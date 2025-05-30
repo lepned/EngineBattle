@@ -1,0 +1,25 @@
+﻿   @inject IWebHostEnvironment Environment
+   @using Markdig
+
+<div class="markdown-content">
+    @((MarkupString)markdownContent)
+</div>
+
+@code {
+
+    [Parameter]
+    public string FileName { get; set; }
+    private string markdownContent = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var filePath = Path.Combine(Environment.ContentRootPath, "wwwroot", FileName);
+
+        // Read the markdown file content
+        markdownContent = File.ReadAllText(filePath);
+        var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+        markdownContent = Markdig.Markdown.ToHtml(markdownContent, pipeline);
+		await Task.CompletedTask;
+    }
+}
+

@@ -1,0 +1,111 @@
+﻿
+<MudItem Class="no-scroll ml-5 mr-5 mt-1">
+
+  <MudItem Class="d-flex">
+    @*<MudItem Style=@FontHeader lg="1"> </MudItem>*@
+    <MudItem Style=@FontHeader Class="d-flex infoBanner mr-3" lg="12">
+      <MudItem Style=@FontHeader Class="ml-1" lg="5"> Hardware </MudItem>
+      <MudItem Style=@FontHeader lg="1"> </MudItem>
+      <MudItem Style=@FontHeader lg="2"> Time control </MudItem>
+      <MudItem Style=@FontHeader lg="1"> Game </MudItem>
+      <MudItem Style=@FontHeader lg="1"> Round </MudItem>
+      <MudItem Style=@FontHeader lg="1"> 50m </MudItem>
+      <MudItem Style=@FontHeader lg="1"> R3 </MudItem>
+      <MudItem Style=@FontHeader lg="1"> Draw </MudItem>
+      @if (Info != null && Info.UseTBAdj)
+      {
+        <MudItem Style=@FontHeader lg="1">
+          TB
+        </MudItem>
+      }
+      @if (Info != null && Info.UseDevCounter)
+      {
+        <MudItem Style=@FontNormal lg="1">
+          Dev
+        </MudItem>
+      }
+      <MudItem Style=@FontHeader lg="2"> Result </MudItem>
+      <MudItem Style=@FontHeader lg="2" Class="mud-centerTxt; justify-center;"> H2H </MudItem>
+      <MudItem Style=@FontHeader lg="2"> Time left </MudItem>
+      @* <MudItem lg="1"> </MudItem> *@
+      <MudItem Style=@FontHeader lg="3"> Tournament ends </MudItem>
+    </MudItem>
+
+  </MudItem>
+  <MudItem Class="d-flex">
+    @*<MudItem Style=@FontNormal lg="1"> </MudItem>*@
+    <MudItem Class="d-flex infoBannerContent mr-3" lg="12">
+      <MudItem Style=@FontNormal Class="ml-1" lg="5">@Info?.Hardware </MudItem>
+      <MudItem Style=@FontNormal lg="1"> </MudItem>
+      <MudItem Style=@FontNormal lg="2"> @Info?.TCText </MudItem>
+      <MudItem Style=@FontNormal lg="1"> @Info?.Game </MudItem>
+      <MudItem Style=@FontNormal lg="1"> @Info?.Round </MudItem>
+      <MudItem Style=@FontNormal lg="1"> @move50 </MudItem>
+      <MudItem Style=@FontNormal lg="1"> @R3 </MudItem>
+      <MudItem Style=@FontNormal lg="1"> @($"{DrawP}p") </MudItem>
+      @if (Info != null && Info.UseTBAdj)
+      {
+        <MudItem Style=@FontNormal lg="1">
+          @TB
+        </MudItem>
+      }
+
+      @if (Info != null && Info.UseDevCounter)
+      {
+        <MudItem Style=@FontNormal lg="1">
+          @Info.DevCounter
+        </MudItem>
+      }
+
+      <MudItem Style=@FontNormal Class="pl-1" lg="2"> @Info?.ResultTxt </MudItem>
+      <MudItem Style=@FontSmall Class="mud-centerTxt; justify-center;" lg="2"> @Info?.HeadToHead </MudItem>
+      <MudItem Style=@FontNormal lg="2"> @Info?.TimeLeftTxt </MudItem>
+      @* <MudItem lg="1"> </MudItem> *@
+      <MudItem Style=@FontNormal lg="3"> @Info?.TournamentEndsTxt </MudItem>
+    </MudItem>
+
+  </MudItem>
+</MudItem>
+
+
+@code {
+
+  [Parameter]
+  public int Move50 { get; set; }
+
+  [Parameter]
+  public int R3 { get; set; }
+
+  [Parameter]
+  public int DrawP { get; set; }
+
+  [Parameter]
+  public int TB { get; set; }
+
+  [Parameter]
+  public int FontSize { get; set; }
+
+  [Parameter]
+  public InfoBannerInfo Info { get; set; }
+
+  private int fontSize = 8;
+  private string FontNormal;
+  private string FontHeader;
+  private string FontSmall;
+  private string move50 => $"{Move50 / 2}.{Move50 % 2}"; //CalcMove50();
+  private string ends { get; set; }
+ 
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;
+      FontHeader = $"font-size:{fontSize + 1}px;";
+      FontNormal = $"font-size:{Math.Min(21, fontSize - 1)}px;";
+      FontSmall = $"font-size:{Math.Min(18, fontSize - 2)}px;";
+      StateHasChanged();
+    }
+    base.OnAfterRender(firstRender);
+  }
+  
+}

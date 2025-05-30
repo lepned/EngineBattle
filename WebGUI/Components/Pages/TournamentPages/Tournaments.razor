@@ -1,0 +1,1688 @@
+﻿@page "/tournament"
+@using System.Linq
+@using WebGUI.Components.Pages.Experimental
+@using WebGUI.Components.Pages
+@using WebGUI.Components.Layout
+@using System.Diagnostics
+@using WebGUI.Plotting
+@using WebGUI.Services
+@using Toolbelt.Blazor.HotKeys2
+@using WebGUI.Components.Layout.TournamentLayout
+@using WebGUI.Components.Layout.CrosstableLayout
+@using WebGUI.Components.Layout.ChessboardLayout
+
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject IDialogService DialogService
+@inject NotifierService Notifier
+@inject ILogger<Tournaments> logger
+@inject HotKeys HotKeys
+
+
+<PageTitle> Tournament page </PageTitle>
+
+<div class="main-screen" id="tournamentPage">
+	<div class="rhs lhs infoB">
+
+		<InfoBanner FontSize=@layoutOptions.Fonts.InfoBannerFont R3="@r3" TB="TB"
+					Move50="move50" DrawP="DrawP" Info="infoBannerInfo"></InfoBanner>
+	</div>
+
+	<MudGrid Class="pl-3 justify-content-between">
+
+		<MudItem sm="12" md="4" lg="4">
+
+			<MudItem Class="lhs mb-3 d-flex" lg="12">
+				<MudItem lg="1">
+				</MudItem>
+				<MudItem lg="10">
+					<MudText Class="mt-4" Typo="Typo.h6">@tournament?.Name</MudText>
+					<MudText Class="pl-3" Style=@descriptionStyle>@tournament?.Description</MudText>
+					<MudPaper>
+						<ul class="pt-4 pb-4" style="list-style-type: disc; list-style-position:inside;">
+							<li style=@descriptionStyle>@Gauntlet</li>
+							<li style=@descriptionStyle>@(GetOpening())</li>
+							<li style=@descriptionStyle>@(GetWin())</li>
+							<li style=@descriptionStyle>@(GetDraw())</li>
+						</ul>
+					</MudPaper>
+				</MudItem>
+				<MudItem lg="2">
+				</MudItem>
+			</MudItem>
+			<MudItem>
+				<div class="lhs">
+
+					<EngineStats Engine1Logo="@whiteEngineLogo"
+								 Engine1Name="@whitePlayer"
+								 Engine2Logo="@blackEngineLogo"
+								 Engine2Name="@blackPlayer"
+								 Engine1Version="@WhiteEngineConfig.Version"
+								 Engine2Version="@BlackEngineConfig.Version"
+								 Engine1TimeLeft="@whiteTime"
+								 Engine1TimePerMove="@whiteMoveTime"
+								 Engine2TimeLeft="@blackTime"
+								 Engine2TimePerMove="@blackMoveTime"
+								 Engine1="Engine1"
+								 Engine2="Engine2"
+								 Engine1ToMove="whiteToMove"
+								 ShowPV="@showPVBoard"
+								 ShowCompletePV="showCompletePV"
+								 FontSize="@layoutOptions.Fonts.EnginesPanelFont"
+								 IsFRC=@tournament.IsChess960
+								 MainLogoFileName="@tournament.MainLogoFileName" />
+
+				</div>
+				<div class="lhs pvHeight">
+					@if (showPVBoard)
+					{
+						<PVboardDuo @ref="pvBoardDuo" BoardSize="@layoutOptions.Sizes.PVboardSize" WhiteMoveAndFen="WhiteMoveAndFen" BlackMoveAndFen="BlackMoveAndFen" IsWhite="@whiteToMove" IsDeviation="@showCompletePV" />
+					}
+					else
+					{
+						<div style="height: @($"{pvBoardHeight}px;")" />
+					}
+				</div>
+
+				@if (layoutOptions.ShowCrosstableBelowStandings)
+				{
+					<div class="standingTable">
+						<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
+								   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
+					</div>
+					@if (!layoutOptions.OnlyShowStandings)
+					{
+						<CrossTableSummary FontSize=@layoutOptions.Fonts.CrossTableFont CrossTable="table" Players="@tournament.EngineSetup.Engines.Count()" />
+					}
+				}
+
+
+				@if (!layoutOptions.ShowCrosstableBelowStandings)
+				{
+					@if (!layoutOptions.OnlyShowStandings)
+					{
+						<div class="standingTable">
+							<CyclingStandingTables CrossTable="table" Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec FontSizeStandings=@layoutOptions.Fonts.StandingsFont ShowNPM=@layoutOptions.UseNPM Players=@tournament.EngineSetup.Engines.Count() ScoreTable="scoreTable" FontSizeCross=@layoutOptions.Fonts.CrossTableFont />
+						</div>
+
+					}
+					else
+					{
+						<div class="standingTable">
+							<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
+									   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
+						</div>
+					}
+				}
+
+
+				<MudSpacer></MudSpacer>
+			</MudItem>
+
+
+			@if (swapTables == false)
+			{
+				<div>
+					<CyclingTables Results="@results"
+								   Pairings="@pairings"
+								   FontSize=@layoutOptions.Fonts.PairingsFont
+								   TableHeight=@pairingTableHeight
+								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec />
+				</div>
+			}
+
+		</MudItem>
+
+		<MudItem Class="mt-5" sm="12" md="4" lg="4" xl="4" xxl="4">
+			<StreamingChessboard @ref="streamingBoard" ShowMoveList=true OpeningMoves="@openingMoves" MoveListHeight=@moveListHeight
+								 MoveHistory="@moveHistory" OpeningName="@currentOpeningInPlay" MoveListFontSize="@layoutOptions.Fonts.MoveListFont">
+			</StreamingChessboard>
+			<div>
+				<div style=@pvStyleBlack class="pv-black-box pv">
+					<span>@blackBefore </span>
+					<span class="pv-deviation-black">@blackPVda </span>
+					<span>@blackRest </span>
+				</div>
+				<div style=@pvStyleWhite class="pv-white-box pv">
+					<span>@whiteBefore </span>
+					<span class="pv-deviation-white">@whitePVda </span>
+					<span>@whiteRest </span>
+				</div>
+			</div>
+
+		</MudItem>
+
+		<MudItem sm="12" md="4" lg="4">
+
+			<MudItem hidden="@(!runWithLogLiveStats)" Class="my-5">
+				<div style=@liveChartStyle class="chart rhs" @ref=livePlotReference></div>
+			</MudItem>
+			<MudItem hidden="@(!runWithLogLiveStats)" Class="my-5">
+				<div style=@liveChartStyle class="chart rhs" @ref=liveQPlotReference></div>
+			</MudItem>
+
+			<MudItem hidden="@(!tournament.LayoutOption.Charts.ShowEval)" Class="my-5">
+				<div style=@moveChartStyle class="chart rhs" @ref=evalChart></div>
+			</MudItem>
+			<MudItem hidden="@(!ShowTime())" Class="my-5">
+				<div style=@moveChartStyle class="chart rhs" @ref=timeUsageChart></div>
+			</MudItem>
+			<MudItem hidden="@(!tournament.LayoutOption.Charts.ShowNPS)" Class="my-5">
+				<div style=@moveChartStyle class="chart rhs" @ref=npsChart></div>
+			</MudItem>
+			<MudItem hidden="@(!ShowNodes())" Class="my-5">
+				<div style=@moveChartStyle class="chart rhs" @ref=nodesChart></div>
+			</MudItem>
+
+			@if (swapTables)
+			{
+				<div id="cycleTable">
+					<CyclingTables Results="@results"
+								   Pairings="@pairings"
+								   FontSizePairing=@layoutOptions.Fonts.PairingsFont
+									 FontSizeLatestGames=@layoutOptions.Fonts.LatestGamesFont
+								   TableHeight=@pairingTableHeight
+								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec />
+				</div>
+			}
+
+		</MudItem>
+	</MudGrid>
+</div>
+
+
+@code {
+	List<string> validSizes = ["small", "medium", "large"];
+	private int height = 100;
+	private bool shouldCycle;
+	private ThreadSafeBoardState boardState = new();
+	private MoveAndFen WhiteMoveAndFen = MoveAndFen.FirstEntry;
+	private MoveAndFen BlackMoveAndFen = MoveAndFen.FirstEntry;
+	private PVboardDuo pvBoardDuo;
+	private bool BestMoveWithPolicy = false;
+	private bool blackLogLive = false;
+	private bool whiteLogLive = false;
+	private StreamingChessboard streamingBoard;
+	private bool showCompletePV = false;
+	private string standingsTableHeight { get; set; }
+	private IDialogReference dialogReference;
+	private IDialogReference resultDialogReference;
+	private List<CrossTableEntry> table = new();
+	private bool swapTables = true;
+	private int autoCycleTimeInSec = 30;
+	private bool showPVBoard = false;
+	private MarkupString crosstableHtml { get; set; }
+	private string descriptionStyle = "margin-left:10px; font-size:14px;";
+	private string pvStyleWhite = "font-size:16px;";
+	private string pvStyleBlack = "font-size:16px;";
+	private string liveChartStyle = "height:200px;";
+	private string moveChartStyle = "height:200px;";
+	private List<string> MessagesFromCeres = new();
+	private int TB = 0;
+	private int r3 = 0;
+	private int move50 = 0;
+	private string reason = "";
+	private int DrawP = 0;
+	private string tournamentGamesHeader = "";
+	private TypesDef.Tournament.Tournament tournament = TypesDef.Tournament.Tournament.Empty;
+	private InfoBannerInfo infoBannerInfo;
+	private string currentOpeningInPlay = "Opening:";
+	private string tournamentDesc = string.Empty;
+	private LayoutOption layoutOptions = LayoutOption.Default;
+	private int pairingTableHeight = 100;
+	private string whiteTime = "00:00:00";
+	private string blackTime = "00:00:00";
+	private string whiteMoveTime = "00:00:00";
+	private string blackMoveTime = "00:00:00";
+	private string whitePlayer = "White player";
+	private string blackPlayer = "Black player";
+	private string blackWDL = ""; //$"[33.3 W | 33.3 D | 33.3 L]";
+	private string whiteWDL = ""; //$"[33.3 W | 33.3 D | 33.3 L]";
+	private string fen;
+	private string blackPV = ""; //"PV: 1.e4 e5 2.Nf3 Nf6 3.Nxe5 d6  ";
+	private string whitePV = ""; //"PV: 1.e4 e5 2.Nf3 Nf6 3.Nxe5 d6  ";
+	private string whitePVda = "";
+	private string whiteBefore = "";
+	private string whiteRest = "";
+	private string blackPVda = "";
+	private string blackBefore = "";
+	private string blackRest = "";
+	private string blackLongPV = "";
+	private string whiteLongPV = "";
+	private bool whiteToMove = true;
+	private TimeOnly whiteTimeOnly;
+	private TimeOnly blackTimeOnly;
+	private string moveTimer;
+	private List<Result> results = new();
+	private List<Pairing> pairings = new();
+	private List<PlayerResult> scoreTable = new();
+	private List<EngineStatus> engineStatus = new();
+	private EngineStatus Engine1 = EngineStatus.Empty;
+	private EngineStatus Engine2 = EngineStatus.Empty;
+	private ChessLibrary.Tournament.Manager.Runner runner;
+	private EngineConfig WhiteEngineConfig = EngineConfig.Empty;
+	private EngineConfig BlackEngineConfig = EngineConfig.Empty;
+	private string moveHistory = string.Empty;
+	private int moveNr = 0;
+	private TypesDef.Tournament.StartOfTournamentInfo startTournyInfo = TypesDef.Tournament.StartOfTournamentInfo.Empty;
+	private ElementReference evalChart;
+	private ElementReference nodesChart;
+	private ElementReference npsChart;
+	private ElementReference timeUsageChart;
+	private ElementReference livePlotReference;
+	private ElementReference liveQPlotReference;
+	private IJSObjectReference chessModule;
+	private LivePlot evalList;
+	private LivePlot nodeList;
+	private LivePlot npsList;
+	private LivePlot timeUsageList;
+	private SearchInfoPlot searchInfoPlot;
+	private bool runWithLogLiveStats = false;
+	private PeriodicTimer timer;
+	private PeriodicTimer oneSecondTimer;
+	private string openingMoves;
+	private string whiteEngineLogo = "img/EngineBattle.png";
+	private string blackEngineLogo = "img/EngineBattle1.png";
+	private string blackDev = "";
+	private string whiteDev = "";
+	private string speedDiff = "";
+	private string gameResult = "";
+	private ChessConfigurationService setting;
+	HotKeysContext keyContext;
+	//private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+	private double tournamentHeight = 0;
+	private double windowHeight = 0;
+	private double pvLabelsHeight = 0;
+	private int moveListHeight = 100;
+	private int totalNumberOfPairs = 0;
+	private string roundNr = string.Empty;
+	private double pvBoardHeight;
+
+	int CalcBufferFunction(int windowHeight)
+	{
+		int diff = 1440 - 1080;
+		int buffer = 170 - ((windowHeight - 1080) * (170 - 130)) / diff;
+		return Math.Clamp(buffer, 130, 170);
+	}
+
+	[JSInvokable]
+	public async Task OnBrowserResize()
+	{
+		await Task.Delay(300);
+		var unzoomedHeight = await chessModule.InvokeAsync<double>("getUnzoomedViewportHeight");
+		windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight");
+		var elementsAboveCycleTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "rhs");
+		var standingTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "standingTable");
+		int buffer = 130; //CalcBufferFunction((int)unzoomedHeight);
+		var elementsAboveStandings = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "lhs") + buffer;
+		if (showPVBoard)
+		{
+			pvBoardHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "pvHeight");
+			elementsAboveStandings += 35;
+		}
+
+		else
+		{
+			pvBoardHeight = 5;
+		}
+
+		if (!layoutOptions.OnlyShowStandings)
+		{
+			elementsAboveStandings += 10;
+		}
+
+		//Console.WriteLine($"Window height: {windowHeight} standingTableHeight: {standingTableHeight} buffer: {buffer} pvBoardHeight: {pvBoardHeight}");
+		var infoB = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "infoB");
+		var streamingBoardHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "streaming-board");
+		pvLabelsHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "pv");
+		var boardHeight = pvLabelsHeight + streamingBoardHeight + infoB + 165;
+		var windowBoardHeightDiff = (int)(windowHeight - boardHeight);
+		var cyclingTableHeight = windowHeight - elementsAboveCycleTableHeight;
+		var absTableDiff = Math.Abs(windowHeight - elementsAboveCycleTableHeight);
+
+		if (windowBoardHeightDiff > 0)
+		{
+			moveListHeight = Math.Max(0, windowBoardHeightDiff);
+		}
+
+		if (windowHeight > elementsAboveStandings)
+		{
+			height = Math.Max(50, (int)(windowHeight - elementsAboveStandings)) - 5;
+			shouldCycle = standingTableHeight > height;
+		}
+
+		if (absTableDiff > 0)
+		{
+			pairingTableHeight = Math.Max(0, (int)(absTableDiff - 180));
+		}
+
+		await InvokeAsync(StateHasChanged);
+		await Task.Delay(200);
+		//logger.LogInformation($"Extra: {extraLimit} Window height: {windowHeight} height: {height} standingTableHeight: {standingTableHeight} shouldCycle: {shouldCycle} pvBoardHeight: {pvBoardHeight} elementsAboveStandings: {elementsAboveStandings} infoB: {infoB} streamingBoardHeight: {streamingBoardHeight} pvLabelsHeight: {pvLabelsHeight} boardHeight: {boardHeight} cyclingTableHeight: {cyclingTableHeight}");
+	}
+
+
+	public void Callback(string lanMove, double policy, double frac)
+	{
+		if (BestMoveWithPolicy)
+		{
+			streamingBoard.UpdatePonderMoveWithPolicy(lanMove, policy, frac);
+		}
+	}
+
+	private void SetPVStyle(LayoutOption layout)
+	{
+		pvStyleWhite = $"font-size:{layout.Fonts.PVLabelFont}px;";
+		pvStyleBlack = $"font-size:{layout.Fonts.PVLabelFont}px;";
+	}
+
+	private bool ShowTime()
+	{
+		var showTime = tournament.LayoutOption.Charts.ShowTime;
+		return runWithLogLiveStats ? showTime : true;
+	}
+
+	private bool ShowNodes()
+	{
+		var showNodes = tournament.LayoutOption.Charts.ShowNodes;
+		return runWithLogLiveStats ? showNodes : true;
+	}
+
+	private bool ShowNPS()
+	{
+		var showNPS = tournament.LayoutOption.Charts.ShowNPS;
+		return runWithLogLiveStats ? showNPS : true;
+	}
+
+	async Task OpenResultDialog()
+	{
+		var option = new DialogOptions() { MaxWidth = MaxWidth.Small, FullWidth = false, CloseButton = false, Position = DialogPosition.TopCenter };
+		var title = $"Game Ended";
+		var res = $"{infoBannerInfo.ResultTxt} ({reason})";
+		var parameters = new DialogParameters
+	  {
+		{"Result", res }
+	  };
+
+		resultDialogReference = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.ResultDialog>(title, parameters, option);
+	}
+
+	void CloseResultDialog() => resultDialogReference?.Close();
+
+	async Task OpenDialog()
+	{
+		if (results.Count > 3000)
+			return;
+
+		var players = tournament.EngineSetup.Engines.Count();
+		var fontSize = layoutOptions.Fonts.CrossTableFont + 1;
+		var crossTable = (tournament.Gauntlet || players == 2) ? runner.GetGauntletCrosstable(results) : table;
+		var size = (tournament.Gauntlet || players == 2) ? table.Count - crossTable.Count : table.Count;
+		var res = whitePlayer + " vs " + blackPlayer + ": " + gameResult;
+		var options = size switch
+		{
+			> 5 => new DialogOptions() { MaxWidth = MaxWidth.ExtraExtraLarge, FullWidth = true, CloseButton = false },
+			> 3 => new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = false },
+			_ => new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = false }
+		};
+		var parameters = new DialogParameters
+	  {
+		{"CrossTable", crossTable },
+		{"FontSize",  fontSize },
+		{"Players",  players },
+		{"GameResult", res},
+		{"Gauntlet",  (tournament.Gauntlet || players == 2) }
+	  };
+		dialogReference = await DialogService.ShowAsync<Components.Layout.CrosstableLayout.CrosstableDialog>("", parameters, options);
+	}
+
+	void CloseDialog() => dialogReference?.Close();
+
+	private async Task UpdatePVBoards(string longPV, int depthToMove, int depthOpp, bool white, string newFen)
+	{
+		try
+		{
+			var moves = boardState.GetPVMoves(longPV, depthToMove, false).ToList();
+			var moveFen = await boardState.PlayPVMoves(moves, newFen);
+			if (white)
+			{
+				WhiteMoveAndFen = moveFen;
+			}
+			else
+			{
+				BlackMoveAndFen = moveFen;
+			}
+		}
+		catch (Exception e)
+		{
+			logger.LogDebug($"Logging exception data: longPV: {longPV} depthToMove: {depthToMove} depthOpp: {depthOpp} white: {white} newFen: {newFen}");
+			logger.LogError(e.Message);
+		}
+	}
+
+
+	private int CountAgreements(string[] wArr, string[] bArr)
+	{
+		var shortest = Math.Min(wArr.Length, bArr.Length);
+		int equalCount = 0;
+		for (int i = 0; i < shortest; i++)
+		{
+			if (wArr[i].Equals(bArr[i]))
+			{
+				equalCount++;
+			}
+
+			else
+				return equalCount;
+		}
+		return equalCount;
+	}
+
+	private async Task<int> CalcPVAgreement(bool whiteToPlay)
+	{
+		var newFen = fen;
+		if (string.IsNullOrEmpty(whiteLongPV) || string.IsNullOrEmpty(blackLongPV))
+		{
+			if (string.IsNullOrEmpty(whiteLongPV) == false && whiteToMove)
+			{
+				whitePVda = string.Empty; whiteBefore = string.Empty;
+				whiteRest = whitePV;
+				if (showPVBoard)
+					await UpdatePVBoards(whiteLongPV, 1, 0, whiteToPlay, newFen);
+				return 0;
+			}
+			if (string.IsNullOrEmpty(blackLongPV) == false && whiteToMove == false)
+			{
+				blackPVda = String.Empty; blackBefore = string.Empty;
+				blackRest = blackPV;
+				if (showPVBoard)
+					await UpdatePVBoards(blackLongPV, 1, 0, whiteToPlay, newFen);
+				return 0;
+			}
+			if (showPVBoard)
+			{
+				if (whiteToPlay)
+				{
+					await UpdatePVBoards(whiteLongPV, 1, 0, whiteToPlay, newFen);
+				}
+				else
+				{
+					await UpdatePVBoards(blackLongPV, 1, 0, whiteToPlay, newFen);
+				}
+				return 0;
+			}
+		}
+
+		var comparePV = whiteToPlay ? blackLongPV : whiteLongPV;
+		var toMovePV = whiteToPlay ? whiteLongPV : blackLongPV;
+		var toCompareArr = comparePV.Split(' ')[1..];
+		var toMoveArr = toMovePV.Split(' ');
+		int numberOfMovesAgreement = CountAgreements(toMoveArr, toCompareArr);
+		var wArr = whitePV.Split(' ');
+		var bArr = blackPV.Split(' ');
+		var blackArr = bArr.Length > 1 ? bArr[1..] : Array.Empty<string>();
+		var res = numberOfMovesAgreement;
+		if (whiteToPlay)
+		{
+			var blackArrCompare = blackArr.Length > 1 ? blackArr[1..] : Array.Empty<string>();
+			whiteBefore = String.Join(" ", wArr.Take(res));
+			whitePVda = wArr.Length > res ? wArr[res] : "";
+			whiteRest = String.Join(" ", wArr.Skip(res + 1));
+
+			int blackTakeCount = Math.Min(bArr.Length, res + 2);
+			blackBefore = String.Join(" ", bArr.Take(blackTakeCount));
+			blackPVda = blackArrCompare.Length > res ? blackArrCompare[res] : "";
+			blackRest = String.Join(" ", blackArrCompare.Skip(res + 1));
+		}
+
+		else
+		{
+			var whiteArr = wArr.Length > 1 ? wArr[1..] : Array.Empty<string>();
+			res = CountAgreements(whiteArr, blackArr);
+			int blackTakeCount = Math.Min(bArr.Length, res + 1);
+			blackBefore = String.Join(" ", bArr.Take(blackTakeCount));
+			blackPVda = blackArr.Length > res ? blackArr[res] : "";
+			blackRest = String.Join(" ", blackArr.Skip(res + 1));
+
+			int whiteTakeCount = Math.Min(wArr.Length, res + 1);
+			whiteBefore = String.Join(" ", wArr.Take(whiteTakeCount));
+			whitePVda = whiteArr.Length > res ? whiteArr[res] : "";
+			whiteRest = String.Join(" ", whiteArr.Skip(res + 1));
+		}
+
+		if (showPVBoard)
+		{
+			var longPV = whiteToPlay ? whiteLongPV : blackLongPV;
+			await UpdatePVBoards(longPV, numberOfMovesAgreement + 1, numberOfMovesAgreement + 2, whiteToPlay, newFen);
+		}
+
+		return numberOfMovesAgreement;
+	}
+
+
+	string Gauntlet => tournament == null ? "" : tournament.Gauntlet ?
+			$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
+			$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
+
+	string GetOpening()
+	{
+		if (tournament != null)
+		{
+			return
+				$"Openings, {tournament.Opening.OpeningsPly}ply, sequential, {(tournament.Opening.OpeningsTwice ? "twice" : "single")}, {tournament.GetOpeningFileName()}";
+		}
+		else
+			return "";
+	}
+
+	string CalcTournamentDuration()
+	{
+		var Tsec = startTournyInfo.TournamentDurationSec;
+		var Gsec = startTournyInfo.GameDurationInSec;
+		if (Tsec == TimeSpan.Zero)
+		{
+			return "";
+		}
+
+		return $"Tournament time: {Tsec}, game time: {Gsec}";
+	}
+
+	string GetWin()
+	{
+		if (tournament != null)
+		{
+			return
+				$"Win: after start, evals >= {tournament.Adjudication.WinOption.MinWinScore} for {tournament.Adjudication.WinOption.WinMoveLength} moves";
+		}
+		else
+			return "";
+	}
+
+	string GetDraw()
+	{
+		if (tournament != null)
+		{
+			return
+				$"Draw: after {tournament.Adjudication.DrawOption.MinDrawMove} moves, evals <= {tournament.Adjudication.DrawOption.MaxDrawScore} for {tournament.Adjudication.DrawOption.DrawMoveLength} moves";
+		}
+		else
+			return "";
+	}
+
+	private double CalcSharpness(WDL wdl)
+	{
+		var w = wdl.Win / 1000;
+		var l = wdl.Loss / 1000;
+		var winPart = Math.Log(1 / w - 1);
+		var lossPart = Math.Log(1 / l - 1);
+		var sum = winPart + lossPart;
+		var factor = 2.0 / sum;
+		//logger.LogInformation($"Win: {w} Loss: {l} LogWin: {winPart} LogLoss: {lossPart} Factor: {factor}");
+		return factor;
+	}
+
+	private string GetWDLString(WDL wdl)
+	{
+		var msg = $"[{(wdl.Win / 1000):P1} W | {(wdl.Draw / 1000):P1} D | {(wdl.Loss / 1000):P1} L]";
+		return msg;
+	}
+
+	private void SetEngineStatus(EngineStatus status)
+	{
+		if (status.PlayerName == Engine1.PlayerName)
+		{
+			Engine1 = status;
+		}
+		else
+		{
+			Engine2 = status;
+		}
+	}
+
+	private void SetSpeedFactor()
+	{
+		if (engineStatus.Count > 1)
+		{
+			var (fst, fstName) = (engineStatus[0].NPS, engineStatus[0].PlayerName);
+			var (snd, sndName) = (engineStatus[1].NPS, engineStatus[1].PlayerName);
+
+			if (fst > snd)
+			{
+				var speed = Math.Round(fst / snd, 0);
+				speedDiff = speed.ToString("N0");
+			}
+			else
+			{
+				var speed = Math.Round(snd / fst, 0);
+				speedDiff = speed.ToString("N0");
+			}
+		}
+	}
+
+	private EngineConfig GetPlayer(string name)
+	{
+		return tournament.EngineSetup.Engines.FirstOrDefault(e => e.Name == name);
+	}
+
+	private void SetGameParams(StartGameInfo info)
+	{
+		var b = info.BlackPlayer;
+		var w = info.WhitePlayer;
+		BlackEngineConfig = b;
+		WhiteEngineConfig = w;
+		Engine1.PlayerName = w.Name;
+		Engine2.PlayerName = b.Name;
+		if (tournament == null)
+			tournament = runner.Tournament();
+		tournamentDesc = tournament.MinSummary();
+		blackLogLive = b.Options.Keys.Contains("LogLiveStats");
+		whiteLogLive = w.Options.Keys.Contains("LogLiveStats");
+
+		runWithLogLiveStats = whiteLogLive || blackLogLive;
+		if (runWithLogLiveStats)
+		{
+			object resB, resW;
+			bool btest = false, wtest = false;
+			if (b.Options.TryGetValue("LogLiveStats", out resB))
+			{
+				var logLiveValue = Convert.ToBoolean(resB.ToString());
+				if (logLiveValue)
+					btest = true;
+			}
+
+			if (w.Options.TryGetValue("LogLiveStats", out resW))
+			{
+				var logLiveValue = Convert.ToBoolean(resW.ToString());
+				if (logLiveValue)
+					wtest = true;
+			}
+
+			if (wtest)
+			{
+				runWithLogLiveStats = true;
+				if (tournament.VerboseLogging)
+					logger.LogInformation("Be sure to include VerboseMoveStats = true to the setoption in order to get LogLiveStat charting");
+				searchInfoPlot = new SearchInfoPlot(chessModule, liveQPlotReference, livePlotReference, "Q-value", "", "", Callback);
+			}
+
+			else if (btest)
+			{
+				runWithLogLiveStats = true;
+				if (tournament.VerboseLogging)
+					logger.LogInformation("Be sure to include VerboseMoveStats = true to the setoption in order to get LogLiveStat charting");
+				searchInfoPlot = new SearchInfoPlot(chessModule, liveQPlotReference, livePlotReference, "Q-value", "", "", Callback);
+			}
+
+			else
+			{
+				runWithLogLiveStats = false;
+			}
+		}
+	}
+
+	private async Task ConfigureTournament()
+	{
+		var opt = new DialogOptions { MaxWidth = MaxWidth.Large };
+		var title = $"Configure your tournament";
+		await DialogService.ShowAsync<Config>(title, opt);
+	}
+
+	private async void CancelTournament()
+	{
+		runner.Cancel();
+		timer?.Dispose();
+		oneSecondTimer?.Dispose();
+		await Notifier.NotifyFullScreenRequested(false);
+		await Task.Delay(200);
+		await chessModule.InvokeVoidAsync("triggerResizeEvent");
+		await InvokeAsync(OnBrowserResize);
+	}
+
+	private async Task ValidateTournamentInput()
+	{
+		ChessLibrary.Tournament.Manager.loadTournament();
+		var ok = await ChessLibrary.Tournament.TournamentUtils.validateEnginesInTournament(tournament);
+		//add pop up dialog if not ok
+		if (!ok)
+		{
+			var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
+			var title = $"Tournament validation failed!";
+			var msg = "Please check the console for errors";
+			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", msg } }, opt);
+		}
+
+	}
+
+	private async void StartTimer()
+	{
+		moveTimer = string.Empty;
+		var elapsedFromStart = TimeSpan.Zero;
+		var start = Stopwatch.GetTimestamp();
+		if (oneSecondTimer != null)
+			return;
+		if (timer != null)
+			return;
+		timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+		oneSecondTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
+		var limit = TimeSpan.FromSeconds(10);
+		TimeOnly tOnly;
+		var lastToPlay = whiteToMove;
+
+		while (oneSecondTimer != null && await oneSecondTimer.WaitForNextTickAsync())
+		{
+			try
+			{
+				if (whiteToMove != lastToPlay)
+				{
+					start = Stopwatch.GetTimestamp();
+					moveTimer = string.Empty;
+					lastToPlay = whiteToMove;
+				}
+				else
+				{
+					var t = Stopwatch.GetElapsedTime(start);
+					var elapsed = new TimeOnly(t.Ticks);
+					moveTimer = OneSecondMoveTimeFormatted(elapsed);
+
+					if (whiteToMove)
+					{
+						var ticks = whiteTimeOnly.Ticks - t.Ticks;
+						if (ticks < limit.Ticks)
+						{
+							//logger.LogInformation("White player is low on time");
+							oneSecondTimer = null;
+						}
+						whiteMoveTime = moveTimer;
+						tOnly = new TimeOnly(Math.Max(0, ticks));
+						whiteTime = TimeLeftFormatted(tOnly);
+						await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
+					}
+
+					else
+					{
+						var ticks = blackTimeOnly.Ticks - t.Ticks;
+						if (ticks < limit.Ticks)
+						{
+							//logger.LogInformation("Black player is low on time");
+							oneSecondTimer = null;
+						}
+						blackMoveTime = moveTimer;
+						tOnly = new TimeOnly(Math.Max(0, ticks));
+						blackTime = TimeLeftFormatted(tOnly);
+						await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
+					}
+
+				}
+			}
+
+			catch (Exception e)
+			{
+				//silently ignoring the error here....
+				logger.LogError(e.Message);
+				Console.WriteLine(e.Message);
+			}
+		}
+
+		while (timer != null && await timer.WaitForNextTickAsync())
+		{
+			try
+			{
+				if (whiteToMove != lastToPlay)
+				{
+					start = Stopwatch.GetTimestamp();
+					moveTimer = string.Empty;
+					lastToPlay = whiteToMove;
+				}
+				else
+				{
+					var t = Stopwatch.GetElapsedTime(start);
+					var elapsed = new TimeOnly(t.Ticks);
+					moveTimer = MoveTimeFormatted(elapsed);
+
+					if (whiteToMove)
+					{
+						var ticks = whiteTimeOnly.Ticks - t.Ticks;
+						whiteMoveTime = moveTimer;
+						tOnly = new TimeOnly(Math.Max(0, ticks));
+						whiteTime = TimeLeftFormatted(tOnly);
+						await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
+					}
+
+					else
+					{
+						var ticks = blackTimeOnly.Ticks - t.Ticks;
+						blackMoveTime = moveTimer;
+						tOnly = new TimeOnly(Math.Max(0, ticks));
+						blackTime = TimeLeftFormatted(tOnly);
+						await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
+					}
+				}
+			}
+
+			catch (Exception e)
+			{
+				//silently ignoring the error here....
+				logger.LogError(e.Message);
+				Console.WriteLine(e.Message);
+			}
+		}
+	}
+
+	private async Task PlayOpeningMoves(List<MoveAndFen> moves)
+	{
+		moveHistory = string.Empty;
+		openingMoves = string.Empty;
+		var isWhite = true;
+		await evalList.ClearData(whitePlayer, blackPlayer);
+		await nodeList.ClearData(whitePlayer, blackPlayer);
+		await npsList.ClearData(whitePlayer, blackPlayer);
+		await timeUsageList.ClearData(whitePlayer, blackPlayer);
+
+		if (moves.Count != 0)
+		{
+			foreach (var move in moves)
+			{
+				CreateOpeningMoves(move);
+				evalList.AddEvalData(isWhite, false, 0.0);
+				nodeList.AddData(isWhite, 0.0, false);
+				npsList.AddData(isWhite, 0.0, true);
+				timeUsageList.AddData(isWhite, 0.0, false);
+				isWhite = !isWhite;
+				await Task.Delay(tournament.MinMoveTimeInMS);
+				await InvokeAsync(StateHasChanged);
+				await streamingBoard.OnNotifyMoveAndFen(move);
+				if (pvBoardDuo != null)
+					await pvBoardDuo.SetPVMoveWithAnnotation(move, true);
+			}
+		}
+		if (moves.Count > 0)
+		{
+			var move = moves.Last();
+			fen = move.FenAfterMove;
+			await Notifier.UpdateOpeningDone(move);
+		}
+		await DoChartUpdates();
+	}
+
+	private void CreateOpeningMoves(MoveAndFen move)
+	{
+		if (move.Move.Color == "w")
+		{
+			moveNr++;
+			openingMoves = $"{openingMoves} {moveNr}. {move.ShortSan}";
+		}
+
+		else
+			openingMoves = $"{openingMoves} {move.ShortSan}";
+	}
+
+	private async void ResetGameState()
+	{
+		infoBannerInfo.ResultTxt = " * ";
+		move50 = 0;
+		r3 = 0;
+		blackLongPV = "";
+		whiteLongPV = "";
+		blackPV = string.Empty;
+		whitePV = string.Empty;
+		blackPVda = string.Empty;
+		whitePVda = string.Empty;
+		blackBefore = string.Empty;
+		whiteBefore = string.Empty;
+		blackRest = string.Empty;
+		whiteRest = string.Empty;
+		if (searchInfoPlot != null)
+			await searchInfoPlot?.ResetPlot(true);
+	}
+
+	private async void Update(ChessLibrary.Tournament.Match.Update update)
+	{
+		switch (update)
+		{
+			case ChessLibrary.Tournament.Match.Update.GameStarted player:
+				await InvokeAsync(StartTimer);
+				ResetGameState();
+				DrawP = tournament.Adjudication.DrawOption.DrawMoveLength * 2;
+				var crossTable = table.FirstOrDefault(e => e.Player == whitePlayer);
+				if (crossTable != null)
+				{
+					var h2h = crossTable.StatsAgainst.FirstOrDefault(e => e.Item1 == blackPlayer);
+					if (h2h != null)
+					{
+						var wdl = h2h.Item2;
+						infoBannerInfo.HeadToHead = $"{wdl.Wins}-{wdl.Draws}-{wdl.Losses}";
+					}
+				}
+				await InvokeAsync(StateHasChanged);
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.EndOfGame e:
+				if (tournament.VerboseLogging)
+					logger.LogDebug($"Game over: {e.Result.Reason} - deviation counter: {tournament.DeviationCounter}");
+				tournamentGamesHeader = $"Last result: {e.Result.Reason}";
+				reason = e.Result.Reason.ToString();
+				var explanation = e.Result.Reason.Explanation;
+				var gameTxtResult = e.Result.Result == "1/2-1/2" ? "Draw" : e.Result.Result == "1-0" ? "White wins" : "Black wins";
+				gameResult = $"{gameTxtResult} by {explanation}";
+				var mh = $"{moveHistory}  ({e.Result.Result} : {explanation})";
+				moveHistory = mh;
+				await Task.Delay(200);
+				await InvokeAsync(() => streamingBoard.UpdateMoveHistory(mh));
+				if (e.Result.Reason != Misc.ResultReason.Cancel)
+				{
+					results.Insert(0, e.Result);
+					infoBannerInfo.ResultTxt = e.Result.Result;
+				}
+				engineStatus.Clear();
+				if (timer != null)
+					timer.Dispose();
+				timer = null;
+				if (oneSecondTimer != null)
+					oneSecondTimer.Dispose();
+				oneSecondTimer = null;
+				var summary = runner.GetPlayerResults(results);
+				scoreTable = summary;
+				table = runner.GenerateStatsCrosstableInHtml(results);
+				await UpdateSpeed(0);
+				await InvokeAsync(StateHasChanged);
+				var resLog = OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
+				Console.WriteLine(resLog);
+				if (tournament.VerboseLogging)
+					logger.LogInformation(resLog);
+
+				if (layoutOptions.ShowCrosstableBetweenGames)
+				{
+					await InvokeAsync(OpenDialog);
+				}
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.BestMove b:
+				moveHistory = b.Info.MoveHistory;
+				FinalStatusReceived(b.Status);
+				await streamingBoard.OnNotifyMoveAndFen(b.Info.MoveAndFen);
+				TB = b.Info.PiecesLeft - tournament.Adjudication.TBAdj.TBMen;
+				move50 = b.Info.Move50;
+				r3 = b.Info.R3;
+				var white = b.Info.Player == whitePlayer;
+				if (b.Info.Eval.IsMate)
+					evalList.AddEvalData(white, true, b.Info.Eval.Value);
+				else
+					evalList.AddEvalData(white, false, b.Info.Eval.Value);
+				nodeList.AddData(white, b.Info.Nodes, false);
+				npsList.AddData(white, b.Info.NPS, true);
+				timeUsageList.AddData(white, b.Info.MoveTime.ToTimeSpan().TotalSeconds, false);
+				var pv = b.Info.PV;
+				var pvLong = b.Info.LongPV;
+				if (b.Info.Player == blackPlayer)
+				{
+					Engine2.Eval = b.Info.Eval;
+					blackPV = pv;
+					blackLongPV = pvLong;
+					DrawP = b.Info.AdjDrawML;
+					blackTimeOnly = b.Info.TimeLeft;
+					blackTime = TimeLeftFormatted(b.Info.TimeLeft);
+					whiteMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+					BlackMoveAndFen = b.Info.MoveAndFen;
+				}
+				else
+				{
+					Engine1.Eval = b.Info.Eval;
+					whitePV = pv;
+					whiteLongPV = pvLong;
+					DrawP = b.Info.AdjDrawML;
+					whiteTimeOnly = b.Info.TimeLeft;
+					whiteTime = TimeLeftFormatted(b.Info.TimeLeft);
+					blackMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+					WhiteMoveAndFen = b.Info.MoveAndFen;
+				}
+
+				whiteToMove = b.Info.Player == blackPlayer;
+				var playerTc = whiteToMove ? WhiteEngineConfig.TimeControlID : BlackEngineConfig.TimeControlID;
+				infoBannerInfo.TCText = tournament.TimeControlTextForPlayer(playerTc);
+				infoBannerInfo.DevCounter = tournament.DeviationCounter;
+				await CalcPVAgreement(!whiteToMove);
+				fen = b.Info.FEN;
+
+				if (runWithLogLiveStats)
+				{
+					searchInfoPlot.ClearSearchData();
+				}
+
+				await InvokeAsync(StateHasChanged);
+				await DoChartUpdates();
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.Info i:
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.Eval e:
+				//SetSpeedFactor();
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.Status s:
+				await StatusReceived(s.Engine);
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.Time t:
+				if (t.Player == blackPlayer)
+				{
+					blackTimeOnly = t.Time;
+					blackTime = TimeLeftFormatted(blackTimeOnly);
+				}
+				else
+				{
+					whiteTimeOnly = t.Time;
+					whiteTime = TimeLeftFormatted(whiteTimeOnly);
+				}
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.NNSeq n:
+				try
+				{
+					if (runWithLogLiveStats)
+					{
+						n.NNSeq.Reverse();
+						searchInfoPlot.AddData(n.NNSeq);
+						var maxLines = Math.Min(n.NNSeq.Count, layoutOptions.Charts.NumberOfLines);
+						await searchInfoPlot.UpdateLogLiveCharts(n.NNSeq, maxLines, layoutOptions.Charts.Qdiff);
+					}
+				}
+				catch (Exception)
+				{
+					var moves = n.NNSeq.Count;
+					logger.LogError($"Failed in updating LogLiveStats Available moves: {moves}, chart wanted: {3} moves");
+				}
+
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.StartOfGame start:
+				try
+				{
+					if (layoutOptions.ShowCrosstableBetweenGames)
+					{
+						await InvokeAsync(CloseDialog);
+					}
+					TimeSpan duration = TimeSpan.Zero;
+					var roundNumber = !string.IsNullOrEmpty(roundNr) && roundNr.Contains('.')
+															? int.Parse(roundNr.Split('.')[0])
+															: 1;
+					
+					var gamesLeft = runner.GetAllPairings().Count;
+					tournament.CurrentGameNr = totalNumberOfPairs - gamesLeft + 1;
+
+					if (results.Count > 5)
+					{
+						double avgTimePerGame = results.Average(e => e.GameTime);
+						double totalDelay = gamesLeft * (tournament.DelayBetweenGames.ToTimeSpan().TotalSeconds + 15);
+						var timeLeft = (avgTimePerGame * gamesLeft) + totalDelay;
+						var timespan = TimeSpan.FromMilliseconds(timeLeft);
+						duration = TimeSpan.FromSeconds(Math.Round(timespan.TotalSeconds));
+					}
+					else
+					{
+						var allPairings = runner.GetAllPairings();
+						if (allPairings.Count == 0)
+						{
+							double avgTimePerGame = results.Average(e => e.GameTime);
+							duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeft);
+						}
+						else
+						{
+							var (tTime, _) = ChessLibrary.Tournament.TournamentUtils.estimateTournamentAndGameTime(gamesLeft, tournament, allPairings);
+							duration = tTime;
+						}
+					}
+
+					infoBannerInfo = new InfoBannerInfo(tournament);
+					infoBannerInfo.TournamentEndsTxt = InfoBannerInfo.GetTournamentEnd(duration);
+					infoBannerInfo.TimeLeftTxt = InfoBannerInfo.Duration(duration);
+					infoBannerInfo.Round = roundNr;
+					var playerTcId = start.Game.WhiteToMove ? start.Game.WhitePlayer.TimeControlID : start.Game.BlackPlayer.TimeControlID;
+					infoBannerInfo.TCText = tournament.TimeControlTextForPlayer(playerTcId);
+
+					if (tournament.PauseAfterRound > 0 && roundNumber > tournament.PauseAfterRound)
+					{
+						logger.LogInformation($"Tournament paused after round number: {roundNumber - 1}");
+						CancelTournament();
+					}
+					else
+					{
+						if (start.Game.OpeningMovesAndFen.Count == 0)
+						{
+							await streamingBoard.OnNewFen(start.Game.StartPos);
+							WhiteMoveAndFen = MoveAndFen.Init(start.Game.StartPos);
+							BlackMoveAndFen = MoveAndFen.Init(start.Game.StartPos);
+							fen = start.Game.StartPos;
+						}
+						await GameStartedReceived(start.Game);
+					}
+					await InvokeAsync(StateHasChanged);
+				}
+				catch (Exception e)
+				{
+					logger.LogError(e.Message);
+				}
+
+				finally
+				{
+					await InvokeAsync(CloseDialog);
+				}
+
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.StartOfTournament tournyStart:
+				try
+				{
+					startTournyInfo = tournyStart.Info;
+					var games = tournyStart.Info.NumberOfGames;
+					tournament = tournyStart.Info.Tournament.Value;
+					if (pairingTableHeight > 0)
+					{
+						showPVBoard = layoutOptions.ShowPVBoard;
+						autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
+					}
+					results = runner.GetResults();
+					var players = runner.GetPlayerResults(results);
+					scoreTable = players;
+					table = runner.GenerateStatsCrosstableInHtml(results);
+					if (results.Count > 0)
+					{
+						await UpdateSpeed(0);
+					}
+					var consoleInfo = OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
+					Console.WriteLine(consoleInfo);
+					if (tournament.VerboseLogging)
+						logger.LogInformation(consoleInfo);
+					pairings = runner.GetLastestPairings();
+					tournament.TotalGames = totalNumberOfPairs; //runner.TotalGames;
+					await InvokeAsync(StateHasChanged);
+				}
+				catch (Exception e)
+				{
+					logger.LogError(e.Message);
+				}
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.EndOfTournament tourny:
+				try
+				{
+					if (File.Exists(tourny.Info.PgnOutPath))
+					{
+						var deviations = runner.GetPGNGames();
+						var anyGameData = deviations.Any();
+						tournament.DeviationCounter = anyGameData ? deviations.Last().GameMetaData.Deviations : 0;
+						tournament.TotalGames = totalNumberOfPairs; //deviations.Count();
+						results = runner.GetResults();
+						scoreTable = runner.GetPlayerResults(results);
+						table = runner.GenerateStatsCrosstableInHtml(results);
+						if (pairings.Count == 0)
+						{
+							infoBannerInfo = new InfoBannerInfo(tournament);
+							infoBannerInfo.TournamentEndsTxt = InfoBannerInfo.GetTournamentEnd(TimeSpan.Zero);
+							infoBannerInfo.TimeLeftTxt = InfoBannerInfo.Duration(TimeSpan.Zero);
+						}
+						var testTime = TimeSpan.FromMilliseconds(results.Sum(r => r.GameTime));
+						var durMsg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and {testTime.Minutes} minutes";
+						var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(deviations);
+						var avgSpeed =
+								res.Where(e => e.Median)
+								.OrderByDescending(e => e.AvgNPS).ToList();
+						foreach (var player in scoreTable)
+						{
+							var speed = avgSpeed.FirstOrDefault(e => e.Player == player.Player);
+							if (speed != null)
+							{
+								player.MedSpeed = speed.AvgNPS;
+								player.AvgNPM = speed.AvgNodes;
+							}
+						}
+						Console.WriteLine(durMsg);
+						tournament.PrintTournamentSummary();
+						var consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat(scoreTable, table);
+						Console.WriteLine(consoleRes);
+						if (tournament.VerboseLogging)
+							logger.LogDebug(consoleRes);
+					}
+					var msg = $"\nEnd of tournament: {tourny.Info.Name} with deviation counter: {tourny.Info.DeviationCounter}\n";
+					if (tournament.VerboseLogging)
+						logger.LogDebug(msg);
+
+					await InvokeAsync(StateHasChanged);
+				}
+				catch (Exception e)
+				{
+					logger.LogError(e.Message);
+				}
+				finally
+				{
+					if (!layoutOptions.ShowCrosstableBetweenGames)
+					{
+						await InvokeAsync(OpenDialog);
+					}
+				}
+				break;
+
+			case ChessLibrary.Tournament.Match.Update.MessagesFromEngine sender:
+				MessagesFromCeres.Insert(0, sender.Message);
+				if (MessagesFromCeres.Count > 10)
+				{
+					var last = MessagesFromCeres.Last();
+					MessagesFromCeres.Remove(last);
+				}
+				break;
+			case ChessLibrary.Tournament.Match.Update.PairingList list:
+				runner.Pairings = list.Pairings;
+				pairings = list.Pairings;
+				break;
+			case ChessLibrary.Tournament.Match.Update.TotalNumberOfPairs games:
+				totalNumberOfPairs = games.PairingsNumber;
+				break;
+			case ChessLibrary.Tournament.Match.Update.RoundNr data:
+				roundNr = data.Round;
+				break;
+		}
+	}
+
+	private async Task UpdateSpeed(int delayInMs)
+	{
+		if (tournament.VerboseLogging)
+			logger.LogDebug("Speed update started: " + DateTime.Now.ToString());
+		if (delayInMs > 0)
+			await Task.Delay(delayInMs);
+		if (tournament.VerboseLogging)
+			logger.LogDebug("Speed update delay ended: " + DateTime.Now.ToString());
+		var games = runner.GetPGNGames();
+		var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games);
+		var avgSpeed =
+				res.Where(e => e.Median)
+				.OrderByDescending(e => e.AvgNPS).ToList();
+		foreach (var player in scoreTable)
+		{
+			var speed = avgSpeed.FirstOrDefault(e => e.Player == player.Player);
+			if (speed != null)
+			{
+				player.MedSpeed = speed.AvgNPS;
+				player.AvgNPM = speed.AvgNodes;
+			}
+		}
+	}
+
+	private async Task GameStartedReceived(StartGameInfo info)
+	{
+		SetGameParams(info);
+		TB = 0;
+		currentOpeningInPlay = info.OpeningName;
+		moveNr = 0;
+		whitePlayer = info.WhitePlayer.Name;
+		whiteDev = info.WhitePlayer.Dev;
+		if (String.IsNullOrEmpty(info.WhitePlayer.LogoPath))
+			whiteEngineLogo = "img/chessLogo.jpg";
+		else
+			whiteEngineLogo = info.WhitePlayer.LogoPath;
+		whiteTimeOnly = info.WhiteTime;
+		whiteTime = TimeLeftFormatted(whiteTimeOnly);
+		blackPlayer = info.BlackPlayer.Name;
+		blackDev = info.BlackPlayer.Dev;
+		if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
+			blackEngineLogo = "img/chessLogo.jpg";
+		else
+			blackEngineLogo = info.BlackPlayer.LogoPath;
+		blackTimeOnly = info.BlackTime;
+		blackTime = TimeLeftFormatted(blackTimeOnly);
+		whiteToMove = info.WhiteToMove;
+		WhiteEngineConfig = info.WhitePlayer;
+		BlackEngineConfig = info.BlackPlayer;
+		Engine1 = EngineStatus.Empty;
+		Engine1.PlayerName = whitePlayer;
+		Engine2 = EngineStatus.Empty;
+		Engine2.PlayerName = blackPlayer;
+		blackMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+		whiteMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+		pairings = runner.GetLastestPairings();
+		ResetGameState();
+		await PlayOpeningMoves(new List<MoveAndFen>(info.OpeningMovesAndFen));
+	}
+
+	private string MoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss.f"); //(“HH:mm:ss.fff”);
+	private string OneSecondMoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss.0");
+	private string TimeLeftFormatted(TimeOnly time) => time.ToString("HH:mm:ss");
+
+	private void FinalStatusReceived(EngineStatus info)
+	{
+		SetEngineStatus(info);
+
+		if (info.WDL.IsHasValue)
+		{
+			switch (info.WDL)
+			{
+				case WDLType.HasValue wdl:
+					if (info.PlayerName == whitePlayer)
+						whiteWDL = GetWDLString(wdl.Values);
+
+					else
+						blackWDL = GetWDLString(wdl.Values);
+					break;
+			}
+		}
+	}
+
+	private async Task StatusReceived(EngineStatus info)
+	{
+		//await _semaphore.WaitAsync();
+
+		try
+		{
+			SetEngineStatus(info);
+			var pv = info.PV;
+
+			if (!info.Eval.IsNA)
+			{
+				if (whiteToMove)
+				{
+					whitePV = pv;
+					whiteLongPV = info.PVLongSAN;
+				}
+
+				else
+				{
+					blackPV = pv;
+					blackLongPV = info.PVLongSAN;
+				}
+
+				var bArr = blackLongPV.Split(" ");
+				var wArr = whiteLongPV.Split(" ");
+				if (bArr.Length == 0 || wArr.Length == 0)
+				{
+					logger.LogWarning("Empty PV arrays in StatusReceived.");
+					return;
+				}
+				var nAgreement = await CalcPVAgreement(whiteToMove);
+
+				if (info.PlayerName == Engine2.PlayerName)
+				{
+					var withPolicy = blackLogLive && BestMoveWithPolicy;
+					if (bArr.Length > 0)
+					{
+						if (nAgreement == 0 && wArr.Length > 1)
+						{
+							await streamingBoard.UpdateLastPVMove(bArr[0], wArr[1], !withPolicy);
+						}
+						else
+						{
+							await streamingBoard.UpdateLastPVMove(bArr[0], string.Empty, !withPolicy);
+						}
+					}
+					Engine2.Eval = info.Eval;
+				}
+				else
+				{
+
+					var withPolicy = whiteLogLive && BestMoveWithPolicy;
+					if (wArr.Length > 0)
+					{
+						if (nAgreement == 0 && bArr.Length > 1)
+						{
+							await streamingBoard.UpdateLastPVMove(wArr[0], bArr[1], !withPolicy);
+						}
+						else
+						{
+							await streamingBoard.UpdateLastPVMove(wArr[0], string.Empty, !withPolicy);
+						}
+
+					}
+					Engine1.Eval = info.Eval;
+				}
+			}
+
+			if (info.WDL.IsHasValue)
+			{
+				switch (info.WDL)
+				{
+					case WDLType.HasValue wdl:
+						//var sharpness = CalcSharpness(wdl.Values);
+						//logger.LogInformation(wdl.Values.ToString());
+						//logger.LogInformation("Sharpness value: " + sharpness.ToString("F1"));
+						if (info.PlayerName == whitePlayer)
+							whiteWDL = GetWDLString(wdl.Values);
+						else
+							blackWDL = GetWDLString(wdl.Values);
+						break;
+				}
+			}
+
+			await InvokeAsync(StateHasChanged);
+		}
+		finally
+		{
+			//_semaphore.Release();
+		}
+
+	}
+
+	private async Task DoChartUpdates()
+	{
+		try
+		{
+			await Task.WhenAll(
+				evalList.SetEvalChartData(),
+				nodeList.SetChartNodeData(),
+				npsList.SetChartNodeData(),
+				timeUsageList.SetChartTimeUsageData());
+		}
+
+		catch (JSException ex)
+		{
+			var msg = $"An error occurred in JS {nameof(DoChartUpdates)}: {ex.Message}";
+			logger.LogError(msg);
+			Console.WriteLine(msg);
+		}
+
+		catch (Exception ex)
+		{
+			// Handle the exception here
+			var msg = $"An error occurred in {nameof(DoChartUpdates)}: {ex.Message}";
+			logger.LogError(msg);
+			Console.WriteLine(msg);
+			Console.WriteLine(ex.InnerException);
+		}
+	}
+
+	private void RunTournament()
+	{
+		runner = new ChessLibrary.Tournament.Manager.Runner(logger, Update, true, false);
+		tournament = runner.Tournament();
+		Task.Factory.StartNew(() =>
+			{
+				try
+				{
+					runner.Run();
+				}
+				catch (Exception ex)
+				{
+					logger.LogError("Tournament failed to start/run - " + tournament.MinSummary());
+					logger.LogError(ex.Message);
+					throw;
+				}
+			});
+
+		evalList = new LivePlot(chessModule, evalChart, whitePlayer, blackPlayer, "Eval in CP", "Centipawns");
+		nodeList = new LivePlot(chessModule, nodesChart, whitePlayer, blackPlayer, "Nodes per move", "Total nodes");
+		npsList = new LivePlot(chessModule, npsChart, whitePlayer, blackPlayer, "Speed (NPS)", "Nodes per sec");
+		timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
+		if (timer != null)
+			timer.Dispose();
+		if (oneSecondTimer != null)
+			oneSecondTimer.Dispose();
+
+		StateHasChanged();
+	}
+
+	private async Task OnSettingAdded(ChessConfigurationService config)
+	{
+		setting = config;
+		await Task.CompletedTask;
+	}
+
+	private void ValidatePVSize()
+	{
+		if (validSizes.Contains(layoutOptions.Sizes.PVboardSize) == false)
+		{
+			//write all available sizes to the log
+			string logMsg = "Available PV board sizes are: ";
+			foreach (var size in validSizes)
+				logMsg += size + ", ";
+			logger.LogInformation("Invalid PV board size: " + layoutOptions.Sizes.PVboardSize + " \n" + logMsg);
+		}
+	}
+
+	private async Task PrepareRun()
+	{
+		await Notifier.NotifyFullScreenRequested(true);
+		await UpdateState();
+	}
+
+	protected async override void OnAfterRender(bool firstRender)
+	{
+		if (firstRender)
+		{
+			chessModule = await JsInteropService.ImportModuleAsync(JS);
+			var dotNetObjectRef = DotNetObjectReference.Create(this);
+			await chessModule.InvokeVoidAsync("registerResizeEvent", dotNetObjectRef);
+			Notifier.IsFullScreenRequested += OnFullScreenRequested;
+
+			keyContext = HotKeys.CreateContext()
+			.Add(ModKey.Ctrl, Key.r, (Func<Task>)(async () => { await PrepareRun(); RunTournament(); }), "Run tournament")
+			.Add(ModKey.Ctrl, Key.c, (() => CancelTournament()), "Cancel tournament")
+			.Add(ModKey.Ctrl, Key.v, (() => ValidateTournamentInput()), "Validate tournament input")
+			.Add(ModKey.Ctrl, Key.u, (Func<Task>)(async () => await UpdateState()), "Update state")
+			.Add(ModKey.Ctrl, Key.p, (() => OpenDialog()), "Create crosstable");
+			//.Add(ModKey.Ctrl, Key.s, (() => SwapBothTables()), "Swap tables")
+			//.Add(ModKey.Ctrl, Key.b, (() => BenchmarkConfig()), "Create benchmark config")
+			//.Add(ModKey.Ctrl, Key.l, (() => OpenResultDialog()), "Show result");
+			runner = new ChessLibrary.Tournament.Manager.Runner(logger, Update, true, false);
+			tournament = runner.Tournament();
+			layoutOptions = tournament.LayoutOption;
+			descriptionStyle = $"margin-left:10px; font-size:{layoutOptions.Fonts.TournamentDescFont}px;";
+			liveChartStyle = $"Height:{layoutOptions.Sizes.LiveChartHeight}px;";
+			moveChartStyle = $"Height:{layoutOptions.Sizes.MoveChartHeight}px;";
+			SetPVStyle(layoutOptions);
+			BestMoveWithPolicy = layoutOptions.BestMoveWithPolicy;
+			if (pairingTableHeight > 0)
+			{
+				showPVBoard = layoutOptions.ShowPVBoard;
+				autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
+			}
+			ValidatePVSize();
+			results = runner.GetResults();
+			scoreTable = runner.GetPlayerResults(results);
+			table = runner.GenerateStatsCrosstableInHtml(results);
+			infoBannerInfo = new InfoBannerInfo(tournament);
+
+			windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight") - 10;
+			tournamentHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "main-screen");
+			var cycleT = await chessModule.InvokeAsync<double>("calculateHeightByElementId", "cycleTable");
+			var streamingBoardHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "streaming-board");
+			pvLabelsHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "pv");
+
+			var tournamentHeightWithouthCycleTable = tournamentHeight - cycleT;
+			var boardHeight = pvLabelsHeight + streamingBoardHeight;
+			var windowBoardHeightDiff = (int)(windowHeight - boardHeight) - 220;
+
+			if (windowBoardHeightDiff > 0)
+			{
+				moveListHeight = Math.Max(0, windowBoardHeightDiff);
+			}
+			if (windowHeight < tournamentHeightWithouthCycleTable)
+			{
+				pairingTableHeight = 0;
+			}
+
+			if (windowHeight > tournamentHeightWithouthCycleTable)
+			{
+				var diff = Math.Abs(tournamentHeightWithouthCycleTable - windowHeight);
+				pairingTableHeight = Math.Max(5, (int)(diff));
+			}
+			StateHasChanged();
+			await OnBrowserResize();
+		}
+
+		base.OnAfterRender(firstRender);
+	}
+
+	private void SwapBothTables()
+	{
+		swapTables = !swapTables;
+		StateHasChanged();
+	}
+
+	private void BenchmarkConfig()
+	{
+		var engines = tournament.EngineSetup.Engines.Where(e => e.Name.ToLower().Contains("lc0"));
+		foreach (var config in engines)
+		{
+			var res = Utilities.Engine.createLC0BenchmarkString(config);
+			var msg = $"{config.Name}\n{res}";
+			logger.LogInformation(msg);
+		}
+	}
+
+	private string GetStyleForResult(string result)
+	{
+		return result switch
+		{
+			"1" => "color: green;",
+			"0" => "color: red;",
+			"1/2" => "color: white;",  // or just return an empty string if you want the default style
+			_ => ""
+		};
+	}
+
+	private async Task OnFullScreenRequested(bool isFullScreen)
+	{
+		await OnBrowserResize();
+	}
+
+	protected async Task UpdateState()
+	{
+		var game = tournament.CurrentGameNr;
+		var round = tournament.Rounds;
+		var total = tournament.TotalGames;
+		var tempTourny = ChessLibrary.Tournament.Manager.loadTournament();
+		tournament.LayoutOption = tempTourny.LayoutOption;
+		tournament.CurrentGameNr = game;
+		tournament.Rounds = round;
+		tournament.TotalGames = totalNumberOfPairs;
+		layoutOptions = tournament.LayoutOption;
+		ValidatePVSize();
+		BestMoveWithPolicy = layoutOptions.BestMoveWithPolicy;
+		showPVBoard = layoutOptions.ShowPVBoard;
+		autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
+		descriptionStyle = $"margin-left:10px; font-size:{layoutOptions.Fonts.TournamentDescFont}px;";
+		liveChartStyle = $"Height:{layoutOptions.Sizes.LiveChartHeight}px;";
+		moveChartStyle = $"Height:{layoutOptions.Sizes.MoveChartHeight}px;";
+		SetPVStyle(layoutOptions);
+		var bannerTime = infoBannerInfo.TimeLeftTxt;
+		var bannerEnd = infoBannerInfo.TournamentEndsTxt;
+		infoBannerInfo = new InfoBannerInfo(tournament);
+		infoBannerInfo.TimeLeftTxt = bannerTime;
+		infoBannerInfo.TournamentEndsTxt = bannerEnd;
+		infoBannerInfo.Round = roundNr;
+		await InvokeAsync(StateHasChanged);
+		await Task.Delay(300);
+		await chessModule.InvokeVoidAsync("triggerResizeEvent");
+		await OnBrowserResize();
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		Notifier.SettingAdded -= OnSettingAdded;
+		Notifier.IsFullScreenRequested -= OnFullScreenRequested;
+		keyContext?.DisposeAsync();
+		if (timer != null)
+			timer.Dispose();
+		if (oneSecondTimer != null)
+			oneSecondTimer.Dispose();
+		await ValueTask.CompletedTask;
+	}
+}

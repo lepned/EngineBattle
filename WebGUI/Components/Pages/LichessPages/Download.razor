@@ -1,0 +1,42 @@
+﻿@page "/downloadPuzzles"
+
+<PageTitle>Puzzle download</PageTitle>
+  
+  <MudContainer Class="my-5 mx-5" Style="width:800px" >
+    <h1>From Lichess</h1>
+    <h2 class="mb-4 mt-4">
+    Lichess games and puzzles are released under the Creative Commons CC0 license.
+    Use them for research, commercial purpose, publication, anything you like.
+    You can download, modify and redistribute them, without asking for permission.
+    </h2>
+
+  <h1 class="mb-4 mt-4">Notes</h1>
+  <h3 class="mb-4 mt-4">
+    Moves are in UCI format. Use a chess library to convert them to SAN, for display.
+
+    All player moves of the solution are "only moves". I.e. playing any other move would considerably worsen the player position. An exception is made for mates in one: there can be several. Any move that checkmates should win the puzzle.
+
+    FEN is the position before the opponent makes their move.
+    The position to present to the player is after applying the first move to that FEN.
+    The second move is the beginning of the solution.
+
+    Popularity is a number between 100 (best) and -100 (worst).
+    It is calculated as 100 * (upvotes - downvotes)/(upvotes + downvotes), although votes are weigthed by various factors such as whether the puzzle was solved successfully or the solver's puzzle rating in comparison to the puzzle's.
+    <br /><br />
+    You can find a list of themes, their names and descriptions, in the link below: <br /><br />
+    <a href="https://github.com/ornicar/lila/blob/master/translation/source/puzzleTheme.xml" target="_blank"> <span style="font-size:23px;">Press here for link to themes</span></a>
+
+
+    </h3>
+
+  <MudFab Label="Press this link to download puzzle data" Class="mt-4 ml-1 mb-2" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Download"
+          Size="Size.Large" Href="https:////database.lichess.org/lichess_db_puzzle.csv.zst" />
+
+          <h2 class="mt-5">Use the downloaded file to perform puzzle tests on value network and policy network or both.</h2>
+
+  </MudContainer>
+
+
+@code {
+
+}

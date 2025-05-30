@@ -1,0 +1,234 @@
+﻿@using WebGUI.Components.Layout.ChessboardLayout
+@inject NotifierService notify
+
+@implements IAsyncDisposable
+
+<MudItem Class="d-flex flex-grow-1 gap-2 pa-2">
+  <MudItem lg="4" Class="d-flex flex-column justify-end flex-grow-1 gap-2">
+    <MudText Style=@FontNormal Class="mud-centerTxt">White</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@Engine1Name</MudText>
+    <MudText Class="mud-centerTxt" Typo=Typo.caption>@Engine1Version</MudText>
+    <MudItem Class="mud-centerTxt">
+      <MudImage Src="@Engine1Logo" Width="100" Height="100" />
+    </MudItem>
+    <MudText Class="mud-centerTxt pt-2" Color=@color1 Typo=Typo.h4>@Engine1.Eval </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@Engine1.Depth/@Engine1.SD</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt"> @FormatNPS(Engine1.NPS) </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine1.Nodes) </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine1.TBhits) </MudText>
+    <MudText Style=@FontWDL Class="mud-centerTxt"> @GetWDLString(Engine1.WDL) </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@Engine1TimeLeft</MudText>
+    <MudText Style=@FontNormal Color=@color1 Class="mud-centerTxt">@Engine1TimePerMove</MudText>
+  </MudItem>
+
+  <MudItem lg="4" Class="d-flex flex-column justify-end flex-grow-1 gap-2">
+    <MudItem Class="mb-1 justify-content-center">
+      <MudText Class="noOverflow" Style=@FontCaption>Powered by EngineBattle - Lars E. Pedersen</MudText>
+      <MudImage Class="d-flex justify-space-between flex-grow-1 gap-1 mb-3" Fluid="true" Src="@MainLogo"></MudImage>
+    </MudItem>
+    <MudText Typo=Typo.h5 Class="mud-centerTxt mb-1">Evaluation</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">Depth/SD</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">Speed</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">Nodes</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">TB Hits</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt"> WDL </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">Time left</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">Move time</MudText>
+  </MudItem>
+
+  <MudItem lg="4" Class="d-flex flex-column justify-end flex-grow-1 gap-2">
+    <MudText Style=@FontNormal Class="mud-centerTxt">Black</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@Engine2Name</MudText>
+    <MudText Class="mud-centerTxt" Typo=Typo.caption>@Engine2Version</MudText>
+    <MudItem Class="mud-centerTxt">
+      <MudImage Src="@Engine2Logo" Width="100" Height="100" />
+    </MudItem>
+    <MudText Class="mud-centerTxt pt-2" Color=@color2 Typo=Typo.h4>@Engine2.Eval </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@Engine2.Depth/@Engine2.SD</MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt"> @FormatNPS(Engine2.NPS) </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine2.Nodes) </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine2.TBhits) </MudText>
+    <MudText Style=@FontWDL Class="mud-centerTxt"> @GetWDLString(Engine2.WDL) </MudText>
+    <MudText Style=@FontNormal Class="mud-centerTxt">@Engine2TimeLeft</MudText>
+    <MudText Style=@FontNormal Color=@color2 Class="mud-centerTxt">@Engine2TimePerMove</MudText>
+  </MudItem>
+</MudItem>
+
+@code {
+
+  private async Task OnNextTick(bool whiteToMove, string timeLeft, string moveTime)
+  {
+    if (whiteToMove)
+    {
+      Engine1TimeLeft = timeLeft;
+      Engine1TimePerMove = moveTime;
+    }
+    else
+    {
+      Engine2TimeLeft = timeLeft;
+      Engine2TimePerMove = moveTime;
+    }
+
+    await InvokeAsync(StateHasChanged);
+  }
+
+  [Parameter]
+  public bool ShowCompletePV { get; set; } = true;
+
+  [Parameter]
+  public bool ShowPV { get; set; }
+
+  [Parameter]
+  public string Engine1Logo { get; set; }
+
+  [Parameter]
+  public string Engine1Name { get; set; }
+
+  [Parameter]
+  public string Engine1Version { get; set; }
+
+  [Parameter]
+  public string Engine2Logo { get; set; }
+
+  [Parameter]
+  public string Engine2Name { get; set; }
+
+  [Parameter]
+  public string Engine2Version { get; set; }
+
+  [Parameter]
+  public EngineStatus Engine1 { get; set; }
+
+  [Parameter]
+  public EngineStatus Engine2 { get; set; }
+
+  [Parameter]
+  public string Engine1TimeLeft { get; set; } = "00:00:00";
+
+  [Parameter]
+  public string Engine1TimePerMove { get; set; } = "00:00:00";
+
+  [Parameter]
+  public string Engine2TimeLeft { get; set; } = "00:00:00";
+
+  [Parameter]
+  public string Engine2TimePerMove { get; set; } = "00:00:00";
+
+  [Parameter]
+  public bool Engine1ToMove { get; set; }
+
+  [Parameter]
+  public bool IsFRC { get; set; }
+
+  [Parameter]
+  public int FontSize { get; set; }
+  
+  [Parameter]
+  public string MainLogoFileName { get; set; }
+
+  private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"img/{MainLogoFileName}";
+
+  private string LogoBackup = "img/MainLogoEB.png";
+  private int fontSize = 8;
+  private string FontNormal;
+  private string FontHeader;
+  private string FontCaption;
+  private string FontWDL;
+
+  private Color pvTextColor { get; set; } = Color.Tertiary;
+  private Color color1 => Engine1ToMove ? Color.Primary : Color.Default;
+  private Color color2 => Engine1ToMove ? Color.Default : Color.Primary;
+
+  //private string whiteUnicode = "&#x2654";
+  //private string blackUnicode = "&#x265A";
+
+  private string GetWDLString(CoreTypes.WDLType wdlValue)
+  {
+    string msg = "[0.0%|0.0%|0.0%]";
+    switch (wdlValue)
+    {
+      case CoreTypes.WDLType.HasValue wdlinput:
+        var wdl = wdlinput.Values;
+        msg = $"[{(wdl.Win / 1000):P1}|{(wdl.Draw / 1000):P1}|{(wdl.Loss / 1000):P1}]";
+        break;
+    }
+    return msg;
+  }
+
+  private string FormatNodes(long nodes)
+  {
+    if (nodes > 1_000_000_000)
+    {
+      var giga = (decimal)nodes / 1_000_000_000;
+      return giga.ToString("F1") + "G"; //G
+    }
+
+    else if (nodes > 1_000_000)
+    {
+      var mill = (decimal)nodes / 1_000_000;
+      return mill.ToString("F1") + "M"; //M
+    }
+
+    else if (nodes > 1_000)
+    {
+      var mill = (decimal)nodes / 1_000;
+      return mill.ToString("F1") + "K"; //K
+    }
+
+    else
+    {
+      return nodes.ToString("F1"); //nps
+    }
+  }
+
+  private string FormatNPS(double nps)
+  {
+    if (nps > 1_000_000_000)
+    {
+      var mill = (decimal)nps / 1_000_000_000;
+      return mill.ToString("F1") + "Gnps"; //Gnps
+    }
+    else if (nps > 1_000_000)
+    {
+      var mill = (decimal)nps / 1_000_000;
+      return mill.ToString("F1") + "Mnps"; //Mnps
+    }
+
+    else if (nps > 1_000)
+    {
+      var thousand = (decimal)nps / 1_000;
+      return thousand.ToString("F1") + "Knps"; //Knps
+    }
+
+    else
+    {
+      return nps.ToString("F1") + " nps"; //nps
+    }
+  }
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;
+      FontHeader = $"font-size:{fontSize + 3}px";
+      FontNormal = $"font-size:{fontSize + 2}px";
+      FontCaption = $"font-size:{Math.Min(13, fontSize - 3)}px";
+      FontWDL = $"font-size:{fontSize}px";
+      StateHasChanged();
+    }
+    base.OnAfterRender(firstRender);
+  }
+
+  protected override void OnInitialized()
+  {   
+    notify.NextTick += OnNextTick;
+  }
+
+  async ValueTask IAsyncDisposable.DisposeAsync()
+  {
+    notify.NextTick -= OnNextTick;
+    await ValueTask.CompletedTask;
+  }
+
+}

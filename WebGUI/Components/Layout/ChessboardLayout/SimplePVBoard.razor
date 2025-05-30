@@ -1,0 +1,139 @@
+﻿@using WebGUI.Services
+@using WebGUI
+
+@implements IDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject NotifierService Notifier
+@inject ILogger<SimplePVBoard> Logger
+
+
+<div @ref="element" style=@($"border: 5px solid purple; width:{Size}px; height:{Size}px;")></div>
+
+@code {
+  public ChessLibrary.Chess.Board Board { get; set; } = new();
+  private string playerName = "";
+  private string Name => $"{playerName}";
+  private string fen;
+  private string lastPV = "";
+  private int lastDepth = 0;
+  string size => $"{Size}px";
+
+  [Parameter] public int Id { get; set; }
+  [Parameter] public int Index { get; set; }
+  [Parameter] public int Size { get; set; }
+  [Parameter] public bool ShowDeviation { get; set; }
+  [Parameter] public bool IsFRC { get; set; }
+  //[Parameter] public ElementReference element { get; set; }
+
+  private ElementReference element;
+  private IJSObjectReference chessJSmodule; //my own chessinterop.js
+  private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+
+  private string SetStyle()
+  {
+    return $"style=border: 4px solid purple; width: {size}; height: {size};";
+  }
+
+  private async Task PrepareChessboard()
+  {
+    //chessboard functionality here
+    Board.IsFRC = IsFRC;
+    chessJSmodule = await JsInteropService.ImportModuleAsync(JS);   
+    await chessJSmodule.InvokeVoidAsync("createChessboard", element);
+    StateHasChanged();
+  }
+
+  private async Task SetPosition(string fen)
+  {
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("setPosition2", element, fen);
+    }
+  }
+
+  public async Task SetMoveWithAnnotation(MoveAndFen input)
+  {
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("setBoardWithHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, null, null, true);
+    }
+  }
+
+  public async Task OnNotifyPV(string pv, string fen, string player, int depth, int id)
+  {
+    //Console.WriteLine($"{player}: PV depth was {depth} in showDeviation for id={id} PV:{pv}");
+    if (Id == id)
+    {
+      if (depth != lastDepth || lastPV != pv)
+      {
+        playerName = player;
+        var moves = GetPVMoves(pv, depth);
+        if (moves.Any())
+          await PlayPVMoves(moves, fen);
+        else
+          await SetPosition(fen);
+
+      }
+
+      lastPV = pv;
+      lastDepth = depth;
+    }
+  }
+
+  private IEnumerable<string> GetPVMoves(string pv, int depth)
+  {
+    //var movestring = "d2d3 e4d3 d1d3 b8c6 f1g2 f8e7 e1g1 f6d7 b2b3 d7c5 d3d2 e8g8 c1b2 e7f6 c3d5 f6b2 d2b2 f8e8 a1d1 a7a5 d5f4  string M = NaN";
+    var arr = pv.Split(' ');
+    var moves = ShowDeviation ? arr.Take(depth) : arr;
+    foreach (var item in moves)
+    {
+      if (item.Any(char.IsDigit))
+        yield return item;
+    }
+  }
+
+  private async Task PlayPVMoves(IEnumerable<string> pvMoves, string fen)
+  {
+    var move = Board.PlayPVLine(pvMoves, fen);
+    if (!string.IsNullOrEmpty(move.ShortSan))
+      await SetMoveWithAnnotation(move);
+  }
+
+  public async Task OnNotifyOpeningDone(MoveAndFen move)
+  {
+    fen = move.FenAfterMove;
+    await SetMoveWithAnnotation(move);
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      await PrepareChessboard();
+    }
+  }
+
+  protected override void OnInitialized()
+  {
+    fen = startPos;
+    Notifier.NotifyFen += SetPosition;
+    Notifier.NotifyOpeningDone += OnNotifyOpeningDone;
+    Notifier.NotifyPV += OnNotifyPV;
+    base.OnInitialized();
+  }
+
+  public void Dispose()
+  {
+    Notifier.NotifyFen -= SetPosition;
+    Notifier.NotifyOpeningDone -= OnNotifyOpeningDone;
+    Notifier.NotifyPV -= OnNotifyPV;
+  }
+
+  public async ValueTask DisposeAsync()
+  {
+    await ValueTask.CompletedTask;
+  }
+
+}

@@ -1,0 +1,22 @@
+﻿@using WebGUI.Components.Layout.ChessboardLayout
+
+
+<MudText Typo="Typo.h5" Class="ml-4 mb-3 mr-3">First deviation in PV line</MudText>
+
+<MudPaper Class="ml-4 mr-4 d-flex justify-space-between flex-grow-1 gap-1" Elevation="0">
+  <MudPaper Width=@pvSize Height=@pvSize>
+    <SimplePVBoard Size="@Size" Id=1 />
+  </MudPaper>
+  <MudPaper Width=@pvSize Height=@pvSize>
+    <SimplePVBoard Size="@Size" Id=2 />
+  </MudPaper>
+</MudPaper>
+
+@code {
+  private string pvSize => Size.ToString() + "px"; // "300px";
+  //private string FontHeaderTxt = "First deviation in PV line";
+  
+  [Parameter] public int Size { get; set; }
+  //private string sizeStr => $"height:{Size}px; width:{Size}px;";
+
+}

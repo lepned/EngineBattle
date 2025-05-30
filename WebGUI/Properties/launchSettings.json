@@ -1,0 +1,23 @@
+{
+  "profiles": {
+    "EngineBattle": {
+      "commandName": "Project",
+        "dotnetRunMessages": true,
+      "commandLineArgs": "",
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5018",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "EngineBattle2": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5019",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }    
+  }
+}

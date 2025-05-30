@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>EngineBattle.Console</AssemblyName>
+		<TargetFramework>net9.0</TargetFramework>
+		<PublishSingleFile>true</PublishSingleFile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Content Include="Json\EretConfig.json" />
+		<Content Include="Json\PuzzleConfig.json" />
+		<Content Include="Json\Tournament.json" />
+		<Content Include="Properties\launchSettings.json" />
+		<Compile Include="CliParser.fs" />
+		<Compile Include="Program.fs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\ChessLibrary\ChessLibrary.fsproj" />
+	</ItemGroup>
+	
+	<Target Name="CopyContentAfterPublish" AfterTargets="Publish">
+		<Copy SourceFiles="tournament.json" DestinationFolder="$(PublishDir)" />
+	</Target>
+
+
+</Project>
+

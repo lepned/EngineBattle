@@ -1,0 +1,14 @@
+﻿
+<MudDialog>
+  <DialogContent>   
+    <MudText Style="font-size:30px">@Result</MudText>    
+  </DialogContent>
+</MudDialog>
+
+@code {
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+  [Parameter] public string Result { get; set; } = "1/2-1/2";
+
+  void Close() => MudDialog.Close(DialogResult.Ok(true));
+
+}

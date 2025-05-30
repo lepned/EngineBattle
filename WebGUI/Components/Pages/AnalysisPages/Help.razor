@@ -1,0 +1,65 @@
+﻿@page "/help"
+
+
+<PageTitle>Settings.Help</PageTitle>
+
+  <MudContainer Class="my-5 mx-5" Style="width:500px" >
+    <h2 >
+      Shortcuts in analysis mode
+    </h2>
+
+    <MudSimpleTable Class="my-5">
+      <thead>
+        <tr>
+          @foreach (var h in headings)
+          {
+            <th>@h.ToUpper()</th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @foreach ((string x, string y) in rows)
+        {
+          <tr>
+            <td>@x</td>
+            <td>@y</td>
+          </tr>
+        }
+      </tbody>
+    </MudSimpleTable>
+
+  </MudContainer>
+  <MudSpacer></MudSpacer>
+
+
+
+@code {
+
+  string[] headings = { "Shortcut key", "Description" };
+  (string, string)[] rows = {
+        ("Key.Escape", "reset engine"),
+        ("Key.Home", "Start of game"),
+        ("Key.End", "End of game"),
+        ("Key.Left", "Play previous move"),
+        ("Key.Right", "Play next move"), 
+        ("Key.Ctrl + Key.ArrowRight", "Load next game"),
+        ("Key.Ctrl + Key.ArrowLeft", "Load previous game"),
+        ("Key.Ctrl + g", "Infinite search"),
+        ("Key.Ctrl + h", "Halt/stop search"),
+        ("Key.Ctrl + v", "Paste in PGN-moves"),
+        ("F1", "Analyze with 1 node"),
+        ("F2", "Analyze with 1_000 nodes"),
+        ("F3", "Analyze with 10_000 nodes"),
+        ("F4", "Analyze with 100_000 nodes"),
+        ("F5", "Analyze with 1_000_000 nodes"),
+        ("F6", "Analyze with 10_000_000 nodes"),
+        ("F7", "Analyze with 100_000_000 nodes"),
+
+    };
+
+  protected override Task OnInitializedAsync()
+  {
+    return base.OnInitializedAsync();
+  }
+
+}

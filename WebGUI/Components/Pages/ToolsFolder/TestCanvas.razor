@@ -1,0 +1,143 @@
+﻿@page "/testCanvas"
+@using WebGUI.Components.Layout.VisualizationLayout
+
+@inject ILogger<TestCanvas> logger
+
+<InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
+<InputFile id="tbInput" OnChange="@OpenCeresNetTestFile" hidden />
+
+<PageTitle>Test canvas</PageTitle>
+<div class="d-flex align-center mb-4 mt-5 ml-4">
+  <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="mr-2" />
+  <MudText Typo="Typo.h4">EPD Position Analyzer</MudText>
+</div>
+<MudText Class="mt-3 mb-4" Typo="Typo.h6">@result</MudText>
+
+@* <MudFab Class="ml-3 mb-5 mt-3" HtmlTag="label" Color="Color.Default" Label="Load Ceres-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="tbInput" /> *@
+<MudFab Class="ml-3 mb-7 mt-3" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" />
+
+<TBTestVisualization EPDList="EPDList" TBEPDList="TBEPDList" ></TBTestVisualization>
+
+@code {
+
+  private List<EPD.EPDEntry> EPDList = new();
+  private List<EPD.TablebaseEPDEntry> TBEPDList = new();
+  private List<PGNTypes.PgnGame> PGNgames = new();
+  IBrowserFile browserFile;
+  private string result;
+
+  private async Task OpenCeresNetTestFile(InputFileChangeEventArgs e)
+  {
+    var pgnName = e.File.Name;
+    logger.LogInformation("File opened {File}", pgnName);
+    var env = Environment.CurrentDirectory;
+    var fullPath = Path.Combine(env, pgnName);
+    await using (FileStream fs = new(fullPath, FileMode.Create))
+    {
+      browserFile = e.File;
+      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);    
+    }
+    
+    var netFile = Tests.records(fullPath).OrderByDescending(e => e.QDn).Take(250);
+    var epds = netFile.Select((e, id) => Parser.EPDExtractor.mapChessRecordToEPD(e, id));
+    EPDList.Clear();
+    TBEPDList.Clear();    
+    EPDList.AddRange(epds);
+    logger.LogInformation(result);
+    File.Delete(fullPath);   
+    StateHasChanged();
+  }
+
+  private async Task OpenTBTestFile(InputFileChangeEventArgs e)
+  {    
+    var pgnName = e.File.Name;
+    logger.LogInformation("File opened {File}", pgnName);
+    var env = Environment.CurrentDirectory;
+    var fullPath = Path.Combine(env, pgnName);
+    await using (FileStream fs = new(fullPath, FileMode.Create))
+    {
+      browserFile = e.File;
+      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+    }
+    var testList = Parser.PGNHelper.readTableBaseResults(fullPath).ToList();
+    File.Delete(fullPath);
+    var tourny = ChessLibrary.Tournament.Manager.loadTournament();
+    var configs = tourny.EngineSetup.Engines.ToList();
+    var head = configs.First();
+    var results = await Analysis.PuzzleEngineAnalysis.performQValueTestOnTB(1, head, testList);
+    EPDList.Clear();
+    TBEPDList.Clear();
+    var ordered = results.CorrectPuzzles.OrderBy(e => e.EPD.FEN).ToList();
+    TBEPDList.AddRange(ordered);
+    logger.LogInformation("Number of endings: " + TBEPDList.Count.ToString());
+    var res = (double)results.Correct / (double)results.TotalNumber;
+    result = $"Percentage of endings correct: {res.ToString("P1")}, Total: {results.TotalNumber} Correct: {results.Correct} Wrong: {results.Wrong}";
+    logger.LogInformation(result);
+    StateHasChanged();
+  }
+
+  private async Task OpenEPDFile(InputFileChangeEventArgs e)
+  {
+    var pgnName = e.File.Name;
+    logger.LogInformation("PGN file opened {File}", pgnName);
+    var env = Environment.CurrentDirectory;
+    var fullPath = Path.Combine(env, pgnName);
+    await using (FileStream fs = new(fullPath, FileMode.Create))
+    {
+      browserFile = e.File;
+      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+    }
+    var epds = Parser.EPDExtractor.readEPDs(fullPath).Take(1500).ToList();
+    if (epds.Count == 0)
+    {
+      logger.LogInformation("No EPDs found in file");
+      return;
+    }
+    EPDList.Clear();
+    TBEPDList.Clear();
+    StateHasChanged();
+    EPDList.AddRange(epds);
+    File.Delete(fullPath);  
+  }
+
+  private async Task OpenPGNFile(InputFileChangeEventArgs e)
+  {    
+    var pgnName = e.File.Name;
+    logger.LogInformation("PGN file opened {File}", pgnName);
+    var env = Environment.CurrentDirectory;
+    var fullPath = Path.Combine(env, pgnName);
+    await using (FileStream fs = new(fullPath, FileMode.Create))
+    {
+      browserFile = e.File;
+      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+    }
+
+    PGNgames = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+    File.Delete(fullPath);    
+    StateHasChanged();    
+  }
+
+  private void StripText(string path, string savePath)
+  {
+    var lines = File.ReadAllLines(path);
+    var stripped = lines.Where(e => e.Contains("WRONG"));
+    File.WriteAllLines(savePath, stripped);
+  }
+
+  protected override Task OnAfterRenderAsync(bool firstRender)
+  {
+    if(firstRender)
+    {      
+      var fullPath = @"C:/Dev/Chess/Lichess/TBTraining/latestDump.txt";
+      var savedTo = @"C:/Dev/Chess/Lichess/TBTraining/latestStrippedDump.txt";
+
+      if (File.Exists(fullPath))
+      {
+        StripText(fullPath, savedTo);
+        TBEPDList = Parser.PGNHelper.readTableBaseResults(savedTo).ToList();
+        StateHasChanged();
+      }
+    }
+    return base.OnAfterRenderAsync(firstRender);
+  }
+}

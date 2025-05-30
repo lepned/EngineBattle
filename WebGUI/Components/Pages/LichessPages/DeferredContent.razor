@@ -1,0 +1,20 @@
+@if (shouldRender)
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter]
+    public RenderFragment ChildContent { get; set; }
+    
+    private bool shouldRender = false;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && !shouldRender)
+        {
+            shouldRender = true;
+            StateHasChanged();
+        }
+    }
+}

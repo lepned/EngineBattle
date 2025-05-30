@@ -1,0 +1,140 @@
+﻿@using WebGUI.Services
+@using WebGUI
+
+@inject ILogger<PuzzleVisualSolution> Logger
+
+<h3 class="mb-1">
+  Puzzle rating: @Puzzle.Rating | @sideToMove to move | @(Solved ? "Solved" : "Failed") | @desc 
+ 
+</h3>
+
+<MudGrid>
+
+  @if (moveSeq.Any())
+  {
+    var moves = Puzzle.Moves.Split(' ');
+    var idx = 0;
+    var fens = Puzzle.Fens.Skip(1).ToList();
+
+    foreach (var fen in fens)
+    {
+      var finalBoardId = boardId + idx.ToString();
+      var move = moves[idx];
+      var boardNr = idx + 1;
+      if (idx == indexFailed && Solved == false)
+      {
+        <MudItem sm=6 md="4" lg="3" xl="2" Class="pa-2">
+          <FenVisualization2 FEN="@fen" MovePlayed="@playedMove" Move="@move" Style=@cssHighlight Solved=Solved BoardId="@finalBoardId" BoardNr="@boardNr" />
+        </MudItem>
+      }
+      else
+      {
+        <MudItem sm=6 md="4" lg="3" xl="2" Class="pa-2">
+          <FenVisualization2 FEN="@fen" Move="@move" Style=@cssNormal Solved=Solved BoardId="@finalBoardId" BoardNr="@boardNr" />
+        </MudItem>
+      }
+      idx++;
+    }
+  }
+
+</MudGrid>
+<div style="overflow:hidden; margin-top:15px; margin-left:8px; margin-right:8px;">
+  <span style="float:left; font-size:15px;">
+    @startFen
+  </span>
+  <span style="font-size:15px; margin-left:40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;">
+    *Theme: @theme
+  </span>
+</div>
+
+
+
+@code {
+  private Chess.Board Board { get; set; } = new();
+  private string desc = string.Empty;
+  private string theme = string.Empty;
+  int indexFailed = 1000;
+  string moveSeq = string.Empty;
+  private static string cssHighlight = "custom-muditem";
+  private static string cssNormal = "";
+  string startFen = string.Empty;
+  string playedMove = string.Empty;
+  private string boardId = Guid.NewGuid().ToString();
+  private string sideToMove = string.Empty;
+
+  [Parameter] public int Size { get; set; }
+  [Parameter] public Puzzle.CsvPuzzleData Puzzle { get; set; }
+  [Parameter] public string PolicyData { get; set; }
+  [Parameter] public string NeuralNet { get; set; }
+  [Parameter] public bool Solved { get; set; }
+
+  private (string correctMove, string playedMove) GetPolicyInfo(string policyData)
+  {
+    if (string.IsNullOrEmpty(policyData))
+    {
+      return (string.Empty, string.Empty);
+    }
+    var policyInfo = policyData.Split(',');
+    if (policyInfo.Length < 2)
+    {
+      return (string.Empty, string.Empty);
+    }
+    var correctMove = policyInfo[0];
+    var playedMove = policyInfo[1];
+    return (correctMove, playedMove);
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      var cmds = Puzzle.Commands.ToList();
+      if (cmds.FirstOrDefault() == null)
+      {
+        return;
+      }
+      Board.PlayCommands(cmds.First().Command);
+      startFen = Board.PositionWithMoves();
+      sideToMove = Board.Position.STM == 0 ? "white" : "black";
+      var position = cmds.FirstOrDefault(e => e.MovePlayed != "") == null ?
+          cmds.First() : cmds.FirstOrDefault(e => e.MovePlayed != "");
+      indexFailed = cmds.IndexOf(position) * 2 + 1;
+      var correctMove = cmds[Puzzle.Index].CorrectMove;
+      var allMovesButFirst = Puzzle.Moves.Split(' ').Skip(1);
+
+      foreach (var move in allMovesButFirst)
+      {
+        Board.PlayLongSanMove(move);
+      }
+      moveSeq = Board.GetShortSanMoveHistory();
+      Board.PlayCommands(position.Command);
+      var fenBeforeMovePlayed = Board.FEN();
+      Board.PlayLongSanMove(position.MovePlayed);
+      playedMove = position.MovePlayed;
+      var movePlayedInShortSan = Board.ShortSANMovesPlayed.Last();      
+      theme = Puzzle.Themes;      
+      var nr = (indexFailed + 1) / 2;
+      (var correctMovePolicy, var movePlayedPolicy) = GetPolicyInfo(PolicyData);
+      if (Solved)
+      {
+        desc = $"The correct move sequence was found: {moveSeq}";
+      }
+      else
+      {
+        Board.LoadFen(fenBeforeMovePlayed);
+        Board.PlayLongSanMove(position.CorrectMove);
+        var correctMoveInShortSan = Board.ShortSANMovesPlayed.Last();
+        if (correctMovePolicy == string.Empty)
+        {
+          // desc = $"Incorrect move {correctMoveInShortSan} on board {indexFailed + 1}, played {movePlayedInShortSan} | correct move sequence is: {moveSeq}";
+          desc = $"Played incorrect move on board {indexFailed + 1}: {movePlayedInShortSan} | correct move sequence is: {moveSeq}";
+        }
+        else
+        {
+          desc = $"Played incorrect move on board {indexFailed + 1}: {movePlayedInShortSan} (P:{movePlayedPolicy}), correct move is: {correctMoveInShortSan} (P:{correctMovePolicy})";
+        }
+      }
+      await Task.CompletedTask;
+    }
+  }
+}

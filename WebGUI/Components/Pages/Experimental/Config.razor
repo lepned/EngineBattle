@@ -1,0 +1,245 @@
+﻿@using WebGUI.Services
+@inject ChessConfigurationService Setup
+@inject NotifierService Notify
+
+<MudDialog Class="my-5 mx-5">
+  <DialogContent>
+    <MudGrid Spacing="6">
+      <MudItem Class="config">
+        <MudText>Setup folders: </MudText>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Engines folder:" @bind-Value=setting.EngineFolder
+                      TextChanged="EngineFolderChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="PGN folder:" @bind-Value=setting.PGNFolder
+                      TextChanged="OpeningFolderChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net folder:" @bind-Value=setting.NeuralNetFolder
+                      TextChanged="NeuralNetFolderChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Tablebase folder:" @bind-Value=setting.TableBaseFolder
+                      TextChanged="TBfolderChanged" Variant="Variant.Filled"></MudTextField>
+        <MudText Class="mt-4">Engine setup (full path): </MudText>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Ceres UCI exe:" @bind-Value=setting.ExeExternalCeres
+                      TextChanged="CeresUCIChanges" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="LC0 folder exe:" @bind-Value=setting.ExeLC0
+                      TextChanged="LC0ExeChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="SF UCI exe:" @bind-Value=setting.ExeSF
+                      TextChanged="SFExeChanged" Variant="Variant.Filled"></MudTextField>
+        @*<MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Engine 1 UCI exe:" @bind-Value=setting.ExeEngine1
+          TextChanged="Engine1ExeChanged" Variant="Variant.Filled"></MudTextField>
+          <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Engine 2 UCI exe:" @bind-Value=setting.ExeEngine2
+          TextChanged="Engine2ExeChanged" Variant="Variant.Filled"></MudTextField>*@
+      </MudItem>
+      <MudItem Class="config">
+        <MudText>Tournament: </MudText>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Opening name:" @bind-Value=setting.OpeningName
+                      TextChanged="OpeningNameChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net:" @bind-Value=setting.NeuralNet
+                      TextChanged="NeuralNetChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Ref Neural net:" @bind-Value=setting.RefNeuralNet
+                      TextChanged="RefNeuralNetChanged" Variant="Variant.Filled"></MudTextField>
+        <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Ceres GPU string:" @bind-Value=setting.CeresGPUstring
+                      TextChanged="CeresGPUChanged" Variant="Variant.Filled"></MudTextField>
+        <MudNumericField Style="font-size:10px" Class="pa-1 ma-1" Label="Number of threads:" @bind-Value=setting.NumberOfThreadsAB
+                         TextChanged="NumberOfThreadsChanged" Variant="Variant.Filled"></MudNumericField>
+        <MudNumericField Style="font-size:10px" Class="pa-1 ma-1" Label="Tablebase size:" @bind-Value=setting.TableBaseSize
+                         TextChanged="TBsizeChanged" Variant="Variant.Filled"></MudNumericField>
+        <MudNumericField Style="font-size:10px" Class="pa-1 ma-1" Label="Number of game pairs:" @bind-Value=setting.NumberOfGamePairs
+                         TextChanged="NumberOfGamePairsChanged" Variant="Variant.Filled"></MudNumericField>
+      </MudItem>
+      <MudItem>
+        <MudDropContainer T="DropItem" Items="setting.DropItems" ItemsSelector="@((item,dropzone) => item.Identifier == dropzone)" ItemDropped="ItemUpdated" Class="d-flex flex-wrap flex-grow-1">
+          <ChildContent>
+            <MudDropZone T="DropItem" Identifier="Engines" Class="rounded mud-background-gray pa-6 ma-2 flex-grow-1">
+              <MudText Typo="Typo.h6" Class="mb-4">Engines</MudText>
+            </MudDropZone>
+            <MudDropZone T="DropItem" Identifier="In tournament" Class="rounded mud-background-gray pa-6 ma-2 flex-grow-1">
+              <MudText Typo="Typo.h6" Class="mb-4">In tournament</MudText>
+            </MudDropZone>
+            <MudDropZone T="DropItem" Identifier="ReferenceEngine" Class="rounded mud-background-gray pa-6 ma-2 flex-grow-1">
+              <MudText Typo="Typo.h6" Class="mb-4">Reference Engine</MudText>
+            </MudDropZone>
+          </ChildContent>
+          <ItemRenderer>
+            <MudPaper Elevation="25" Class="pa-4 my-4">@context.Name</MudPaper>
+          </ItemRenderer>
+        </MudDropContainer>
+      </MudItem>
+    </MudGrid>
+
+
+  </DialogContent>
+  <DialogActions>
+    <MudButton Color="Color.Primary" OnClick="Submit">Ok</MudButton>
+    <MudButton Color="Color.Primary" OnClick="Save">Save</MudButton>
+    <MudButton Color="Color.Primary" OnClick="Load">Load</MudButton>
+  </DialogActions>
+</MudDialog>
+
+
+@code {
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+  private void ItemUpdated(MudItemDropInfo<DropItem> dropItem)
+  {
+    dropItem.Item.Identifier = dropItem.DropzoneIdentifier;
+  }
+
+  private ChessConfigurationService setting;
+  private List<EngineItem> EnginesInTournament = new List<EngineItem>();
+
+  static DropItem Create(string name, string zone)
+  {
+    return new DropItem
+      {
+        Name = name,
+        Identifier = zone
+      };
+  }
+
+  async Task Submit()
+  {
+    EnginesInTournament.Clear();
+    foreach (var item in setting.DropItems)
+    {
+      if (item.Identifier == "In tournament")
+      {
+        EnginesInTournament.Add(new EngineItem() { EngineType = CreatePlayer(item.Name), Reference = false });
+      }
+
+      if (item.Identifier == "ReferenceEngine")
+      {
+        EnginesInTournament.Add(new EngineItem() { EngineType = CreatePlayer(item.Name), Reference = true });
+      }
+    }
+    await Notify.AddedEngineInTournament(EnginesInTournament);
+    await Notify.SettingLoaded(setting);
+    MudDialog.Close(DialogResult.Ok(true));
+  }
+
+  private EngineType CreatePlayer(string name)
+  {
+    return name switch
+    {
+      "Ceres in process" => EngineType.CeresInProcess,
+      "Ceres in process Ref net" => EngineType.CeresInProcess1,
+      "Stockfish" => EngineType.Stockfish,
+      "LC0 in process" => EngineType.LC0InProcess,
+      "LC0 in process Ref net" => EngineType.LC0InProcess1,
+      "Ceres UCI" => EngineType.CeresUCI,
+      "Ceres UCI Ref net" => EngineType.CeresUCI1,
+      _ => EngineType.CeresInProcess
+    };
+  }
+
+  private void Save() => setting.SaveSettings();
+  private void Load()
+  {
+    setting.LoadSettings(ref setting);
+
+  }
+
+  private void EngineFolderChanged(string folder)
+  {
+    setting.EngineFolder = folder;
+  }
+
+  private void OpeningFolderChanged(string folder)
+  {
+    setting.PGNFolder = folder;
+  }
+
+  private void OpeningNameChanged(string opening)
+  {
+    setting.OpeningName = opening;
+  }
+
+  private void NeuralNetChanged(string net)
+  {
+    setting.NeuralNet = net;
+  }
+
+  private void RefNeuralNetChanged(string refNet)
+  {
+    setting.RefNeuralNet = refNet;
+  }
+
+  private void NeuralNetFolderChanged(string folder)
+  {
+    setting.NeuralNetFolder = folder;
+  }
+  private void CeresGPUChanged(string gpu)
+  {
+    setting.CeresGPUstring = gpu;
+  }
+
+  private void NumberOfThreadsChanged(string threads)
+  {
+    int numberOfthreads;
+    var ok = int.TryParse(threads, out numberOfthreads);
+    if (ok)
+    {
+      setting.NumberOfThreadsAB = numberOfthreads;
+    }
+  }
+
+  private void TBsizeChanged(string size)
+  {
+    int tbSize;
+    var ok = int.TryParse(size, out tbSize);
+    if (ok)
+    {
+      setting.TableBaseSize = tbSize;
+    }
+  }
+
+  private void TBfolderChanged(string folder)
+  {
+    setting.TableBaseFolder = folder;
+  }
+
+  private void CeresUCIChanges(string path)
+  {
+    setting.ExeExternalCeres = path;
+  }
+
+  private void LC0ExeChanged(string path)
+  {
+    setting.ExeLC0 = path;
+  }
+
+  private void SFExeChanged(string path)
+  {
+    setting.ExeSF = path;
+  }
+
+  private void Engine1ExeChanged(string path)
+  {
+    setting.ExeEngine1 = path;
+  }
+
+  private void Engine2ExeChanged(string path)
+  {
+    setting.ExeEngine2 = path;
+  }
+
+  private void NumberOfGamePairsChanged(string gamePairs)
+  {
+    int games;
+    var ok = int.TryParse(gamePairs, out games);
+    if (ok)
+    {
+      setting.NumberOfGamePairs = games;
+    }
+  }
+
+  protected override Task OnInitializedAsync()
+  {
+    setting = Setup;
+    return base.OnInitializedAsync();
+  }
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (firstRender)
+    {
+    }
+    base.OnAfterRender(firstRender);
+  }
+}

@@ -1,0 +1,27 @@
+﻿@inject IHostEnvironment Env
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebGUI</title>
+  <base href="/" />
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+  <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+  <link href="/css/chessboard2.min.css" rel="stylesheet" />
+  <link href="css/site_v1.16.css" rel="stylesheet" />
+  <link rel="icon" type="image/x-icon" href="chessIcon.png" />
+  <HeadOutlet @rendermode="InteractiveServer" />
+
+</head>
+<body>
+  <Routes @rendermode="InteractiveServer" />
+   
+  <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+  <script src="/js/chessboard2.min.js"></script>
+  <script src="/js/plotly.js"></script>
+  <script src="_framework/blazor.web.js"></script>
+
+</body>
+</html>

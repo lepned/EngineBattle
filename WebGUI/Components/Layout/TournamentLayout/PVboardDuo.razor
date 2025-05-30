@@ -1,0 +1,93 @@
+﻿@using WebGUI.Components.Layout.ChessboardLayout
+
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+
+
+<div class="pv-board-container @GetContainerSizeClass()">
+	<div class="pv-board left-board @GetBoardSizeClass()">
+		<div @ref="pvWhite"></div>
+	</div>
+	<div class="pv-board right-board @GetBoardSizeClass()">
+		<div @ref="pvBlack"></div>
+	</div>
+</div>
+
+
+@code {
+
+	[Parameter]
+	public string BoardSize { get; set; }
+
+	[Parameter]
+	public MoveAndFen WhiteMoveAndFen { get; set; }
+
+	[Parameter]
+	public MoveAndFen BlackMoveAndFen { get; set; }
+
+	[Parameter]
+	public bool IsWhite { get; set; }
+
+	[Parameter]
+	public bool IsDeviation { get; set; }
+
+	ElementReference pvWhite;
+	ElementReference pvBlack;
+	private IJSObjectReference chessJSmodule;
+
+	private string lastWhiteFen;
+	private string lastBlackFen;
+	private string currentBoardSize = "medium"; // "small", "medium", "large""
+
+	private string GetBoardSizeClass() => $"board-{currentBoardSize.ToLowerInvariant()}";
+	private string GetContainerSizeClass() => $"container-{currentBoardSize.ToLowerInvariant()}";
+
+	private void SetBoardSize(string size)
+	{
+		currentBoardSize = size;
+		StateHasChanged();
+	}
+	//called after opening moves are played
+	public async Task SetPVMoveWithAnnotation(MoveAndFen input, bool clear)
+	{
+		await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvWhite, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+		await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvBlack, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+	}
+
+	protected override async Task OnParametersSetAsync()
+	{
+		if (chessJSmodule is not null)
+		{
+			if (lastWhiteFen != WhiteMoveAndFen.FenAfterMove)
+			{
+				var input = WhiteMoveAndFen;
+				await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvWhite, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+				lastWhiteFen = WhiteMoveAndFen.FenAfterMove;
+			}
+
+			if (lastBlackFen != BlackMoveAndFen.FenAfterMove)
+			{
+				var input = BlackMoveAndFen;
+				await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvBlack, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+				lastBlackFen = BlackMoveAndFen.FenAfterMove;
+			}
+		}
+		if (BoardSize != currentBoardSize)
+		{
+			SetBoardSize(BoardSize);
+			StateHasChanged();
+		}
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+			await chessJSmodule.InvokeVoidAsync("createChessboard", pvWhite, WhiteMoveAndFen.FenAfterMove);
+			await chessJSmodule.InvokeVoidAsync("createChessboard", pvBlack, BlackMoveAndFen.FenAfterMove);
+			lastWhiteFen = WhiteMoveAndFen.FenAfterMove;
+			lastBlackFen = BlackMoveAndFen.FenAfterMove;
+		}
+	}
+}

@@ -1,0 +1,21 @@
+{
+    "EngineFolder": "C:/Dev/Chess/Engines/EngineDefs",
+    "Engines": [
+        {
+            "Engine": {
+                "ConfigName": "SFDef.json",
+                "Nodes": 1000000
+            }
+        },        
+        {
+            "EngineWithNets": {
+                "ConfigName": "CeresDef.json",
+                "Nodes": 1000,
+                "ListOfNetsWithPaths": [
+                    "C:/Dev/Chess/Networks/CeresNet/C1-640-34.onnx"
+                ]
+            }
+        }
+    ],
+    "ChartLines": 8
+}

@@ -1,0 +1,160 @@
+﻿@inject IJSRuntime JS
+<MudDialog>
+  <DialogContent>
+    <div style="width:700px; height:500px" @ref="chart"></div>
+  </DialogContent>
+  <DialogActions>
+    <MudIconButton Class="ml-3 mt-0" Icon="@Icons.Material.Filled.BarChart" Color="@Color.Info" OnClick="BarChart">  </MudIconButton>
+    <MudIconButton Class="ml-3 mt-0" Icon="@Icons.Material.Filled.StackedLineChart" Color="@Color.Info" OnClick="LineChart">  </MudIconButton>
+    <MudButton Color="Color.Primary" OnClick="Submit">Ok</MudButton>
+  </DialogActions>
+</MudDialog>
+
+@code {
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+  //[Parameter] public TournamentGameInfo GameInfo { get; set; }
+  ElementReference chart;
+
+  private IJSObjectReference chessModule;
+  //private Chess.Charts.PlotData PlotData { get; set; }
+
+  void Submit() => MudDialog.Close(DialogResult.Ok(true));
+
+  private void BarChart()
+  {
+    //PlotData = GameInfo.LimitsUsageChartData(TournamentGameInfo.LimitsUsageChartType.Bar);
+    SetBarChartData();
+  }
+
+  private void LineChart()
+  {
+    //PlotData = GameInfo.LimitsUsageChartData(TournamentGameInfo.LimitsUsageChartType.Line);
+    //SetLineChartData();
+  }
+
+  protected override async void OnAfterRender(bool firstRender)
+  {
+    if (firstRender)
+    {
+      chessModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js");
+      LineChart();
+    }
+    base.OnAfterRender(firstRender);    
+  }
+
+  private async void SetBarChartData()
+  {
+    await Task.CompletedTask;
+  //  var data = PlotData;
+
+  //  var xaxis = new
+  //  {
+  //    title = "Move#",
+  //    showgrid = false,
+  //    zeroline = false
+  //  };
+
+  //  var yaxis = new
+  //  {
+  //    title = "Time used",
+  //    showline = false
+  //  };
+
+  //  var layout = new
+  //  {
+  //    showlegend = true,
+  //    xaxis = xaxis,
+  //    yaxis = yaxis
+
+  //  };
+
+  //  var bar1 = new
+  //  {
+  //    x = data.MoveElements,
+  //    y = data.PlayerWhiteData,
+  //    type = "bar",
+  //    name = data.PlayerWhite
+  //  };
+
+  //  var bar2 = new
+  //  {
+  //    x = data.MoveElements,
+  //    y = data.PlayerBlackData,
+  //    type = "bar",
+  //    name = data.PlayerBlack
+  //  };
+
+  //  var config = new
+  //  {
+  //    trace1 = bar1,
+  //    trace2 = bar2,
+  //  };
+
+  //  if (chessModule is not null)
+  //    await chessModule.InvokeVoidAsync("setBarChartData", chart, layout, config);
+
+  //  StateHasChanged();
+  //}
+
+  //private async void SetLineChartData()
+  //{
+  //  var data = PlotData;
+
+  //  var xaxis = new
+  //  {
+  //    title = "Move#",
+  //    showgrid = false,
+  //    zeroline = false
+  //  };
+
+  //  var yaxis = new
+  //  {
+  //    title = "Cumulative time used",
+  //    showline = false
+  //  };
+
+  //  var layout = new
+  //  {
+  //    showlegend = true,
+  //    xaxis = xaxis,
+  //    yaxis = yaxis
+  //  };
+
+  //  var trace1 = new
+  //  {
+  //    x = data.MoveElements,
+  //    y = data.PlayerWhiteData,
+  //    type = "scatter",
+  //    name = data.PlayerWhite
+  //  };
+
+  //  var trace2 = new
+  //  {
+  //    x = data.MoveElements,
+  //    y = data.PlayerBlackData,
+  //    type = "scatter",
+  //    name = data.PlayerBlack
+  //  };
+
+  //  var trace3 = new
+  //  {
+  //    x = data.MoveElements,
+  //    y = data.TimeAllotData,
+  //    type = "scatter",
+  //    name = "Allotment"
+  //  };
+
+  //  var config = new
+  //  {
+  //    trace1 = trace1,
+  //    trace2 = trace2,
+  //    trace3 = trace3,
+  //  };
+
+    //if (chessModule is not null)
+    //  await chessModule.InvokeVoidAsync("setLineChartData", chart, layout, config);
+
+    //StateHasChanged();
+  }
+
+}

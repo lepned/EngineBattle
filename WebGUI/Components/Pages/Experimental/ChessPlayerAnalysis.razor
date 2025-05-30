@@ -1,0 +1,358 @@
+﻿@page "/playerAnalysis"
+@using WebGUI.Services
+@using WebGUI.Components.Layout.ChessboardLayout
+@inject ChessConfigurationService Setup
+@inject IJSRuntime JS
+@inject IDialogService DialogService
+@inject NotifierService Notifier
+
+<PageTitle> Chessplayer analysis tool </PageTitle>
+
+<MudGrid Spacing="6" Class="d-flex ml-6 mt-5 mb-3">
+  <MudItem lg="12" Class="d-flex">
+    <MudItem lg="4" Class="m-4">
+      <Chessboard ShowFenField=false ShowChessNavButtons=true ShowMoveList=false OnMoveMadeOnBoard="OnMoveMadeOnBoard"></Chessboard>
+    </MudItem>
+    <MudItem lg="4" Class="mt-4">
+      <MudText Class="pa-1 ma-1">Input for analysis: </MudText>
+      <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="PGN folder for players:" @bind-Value=setting.PGNFolderPlayers
+                    TextChanged="EngineFolderChanged" Variant="Variant.Filled"></MudTextField>
+      <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net folder:" @bind-Value=setting.NeuralNetFolder
+                    TextChanged="NeuralNetFolderChanged" Variant="Variant.Filled"></MudTextField>
+      <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net:" @bind-Value=setting.NeuralNet
+                    TextChanged="NeuralNetChanged" Variant="Variant.Filled"></MudTextField>
+
+      <MudNumericField Style="font-size:10px" Label="Years from peak:" @bind-Value=yearsFromPeak
+                       TextChanged="YearsFromPeak" Variant="Variant.Filled"></MudNumericField>
+      <MudNumericField Style="font-size:10px" Class="ml-1" Label="Number of nodes:" @bind-Value="nodesPerMove"
+                       Variant="Variant.Filled"></MudNumericField>
+      <MudNumericField T="double" Style="font-size:10px" Class="ml-1" Min=0.0 Max=1.0 Step=0.01 Label="Delta Q value:" @bind-Value=deltaQ
+                       Format="F2" Variant="Variant.Filled"></MudNumericField>
+      <MudSwitch T="bool" Color="Color.Primary" Class="analyzeButton ml-4" @bind-Value="@checkAllYears"> Check all years @(checkAllYears ? "On" : "Off") </MudSwitch>
+      <MudSwitch T="bool" Color="Color.Tertiary" Class="analyzeButton ml-4" @bind-Value="@runAllPlayersFromFolder"> Run all players @(runAllPlayersFromFolder ? "On" : "Off") </MudSwitch>
+      <MudSwitch T="bool" Color="Color.Secondary" Class="analyzeButton ml-4" @bind-Value="@evaluateWithSearch"> With search @(evaluateWithSearch ? "On" : "Off") </MudSwitch>
+    </MudItem>
+
+    <MudItem lg="3" Class="m-4">
+      @if (playerAnalysis)
+      {
+        <MudTable Class=playerTable T="Player" HeaderClass="evalTableHeader" Items=@PlayersOutput FixedHeader=true Dense="true" Hover="true" Striped="true">
+          <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Score</MudTh>
+            <MudTh>#Moves</MudTh>
+          </HeaderContent>
+          <RowTemplate>
+            <MudTd DataLabel="Line">@context.name</MudTd>
+            <MudTd DataLabel="Line">@context.score.ToString("P2")</MudTd>
+            <MudTd DataLabel="Line">@context.moves</MudTd>
+          </RowTemplate>
+        </MudTable>
+      }
+      else
+      {
+        <MudTable Class=analysisTable T="string" HeaderClass="evalTableHeader" Items=@EvalList FixedHeader=true Dense="true" Hover="true" Striped="true">
+          <HeaderContent>
+            <MudTh>@tableHeader</MudTh>
+          </HeaderContent>
+          <RowTemplate>
+            <MudTd DataLabel="Line">@context</MudTd>
+          </RowTemplate>
+        </MudTable>
+      }
+    </MudItem>
+  </MudItem>
+
+  <MudItem>
+    <MudButton Disabled=disableRun Class="analyzeButton ml-5 mt-5" Variant="Variant.Outlined" OnClick=RunAnalysis> Run move agreement analysis </MudButton>
+    <MudButton Disabled=disableRun Class="analyzeButton ml-5 mt-5" Variant="Variant.Outlined" OnClick=RunMultiNetAnalysis> Run analysis across multiple networks </MudButton>
+  </MudItem>
+</MudGrid>
+
+
+@code {
+  private int yearsFromPeak = 1;
+  //private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  private bool disableRun = false;
+  private ChessConfigurationService setting;
+  private List<Player> PlayersOutput = new List<Player>();
+  private List<string> EvalList = new List<string>();
+  private string tableHeader = "Player performance based on policy evaluation only";
+  private bool playerAnalysis = true;
+  private bool checkAllYears = false;
+  private bool runAllPlayersFromFolder = false;
+  bool evaluateWithSearch = true;
+  int nodesPerMove = 100;
+  double deltaQ = 0.30;
+
+  private record Player(string name, float score, float moves);
+
+  private void EngineFolderChanged(string folder)
+  {
+    setting.PGNFolderPlayers = folder;
+  }
+  private void NeuralNetFolderChanged(string folder)
+  {
+    setting.NeuralNetFolder = folder;
+  }
+
+  private void YearsFromPeak(string years)
+  {
+    yearsFromPeak = int.Parse(years);
+  }
+
+  private void NeuralNetChanged(string net)
+  {
+    setting.NeuralNet = net;
+  }
+
+  private async Task RunAnalysis()
+  {
+    PlayersOutput.Clear();
+    playerAnalysis = true;
+    tableHeader = "Player performance based on policy evaluation only";
+    disableRun = true;
+    var playersFromFolder = GetPlayersFromFolder().Select(name => new Player(name, 0, 0));
+    string netInfo = new string(setting.NeuralNet.TakeWhile(e => e != '.').ToArray());
+    //NNEvaluator evaluator = NNEvaluator.FromSpecification($"LC0:{netInfo}", "GPU:0");
+
+    if (checkAllYears)
+    {
+      yearsFromPeak = 300;
+    }
+
+    //if (runAllPlayersFromFolder)
+    //{
+    //  yearsFromPeak = 300;
+    //  foreach (Player player in playersFromFolder)
+    //  {
+    //    if (evaluateWithSearch)
+    //      await EvalutePlayerWithSearch(evaluator, player.name, 1990);
+    //    else
+    //      await EvalutePlayer(evaluator, player.name, 1990);
+    //  }
+    //}
+
+    //else
+    //{
+    //  foreach (ChessPlayer player in ChessPlayers.FamousPlayers)
+    //  {
+    //    if (evaluateWithSearch)
+    //      await EvalutePlayerWithSearch(evaluator, player.LastName, player.PeakYear);
+    //    else
+    //      await EvalutePlayer(evaluator, player.LastName, player.PeakYear);
+    //  }
+    //}
+
+    //sort list
+    PlayersOutput = PlayersOutput.OrderByDescending(e => e.score).ToList();
+
+    disableRun = false;
+    StateHasChanged();
+    await Task.CompletedTask;
+  }
+
+  private async Task RunMultiNetAnalysis()
+  {
+    try
+    {
+      playerAnalysis = false;
+      EvalList.Clear();
+      await Task.Factory.StartNew(async () =>
+      {
+        tableHeader = "Comparing Analysis across multiple networks";
+        disableRun = true;
+        PlayersOutput.Clear();
+        await Task.Delay(100);
+        //var testPos = Ceres.Chess.Position.FromFEN(fen);
+        //var files = GetNetworksFromFolder().ToList();
+        //foreach (string s in files)
+        //{
+        //  //NNWeightsFileLC0 netInfo = NNWeightsFileLC0.LookupOrDownload(s);
+        //  //for each netwrok, create evaluator and dump evaluation
+        //  string netInfo = new string(s.TakeWhile(e => e != '.').ToArray());
+        //  var res = GetEvaluation(netInfo, testPos);
+        //  var evalString = $"{netInfo} {res}";
+        //  await InvokeAsync(() => UpdateEvalList(evalString));
+        //}
+      });
+    }
+    catch (Exception ex)
+    {
+      //ignore for now - just add a line to the list of engines
+      EvalList.Add($"Something went wrong {ex.Message}");
+    }
+    finally
+    {
+      disableRun = false;
+      StateHasChanged();
+      await Task.CompletedTask;
+    }
+  }
+
+  private void UpdateEvalList(string eval)
+  {
+    EvalList.Add(eval);
+    StateHasChanged();
+  }
+
+  private void UpdateList(Player player)
+  {
+    PlayersOutput.Add(player);
+    StateHasChanged();
+  }
+
+  //private string GetEvaluation(string netInfo, Ceres.Chess.Position testPos)
+  //{
+  //  NNEvaluator evaluator = NNEvaluator.FromSpecification($"LC0:{netInfo}", "GPU:0");
+  //  string res = evaluator.Evaluate(testPos, false).ToString();
+  //  evaluator.Dispose();
+  //  return res;
+  //}
+
+  private IEnumerable<string> GetNetworksFromFolder()
+  {
+    var files = new DirectoryInfo(setting.NeuralNetFolder).GetFiles();
+    foreach (var item in files)
+    {
+      yield return item.Name;
+    }
+  }
+
+  private IEnumerable<string> GetPlayersFromFolder()
+  {
+    var files = new DirectoryInfo(setting.PGNFolderPlayers).GetFiles();
+    foreach (var item in files)
+    {
+      string name = new string(item.Name.TakeWhile(e => e != '.').ToArray());
+      yield return name;
+    }
+  }
+
+  //private async Task EvalutePlayer(NNEvaluator evaluator, string playerName, int peakYear)
+  //{
+  //  await Task.Factory.StartNew(async () =>
+  //  {
+  //    string FN = @$"{setting.PGNFolderPlayers}\{playerName}.pgn";
+  //    float countSame = 0, countDifferent = 0;
+  //    foreach (Game game in Game.FromPGN(FN).Where(g => g.PlayerLastNameContains(playerName)))
+  //    {
+  //      //analyze only games played within 3 years of peak
+  //      if (game.Date.Year < peakYear - yearsFromPeak || game.Date.Year > peakYear + yearsFromPeak) continue;
+  //      //generate all positions in the game for this player (with move histories)
+  //      //SideType ourSide = game.PlayerWhite.Contains(playerName) ? SideType.White : SideType.Black;
+  //      //PositionWithHistory[] ourPositions = game.PositionsWithHistory.Where(g => g.FinalPosition.SideToMove == ourSide).ToArray();
+  //      //evalute all positions in game
+  //      //NNEvaluatorResult[] evals = evaluator.Evaluate(ourPositions, fillInMissingPlanes: true);
+  //      for (int i = 30; i < ourPositions.Length; i++)
+  //      {
+  //        var bestMovePolicyInfo = evals[i].Policy.MovesAndProbabilities(ourPositions[i].FinalPosition).FirstOrDefault();
+  //        if (bestMovePolicyInfo.Move == ourPositions[i].NextMove)
+  //        {
+  //          countSame++;
+  //        }
+  //        else
+  //          countDifferent++;
+  //      }
+  //    }
+  //    float pctAll = countSame / (countSame + countDifferent);
+  //    string score = $"{pctAll:P2}   -   {playerName} in {countSame + countDifferent} moves";
+  //    Player player = new(playerName, pctAll, countSame + countDifferent);
+  //    await InvokeAsync(() => UpdateList(player));
+  //  });
+  //}
+
+  //private async Task EvalutePlayerWithSearch(NNEvaluator evaluator, string playerName, int peakYear)
+  //{
+  //  await Task.Factory.StartNew(async () =>
+  //  {
+  //    string FN = @$"{setting.PGNFolderPlayers}\{playerName}.pgn";
+  //    float countSame = 0, countDifferent = 0;
+  //    foreach (Game game in Game.FromPGN(FN).Where(g => g.PlayerLastNameContains(playerName)))
+  //    {
+  //      ceresEngine.ResetGame();
+  //      //analyze only games played within 3 years of peak
+  //      if (game.Date.Year < peakYear - yearsFromPeak || game.Date.Year > peakYear + yearsFromPeak) continue;
+  //      //generate all positions in the game for this player (with move histories)
+  //      SideType ourSide = game.PlayerWhite.Contains(playerName) ? SideType.White : SideType.Black;
+  //      PositionWithHistory[] ourPositions = game.PositionsWithHistory.Where(g => g.FinalPosition.SideToMove == ourSide).ToArray();
+  //      for (int i = 4; i < ourPositions.Length; i++)
+  //      {
+  //        PositionWithHistory pos = ourPositions[i];
+  //        Move move = ourPositions[i].NextMove;
+  //        //Console.WriteLine($"Move played: {move.ToSAN(pos.FinalPosition)}");
+  //        if (move.IsNull)
+  //        {
+  //          continue;
+  //        }
+  //        var searchResult = ceresEngine.SearchCeres(pos, SearchLimit.NodesPerMove(nodesPerMove));
+  //        var bestMove = searchResult.Search.BestMove;
+  //        double topToWorseMoveDiff = 0;
+  //        if (bestMove.EqualsMove(move))
+  //        {
+  //          countSame++;
+  //        }
+  //        else
+  //        {
+  //          bool foundMove = false;
+  //          foreach (var topLevelSubtree in searchResult.Search.Manager.Root.ChildrenExpanded)
+  //          {
+  //            Move m = MGMoveConverter.ToMove(topLevelSubtree.Annotation.PriorMoveMG);
+  //            var moveSAN = m.ToSAN(searchResult.Search.Manager.Root.Annotation.Pos);
+  //            var moveQ = -topLevelSubtree.Q;
+  //            var delta = searchResult.ScoreQ - moveQ;
+  //            topToWorseMoveDiff = Math.Max(topToWorseMoveDiff, delta);
+  //            if (m == move)
+  //            {
+  //              foundMove = true;
+  //              //Console.WriteLine(m + " " + moveSAN + " " + diff); // negative to make from perspective of root player
+  //              if (delta < deltaQ)
+  //              {
+  //                countSame++;
+  //                break;
+  //              }
+  //              else
+  //              {
+  //                countDifferent++;
+  //              }
+  //            }
+  //          }
+  //          if (!foundMove)
+  //          {
+  //            Console.WriteLine($"{move.ToSAN(pos.FinalPosition)} not found in top search nodes - max diff is {topToWorseMoveDiff}");
+  //            if (topToWorseMoveDiff > deltaQ)
+  //            {
+  //              countDifferent++;
+  //            }
+  //            else
+  //            {
+  //              countSame++;
+  //            }
+  //          }
+  //        }
+  //      }
+  //    }
+  //    float pctAll = countSame / (countSame + countDifferent);
+  //    string score = $"{pctAll:P2}   -   {playerName} in {countSame + countDifferent} moves";
+  //    Player player = new(playerName, pctAll, countSame + countDifferent);
+  //    await InvokeAsync(() => UpdateList(player));
+  //  });
+  //}
+
+  public async void OnMoveMadeOnBoard(string newFen)
+  {
+    //PositionWithHistory pos = PositionWithHistory.FromFENAndMovesUCI(newFen);
+    //fen = pos.FinalPosition.FEN;
+    StateHasChanged();
+    await Task.CompletedTask;
+  }
+
+  protected override Task OnInitializedAsync()
+  {
+    setting = Setup;
+    setting.NeuralNet = "703810";
+    //ceresEngine = new GameEngineCeresInProcess("Ceres", NNEvaluatorDef.FromSpecification(setting.NeuralNet, "GPU:0"));
+    return base.OnInitializedAsync();
+  }
+
+}

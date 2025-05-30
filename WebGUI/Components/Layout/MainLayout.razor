@@ -1,0 +1,67 @@
+﻿@using WebGUI.Services;
+@inherits LayoutComponentBase
+@inject NotifierService notify
+
+<MudThemeProvider Theme="theme" @bind-IsDarkMode="isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+  <MudAppBar>
+    <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+    <MudSpacer />
+    <MudText Typo="Typo.h5" Class="mudblazor-appbar-brand-text d-none d-md-flex">EngineBattle</MudText>
+
+    <MudSpacer />
+    <MudDivider Vertical="true" FlexItem="true" DividerType="DividerType.Middle" Class="mx-4 my-3" />
+      <MudImage Class="ml-4" Src="img/chessIcon.png" />
+    @*<MudTooltip Text="Toggle light/dark theme">
+      <MudIconButton Icon="@Icons.Material.Filled.Brightness4" Color="Color.Inherit" OnClick="@((e) => DarkMode())" />
+    </MudTooltip>*@
+  </MudAppBar>
+  <MudDrawer @bind-Open="@_drawerOpen">
+    <MudDrawerHeader Class="mudblazor-brand" LinkToIndex="true">
+      <img src="img/EngineBattle.png" style="width:200px" />
+  </MudDrawerHeader>
+    <NavMenu />
+  </MudDrawer>
+
+  <MudMainContent Class=pl-2>
+    @Body
+  </MudMainContent>
+</MudLayout>
+
+@code {
+  bool _drawerOpen = true;
+  MudTheme theme = new();
+  private bool isDarkMode = true;
+
+  void DrawerToggle()
+  {
+    _drawerOpen = !_drawerOpen;
+  }
+
+  async Task Notify_IsFullScreenRequested(bool isFullScreenRequested)
+  {
+    _drawerOpen = !isFullScreenRequested;
+    await Task.CompletedTask;
+    StateHasChanged();
+  }
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (firstRender)
+    {
+      notify.IsFullScreenRequested += Notify_IsFullScreenRequested;
+    }
+    base.OnAfterRender(firstRender);
+  }
+
+  public async ValueTask DisposeAsync()
+  {
+    notify.IsFullScreenRequested -= Notify_IsFullScreenRequested;
+    await ValueTask.CompletedTask;
+  }
+ 
+}

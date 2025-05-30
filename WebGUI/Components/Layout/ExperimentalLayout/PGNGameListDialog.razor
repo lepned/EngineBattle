@@ -1,0 +1,83 @@
+﻿@using WebGUI.Components.Layout
+@inject IDialogService DialogService
+
+<MudDialog Class="pa-2" Style="width: 35%; max-width: 35%;">
+  <TitleContent>
+    <div class="d-flex align-center">
+      <MudIcon Icon="@Icons.Material.Filled.SportsEsports" Class="mr-2" />
+      <MudText Typo="Typo.h6">PGN Game List (@Games.Count games)</MudText>
+      <MudSpacer />
+    </div>
+  </TitleContent>
+  <DialogContent>
+    <MudTextField @bind-Value="SearchString" Placeholder="Search for player..."
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  IconSize="Size.Medium" Class="mt-0 mb-3" Immediate="true" />
+
+    <MudTable Style="border: none; padding: 0; background-color: transparent;"
+              Items="@Games"
+              T="PGNTypes.PgnGame"
+              MultiSelection="true"
+              @bind-SelectedItems="SelectedItems"
+              OnRowClick="SelectGame"
+              Virtualize="true"
+              FixedHeader="true"
+              Height="calc(65vh)"
+              Hover="true"
+              SortLabel="Sort By"
+              Dense="true"
+              Filter="FilterFunc">
+      <HeaderContent>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Round">R#</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameNumber">G#</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Result">Result</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPGNSummary(x)">Players</MudTableSortLabel></MudTh>
+      </HeaderContent>
+      <RowTemplate>
+        <MudTd DataLabel="R#">@context.GameMetaData.Round</MudTd>
+        <MudTd DataLabel="G#">@context.GameNumber</MudTd>
+        <MudTd DataLabel="Result">@context.GameMetaData.Result</MudTd>
+        <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPGNSummary(context)</MudTd>
+      </RowTemplate>
+      <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 20, 30, 50, 100, 250 }" />
+      </PagerContent>
+    </MudTable>
+  </DialogContent>
+  <DialogActions>
+    <MudButton Color="Color.Primary" OnClick="Cancel">Close</MudButton>
+  </DialogActions>
+</MudDialog>
+
+
+@code {
+    [Parameter] public List<PGNTypes.PgnGame> Games { get; set; } = new();
+    [Parameter] public HashSet<PGNTypes.PgnGame> SelectedItems { get; set; } = new();
+    [Parameter] public string SearchString { get; set; } = "";
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    
+    private void Cancel() => MudDialog.Cancel();
+    
+    private void SelectGame(TableRowClickEventArgs<PGNTypes.PgnGame> args)
+    {
+        MudDialog.Close(DialogResult.Ok(args.Item));
+    }
+    
+    private bool FilterFunc(PGNTypes.PgnGame game)
+    {
+        if (string.IsNullOrWhiteSpace(SearchString))
+            return true;
+
+        string searchTerm = SearchString.Trim().ToLower();
+
+        // Search in white player name
+        if (game.GameMetaData.White?.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        // Search in black player name
+        if (game.GameMetaData.Black?.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        return false;
+    }
+}

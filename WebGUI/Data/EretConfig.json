@@ -1,0 +1,31 @@
+{
+  "EngineFolder": "C:/Dev/Chess/Engines/EngineDefs",
+  "Engines": [
+  {
+    "Engine": {
+      "ConfigName": "SFDef.json"
+    }
+  },
+  {
+    "Engine": {
+      "ConfigName": "ObsidianDef.json"
+    }
+  },
+  {
+    "EngineWithNets": {
+      "ConfigName": "CeresDef.json",
+      "ListOfNetsWithPaths": 
+      [
+        "C:/Dev/Chess/Networks/CeresNet/C1-640-34.onnx", 
+        "C:/Dev/Chess/Networks/CeresNet/C1-512-25.onnx"
+      ]
+    }
+  }
+], 
+    "PuzzleFile": "C:/Dev/Chess/Puzzles/ERET_VESELY203.epd",
+    "SampleSize": 10,
+    "TimeInSeconds": 5,
+    "Nodes": 10000,
+    "RunWithNodeLimit": false
+  }
+  

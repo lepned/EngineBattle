@@ -1,0 +1,110 @@
+﻿@page "/engineJSONCreator"
+@inject ILogger<DefaultEngineJsonCreator> logger
+@using System.Text.Json
+
+
+<InputFile id="engineDefault" OnChange="@PickExecutable" hidden />
+
+<PageTitle>EngineJSONCreator</PageTitle>
+
+<MudItem Class="d-flex mt-5">
+  <MudItem sm="6">
+    <MudText Class="mt-5" Typo="Typo.h4">Create default engine.json files from pointing to an engine executable</MudText>
+    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
+      <MudTextField HelperText="Folder where the executable is located" Placeholder="Write complete path to executable" T="string" Typo="Typo.h6" Text="@engineFolder" @bind-value="engineFolder"></MudTextField>
+    </div>
+    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
+    <MudTextField HelperText="Folder where the engine.json files will be written to" Placeholder="Write path to engine JSON folder" T="string" Typo="Typo.h6" Text="@engineDefs" @bind-value="engineDefs"></MudTextField>
+    </div>
+    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
+    <MudTextField HelperText="Full path to optional weightsfile" Placeholder="Write path to engine JSON folder" T="string" Typo="Typo.h6" Text="@pathToWeights" @bind-value="pathToWeights"></MudTextField>
+    </div>
+    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
+    <MudTextField HelperText="Full path to optional Syzygy database" Placeholder="Write path to engine JSON folder" T="string" Typo="Typo.h6" Text="@pathToSyzygyPath" @bind-value="pathToSyzygyPath"></MudTextField>
+    </div>
+    <MudFab Class="ml-3 mb-3 mt-5" HtmlTag="label" Color="Color.Default" Label="Pick executable" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="engineDefault" />
+    <MudText Class="ml-3 mt-5">Remember to add text to empty strings (or remove the empty properties) in the generated engine.json file</MudText>
+  </MudItem>
+</MudItem>
+
+@code {
+
+  private string engineDefs = "C:/Dev/Chess/Engines/EngineDefs";
+  private string pathToWeights = "C:/Dev/Chess/Networks/BT4/BT4-1024x15x32h-swa-6147500.pb.gz";
+  private string pathToSyzygyPath = "C:/Dev/Chess/TableBases/sygyzy";
+  private string engineFolder = "C:/Dev/Chess/LeelaBuild/PolicyBoostingCutlass/lc0/build";
+
+  private async Task PickExecutable(InputFileChangeEventArgs e)
+  {
+    var pgnName = e.File.Name;
+    //check if file is executable and that check if the file is in the engineDefs folder specified above
+    var inFolder = Directory.GetFiles(engineFolder).Any(x => x.Contains(pgnName));
+    if (!pgnName.EndsWith(".exe") || !inFolder)
+    {
+      logger.LogWarning("Executable or folder not valid {File} {Folder}", pgnName, engineDefs);
+      return;
+    }
+
+    logger.LogInformation("Executable opened {File}", pgnName);
+    logger.LogInformation("Creating default engine.json file from executable", e.File.Name);
+    var env = Environment.CurrentDirectory;
+    var fullPath = pgnName.ToLower().Contains("ceres") ? engineFolder : Path.Combine(env, pgnName);
+    var useFolder = pgnName.ToLower().Contains("ceres");
+    ChessLibrary.Engine.ChessEngine engine = null;
+    CoreTypes.EngineConfig config = null;
+    var path = Path.Combine(engineFolder, pgnName);
+    config = CoreTypes.EngineConfig.EmptyWithPath(path);
+    engine = EngineHelper.createEngine(config);
+    engine.StartProcess();
+    engine.StopProcess();
+    var defs = engine.GetDefaultOptions();
+
+    //WeightsFile
+    if (defs.ContainsKey("WeightsFile"))
+    {
+      defs["WeightsFile"] = pathToWeights;
+    }
+
+    //SyzygyPath
+    if (defs.ContainsKey("SyzygyPath"))
+    {
+      if (string.IsNullOrEmpty(pathToSyzygyPath))
+      {
+        defs.Remove("SyzygyPath");
+      }
+      else
+      {
+        defs["SyzygyPath"] = pathToSyzygyPath;
+      }
+    }
+
+    //LogLiveStats
+    if (defs.ContainsKey("LogLiveStats"))
+    {
+      defs["LogLiveStats"] = true;
+    }
+
+    //VerboseMoveStats
+    if (defs.ContainsKey("VerboseMoveStats"))
+    {
+      defs["VerboseMoveStats"] = true;
+    }
+
+    //UCI_ShowWDL
+    if (defs.ContainsKey("UCI_ShowWDL"))
+    {
+      defs["UCI_ShowWDL"] = true;
+    }
+
+    var defaultConfig = CoreTypes.EngineConfig.AddOptions(config, defs);
+    //make the json indented for better read
+    var setting = System.Text.Json.JsonSerializerOptions.Default.WriteIndented;
+    var json = System.Text.Json.JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions { WriteIndented = true, AllowTrailingCommas = true });
+    var name = pgnName.Replace(".exe", ".json");
+    var outPath = Path.Combine(engineDefs, name);
+    await File.WriteAllTextAsync(outPath, json);
+    await Task.Delay(1000);
+    logger.LogInformation($"Done with creating default engine.json file {engineDefs}");
+  }
+
+}

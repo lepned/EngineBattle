@@ -1,0 +1,246 @@
+﻿@using WebGUI.Services
+@using WebGUI
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject NotifierService Notifier
+@inject ILogger<StreamingChessboard> Logger
+
+<MudGrid Justify="Justify.Center">
+  <MudItem sm=12>    
+    <div class="mt-3 streaming-board" style="height:100%;" @ref="element"></div>    
+  </MudItem>
+
+  @if (!String.IsNullOrEmpty(OpeningName))
+  {
+    <span style=@openingStyle class="mud-text">@OpeningName</span>
+  }
+
+  else
+  {
+    <span style=@openingStyle class="mud-text">@(startPos)</span>
+  }
+
+  @if (ShowMoveList)
+  {
+    <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
+      <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3 hideScroll moveList" style=@moveListStyle>
+        <span class="openingMoves">@OpeningMoves</span>
+        <span> @MoveHistory </span>
+      </div>
+    </MudItem>
+  }
+
+</MudGrid>
+
+
+@code {
+
+  [Parameter] public bool ShowMoveList { get; set; } = true;
+  [Parameter] public string OpeningName { get; set; }
+  [Parameter] public string OpeningMoves { get; set; }
+  [Parameter] public int MoveListFontSize { get; set; }
+  [Parameter] public int MoveListHeight { get; set; }
+  [Parameter] public string MoveHistory { get; set; }
+
+  private int moveListFontSize = 8;
+  private int moveListHeight = 80;
+  private string openingStyle = $"font-size:15px";
+  private string moveListStyle = "font-size:18px; height: 199px;";
+  private string previousMoveHistory;
+
+  private async Task ScrollToEnd()
+  {
+    await chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
+  }
+
+  private bool whiteToMove = true;
+  private ThreadSafeBoardState state = new();
+  private string fen;
+  private ElementReference element;
+  private IJSObjectReference chessJSmodule; //my own chessinterop.js
+  private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  List<string> replayMoves = new List<string>();
+  private DotNetObjectReference<StreamingChessboard> dotNetRef;
+
+
+  [JSInvokable]
+  public async Task OnBrowserResize()
+  {    
+    StateHasChanged();
+    await Task.CompletedTask;
+    //await InvokeAsync(StateHasChanged);
+  }
+
+  private async Task PrepareChessboard()
+  {
+    dotNetRef = DotNetObjectReference.Create(this);
+    chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+    await chessJSmodule.InvokeVoidAsync("createChessboard", element);
+    await chessJSmodule.InvokeVoidAsync("registerResizeEvent", dotNetRef);
+    StateHasChanged();
+  }
+
+  private async Task SetPosition(string fen)
+  {
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("setPosition2", element, fen);
+    }
+  }
+
+  private async Task SetArrowHighlighting(CoreTypes.MoveAndFen input)
+  {
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("setArrowHighlighting", element, input.Move.FromSq, input.Move.ToSq, "#9D8989");
+    }
+  }
+
+  private async Task SetPositionAndMove(CoreTypes.MoveAndFen input)
+  {
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("setBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+    }
+  }
+
+  public async Task OnNewFen(string newFen)
+  {
+    if (fen != newFen)
+    {
+      fen = newFen;
+      startPos = newFen;
+      await SetPosition(fen);
+    }
+  }
+
+  public async Task OnNotifyMoveAndFen(MoveAndFen input)
+  {
+    @if (fen != input.FenAfterMove)
+    {
+      fen = input.FenAfterMove;
+      state.Fen = fen;
+      state.LoadFen(fen);
+      whiteToMove = input.Move.Color == "b";
+      await SetPositionAndMove(input);
+    }
+  }
+
+  public async Task UpdateLastPVMove(string pvMove, string oppPvMove, bool withArrows)
+  {
+    if (withArrows && state.LastPV != pvMove && !String.IsNullOrEmpty(pvMove))
+    {
+      state.LastPV = pvMove;
+      if (chessJSmodule is not null)
+      {
+        var (fromSq, toSq) = (pvMove.Substring(0, 2), pvMove.Substring(2, 2));
+        if (!String.IsNullOrEmpty(oppPvMove))
+        {
+          var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
+          var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
+          
+          await chessJSmodule.InvokeVoidAsync("setDoubleArrowHighlighting", element, fromSq, toSq, oppFromSq, oppToSq, color, oppColor);
+          //Console.WriteLine($"PV: {pvMove} OppPV: {oppPvMove} FromSq: {fromSq} ToSq: {toSq} OppFromSq: {oppFromSq} OppToSq: {oppToSq}");
+        }
+        else
+        {
+          await chessJSmodule.InvokeVoidAsync("setArrowHighlighting", element, fromSq, toSq, "#9D8989");
+          //Console.WriteLine($"PV: {pvMove} OppPV: {oppPvMove} FromSq: {fromSq} ToSq: {toSq}");
+        }
+      }
+    }
+    else
+    {
+      state.LastPV = pvMove;
+    }
+  }
+
+  public async void UpdatePonderMoveWithPolicy(string ponderMove, double policy, double frac)
+  {
+    if ((state.LastPonderMove != ponderMove && ponderMove == state.LastPV) || state.LastFraction != frac)
+    {
+      if (chessJSmodule is not null)
+      {
+        var (fromSq, toSq) = (ponderMove.Substring(0, 2), ponderMove.Substring(2, 2));
+        var text = $"P:{(policy / 100):P0} N:{frac:P0}";
+        var (_, color) = state.GetPieceAndColorOnSquare(toSq);
+
+        var noPiece = string.IsNullOrEmpty(color);
+        var textColor = noPiece ? "Black" : color == "w" ? "white" : "black"; //: "yellow";
+        var bgColor = noPiece ? "transparent" : color == "w" ? "black" : "white";
+        // if (!noPiece)
+        // {
+        //   Console.WriteLine($"Is piece on square {toSq} P: {piece} Color: {color}");
+        // }
+        state.LastPonderMove = ponderMove;
+        state.LastFraction = frac;
+        await chessJSmodule.InvokeVoidAsync("setPonderArrowHighlightingWithLabel", element, text, fromSq, toSq, "#9D8989", textColor, bgColor);
+      }
+    }
+  }
+
+  public async Task UpdateMoveHistory(string moveHistory)
+  {
+    MoveHistory = moveHistory;
+    StateHasChanged();
+    await Task.Delay(200);
+    await ScrollToEnd();
+
+  }
+
+  protected override async Task OnParametersSetAsync()
+  {
+    if (chessJSmodule is not null && MoveHistory != previousMoveHistory)
+    {
+      previousMoveHistory = MoveHistory;
+      await ScrollToEnd();
+    }
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      await PrepareChessboard();      
+    }
+    if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
+    {
+      moveListFontSize = MoveListFontSize;
+      moveListStyle = $"font-size:{moveListFontSize}px; height: {MoveListHeight}px;";
+      openingStyle = $"font-size:{moveListFontSize}px";
+      StateHasChanged();
+    }
+
+    if (MoveListHeight > 0 && MoveListHeight != moveListHeight)
+    {
+      moveListHeight = MoveListHeight;
+      moveListStyle = $"font-size:{moveListFontSize}px; height: {MoveListHeight}px;";
+      StateHasChanged();
+    }
+  }
+
+  private async Task OnFullScreenRequested(bool isFullScreen)
+  {
+    await Task.Delay(300);
+    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", element);
+    StateHasChanged();
+  }
+
+  protected override void OnInitialized()
+  {
+    Notifier.IsFullScreenRequested += OnFullScreenRequested;
+    fen = startPos;
+  }
+
+  async ValueTask IAsyncDisposable.DisposeAsync()
+  {
+    Dispose();
+    await ValueTask.CompletedTask;
+  }
+
+  public void Dispose()
+  {
+    Notifier.IsFullScreenRequested -= OnFullScreenRequested;
+  }
+}

@@ -1,0 +1,38 @@
+{
+    "PuzzleFile": "C:/Dev/Chess/Puzzles/lichess_db_April_2025.csv",
+    "Type": "policy, value, search",
+    "MaxRating": 3500,
+    "MinRating": 0,
+    "RatingGroups": "2500, 2700",
+    "PuzzleFilter": "",
+    "EngineFolder": "C:/Dev/Chess/Engines/EngineDefs",
+    "Engines": [
+        {
+            "Engine": {
+                "ConfigName": "SFDef.json",
+                "Nodes": 10000
+            }
+        },
+        {
+            "Engine": {
+                "ConfigName": "Lc0Def.json",
+                "Nodes": 100
+            }
+        },
+        {
+
+            "EngineWithNets": {
+                "ConfigName": "CeresDef.json",
+                "Nodes": 100,
+                "ListOfNetsWithPaths": [
+                    "C:/Dev/Chess/Networks/CeresNet/C1-640-34.onnx",
+                    "C:/Dev/Chess/Networks/CeresNet/C1-512-25.onnx"
+                ]
+            }
+        }
+    ],
+    "SampleSize": 1000,
+    "Nodes": "",
+    "Concurrency": 1,
+    "FailedPuzzlesOutputFolder": "C:/Dev/Chess/Puzzles"
+}

@@ -1,0 +1,83 @@
+﻿@using MudBlazor
+@using WebGUI.Services
+
+<div class="pairings-container"
+style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
+            --max-height: @(tableHeight > 0 ? $"{tableHeight}px" : "auto");">
+  <div class="header">
+    <span class="header-text">Latest games</span>
+  </div>
+  <div class="table-wrapper">
+    <table class="custom-table">
+      <thead>
+        <tr class="header-row">
+          <th class="header-cell">White</th>
+          <th class="header-cell">Black</th>
+          <th class="header-cell">Move</th>
+          <th class="header-cell">Result</th>
+          <th class="header-cell">Reason</th>
+          <th class="header-cell">Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (Results.Count > 0)
+        {
+          foreach (var context in Results)
+          {
+            <tr class="data-row">
+              <td class="data-cell">@context.Player1</td>
+              <td class="data-cell">@context.Player2</td>
+              <td class="data-cell">@(context.Moves / 2)</td>
+              <td class="data-cell">@context.Result</td>
+              <td class="data-cell">@context.Reason</td>
+              <td class="data-cell">@(Formatting.formatMoveTime(context.GameTime))</td>
+            </tr>
+          }
+        }
+        else
+        {
+          <tr class="data-row">
+            <td class="data-cell" colspan="6">No games available</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+@code {
+
+  [Parameter]
+  public List<Result> Results { get; set; } = new();
+
+  [Parameter]
+  public int FontSize { get; set; }
+
+  [Parameter]
+  public int TableHeight { get; set; }
+
+  private int fontSize = 12;
+  private int tableHeight = 0;
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;
+      StateHasChanged();
+    }    
+
+    base.OnAfterRender(firstRender);
+  }
+
+  protected override void OnParametersSet()
+  {
+    if (TableHeight > 0 && TableHeight != tableHeight)
+    {      
+      tableHeight = TableHeight;
+      StateHasChanged();
+    }
+    base.OnParametersSet();
+  }
+
+}

@@ -1,0 +1,341 @@
+﻿@using WebGUI.Components.Layout.ChessboardLayout
+@using ChessLibrary
+@inject NotifierService Notifier
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@implements IAsyncDisposable
+
+
+<MudText Style="@fontSize" Color=@pvTextColor Class="mud-centerTxt mt-1 pb-3">@activePV</MudText>
+<MudItem>
+  <MudCarousel @ref="carousel" Style="@pvContainerSize" TData="RenderFragment" ShowArrows="false" ShowBullets="false" AutoCycle="false">
+
+    <MudCarouselItem Transition="Transition.None">
+      <div>
+        <MudItem Class="ml-3 mr-3 mt-2 d-flex justify-space-between flex-grow-1 gap-1">
+          <MudSpacer></MudSpacer>         
+            @BoardFragment1
+          <MudSpacer></MudSpacer>
+          <MudSpacer></MudSpacer>
+          <MudSpacer></MudSpacer>
+          <MudSpacer></MudSpacer>          
+            @BoardFragment2     
+          <MudSpacer></MudSpacer>
+        </MudItem>
+      </div>
+    </MudCarouselItem>
+
+    <MudCarouselItem Transition="Transition.None">
+      <div >
+        <MudItem Class="ml-3 mr-3 mt-2 d-flex justify-space-between flex-grow-1 gap-1">
+          <MudSpacer></MudSpacer>         
+            @BoardFragment3
+          <MudSpacer></MudSpacer>
+          <MudSpacer></MudSpacer>
+          <MudSpacer></MudSpacer>
+          <MudSpacer></MudSpacer>         
+            @BoardFragment4       
+          <MudSpacer></MudSpacer>
+        </MudItem>
+      </div>
+    </MudCarouselItem>
+
+  </MudCarousel>
+</MudItem>
+
+
+@code {
+  private int currentIndex = 0;
+  private bool hideDeviation = true;
+  private bool hideFullPV = false;
+  private MudCarousel<RenderFragment> carousel;
+  private string activePV = "PV complete";
+  ElementReference pvBoard1;
+  ElementReference pvBoard2;
+  ElementReference pvBoard3;
+  ElementReference pvBoard4;
+
+  BoardState boardState1 = new();
+  BoardState boardState2 = new();
+  BoardState boardState3 = new();
+  BoardState boardState4 = new();
+
+  private IJSObjectReference chessJSmodule;
+  private DotNetObjectReference<PVboardCarousel> dotNetRef;
+
+  [Parameter]
+  public int BoardSize { get; set; }
+
+  [Parameter]
+  public bool IsFRC { get; set; }
+
+  [Parameter]
+  public int FontSize { get; set; }
+
+  string fontSize => $"font-size:{FontSize + 2}px";
+  string pvSize => $"{BoardSize}px";
+  string pvContainerSize => $"height:{BoardSize + 20}px";
+  private string fen;
+  public Chess.Board Board { get; set; } = new();
+  private Color pvTextColor { get; set; } = Color.Default;
+  private Color color1 => hideFullPV ? Color.Primary : Color.Default;
+  private Color color2 => hideDeviation ? Color.Default : Color.Primary;
+
+  private RenderFragment BoardFragment1 => builder =>
+    {
+      builder.OpenElement(0, "div");
+      //builder.AddAttribute(1, "class", "board-container");
+      builder.AddAttribute(1, "style", $"border: 3px solid white; width:{BoardSize}px; height:{BoardSize}px;");
+      builder.AddElementReferenceCapture(2, r => pvBoard1 = r);
+      builder.CloseElement();
+    };
+
+  private RenderFragment BoardFragment2 => builder =>
+  {
+    builder.OpenElement(0, "div");
+    //builder.AddAttribute(1, "class", "board-container");
+    builder.AddAttribute(2, "style", $"border: 3px solid black; width:{BoardSize}px; height:{BoardSize}px;");
+    builder.AddElementReferenceCapture(3, r => pvBoard2 = r);
+    builder.CloseElement();
+  };
+
+  private RenderFragment BoardFragment3 => builder =>
+  {
+    builder.OpenElement(0, "div");
+    //builder.AddAttribute(1, "class", "board-container");
+    builder.AddAttribute(2, "style", $"border: 3px solid white; width:{BoardSize}px; height:{BoardSize}px;");
+    builder.AddElementReferenceCapture(3, r => pvBoard3 = r);
+    builder.CloseElement();
+  };
+
+  private RenderFragment BoardFragment4 => builder =>
+  {
+    builder.OpenElement(0, "div");
+    //builder.AddAttribute(1, "class", "board-container");
+    builder.AddAttribute(2, "style", $"border: 3px solid black; width:{BoardSize}px; height:{BoardSize}px;");
+    builder.AddElementReferenceCapture(3, r => pvBoard4 = r);
+    builder.CloseElement();
+  };
+
+
+  [JSInvokable]
+  public async Task OnBrowserResize()
+  {
+    await Task.Delay(200);
+    //RefreshBoards();
+    await InvokeAsync(StateHasChanged);
+  }
+
+  private async Task Next()
+  {
+    carousel.Next();
+    currentIndex = carousel.SelectedIndex;
+    if (currentIndex == 1)
+    {
+      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard3);
+      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard4);
+      activePV = "PV deviation";
+      pvTextColor = Color.Tertiary;
+      hideDeviation = false;
+      hideFullPV = true;
+    }
+    else
+    {
+      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard1);
+      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard2);
+      activePV = "PV complete";
+      hideDeviation = true;
+      hideFullPV = false;
+      pvTextColor = Color.Default;
+    }
+    await Task.Delay(200);
+    InitializeChessboards();
+    await InvokeAsync(StateHasChanged); 
+  }
+
+
+  protected async Task UpdateRequested(int size)
+  {
+    InitializeChessboards();
+    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard1);
+    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard2);
+    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard3);
+    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard4);
+    await InvokeAsync(StateHasChanged);
+  }
+
+  private async void InitializeChessboard(int id)
+  {
+    var (element, state) = GetElementReference(id);
+    if (element.Context is not null)
+    {
+      //Console.WriteLine($"State for player: {state.PlayerName} depth: {state.LastDepth} pv:{state.LastPV}");
+      //await chessJSmodule.InvokeVoidAsync("createChessboard", element, state.MoveAndFenType.FenAfterMove);
+      var input = state.MoveAndFenType;
+      await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+    }
+    else
+    {
+      CreateBoard(id);
+    }
+  }
+
+  private async void CreateBoard(int id)
+  {
+    var (element, state) = GetElementReference(id);
+    if (element.Context is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("createChessboard", element, state.MoveAndFenType.FenAfterMove);
+    }
+    else
+    {
+
+    }
+  }
+
+  private void CreateChessboards()
+  {
+    CreateBoard(1);
+    CreateBoard(2);
+    CreateBoard(3);
+    CreateBoard(4);
+  }
+
+  private void InitializeChessboards()
+  {
+    if (currentIndex == 0)
+    {
+      InitializeChessboard(1);
+      InitializeChessboard(2);
+    }
+    else if (currentIndex == 1)
+    {
+      InitializeChessboard(3);
+      InitializeChessboard(4);
+    }
+  }
+
+  private void RefreshBoards()
+  {
+    InitializeChessboard(1);
+    InitializeChessboard(2);
+    InitializeChessboard(3);
+    InitializeChessboard(4);
+  }
+
+  private (ElementReference, BoardState) GetElementReference(int id)
+  {
+    if (id > 4)
+      Console.WriteLine("id > 4 - error should be looked at");
+    return id switch
+    {
+      1 => (pvBoard1, boardState1),
+      2 => (pvBoard2, boardState2),
+      3 => (pvBoard3, boardState3),
+      4 => (pvBoard4, boardState4),
+      _ => (pvBoard1, boardState1),
+    };
+  }
+
+  private async Task SetPositionHelper(string fen, int id)
+  {
+    var (element, _) = GetElementReference(id);
+    if (element.Context is not null)
+      await chessJSmodule.InvokeVoidAsync("setPosition2", element, fen);
+  }
+
+  private async Task SetPosition(string fen)
+  {
+    if (chessJSmodule is not null)
+    {
+      await SetPositionHelper(fen, 1);
+      await SetPositionHelper(fen, 2);
+      await SetPositionHelper(fen, 3);
+      await SetPositionHelper(fen, 4);
+    }
+  }
+
+  public async Task SetPVMoveWithAnnotation(MoveAndFen input, int id, bool clear)
+  {
+    if (chessJSmodule is not null)
+    {
+      var (element, _) = GetElementReference(id);
+      if (element.Context is not null)
+      {
+        // if (clear)
+        // {
+        //   await chessJSmodule.InvokeVoidAsync("clearBoard2", element);
+        // }
+        await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+      }
+    }
+    //await Task.CompletedTask;
+  }
+
+  public async Task OnNotifyOpeningDone(MoveAndFen move)
+  {
+    fen = move.FenAfterMove;
+    await SetPVMoveWithAnnotation(move, 1, true);
+    await SetPVMoveWithAnnotation(move, 2, true);
+    await SetPVMoveWithAnnotation(move, 3, true);
+    await SetPVMoveWithAnnotation(move, 4, true);
+  }
+
+  public async void UpdatePV(string pv, string fen, string player, int depth, int id)
+  {
+    var (element, state) = GetElementReference(id);
+
+    if (depth != state.LastDepth || state.LastPV != pv)
+    {
+      state.PlayerName = player;
+      var moves = state.GetPVMoves(pv, depth, hideFullPV).ToList();
+      if (moves.Count > 0)
+      {
+        var fenAndMove = state.PlayPVMoves(moves, fen);
+        if (!string.IsNullOrEmpty(fenAndMove.ShortSan))
+        {
+          //Console.WriteLine($"ShortSan: {fenAndMove.ShortSan}");
+          await SetPVMoveWithAnnotation(fenAndMove, id, false);
+        }
+      }
+      else
+        await SetPosition(fen);
+    }
+    state.LastPV = pv;
+    state.LastDepth = depth;
+  }
+
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      dotNetRef = DotNetObjectReference.Create(this);
+      chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+      await chessJSmodule.InvokeVoidAsync("registerResizeEvent", dotNetRef);
+      await Task.Delay(300);
+      CreateChessboards();
+    }
+  }
+
+  protected override void OnInitialized()
+  {
+    Notifier.NotifyCallNext += Next;
+    Notifier.UpdateRequested += UpdateRequested;
+    Notifier.NotifyFen += SetPosition;
+    Notifier.NotifyOpeningDone += OnNotifyOpeningDone;
+    //Notifier.NotifyPV += OnNotifyPV;
+  }
+
+  async ValueTask IAsyncDisposable.DisposeAsync()
+  {
+    Notifier.NotifyCallNext -= Next;
+    Notifier.UpdateRequested -= UpdateRequested;
+    Notifier.NotifyFen -= SetPosition;
+    Notifier.NotifyOpeningDone -= OnNotifyOpeningDone;
+    //Notifier.NotifyPV -= OnNotifyPV;
+    Console.WriteLine("PVboardCarousel disposed");
+    await ValueTask.CompletedTask;
+  }
+
+}

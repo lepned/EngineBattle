@@ -1,0 +1,58 @@
+﻿@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+
+
+<h3 class="mud-centerTxt mt-5">@boardHeader</h3>
+<div class="@Style" @ref="boardElement"></div>
+
+
+
+@code {
+
+	[Parameter] public string FEN { get; set; }
+	[Parameter] public int BoardNr { get; set; }
+	[Parameter] public string Move { get; set; }
+	[Parameter] public string MovePlayed { get; set; }
+	[Parameter] public string Style { get; set; }
+	[Parameter] public bool Solved { get; set; }
+	[Parameter] public string BoardId { get; set; }
+
+	private ElementReference boardElement;
+	private string boardHeader => $"Board {BoardNr}";
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			var chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+			var color = FEN.Contains("w") ? "w" : "b";
+			//validate Move here
+			if (Move.Length < 4)
+				return;
+
+			if (!boardElement.Equals(null))
+			{
+				var fromSq = Move.Substring(0, 2);
+				var toSq = Move.Substring(2, 2);
+				if (Solved)
+				{
+					await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, FEN, false, fromSq, toSq, null, null);
+				}
+				else
+				{
+					var wrongMovePlayed = string.IsNullOrEmpty(MovePlayed) == false;
+					if (wrongMovePlayed)
+					{
+						var wrongFromSq = MovePlayed.Substring(0, 2);
+						var wrongToSq = MovePlayed.Substring(2, 2);
+						await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, FEN, false, fromSq, toSq, wrongFromSq, wrongToSq);
+					}
+					else
+					{
+						await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, FEN, false, fromSq, toSq, null, null);
+					}
+				}
+			}
+		}
+	}
+}

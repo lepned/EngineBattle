@@ -1,0 +1,102 @@
+﻿@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+
+@if (string.IsNullOrEmpty(uniqueBoardId) == false)
+{
+  <h3 class="mud-centerTxt">@moveHeader</h3>
+  <div id="board_wrapper">
+
+    <div class="@Style" id="@uniqueBoardId" @ref="boardElement">
+      <canvas id="drawing_canvas" width="392" height="392"></canvas>
+    </div>
+  </div>
+}
+
+
+@code {
+
+  [Parameter] public string FEN { get; set; }
+  [Parameter] public int BoardNr { get; set; }
+  [Parameter] public string Move { get; set; }
+  [Parameter] public string MovePlayed { get; set; }
+  [Parameter] public string Style { get; set; }
+  [Parameter] public bool Solved { get; set; }
+  [Parameter] public string BoardId { get; set; }
+
+  private ElementReference boardElement;
+  private string uniqueBoardId;
+  private string moveHeader => string.IsNullOrEmpty(MovePlayed) ? GetBoardId(Move) : $"{GetBoardId(Move)} ({MovePlayed}?)";
+
+  private string GetBoardId(string move)
+  {
+    var nr = BoardNr / 2 + 1;
+    var even = BoardNr % 2 == 0;
+    var odd = BoardNr % 2 == 1;
+    var differentMovePlayed = string.IsNullOrEmpty(MovePlayed) == false;
+    if (odd)
+      return $"Position {nr}: {move}";
+    else
+      return $"{move}";
+
+    // if (Solved)
+    // {
+    //   if (even)
+    //     return $"Position {nr}: {move}";
+    //   else
+    //     return $"{move}";
+    // }
+
+    // else
+    // {
+    //   if (differentMovePlayed)
+    //   {
+    //     return $"Position {nr}: {move}";
+    //   }
+    //   else
+    //     return $"{move}";//$"Board {nr}: {move}";
+    // }
+  }
+
+  protected override void OnInitialized()
+  {
+    if (string.IsNullOrEmpty(uniqueBoardId))
+      uniqueBoardId = BoardId;
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      var chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+      var color = FEN.Contains("w") ? "w" : "b";
+      //validate Move here
+      if (Move.Length < 4)
+        return;
+
+      if (!boardElement.Equals(null))
+      {
+        var fromSq = Move.Substring(0, 2);
+        var toSq = Move.Substring(2, 2);
+        if (Solved)
+        {
+          await chessJSmodule.InvokeVoidAsync("highlightMovesOnChessboard", boardElement, color, fromSq, toSq, FEN);
+        }
+        else
+        {
+          var wrongMovePlayed = string.IsNullOrEmpty(MovePlayed) == false;
+          if (wrongMovePlayed)
+          {
+            var wrongFromSq = MovePlayed.Substring(0, 2);
+            var wrongToSq = MovePlayed.Substring(2, 2);
+            //Console.WriteLine($"Solved: {Solved} MovePlayed: {MovePlayed} CorrectMove: {Move} - Color: {color} From: {fromSq} To: {toSq} BoardId: {boardElement.Id} Fen: {FEN}");
+            await chessJSmodule.InvokeVoidAsync("simpleChessBoardToElementWithDoubleHighlight", boardElement, color, fromSq, toSq, wrongFromSq, wrongToSq, FEN);
+          }
+          else
+          {
+            await chessJSmodule.InvokeVoidAsync("highlightMovesOnChessboard", boardElement, color, fromSq, toSq, FEN);
+          }
+        }
+      }
+    }
+  }
+}

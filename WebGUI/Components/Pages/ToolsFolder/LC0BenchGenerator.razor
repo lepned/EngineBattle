@@ -1,0 +1,44 @@
+﻿@page "/benchGenerator"
+@inject ILogger<LC0BenchGenerator> logger
+
+<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+
+<PageTitle>Tools.BenchLC0</PageTitle>
+
+<MudText Class="mt-4 ml-4 pt-4 pl-4" Typo="Typo.h4">Create benchmark commands based on engine.json file</MudText>
+
+<MudFab Class="ml-3 mt-4" HtmlTag="label" Color="Color.Default" Label="Pick engine.json file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+<MudTextField Lines=10 T="string" Typo="Typo.h6" Text="@benchmark" @bind-value="benchmark"></MudTextField>
+
+@code {
+
+  IBrowserFile browserFile;
+  private string benchmark;
+
+  private async Task OpenPGNFile(InputFileChangeEventArgs e)
+  {
+    var pgnName = e.File.Name;
+    logger.LogInformation("PGN file opened {File}", pgnName);
+    var env = Environment.CurrentDirectory;
+    var fullPath = Path.Combine(env, pgnName);
+    await using (FileStream fs = new(fullPath, FileMode.Create))
+    {
+      browserFile = e.File;
+      await browserFile.OpenReadStream().CopyToAsync(fs);      
+    }
+
+    var selectedConfig = JSON.readSingleEngineConfig(fullPath);
+    var res = Utilities.Engine.createLC0BenchmarkString(selectedConfig);
+    var msg = $"File selected: {pgnName} \nEngine name: {selectedConfig.Name}\n\n{res}";
+    benchmark = msg;
+    logger.LogCritical(msg);
+    File.Delete(fullPath);
+    await Task.CompletedTask;
+  }
+
+  protected override Task OnInitializedAsync()
+  {
+    return base.OnInitializedAsync();
+  }
+
+}

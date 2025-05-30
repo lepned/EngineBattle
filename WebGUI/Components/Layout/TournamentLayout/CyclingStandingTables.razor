@@ -1,0 +1,74 @@
+﻿@implements IDisposable
+@using System.Timers
+@using WebGUI.Components.Layout.CrosstableLayout
+
+<div class="table-container">
+  @if (activeTableIndex == 0)
+  {
+    <div class="table-wrapper active">
+      <Standings ScoreTable="@ScoreTable" FontSize="@fontSizeStandings" Height="Height" ShowNPM=ShowNPM />
+    </div>
+  }
+  else
+  {
+    <div class="table-wrapper">
+      <CrossTableSummary CrossTable="@CrossTable" Players=@Players FontSize="@fontSizeCross" Height="Height" />
+    </div>
+  }
+</div>
+
+@code {
+  private Timer cycleTimer;
+  private int activeTableIndex = 0;
+
+  [Parameter] public List<PlayerResult> ScoreTable { get; set; } = new();
+  [Parameter] public int FontSizeCross { get; set; } = 15;
+  [Parameter] public int FontSizeStandings { get; set; } = 18;
+  [Parameter] public bool ShowNPM { get; set; }
+  [Parameter] public int CycleSeconds { get; set; } = 20; // Default 20 seconds
+  [Parameter] public List<CrossTableEntry> CrossTable { get; set; } = new();
+  [Parameter] public int Players { get; set; }    
+  [Parameter] public int Height { get; set; }
+
+  private int fontSizeStandings = 12;
+  private int fontSizeCross = 14;
+  private int cycleSeconds = 20;
+
+  protected override void OnInitialized()
+  {
+    cycleTimer = new Timer(CycleSeconds * 1000);
+    cycleTimer.Elapsed += (sender, args) =>
+    {
+      activeTableIndex = (activeTableIndex + 1) % 2;      
+    };
+    cycleTimer.Start();
+    base.OnInitialized();
+  }
+
+  protected override void OnParametersSet()
+  {
+    if (FontSizeStandings > 0 && FontSizeStandings != fontSizeStandings)
+    {
+      fontSizeStandings = FontSizeStandings;
+      StateHasChanged();
+    }
+    if (FontSizeCross > 0 && FontSizeCross != fontSizeCross)
+    {
+      fontSizeCross = FontSizeCross;
+      StateHasChanged();
+    }
+
+    if (CycleSeconds > 0 && CycleSeconds != cycleSeconds)
+    {
+      cycleSeconds = CycleSeconds;
+      Dispose();
+      OnInitialized();
+    }
+    base.OnParametersSet();
+  }
+  
+  public void Dispose()
+  {
+    cycleTimer?.Dispose();
+  }
+}

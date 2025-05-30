@@ -1,0 +1,333 @@
+﻿@page "/createOpeningBook"
+@inject ILogger<CreateOpeningBook> logger
+
+<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+<InputFile id="epdInput" OnChange="@OpenOpeningBookForSorting" hidden />
+<InputFile id="epdToPGN" OnChange="@CreatePGNFileFromEPD" hidden />
+<InputFile id="shufflePGN" OnChange="@ShufflePGNGames" hidden />
+
+<PageTitle>CreateOpeningBook</PageTitle>
+<div style="margin:20px; width:700px">
+
+	<MudText Typo="Typo.h4">Generate Chess960 Positions </MudText>
+	<MudText Class="mt-3" Typo="Typo.body2">
+		Creates an EPD file containing random Chess960 positions, suitable for use as an opening book. The default output path is C:/Dev/Chess/Openings, but you can change the name of the path and number of positions below.
+	</MudText>
+	<MudTextField Placeholder="Write path to opening folder" T="string" Typo="Typo.h6" Text="@chess960Path" @bind-value="chess960Path"></MudTextField>
+	<MudNumericField Label="Number of positions" @bind-Value="numberOfPositions" Min="1" Max="960" Step="1" />
+	<MudButton Class="mt-5" Color="Color.Primary" Variant="Variant.Outlined" OnClick=@CreateChess960Positions>Create FRC book</MudButton>
+	<MudButton Class="mt-5 ml-2" Color="Color.Primary" Variant="Variant.Outlined" OnClick=@CreateChess960DoublePositions>Create DFRC book</MudButton>
+
+</div>
+
+
+
+<div style="margin:40px 20px;width:700px">
+	<MudText Typo="Typo.h4">Generate an Opening Book from TCEC Games</MudText>
+	<MudText Class="mt-3" Typo="Typo.body2">Creates a PGN-based opening book from a PGN file you have downloaded from the TCEC archives. The default path is C:\Dev\Chess\PGNs\openingbookCreator1.pgn, but you can change the name and the path below. </MudText>
+	<MudTextField Placeholder="Write complete path to file" T="string" Typo="Typo.h6" Text="@pgnOpeningFullName" @bind-value="pgnOpeningFullName"></MudTextField>
+</div>
+
+<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Load pgn file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+
+<div style="margin:40px 20px;width:700px">
+	<MudText Typo="Typo.h4">Generate an Opening Book from an EPD File</MudText>
+	<MudText Class="mt-3" Typo="Typo.body2">This will create an opening book from an EPD file. The default path is C:/Dev/Chess/PGNs, but you can change the path below. </MudText>
+	<MudTextField Placeholder="Write complete path to file" T="string" Typo="Typo.h6" Text="@epdToPgnFileName" @bind-value="epdToPgnFileName"></MudTextField>
+</div>
+
+@*<MudButton Color="Color.Primary" Variant="Variant.Outlined" OnClick=@OpenPGNFile>Select file</MudButton>*@
+
+<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdToPGN" />
+
+<div style="margin:40px 20px; width:800px">
+	<MudText Typo="Typo.h4">Sort Openings by Out-of-Book Evaluation </MudText>
+	<MudText Class="mt-3" Typo="Typo.body2">This will create a sorted opening book based on out-of-book evalution. Please add engine names, number of nodes, minimum eval score in centipawn, maximum eval score in centipawn and max eval difference when more than one engine is used below. The console will ouput the path to the newly created opening book. </MudText>
+	<MudGrid Class="ml-1 mb-2 mt-2">
+		<MudTextField Typo="Typo.h6" HelperText="Add engine names (comma separated) from engine.json above"
+		Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
+		Placeholder="stockfish, lc0" T="string" Text="@engineName" @bind-value="engineName"></MudTextField>
+		<MudTextField Typo="Typo.h6" HelperText="Select number of nodes (comma separated) to use for each engine above"
+		Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
+		T="string" Text="@nodes" @bind-value="nodes"></MudTextField>
+	</MudGrid>
+	<MudGrid Class="ml-1 mb-2 mt-2">
+		<MudTextField Typo="Typo.h6"
+		Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
+		HelperText="Minimum eval score in centipawn"
+		T="string" Text="@minEvalScore" @bind-value="minEvalScore"></MudTextField>
+		<MudTextField Typo="Typo.h6" HelperText="Maximum eval score in centipawn"
+		Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
+		T="string" Text="@maxEvalScore" @bind-value="maxEvalScore"></MudTextField>
+		<MudTextField Typo="Typo.h6" HelperText="Maximum eval score difference in centipawn"
+		Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
+		T="string" Text="@maxEvalDiff" @bind-value="maxEvalDiff"></MudTextField>
+	</MudGrid>
+</div>
+<MudFab Class="ml-3 mb-3" HtmlTag="label" Color="Color.Default" Label="Pick, evaluate and sort opening book" Size="Size.Large" StartIcon="@Icons.Material.Filled.Analytics" for="epdInput" />
+
+<div style="margin:40px 20px;width:800px">
+    <MudText Typo="Typo.h4">Shuffle Openings Based on a PGN Opening Book</MudText>  
+    <MudText Class="mt-3" Typo="Typo.body2">Generate a new opening book by shuffling the games from an existing PGN file. The console will display the path to the newly created shuffled opening book.</MudText>
+</div>
+
+<MudFab Class="ml-3 mb-9 mt-1" HtmlTag="label" Color="Color.Default" Label="Pick pgn-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="shufflePGN" />
+
+
+@code {
+
+	private string pgnOpeningFullName = "C:/Dev/Chess/PGNs/openingbookCreator1.pgn";
+	private string epdToPgnFileName = "C:/Dev/Chess/PGNs/";
+	private string chess960Path = "C:/Dev/Chess/Openings";
+	private int numberOfPositions = 960;
+	private string engineName = "";
+	private string minEvalScore = "50";
+	private string maxEvalScore = "100";
+	private string maxEvalDiff = "100";
+	private string nodes = "1";
+	IBrowserFile browserFile;
+
+	private void CreateChess960Positions()
+	{
+		Chess960.writeChess960PositionsToFile(chess960Path, numberOfPositions);
+	}
+
+	private async Task OpenOpeningBookForSorting(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+		if (pgnName.ToLower().EndsWith(".pgn"))
+		{
+			var games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+			WriteEvalSortedPGNGames(pgnName, games);
+			File.Delete(fullPath);
+		}
+		else if (pgnName.ToLower().EndsWith(".epd"))
+		{
+			var positions = Parser.EPDExtractor.readEPDs(fullPath).ToList();
+			WriteOrderedEpdPositions(pgnName, positions);
+			File.Delete(fullPath);
+		}
+		else
+		{
+			logger.LogInformation("File type not supported");
+		}
+	}
+
+	private void WriteOrderedEpdPositions(string pgnName, List<EPD.EPDEntry> positions)
+	{
+		var tourny = ChessLibrary.Tournament.Manager.loadTournament();
+		var configs = tourny.EngineSetup.Engines.ToList();
+
+		// Split engineName using comma as the separator and trim each part
+		var engineParts = engineName
+			.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+			.Select(part => part.Trim())
+			.ToArray();
+
+		var candidates =
+			engineParts.Select(part => configs
+				.Where(e => e.Name.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0))
+				.SelectMany(e => e).ToList();
+
+		//sort candidates by the use of engineParts
+		candidates = candidates.OrderBy(e => engineParts.ToList().IndexOf(e.Name)).ToList();
+		var candidatesString = string.Join(", ", candidates.Select(c => c.Name));
+
+		var nodeList = nodes.Split(',').Select(n => int.Parse(n.Trim())).ToList();
+		var zipped = candidates.Zip(nodeList);
+		var concatenated = zipped.Select(z => $"{z.First.Name} ({z.Second:N0}N)").ToList();
+		var concatenatedString = string.Join(", ", concatenated);
+		//var head = candidates.FirstOrDefault();
+
+		if (candidates.Count == 0)
+		{
+			Console.WriteLine($"No enigne with name {engineName} is present in tournament.json file. Failed to sort openings");
+			return;
+		}
+
+		if (nodeList.Count == 0)
+		{
+			Console.WriteLine($"No nodes were provided. Failed to sort openings");
+			return;
+		}
+
+		//return if length of nodeList is different than length of candidates
+		if (nodeList.Count != candidates.Count)
+		{
+			Console.WriteLine($"Number of nodes and engines do not match. Failed to sort openings");
+			return;
+		}
+
+		string outPutDir = $"{chess960Path}/BookEvals";
+		var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.epd");
+		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
+		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(nodeList, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff);
+		if (!Directory.Exists(outPutDir))
+		{
+			Directory.CreateDirectory(outPutDir);
+		}
+
+		using (FileStream stream = File.Create(filePath))
+		{
+			using (StreamWriter fs = new StreamWriter(stream))
+			{
+				foreach (var epd in positionEvalsWithMoves)
+				{
+					//brkbnrnq/pppppppp/8/8/8/8/PPPPPPPP/BRKBNRNQ w KQkq - 0 1 ; id "Chess960 - Position nr: 850";
+					var summary = $"{epd.Item1.FEN}; id \"{epd.Item1.Id?.Value}\"; other \"max eval: {epd.Item2} by {epd.Item4}, {epd.Item3}\";";
+					fs.WriteLine(summary);
+				}
+			}
+		}
+
+		logger.LogInformation($"Done sorting openings based on {nodes} node(s) Eval with use of {concatenatedString}.");
+		logger.LogInformation($"Sorted opening book was written to {filePath}");
+	}
+
+	private void WriteEvalSortedPGNGames(string pgnName, List<PGNTypes.PgnGame> games)
+	{
+		var tourny = ChessLibrary.Tournament.Manager.loadTournament();
+		var configs = tourny.EngineSetup.Engines.ToList();
+
+		// Split engineName using comma as the separator and trim each part
+		var engineParts = engineName
+			.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+			.Select(part => part.Trim())
+			.ToArray();
+
+		// Filter configs so that every part of engineName is found (case-insensitive)
+		var candidates =
+			engineParts.Select(part => configs
+				.Where(e => e.Name.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0))
+				.SelectMany(e => e).ToList();
+
+		var candidatesString = string.Join(", ", candidates.Select(c => c.Name));
+		var nodeList = nodes.Split(',').Select(n => int.Parse(n.Trim())).ToList();		
+		var zipped = candidates.Zip(nodeList);
+		var concatenated = zipped.Select(z => $"{z.First.Name} ({z.Second:N0}N)").ToList();
+		var concatenatedString = string.Join(", ", concatenated);
+		//var head = candidates.FirstOrDefault();
+		if (candidates.Count == 0)
+		{
+			Console.WriteLine($"No enigne with name {engineName} is present in tournament.json file. Failed to sort openings");
+			return;
+		}
+
+		if (nodeList.Count == 0)
+		{
+			Console.WriteLine($"No nodes were provided. Failed to sort openings");
+			return;
+		}
+
+		//return if length of nodeList is different than length of candidates
+		if (nodeList.Count != candidates.Count)
+		{
+			Console.WriteLine($"Number of nodes and engines do not match. Failed to sort openings");
+			return;
+		}
+
+		string outPutDir = $"{chess960Path}/BookEvals";
+		var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.pgn");
+		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
+		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);
+		if (!Directory.Exists(outPutDir))
+		{
+			Directory.CreateDirectory(outPutDir);
+		}
+
+		using (FileStream stream = File.Create(filePath))
+		{
+			using (StreamWriter fs = new StreamWriter(stream))
+			{
+				foreach (var pgn in positionEvalsWithMoves)
+				{
+					logger.LogInformation($"Game nr: {pgn.Item1.GameNumber} eval: {pgn.Item2} {pgn.Item3} summary: {pgn.Item5}");
+					var eval = $"[MaxEval \"{pgn.Item2} by {pgn.Item4}, {pgn.Item3}\"]" + Environment.NewLine;
+					var summary = $"{eval}{pgn.Item1.Raw}";					
+					fs.WriteLine(summary);
+				}
+			}
+		}
+
+		logger.LogInformation($"Done sorting openings based on {nodes} node(s) Eval with use of {concatenatedString}.");
+		logger.LogInformation($"Sorted opening book was written to {filePath}");
+	}
+
+	private void CreateChess960DoublePositions()
+	{
+		Chess960.writeChess960DoublePositionsToFile(chess960Path, numberOfPositions);
+	}
+
+	private async Task ShufflePGNGames(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+		var games = Parser.PGNParser.parsePgnFile(fullPath);
+		var filePath = Path.Combine(chess960Path, $"Shuffled_{pgnName}");
+		//logger.LogInformation($"Shuffle started...");
+		PGNHelper.shufflePgnGames(filePath, games);
+		logger.LogInformation("Opening book was shuffled and written to path", filePath);
+		File.Delete(fullPath);
+	}
+
+	private async Task OpenPGNFile(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+
+		var games = Parser.PGNParser.parsePgnFile(fullPath);
+		PGNWriter.writeOpeningPgnFile(games, pgnOpeningFullName);
+		logger.LogInformation("Opening book written to path", pgnOpeningFullName);
+		File.Delete(fullPath);
+	}
+
+	private async Task CreatePGNFileFromEPD(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		logger.LogInformation("EPD file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+
+		var fileNameWithoutExt = Path.GetFileNameWithoutExtension(fullPath);
+		var directory = Path.GetDirectoryName(epdToPgnFileName);
+		var newFilePath = Path.Combine(directory, fileNameWithoutExt + ".pgn");
+
+		var games = Parser.EPDExtractor.readEPDs(fullPath).ToList();
+		PGNWriter.writeOpeningPgnFromEPD(games, newFilePath);
+		logger.LogInformation("Opening book written to path", newFilePath);
+		File.Delete(fullPath);
+	}
+
+	protected override Task OnInitializedAsync()
+	{
+		return base.OnInitializedAsync();
+	}
+
+}

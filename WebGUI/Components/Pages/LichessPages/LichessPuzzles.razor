@@ -1,0 +1,758 @@
+﻿@page "/LichessPuzzles"
+@using System.Text
+@using WebGUI.Components.Layout
+@using System.Collections.Concurrent;
+@using WebGUI.Services;
+@using WebGUI.Components.Layout.VisualizationLayout
+@using static ChessLibrary.TypesDef.Puzzle
+@using static ChessLibrary.Utilities.JSONParser
+
+@inject ILogger<LichessPuzzles> logger
+
+<InputFile id="fileInput" OnChange="@OpenCSVFile" hidden />
+
+<PageTitle>Lichess Puzzles</PageTitle>
+<MudItem Class="d-flex mr-3 mb-3">
+  <MudItem lg="3" md="4" sm="5">
+    <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h3">Lichess Puzzles run</MudText>
+    <MudPaper Class="ml-6 mb-3 mt-6">
+      <MudText Class="mb-5" Typo="Typo.h6"> This enables you to run policy, value and search tests based on your puzzleconfig.json file. You can draw a set of puzzle theme filters below and select how many puzzles you want to vizualize.  </MudText>
+      <MudItem>
+        <MudButton Class="mb-3 mt-3 ml-1" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="Draw" Disabled=@disableDraw>Draw themes</MudButton>
+        <MudTextField Label="Puzzle theme filter (csv)" @bind-Value="@Filter"></MudTextField>
+      </MudItem>
+      <MudTextField Label="Number of failed puzzles to show" @bind-Value="@failedNumber"></MudTextField>
+      <MudTextField Label="Number of solved puzzles to show" @bind-Value="@solvedNumber"></MudTextField>
+    </MudPaper>
+
+    <MudFab Class="mb-3 mt-4 ml-5" HtmlTag="label" Color="Color.Default" Label="Pick and run puzzle config file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" Disabled=@disableRun />
+
+    @if (disableRun)
+    {
+      <MudItem>
+
+        <MudText Class="ml-6 mt-2" Typo="Typo.body1">Puzzle run in progress...</MudText>
+        <MudProgressCircular Class="ml-6 mt-3" Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
+      </MudItem>
+    }
+  </MudItem>
+  <MudItem Class="ml-10" xl="8" md="9">
+    @if (PolicyScores.Count > 0)
+    {
+      <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Policy head tests  </MudText>
+      <MudPaper>
+        <MudTable FixedHeader=true Dense=true Items="@PolicyScores" T="Puzzle.Score" SortLabel="Sort By">
+          <HeaderContent>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
+          </HeaderContent>
+          <RowTemplate>
+            <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
+            <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
+            <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
+            <MudTd DataLabel="Accuracy" Style="font-size:19px">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+            <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
+            <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
+            <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
+            <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
+            <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
+          </RowTemplate>
+        </MudTable>
+      </MudPaper>
+    }
+    @if (ValueScores.Count > 0)
+    {
+      <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Value head tests </MudText>
+      <MudPaper>
+        <MudTable FixedHeader=true Dense=true Items="@ValueScores" T="Puzzle.Score" SortLabel="Sort By">
+          <HeaderContent>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
+          </HeaderContent>
+          <RowTemplate>
+            <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
+            <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
+            <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
+            <MudTd DataLabel="Accuracy" Style="font-size:19px">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+            <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
+            <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
+            <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
+            <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
+            <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
+          </RowTemplate>
+        </MudTable>
+      </MudPaper>
+    }
+
+    @if (SearchScores.Count > 0)
+    {
+      <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Search tests </MudText>
+      <MudPaper>
+        <MudTable FixedHeader=true Dense=true Items="@SearchScores" T="Puzzle.Score" SortLabel="Sort By">
+          <HeaderContent>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
+            <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
+          </HeaderContent>
+          <RowTemplate>
+            <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
+            <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
+            <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
+            <MudTd DataLabel="Accuracy" Style="font-size:19px">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+            <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
+            <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
+            <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
+            <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
+            <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
+          </RowTemplate>
+        </MudTable>
+      </MudPaper>
+    }
+  </MudItem>
+
+</MudItem>
+
+<MudPaper Class="pa-4 mt-4">
+  <MudText Typo="Typo.h5" Class="mb-3">Puzzle Visualizations</MudText>
+
+  <MudGrid>
+    <MudItem xs="12" md="6">
+      <MudSelect T="string" Label="Filter by Type" Value="@selectedType" ValueChanged="@((string val) => FilterByType(val))">
+        <MudSelectItem Value="@("All")">All Types</MudSelectItem>
+        <MudSelectItem Value="@("Policy")">Policy</MudSelectItem>
+        <MudSelectItem Value="@("Value")">Value</MudSelectItem>
+        <MudSelectItem Value="@("Search")">Search</MudSelectItem>
+      </MudSelect>
+    </MudItem>
+    <MudItem xs="12" md="6">
+      <MudSelect T="string" Label="Filter by Engine" Value="@selectedEngine" ValueChanged="@((string val) => FilterByEngine(val))">
+        <MudSelectItem Value="@("All")">All Engines</MudSelectItem>
+        @foreach (var engine in AvailableEngines)
+        {
+          <MudSelectItem Value="@engine">@engine</MudSelectItem>
+        }
+      </MudSelect>
+    </MudItem>
+  </MudGrid>
+
+  <MudTable Items="@FilteredScores" Hover="true" Dense="true" Class="mt-3">
+    <HeaderContent>
+      <MudTh>Type</MudTh>
+      <MudTh>Engine</MudTh>
+      <MudTh>Neural Net</MudTh>
+      <MudTh>Theme</MudTh>
+      <MudTh>Nodes</MudTh>
+      <MudTh>Rating</MudTh>
+      <MudTh>Accuracy</MudTh>
+      <MudTh>Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+      <MudTd DataLabel="Type">@context.Type</MudTd>
+      <MudTd DataLabel="Engine">@context.Engine</MudTd>
+      <MudTd DataLabel="Neural Net">@context.NeuralNet</MudTd>
+      <MudTd DataLabel="Theme">@(string.IsNullOrEmpty(context.Filter) ? "None" : context.Filter)</MudTd>
+      <MudTd DataLabel="Nodes">@context.Nodes.ToString()</MudTd>
+      <MudTd DataLabel="Rating">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
+      <MudTd DataLabel="Accuracy">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+      <MudTd>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Size="Size.Small"
+                   OnClick="@(() => ToggleScoreDetails(context))">
+          @(expandedScoreIds.Contains(context.GetHashCode()) ? "Hide Boards" : "Show Boards")
+        </MudButton>
+      </MudTd>
+    </RowTemplate>
+    <ChildRowContent>
+      @if (expandedScoreIds.Contains(context.GetHashCode()))
+      {
+        <MudTd colspan="8" Style="padding:0;">
+          <MudPaper Class="pa-2 mt-1" Elevation="3" @key="context.GetHashCode()">
+            <DeferredContent>
+              <ChildContent>
+                <PuzzleBanner Score="@context"
+                              NumberOfFailedPussles="@failedNumber"
+                              NumberOfSolvedPussles="@solvedNumber" />
+              </ChildContent>
+            </DeferredContent>
+          </MudPaper>
+        </MudTd>
+      }
+    </ChildRowContent>
+  </MudTable>
+</MudPaper>
+
+
+@code {
+  private Chess.Board chess = new();
+  IBrowserFile browserFile;
+  private string fileName;
+  private Puzzle.CsvPuzzleData[] puzzles;
+  private List<Puzzle.Score> PolicyScores = new();
+  private List<Puzzle.Score> ValueScores = new();
+  private List<Puzzle.Score> SearchScores = new();
+  private string Filter { get; set; } = ""; // "sacrifice, mate, endgame, defensive"; // "sacrifice, deflection, attraction, attack, fork, defensive";
+  int failedNumber = 15;
+  int solvedNumber = 15;
+  private string FolderName { get; set; } = String.Empty;
+  private string fullPath = string.Empty;
+  private bool disableRun = false;
+  private bool disableDraw = false;
+  private string endOfRun = string.Empty;
+  private string selectedType = "All";
+  private string selectedEngine = "All";
+  private HashSet<int> expandedScoreIds = new HashSet<int>();
+
+  private IEnumerable<string> AvailableEngines =>
+    PolicyScores.Concat(ValueScores).Concat(SearchScores)
+      .Select(s => s.Engine)
+      .Distinct()
+      .OrderBy(e => e);
+
+  private IEnumerable<Score> FilteredScores =>
+    PolicyScores.Concat(ValueScores).Concat(SearchScores)
+      .Where(s => selectedType == "All" || s.Type.Contains(selectedType))
+      .Where(s => selectedEngine == "All" || s.Engine == selectedEngine)
+      .OrderBy(s => s.Type)
+      .ThenBy(s => s.Filter)
+      .ThenBy(s => s.Nodes)
+      .ThenByDescending(s => s.PlayerRecord.Rating)
+      .ThenBy(s => s.Engine);
+
+  private void FilterByType(string type)
+  {
+    selectedType = type;
+    expandedScoreIds.Clear();
+    StateHasChanged();
+  }
+
+  private void FilterByEngine(string engine)
+  {
+    selectedEngine = engine;
+    expandedScoreIds.Clear();
+    StateHasChanged();
+  }
+
+  private async void ToggleScoreDetails(Score score)
+  {
+    var id = score.GetHashCode();
+    if (expandedScoreIds.Contains(id))
+    {
+      expandedScoreIds.Remove(id);
+    }
+    else
+    {
+      expandedScoreIds.Add(id);
+
+      // Force a complete state update
+      await InvokeAsync(StateHasChanged);
+
+      // Give the DOM time to update, then trigger another refresh
+      await Task.Delay(200);
+      await InvokeAsync(StateHasChanged);
+    }
+
+    StateHasChanged();
+  }
+
+  private async void Update(Lichess update)
+  {
+    switch (update)
+    {
+      case Lichess.PuzzleResult pRes:
+        var res = pRes.Item;
+        if (res.Type == "Policy" && pRes.Item.Nodes == 1)
+          PolicyScores.Add(pRes.Item);
+        else if (res.Type == "Value")
+          ValueScores.Add(pRes.Item);
+        else
+          SearchScores.Add(pRes.Item);
+        break;
+      case Lichess.Done msg:
+        endOfRun = ": " + msg.Item;
+        break;
+    }
+    await InvokeAsync(StateHasChanged);
+  }
+
+  private void Draw()
+  {
+    Filter = Puzzle.drawPuzzleCategories(5);
+    // var test = Puzzle.getPuzzleCategories().ToList();
+    // foreach (var item in test)
+    // {
+    //   //print each item to the console
+    //   var cat = item.Category;
+    //   var description = item.Description;
+    //   Console.WriteLine($"Category: {cat}, Description: {description}");
+    // }
+    StateHasChanged();
+  }
+
+  private Puzzle.CsvPuzzleData[] ParseCsv(string filePath, bool random)
+  {
+    // Create an empty list of records
+    var records = new List<Puzzle.CsvPuzzleData>();
+
+    // Read the input file
+    var lines = File.ReadAllLines(filePath);
+
+    // Skip the header line
+    foreach (var line in lines.Skip(1))
+    {
+      // Split the line by comma
+      var fields = line.Split(',');
+
+      // Parse the fields into variables
+      var puzzleId = fields[0].GetHashCode();
+      var fen = fields[1];
+      var moves = fields[2];
+      var rating = int.Parse(fields[3]);
+      var ratingDeviation = int.Parse(fields[4]);
+      var popularity = int.Parse(fields[5]);
+      var nbPlays = int.Parse(fields[6]);
+      var themes = fields[7];
+      var gameUrl = fields[8];
+      var openingTags = fields[9];
+      var fens = new List<string>(); //GetAllFens(fen,ms);
+      var posList = new List<Puzzle.Position>();
+      var record = Puzzle.CsvPuzzleData.Create(puzzleId, fen, moves, rating, ratingDeviation, popularity, nbPlays, themes, gameUrl, openingTags, line, posList, fens, 0);
+      records.Add(record);
+    }
+
+    // Shuffle the records list using Fisher-Yates algorithm
+    var recordsArray = records.ToArray();
+    if (random)
+      System.Random.Shared.Shuffle(recordsArray);
+    return recordsArray;
+  }
+
+  private void StartOfRun()
+  {
+    endOfRun = ": started";
+    disableRun = true;
+    StateHasChanged();
+  }
+
+  private async Task OpenCSVFile(InputFileChangeEventArgs e)
+  {
+    StartOfRun();
+
+    if (puzzles == null || fileName != e.File.Name)
+    {
+      var pgnName = e.File.Name;
+      fileName = pgnName;
+      //check if the file ends on .json
+      if (!pgnName.EndsWith(".json"))
+      {
+        logger.LogError("Selected file does not end with .json, please select you puzzle config file (JSON)");
+        disableRun = false;
+        StateHasChanged();
+        return;
+      }
+      logger.LogInformation("Selected file {File}", pgnName);
+      var env = Environment.CurrentDirectory;
+      fullPath = Path.Combine(env, pgnName);
+      await using (FileStream fs = new(fullPath, FileMode.Create))
+      {
+        browserFile = e.File;
+        await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
+      }
+
+      await Run(null);
+    }
+
+    disableRun = false;
+    StateHasChanged();
+    File.Delete(fullPath);
+    await Task.Delay(500);
+  }
+
+
+  private string CreateCombinedScoresTable(string puzzleFile)
+  {
+    var sb = new StringBuilder();
+    sb.AppendLine("\n```\n");
+    sb.AppendLine($"Puzzle file name: {puzzleFile}\n");
+    // Combine all sets of scores to calculate the maximum width for each column
+    var allScores = PolicyScores.Concat(ValueScores).Concat(SearchScores).ToList();
+
+    // Calculate the maximum width for each column
+    int maxEngineWidth = Math.Max("Engine".Length, allScores.Max(s => s.Engine.Length));
+    int maxNeuralNetWidth = Math.Max("Neural net".Length, allScores.Max(s => s.NeuralNet.Length));
+    int maxPerfWidth = Math.Max("Perf".Length, allScores.Max(s => s.PlayerRecord.Rating.ToString("F0").Length));
+    int maxAccuracyWidth = Math.Max("Accuracy".Length, allScores.Max(s => ((decimal)s.Correct / s.TotalNumber).ToString("P1").Length));
+    int maxTotalWidth = Math.Max("Total".Length, allScores.Max(s => s.TotalNumber.ToString().Length));
+    int maxAvgRatingWidth = Math.Max("Avg rating".Length, allScores.Max(s => s.RatingAvg.ToString("F0").Length));
+    int maxTypeWidth = Math.Max("Type".Length, allScores.Max(s => s.Type.Length));
+    int maxThemeWidth = Math.Max("Theme".Length, allScores.Max(s => s.Filter.Length + 2));
+    int maxNodesWidth = Math.Max("Nodes".Length, allScores.Max(s => s.Nodes.ToString().Length));
+
+    // Calculate approximate separator width
+    int tabWidth = 6; // Approximate width of a tab character
+    int columns = 8; // Number of columns in the table
+    int approximateWidth = maxEngineWidth + maxNeuralNetWidth + maxPerfWidth +
+                          maxAccuracyWidth + maxTotalWidth + maxAvgRatingWidth +
+                          maxThemeWidth + maxNodesWidth + (columns - 1) * tabWidth;
+
+    string separatorLine = new string('-', approximateWidth);
+
+    // Add headers with fixed width
+    if (PolicyScores.Count > 0)
+    {
+      sb.AppendLine("Policy Head Tests\n");
+      sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+
+      // Track groups by rating average
+      double? currentGroup = null;
+
+      // Add policy scores with fixed width for each column
+      foreach (var score in PolicyScores)
+      {
+        // If we've moved to a new rating group, add a separator
+        if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
+        {
+          sb.AppendLine(separatorLine);
+        }
+        currentGroup = score.RatingAvg;
+
+        sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{((decimal)score.Correct / score.TotalNumber).ToString("P1").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+      }
+
+      sb.AppendLine();
+    }
+    if (ValueScores.Count > 0)
+    {
+      sb.AppendLine("Value Head Tests\n");
+      sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+
+      // Track groups by rating average
+      double? currentGroup = null;
+
+      // Add value scores with fixed width for each column
+      foreach (var score in ValueScores)
+      {
+        // If we've moved to a new rating group, add a separator
+        if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
+        {
+          sb.AppendLine(separatorLine);
+        }
+        currentGroup = score.RatingAvg;
+
+        sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{((decimal)score.Correct / score.TotalNumber).ToString("P1").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+      }
+      sb.AppendLine();
+    }
+
+    if (SearchScores.Count > 0)
+    {
+      sb.AppendLine("Search Tests\n");
+      sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+
+      // Track groups by rating average
+      double? currentGroup = null;
+
+      // Add value scores with fixed width for each column
+      foreach (var score in SearchScores)
+      {
+        // If we've moved to a new rating group, add a separator
+        if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
+        {
+          sb.AppendLine(separatorLine);
+        }
+        currentGroup = score.RatingAvg;
+
+        sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{((decimal)score.Correct / score.TotalNumber).ToString("P1").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+      }
+      sb.AppendLine();
+    }
+    sb.Append("\n```\n");
+    return sb.ToString();
+
+  }
+
+  public static string RemovePosAndFen(string input)
+  {
+    const string prefix = "position fen ";
+    if (input.StartsWith(prefix, StringComparison.Ordinal))
+      return input.Substring(prefix.Length);
+    return input;
+  }
+
+  private async Task Run(MouseEventArgs args)
+  {
+    var fullPathName = string.IsNullOrWhiteSpace(fullPath) ? FolderName : fullPath;
+
+    if (!File.Exists(fullPathName))
+    {
+      logger.LogError($"Puzzle config file not found: {fullPathName}");
+      return;
+    }
+    disableRun = true;
+    StateHasChanged();
+
+    await Task.Factory.StartNew(async () =>
+    {
+      try
+      {
+        // Load and normalize config
+        var data = loadPuzzleConfig(normalizePath(fullPathName));
+        
+        //add drawn filters (optional) to puzzle filter
+        if (!string.IsNullOrWhiteSpace(data.PuzzleFilter) && !string.IsNullOrWhiteSpace(Filter))
+        {
+          data.PuzzleFilter = $"{data.PuzzleFilter},{Filter}";
+        }
+        else if (string.IsNullOrWhiteSpace(data.PuzzleFilter))
+        {
+          data.PuzzleFilter = Filter;
+        }
+
+        //make the puzzle filter lower case and remove duplicates
+        if (!string.IsNullOrWhiteSpace(data.PuzzleFilter))
+        {
+          data.PuzzleFilter =
+            string.Join(",", data.PuzzleFilter.Split(',')
+            .Select(e => e.Trim())
+            .Select(e => e.ToLowerInvariant())
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Distinct());
+          logger.LogInformation($"Puzzle filter set to: {data.PuzzleFilter}");
+        }
+
+        var normalizedPath = normalizePath(data.PuzzleFile);
+        logger.LogInformation($"Processing Lichess puzzle file: {fullPathName}");
+
+        // Build engine configs
+        var engineConfigs = data.Engines
+          .SelectMany(e => mapToEngPuzzleConfig(data.EngineFolder, e))
+          .ToList();
+
+        // Parse puzzles
+        puzzles = parsePuzzle(normalizedPath, false);
+        var formattedLength = puzzles.Length.ToString("N0");
+        logger.LogInformation($"Loaded {formattedLength} puzzles from {normalizedPath}");
+
+        // Create the puzzle input
+        var puzzleInput = Puzzle.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
+                              engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, data.Concurrency);
+
+
+        // parse the comma-separated types (or get an empty list)
+        var types = string.IsNullOrWhiteSpace(data.Type)
+        ? new List<string>()
+        : data.Type
+          .ToLowerInvariant()
+          .Split(',')
+          .Select(e => e.Trim())
+          .Where(e => e.Length > 0)
+          .ToList();
+
+
+        List<Score> scores;
+
+        switch (types.Count)
+        {
+          case 0:
+            logger.LogInformation("No puzzle types specified, defaulting to policy and value test");
+            scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+            break;
+
+          case 1:
+            {
+              var a = types[0];
+              logger.LogInformation($"Puzzle type specified: {a}");
+              switch (a)
+              {
+                case "policy":
+                  scores = Analysis.PuzzleRunners.runPolicyHeadTest(puzzleInput, Update);
+                  break;
+                case "value":
+                  scores = Analysis.PuzzleRunners.runValueHeadTest(puzzleInput, Update);
+                  break;
+                case "search":
+                  scores = Analysis.PuzzleRunners.runSearchTests(puzzleInput, Update);
+                  break;
+                default:
+                  logger.LogInformation($"Invalid puzzle type specified: {a} - defaulting to policy and value test");
+                  scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                  break;
+              }
+            }
+            break;
+
+          case 2:
+            {
+              logger.LogInformation($"Puzzle types specified: {data.Type}");
+              var set = new HashSet<string>(types);
+              if (set.SetEquals(new[] { "policy", "search" }))
+              {
+                scores = Analysis.PuzzleRunners.runPolicyAndSearchTests(puzzleInput, Update);
+              }
+              else if (set.SetEquals(new[] { "policy", "value" }))
+              {
+                scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+              }
+              else if (set.SetEquals(new[] { "search", "value" }))
+              {
+                scores = Analysis.PuzzleRunners.runValueAndSearchTest(puzzleInput, Update);
+              }
+              else
+              {
+                logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
+                scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+              }
+            }
+            break;
+
+          case 3:
+            {
+              logger.LogInformation($"Puzzle types specified: {data.Type}");
+              var set = new HashSet<string>(types);
+              if (set.SetEquals(new[] { "policy", "value", "search" }))
+              {
+                logger.LogInformation($"All three puzzle types specified: {data.Type} - running all tests, including search");
+                scores = Analysis.PuzzleRunners.runAllTests(puzzleInput, Update);
+              }
+              else
+              {
+                logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
+                scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+              }
+            }
+            break;
+
+          default:
+            logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
+            scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+            break;
+        }
+
+        //updatePuzzleBoards = true;
+        ValueScores =
+          ValueScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Value"))
+          .OrderBy(e => e.Filter)
+          .ThenByDescending(e => e.RatingAvg)
+          .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+          .ToList();
+
+        PolicyScores =
+          PolicyScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Policy"))
+          .OrderBy(e => e.Filter)
+          .ThenByDescending(e => e.RatingAvg)
+          .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+          .ToList();
+
+        SearchScores =
+          SearchScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Search"))
+          .OrderBy(e => e.Filter)
+          .ThenByDescending(e => e.RatingAvg)
+          .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+          .ToList();
+
+        var normalized = Utilities.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
+        var table = CreateCombinedScoresTable(data.PuzzleFile);
+        logger.LogInformation(table);
+        //check if folder exists here
+        if (Directory.Exists(normalized))
+        {
+          //combine all scores into one list
+          var allScores = new List<Puzzle.Score>();
+          allScores.AddRange(PolicyScores);
+          allScores.AddRange(ValueScores);
+          allScores.AddRange(SearchScores);
+          var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
+          var fileName = Path.Combine(normalized, $"failedLichessPuzzles_{datePart}.epd");
+          using (StreamWriter sw = File.AppendText(fileName))
+          {
+            var boardBm = new Chess.Board();
+            var boardAm = new Chess.Board();
+            foreach (var item in allScores)
+            {
+              sw.WriteLine($"\n##Failed puzzles by {item.Engine} (nn:{item.NeuralNet}) - overall performance: {item.PlayerRecord.Rating.ToString("F0")} - Type: {item.Type} - Theme: {item.Filter} - Nodes: {item.Nodes}\n");
+              var sorted = item.FailedPuzzles
+            .Select(tuple =>
+            {
+              var parts = tuple.Item2.Split(',');
+              if (parts.Length > 1 && double.TryParse(parts[0].Trim(), out double value))
+                return (tuple.Item1, value, tuple.Item2);
+              return (tuple.Item1, tuple.Item1.Rating, tuple.Item2);
+            })
+            .OrderBy(tuple => tuple.Item2);
+              //.TakeWhile(tuple => tuple.Item2 < 100.0);
+
+              foreach (var puzzle in sorted)
+              {
+                foreach (var cmd in puzzle.Item1.Commands)
+                {
+                  if (!String.IsNullOrWhiteSpace(cmd.MovePlayed))
+                  {
+                    boardBm.PlayCommands(cmd.Command);
+                    var fen = boardBm.FEN();
+                    boardBm.PlayLongSanMove(cmd.CorrectMove);
+                    var bm = boardBm.ShortSANMovesPlayed.LastOrDefault();
+                    boardAm.PlayCommands(cmd.Command);
+                    boardAm.PlayLongSanMove(cmd.MovePlayed);
+                    var aM = boardAm.ShortSANMovesPlayed.LastOrDefault();
+                    var policies = puzzle.Item3.Split(",");
+                    var (bmP, amP) = policies.Length > 1 ? (policies[0].Trim(), policies[1].Trim()) : ("", "");
+                    var msg = $"{fen} bm {bm}; am {aM}; id \"Lichess id {puzzle.Item1.PuzzleId}, policy value for bestmove {bm}={bmP} and move played {aM}={amP}\"; other \"{cmd.CorrectMove},{cmd.MovePlayed}\"";
+                    sw.WriteLine(msg);
+                  }
+                }
+              }
+            }
+          }
+          //write table to file with date and time
+          var tableFileName = Path.Combine(normalized, $"LichessSummary{datePart}.txt");
+          using (StreamWriter sw = new StreamWriter(tableFileName))
+          {
+            sw.WriteLine(table);
+          }
+        }
+
+        await Task.CompletedTask;
+      }
+      catch (Exception ex)
+      {
+        logger.LogError("Lichess value head puzzle failed to start/run - ");
+        logger.LogError(ex.Message);
+      }
+
+      finally
+      {
+        await InvokeAsync(() => disableRun = false);
+      }
+
+    });
+
+    if (!string.IsNullOrWhiteSpace(fullPath))
+    {
+      File.Delete(fullPath);
+    }
+
+    StateHasChanged();
+    await Task.Delay(1000);
+
+  }
+}

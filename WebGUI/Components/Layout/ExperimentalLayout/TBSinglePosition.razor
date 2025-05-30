@@ -1,0 +1,25 @@
+﻿
+@using System.Text
+@using WebGUI.Components.Layout.VisualizationLayout
+
+@inject ILogger<TBSinglePosition> Logger
+
+@if (IsTBPosition)
+{
+  <EPDVisualization EPD="@TBEPD.EPD" />
+}
+
+else
+{
+  <EPDVisualization EPD="@EPD" />
+}
+
+
+@code {
+
+  [Parameter] public EPD.EPDEntry EPD { get; set; }
+  [Parameter] public EPD.TablebaseEPDEntry TBEPD { get; set; }
+  [Parameter] public bool IsTBPosition { get; set; }
+  
+}
+

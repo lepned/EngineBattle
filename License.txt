@@ -1,0 +1,27 @@
+GNU General Public License (GPL) Version 3 – Summary
+
+This software is released under the GNU GPL version 3, a free and open-source license that ensures the following key freedoms:
+
+Freedom to Use:
+You may run the software for any purpose without restriction.
+
+Freedom to Study and Modify:
+The complete source code is provided so you can study how the program works and change it to suit your needs.
+
+Freedom to Redistribute:
+You are free to share the original software or your modified versions. However, if you distribute it, you must do so under the same GPL v3 license, ensuring that everyone else also benefits from these freedoms.
+
+Copyleft Principle:
+Any derivative work based on this software must be released under GPL v3 as well. This means that improvements or modifications you make must remain free and open for the community.
+
+Patent Protection:
+Contributors grant a patent license for their contributions. This provision protects users from patent claims and litigation related to the use of the software.
+
+Anti-Tivoization:
+If the software is embedded in hardware, you must be provided with any necessary information (such as installation instructions) that allows you to install and run modified versions on that hardware.
+
+No Warranty:
+The software is distributed "as is," without any warranties. The authors are not responsible for any issues or damages that may arise from its use.
+
+For a complete understanding of your rights and obligations under this license, please refer to the full text of the GPL v3, available at:
+https://www.gnu.org/licenses/gpl-3.0.html

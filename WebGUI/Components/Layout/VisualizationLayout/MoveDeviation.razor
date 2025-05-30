@@ -1,0 +1,72 @@
+﻿@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+
+<h4 class="mud-centerTxt mb-3">@moveTitle</h4>
+<MudGrid>
+  <MudItem md="4" lg="5">
+    <div>@board1Header</div>
+    <div @ref="boardElement1"></div>
+    <div>@board1Subtitle</div>
+  </MudItem>
+  <MudItem md="4" lg="5">
+    <div>@board2Header</div>
+    <div @ref="boardElement2"></div>
+    <div>@board2Subtitle</div>
+  </MudItem>
+</MudGrid>
+
+
+@code {
+
+  [Parameter] public TypesDef.CoreTypes.MoveDeviation MoveDeviationInput { get; set; }
+  [Parameter] public bool OwnDeviations { get; set; }
+
+  private ElementReference boardElement1;
+  private ElementReference boardElement2;
+  private IJSObjectReference chessJSmodule;
+  private string moveTitle;
+  private string board1Header;
+  private string board1Subtitle;
+  private string board2Header;
+  private string board2Subtitle;
+
+  public async Task SetMoveWithAnnotation()
+  {
+    var fenPrev = MoveDeviationInput.PrevFen;
+    var fenDev = MoveDeviationInput.DevFen;
+    var color = MoveDeviationInput.Color;
+    var move1From = MoveDeviationInput.PrevSanMove.Item2.Substring(0, 2);
+    var move1To = MoveDeviationInput.PrevSanMove.Item2.Substring(2, 2);
+    var move2From = MoveDeviationInput.DevSanMove.Item2.Substring(0, 2);
+    var move2To = MoveDeviationInput.DevSanMove.Item2.Substring(2, 2);
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("createChessboard", boardElement1);
+      await chessJSmodule.InvokeVoidAsync("createChessboard", boardElement2);
+      await chessJSmodule.InvokeVoidAsync("setBoardWithSquareHighlighting", boardElement1, fenPrev, color, move1From, move1To, true);
+      await chessJSmodule.InvokeVoidAsync("setBoardWithSquareHighlighting", boardElement2, fenDev, color, move2From, move2To, true);
+    }
+    else
+    {
+      await Task.CompletedTask;
+    }
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+      var (prevPGN, devPGN) = MoveDeviationInput.PgnGamePair;
+      moveTitle =
+        OwnDeviations ? $"Move deviation by {MoveDeviationInput.PlayerToDeviate} compared to own game" :
+        $"Move deviation by {MoveDeviationInput.PlayerToDeviate} compared to {MoveDeviationInput.Opponent}";
+      board1Header = $"Game#: {prevPGN.GameNumber} Black: {prevPGN.GameMetaData.Black}";
+      board1Subtitle = $"White: {prevPGN.GameMetaData.White} :  {prevPGN.GameMetaData.Result}";
+      board2Header = $"Game#: {devPGN.GameNumber} Black: {devPGN.GameMetaData.Black}";
+      board2Subtitle = $"White: {devPGN.GameMetaData.White} :  {devPGN.GameMetaData.Result}";
+      await SetMoveWithAnnotation();
+      StateHasChanged();
+    }
+  }
+}

@@ -1,0 +1,116 @@
+﻿@page "/backendBench"
+
+@using WebGUI.Services
+@using CliWrap
+@using CliWrap.EventStream
+@inject ChessConfigurationService Setup
+
+<PageTitle> Backend benchmark tool for Ceres </PageTitle>
+<MudContainer Class="mt-4">
+  <MudText Typo=Typo.h4>Ceres benchmark for backend speed at different batch sizes</MudText>
+  <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net folder:" @bind-Value=setting.NeuralNetFolder
+                TextChanged="NeuralNetFolderChanged" Variant="Variant.Filled"></MudTextField>
+  <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net:" @bind-Value=setting.NeuralNet
+                TextChanged="NeuralNetChanged" Variant="Variant.Filled"></MudTextField>
+  <MudButton Disabled=disableRun Class="analyzeButton ml-5 mt-5" Variant="Variant.Outlined" OnClick=RunBenchmark> Run Long Backend Benchmark </MudButton>
+  <MudTable Class="benchmarkTable" Items="backendBenchList" Hover="true" Breakpoint="Breakpoint.Sm" Dense="true" Striped=true Height="1200px" LoadingProgressColor="Color.Info">
+    <HeaderContent>
+      <MudTh>
+        <MudText Typo=Typo.h6>Backend benchmark speed for @setting.NeuralNet</MudText>
+      </MudTh>
+    </HeaderContent>
+    <RowTemplate>
+      <MudTd DataLabel="Description">
+        <pre> @context </pre>
+      </MudTd>
+    </RowTemplate>
+  </MudTable>
+</MudContainer>
+
+@code {
+  private ChessConfigurationService setting;
+  private bool disableRun = false;
+  List<string> backendBenchList = new();
+  //string nn = CeresUserSettingsManager.Settings.DefaultNetworkSpecString;
+
+
+  private void NeuralNetFolderChanged(string folder)
+  {
+    setting.NeuralNetFolder = folder;
+  }
+
+  private void NeuralNetChanged(string net)
+  {
+    setting.NeuralNet = net;
+  }
+
+  private void UpdateList(string res)
+  {
+    if (res.StartsWith("Benchmark"))
+    {
+      backendBenchList.Insert(0, res);
+    }
+    StateHasChanged();
+  }
+
+  private async Task RunBenchmark()
+  {
+    backendBenchList.Clear();
+    disableRun = true;
+    await StartBenchMark();
+  }
+
+  private async Task StartBenchMark()
+  {
+    var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
+    var ceresDir = currentDir.Parent.Parent;
+    var fullpath = Path.Combine(ceresDir.FullName, "artifacts", "release", "net5.0");
+    var ceresPath = Path.Combine(fullpath, "ceres");
+    Action<string> updateBenchMark = (info) => InvokeAsync(() => UpdateList(info));
+
+    await Task.Factory.StartNew(async () =>
+    {
+      await Iterate(ceresPath, fullpath, updateBenchMark);
+    });
+  }
+
+  private async Task Iterate(string ceresPath, string fullPath, Action<string> update)
+  {
+    var cmd = ConfigureCliWrapper(ceresPath, fullPath, update);
+    await foreach (var cmdEvent in cmd.ListenAsync())
+    {
+      switch (cmdEvent)
+      {
+        case StartedCommandEvent started:
+          Console.WriteLine("Process started");
+          break;
+        case StandardOutputCommandEvent stdOut:
+          Console.WriteLine(stdOut.Text);
+          break;
+        case StandardErrorCommandEvent stdErr:
+          Console.WriteLine(stdErr.Text);
+          break;
+        case ExitedCommandEvent exited:
+          Console.WriteLine("Process finished");
+          break;
+      }
+    }
+    await InvokeAsync(() => { disableRun = false; StateHasChanged(); });
+  }
+
+  private Command ConfigureCliWrapper(string ceresPath, string fullPath, Action<string> update)
+  {
+    return Cli.Wrap(ceresPath)
+         .WithWorkingDirectory(fullPath)
+         .WithArguments(args => args
+           .Add("backendbench"))
+         .WithValidation(CommandResultValidation.None)
+         .WithStandardOutputPipe(PipeTarget.ToDelegate(update));
+  }
+
+  protected override Task OnInitializedAsync()
+  {
+    setting = Setup;
+    return base.OnInitializedAsync();
+  }
+}

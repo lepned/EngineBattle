@@ -1,0 +1,66 @@
+﻿@page "/removeEngineFromPgn"
+@inject ILogger<RemoveEngineFromPGN> logger
+
+<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+
+<PageTitle>RemoveEngineFromPGN</PageTitle>
+<div style="margin:20px; width:700px">
+
+    <MudText Typo="Typo.h4">Remove games from a PGN file</MudText>
+	<MudText Class="mt-3" Typo="Typo.body2">
+		Remove games associated with a specific engine name from a PGN file. Specify the folder for saving the output and the engine name below.
+	</MudText>
+	<MudTextField Class="mt-3" Placeholder="Specify the folder to save the output" T="string" Typo="Typo.h6" Text="@path" @bind-value="path"></MudTextField>
+	<MudTextField Class="mt-3" T="string" Typo="Typo.h6"
+				  HelperText="Enter the engine name you want to remove" Text="@engineName" @bind-value="engineName"></MudTextField>
+</div>
+
+
+<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.Download" for="fileInput" />
+
+@code {
+
+	private string path = "C:/Dev/Chess/PGNs/";
+	private string engineName = string.Empty;
+	IBrowserFile browserFile;
+
+	private string GetFileName(string pgn, string playerToRemove)
+	{
+		string fileName = Path.GetFileNameWithoutExtension(pgn);
+		string fileDir = Path.GetDirectoryName(path);
+		string fileExt = Path.GetExtension(pgn);
+		string outputFile = Path.Combine(fileDir, $"{fileName}_{playerToRemove}_Removed{fileExt}");
+		return outputFile;
+	}
+
+	
+	private async Task OpenPGNFile(InputFileChangeEventArgs e)
+	{
+		if (engineName == string.Empty)
+		{
+			logger.LogError("Engine name is not specified");
+			return;
+		}
+		var pgnName = e.File.Name;
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+
+		var games = Parser.PGNParser.parsePgnFile(fullPath);
+		var fileNamePath = GetFileName(pgnName, engineName);
+		Parser.PGNWriter.removePlayerFromPGN(engineName, games, fileNamePath);
+		File.Delete(fullPath);
+		logger.LogInformation($"Engine {engineName} was removed from PGN-file and written to path {fileNamePath}");
+	}
+
+	protected override Task OnInitializedAsync()
+	{
+		return base.OnInitializedAsync();
+	}
+
+}

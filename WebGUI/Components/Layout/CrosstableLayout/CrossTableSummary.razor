@@ -1,0 +1,164 @@
+﻿@using MudBlazor
+@using WebGUI.Services
+
+@inject NotifierService notify
+
+<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
+  <div class="header">
+    <span class="header-text">Crosstable</span>
+  </div>
+    <div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "auto");" id="standingsDiv">
+    <table class="custom-table">
+      <thead>
+        <tr class="header-row">
+          <th class="header-cell">Nr</th>
+          <th class="header-cell">Player</th>
+          <th class="header-cell pl-5">Pairs</th>
+          @foreach (var item in CrossTable)
+          {
+            <th class="header-cell pl-6">@item.Rank</th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @foreach (var item in CrossTable)
+        {
+          var (wins, draws, losses) = GetAllPairs(item);
+          <tr class="data-row @(item.Challenger ? "challenger" : "")">
+            <td class="data-cell">@item.Rank</td>
+            <td class="data-cell">@item.Player</td>
+            <td class="data-cell">
+              <span style="color: rgba(0, 255, 0, 0.5)">+@wins</span>
+              <span>-@draws</span>
+              <span style="color: #FF3C54">-@losses</span>
+            </td>
+
+            @foreach (var opponent in CrossTable)
+            {
+              @if (item.Player == opponent.Player)
+              {
+                <td class="data-cell">X-X-X </td>
+              }
+              else
+              {
+                var stats = item.StatsAgainst.FirstOrDefault(s => s.Item1 == opponent.Player);
+                if (stats != null)
+                {
+                  <td class="data-cell">
+                    <span style="color: rgba(0, 255, 0, 0.6)">@stats.Item2.Wins-</span>
+                    <span>@stats.Item2.Draws-</span>
+                    <span style="color: rgba(255, 0, 0, 0.8)">@stats.Item2.Losses</span>
+                  </td>
+                }
+                else
+                {
+                  <td class="data-cell">No Data</td>
+                }
+              }
+            }
+
+          </tr>
+        }
+
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+@code {
+
+  [Parameter]  public List<CrossTableEntry> CrossTable { get; set; } = new();
+  [Parameter]  public int FontSize { get; set; }
+  [Parameter]  public int Players { get; set; }
+  [Parameter] public int Height { get; set; }
+
+
+  private int fontSize = 8;
+  // private string FontHeaderTxt;
+  // private string FontHeaderTxtAndCentered;
+  // private string FontChallenger;
+  // private string FontNormal;
+  // private string FontNormalAndCentered;
+  // private string FontSmallAndCentered;
+  // private string FontSmallRankAndCentered;
+  // private string Width;
+  //private string nameColWidth = "width: 10%;";  
+
+  private List<string> LossCombinations = new List<string> { "00", "01/2", "1/20", };
+  private List<string> WinCombinations = new List<string> { "11", "11/2", "1/21" };
+  private List<string> DrawCombinations = new List<string> { "1/21/2", "10", "01" };
+
+  private (int, int, int) GetAllPairs(CrossTableEntry entry)
+  {
+    var wins = 0;
+    var losses = 0;
+    var draws = 0;
+
+    foreach (var st in entry.ResultsAgainst)
+    {
+      var opponent = st.Item1;
+      var results = st.Item2;
+      var player = entry.Player;
+      (var win, var draw, var loss) = CalculatePairs(player, opponent, results);
+      wins = wins + win;
+      draws = draws + draw;
+      losses = losses + loss;
+    }
+    return (wins, draws, losses);
+  }
+
+  private (int, int, int) CalculatePairs(string player, string opponent, string[] results)
+  {
+    int wins = 0;
+    int losses = 0;
+    int draws = 0;
+    var odd = results.Length % 2 == 0;
+    List<Tuple<string, string>> result = new List<Tuple<string, string>>();
+    // If odd number of elements, decrease count by 1 to ignore the last one
+    int countToProcess = results.Length % 2 == 0 ? results.Length : results.Length - 1;
+
+    for (int i = 0; i < countToProcess; i += 2)
+    {
+      result.Add(new Tuple<string, string>(results[i], results[i + 1]));
+    }
+    var game = 1;
+    foreach (var pair in result)
+    {
+      var addThem = pair.Item1 + pair.Item2;
+      if (WinCombinations.Contains(addThem) && LossCombinations.Contains(addThem))
+      {
+        continue;
+      }
+      else if (DrawCombinations.Contains(addThem))
+      {
+        draws++;
+      }
+      else if (WinCombinations.Contains(addThem))
+      {
+        wins++;
+      }
+
+      else if (LossCombinations.Contains(addThem))
+      {
+        losses++;
+      }
+
+      //Console.WriteLine($"{game}: {player} vs {opponent} ({pair.Item1}, {pair.Item2}) ({wins}-{losses})");
+      game++;
+    }
+    
+    return (wins, draws, losses);
+  }
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;     
+      StateHasChanged();
+    }
+
+    base.OnAfterRender(firstRender);
+  }
+}

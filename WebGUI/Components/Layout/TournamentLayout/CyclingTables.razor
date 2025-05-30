@@ -1,0 +1,91 @@
+﻿@implements IDisposable
+@using System.Timers
+
+<div class="table-container" >
+
+  @if (activeTableIndex == 0)
+  {
+    <div class="table-wrapper active">
+      <LatestGames FontSize=@fontSizeLatestGames Results="@Results" TableHeight="@tableHeight" />
+    </div>
+  }
+  else
+  {
+    <div class="table-wrapper">
+      <Pairings FontSize=@fontSizePairing PairingList="@Pairings" TableHeight="@tableHeight" />
+    </div>
+  }
+</div>
+
+@code {
+  private Timer cycleTimer;
+  private int activeTableIndex = 0;
+
+  [Parameter]
+  public List<Result> Results { get; set; } = new();
+
+  [Parameter]
+  public List<Pairing> Pairings { get; set; } = new();
+
+  [Parameter]
+  public int FontSizePairing { get; set; } = 15;
+
+  [Parameter]
+  public int FontSizeLatestGames { get; set; } = 15;
+
+  [Parameter]
+  public int CycleSeconds { get; set; } = 20; // Default 30 seconds
+
+  [Parameter]
+  public int TableHeight { get; set; }
+
+  private int tableHeight = 0;
+  private int fontSizePairing = 12;
+  private int fontSizeLatestGames = 12;
+  private int cycleSeconds = 20;
+
+  protected override void OnInitialized()
+  {
+    cycleTimer = new Timer(CycleSeconds * 1000);
+    cycleTimer.Elapsed += (sender, args) =>
+    {
+      activeTableIndex = (activeTableIndex + 1) % 2;      
+    };
+    cycleTimer.Start();
+    base.OnInitialized();
+  }
+
+  protected override void OnParametersSet()
+  {
+    if (FontSizePairing > 0 && FontSizePairing != fontSizePairing)
+    {
+      fontSizePairing = FontSizePairing;
+      StateHasChanged();
+    }
+
+    if (FontSizeLatestGames > 0 && FontSizeLatestGames != fontSizeLatestGames)
+    {
+      fontSizeLatestGames = FontSizeLatestGames;
+      StateHasChanged();
+    }
+
+    if (TableHeight > 0 && TableHeight != tableHeight && TableHeight > 5)
+    {
+      tableHeight = TableHeight;
+      StateHasChanged();
+    }
+
+    if (CycleSeconds > 0 && CycleSeconds != cycleSeconds)
+    {
+      cycleSeconds = CycleSeconds;
+      Dispose();
+      OnInitialized();
+    }
+    base.OnParametersSet();
+  }
+
+  public void Dispose()
+  {
+    cycleTimer?.Dispose();
+  }
+}

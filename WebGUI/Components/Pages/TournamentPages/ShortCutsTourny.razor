@@ -1,0 +1,53 @@
+﻿@page "/tournyShortcuts"
+
+
+<PageTitle>Tournament.Help</PageTitle>
+
+<MudContainer Class="my-5 mx-5" Style="width:500px">
+  <h2>
+    Shortcuts in tournament mode
+  </h2>
+
+  <MudSimpleTable Class="my-5">
+    <thead>
+      <tr>
+        @foreach (var h in headings)
+        {
+          <th>@h.ToUpper()</th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @foreach ((string x, string y) in rows)
+      {
+        <tr>
+          <td>@x</td>
+          <td>@y</td>
+        </tr>
+      }
+    </tbody>
+  </MudSimpleTable>
+
+</MudContainer>
+<MudSpacer></MudSpacer>
+
+
+
+@code {
+
+  string[] headings = { "Shortcut key", "Description" };
+  (string, string)[] rows = {
+    ("Key.Ctrl + v", "Validate your tournament.json"),
+    ("Key.Ctrl + r", "Run tournament"),
+    ("Key.Ctrl + c", "Stop tournament"),
+    ("Key.Ctrl + u", "Update tournament GUI"),
+    ("Key.Ctrl + p", "Create crosstable"),
+
+  };
+
+  protected override Task OnInitializedAsync()
+  {
+    return base.OnInitializedAsync();
+  }
+
+}

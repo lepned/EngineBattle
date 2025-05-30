@@ -1,0 +1,22 @@
+{
+    "Name": "Stockfish 17",
+    "Alias": "SF 17",
+    "Version": "NNUE with 2 cores",
+    "TimeControlID": 1,
+    "Rating": 3680,
+    "Dev": "by The Stockfish developers.",
+    "LogoPath": "img/SF-TCEC.png",
+    "Protocol": "UCI",
+    "ContemptEnabled": false,
+    "NegativeContemptAllowed": false,
+    "Path": "C:/Dev/Chess/Engines/SF/sf17.exe",
+    "NetworkPath": "C:/Dev/Chess/Networks",
+    "Args": null,
+    "Options": {
+        "Threads": 2,
+        "Hash": 2048,
+        "SyzygyPath": "C:/Dev/Chess/TableBases/sygyzy",
+        "Ponder": false,
+        "UCI_ShowWDL": true
+    }
+}

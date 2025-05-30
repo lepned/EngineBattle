@@ -1,0 +1,126 @@
+{
+  "Name": "Demo tournament",
+  "Description": "Testing features",
+  "OS": "Win11 x64",
+  "CPU": "i9-13900K CPU 32 Threads",
+  "RAM": "32 Gb RAM",
+  "GPU": "1x RTX 3080",
+  "LogoFileName": "MainLogoEB.png",
+  "VerboseLogging": false,
+  "VerboseMoveAnnotation": false,
+  "MinMoveTimeInMS": 400,
+  "Gauntlet": true,
+  "PreventMoveDeviation": false,
+  "Challengers": 1,
+  "Rounds": 50,
+  "PauseAfterRound": 0,
+  "DelayBetweenGames": "00:00:20.000",
+  "MoveOverhead": "00:00:00.100",
+  "Adjudication": {
+    "DrawOption": {
+      "DrawMoveLength": 5,
+      "MaxDrawScore": 0.30,
+      "MinDrawMove": 20
+    },
+
+    "WinOption": {
+      "MinWinScore": 5.0,
+      "WinMoveLength": 5,
+      "MinWinMove": 0
+    },
+
+    "TBAdj": {
+      "TablebaseDirectory": "",
+      "UseTBAdjudication": false,
+      "TBMen": 6
+    }
+  },
+
+  "TestOptions": {
+    "PolicyTest": false,
+    "ValueTest": false,
+    "WriteToConsole": false,
+    "NumberOfGamesInParallelConsoleOnly": 1
+  },
+
+  "Opening": {
+    "OpeningsPath": "",
+    "OpeningsPly": 100,
+    "OpeningsTwice": true    
+  },
+
+  "PgnOutPath": "",
+  "ReferencePGNPath": "",
+  "EngineSetup": {
+    "EngineDefFolder": "",
+    "EngineDefList": [
+     
+    ]
+  },
+
+  "LayoutOption": {
+    "Fonts": {
+      "InfoBannerFont": 18,
+      "TournamentDescFont": 16,
+      "EnginesPanelFont": 18,
+      "MoveListFont": 16,
+      "PVLabelFont": 17,
+      "StandingsFont": 18,
+      "CrossTableFont": 18,
+      "PairingsFont": 16,
+      "LatestGamesFont": 16
+    },
+
+    "Sizes": {
+      "LiveChartHeight": 230,
+      "MoveChartHeight": 230,
+      "PVboardSize": "medium"
+    },
+
+    "Charts": {
+      "ShowEval": true,
+      "ShowNPS": true,
+      "ShowTime": false,
+      "ShowNodes": false,
+      "NumberOfLines": 5,
+      "Qdiff": 1.0
+    },
+
+    "ShowPVBoard": true,
+    "UseNPM": false,
+    "BestMoveWithPolicy": false,
+    "OnlyShowStandings": true,
+    "ShowCrosstableBetweenGames": true,
+    "ShowCrosstableBelowStandings": false,
+    "AutoCycleTimeInSec": 30
+  },
+
+  "TimeControl": {
+    "TimeConfigs": [
+      {
+        "Id": 1,
+        "Fixed": "00:01:00.000",
+        "Increment": "00:00:01.000",
+        "NodeLimit": false,
+        "Nodes": 1
+      },
+      {
+        "Id": 2,
+        "Fixed": "00:03:00.000",
+        "Increment": "00:00:02.000",
+        "NodeLimit": false,
+        "Nodes": 1
+      },
+      {
+        "Id": 3,
+        "Fixed": "00:05:00.000",
+        "Increment": "00:00:03.000",
+        "NodeLimit": false,
+        "Nodes": 100
+      }
+    ],
+    "WmovesToGo": 0,
+    "BmovesToGo": 0
+  }
+
+}

@@ -1,0 +1,55 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>  
+    <OutputType>Library</OutputType>  
+    <TargetFramework>net9.0</TargetFramework>
+    </PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="UciOption.fs" />
+		<Compile Include="ConsoleHandler.fs" />
+		<Compile Include="QBBOperations.fs" />
+		<Compile Include="CoreTypes.fs" />
+		<Compile Include="MoveGeneration.fs" />
+		<Compile Include="LowLevelUtilities.fs" />
+		<Compile Include="Parser.fs" />
+		<Compile Include="Utilities.fs" />
+		<Compile Include="Board.fs" />
+		<Compile Include="ArgsParser.fs" />
+		<Compile Include="Engine.fs" />
+		<Compile Include="Analysis.fs" />
+		<Compile Include="Tests\Chess960TestPositions.fs" />
+		<None Include="Tests\Script1.fsx" />
+		<None Include="Tests\testOfCliWrap.fsx" />
+		<Compile Include="Tests\Perft.fs" />
+		<Compile Include="Tests\Test.fs" />
+		<Compile Include="Tournament.fs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!--<PackageReference Include="CommandLineParser.FSharp" Version="2.9.1" >
+			<ExcludeAssets>all</ExcludeAssets>
+		</PackageReference>-->
+		<PackageReference Include="MathNet.Numerics.FSharp" Version="5.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="8.0.0" />
+		<PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+		<PackageReference Include="CliWrap" Version="3.6.6" />
+		<PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
+		<PackageReference Include="System.Management" Version="8.0.0" />
+	</ItemGroup>
+	<ItemGroup>
+		<Content Include="Tools\fathom.exe">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Tools\fathom.linux">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Tools\fathom.macosx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+
+</Project>

@@ -1,0 +1,82 @@
+﻿@using System.Text
+@using WebGUI.Components.Layout.ExperimentalLayout
+@using WebGUI.Components.Layout.ChessboardLayout
+
+<MudContainer Fixed="true">
+  @if (TotalPages > 1)
+  {
+    <div class="d-flex justify-center mb-6 mt-0">
+      <MudPagination Size="Size.Large" Count="@TotalPages" SelectedChanged="PageChanged" Selected="CurrentPage" />
+    </div>
+  }
+  <MudGrid>
+    @if (TBEPDList.Count > 0)
+    {
+      @for (int i = 0; i < CurrentPageTBItems.Count(); i++)
+      {
+        var tbEPD = CurrentPageTBItems.ElementAt(i);
+        var uniqueKey = $"{CurrentPage}-tb-{i}";
+
+        <MudItem sm="2" md="2" lg="2" Class="pa-2" @key="uniqueKey">
+          <TBSinglePosition EPD="@tbEPD.EPD" TBEPD="tbEPD" IsTBPosition=true @key="PageIdentifier + uniqueKey" />
+        </MudItem>
+      }
+    }
+    else if (EPDList.Count > 0)
+    {
+      @for (int i = 0; i < CurrentPageEPDItems.Count(); i++)
+      {
+        var epd = CurrentPageEPDItems.ElementAt(i);
+        var uniqueKey = $"{CurrentPage}-epd-{i}";
+
+        <MudItem xs="6" sm="3" md="3" xl="3" xxl="2" Class="pa-2" @key="uniqueKey">
+          <EPDVisualization EPD="@epd" @key="PageIdentifier + uniqueKey" />
+        </MudItem>
+      }
+    }
+  </MudGrid>
+
+  @if (TotalPages > 1)
+  {
+    <div class="d-flex justify-center mt-4">
+      <MudPagination Size="Size.Large" Count="@TotalPages" SelectedChanged="PageChanged" Selected="CurrentPage" />
+    </div>
+  }
+</MudContainer>
+
+@code {
+  [Parameter] public List<EPD.EPDEntry> EPDList { get; set; } = new();
+  [Parameter] public List<EPD.TablebaseEPDEntry> TBEPDList { get; set; } = new();
+
+  private int ItemsPerPage { get; set; } = 100; // Adjust based on your needs
+  private int CurrentPage { get; set; } = 1;
+  private string PageIdentifier => $"page-{CurrentPage}-";
+
+  private IEnumerable<EPD.EPDEntry> CurrentPageEPDItems =>
+      EPDList.Skip((CurrentPage - 1) * ItemsPerPage).Take(ItemsPerPage);
+
+  private IEnumerable<EPD.TablebaseEPDEntry> CurrentPageTBItems =>
+      TBEPDList.Skip((CurrentPage - 1) * ItemsPerPage).Take(ItemsPerPage);
+
+  private int TotalPages =>
+      (TBEPDList.Count > 0 ?
+          (int)Math.Ceiling((double)TBEPDList.Count / ItemsPerPage) :
+          (int)Math.Ceiling((double)EPDList.Count / ItemsPerPage));
+
+  private void PageChanged(int page)
+  {
+    CurrentPage = page;
+    StateHasChanged();
+  }
+
+  protected override void OnParametersSet()
+  {
+    // Reset to first page when data changes
+    CurrentPage = 1;
+
+    // Initialize with empty lists if null
+    EPDList ??= new();
+    TBEPDList ??= new();
+  }
+}
+

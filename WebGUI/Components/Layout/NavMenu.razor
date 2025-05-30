@@ -1,0 +1,93 @@
+﻿@inject NotifierService Notifier
+<MudNavMenu>
+	<MudNavGroup Title="Configuration and setup" Expanded="(setupVisible)">
+		<MudNavLink Href="/">Overview</MudNavLink>
+		<MudNavLink Href="/tournamentSetup">Tournament setup</MudNavLink>
+		<MudNavLink Href="/EngineDef">Engine setup</MudNavLink>
+
+	</MudNavGroup>
+	@if (shouldBeVisible)
+	{
+		<MudNavGroup Title="Tournament setting" Expanded="true">
+			<MudNavLink Href="/tournyShortcuts">Shortcuts</MudNavLink>
+			<MudNavLink Href="/tournament">Run tournament</MudNavLink>
+		</MudNavGroup>
+	}
+	@if (shouldBeVisible)
+	{
+		<MudNavGroup Title="Puzzles" Expanded="true">
+			<MudNavLink Href="/tutorialPuzzles">Tutorial puzzle</MudNavLink>
+			<MudNavLink Href="/downloadPuzzles">Download puzzle data</MudNavLink>
+			<MudNavLink Href="/LichessPuzzles">Run Lichess puzzles</MudNavLink>
+			<MudNavLink Href="/EretPuzzleTest">ERET puzzle test</MudNavLink>
+
+		</MudNavGroup>
+	}
+
+	<MudNavGroup Title="Tools" Expanded="false">
+		<MudNavLink Href="/testCanvas">Test canvas</MudNavLink>
+		@* <MudNavLink Href="/engineJSONCreator">Engine.json creator</MudNavLink> *@
+		<MudNavLink Href="/createOpeningBook">Create opening book</MudNavLink>
+		@* <MudNavLink Href="/benchGenerator">LC0 Benchmark generator</MudNavLink> *@
+		<MudNavLink Href="/deviationFinder">Move deviation finder</MudNavLink>
+	</MudNavGroup>
+	
+	<MudNavGroup Title="PGN tools" Expanded="true">
+		<MudNavLink Href="/ordo">Create Ordo table</MudNavLink>
+		<MudNavLink Href="/minimalPGN">Create minimal PGN</MudNavLink>
+		<MudNavLink Href="/speedBookExit">Book exit speed from PGN</MudNavLink>
+		<MudNavLink Href="/speed">Engine speed from PGN</MudNavLink>
+		<MudNavLink Href="/searchCalc">Search metric from PGN</MudNavLink>
+		<MudNavLink Href="/removeEngineFromPgn">Remove engine from PGN</MudNavLink>
+
+	</MudNavGroup>
+
+	@if (shouldBeVisible)
+	{
+		<MudNavGroup Title="Analysis" Expanded="true">
+			<MudNavLink Href="/analysisMode">Configuration</MudNavLink>			
+			<MudNavLink Href="/help">Shortcuts</MudNavLink>
+			<MudNavLink Href="/DualEngineAnalysis">Dual Engine analysis</MudNavLink>
+			<MudNavLink Href="/singleEngineAnalysis">Single Engine analysis</MudNavLink>
+		</MudNavGroup>
+	}
+
+
+</MudNavMenu>
+
+@code {
+	private bool shouldBeVisible;
+	private bool setupVisible;
+
+	protected override void OnInitialized()
+	{
+		var relativePath = "wwwroot/tournament.json"; // Specify the relative path to the file
+		var currentDirectory = Directory.GetCurrentDirectory();
+		var fullPath = Path.Combine(currentDirectory, relativePath);		
+		shouldBeVisible = File.Exists(fullPath);
+		setupVisible = !shouldBeVisible;
+	}
+
+	async Task RefreshNavMenu(bool refresh)
+	{
+		shouldBeVisible = refresh;
+		//setupVisible = true;
+		await Task.CompletedTask;
+		StateHasChanged();
+	}
+
+	protected override void OnAfterRender(bool firstRender)
+	{
+		if (firstRender)
+		{
+			Notifier.RefreshNavMenuRequested += RefreshNavMenu;
+		}
+		base.OnAfterRender(firstRender);
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		Notifier.RefreshNavMenuRequested -= RefreshNavMenu;
+		await ValueTask.CompletedTask;
+	}
+}

@@ -1,0 +1,72 @@
+﻿@using MudBlazor
+
+<div class="pairings-container"
+style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
+            --max-height: @(tableHeight > 0 ? $"{tableHeight}px" : "inherit");">
+  <div class="header">
+    <span class="header-text">Upcoming Pairings</span>
+  </div>
+  <div class="table-wrapper" style="--min-height: @(tableHeight> 0 ? $"{tableHeight - 100}px" : "auto");">
+    <table class="custom-table">
+      <thead>
+        <tr class="header-row">
+          <th class="header-cell">White</th>
+          <th class="header-cell">Black</th>
+          <th class="header-cell">Opening</th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (PairingList.Count > 0)
+        {
+          foreach (var context in PairingList)
+          {
+            <tr class="data-row">
+              <td class="data-cell">@context.White.Name</td>
+              <td class="data-cell">@context.Black.Name</td>
+              <td class="data-cell">@PGNHelper.getOpeningInfoOnly(context.Opening)</td>
+            </tr>
+          }
+        }
+        else
+        {
+          <tr class="data-row" style=$"min-height: {tableHeight}px;">
+            <td class="data-cell" colspan="3">No pairings available</td>           
+          </tr>
+        }
+
+      </tbody>
+    </table>
+  </div>
+</div>
+
+@code {
+
+  [Parameter]
+  public List<Pairing> PairingList { get; set; } = new();
+
+  [Parameter]
+  public int FontSize { get; set; }
+
+  [Parameter]
+  public int TableHeight { get; set; }
+
+
+  private int tableHeight = 0;
+  private int fontSize = 12;
+
+  protected override void OnParametersSet()
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;
+      StateHasChanged();
+    }
+
+    if (TableHeight > 0 && TableHeight != tableHeight)
+    {
+      tableHeight = TableHeight;
+      StateHasChanged();
+    }
+    base.OnParametersSet();
+  } 
+}

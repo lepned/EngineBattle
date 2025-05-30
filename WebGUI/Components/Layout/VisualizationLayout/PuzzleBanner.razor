@@ -1,0 +1,61 @@
+﻿
+
+<MudText Typo=Typo.h5 Class="ml-3" >Details for @Score.Engine with @Score.NeuralNet (@Score.Type), theme @Score.Filter, nodes @Score.Nodes </MudText>
+@if (Score.TotalNumber > 0)
+{
+	if (Score.FailedPuzzles.Count > 0)
+	{
+		<MudPaper Elevation="2">			
+			<MudTable Class="mt-4 pl-3" Items="@FailedPuzzles" FixedHeader=true T="(Puzzle.CsvPuzzleData,string)">
+				<RowTemplate>
+					<MudTd>
+						<PuzzleVisualSolution Size="240" Puzzle="context.Item1" PolicyData="@context.Item2" NeuralNet="@Score.NeuralNet" Solved=false />
+					</MudTd>
+				</RowTemplate>
+			</MudTable>
+		</MudPaper>
+	}
+	if (Score.CorrectPuzzles.Count > 0)
+	{
+		<MudPaper Elevation="2">	
+			<MudTable Class="mt-4 pl-3" Items="@SolvedPuzzles" FixedHeader=true T="Puzzle.CsvPuzzleData">
+				<RowTemplate>
+					<MudTd>
+						<PuzzleVisualSolution Size="240" Puzzle="context" NeuralNet="@Score.NeuralNet" Solved=true />
+					</MudTd>
+				</RowTemplate>
+			</MudTable>
+		</MudPaper>
+	}
+}
+
+@code {
+
+	[Parameter]
+	public Puzzle.Score Score { get; set; }
+
+	[Parameter]
+	public int NumberOfFailedPussles { get; set; }
+
+	[Parameter]
+	public int NumberOfSolvedPussles { get; set; }
+
+	private List<(Puzzle.CsvPuzzleData, string)> FailedPuzzles => Score.FailedPuzzles
+		.Select(tuple => (tuple.Item1, tuple.Item2))
+		.OrderBy(tuple =>
+		{
+			// Split the string by comma
+			var parts = tuple.Item2.Split(',');
+
+			if (parts.Length > 1 && double.TryParse(parts[0].Trim(), out double value))
+				return value;
+
+			// Default value when there's no second part or it can't be parsed
+			return tuple.Item1.Rating;
+		})
+		.Take(NumberOfFailedPussles)
+		.ToList();
+	
+
+	private List<Puzzle.CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.OrderByDescending(e => e.Rating).Take(NumberOfSolvedPussles).ToList();
+}

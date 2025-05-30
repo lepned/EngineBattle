@@ -1,0 +1,263 @@
+﻿@using MudBlazor
+
+<div class="ml-4 mb-2">
+  <span style="@FontHeaderTxt"> Last game: </span>
+  <span style="@FontNormal"> @gameResultHeader</span>
+</div>
+<MudTextField Style=@FontHeaderTxt Class="ml-4 mr-2" Text="Crosstable" T=string />
+<MudTable Class="hideScroll" Items="CrossTable" Dense=true>  
+  <HeaderContent>
+    <MudTh Style=@NameHeaderTxt>Player (Pairs)</MudTh>
+    @foreach (var entry in CrossTable)
+    {
+      <MudTh Class="noOverflow" Style=@FontHeaderTxt>@entry.Player</MudTh>
+    }
+  </HeaderContent>
+  <RowTemplate>
+    <MudTd Style=@NameHeaderTxt DataLabel="Player">
+      @if (true)
+      {
+        var (wins, draws, losses) = GetAllPairs(context);       
+        <span>@context.Player </span>
+        <div style="@FontNormal">
+          <span style="color: rgba(0, 255, 0, 0.5)">+@wins</span>
+          <span> =@draws</span>
+          <span style="color: #FF3C54"> -@losses</span>
+        </div>
+      }
+
+    </MudTd>
+    @foreach (var opponent in CrossTable)
+    {      
+      if (context.Player == opponent.Player)
+      {
+        <MudTd Style="@($"{FontNormal} text-align: center;")"></MudTd>
+      }
+      else
+      {        
+        var results = context.ResultsAgainst.FirstOrDefault(r => r.Item1 == opponent.Player)?.Item2;
+
+        if (results != null && results.Any())
+        {
+          var res = CalculatePairs(context.Player, opponent.Player, results);
+          (var s, var pairs) = GetPairs(results);
+
+          <MudTd Style=@Width>
+            <p style="@FontNormal">
+              Pairs: <span style="color: rgba(0, 255, 0, 0.5);">+@res.W</span><span>=@res.D</span><span style="color: #FF3C54">-@res.L</span>
+            </p>
+            @foreach (var pair in pairs)
+            {
+              var resStyle = GetStyleForPairResult(pair.Item1, pair.Item2);
+              if (resStyle == "equal")
+              {
+                <span style="display: inline-block; font-family: 'Courier New', monospace; ">
+                  <span style="color:GrayText;@FontNormal; "> @pair.Item1 </span>
+                  <span style="color:GrayText;@FontNormal; "> @pair.Item2 </span>
+                  <span>&#160; </span>
+                </span>
+              }
+              else
+              {
+                <span style="display: inline-block; font-family: 'Courier New', monospace; ">
+                  <span style="@GetStyleForResult(pair.Item1);@FontNormal; "> @pair.Item1 </span>
+                  <span style="@GetStyleForResult(pair.Item2);@FontNormal; "> @pair.Item2 </span>
+                  <span>&#160; </span>
+                </span>
+              }
+            }
+            @if (!string.IsNullOrEmpty(s))
+            {
+              <span style="display: inline-block; font-family: 'Courier New', monospace; ">
+                <span style="@GetStyleForResult(s);@FontNormal;width: 10px;"> @s </span>
+              </span>
+            }
+          </MudTd>
+        }
+        else
+        {
+          <MudTd style="font-size: 1em;text-align:center; white-space: normal;">No games</MudTd>
+        }
+      }
+    }
+  </RowTemplate>
+</MudTable>
+
+@code {
+
+  [Parameter]
+  public List<CrossTableEntry> CrossTable { get; set; } = new();
+
+  [Parameter]
+  public int FontSize { get; set; }
+
+  [Parameter]
+  public string GameResult { get; set; }
+
+  private int fontSize = 8;
+  private string FontHeaderTxt;
+  private string FontNormal;
+  private string NameHeaderTxt;
+  private string FontSummaryPairing;
+  private string FontSmal;
+  private string FontNormalAndCentered;
+  private string Width; //style="width: 20%;"
+  private string gameResultHeader = "No games played";
+  
+  private (int, int, int) GetAllPairs(CrossTableEntry entry)
+  {
+    var wins = 0;
+    var losses = 0;
+    var draws = 0;
+
+    foreach (var st in entry.ResultsAgainst)
+    {
+      var opponent = st.Item1;
+      var results = st.Item2;
+      var player = entry.Player;
+      (var win, var draw, var loss) = CalculatePairs(player, opponent, results);
+      wins = wins + win;
+      losses = losses + loss;
+      draws = draws + draw;
+    }
+    return (wins, draws, losses);
+  }
+
+  string FormattedPoints(CrossTableEntry entry)
+  {
+    //get number of games played in total
+    var totalGames = entry.StatsAgainst.Sum(s => s.Item2.Wins + s.Item2.Draws + s.Item2.Losses);
+    var res = $"{entry.TotalScore}/{totalGames}";
+    return res;
+  }
+  
+  private string GetStyleForResult(string result)
+  {
+    return result switch
+    {
+      "1" => "color: rgba(0, 255, 0, 0.5)", //"color: green;",
+      "0" => "color: #FF3C54;", // "color: rgba(255, 0, 0, 0.7)", //"color: red;",
+      "1/2" => "", //"color: white;",  // or just return an empty string if you want the default style
+      _ => ""
+    };
+  }
+
+  private string GetStyleForPairResult(string res1, string res2)
+  {
+    if (res1 == "1" && res2 == "0")
+    {
+      return "equal";
+    }
+
+    else if (res1 == "0" && res2 == "1")
+    {
+      return "equal";
+    }
+
+    else if (res1 == "½" && res2 == "½")
+    {
+      return "equal";
+    }
+
+    return "";   
+  }
+
+  private (string, List<Tuple<string, string>>) GetPairs(string[] results)
+  {
+    List<Tuple<string, string>> pairs = new List<Tuple<string, string>>();
+    for (int i = 0; i < results.Length - 1; i += 2)
+    {
+      if (i + 1 < results.Length)
+      {
+        pairs.Add(new Tuple<string, string>(GetValue(results[i]), GetValue(results[i + 1])));
+      }     
+    }
+    if (results.Length % 2 == 1)
+    {
+      return (GetValue(results.Last()), pairs);
+    }
+    return ("", pairs);
+  }
+
+  private string GetValue(string result)
+  {
+    return result switch
+    {
+      "1" => "1",
+      "0" => "0",
+      "1/2" => "½",
+      _ => " "
+    };
+  }
+
+  private List<string> LossCombinations = new List<string> { "00", "01/2", "1/20", };
+  private List<string> WinCombinations = new List<string> { "11", "11/2", "1/21" };
+  private List<string> DrawCombinations = new List<string> { "1/21/2", "10", "01" };
+
+  private (int W, int D, int L) CalculatePairs(string player, string opponent, string[] results)
+  {
+    int wins = 0;
+    int losses = 0;
+    int draws = 0;
+    var odd = results.Length % 2 == 0;
+    List<Tuple<string, string>> result = new List<Tuple<string, string>>();
+    // If odd number of elements, decrease count by 1 to ignore the last one
+    int countToProcess = results.Length % 2 == 0 ? results.Length : results.Length - 1;      
+
+    for (int i = 0; i < countToProcess; i += 2)
+    {
+      result.Add(new Tuple<string, string>(results[i], results[i + 1]));
+    }
+    var game = 1;
+    foreach (var pair in result)
+    {
+      var addThem = pair.Item1 + pair.Item2;
+      if (WinCombinations.Contains(addThem) && LossCombinations.Contains(addThem))
+      {
+        continue;
+      }
+      else if (WinCombinations.Contains(addThem))
+      {
+        wins++;
+      }
+
+      else if (DrawCombinations.Contains(addThem))
+      {
+        draws++;
+      }
+
+      else if (LossCombinations.Contains(addThem))
+      {
+        losses++;
+      }
+
+      //Console.WriteLine($"{game}: {player} vs {opponent} ({pair.Item1}, {pair.Item2}) ({wins}-{losses})");
+      game++;
+    }
+
+    return (wins, draws, losses);
+
+  }
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;
+      FontHeaderTxt = $"font-size:{fontSize + 1}px";
+      FontNormal = $"font-family: Consolas; font-size:{fontSize}px;";
+      var headerWidth = CrossTable.Count() > 3 ? 15 : 20;
+      NameHeaderTxt = $"font-size:{fontSize + 1}px; width:{headerWidth}%;";
+      FontSummaryPairing = $"font-family: Consolas; font-size:{fontSize + 2}px";
+      FontNormalAndCentered = $"font-size:{fontSize}px; text-align: center;";
+      var w = (100 - headerWidth) / (CrossTable.Count());
+      Width = $"width: {w - 1}%;";
+      FontSmal = $"font-size:{fontSize - 2}px";
+      gameResultHeader = GameResult;
+      StateHasChanged();
+    }
+
+    base.OnAfterRender(firstRender);
+  }
+
+}

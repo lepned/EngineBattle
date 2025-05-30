@@ -1,0 +1,69 @@
+﻿@using WebGUI
+
+@using System.Text
+
+@inject ILogger<EpdFileVisualization> Logger
+
+<InputFile id="fileInput" OnChange="@OpenCSVFile" hidden />
+<MudFab Class="ml-3 mb-3 mt-6" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+<MudPaper >
+  <MudGrid>
+    @foreach (var epd in EPDs)
+    {    
+      <MudItem sm=2 md="2" lg="2" Class="pa-2">
+        <EPDVisualization  EPD="@epd" />
+      </MudItem>
+    }
+
+  </MudGrid>
+</MudPaper>
+
+@code {
+
+  private List<EPD.EPDEntry> EPDs = new();
+  IBrowserFile browserFile;
+
+  string GetHeader(EPD.EPDEntry EPD)
+  {
+    StringBuilder msgBuilder = new StringBuilder();
+
+    if (EPD.BestMove != null)
+    {
+      msgBuilder.Append("BestMove: ").Append(EPD.BestMove.Value.Trim());
+    }
+    else if (EPD.AvoidMove != null)
+    {
+      msgBuilder.Append("AvoidMove: ").Append(EPD.AvoidMove.Value.Trim());
+    }
+    else if (EPD.Other != null)
+    {
+      if (!string.IsNullOrEmpty(EPD.Id?.Value))
+      {
+        msgBuilder.Append(EPD.Id.Value).Append(": ");
+      }
+      if (!string.IsNullOrEmpty(EPD.Other?.Value))
+      {
+        msgBuilder.Append(EPD.Other.Value);
+      }
+    }
+
+    return msgBuilder.ToString();
+  }
+
+  private async Task OpenCSVFile(InputFileChangeEventArgs e)
+  {
+    var pgnName = e.File.Name;
+    Logger.LogInformation("CSV file opened {File}", pgnName);
+    var env = Environment.CurrentDirectory;
+    var path = Path.Combine(env, pgnName);
+    await using (FileStream fs = new(path, FileMode.Create))
+    {
+      browserFile = e.File;
+      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
+    }
+
+    EPDs = Parser.EPDExtractor.readEPDs(path).Take(100).ToList();
+    File.Delete(path);    
+  }
+}
+

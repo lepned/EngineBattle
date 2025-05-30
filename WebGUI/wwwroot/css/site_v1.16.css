@@ -1,0 +1,663 @@
+/* Targets ONLY the main screen container which is the tournament page */
+.main-screen {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Disable scrollbars */
+}
+
+.pv-board-container {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+    margin-left: 1.5rem;
+    margin-right: 0.5rem;
+    padding-right: 1.25rem;
+    flex-grow: 1;
+    gap: 0.25rem;
+}
+
+.pv-board {
+    flex-grow: 0;
+}
+
+.left-board {
+    margin-left: 2rem;
+}
+
+.right-board {
+    margin-right: 1rem;
+}
+
+/* Board size classes */
+.board-small {
+    width: 23%;
+}
+
+.board-medium {
+    width: 29%;
+}
+
+.board-large {
+    width: 35%;
+}
+
+/* Container size adjustments */
+.container-small {
+    padding-right: 2.0rem;
+    padding-left: 2.0rem;
+    margin-left: 1rem;
+    margin-right: 1rem;
+}
+
+.container-medium {
+    padding-right: 0.25rem;
+    margin-left: 1.0rem;
+    margin-right: 1.0rem;
+}
+
+.container-large {
+    padding-right: 0rem;
+    margin-left: 0rem;
+    margin-right: 0rem;
+}
+
+
+/* Ensure the scrollbar is only visible when needed */
+.standings-table-wrapper {
+    overflow-y: auto; /* Show scrollbar only when content overflows */
+    
+    background-color: #2c2f35; /* Optional: Background color for the container */
+}
+
+    /* Style the scrollbar */
+    .standings-table-wrapper::-webkit-scrollbar {
+        width: 12px; /* Width of the scrollbar */
+        background-color: #2c2f35; /* Dark background for the scrollbar track */
+    }
+
+    /* Style the scrollbar thumb (the draggable part) */
+    .standings-table-wrapper::-webkit-scrollbar-thumb {
+        background-color: #555; /* Darker color for the thumb */
+        border-radius: 6px; /* Rounded corners */
+    }
+
+        /* Optional: Add hover effect for the thumb */
+        .standings-table-wrapper::-webkit-scrollbar-thumb:hover {
+            background-color: #777; /* Slightly lighter color on hover */
+        }
+
+/* For Firefox */
+.standings-table-wrapper {
+    scrollbar-width: thin; /* Thin scrollbar */
+    scrollbar-color: #555 #2c2f35; /* Thumb color and track color */
+}
+
+.overlay-menu-button {
+    max-width: 100%;
+}
+
+    .overlay-menu-button .mud-button-label {
+        white-space: nowrap !important; /* Force no wrapping with !important */
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: block !important;
+        width: 100% !important;
+        max-height: 1.2em !important; /* Strictly limit height to one line */
+        line-height: 1.2em !important; /* Match line height to max-height */
+    }
+
+
+.tiny-button {
+    font-size: 10px;
+    padding: 2px 6px;
+    height: 35px;
+    line-height: 20px;
+    min-width: 80px;
+    margin-right: 8px; /* Add horizontal spacing between buttons */
+    margin-bottom: 8px; /* Add vertical spacing between buttons if they wrap */
+}
+
+
+
+.markdown-content {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+}
+
+    .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+        margin-top: 1em;
+    }
+
+    .markdown-content pre {
+        /*background-color: #f4f4f4;*/
+        padding: 10px;
+        border-radius: 5px;
+        overflow-x: auto;
+    }
+
+.small-mud-select-item {
+  margin: 0 !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
+.circle-piece {
+  position: relative;
+  width: 75%;
+  height: 75%;
+  border-radius: 50%;
+  border: 2px solid yellow;
+  color: black;
+  text-align: center;
+  font-size: 1.2em;
+  font-weight: bold;
+  opacity: 0.85; /* 50% opacity */
+  /*background-color: rgba(144, 238, 144, 0.75);*/
+  margin: auto; /* Add this line to center the circle horizontally */
+  top: 50%; /* Add this line to center the circle vertically */
+  transform: translateY(-50%); /* Add this line to center the circle vertically */
+  display: flex; /* Add this line to enable flexbox */
+  justify-content: center; /* Add this line to align text horizontally */
+  align-items: center; /* Add this line to align text vertically */
+}
+
+
+.arrow-head-38dfa {
+  height: 33% !important;
+  opacity: 0.75; /* 50% opacity */
+}
+
+.arrow-line-a8dce {
+  height: 17% !important;
+}
+
+.square-4b72b.white-3b784 {
+  /*box-shadow: inset 0 0 3px 3px yellow;*/
+  background-color: #B1D8DB;
+  color: #B1D8DB
+  /*background-color: yellow;
+  border: 2px solid red;*/
+}
+
+.square-4b72b.black-b7cb6 {
+  /* box-shadow: inset 0 0 3px 3px blue;*/
+  background-color: #619EB3;
+  color: #619EB3
+}
+
+.left-alignment-table {
+  text-align: left;
+}
+
+.myMudCarousel {
+  min-height: 100px; /* Adjust as needed */
+  height: auto;
+}
+
+.mud-carousel-item {
+  width: 100%; /* Ensures each item is the full width of the carousel */
+  box-sizing: border-box; /* Includes padding and border in the element's total width and height */
+}
+
+.moveList {
+  font-weight: 400;
+  padding: 5px;
+  overflow: hidden;
+  position: relative;
+  line-height: 1.2em; /* Adjust line-height to match your design */
+}
+
+.openingMoves {
+  color: skyblue;
+}
+
+.pv-white-box,
+.pv-black-box {
+  border-radius: 10px;
+  font-weight: 400;
+  padding: 5px;
+  overflow: hidden;
+  position: relative;
+  line-height: 1.2em; /* Adjust line-height to match your design */
+  height: 3.9em; /* 3 times the line-height to show three lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 3; /* Number of lines you want to display */
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis; /* This will add "..." at the end of the last line if the text is cut off */
+}
+
+/* represent the white player */
+.pv-white-box {
+  margin-top: 10px;
+  background-color: #e0e2ed; /* A light gray that isn't too stark against white */
+  color: #0048c0; /* Good contrast for readability */
+}
+
+/* represent the black player */
+.pv-black-box {
+  background-color: #191b23; /* Dark enough to contrast the page background, but not pure black */
+  color: #83a6f5; /* High contrast for readability against a dark background */
+  /*font-weight: 400;*/
+}
+
+.pv-deviation-white {
+  /*color: rgba(235, 235, 0, 1);*/
+  background-color: #191b23;
+  color: #e7c914;
+}
+
+.pv-deviation-black {
+  /*color: rgba(204, 204, 0, 1);*/
+  color: #e7c914;
+}
+
+.custom-muditem {
+  background-color: indianred; /* #4CAF50;  Green background */
+  padding-top: 7px;
+  padding-bottom: 7px;
+  padding-left: 7px;
+  padding-right: 7px;
+}
+
+.infoBannerContent {
+  color: #b0b7c0;
+  background-color: #2c2f35;
+}
+
+.infoBanner {
+  color: #b0b7c0;
+  background-color: black;
+}
+
+.multiLine {
+  display: block;
+  height: 5em;
+  line-height: 1.5;
+}
+
+.scrollable {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.no-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hideScroll .mud-table-container {
+  overflow-y: hidden;
+  overflow-x: hidden;
+}
+
+.mainContainer {
+  margin: 10px;
+  padding: 10px;
+}
+
+.white-mudpaper {
+  background-color: darkslateblue;
+}
+
+.black-mudpaper {
+  background-color: darkslateblue;
+}
+
+.mud-centerTxt {
+  text-align: center;
+  margin-top: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.noOverflow {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mud-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.selected {
+  background-color: #1E88E5 !important;
+}
+
+  .selected > td {
+    color: white !important;
+  }
+
+    .selected > td .mud-input {
+      color: white !important;
+    }
+
+.chessboard {
+  max-height: 1000px;
+  max-width: 1000px
+}
+
+.chessboardHeader {
+  text-align: center;
+}
+
+.filterSelect {
+  width: 50px;
+}
+
+.evalTableHeader {
+  font-size: 14px;
+  height: 40px;
+}
+
+.scoreTable {
+  min-height: 100px;
+}
+
+.evalTable {
+  padding: 2px;
+  margin: 2px;
+  width: auto;
+  max-height: 500px;
+}
+
+.analyzeButton {
+  height: 40px;
+  margin-top: 4px;
+}
+
+.slider {
+  max-width: 120px;
+  margin-left: 13px;
+  margin-top: 0px;
+}
+
+.wideSlider {
+  max-width: 400px;
+  margin-left: 10px;
+  margin-top: 10px;
+}
+
+.config {
+  width: 500px;
+}
+
+.tournamentTable {
+  width: 1200px;
+}
+
+.pgnTable {
+  width: 800px;
+}
+
+.analysisTable {
+  width: 1200px;
+}
+
+.playerTable {
+  width: 600px;
+}
+
+.benchmarkText {
+  width: 800px;
+  font-size: large;
+}
+
+.benchmarkTable {
+  width: 800px;
+  margin-top: 20px;
+}
+
+.MainContentAnalyze {
+  max-width: 900px;
+}
+
+.pgnEvalChart {
+  background-color: lightgray;
+  max-width: 900px;
+  min-width: 500px;
+  height: 150px;
+  margin: 4px;
+}
+
+.qChart {
+  background-color: lightslategray;
+  /*max-width:1200px;*/
+  height: 260px;
+  margin: 4px;
+}
+
+.chartSearch {
+  background-color: lightslategray;
+  height: 260px;
+  margin: 5px;
+}
+
+.chart {
+  background-color: #373740;
+  margin: 5px;
+  margin-right: 10px;
+}
+
+/* CSS class to highlight a square */
+.highlight-white {
+  background-color: rgba(250, 250, 210, 0.8) !important;
+}
+
+.highlight-black {
+  background-color: rgba(238, 232, 170, 0.8) !important;
+  /*background-color: rgba(255, 250, 205, 0.9) !important;*/
+}
+
+.highlight-wrong {
+  box-shadow: inset 0 0 3px 3px #ff6347;
+}
+
+.nowrap {
+  white-space: nowrap;
+  width: 500px;
+}
+
+html, body {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+a, .btn-link {
+  color: #0366d6;
+}
+
+.btn-primary {
+  color: #fff;
+  background-color: #1b6ec2;
+  border-color: #1861ac;
+}
+
+.content {
+  padding-top: 1.1rem;
+}
+
+.valid.modified:not([type=checkbox]) {
+  outline: 1px solid #26b050;
+}
+
+.invalid {
+  outline: 1px solid red;
+}
+
+.validation-message {
+  color: red;
+}
+
+#blazor-error-ui {
+  background: lightyellow;
+  bottom: 0;
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+  display: none;
+  left: 0;
+  padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+  position: fixed;
+  width: 100%;
+  z-index: 1000;
+}
+
+  #blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+  }
+
+.tournament-carousel {
+  flex: 1 1 auto;
+  min-height: 400px;
+  position: relative;
+  overflow: hidden; /* Contain content within carousel */
+  will-change: transform; /* Optimize for animations */
+}
+
+.mud-carousel-item {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  transition: transform 0.3s ease;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+  .mud-carousel-item.active {
+    visibility: visible;
+    z-index: 1;
+  }
+
+/* Performance optimizations */
+.mud-carousel-items-container {
+  transform: translateZ(0); /* Create new layer */
+  will-change: transform;
+}
+
+/* Table specific fixes */
+.mud-table {
+  table-layout: fixed;
+  width: 100% !important;
+}
+
+.mud-table-container {
+  overflow: auto;
+  flex-grow: 1;
+  transform: translateZ(0); /* Improve scrolling */
+}
+
+.pairings-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: var(--max-height);
+  margin-right: 10px;
+  margin-left: 10px;
+}
+
+.standings-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  margin-top: 10px;
+  margin-left: 15px;
+  margin-right: 15px;
+}
+
+.header {
+  padding: 6px 12px;
+  /*background: #2d2d2d;*/
+  border-bottom: 1px solid #404040;
+}
+
+.header-text {
+  font-size: var(--font-size);
+  font-weight: bold;
+  color: #d4cfcf;
+}
+
+.table-wrapper {
+  flex: 1;
+  overflow: hidden;
+}
+
+.custom-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.header-row {
+  background: #404045;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.header-cell {
+  padding: 4px 12px;
+  text-align: left;
+  font-size: var(--font-size);
+  font-weight: normal;
+  color: #fff;
+  border-bottom: 2px solid #404040;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-row {
+  border-bottom: 1px solid #404040;
+}
+
+  .data-row.challenger {
+    background: rgba(64, 128, 192, 0.1);
+  }
+
+.data-cell {
+  padding: 2px 12px;
+  font-size: var(--font-size);
+  color: #c7cace;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.center {
+  text-align: center;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .custom-table {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .header-row,
+  .data-row {
+    display: contents;
+  }
+
+  .header-cell,
+  .data-cell {
+    padding: 8px;
+    border-bottom: none;
+  }
+
+    .header-cell::before,
+    .data-cell::before {
+      content: attr(data-label);
+      font-weight: bold;
+      display: block;
+      margin-bottom: 4px;
+      color: #888;
+    }
+}

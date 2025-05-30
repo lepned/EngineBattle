@@ -1,0 +1,118 @@
+﻿@using WebGUI.Services
+@using WebGUI
+
+@implements IAsyncDisposable
+@implements IDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject NotifierService Notifier
+@inject ILogger<SimpleChessboard> Logger
+
+@if (ShowDesc)
+{
+  <MudItem md="4" lg="6">
+    @desc
+  </MudItem>
+}
+<MudItem md="4" lg="6">
+  @blackPlayer
+</MudItem>
+<MudItem md="4" lg="6">
+  <div @ref="board"></div>
+</MudItem>
+<MudItem md="4" lg="6">
+  @if (ShowDesc)
+  {
+    @White
+  }
+
+  @if (!ShowDesc)
+  {
+    @whitePlayer
+  }
+
+</MudItem>
+
+@code {
+  public ChessLibrary.Chess.Board Board { get; set; } = new();
+  private string whitePlayer = "White";
+  private string blackPlayer = "black";
+  private string resultGame;
+  private string desc;
+  private string fen;
+  private string White => $"{whitePlayer} - {resultGame}";
+
+  [Parameter] public string Id { get; set; }
+  [Parameter] public bool ShowDesc { get; set; }
+  [Parameter] public int Size { get; set; }
+
+  private DotNetObjectReference<SimpleChessboard> objRef;
+  private ElementReference board;
+  private IJSObjectReference chessJSmodule; //my own chessinterop.js
+  private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+
+  private async Task PrepareChessboard()
+  {
+    //chessboard functionality here
+    objRef = DotNetObjectReference.Create(this);
+    chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+    await chessJSmodule.InvokeVoidAsync("createChessboard", board);
+  }
+
+  public async Task SetMoveWithAnnotation(MoveAndFen input)
+  {
+    if (chessJSmodule is not null)
+    {
+      await chessJSmodule.InvokeVoidAsync("setBoardWithSquareHighlighting", board, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+    }
+    else
+    {
+      await Task.CompletedTask;
+    }
+  }
+
+  public async Task OnNotifyPGN(PGNTypes.PgnGame game, string id, string color, int moveNr)
+  {
+    if (Id == id)
+    {
+      whitePlayer = game.GameMetaData.White;
+      blackPlayer = game.GameMetaData.Black;
+      resultGame = game.GameMetaData.Result;
+      desc = $"{game.GameMetaData.Round}, Game {game.GameNumber}, Move {moveNr}";
+      var movesAndFen = Board.PlayPgnToPly(game, moveNr);
+      fen = movesAndFen.FenAfterMove;
+      await SetMoveWithAnnotation(movesAndFen);
+      StateHasChanged();
+    }
+    await Task.CompletedTask;
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      await PrepareChessboard();
+    }
+  }
+
+  protected override void OnInitialized()
+  {
+    fen = startPos;
+    Notifier.NotifyPGN += OnNotifyPGN;
+    base.OnInitialized();
+  }
+
+  async ValueTask IAsyncDisposable.DisposeAsync()
+  {
+    await ValueTask.CompletedTask;
+    Dispose();
+  }
+
+  public void Dispose()
+  {
+    objRef?.Dispose();
+    Notifier.NotifyPGN -= OnNotifyPGN;
+  }
+
+}

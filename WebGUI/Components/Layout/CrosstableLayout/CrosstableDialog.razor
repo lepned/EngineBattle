@@ -1,0 +1,25 @@
+﻿
+<MudDialog>
+  <DialogContent>
+    @if (Gauntlet)
+    {
+      <CrossChallengerTableDetail CrossTable="CrossTable" FontSize="Fontsize + 4" Players="Players" GameResult="@GameResult"></CrossChallengerTableDetail>
+    }
+    else
+    {
+      <CrossTableDetail CrossTable="CrossTable" FontSize="Fontsize + 4" GameResult="@GameResult"></CrossTableDetail>
+    }
+  </DialogContent>
+</MudDialog>
+
+@code {
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+  [Parameter] public List<CrossTableEntry> CrossTable { get; set; }
+  [Parameter] public int Fontsize { get; set; }
+  [Parameter] public bool Gauntlet { get; set; }
+  [Parameter] public int Players { get; set; }
+  [Parameter] public string GameResult { get; set; }
+
+  void Close() => MudDialog.Close(DialogResult.Ok(true));
+
+}

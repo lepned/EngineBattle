@@ -1,0 +1,99 @@
+﻿@page "/ceresSysbench"
+
+@using WebGUI.Services
+@using CliWrap;
+@using CliWrap.Buffered;
+@using CliWrap.EventStream
+@using System.Text;
+@inject ChessConfigurationService Setup
+
+<PageTitle> Benchmark tool for Ceres </PageTitle>
+<MudContainer Class="mt-4">
+  <MudText Typo=Typo.h4>Ceres benchmark of system CPU and GPU speed</MudText>
+  <MudButton />
+  <MudButton Disabled=disableRun Class="analyzeButton ml-2 mt-10 mb-10"
+             Variant="Variant.Outlined" OnClick=RunBenchmark> Run Quick Sysbench </MudButton>
+  
+  @foreach (var item in benchResults)
+  {
+    <pre Class="benchmarkText">@item</pre>
+  }
+  
+</MudContainer>
+
+
+@code {
+  private ChessConfigurationService setting;
+  private bool disableRun = false;
+  List<string> benchResults = new();
+  StringBuilder sb = new StringBuilder();
+  //string nn = CeresUserSettingsManager.Settings.DefaultNetworkSpecString;
+
+  private async Task RunBenchmark()
+  {
+    disableRun = true;
+    benchResults.Clear();
+    await StartBenchMark();    
+  }
+
+  private void UpdateGUI(string res)
+  {
+    benchResults.Add(res);
+    StateHasChanged();
+  }
+
+  private async Task StartBenchMark()
+  {
+    var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
+    var ceresDir = currentDir.Parent.Parent;
+    var fullpath = Path.Combine(ceresDir.FullName, "artifacts", "release", "net5.0");
+    var ceresPath = Path.Combine(fullpath, "ceres");
+    Action<string> updateBenchMark = (info) => InvokeAsync(() => UpdateGUI(info));
+
+    await Task.Factory.StartNew(async () =>
+    {
+      await Iterate(ceresPath, fullpath, updateBenchMark);
+    });    
+  }
+
+  private Command ConfigureCliWrapper(string ceresPath, string fullPath, Action<string> update)
+  {
+    return Cli.Wrap(ceresPath)
+         .WithWorkingDirectory(fullPath)
+         .WithArguments(args => args.Add("sysbench"))
+         .WithValidation(CommandResultValidation.None)
+         .WithStandardOutputPipe(PipeTarget.ToDelegate(update));
+  }
+
+  private async Task Iterate(string ceresPath, string fullPath, Action<string> update)
+  {
+    var cmd = ConfigureCliWrapper(ceresPath, fullPath, update);
+    await foreach (var cmdEvent in cmd.ListenAsync())
+    {
+      switch (cmdEvent)
+      {
+        case StartedCommandEvent started:
+          Console.WriteLine("Process started");
+          break;
+        case StandardOutputCommandEvent stdOut:
+          Console.WriteLine(stdOut.Text);
+          break;
+        case StandardErrorCommandEvent stdErr:
+          Console.WriteLine(stdErr.Text);
+          break;
+        case ExitedCommandEvent exited:
+          Console.WriteLine("Process finished");
+          break;
+      }
+    }
+    await Task.CompletedTask;
+
+    await InvokeAsync(() => { disableRun = false; StateHasChanged(); });
+  }
+
+  protected override Task OnInitializedAsync()
+  {
+    setting = Setup;
+    return base.OnInitializedAsync();
+  }
+}

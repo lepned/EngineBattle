@@ -1,0 +1,271 @@
+﻿@using MudBlazor
+@using WebGUI.Services
+@using System.Timers
+@implements IDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+
+@inject NotifierService notify
+
+<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")" >
+	<div class="header">
+		<span class="header-text">Standings</span>
+	</div>
+	<div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "20vh"); overflow-y: auto;" id="standingsDiv">
+
+		<table class="custom-table">
+			<thead>
+				<tr class="header-row">
+					<th class="header-cell">Player</th>
+					<th class="header-cell">Points</th>
+					<th class="header-cell">EFF%</th>
+					<th class="header-cell center">ELO (±)</th>
+					<th class="header-cell center">W-D-L</th>
+					<th class="header-cell">@(ShowNPM ? "NPM" : "Speed")</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var context in ScoreTable)
+				{
+					<tr class="data-row @(context.Challenger ? "challenger" : "")">
+						<td class="data-cell">@context.Player</td>
+						<td class="data-cell">@FormatPoints(context)</td>
+						<td class="data-cell">@FormatPerf(context)</td>
+						<td class="data-cell center">@FormatEloWithError(context, context.Challenger, ScoreTable.Count == 2 && ScoreTable.IndexOf(context) == 0)</td>
+						<td class="data-cell center">@context.Win-@context.Draw-@context.Loss</td>
+						<td class="data-cell">
+							@if (ShowNPM)
+							{
+								@FormatNPM(context.AvgNPM)
+							}
+							else
+							{
+								@FormatNPS(context.MedSpeed)
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+@code {
+
+	[Parameter]
+	public List<PlayerResult> ScoreTable { get; set; } = new();
+
+	[Parameter]
+	public int FontSize { get; set; }
+
+	[Parameter]
+	public bool ShowNPM { get; set; }
+
+	[Parameter]
+	public int Height { get; set; }
+
+	[Parameter]
+	public int CycleSeconds { get; set; } = 20; // Default 20 seconds
+
+	[Parameter]
+	public bool ShouldCycle { get; set; }
+
+	private int fontSize = 6;
+	private Timer cycleTimer;
+	private int activeTableIndex = 0;
+	private int cycleSeconds = 20;
+	private IJSObjectReference chessJSmodule; //my own chessinterop.js
+
+
+	private async Task ScrollToEnd()
+	{
+		await chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "standingsDiv");
+	}
+
+	private async Task ScrollToTop()
+	{
+		await chessJSmodule.InvokeVoidAsync("scrollDivToTop", "standingsDiv");
+	}
+
+	string CheckForNanAndInfinity(double value, bool percentage)
+	{
+		//if positive infinity return the + infinity symbol
+		if (double.IsPositiveInfinity(value))
+		{
+			return "∞";
+		}
+
+		//if negative infinity return the - infinity symbol
+		if (double.IsNegativeInfinity(value))
+		{
+			return "∞";
+		}
+
+		//if NaN return the three dashes
+		if (double.IsNaN(value))
+		{
+			return "---";
+		}
+		if (percentage)
+		{
+			return value.ToString("P0");
+		}
+		return value.ToString("F0");
+	}
+
+	private string FormatEloWithError(PlayerResult res, bool isChallenger, bool onlyTwoPlayersAndTopRow)
+	{
+		if (res.Played == 0)
+		{
+			return "---";
+		}
+		if (onlyTwoPlayersAndTopRow)
+		{
+			return "0.0";
+		}
+
+		var elo = CheckForNanAndInfinity(res.Elo, false);
+		var pos = LowLevelUtilities.ConsoleUtils.positiveInfinitySymbol;
+		var neg = LowLevelUtilities.ConsoleUtils.negativeInfinitySymbol;
+		if (elo == pos || elo == neg)
+		{
+			return elo;
+		}
+		var error = CheckForNanAndInfinity(res.Error, false);
+		if (isChallenger)
+		{
+			return $"{elo} (---)";
+		}
+		var ret = $"{elo} ({error})";
+		return ret;
+	}
+
+	private string FormatPerf(PlayerResult res)
+	{
+		if (res.Played == 0)
+		{
+			return "---";
+		}
+		var ratio = (res.Points / (double)res.Played);
+		var percentage = CheckForNanAndInfinity(ratio, true);
+		return percentage;
+	}
+
+	private string FormatPoints(PlayerResult res)
+	{
+		var msg = $"{res.Points}/{res.Played}";
+		return msg;
+	}
+
+	private string FormatNPS(double nps)
+	{
+		if (nps > 1_000_000_000)
+		{
+			var mill = nps / 1_000_000_000;
+			return mill.ToString("F1") + "Gnps"; //Gnps
+		}
+		else if (nps > 1_000_000)
+		{
+			var mill = nps / 1_000_000;
+			return mill.ToString("F1") + "Mnps"; //Mnps
+		}
+
+		else if (nps >= 1_000)
+		{
+			var thousand = nps / 1_000;
+			return thousand.ToString("F1") + "Knps"; //Knps
+		}
+
+		else
+		{
+			return nps.ToString("F1") + " nps"; //nps
+		}
+	}
+
+	private string FormatNPM(double npm)
+	{
+		if (npm > 1_000_000_000)
+		{
+			var mill = npm / 1_000_000_000;
+			return mill.ToString("F1") + "Gnpm"; //Gnps
+		}
+		else if (npm > 1_000_000)
+		{
+			var mill = npm / 1_000_000;
+			return mill.ToString("F1") + "Mnpm"; //Mnps
+		}
+
+		else if (npm >= 1_000)
+		{
+			var thousand = npm / 1_000;
+			return thousand.ToString("F1") + "Knpm"; //Knps
+		}
+
+		else
+		{
+			return npm.ToString("F0") + " npm"; //nps
+		}
+	}
+
+	private async void DoScroll()
+	{
+		if (ShouldCycle)
+		{
+			if (activeTableIndex == 1)
+			{
+				await ScrollToEnd();
+			}
+			else
+			{
+				await ScrollToTop();
+			}
+		}
+	}
+
+	protected override void OnInitialized()
+	{
+		if (ShouldCycle && CycleSeconds > 0)
+		{
+			cycleTimer = new Timer(CycleSeconds * 1000);
+			cycleTimer.Elapsed += (sender, args) =>
+			{
+				activeTableIndex = (activeTableIndex + 1) % 2;
+				DoScroll();
+			};
+			cycleTimer.Start();
+		}
+		base.OnInitialized();
+	}
+
+	protected override void OnParametersSet()
+	{
+		if (ShouldCycle && CycleSeconds > 0 && CycleSeconds != cycleSeconds)
+		{
+			cycleSeconds = CycleSeconds;
+			Dispose();
+			OnInitialized();
+		}
+		StateHasChanged();
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+		}
+		if (FontSize > 0 && FontSize != fontSize)
+		{
+			fontSize = FontSize;
+			StateHasChanged();
+		}
+
+		base.OnAfterRender(firstRender);
+	}
+
+	public void Dispose()
+	{
+		cycleTimer?.Dispose();
+	}
+
+}

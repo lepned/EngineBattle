@@ -1,0 +1,208 @@
+﻿@page "/ceresSuite"
+
+@using WebGUI.Services
+
+@using System.Globalization
+@using CliWrap
+@using CliWrap.EventStream
+@inject ChessConfigurationService Setup
+@inject IDialogService DialogService
+@inject NotifierService Notifier
+@implements IAsyncDisposable
+
+<PageTitle> Move agreement analysis </PageTitle>
+
+<InputFile id="fileInput" OnChange="@OpenEPDFile" hidden />
+
+<MudContainer Class="ml-6 mt-5 mb-3">
+  <MudGrid>
+    <MudItem>
+      <MudText Typo=Typo.h4>Run search on all positions in a suite of test positions from an EPD file and quantify agreement with specified correct moves</MudText>
+
+    </MudItem>
+  </MudGrid>
+  @*<MudItem>
+  <Chessboard Size="600px" ShowFenField=true ShowChessNavButtons=true ShowMoveList=false OnMoveMade="OnNotifyMove"></Chessboard>
+  </MudItem>*@
+  <MudItem Class="config mt-5">
+    <MudText Class="pa-1 ma-1">Input for test suite: </MudText>
+    <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large"
+            StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+    <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="EPD file name:" @bind-Value=epdFile
+                  TextChanged="EpdFileChanged" Variant="Variant.Filled"></MudTextField>
+    @*<MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net folder:" @bind-Value=setting.NeuralNetFolder
+    TextChanged="NeuralNetFolderChanged" Variant="Variant.Filled"></MudTextField>*@
+    <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net:" @bind-Value=setting.NeuralNet
+                  TextChanged="NeuralNetChanged" Variant="Variant.Filled"></MudTextField>
+    <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Reference Neural net:" @bind-Value=setting.RefNeuralNet
+                  TextChanged="RefNeuralNetChanged" Variant="Variant.Filled"></MudTextField>
+    <MudNumericField Format="N0" Label="Time in seconds per move:"
+                     Variant="Variant.Filled" @bind-Value="timeInSeconds" Culture=currentCulture></MudNumericField>
+    <MudItem>
+
+      @*<MudGrid Class="pa-1 ma-1">
+      <MudNumericField Class="filterSelect" Immediate="false" HideSpinButtons=true Format="N0" Label="Number of nodes:"
+      Variant="Variant.Filled" @bind-Value="nodesPerMove" Culture=currentCulture></MudNumericField>
+      <MudNumericField Class="filterSelect ml-2" Min=1 Label="Max positions" @bind-Value=maxNumberOfPos
+      Variant="Variant.Filled"></MudNumericField>
+      </MudGrid>*@
+
+    </MudItem>
+  </MudItem>
+  <MudButton Disabled=disableRun Class="analyzeButton ml-5 mt-5" Variant="Variant.Outlined" OnClick=RunEpdSuite> Run test suite </MudButton>
+  <div class="mb-10">
+    @foreach (var item in epdSearchList)
+    {
+      <pre>@item</pre>
+    }
+  </div>
+</MudContainer>
+
+
+@code {
+  private bool disableRun = false;
+  private ChessConfigurationService setting;
+  //private string tableHeader = $"Test suite results ";
+  //private record Player(string name, float score, float moves);
+  //double nodesPerMove = 10_000;
+  //int maxNumberOfPos = 10;
+  int timeInSeconds = 5;
+  public CultureInfo currentCulture = CultureInfo.CurrentCulture;
+  private List<string> epdSearchList = new();
+  private string epdFile = string.Empty;
+
+  private void NeuralNetChanged(string net)
+  {
+    setting.NeuralNet = net;
+  }
+
+  private void EpdFileChanged(string filename)
+  {
+    epdFile = filename;
+    //StateHasChanged();
+  }
+
+  private void RefNeuralNetChanged(string net)
+  {
+    setting.RefNeuralNet = net;
+  }
+
+  private void OpenEPDFile(InputFileChangeEventArgs e)
+  {
+    epdFile = e.File.Name;
+  }
+
+  //private async Task RunAnalysis()
+  //{
+  //  //PlayersOutput.Clear();
+  //  disableRun = true;
+  //  ParamsSearch paramsNoFutility = new ParamsSearch() { FutilityPruningStopSearchEnabled = false };
+  //  string pathToEpdFile = Path.Combine(setting.EpdFolder, setting.EpdFileName);
+  //  string suiteGPU = "GPU:0";
+  //  SuiteTestDef suiteDef =
+  //    new SuiteTestDef("Suite", pathToEpdFile,
+  //                     SearchLimit.NodesPerMove((int)nodesPerMove),
+  //                     GameEngineDefFactory.CeresInProcess("Ceres1", setting.NeuralNet, suiteGPU, paramsNoFutility with { }),
+  //                     GameEngineDefFactory.CeresInProcess("Ceres2", setting.RefNeuralNet, suiteGPU, paramsNoFutility with { }),
+  //                     null);
+
+  //  suiteDef.MaxNumPositions = maxNumberOfPos;
+  //  suiteDef.EPDLichessPuzzleFormat = suiteDef.EPDFileName.ToUpper().Contains("LICHESS");
+
+  //  //suiteDef.EPDFilter = s => !s.Contains(".exe"); // For NICE suite, these represent positions with multiple choices
+
+  //  SuiteTestRunner suiteRunner = new SuiteTestRunner(suiteDef);
+  //  SuiteTestResult suiteResult = suiteRunner.Run(1, true, false);
+  //  disableRun = false;
+  //  Console.WriteLine("Max mbytes alloc: " + WindowsVirtualAllocManager.MaxBytesAllocated / (1024 * 1024));
+  //  Console.WriteLine("Test counter 1  : " + MCTSEventSource.TestCounter1);
+  //  Console.WriteLine("Test metric 1   : " + MCTSEventSource.TestMetric1);
+  //  StateHasChanged();
+  //  await Task.CompletedTask;
+  //}
+
+  private void UpdateList(string res)
+  {
+    epdSearchList.Add(res);
+    StateHasChanged();
+  }
+
+  private async Task RunEpdSuite()
+  {
+    if (string.IsNullOrEmpty(epdFile))
+    {
+      return;
+    }
+    epdSearchList.Clear();
+    disableRun = true;
+    await StartEpdSuite();
+  }
+
+  private async Task StartEpdSuite()
+  {
+    var currentDir = new DirectoryInfo(Directory.GetCurrentDirectory());
+    var ceresDir = currentDir.Parent.Parent;
+    var fullpath = Path.Combine(ceresDir.FullName, "artifacts", "release", "net5.0");
+    var ceresPath = Path.Combine(fullpath, "ceres");
+    Action<string> updateSuite = (info) => InvokeAsync(() => UpdateList(info));
+
+    await Task.Factory.StartNew(async () =>
+    {
+      await Iterate(ceresPath, fullpath, updateSuite);
+    });
+  }
+
+  private async Task Iterate(string ceresPath, string fullPath, Action<string> update)
+  {
+    var cmd = ConfigureCliWrapper(ceresPath, fullPath, update);
+    await foreach (var cmdEvent in cmd.ListenAsync())
+    {
+      switch (cmdEvent)
+      {
+        case StartedCommandEvent started:
+          Console.WriteLine("Process started");
+          break;
+        case StandardOutputCommandEvent stdOut:
+          Console.WriteLine(stdOut.Text);
+          break;
+        case StandardErrorCommandEvent stdErr:
+          Console.WriteLine(stdErr.Text);
+          break;
+        case ExitedCommandEvent exited:
+          Console.WriteLine("Process finished");
+          break;
+      }
+    }
+    await InvokeAsync(() => { disableRun = false; StateHasChanged(); });
+  }
+
+  private Command ConfigureCliWrapper(string ceresPath, string fullPath, Action<string> update)
+  {
+    return Cli.Wrap(ceresPath)
+         .WithWorkingDirectory(fullPath)
+         .WithArguments(args => args
+           .Add("suite")
+           .Add($"epd={epdFile}")
+           .Add($"network={setting.NeuralNet}")
+           .Add($"limit={timeInSeconds}sm")
+           .Add($"device={setting.CeresGPUstring}")
+           .Add($"pruning=false"))
+         .WithValidation(CommandResultValidation.None)
+         .WithStandardOutputPipe(PipeTarget.ToDelegate(update));
+  }
+
+  protected override Task OnInitializedAsync()
+  {
+    setting = Setup;
+    setting.RefNeuralNet = "703810";
+    return base.OnInitializedAsync();
+  }
+
+
+  public async ValueTask DisposeAsync()
+  {
+    await Task.CompletedTask;
+    //todo
+  }
+
+}

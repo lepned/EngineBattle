@@ -1,0 +1,98 @@
+﻿@using System.Text
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject ILogger<EPDVisualization> Logger
+
+<MudText Typo="Typo.h6"> @header </MudText>
+<MudText Typo="Typo.subtitle1"> @subHeader</MudText>
+@if (EPD is not null)
+{
+	<div @ref=boardElement/>
+	<MudTextField T="string" Lines="2" Underline="false" Text="@EPD.FEN" Style="font-size:11px;" />
+}
+
+
+@code {
+
+	[Parameter] public EPD.EPDEntry EPD { get; set; }
+
+	private string subHeader = string.Empty;
+	private string header = string.Empty;	
+	private IJSObjectReference chessJSmodule; //my own chessinterop.js
+	private ElementReference boardElement;
+
+	string GetHeader(EPD.EPDEntry epd)
+	{
+		StringBuilder msgBuilder = new StringBuilder();
+
+		if (epd.BestMove != null)
+		{
+			msgBuilder.Append("BestMove: ").Append(epd.BestMove.Value.Trim());
+		}
+		else if (epd.AvoidMove != null)
+		{
+			msgBuilder.Append("AvoidMove: ").Append(epd.AvoidMove.Value.Trim());
+		}
+		else if (epd.Other != null)
+		{
+			if (!string.IsNullOrEmpty(epd.Other?.Value))
+			{
+				//msgBuilder.Append(epd.Other.Value);
+			}
+		}
+
+		return msgBuilder.ToString();
+	}
+
+	string GetSubHeader(EPD.EPDEntry epd)
+	{
+		StringBuilder msgBuilder = new StringBuilder();
+
+		if (epd.Id != null)
+		{
+			msgBuilder.Append(epd.Id.Value);//.Append(": ");
+		}
+
+		// if (epd.Other != null)
+		// {
+		// 	if (!string.IsNullOrEmpty(epd.Other?.Value))
+		// 	{
+		// 		msgBuilder.Append(" : ");
+		// 		msgBuilder.Append(epd.Other.Value);
+		// 	}
+		// }
+
+		return msgBuilder.ToString();
+	}
+
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+			if (!string.IsNullOrEmpty(EPD.Other?.Value))
+			{
+				var correctAndWrongMove = EPD.Other.Value.Split(",");				
+				var correct = correctAndWrongMove[0].Trim();
+				var wrong = correctAndWrongMove[1].Trim();
+				var fromSq = correct.Substring(0, 2);
+				var toSq = correct.Substring(2, 2);
+				var wrongFromSq = wrong.Substring(0, 2);
+				var wrongToSq = wrong.Substring(2, 2);
+				await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, EPD.FEN, false, fromSq, toSq, wrongFromSq, wrongToSq);
+			}
+			else
+			{
+				await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, EPD.FEN, false, null, null, null, null);
+			}
+
+			header = GetHeader(EPD);
+			if (string.IsNullOrEmpty(header))
+				header = "Header not found";
+			subHeader = GetSubHeader(EPD);
+			StateHasChanged();
+		}
+	}
+
+}
