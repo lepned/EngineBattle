@@ -94,7 +94,7 @@ To run the program, you will need to have .NET 9.0 or later installed. You can d
 A console application should now run and display a link such as "http://localhost:5018/." Ctrl-click on the link to open the URL in the browser (such as Edge,  the most thoroughly tested browser). You should now be able to see the web GUI in the browser. 
 To keep your local copy of this repo updated, navigate to the `EngineBattle` folder in the console and run:
 
-` git pull origin master `
+` git pull origin main `
 
 ## Configuration
 
