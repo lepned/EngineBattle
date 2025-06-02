@@ -590,7 +590,7 @@ module TournamentUtils =
   
   let validateEnginesInTournament (tourny : Tournament)  =
     async {
-      Utilities.Validation.validateTournamentInput tourny (tourny.EngineSetup.Engines)
+      Utilities.Validation.validateTournamentInput tourny
       let mutable valid = tourny.EngineSetup.Engines.Length > 1
       for engConfig in tourny.EngineSetup.Engines do
         let engine = engConfig |> EngineHelper.createEngine
@@ -2867,7 +2867,6 @@ module Manager =
             let tourny =           
               if tourny.EngineSetup.EngineDefList.Length > 0 then
                 let engineList = Utilities.JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList            
-                Utilities.Validation.validateTournamentInput tourny engineList
                 if tourny.Gauntlet && tourny.Challengers > 0 then
                   for engine in engineList |> List.truncate tourny.Challengers do
                     engine.IsChallenger <- true
@@ -2875,7 +2874,9 @@ module Manager =
                   for engine in engineList do
                     engine.IsChallenger <- false
                 let engineSetup = {tourny.EngineSetup with Engines = engineList}
-                {tourny with EngineSetup = engineSetup }
+                let updatedTourny = {tourny with EngineSetup = engineSetup }
+                Utilities.Validation.validateTournamentInput updatedTourny
+                updatedTourny
               else 
                 //let enginesTest = createEnginesFromFolder "C:/Dev/Chess/Networks/CeresLatest" |> Seq.toList
                 //(enginesTest |> List.head).IsChallenger <- true

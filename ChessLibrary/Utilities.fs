@@ -787,9 +787,12 @@ module Validation =
           Errors [sprintf "All engines must have a unique name - duplicates %A" duplicates]
       else Ok
 
-  let validateEnginesPresent (engines: EngineConfig seq) =
+  let validateEnginesPresent (engines: EngineConfig seq) nChallengers =      
+      let otherEngines = (engines |> Seq.length) - nChallengers
       if engines |> Seq.length < 2 then
           Errors ["No engines found - at least two engines must be defined in EngineDefList in tournament.json"]
+      else if otherEngines < 1 then
+          Errors ["Gauntlet tournament configuration error: All engines are marked as challengers. In a gauntlet tournament, challengers need opponents to play against. Please either reduce the 'Challengers' parameter in tournament.json or add more engines to your EngineDefList so that some engines serve as non-challengers."]
       else
           Ok
 
@@ -861,27 +864,27 @@ module Validation =
           Errors ["Delay between games very low - consider to increase it to at least 5 seconds in tournament.json"]
       else Ok
 
-  let validateTournamentInput (tourny: Tournament) (configs: EngineConfig list) =
-      let results = [
-          validateEnginesPresent configs
+  let validateTournament (tourny: Tournament) =
+      [
+          validateEnginesPresent tourny.EngineSetup.Engines tourny.Challengers
           validateOpeningPath tourny
           validatePgnOutPath tourny
-          validateEngineConfigs configs
-          validateEngineTimeControls tourny configs
-          validateDelayBetweenGames tourny configs
-          validateUniqueNames configs
-          validateEngineNames configs
-          for config in configs do
+          validateEngineConfigs tourny.EngineSetup.Engines
+          validateEngineTimeControls tourny tourny.EngineSetup.Engines
+          validateDelayBetweenGames tourny tourny.EngineSetup.Engines
+          validateUniqueNames tourny.EngineSetup.Engines
+          validateEngineNames tourny.EngineSetup.Engines
+          for config in tourny.EngineSetup.Engines do
               validateChessEngineCmds config
           // Add more validation functions here as needed
-      ]
+      ] |> accumulateErrors
       
-      match accumulateErrors results with
+  let validateTournamentInput (tourny: Tournament) =
+      match validateTournament tourny with
       | Ok -> ConsoleUtils.printInColor ConsoleColor.Green "Tournament passed limited validation of key settings"
       | Errors msgs ->
           for msg in msgs do
               ConsoleUtils.printInColor ConsoleColor.Red msg
-
 
 module Time =
   let prettyPrintTimeSpan (timeSpan: TimeSpan) =
@@ -1621,7 +1624,6 @@ module PGNCalculator =
     opponentResults 
 
   let createStatsCrossTableSummary (results: Result list) (challengerList: string list) players = 
-      //let players = results |> List.collect (fun r -> [r.Player1; r.Player2]) |> List.distinct
 
       let scoreOfPlayer player =
           let games =
@@ -1682,31 +1684,9 @@ module PGNCalculator =
             yield r.Player1
             yield r.Player2 
         ] |> Seq.distinct |> List.ofSeq 
-      let findPairings = 
-        [
-          for p in players do
-            let sum = results |> Seq.sumBy (fun e -> if (e.Player1 = p || e.Player2 = p) then 1 else 0)
-            yield (p,sum)
-        ] |> List.sortByDescending snd
-      let challengers =
-        let rec loop (list : (string * int) list) (challengerList: string list) =
-          match list with
-          |[] -> challengerList
-          |[a] -> challengerList
-          |a::b::t ->
-            let p1, n1 = a
-            let _, n2 = b
-            if float n1 > float n2 * 1.5 then              
-              loop (b::t) (p1::challengerList)
-            else
-              loop (b::t) challengerList
-        loop findPairings []
-      generateSmallStatCrossTableHtml results challengers players
+
+      generateSmallStatCrossTableHtml results [] players
   
-  let generateCrosstable results =
-    generateCrosstableEntries(results);
-
-
   let idealizedEloPrint (cross: CrossTableEntry seq) =
     let sb = new StringBuilder()
     sb.AppendLine "\n```\n" |> ignore
@@ -1727,7 +1707,7 @@ module PGNCalculator =
 
   let getEngineDataResults results =
     let allResults = getResultsFromPGNGames results
-    let cross = generateCrosstable allResults
+    let cross = generateCrosstableEntries allResults
     let playerRes = getFullStatFromResults allResults |> Seq.toList
     let avgSpeed =
       PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(results)

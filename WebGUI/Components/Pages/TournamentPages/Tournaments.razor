@@ -739,19 +739,34 @@
 		await InvokeAsync(OnBrowserResize);
 	}
 
+	private bool TournamentJsonOk () => 
+    ChessLibrary.Utilities.Validation.validateTournament(tournament) is Utilities.Validation.ValidationResult res && 
+    res == Utilities.Validation.ValidationResult.Ok;
+
 	private async Task ValidateTournamentInput()
-	{
-		ChessLibrary.Tournament.Manager.loadTournament();
-		var ok = await ChessLibrary.Tournament.TournamentUtils.validateEnginesInTournament(tournament);
+	{		
+		var errorsFound = !TournamentJsonOk();
+		
 		//add pop up dialog if not ok
+		if (errorsFound)
+		{
+			var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
+			var title = $"Tournament validation failed!";
+			var msg = "Please check the console for errors";
+			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", msg } }, opt);
+			return;
+		}
+		
+		ChessLibrary.Tournament.Manager.loadTournament();        
+		var ok = await ChessLibrary.Tournament.TournamentUtils.validateEnginesInTournament(tournament);
 		if (!ok)
 		{
 			var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
 			var title = $"Tournament validation failed!";
 			var msg = "Please check the console for errors";
 			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", msg } }, opt);
-		}
-
+			return;
+		}				
 	}
 
 	private async void StartTimer()
