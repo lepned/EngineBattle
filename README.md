@@ -1,5 +1,7 @@
 # EngineBattle
 
+[![Join the Discord](https://img.shields.io/discord/1379064923744894987?label=Discord&logo=discord&style=flat)](https://discord.gg/8QNeaJHv)
+
 **EngineBattle** is a comprehensive tool designed for running tournaments, testing, analyzing, and comparing chess engines. It simplifies puzzle-based testing, detailed analysis, tournament management, and provides interactive visualizations, making it ideal for chess developers, researchers, and streamers.
 
 ---
