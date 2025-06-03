@@ -1095,40 +1095,43 @@ module EngineAgent =
           for rating in ratings do
             // load & log
             let puzzles = PuzzleDataUtils.sortPuzzleData theme rating input
-            let avg     = puzzles |> Array.averageBy (fun p -> p.Rating)
-            printfn "\nRating group %d (avg %.0f), theme “%s”" rating avg themeLabel
+            if puzzles.Length = 0 then 
+                LowLevelUtilities.ConsoleUtils.yellowConsole $"\nSkipping tests: No puzzles found matching theme '{theme}' and rating {rating}"                
+            else
+              let avg = puzzles |> Array.averageBy (fun p -> p.Rating)
+              printfn "\nRating group %d (avg %.0f), theme “%s”" rating avg themeLabel
 
-            if hasSearch && nodes > 0 then
-              let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel
-              sendU (PuzzleResult score)
-              results.Add score
-            // run each requested sub-test
-            for test in toRun do
-              match test with
-              | Value when isCeresOrLc0 ->
-                  let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel
-                  sendU (PuzzleResult score)
-                  results.Add score
+              if hasSearch && nodes > 0 then
+                let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel
+                sendU (PuzzleResult score)
+                results.Add score
+              // run each requested sub-test
+              for test in toRun do
+                match test with
+                | Value when isCeresOrLc0 ->
+                    let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel
+                    sendU (PuzzleResult score)
+                    results.Add score
 
-              | Policy ->
-                  let score = performPolicyOrSearchTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel
-                  sendU (PuzzleResult score)
-                  results.Add score
+                | Policy ->
+                    let score = performPolicyOrSearchTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel
+                    sendU (PuzzleResult score)
+                    results.Add score
 
-              | Search node when node > 1 ->
-                  let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel
-                  sendU (PuzzleResult score)
-                  results.Add score
+                | Search node when node > 1 ->
+                    let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel
+                    sendU (PuzzleResult score)
+                    results.Add score
               
-              | Search node when node <= 1 ->
-                  printfn "  → Skipping Search test with %d nodes (requires node count higher than 1)" node
+                | Search node when node <= 1 ->
+                    printfn "  → Skipping Search test with %d nodes (requires node count higher than 1)" node
 
-              | _ -> ()  // skip if node = empty/zero or Value if not lc0/ceres
+                | _ -> ()  // skip if node = empty/zero or Value if not lc0/ceres
 
-            // partial timing
-            let elapsed = Stopwatch.GetElapsedTime start
-            let total   = results |> Seq.sumBy (fun s -> s.TotalNumber)
-            printfn "  → %d puzzles in %.0f s (theme: %s)" total elapsed.TotalSeconds themeLabel
+              // partial timing
+              let elapsed = Stopwatch.GetElapsedTime start
+              let total   = results |> Seq.sumBy (fun s -> s.TotalNumber)
+              printfn "  → %d puzzles in %.0f s (theme: %s)" total elapsed.TotalSeconds themeLabel
 
       // wrap up
       sendU (Done "Finished!")

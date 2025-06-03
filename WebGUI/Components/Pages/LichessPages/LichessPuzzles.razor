@@ -379,15 +379,16 @@
         await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
       }
 
-      await Run(null);
     }
+    await Run(null);
 
+    // Reset the file input to allow re-selection of the same file
+    browserFile = null;
+    fileName = string.Empty;
     disableRun = false;
-    StateHasChanged();
-    File.Delete(fullPath);
+    StateHasChanged();    
     await Task.Delay(500);
   }
-
 
   private string CreateCombinedScoresTable(string puzzleFile)
   {
@@ -396,7 +397,7 @@
     sb.AppendLine($"Puzzle file name: {puzzleFile}\n");
     // Combine all sets of scores to calculate the maximum width for each column
     var allScores = PolicyScores.Concat(ValueScores).Concat(SearchScores).ToList();
-
+      
     // Calculate the maximum width for each column
     int maxEngineWidth = Math.Max("Engine".Length, allScores.Max(s => s.Engine.Length));
     int maxNeuralNetWidth = Math.Max("Neural net".Length, allScores.Max(s => s.NeuralNet.Length));
@@ -517,7 +518,7 @@
       {
         // Load and normalize config
         var data = loadPuzzleConfig(normalizePath(fullPathName));
-        
+
         //add drawn filters (optional) to puzzle filter
         if (!string.IsNullOrWhiteSpace(data.PuzzleFilter) && !string.IsNullOrWhiteSpace(Filter))
         {
@@ -648,27 +649,35 @@
             break;
         }
 
-        //updatePuzzleBoards = true;
-        ValueScores =
-          ValueScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Value"))
-          .OrderBy(e => e.Filter)
-          .ThenByDescending(e => e.RatingAvg)
-          .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-          .ToList();
+        if (ValueScores.Any())
+        {
+          ValueScores =
+            ValueScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Value"))
+            .OrderBy(e => e.Filter)
+            .ThenByDescending(e => e.RatingAvg)
+            .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+            .ToList();
+        }
 
-        PolicyScores =
-          PolicyScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Policy"))
-          .OrderBy(e => e.Filter)
-          .ThenByDescending(e => e.RatingAvg)
-          .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-          .ToList();
+        if (PolicyScores.Any())
+        {
+          PolicyScores =
+            PolicyScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Policy"))
+            .OrderBy(e => e.Filter)
+            .ThenByDescending(e => e.RatingAvg)
+            .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+            .ToList();
+        }
 
-        SearchScores =
-          SearchScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Search"))
-          .OrderBy(e => e.Filter)
-          .ThenByDescending(e => e.RatingAvg)
-          .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-          .ToList();
+        if (SearchScores.Any())
+        {
+          SearchScores =
+            SearchScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Search"))
+            .OrderBy(e => e.Filter)
+            .ThenByDescending(e => e.RatingAvg)
+            .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+            .ToList();
+        }
 
         var normalized = Utilities.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
         var table = CreateCombinedScoresTable(data.PuzzleFile);
@@ -735,21 +744,20 @@
       }
       catch (Exception ex)
       {
-        logger.LogError("Lichess value head puzzle failed to start/run - ");
+        logger.LogError("Lichess puzzle failed to start/run - ");
         logger.LogError(ex.Message);
       }
 
       finally
       {
+        if (!string.IsNullOrWhiteSpace(fullPath))
+        {
+          File.Delete(fullPath);
+        }
         await InvokeAsync(() => disableRun = false);
       }
 
-    });
-
-    if (!string.IsNullOrWhiteSpace(fullPath))
-    {
-      File.Delete(fullPath);
-    }
+    });    
 
     StateHasChanged();
     await Task.Delay(1000);
