@@ -317,12 +317,12 @@ let createPawnMask startSq finalSq =
   let dir = if startSq > finalSq then -1 else 1
   while currentSq <> finalSq do
     if currentSq > 0 then
-      mask <- mask ||| (1UL <<< currentSq + 7)
+      mask <- mask ||| (1UL <<< (currentSq + 7))
     if currentSq < 7 then
-      mask <- mask ||| (1UL <<< currentSq + 9)
+      mask <- mask ||| (1UL <<< (currentSq + 9))
     currentSq <- currentSq + dir
-  mask <- mask ||| (1UL <<< currentSq + 7)
-  mask <- mask ||| (1UL <<< currentSq + 9)
+  mask <- mask ||| (1UL <<< (currentSq + 7))
+  mask <- mask ||| (1UL <<< (currentSq + 9))
   mask
 
 //pre compute a 2D array with pawn masks where fromSq is one index and toSq the second index
@@ -338,9 +338,9 @@ let createKingMask startSq finalSq =
   let dir = if startSq > finalSq then -1 else 1
   while currentSq <> finalSq do
     if currentSq < 5 && dir = 1 then
-      mask <- mask ||| (1UL <<< currentSq + 10)
+      mask <- mask ||| (1UL <<< (currentSq + 10))
     if currentSq > 1 && dir = -1 then
-      mask <- mask ||| (1UL <<< currentSq + 6)
+      mask <- mask ||| (1UL <<< (currentSq + 6))
     currentSq <- currentSq + dir  
   mask
 
@@ -352,7 +352,7 @@ let getKingMask fromSq toSq = KingMasks.[fromSq, toSq]
 
 /// Efficiently represents initial rook placement information used in Chess960.
 /// Each of the 4 fields supports values in the range [0..15].
-/// Initialized such that values returned by default object will return as 15.
+/// Initialized such that the default instance decodes to 14 for all fields.
 [<System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 1)>]
 type RookPlacementInfo =
     val mutable private rookInitPlacementBits: uint16

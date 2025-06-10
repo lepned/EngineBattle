@@ -698,7 +698,12 @@
 					wtest = true;
 			}
 
-			if (wtest)
+			if (tournament.TestOptions.ValueTest)
+			{
+				runWithLogLiveStats = false;
+			}
+			
+			else if (wtest)
 			{
 				runWithLogLiveStats = true;
 				if (tournament.VerboseLogging)

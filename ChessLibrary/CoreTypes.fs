@@ -791,7 +791,7 @@ module TypesDef =
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
     type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int }
     type EngineSetup =
-      { [<JsonIgnore>] Engines: CoreTypes.EngineConfig list
+      { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
         EngineDefList: string list }
     type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallelConsoleOnly: int }

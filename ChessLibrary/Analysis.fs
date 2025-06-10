@@ -376,7 +376,8 @@ module PuzzleEngineAnalysis =
     engine
 
   let getPuzzleValueEngine config =   
-    let isLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)    
+    let isLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
+    let isCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
     let dict = Dictionary<string, obj>(config.Options)
     if isLc0 then
         //for some unknow reason we need to remove the backend options in current lc0 version for valuehead to work
@@ -411,8 +412,10 @@ module PuzzleEngineAnalysis =
                 let engine = EngineHelper.createEngineWithoutValidation(config)
                 engine.StartProcess()
                 Some engine
-        else
+        elif isCeres then
             Some engine
+        else
+            None
     with
         | ex ->
             let redMsg = sprintf "An error occurred while configuring value head engine for %s: \n\t%s\n" config.Name ex.Message

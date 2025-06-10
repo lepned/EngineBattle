@@ -876,7 +876,7 @@ module Match =
                     }                  
                     
                 if bestMove.R3 > 1 && tourny.VerboseLogging then
-                  logger.LogInformation($"Ply {board.PlyCount} - Repetition occured: {bestMove.R3} time(s)")
+                  logger.LogInformation($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
                 callback(BestMove (bestMove, EngineStatus.Empty))
                 evalList <- []
                 depth <- 0
@@ -1184,7 +1184,7 @@ module Match =
                     }                  
                     
                 if bestMove.R3 > 1 && tourny.VerboseLogging then
-                  logger.LogDebug($"Ply {board.PlyCount} - Repetition occured: {bestMove.R3} time(s)")
+                  logger.LogDebug($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
                 
                 evalList <- []
                 depth <- 0
@@ -1265,8 +1265,8 @@ module Match =
               let nnMsg = Regex.getInfoStringData playing.Name line 
               let list = ResizeArray<NNValues>()
               list.Add(nnMsg)              
-              let moreItems = if line.StartsWith "info string node" then false else true
-              if moreItems = false && tourny.VerboseLogging then
+              let moreItems = line.StartsWith "info string node" |> not
+              if not moreItems && tourny.VerboseLogging then
                 logger.LogDebug "Only one move in log live stats"
               let mutable cont = moreItems
               while cont do
@@ -1282,6 +1282,7 @@ module Match =
                 else
                   let msg = Utilities.Regex.getInfoStringData playing.Name newline
                   list.Add msg
+              
               makeShortSan list &board
               match Utilities.Engine.calcTopNn list with
               |Some (n1,n2,q1,q2, p1, pt) -> 
@@ -1642,7 +1643,7 @@ module Match =
                     }                  
                     
                 if bestMove.R3 > 1 && tourny.VerboseLogging then
-                  logger.LogDebug($"Ply {board.PlyCount} - Repetition occured: {bestMove.R3} time(s)")
+                  logger.LogDebug($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
                 evalList <- []
                 depth <- 0
                 selfdepth <- 0
@@ -1722,8 +1723,8 @@ module Match =
               let nnMsg = Utilities.Regex.getInfoStringData playing.Name line 
               let list = ResizeArray<NNValues>()
               list.Add(nnMsg)              
-              let moreItems = if line.StartsWith "info string node" then false else true
-              if moreItems = false && tourny.VerboseLogging then
+              let moreItems = line.StartsWith "info string node" |> not
+              if not moreItems && tourny.VerboseLogging then
                 logger.LogDebug "Only one move in log live stats"
               let mutable cont = moreItems
               while cont do
@@ -1739,6 +1740,7 @@ module Match =
                 else
                   let msg = Utilities.Regex.getInfoStringData playing.Name newline
                   list.Add msg
+                
               makeShortSan list &board           
               match Utilities.Engine.calcTopNn list with
               |Some (n1,n2,q1,q2, p1, pt) -> 
@@ -1754,7 +1756,8 @@ module Match =
                 callback (NNSeq list)
 
             elif line.StartsWith "info" then              
-              let isWhite = playing.Name = player1.Name              
+              let isWhite = playing.Name = player1.Name
+              printfn "Parsing info line for %s: %s" playing.Name line
               match Utilities.Regex.getEssentialData line isWhite with
               |Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv ) ->                 
                 numberOfNodes <- nodes                
@@ -1771,7 +1774,6 @@ module Match =
                 moveInfoData.s <- nps
                 moveInfoData.tb <- tbhits
                 moveInfoData.pv <- pvLine
-
 
                 if not (String.IsNullOrEmpty(pvLine)) then
                   if player1.Name = playing.Name then
@@ -2913,12 +2915,40 @@ module Manager =
           Match.gauntlet logger tournament sendResponse cts          
         else 
           Match.roundRobin logger tournament sendResponse cts            
-  
-      //run tournament
-      let res = tourny |> Async.RunSynchronously
-      sendResponse (Match.EndOfTournament tournament)      
-      logger.LogInformation($"Elapsed tournament time in seconds: {(timer.ElapsedMilliseconds/1000L)}")
-      res
+      
+      let mutable validationPassed = true
+      //check for value head tests
+      if tournament.TestOptions.ValueTest then
+        //validate value tests
+        for engineConfig in tournament.EngineSetup.Engines do
+          let isLc0 = engineConfig.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
+          match Analysis.PuzzleEngineAnalysis.getPuzzleValueEngine engineConfig with
+          |Some engine -> 
+            if isLc0 then
+                let conf = engine.Config              
+                tournament.EngineSetup.Engines <- tournament.EngineSetup.Engines |> List.map(fun e -> if e.Name = engineConfig.Name then conf else e)
+            printfn "Value test engine found: %s" engine.Name
+          |_ -> 
+            validationPassed <- false //failwith "Value test engine not found"            
+            if isLc0 then
+              ConsoleUtils.printInColor ConsoleColor.Yellow $"The Lc0 binary used does not support value head testing: {engineConfig.Name}. Please make sure to use a binary that supports value head tests via an option called ValueOnly or by using command line argument valuehead for Lc0 rewrite"              
+            else
+              let msg = $"The engine {engineConfig.Name} does not support value head testing, only Lc0 and Ceres supports it currently"
+              ConsoleUtils.printInColor ConsoleColor.Yellow msg
+        if validationPassed then
+          ConsoleUtils.printInColor ConsoleColor.Yellow "All engines passed validation for value head tests"
+        else
+          ConsoleUtils.printInColor ConsoleColor.Red "Validation failed for value head tests"
+          
+      if validationPassed then
+        //run tournament
+        let res = tourny |> Async.RunSynchronously
+        sendResponse (Match.EndOfTournament tournament)      
+        logger.LogInformation($"Elapsed tournament time in seconds: {(timer.ElapsedMilliseconds/1000L)}")
+        res
+      else
+        logger.LogInformation("Tournament validation failed, please make sure that all engines in the tournament supports value head tests.")
+        []
   
   type Runner (logger, callback: Action<Match.Update>, reloadTournament:bool, consoleOnly : bool) =    
     let cts = new CancellationTokenSource()

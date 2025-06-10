@@ -69,6 +69,7 @@ type Board() =
       updatePosition update      
       startPos <- BoardHelper.posToFen position
       mostCurrentFEN <- startPos
+      isFRC <- false
       plyCount <- 0
       numberOfMoves <- 0L
       currentIndex <- 0
