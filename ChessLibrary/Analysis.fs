@@ -378,31 +378,32 @@ module PuzzleEngineAnalysis =
   let getPuzzleValueEngine config =   
     let isLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
     let isCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
-    let dict = Dictionary<string, obj>(config.Options)
-    if isLc0 then
-        //for some unknow reason we need to remove the backend options in current lc0 version for valuehead to work
-        for item in dict do
-          if item.Key.Contains "Backend" then
-            dict.Remove item.Key |> ignore
-        //check if minibatchsize is already set    
-        if not (dict.ContainsKey "MinibatchSize") then
-            dict.Add("MinibatchSize", 256)
-
-    let config = if isLc0 then {config with Options = dict} else config
+    
     try
         let engine = EngineHelper.createEngineWithoutValidation(config)        
         engine.StartProcess()
         let options = engine.GetDefaultOptions()
         if isLc0 then
-            if options.ContainsKey "ValueOnly" then
-                let opt = EngineOption.Create "ValueOnly" "true"
-                engine.AddSetOption opt
+            engine.StopProcess()                
+            if options.ContainsKey "ValueOnly" then                
+                let dict = Dictionary<string, obj>(config.Options)
+                //for some unknow reason we need to remove the backend options in some older lc0 version for valuehead to work
+                for item in dict do
+                  if item.Key.Contains "Backend" then
+                    dict.Remove item.Key |> ignore
+                //check if minibatchsize is already set    
+                if not (dict.ContainsKey "MinibatchSize") then
+                    dict.Add("MinibatchSize", 256)
+                if not (dict.ContainsKey "ValueOnly") then
+                    dict.Add("ValueOnly", true)
+                let config = if isLc0 then {config with Options = dict} else config
+                let engine = EngineHelper.createEngineWithoutValidation(config)
+                engine.StartProcess()
                 Some engine                  
-            else
-                engine.StopProcess()
+            else            
                 let redMsg = sprintf "\nValueOnly option is not available for %s with args: %s, will try valuehead argument next." config.Name config.Args
-                let isShowHiddenArgSet = redMsg.Contains "--show-hidden"
-                if not isShowHiddenArgSet then
+                let isShowHiddenArgMissing = redMsg.Contains "--show-hidden" |> not
+                if isShowHiddenArgMissing then
                     let redMsg = redMsg + " Please add --show-hidden argument to engine config."
                     LowLevelUtilities.ConsoleUtils.redConsole redMsg
                 else 
