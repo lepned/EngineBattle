@@ -1003,7 +1003,7 @@
 				oneSecondTimer = null;
 				var summary = runner.GetPlayerResults(results);
 				scoreTable = summary;
-				table = runner.GenerateStatsCrosstableInHtml(results);
+				table = runner.GenerateStatsCrosstable(results);
 				await UpdateSpeed(0);
 				await InvokeAsync(StateHasChanged);
 				var resLog = OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
@@ -1205,7 +1205,7 @@
 					results = runner.GetResults();
 					var players = runner.GetPlayerResults(results);
 					scoreTable = players;
-					table = runner.GenerateStatsCrosstableInHtml(results);
+					table = runner.GenerateStatsCrosstable(results);
 					if (results.Count > 0)
 					{
 						await UpdateSpeed(0);
@@ -1235,7 +1235,7 @@
 						tournament.TotalGames = totalNumberOfPairs; //deviations.Count();
 						results = runner.GetResults();
 						scoreTable = runner.GetPlayerResults(results);
-						table = runner.GenerateStatsCrosstableInHtml(results);
+						table = runner.GenerateStatsCrosstable(results);
 						if (pairings.Count == 0)
 						{
 							infoBannerInfo = new InfoBannerInfo(tournament);
@@ -1596,7 +1596,7 @@
 			ValidatePVSize();
 			results = runner.GetResults();
 			scoreTable = runner.GetPlayerResults(results);
-			table = runner.GenerateStatsCrosstableInHtml(results);
+			table = runner.GenerateStatsCrosstable(results);
 			infoBannerInfo = new InfoBannerInfo(tournament);
 
 			windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight") - 10;

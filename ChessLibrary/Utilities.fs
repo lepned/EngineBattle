@@ -362,7 +362,7 @@ module OrdoHelper =
     let pairs = sprintf "%2d-%d" pairWins pairLosses
     {
         Player = p.Player
-        Elo = if p.Challenger then 0.0 else p.Elo
+        Elo = p.Elo // if p.Challenger then 0.0 else p.Elo
         Error = p.Error //if p.Challenger then 0.0 else p.Error
         Points = p.Points
         Played = p.Played
@@ -520,14 +520,13 @@ module OrdoHelper =
         |> Seq.filter (fun t -> t.Challenger)
         |> Seq.map (fun t -> t.Player)
         |> Set.ofSeq
-
-    // Prepare a list of players with challenger status
+    
+    // In a two player table, the first player is always the challenger
     let players =
         engines
-        |> Seq.map (fun p ->
+        |> Seq.mapi (fun idx p ->
             let isChallenger =
-                if table |> Seq.length = 2 then true
-                else challengerSet.Contains p.Player
+                table |> Seq.length = 2 && idx = 0 
             { p with Challenger = isChallenger }
         )
         |> Seq.toList
@@ -538,8 +537,17 @@ module OrdoHelper =
         let restSorted = rest |> List.sortByDescending (fun e -> e.Elo)
         challengers @ restSorted
 
+    //normalize rating based on the first player's elo performance
+    let firstPlayerElo = 
+        match sortedPlayers |> List.tryHead with
+        | Some p -> p.Elo
+        | None -> 0.0
+
+    let normalizeElo (elo: float) = elo - firstPlayerElo    
+    
     // Write each player's line
     for p in sortedPlayers do
+        p.Elo <- normalizeElo p.Elo
         let (wins, losses) =
             match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
             | Some t ->
@@ -1664,13 +1672,13 @@ module PGNCalculator =
           { Player = p1; Alias = p1; Challenger = challengerList |> List.contains p1 ; Rank = idx + 1; ResultsAgainst = opponentsList results p1; StatsAgainst = statsList; TotalScore = score; Eff = eff }
       )
 
-  let generateSmallStatCrossTableHtml (results:Result seq) (challengerList: string seq) players =      
+  let generateSmallStatCrossTable (results:Result seq) (challengerList: string seq) players =      
     let challengers = challengerList |> List.ofSeq
     let players = players |> List.ofSeq
     let crossTable = createStatsCrossTableSummary (results |> Seq.rev |> Seq.toList) challengers players
     ResizeArray(crossTable)   
 
-  let generateBigStatCrossTableHtml (results:Result seq) (challengerList: string list) players =      
+  let generateBigStatCrossTable (results:Result seq) (challengerList: string list) players =      
     let crossTable = createStatsCrossTableSummary (results |> Seq.rev |> Seq.toList) challengerList players   
     crossTable 
     |> Array.filter (fun e -> e.Challenger) // if e.Rank = 2 || e.Rank = 3 then true else false )//e.Challenger) 
@@ -1685,7 +1693,7 @@ module PGNCalculator =
             yield r.Player2 
         ] |> Seq.distinct |> List.ofSeq 
 
-      generateSmallStatCrossTableHtml results [] players
+      generateSmallStatCrossTable results [] players
   
   let idealizedEloPrint (cross: CrossTableEntry seq) =
     let sb = new StringBuilder()
@@ -1730,25 +1738,41 @@ module PGNCalculator =
 
   let processStat (challengers: string list) (playerResults : _ list) =
     let challengerSet = Set(challengers)
-    let notInChallengerSet (p:PlayerResult) = not (challengerSet.Contains p.Player)
-    
-    let sortByPointsPlayed = List.sortBy (fun e -> -(e.Points / float e.Played))
+    let notInChallengerSet (p:PlayerResult) = not (challengerSet.Contains p.Player)    
+    let sortByPointsPlayed = List.sortBy (fun e -> -(e.Points / float e.Played))        
+    let normalizeElo (elo: float) firstPlayerElo = elo - firstPlayerElo
 
     match challengerSet with
-    |set when set.IsEmpty -> playerResults |> sortByPointsPlayed |> ResizeArray<_>   
+    |set when set.IsEmpty -> 
+      let sorted = playerResults |> sortByPointsPlayed       
+      let firstPlayerElo = 
+        match sorted |> List.tryHead with
+        | Some p -> p.Elo
+        | None -> 0.0
+
+      for p in sorted do
+        p.Elo <- normalizeElo p.Elo firstPlayerElo
+      sorted |> ResizeArray<_>
     |_ ->        
       let rest = playerResults |> List.filter notInChallengerSet
       let allChallengers = 
           playerResults
-          |> List.filter (fun res -> challengerSet.Contains res.Player)
-          |> List.map (fun res -> 
-            if challengers.Length = 1 then 
-              {res with Elo = 0.00; Error = 0.00; Challenger = true} 
-            else 
-              {res with Challenger = true})
-        
-      (allChallengers |> sortByPointsPlayed) @ (rest |> sortByPointsPlayed) |> ResizeArray<_>
+          |> List.filter (fun res -> challengerSet.Contains res.Player)        
+      
+      for p in allChallengers do
+        p.Challenger <- true       
 
+      let sorted = (allChallengers |> sortByPointsPlayed) @ (rest |> sortByPointsPlayed) 
+      
+      //normalize rating based on the first player's elo performance
+      let firstPlayerElo = 
+          match sorted |> List.tryHead with
+          | Some p -> p.Elo
+          | None -> 0.0
+          
+      for p in sorted do
+        p.Elo <- normalizeElo p.Elo firstPlayerElo
+      sorted |> ResizeArray<_>
     
   let getFullStat isGauntlet (challengers:string list) (players:string list) tournamentResults =      
       match challengers with

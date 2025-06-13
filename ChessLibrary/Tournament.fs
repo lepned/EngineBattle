@@ -331,10 +331,9 @@ module Replay =
             let previousGames = 
                 refGamesPlayed 
                 |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pairing.OpeningHash && (e.GameMetaData.White = pairing.White.Name || e.GameMetaData.Black = pairing.Black.Name ))
-          
-            //what to do with previous games here?
-            for g in previousGames do
-                printfn "Previous game found from referencePGN: %s, %s for pairing %s, %s" g.GameMetaData.White g.GameMetaData.Black pairing.White.Name pairing.Black.Name
+                     
+            //for g in previousGames do
+            //    printfn "Previous game found in PGN: %s, %s for pairing %s, %s" g.GameMetaData.White g.GameMetaData.Black pairing.White.Name pairing.Black.Name
           
             let replayBoard = Board()
             replayBoard.IsFRC <- isChess960
@@ -1757,7 +1756,6 @@ module Match =
 
             elif line.StartsWith "info" then              
               let isWhite = playing.Name = player1.Name
-              printfn "Parsing info line for %s: %s" playing.Name line
               match Utilities.Regex.getEssentialData line isWhite with
               |Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv ) ->                 
                 numberOfNodes <- nodes                
@@ -1921,10 +1919,9 @@ module Match =
           let previousGames = 
             refGamesPlayed 
             |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pairing.OpeningHash && (e.GameMetaData.White = pairing.White.Name || e.GameMetaData.Black = pairing.Black.Name ))
-          
-          //what to do with previous games here?
-          for g in previousGames do
-            printfn "Previous game found from referencePGN: %s, %s for pairing %s, %s" g.GameMetaData.White g.GameMetaData.Black pairing.White.Name pairing.Black.Name
+                    
+          //for g in previousGames do
+          //  printfn "Previous game found in PGN: %s, %s for pairing %s, %s" g.GameMetaData.White g.GameMetaData.Black pairing.White.Name pairing.Black.Name
           
           let replayBoard = Board()
           replayBoard.IsFRC <- tourny.IsChess960
@@ -2979,7 +2976,7 @@ module Manager =
               callback.Invoke gameUpdate
           else
             let pRes = x.GetPlayerResults results
-            let cross = x.GenerateStatsCrosstableInHtml results            
+            let cross = x.GenerateStatsCrosstable results            
             let table = OrdoHelper.getResultsAndPairsInConsoleFormat pRes cross            
             callback.Invoke (Match.Update.GameSummary table)
       |_ -> callback.Invoke update
@@ -3065,10 +3062,10 @@ module Manager =
     member _.GenerateCrosstableEntries (results: ResizeArray<Result>) =
       PGNCalculator.generateCrosstableEntries results
  
-    member _.GenerateStatsCrosstableInHtml (results: ResizeArray<Result>) = 
+    member _.GenerateStatsCrosstable (results: ResizeArray<Result>) = 
       let challengers = tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name
       let players = tournament.EngineSetup.Engines |> List.map _.Name
-      PGNCalculator.generateSmallStatCrossTableHtml results challengers players
+      PGNCalculator.generateSmallStatCrossTable results challengers players
 
     member _.GetGauntletCrosstable (results: ResizeArray<Result>) = 
       let players = tournament.EngineSetup.Engines |> List.map _.Name
@@ -3077,4 +3074,4 @@ module Manager =
           players |> List.take 1
         else          
           tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name
-      PGNCalculator.generateBigStatCrossTableHtml results challengers players
+      PGNCalculator.generateBigStatCrossTable results challengers players

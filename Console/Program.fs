@@ -600,14 +600,16 @@ module Program =
         if File.Exists tourny.PgnOutPath then
             let results = runner.GetResults()
             let scoreTable = runner.GetPlayerResults(results)
-            let table = runner.GenerateStatsCrosstableInHtml(results)
-            let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
+            let table = runner.GenerateStatsCrosstable(results)
+            let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table            
+            Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
         else
             let results = results |> ResizeArray
             let scoreTable = runner.GetPlayerResults(results)
-            let table = runner.GenerateStatsCrosstableInHtml(results)
+            let table = runner.GenerateStatsCrosstable(results)
             let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
+            Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
         printfn "Time: %A" endTime
         
