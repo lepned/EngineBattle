@@ -37,12 +37,12 @@
   </HeaderContent>
   <RowTemplate>
     <MudTd Style="font-size:16px" DataLabel="Player">@context.Player</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Player">@(isChallenger(context) ? 0 : context.Elo)</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Points">@(isChallenger(context) ? "---" : context.Error.ToString("F0"))</MudTd>
+    <MudTd Style="font-size:16px" DataLabel="Player">@context.Elo</MudTd>
+    <MudTd Style="font-size:16px" DataLabel="Points">@context.Error.ToString("F0")</MudTd>
     <MudTd Style="font-size:16px" DataLabel="Score">@context.Points</MudTd>
     <MudTd Style="font-size:16px" DataLabel="Win">@context.Played</MudTd>
     <MudTd Style="font-size:16px" DataLabel="Win">@context.Percent.ToString("F0")</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Win">@(isChallenger(context) ? "" : context.CFS.ToString("F0"))</MudTd>
+    <MudTd Style="font-size:16px" DataLabel="Win">@context.CFS.ToString("F0")</MudTd>
     <MudTd Style="font-size:16px" DataLabel="Win">@FormatNps(context.Speed)</MudTd>
     <MudTd Style="font-size:16px" DataLabel="Win">@context.Win</MudTd>
     <MudTd Style="font-size:16px" DataLabel="Win">@context.Draw</MudTd>

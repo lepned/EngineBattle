@@ -547,7 +547,7 @@ module OrdoHelper =
     
     // Write each player's line
     for p in sortedPlayers do
-        p.Elo <- normalizeElo p.Elo
+        //p.Elo <- normalizeElo p.Elo
         let (wins, losses) =
             match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
             | Some t ->
@@ -1750,8 +1750,8 @@ module PGNCalculator =
         | Some p -> p.Elo
         | None -> 0.0
 
-      for p in sorted do
-        p.Elo <- normalizeElo p.Elo firstPlayerElo
+      //for p in sorted do
+      //  p.Elo <- normalizeElo p.Elo firstPlayerElo
       sorted |> ResizeArray<_>
     |_ ->        
       let rest = playerResults |> List.filter notInChallengerSet
@@ -1770,8 +1770,8 @@ module PGNCalculator =
           | Some p -> p.Elo
           | None -> 0.0
           
-      for p in sorted do
-        p.Elo <- normalizeElo p.Elo firstPlayerElo
+      //for p in sorted do
+      //  p.Elo <- normalizeElo p.Elo firstPlayerElo
       sorted |> ResizeArray<_>
     
   let getFullStat isGauntlet (challengers:string list) (players:string list) tournamentResults =      
