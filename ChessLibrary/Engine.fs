@@ -376,7 +376,8 @@ module Engine =
 
       do
           setupProcess()
-    
+      
+      member _.GetNoneDefaultSetOptions() = nonDefaultValues        
       member _.GetAllDefaultOptions() = dict
       member this.IsLc0 = isLc0
       member val IsFRC = board.IsFRC with get, set
@@ -399,7 +400,10 @@ module Engine =
     
       member this.SetAllOptions (allOptions: Dictionary<string,obj>) =
         for opt in allOptions do
-          let cmd = sprintf "setoption name %s value %s" opt.Key (opt.Value.ToString())
+          let cmd =            
+            match Boolean.TryParse (opt.Value.ToString()) with
+            | true, v -> sprintf "setoption name %s value %s" opt.Key (sprintf "%b" v)              
+            | _ -> sprintf "setoption name %s value %s" opt.Key (opt.Value.ToString())            
           printfn "%s" cmd
           write cmd
           assignNetworkName cmd

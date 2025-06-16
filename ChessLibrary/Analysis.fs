@@ -135,10 +135,10 @@ module Manager =
       let sendAnalysisResponse (update: EngineUpdate) =
         callback.Invoke update
 
-      let engine  = 
+      let mutable engine = 
         let eng = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig)
         eng.Board <- board
-        eng
+        eng      
       
       member x.Engine = engine
       

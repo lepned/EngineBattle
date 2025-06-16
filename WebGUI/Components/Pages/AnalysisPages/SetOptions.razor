@@ -1,44 +1,70 @@
 ﻿
 <MudDialog>
-	<DialogContent>
-		<MudPaper Elevation="4" Class="pa-4">
-			<MudText Typo="Typo.h4" GutterBottom>Engine Options</MudText>
-			<MudGrid Class="d-flex">
-				@foreach (var item in Engine.GetAllDefaultOptions())
-				{
-					<MudItem sm="2">
-						<MudTextField Label="@item.Key"
-									  Variant="Variant.Outlined"
-									  T="string"
-									  Value="@item.Value.ToString()"
-									  ValueChanged="@(val => OnValueChanged(item.Key, val))"
-									  Immediate="true" />
-					</MudItem>
-				}
-			</MudGrid>
-		</MudPaper>
-		<MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SetAllOptions">Configure options</MudButton>
-	</DialogContent>
+  <DialogContent>
+    <MudPaper Elevation="4" Class="pa-4">
+      <MudText Typo="Typo.h4" GutterBottom>Engine Options</MudText>
+      <MudGrid Class="d-flex">
+        @foreach (var item in Engine.GetAllDefaultOptions())
+        {
+          <MudItem sm="2">
+            <MudTextField Label="@item.Key"
+                          Variant="Variant.Outlined"
+                          T="string"
+                          Value="@item.Value.ToString()"
+                          ValueChanged="@(val => OnValueChanged(item.Key, val))"
+                          Immediate="true" />
+          </MudItem>
+        }
+      </MudGrid>
+    </MudPaper>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SetAllOptions">Configure options</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ResetToDefaults">Default options</MudButton>
+  </DialogContent>
 </MudDialog>
 
 @code {
 
-	[CascadingParameter] IMudDialogInstance MudDialog { get; set; }
-	[Parameter] public ChessLibrary.Engine.ChessEngineWithUCIProcessing Engine { get; set; }
-	[Parameter] public int Fontsize { get; set; }
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+  [Parameter] public ChessLibrary.Engine.ChessEngineWithUCIProcessing Engine { get; set; }
+  [Parameter] public int Fontsize { get; set; }
 
-	void Close() => MudDialog.Close(DialogResult.Ok(true));
-	private Dictionary<string, object> options = new Dictionary<string, object>();
+  void Close() => MudDialog.Close(DialogResult.Ok(true));
+  private Dictionary<string, object> options = new Dictionary<string, object>();
 
-	private void OnValueChanged(string key, string value)
-	{
-		options[key] = value;
-	}
+  private void OnValueChanged(string key, string value)
+  {
+    options[key] = value;
+  }
 
-	private void SetAllOptions()
-	{
-		Engine.SetAllOptions(options);
-		Close();
-	}
+  private void SetAllOptions()
+  {
+    Engine.SetAllOptions(options);
+    Close();
+  }
 
+  private void ResetToDefaults()
+  {
+    var defaults = Engine.GetAllDefaultOptions();
+    var nonDefaults = Engine.GetNoneDefaultSetOptions();
+    var nonEmptyDefaults = defaults
+      .Where(e => !String.IsNullOrWhiteSpace(e.Value as string))
+      .ToDictionary(e => e.Key, e => (object)(e.Value as string ?? string.Empty));
+
+    var nonDefaultsDefaults = nonDefaults
+        .Select(e => (e.Key, e.Value.Item1))
+        .Where(e => !String.IsNullOrWhiteSpace(e.Item2 as string))
+        .Where(e => e.Key != "WeightsFile")
+        .Where(e => e.Key != "Backend")
+        .ToDictionary(e => e.Key, e => (object)(e.Item2 as string ?? string.Empty));
+
+    //debugging output to console
+    foreach (var opt in nonDefaults)
+    {
+      var (def, cur) = opt.Value;
+      Console.WriteLine($"Option: {opt.Key}, Current: {cur}, Default: {def}");
+    }
+
+    Engine.SetAllOptions(nonDefaultsDefaults);
+    Close();
+  }
 }

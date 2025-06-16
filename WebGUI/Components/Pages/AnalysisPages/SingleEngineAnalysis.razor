@@ -339,7 +339,11 @@
     logger.LogInformation("File saved to {path}", gamesPath);
     var sb = new StringBuilder();
     sb.AppendLine();
-    sb.AppendLine(board.FEN());
+    //add header for the game
+    sb.AppendLine($"[Event \"Single Engine Analysis\"]");
+    sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+    sb.AppendLine($"[Fen \"{board.StartPosition}\"]");
+    sb.AppendLine();
     sb.AppendLine(board.GetMoveHistory());
     File.AppendAllText(gamesPath, sb.ToString());
     await Task.CompletedTask;

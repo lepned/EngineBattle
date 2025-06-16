@@ -25,19 +25,19 @@
   <MudText Typo=Typo.h5 Class="pa-1 ma-1">Engine: @EngineName</MudText>
   <MudGrid Class="pa-1 ma-1">
     <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled="searchInProgress" Variant="Variant.Outlined" Size="Size.Small" OnClick=Analyze> Start search </MudButton>
+      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=Analyze> Start search </MudButton>
     </MudItem>
     <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled=(!searchInProgress) Variant="Variant.Outlined" Size="Size.Small" OnClick=StopSearch> Stop search </MudButton>
+      <MudButton Class="tiny-button" Disabled=@(!searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=StopSearch> Stop search </MudButton>
     </MudItem>
     <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled="searchInProgress" Variant="Variant.Outlined" Size="Size.Small" OnClick=ResetEngine> Reset engine </MudButton>
+      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=ResetEngine> Reset engine </MudButton>
     </MudItem>
     <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled="searchInProgress" Variant="Variant.Outlined" Size="Size.Small" OnClick=RunUCICommand> UCI </MudButton>
+      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=RunUCICommand> UCI </MudButton>
     </MudItem>
     <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled="searchInProgress" Variant="Variant.Outlined" OnClick=OpenDialog> Settings </MudButton>
+      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" OnClick=OpenDialog> Settings </MudButton>
     </MudItem>
   </MudGrid>
 
@@ -78,7 +78,7 @@
       <MudNumericField Style="height:50px;" HideSpinButtons=true Format="N0" Label="Node limit" Variant="Variant.Filled" @bind-Value="numberOfNodes" Culture=currentCulture @onchange="NodeCountChanged" />
     </MudItem>
     <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
-            Label="WeightsFile" Size="Size.Medium" for="@Id" />
+            Label="WeightsFile" Size="Size.Small" for="@Id" />
     <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
             Label="Engine.json" Size="Size.Small" for="@engineJson" />
   </MudItem>
@@ -225,6 +225,7 @@
   private string neuralNet = "Fill in";
   private string backend = "";
   private bool searchInProgress = false;
+  private bool waitingForEngine = false;
   private ChessLibrary.Analysis.Manager.SimpleEngineAnalyzer analyzer;
   private List<NNValues> NNInfoList = new();
   private List<string> InfoLineList = new();
@@ -294,6 +295,11 @@
 
   async Task OpenDialog()
   {
+    if (analyzer == null)
+    {
+      logger.LogInformation("No engine loaded");
+      return;
+    }
     var fontSize = 20;
 
     var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = true };
@@ -306,7 +312,8 @@
     {"Engine", analyzer.Engine }
 
     };
-    dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>("", parameters, options);
+    var header = $"Current settings for {Engine.Name}";
+    dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>(header, parameters, options);
   }
 
   void CloseDialog() => dialogReference?.Close();
@@ -502,7 +509,7 @@
     if (qPlot != null)
       qPlot.NN = neuralNet;
     logger.LogInformation("New Network loaded {Network}", neuralNet);
-    
+
     var engineToCheck = analyzer?.Engine;
     if (engineToCheck == null)
     {
@@ -521,6 +528,9 @@
   private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
   {
     //SetDefaultContempt();
+    waitingForEngine = true;
+    searchInProgress = false;
+    StateHasChanged();
     analyzer?.Engine.ShutDownEngine();
     var name = e.File.Name;
     logger.LogInformation("Engine.json file opened {File}", name);
@@ -573,6 +583,8 @@
     await InvokeAsync(StateHasChanged);
     if (analyzer == null)
     {
+      waitingForEngine = true;
+      StateHasChanged();
       analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe);
       backend = analyzer.BackendInfo();
 
@@ -618,6 +630,8 @@
       case EngineUpdate.Ready ready:
         showCharts = ready.HasLiveStat;
         showNNdata = false;
+        searchInProgress = false;
+        waitingForEngine = false;
         //logger.LogInformation(player.Player);
         break;
 
@@ -632,6 +646,7 @@
       case EngineUpdate.BestMove b:
         whitePV = b.Item.PV;
         searchInProgress = false;
+        waitingForEngine = false;
         //await InvokeAsync(() => searchInProgress = false);
         await InvokeAsync(() => StateHasChanged());
         break;
@@ -673,8 +688,14 @@
 
   private async Task ResetEngine()
   {
-    //logger.LogCritical(nameof(AnalyzeWithEngine) + ChessBoard.FEN());
+    if (analyzer == null)
+    {
+      logger.LogInformation("No engine loaded");
+      return;
+    }
+
     tableHeader = "Analysis";
+
     analyzer?.Reset();
     if (qPlot != null)
     {

@@ -275,7 +275,7 @@
       }
 
       fenWithMoves = ChessBoard.PositionWithMoves();
-      logger.LogInformation(nameof(UpdateNewMove) + " method with fen: " + fenWithMoves);
+      //logger.LogInformation(nameof(UpdateNewMove) + " method with fen: " + fenWithMoves);
       var lastNNMoves = GetNNValues(currentId);
       await DisplayMoveAnnotation(lastNNMoves, currentId);
     }

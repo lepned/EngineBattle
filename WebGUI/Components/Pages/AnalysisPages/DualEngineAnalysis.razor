@@ -299,7 +299,7 @@
         }
         chartLines = configFile.ChartLines;
       }
-      
+
       else if (engineConfigs.Count > 0)
       {
         Engine1 = engineConfigs[0];
@@ -426,7 +426,11 @@
     logger.LogInformation("File saved to {path}", gamesPath);
     var sb = new StringBuilder();
     sb.AppendLine();
-    sb.AppendLine(board.FEN());
+    //add header for the game
+    sb.AppendLine($"[Event \"Dual Engine Analysis\"]");
+    sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+    sb.AppendLine($"[Fen \"{board.StartPosition}\"]");
+    sb.AppendLine();
     sb.AppendLine(board.GetMoveHistory());
     File.AppendAllText(gamesPath, sb.ToString());
     await Task.CompletedTask;
@@ -707,7 +711,7 @@
       {
         var env = Environment.CurrentDirectory;
         fullPath = Path.Combine(env, "wwwroot", "AnalyzeConfig.json");
-        config = Utilities.JSONParser.loadAnalyzeConfig(fullPath); ;
+        config = Utilities.JSONParser.loadAnalyzeConfig(fullPath);
         var folder = config.EngineFolder;
 
         var engineConfigs =
