@@ -549,7 +549,10 @@
     Engine = engineConfig;
     NNInfoList.Clear();
     analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe);
+    neuralNet = analyzer.GetNetwork();
+    backend = analyzer.BackendInfo();
     File.Delete(fullPath);
+    StateHasChanged();
   }
 
   private void SetDefaultContempt()

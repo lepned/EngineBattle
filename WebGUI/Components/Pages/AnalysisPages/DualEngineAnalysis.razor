@@ -645,8 +645,8 @@
 
     games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
     File.Delete(fullPath);
+    await OpenPGNDialog();
     StateHasChanged();
-    await Task.CompletedTask;
   }
 
   public async void OnUCIReceived(List<string> config)
