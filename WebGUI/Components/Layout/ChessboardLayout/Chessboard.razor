@@ -13,8 +13,32 @@
 @inject ILogger<Chessboard> logger
 @inject OverlaySetting OverlaySetting
 
-
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+<div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
+  <MudPaper Elevation="3" Class="pa-1">
+    <MudStack Row="true" Spacing="0">
+      <MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
+                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+        <img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
+             style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+      </MudIconButton>
+      <MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
+                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+        <img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+      </MudIconButton>
+      <MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
+                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+        <img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+      </MudIconButton>
+      <MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
+                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+        <img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+
+      </MudIconButton>
+    </MudStack>
+  </MudPaper>
+</div>
+
 <MudGrid Justify="Justify.Center">
   @if (ShowPlayerInfo)
   {
@@ -138,6 +162,40 @@
   [Parameter] public int MoveListHeight { get; set; }
   [Parameter] public string MoveHistory { get; set; }
 
+  private string pendingPromotionMove;
+  private int promotionButtonSize = 50; // Set to your preferred size
+  private double promotionButtonSizePx => promotionButtonSize * 0.85; // Adjust size for the images
+  private TaskCompletionSource<string> promotionTcs;
+
+  private async Task SelectPromotion(string promotionPiece)
+  {
+    // Hide the promotion dialog
+    await chessJSmodule.InvokeVoidAsync("hidePromotionDialog");
+
+    if (promotionTcs != null)
+    {
+      // Complete the pending task with the selected promotion piece
+      promotionTcs.TrySetResult(promotionPiece);
+    }
+  }
+
+  [JSInvokable]
+  public async Task<string> ShowPromotionDialog(string move, double x, double y, bool isWhite)
+  {
+    // Create a new TaskCompletionSource to wait for user selection
+    promotionTcs = new TaskCompletionSource<string>();
+    pendingPromotionMove = move;
+
+    // Show the promotion dialog at the coordinates passed from JavaScript
+    await chessJSmodule.InvokeVoidAsync("showPromotionDialog", x, y, isWhite);
+
+    // Wait for the user to select a promotion piece
+    string promotionPiece = await promotionTcs.Task;
+
+    // Return the full move with the promotion piece
+    return move + promotionPiece;
+  }
+
   public double MinPolicyThreshold { get; set; } // Minimum probability threshold for displaying moves
   public List<MoveAndFen> MoveList { get; set; }
   private int moveListFontSize = 8;
@@ -240,9 +298,7 @@
     if (res.Count() > 1)
     {
       //promotion here
-      var moveQ = move + "q";
-      var queenPromo = res.FirstOrDefault(e => e.Item1.Contains(moveQ));
-      candidate = queenPromo.Item1;
+      return "promotion:" + move;
     }
     else
     {
@@ -410,14 +466,14 @@
       return
           moves
           .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(e.LANMove.Length - 2), text = e.P.ToString("F1") }).ToList();
+          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
     }
     else if (currentOverlaySetting == OverlaySettings.Q)
     {
       return
           moves
           .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(e.LANMove.Length - 2), text = e.Q.ToString("F2") }).ToList();
+          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
     }
 
     else if (currentOverlaySetting == OverlaySettings.V)
@@ -425,7 +481,7 @@
       return
           moves
           .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(e.LANMove.Length - 2), text = e.V.ToString("F2") }).ToList();
+          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
     }
 
     else if (currentOverlaySetting == OverlaySettings.QVDiff)
@@ -433,7 +489,7 @@
       return
           moves
           .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(e.LANMove.Length - 2), text = (e.Q - e.V).ToString("F2") }).ToList();
+          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
     }
 
     else if (currentOverlaySetting == OverlaySettings.E)
@@ -441,7 +497,7 @@
       return
           moves
           .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(e.LANMove.Length - 2), text = (2 * e.E).ToString("F2") }).ToList();
+          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
     }
 
     else if (currentOverlaySetting == OverlaySettings.Nodes)
@@ -449,7 +505,7 @@
       return
           moves
           .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(e.LANMove.Length - 2), text = FormatNodes(e.Nodes) }).ToList();
+          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
     }
 
     return new List<object>();

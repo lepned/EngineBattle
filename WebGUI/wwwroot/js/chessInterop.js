@@ -669,7 +669,25 @@ export function addChessboardToElement(dotnetHelper, fen, element) {
     }
     let toMove = await dotnetHelper.invokeMethodAsync('sideToMove');
     let moveValidated = await dotnetHelper.invokeMethodAsync('GetMoveStr', moveStr);
-    dotnetHelper.invokeMethodAsync('UpdateNewMove', moveValidated, true);
+    // Check if this is a promotion move
+    if (moveValidated && moveValidated.startsWith("promotion:")) {
+
+      // Get the position of the target square for showing the dialog
+      const square = element.querySelector(`[data-square-coord=${target}]`);
+      const rect = square.getBoundingClientRect();
+
+      // Get the side to move to determine piece color
+      const isWhite = toMove === 'w';
+
+      // Show promotion dialog and get selected piece
+      const promotionPiece = await dotnetHelper.invokeMethodAsync('ShowPromotionDialog', moveStr, Math.round(rect.left), Math.round(rect.top), isWhite);
+
+      // Now we have the complete move with promotion piece
+      dotnetHelper.invokeMethodAsync('UpdateNewMove', promotionPiece, true);
+    } else {
+      dotnetHelper.invokeMethodAsync('UpdateNewMove', moveValidated, true);
+    }
+
     var fen = await dotnetHelper.invokeMethodAsync('GetPositionFen');
     board.position(fen, true);
     highlightSquare2(element, target, toMove, false);
@@ -850,5 +868,33 @@ export function scrollDivToEnd(div) {
     if (element) {
         element.scrollTop = element.scrollHeight;
     }
+}
+
+// Function to show promotion dialog
+export function showPromotionDialog(x, y, isWhite) {
+  const dialog = document.getElementById('promotionDialog');
+  if (!dialog) return;
+
+  // Position the dialog at the specified coordinates
+  dialog.style.left = x + 'px';
+  dialog.style.top = y + 'px';
+
+  // Change the piece images based on the side to move
+  const color = isWhite ? 'w' : 'b';
+  document.getElementById('promoQ').src = `chessboardjs/img/chesspieces/wikipedia/${color}Q.png`;
+  document.getElementById('promoR').src = `chessboardjs/img/chesspieces/wikipedia/${color}R.png`;
+  document.getElementById('promoB').src = `/chessboardjs/img/chesspieces/wikipedia/${color}B.png`;
+  document.getElementById('promoN').src = `/chessboardjs/img/chesspieces/wikipedia/${color}N.png`;
+
+  // Show the dialog
+  dialog.style.display = 'block';
+}
+
+// Function to hide promotion dialog
+export function hidePromotionDialog() {
+  const dialog = document.getElementById('promotionDialog');
+  if (dialog) {
+    dialog.style.display = 'none';
+  }
 }
 
