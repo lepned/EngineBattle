@@ -259,12 +259,12 @@
         browserFile = e.File;
         await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
       }
-      var configFile = Utilities.JSONParser.loadAnalyzeConfig(fullPath);
-      config = configFile;
-      var folder = configFile.EngineFolder;
+      
+      config = Utilities.JSONParser.loadAnalyzeConfig(fullPath);      
+      var folder = config.EngineFolder;
 
       var engineConfigs =
-        configFile.Engines
+        config.Engines
         .SelectMany(e => Utilities.JSONParser.mapToEngConfig(folder, e))
         .ToList();
 
@@ -297,7 +297,7 @@
         {
           overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
         }
-        chartLines = configFile.ChartLines;
+        chartLines = config.ChartLines;
       }
 
       else if (engineConfigs.Count > 0)
@@ -315,7 +315,7 @@
           overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
         }
       }
-      chartLines = configFile.ChartLines;
+      chartLines = config.ChartLines;
     }
     catch (System.IO.FileNotFoundException)
     {
@@ -324,13 +324,12 @@
     catch (Exception ex)
     {
       logger.LogError(ex, "Failed to load analyzeConfig.json from '{Path}'. Please review your config file for errors.", fullPath);
+      File.Delete(fullPath);
     }
     finally
     {
       await InvokeAsync(StateHasChanged);      
     }
-
-    //File.Delete(fullPath);
   }
 
   private async Task PasteFromClipboard()
@@ -681,9 +680,8 @@
   }
 
   public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
-  {
-    var name = engineConf.OldName;
-    if (name == Engine1.Name)
+  {    
+    if (engineConf.Id.Contains("Input1"))
     {
       Engine1 = engineConf.EngineConfig;
     }

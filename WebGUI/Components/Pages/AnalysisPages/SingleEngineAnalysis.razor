@@ -207,12 +207,11 @@
         await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
       }
 
-      var configFile = Utilities.JSONParser.loadAnalyzeConfig(fullPath);
-      config = configFile;
-      var folder = configFile.EngineFolder;
+      config = Utilities.JSONParser.loadAnalyzeConfig(fullPath);      
+      var folder = config.EngineFolder;
 
       var engineConfigs =
-        configFile.Engines
+        config.Engines
         .SelectMany(e => Utilities.JSONParser.mapToEngConfig(folder, e))
         .ToList();
 
@@ -223,14 +222,14 @@
         {
           overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
         }
-        nodes = configFile.Engines[0] switch
+        nodes = config.Engines[0] switch
         {
           Puzzle.PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
           Puzzle.PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
           _ => Math.Max(1, config.Nodes) // Fall back to the global config
         };
       }
-      chartLines = configFile.ChartLines;      
+      chartLines = config.ChartLines;      
     }
     catch (System.IO.FileNotFoundException)
     {
@@ -238,7 +237,8 @@
     }
     catch (Exception ex)
     {
-      logger.LogError(ex, "Failed to load analyzeConfig.json file, please review your config file");      
+      logger.LogError(ex, "Failed to load analyzeConfig.json file, please review your config file"); 
+      File.Delete(fullPath);
     }
     finally
     {
@@ -595,10 +595,10 @@
 
   public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
   {
-    var name = engineConf.OldName;
-    if (name == Engine.Name)
+    if (engineConf.Id.Contains("Input1"))
     {
       Engine = engineConf.EngineConfig;
+      
     }
     await InvokeAsync(() => StateHasChanged());
   }
@@ -656,7 +656,6 @@
         StateHasChanged();
       }
     }
-
   }
 
   async ValueTask IAsyncDisposable.DisposeAsync()

@@ -189,6 +189,8 @@
     get { return ChessBoard.PositionHash().ToString(); }
     set { zobristHash = value; }
   }
+
+  private string currentName = string.Empty;
   private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
   private NNValues currentPosition = NNValues.Empty;
   private string engineJson => "engineJson" + Id;
@@ -544,7 +546,7 @@
     var jsonFile = e.File.Name;
     logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
     var engineConfig = JSON.readSingleEngineConfig(fullPath);
-    var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine.Name };
+    var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
     await OnNewEngineLoaded.InvokeAsync(args);
     Engine = engineConfig;
     NNInfoList.Clear();
@@ -676,7 +678,7 @@
           qPlot.AddData(NNInfoList);
           //var enabled = OverlaySetting.HasOverlaySetting(Id);
           if (NNInfoList.Count > 0)
-            await Notifier.MovesWithId(NNInfoList,Id);
+            await Notifier.MovesWithId(NNInfoList, Id);
           var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
           await qPlot.UpdateLogLiveCharts(NNInfoList, maxLines, Qdiff);
         }
@@ -814,8 +816,23 @@
     return base.OnInitializedAsync();
   }
 
-  protected override void OnParametersSet()
+  protected override async Task OnParametersSetAsync()
   {
+    if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
+    {
+      logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
+      currentName = Engine.Name;
+      await qPlot?.ResetNPlot();
+      await InvokeAsync(NNInfoList.Clear);
+      analyzer.Engine.ShutDownEngine();
+      analyzer = null;
+      neuralNet = string.Empty;
+      OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
+      await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);
+      selectedOverlaySetting = OverlaySettings.None;
+      await Task.CompletedTask;
+    }
+
     var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
     if (OverlaySetting.IsOverlaySettingsEnabled)
     {
@@ -828,6 +845,14 @@
     {
       runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
       showCharts = runLogLiveStats;
+      if (runLogLiveStats && overlaySettings == OverlaySettings.None)
+      {
+        if (!OverlaySetting.IsOverlaySettingsEnabled)
+        {
+          OverlaySetting.SetOverlaySetting(Id, OverlaySettings.Policy);
+          selectedOverlaySetting = OverlaySettings.Policy;
+        }
+      }
     }
     numberOfLines = Math.Max(1, ChartLines);
     StateHasChanged();
@@ -849,6 +874,7 @@
       {
         runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
         showCharts = runLogLiveStats;
+        currentName = Engine.Name;
       }
       qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
       if (string.IsNullOrEmpty(FEN) == false)

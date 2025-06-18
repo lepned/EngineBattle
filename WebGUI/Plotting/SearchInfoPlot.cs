@@ -155,6 +155,62 @@ namespace WebGUI.Plotting
       NumberOfNodesSearched.Clear();
     }
 
+
+    public async Task ResetNPlot()
+    {
+      QvaluesDict.Clear();
+      NvaluesDict.Clear();
+      NumberOfNodesSearched.Clear();
+
+      if (chessModule is not null)
+      {
+        Title = $"{FEN}";
+        YTitle = YTitle;
+
+        var xaxis = new
+        {
+          showgrid = false,
+          zeroline = false,
+          tickfont = new { size = fontSizeTickFont },
+        };
+
+        var yaxis = new
+        {
+          title = YTitle,
+          showline = true,
+          showgrid = false,
+          tickfont = new { size = fontSizeTickFont },
+        };
+
+        var layout = new
+        {
+          title = Title,
+          paper_bgcolor = "rgba(0,0,0,0)",
+          plot_bgcolor = "rgba(0,0,0,0)",
+          showlegend = true,
+          xaxis = xaxis,
+          yaxis = yaxis,
+          legend = new
+          {
+            title = new
+            {
+              text = $"{EngineName}, NN: {NN}",
+            }
+          },
+        };
+
+        try
+        {
+          await chessModule.InvokeVoidAsync("clearQPlot", NchartElement, layout).AsTask();
+        }
+        catch (Exception ex)
+        {
+          Console.WriteLine($"An error occurred in {nameof(ResetNPlot)}: {ex.Message}");
+          // Handle the exception here
+        }
+      }
+    }
+
     public async Task ResetPlot(bool resetChartElement)
     {
       QvaluesDict.Clear();
