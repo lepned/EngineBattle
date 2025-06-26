@@ -2003,6 +2003,7 @@ module TypesDef =
 
     type UCICommand =
         | UCI
+        | RawCommand of command: string
         | PositionWithMoves of command: string
         | Position of fen: string
         | UciNewGame     

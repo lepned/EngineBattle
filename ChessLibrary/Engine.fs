@@ -21,10 +21,10 @@ open Chess.BoardUtils
 module Engine =
 
   // Define a class to manage the chess engine process and communicate with it 
-  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq)  =
+  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, writeToConsole: bool)  =
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
-      let mutable board = Chess.Board()
+      let moveBoard = Chess.Board()      
       let mutable commands = ResizeArray<string>()
       let isChess960Set () = 
           commands |> Seq.tryFindBack (fun e -> e.Contains "UCI_Chess960")         
@@ -121,17 +121,17 @@ module Engine =
       let bestLine callback (engineName:string) (line:string)  =        
         let move, ponder = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
         callback (Done engineName)
-        match tryGetTMoveFromCoordinateNotation &board move with
+        match tryGetTMoveFromCoordinateNotation &moveBoard move with
         |Some tmove ->
           //let mutable moveAdj = tmove
-          let shortSan = getSanNotationFromTMove &board tmove    
+          let shortSan = getSanNotationFromTMove &moveBoard tmove    
           let eval = 
             if evalList.Length > 0 then 
               evalList.[0] 
             else 
               if fullEvalList.Length > 0 then fullEvalList[0] else EvalType.CP 0.0
           let pv = Player1PV
-          let fen = BoardHelper.posToFen board.Position
+          let fen = BoardHelper.posToFen moveBoard.Position
           let moveDetail = 
             {
               LongSan = move
@@ -141,7 +141,7 @@ module Engine =
               IsCastling = (tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY) 
               }                 
           let moveAndFen = {Move = moveDetail; ShortSan=shortSan; FenAfterMove = fen}
-          let mutable posToCheck = board.Position
+          let mutable posToCheck = moveBoard.Position
           let piecesLeft = PositionOps.numberOfPieces &posToCheck
           let bestMove = 
             { Player=engineName
@@ -169,13 +169,13 @@ module Engine =
           depth <- 0
         |_ ->
           let msg = $"{engineName} played an illegal move here: {line} "
-          let boardState = $"Board state: {board.FEN()} {board.CurrentFEN} {board.CurrentIndex} "
+          let boardState = $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.CurrentIndex} "
           printfn "%s" msg
           printfn "%s" boardState
 
       let regular callback (engineName:string) (line:string) =
         let mutable avgNps = 0.0
-        let isWhite = board.Position.STM = 0uy
+        let isWhite = moveBoard.Position.STM = 0uy
         match Utilities.Regex.getEssentialData line isWhite with
         |Some (d, eval, nodes, nps, pvLine, tbHits, wdl, sd, mPv ) ->         
           numberOfNodes <- nodes
@@ -184,8 +184,8 @@ module Engine =
           evalList <- eval :: evalList
           let mPv = if mPv = 0 then 1 else mPv        
           if not (String.IsNullOrEmpty(pvLine)) && mPv = 1 then
-              Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
-          let pvUpdate = if mPv = 1 then Player1PV else getShortSanPVFromLongSanPVFast moveList &board pvLine       
+              Player1PV <- getShortSanPVFromLongSanPVFast moveList &moveBoard pvLine
+          let pvUpdate = if mPv = 1 then Player1PV else getShortSanPVFromLongSanPVFast moveList &moveBoard pvLine       
           let status = 
             { 
               PlayerName = engineName
@@ -205,7 +205,8 @@ module Engine =
         |None -> ()
 
       let processLine callback (name:string) (line:string)  =
-        printfn "%s" line
+        if writeToConsole then
+          printfn "%s" line
         match line with
         | line when line.StartsWith("readyok") ->
             state <- RegularSearchMode 
@@ -222,7 +223,6 @@ module Engine =
         | line when line.StartsWith "info string" && line.Contains "N:" ->          
             match state with
             |InMoveStatMode list ->
-              //printfn "%s" line
               if line.StartsWith "info string node" |> not then
                 let nn = Utilities.Regex.getInfoStringData name line
                 list.Add nn
@@ -241,13 +241,14 @@ module Engine =
         | line when line.StartsWith("info") ->
             state <- RegularSearchMode 
         | _  -> 
-          printfn "%s" line
+          //if writeToConsole then
+            printfn "%s" line
          
       
         match state with
         |InMoveStatMode list ->
           if line.StartsWith "info string node" then
-            makeShortSan list &board
+            makeShortSan list &moveBoard
             callback (NNSeq list)
             state <- Start
         | RegularSearchMode ->
@@ -299,8 +300,8 @@ module Engine =
         ]
 
       let setupProcess() =
-          let mutable pos = board.Position
-          board.IsFRC <- PositionOps.isFRC &pos
+          let mutable pos = moveBoard.Position
+          moveBoard.IsFRC <- PositionOps.isFRC &pos
           engineProcess.StartInfo.FileName <- config.Path
           engineProcess.StartInfo.UseShellExecute <- false
           engineProcess.StartInfo.RedirectStandardInput <- true
@@ -380,11 +381,7 @@ module Engine =
       member _.GetNoneDefaultSetOptions() = nonDefaultValues        
       member _.GetAllDefaultOptions() = dict
       member this.IsLc0 = isLc0
-      member val IsFRC = board.IsFRC with get, set
-      member _.Board 
-        with get() = board
-        and set(v) = 
-          board <- v      
+      member val IsFRC = moveBoard.IsFRC with get, set
       member _.PrintUCI() = printCommands()
       member _.Network = network
       member _.Name = name
@@ -396,8 +393,10 @@ module Engine =
       member this.Config = config
       member this.Path = config.Path
       member this.GetUCICommands() = optionsMap
-      member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit      
-    
+      member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit
+      
+      member this.CurrentPositionCommand() = moveBoard.PositionWithMovesIndexed()
+
       member this.SetAllOptions (allOptions: Dictionary<string,obj>) =
         for opt in allOptions do
           let cmd =            
@@ -430,19 +429,26 @@ module Engine =
               engineProcess.Close()
               engineProcess.Dispose()            
               printfn "Engine %s has been shut down." name
+          | RawCommand cmd ->
+              write cmd
+              commands.Add cmd
           | PositionWithMoves command ->
+              //let hmm = board.PositionWithMovesIndexed()
+              moveBoard.ResetBoardState()
+              moveBoard.PlayCommands command
               let isSet = isChess960Set()
-              if board.IsFRC && not isSet then 
+              if moveBoard.IsFRC && not isSet then 
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
-              elif isSet && not board.IsFRC then
+              elif isSet && not moveBoard.IsFRC then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
               write command
               commands.Add command
           | Position fen -> 
-              board.LoadFen fen
-              if board.IsFRC then 
+              //board.LoadFen fen
+              moveBoard.LoadFen fen
+              if moveBoard.IsFRC then 
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
-              elif isChess960Set() && not board.IsFRC then
+              elif isChess960Set() && not moveBoard.IsFRC then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
               let cmd = (sprintf "position fen %s" fen)
               write cmd
@@ -1058,7 +1064,7 @@ module EngineHelper =
           let cmds = createInitialUCICommands config
           new PuzzleChessEngine(config, cmds)
 
-  let createAltEngine (callback, config:EngineConfig) : ChessEngineWithUCIProcessing =     
+  let createAltEngine (callback, config:EngineConfig, writeToConsole:bool) : ChessEngineWithUCIProcessing =     
       let validation = Utilities.Validation.validateChessEngineCmds config
       match validation with
       |Utilities.Validation.Errors errors -> 
@@ -1067,7 +1073,7 @@ module EngineHelper =
         failwith "Engine could not be created"
       |Utilities.Validation.Ok -> 
           let cmds = createInitialUCICommands config
-          new ChessEngineWithUCIProcessing(callback, config, cmds) 
+          new ChessEngineWithUCIProcessing(callback, config, cmds, writeToConsole) 
 
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {

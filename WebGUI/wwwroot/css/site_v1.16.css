@@ -21,6 +21,18 @@
     flex-grow: 0;
 }
 
+.mud-td-two-lines {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal;
+    line-height: 1.7; /* Adjust as needed */
+    /*min-height: calc(1.8em * 1);*/ /* 2 lines */
+    /*max-height: calc(1.8em * 1);*/ /* 2 lines */
+}
+
 .left-board {
     margin-left: 2rem;
 }

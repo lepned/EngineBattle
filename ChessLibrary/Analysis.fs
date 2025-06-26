@@ -128,17 +128,15 @@ module Helper =
 
 module Manager =  
   
-  type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineUpdate>) =
+  type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineUpdate>, writeToConsole) =
       let SearchDict = new System.Collections.Generic.Dictionary<string,int>()
       let board : Chess.Board = board
+      let moveBoard = Chess.Board()
       let logger : ILogger = logger
       let sendAnalysisResponse (update: EngineUpdate) =
         callback.Invoke update
 
-      let mutable engine = 
-        let eng = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig)
-        eng.Board <- board
-        eng      
+      let engine = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig, writeToConsole)
       
       member x.Engine = engine
       
@@ -155,6 +153,8 @@ module Manager =
       member x.Quit() = engine.ShutDownEngine()
 
       member x.UCI() = engine.SendUCICommand UCI
+
+      member x.NewGame() = engine.SendUCICommand UciNewGame
 
       member x.AddSetoption (option: EngineOption) = engine.SendUCICommand (SetOption option)
 
@@ -176,11 +176,15 @@ module Manager =
           engine.SendUCICommand (PositionWithMoves command)
           engine.SendUCICommand (GoInfinite)
 
-      member x.SearchNodes (nodes, fen:string, keepNodes : bool) =       
+      member x.SearchNodes (nodes, keepNodes : bool) = 
         engine.SendUCICommand Stop
-        let moves = board.GetMoveHistory()
-        board.PrintPosition moves        
-        if board.AnyLegalMove() |> not then
+        let commands = board.PositionWithMovesIndexed()
+        moveBoard.ResetBoardState()
+        moveBoard.PlayCommands commands
+        let moves = moveBoard.GetMoveHistory()
+        moveBoard.PrintPosition moves        
+        if moveBoard.AnyLegalMove() |> not then
+          let fen = moveBoard.FEN()
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
         else
           engine.SendUCICommand UciNewGame
@@ -188,11 +192,36 @@ module Manager =
             SearchDict.Clear()
           //let nodeLimit = nodes + getPrevNodes fen
           //SearchDict[fen] <- (nodeLimit)
-          let command = board.PositionWithMovesIndexed()
-          printfn "Search command: %s" command
-          engine.SendUCICommand (PositionWithMoves command)
+          printfn "Search command: %s" commands
+          engine.SendUCICommand (PositionWithMoves commands)
           engine.SendUCICommand (GoNodes nodes)
-
+    
+      member x.SearchNodesWithCommand (nodes, commands:string, keepNodes : bool) =       
+        engine.SendUCICommand Stop
+        moveBoard.ResetBoardState()
+        moveBoard.PlayCommands commands
+        let moves = moveBoard.GetMoveHistory()
+        moveBoard.PrintPosition moves        
+        if moveBoard.AnyLegalMove() |> not then
+          logger.LogInformation ("In searchNodesWithCommands - no legal moves with command: " + commands)
+        else
+          engine.SendUCICommand UciNewGame
+          if not keepNodes then
+            SearchDict.Clear()
+          printfn "Search command: %s" commands
+          engine.SendUCICommand (PositionWithMoves commands)
+          engine.SendUCICommand (GoNodes nodes)
+      
+      member x.Play (goCommand: string) =
+        engine.SendUCICommand Stop    
+        if board.AnyLegalMove() |> not then
+          let fen = board.FEN()
+          logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
+        else                   
+          let command = board.PositionWithMoves()
+          printfn "Search command: %s" command
+          engine.SendUCICommand (PositionWithMoves command)          
+          engine.SendUCICommand (RawCommand goCommand)
 
 module PuzzleDataUtils =
   

@@ -255,9 +255,9 @@ type Board() =
       
     member this.FEN() = BoardHelper.posToFen position
 
-    member this.GetNumberedMoveList() : string seq = 
+    member this.GetNumberedMoveList() : string seq =       
       seq { 
-        let ply = 0 //plyCount
+        let ply = if openingMoves.Count = 0 then game.[0].Ply |> int else openingMoves.Count
         let mutable nr = ply
         let mutable moveNr = 
           if ply % 2 = 1 then
@@ -266,16 +266,22 @@ type Board() =
           else      
             ply / 2 + 1
         for moveStr in this.MovesAndFenPlayed do
-          if nr % 2 = 0 then                        
+          if moveStr.Move.Color = "w" then
             $" {moveNr}. {moveStr.ShortSan}"
+            nr <- nr + 1
+          elif moveStr.Move.Color = "b" && nr = ply then                        
+            $" {moveNr}... {moveStr.ShortSan}"
+            nr <- nr + 1
+            moveNr <- moveNr + 1
           else
             $" {moveStr.ShortSan}"
             moveNr <- moveNr + 1
-          nr <- nr + 1   }      
+            nr <- nr + 1
+          }      
     
     member this.GetMoveHistory() =      
       let sb = sbPool.Get()      
-      let ply = openingMoves.Count        
+      let ply = if openingMoves.Count = 0 then game.[0].Ply |> int else openingMoves.Count
       let mutable nr = ply
       let mutable moveNr = 
         if ply % 2 = 1 then
@@ -283,12 +289,48 @@ type Board() =
         else      
           ply / 2 + 1
       for moveStr in this.MovesAndFenPlayed do
-        if nr % 2 = 0 then                        
-          sb.Append $" {moveNr}. {moveStr.ShortSan}" |> ignore
-        else
-          sb.Append $" {moveStr.ShortSan}" |> ignore
-          moveNr <- moveNr + 1
-        nr <- nr + 1
+          if moveStr.Move.Color = "w" then
+            sb.Append $" {moveNr}. {moveStr.ShortSan}" |> ignore
+            nr <- nr + 1
+          elif moveStr.Move.Color = "b" && nr = ply then                        
+            sb.Append $" {moveNr}... {moveStr.ShortSan}" |> ignore
+            nr <- nr + 1
+            moveNr <- moveNr + 1
+          else
+            sb.Append $" {moveStr.ShortSan}" |> ignore
+            moveNr <- moveNr + 1
+            nr <- nr + 1
+      sb.ToString().TrimStart()
+    
+    member this.GetMoveHistoryToCurrentFen (fen : string) =      
+      let mutable priorMoves = this.MovesAndFenPlayed |> Seq.takeWhile (fun e -> e.FenAfterMove <> fen)
+      let currentMove = this.MovesAndFenPlayed |> Seq.tryFind (fun e -> e.FenAfterMove = fen)
+      let ply = if openingMoves.Count = 0 then game.[0].Ply |> int else openingMoves.Count
+        // add current move to the prior moves
+      match currentMove with
+      | Some move -> priorMoves <- Seq.append priorMoves (seq { yield move })
+      | None -> ()
+      let sb = sbPool.Get()      
+      //let ply = openingMoves.Count        
+      let mutable nr = ply
+      let mutable moveNr = 
+        if ply % 2 = 1 then
+          ply / 2 + ply % 2
+        else      
+          ply / 2 + 1
+      
+      for moveStr in priorMoves do
+          if moveStr.Move.Color = "w" then
+            sb.Append $" {moveNr}. {moveStr.ShortSan}" |> ignore
+            nr <- nr + 1
+          elif moveStr.Move.Color = "b" && nr = ply then                        
+            sb.Append $" {moveNr}... {moveStr.ShortSan}" |> ignore
+            nr <- nr + 1
+            moveNr <- moveNr + 1
+          else
+            sb.Append $" {moveStr.ShortSan}" |> ignore
+            moveNr <- moveNr + 1
+            nr <- nr + 1
       sb.ToString().TrimStart()
 
     member this.GetShortSanMoveHistory() =      
@@ -336,27 +378,6 @@ type Board() =
       generateCapturesInSpan span &index &position      
       generateQuietsInSpan span &index &position isFRC
       span.Slice(0, index).ToArray()
-    
-    //member this.FastMoveGenerator() =
-    //    let span = moveArray.Value.AsSpan()
-    //    let mutable index = 0
-    //    generateCapturesInSpan span &index &position      
-    //    generateQuietsInSpan span &index &position false
-    //    span.Slice(0, index)
-
-    //member this.FastArrayMoveGenerator() =
-    //    let array = moveArray.Value
-    //    let mutable index = 0
-    //    generateCaptures &array &index &position      
-    //    generateQuiets &array &index &position false
-    //    array[..index - 1]
-    
-    member this.GenerateMovesSlow () =        
-        let span = Span<TMove>(Array.zeroCreate<TMove>(MAX_MOVES))
-        let mutable index = 0
-        generateCapturesInSpan span &index &position      
-        generateQuietsInSpan span &index &position this.IsFRC
-        span.Slice(0, index)
 
     member this.SafeMoveGenerator() =
         let span = Span<TMove>(Array.zeroCreate<TMove>(256))
@@ -364,7 +385,6 @@ type Board() =
         generateCapturesInSpan span &index &position      
         generateQuietsInSpan span &index &position this.IsFRC
         span.Slice(0, index).ToArray()
-
 
     //member this.GenerateMovesFast () =
     //  let mutable index = 0
@@ -1269,35 +1289,6 @@ module BoardUtils =
         
       |_ -> () //printfn $"{nameof getSanNotationFromTMove}: failed to parse move {move}"
     String.concat " " (ret |> Seq.toArray)
-
-  let getShortSanPVFromLongSanPVOld (board:Board inref) (pv:string) =
-    let myBoard = new Board()
-    myBoard.IsFRC <- board.IsFRC
-    myBoard.Position <- board.Position
-    myBoard.PlyCount <- board.PlyCount
-    let start = board.PlyCount
-    let allMoves = pv.Split(' ')
-    let ret = ResizeArray<string>(allMoves.Length)
-    for move in allMoves do
-      match tryGetTMoveFromCoordinateNotation &myBoard move with
-      | Some tmove ->
-        let moveNr = myBoard.PlyCount / 2 + 1
-        let san = getSanNotationFromTMove &myBoard tmove
-        if san <> "" then
-          if myBoard.PlyCount % 2 = 1 then
-            //black move
-            if myBoard.PlyCount = start then
-              ret.Add(sprintf "%d.... %s" moveNr san)
-            else
-              ret.Add(san)
-          else
-            let mStr = sprintf "%d.%s" moveNr san
-            ret.Add(mStr)
-          myBoard.MakeMove &tmove
-          
-      |_ -> () //printfn $"{nameof getSanNotationFromTMove}: failed to parse move {move}"
-    String.concat " " (ret |> Seq.toArray)       
-
 
   let makeShortSan (moves: NNValues seq) (board: Board inref) =
     for nnMove in moves do

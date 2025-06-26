@@ -22,882 +22,886 @@
 <InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
 
 <MudItem Class="m-2">
-  <MudText Typo=Typo.h5 Class="pa-1 ma-1">Engine: @EngineName</MudText>
-  <MudGrid Class="pa-1 ma-1">
-    <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=Analyze> Start search </MudButton>
-    </MudItem>
-    <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled=@(!searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=StopSearch> Stop search </MudButton>
-    </MudItem>
-    <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=ResetEngine> Reset engine </MudButton>
-    </MudItem>
-    <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=RunUCICommand> UCI </MudButton>
-    </MudItem>
-    <MudItem Class="pa-1 ma-1" lg="2">
-      <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" OnClick=OpenDialog> Settings </MudButton>
-    </MudItem>
-  </MudGrid>
-
-  <MudItem>
-    <MudGrid Class="mt-3">
-      <MudItem lg="2" Class="pa-1 ml-8 ma-1" hidden="@(!runLogLiveStats)">
-        <MudText Typo="Typo.caption" Class="mb-1 ml-1" Style="white-space: nowrap;">Overlay mode</MudText>
-        <MudMenu FullWidth="true"
-                 Label="@GetOverlayLabel()"
-                 Variant="Variant.Outlined"
-                 Size="Size.Small"
-                 EndIcon="@Icons.Material.Filled.ArrowDropDown">
-          @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
-          {
-            <MudMenuItem OnClick="@(() => OnOverlaySettingChanged(setting))">@setting</MudMenuItem>
-          }
-        </MudMenu>
-
-      </MudItem>
-      <div hidden="@(selectedOverlaySetting == OverlaySettings.None)">
-        <MudSlider Class="slider"
-                   Value="@((double)MinPolicyThreshold)"
-                   ValueChanged="@((double sliderValue) => OnMinPolicyThresholdChanged(sliderValue))"
-                   Min="0"
-                   Max="0.05"
-                   Step="0.005"
-                   Color="Color.Info">
-          MinPolicy: @MinPolicyThreshold.ToString("P1")
-        </MudSlider>
-      </div>
-      <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@autoSearchSwitch"> Auto search @(autoSearchSwitch ? "On" : "Off") </MudSwitch>
-      <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showCharts"> Charts @(showCharts ? "On" : "Off") </MudSwitch>
-
+    <MudText Typo=Typo.h5 Class="pa-1 ma-1">Engine: @EngineName</MudText>
+    <MudGrid Class="pa-1 ma-1">
+        <MudItem Class="pa-1 ma-1" lg="2">
+            <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=Analyze> Start search </MudButton>
+        </MudItem>
+        <MudItem Class="pa-1 ma-1" lg="2">
+            <MudButton Class="tiny-button" Disabled=@(!searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=StopSearch> Stop search </MudButton>
+        </MudItem>
+        <MudItem Class="pa-1 ma-1" lg="2">
+            <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=ResetEngine> Reset engine </MudButton>
+        </MudItem>
+        <MudItem Class="pa-1 ma-1" lg="2">
+            <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=RunUCICommand> UCI </MudButton>
+        </MudItem>
+        <MudItem Class="pa-1 ma-1" lg="2">
+            <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" OnClick=OpenDialog> Settings </MudButton>
+        </MudItem>
     </MudGrid>
-  </MudItem>
-  <MudItem Class="d-flex ml-3 mt-4">
-    <MudItem sm="3">
-      <MudNumericField Style="height:50px;" HideSpinButtons=true Format="N0" Label="Node limit" Variant="Variant.Filled" @bind-Value="numberOfNodes" Culture=currentCulture @onchange="NodeCountChanged" />
+
+    <MudItem>
+        <MudGrid Class="mt-3">
+            <MudItem lg="2" Class="pa-1 ml-8 ma-1" hidden="@(!runLogLiveStats)">
+                <MudText Typo="Typo.caption" Class="mb-1 ml-1" Style="white-space: nowrap;">Overlay mode</MudText>
+                <MudMenu FullWidth="true"
+                         Label="@GetOverlayLabel()"
+                         Variant="Variant.Outlined"
+                         Size="Size.Small"
+                         EndIcon="@Icons.Material.Filled.ArrowDropDown">
+                    @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
+                    {
+                        <MudMenuItem OnClick="@(() => OnOverlaySettingChanged(setting))">@setting</MudMenuItem>
+                    }
+                </MudMenu>
+
+            </MudItem>
+            <div hidden="@(selectedOverlaySetting == OverlaySettings.None)">
+                <MudSlider Class="slider"
+                           Value="@((double)MinPolicyThreshold)"
+                           ValueChanged="@((double sliderValue) => OnMinPolicyThresholdChanged(sliderValue))"
+                           Min="0"
+                           Max="0.05"
+                           Step="0.005"
+                           Color="Color.Info">
+                    MinPolicy: @MinPolicyThreshold.ToString("P1")
+                </MudSlider>
+            </div>
+            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@autoSearchSwitch"> Auto search @(autoSearchSwitch ? "On" : "Off") </MudSwitch>
+            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showCharts"> Charts @(showCharts ? "On" : "Off") </MudSwitch>
+
+        </MudGrid>
     </MudItem>
-    <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
-            Label="WeightsFile" Size="Size.Small" for="@Id" />
-    <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
-            Label="Engine.json" Size="Size.Small" for="@engineJson" />
-  </MudItem>
-
-  <div class="ml-4 mt-2">
-    <span> NN: @neuralNet</span>
-    <span>@backend</span>
-  </div>
-
-  <MudItem Class="pa-1 ma-1">
-
-    <MudItem Class="ma-1">
-      <MudTextField HelperText="PV" ReadOnly=true Variant="Variant.Filled" Style="font-size:14px; font-weight:400; color:blue; background-color:white" Class="mud-text pl-1" Text=@whitePV T=string Lines="2" />
-    </MudItem>
-    <MudItem style="font-size:small">
-      @* (Hash: @ZobristHash) *@
-
-    </MudItem>
-
-    <MudItem hidden="@(!showCharts)" lg="12">
-      <MudSlider Class="slider" @bind-Value="numberOfLines" Min="1" Max="10" Step="1"
-                 Color="Color.Info">N chartlines: @numberOfLines.ToString()</MudSlider>
-      <div style="height:@GetChartHeight();" class="chart" @ref=nPlotReference></div>
-    </MudItem>
-
-    <MudItem Class="mt-3 ml-1">
-      @if (currentPosition != null && currentPosition.Nodes > 0)
-      {
-        <MudItem>
-          <MudText Class="mb-0">@tableHeader</MudText>
+    <MudItem Class="d-flex ml-3 mt-4">
+        <MudItem sm="3">
+            <MudNumericField Style="height:50px;" HideSpinButtons=true Format="N0" Label="Node limit" Variant="Variant.Filled" @bind-Value="numberOfNodes" Culture=currentCulture @onchange="NodeCountChanged" />
         </MudItem>
-        <MudItem Class="d-flex">
-          <MudItem sm="9" Class="mb-2 mt-4">
-            <MudText Typo="Typo.body1">
-              Current position Q: @currentPosition.Q.ToString("N2") (V: @currentPosition.V.ToString("N2")))
-            </MudText>
-          </MudItem>
-          <MudItem sm="3">
-            <MudButton Class="analyzeButton" Size="Size.Small" Variant="Variant.Text" Disabled="NNInfoList.Count == 0" OnClick=ShowSearchPlot> Switch to raw output </MudButton>
-          </MudItem>
-        </MudItem>
-      }
-
-      @if (currentPosition != null && currentPosition.Nodes == 0)
-      {
-        <MudItem>
-          <MudText Class="mb-2 mb-4">@tableHeader</MudText>
-        </MudItem>
-      }
-
-      @if (showNNdata)
-      {
-        <MudItem>
-          <div style="overflow-y: auto; max-height: 600px;">
-            <MudTable Class="mb-3" Items="@NNInfoList" OnRowClick="PlayMoveFromTable" T="NNValues"
-                      FixedHeader=true Dense="true" Hover="true" Striped="true">
-              <HeaderContent>
-                <MudTh>Log live move stats</MudTh>
-              </HeaderContent>
-              <RowTemplate>
-                <MudTd DataLabel="Raw">@context?.Raw</MudTd>
-              </RowTemplate>
-            </MudTable>
-          </div>
-        </MudItem>
-      }
-
-      @if (!showNNdata)
-      {
-        <div style="overflow-y: auto; max-height: 600px;">
-          <MudTable Class="mb-3" Items="@dataList" OnRowClick="PlayMoveFromTable" T="KeyValuePair<int, EngineStatus>"
-                    FixedHeader=true Dense="true" Hover="true" Striped="true">
-            <HeaderContent>
-              <MudTh>Eval</MudTh>
-              <MudTh>D</MudTh>
-              <MudTh>SD</MudTh>
-              <MudTh>PV</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-
-              <MudTd DataLabel="Raw">@context.Value.Eval</MudTd>
-              <MudTd DataLabel="Raw">@context.Value.Depth</MudTd>
-              <MudTd DataLabel="Raw">@context.Value.SD</MudTd>
-              <MudTd DataLabel="Raw">@context.Value.PV</MudTd>
-            </RowTemplate>
-          </MudTable>
-        </div>
-      }
+        <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                Label="WeightsFile" Size="Size.Small" for="@Id" />
+        <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                Label="Engine.json" Size="Size.Small" for="@engineJson" />
     </MudItem>
-  </MudItem>
+
+    <div class="ml-4 mt-2">
+        <span> NN: @neuralNet</span>
+        <span>@backend</span>
+    </div>
+
+    <MudItem Class="pa-1 ma-1">
+
+        <MudItem Class="ma-1">
+            <MudTextField HelperText="PV" ReadOnly=true Variant="Variant.Filled" Style="font-size:14px; font-weight:400; color:blue; background-color:white" Class="mud-text pl-1" Text=@whitePV T=string Lines="2" />
+        </MudItem>
+        <MudItem style="font-size:small">
+            @* (Hash: @ZobristHash) *@
+
+        </MudItem>
+
+        <MudItem hidden="@(!showCharts)" lg="12">
+            <MudSlider Class="slider" @bind-Value="numberOfLines" Min="1" Max="10" Step="1"
+                       Color="Color.Info">N chartlines: @numberOfLines.ToString()</MudSlider>
+            <div style="height:@GetChartHeight();" class="chart" @ref=nPlotReference></div>
+        </MudItem>
+
+        <MudItem Class="mt-3 ml-1">
+            @if (currentPosition != null && currentPosition.Nodes > 0)
+            {
+                <MudItem>
+                    <MudText Class="mb-0">@tableHeader</MudText>
+                </MudItem>
+                <MudItem Class="d-flex">
+                    <MudItem sm="9" Class="mb-2 mt-4">
+                        <MudText Typo="Typo.body1">
+                            Current position Q: @currentPosition.Q.ToString("N2") (V: @currentPosition.V.ToString("N2")))
+                        </MudText>
+                    </MudItem>
+                    <MudItem sm="3">
+                        <MudButton Class="analyzeButton" Size="Size.Small" Variant="Variant.Text" Disabled="NNInfoList.Count == 0" OnClick=ShowSearchPlot> Switch to raw output </MudButton>
+                    </MudItem>
+                </MudItem>
+            }
+
+            @if (currentPosition != null && currentPosition.Nodes == 0)
+            {
+                <MudItem>
+                    <MudText Class="mb-2 mb-4">@tableHeader</MudText>
+                </MudItem>
+            }
+
+            @if (showNNdata)
+            {
+                <MudItem>
+                    <div style="overflow-y: auto; max-height: 600px;">
+                        <MudTable Class="mb-3" Items="@NNInfoList" OnRowClick="PlayMoveFromTable" T="NNValues"
+                                  FixedHeader=true Dense="true" Hover="true" Striped="true">
+                            <HeaderContent>
+                                <MudTh>Log live move stats</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Raw">@context?.Raw</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+                </MudItem>
+            }
+
+            @if (!showNNdata)
+            {
+                <div style="overflow-y: auto; max-height: 600px;">
+                    <MudTable Class="mb-3" Items="@dataList" OnRowClick="PlayMoveFromTable" T="KeyValuePair<int, EngineStatus>"
+                              FixedHeader=true Dense="true" Hover="true" Striped="true">
+                        <HeaderContent>
+                            <MudTh>Eval</MudTh>
+                            <MudTh>D</MudTh>
+                            <MudTh>SD</MudTh>
+                            <MudTh>PV</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+
+                            <MudTd DataLabel="Raw">@context.Value.Eval</MudTd>
+                            <MudTd DataLabel="Raw">@context.Value.Depth</MudTd>
+                            <MudTd DataLabel="Raw">@context.Value.SD</MudTd>
+                            <MudTd DataLabel="Raw" Class="mud-td-two-lines">
+                                @context.Value.PV
+                            </MudTd>
+                            
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+            }
+        </MudItem>
+    </MudItem>
 </MudItem>
 
 
 @code {
-  [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
-  [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
-  [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
-  [Parameter] public int ChartLines { get; set; }
-  [Parameter] public int Nodes { get; set; }
-  [Parameter] public string Id { get; set; }
-  [Parameter] public string FEN { get; set; }
-  [Parameter] public EngineConfig Engine { get; set; }
-  [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
+    [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
+    [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
+    [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
+    [Parameter] public int ChartLines { get; set; }
+    [Parameter] public int Nodes { get; set; }
+    [Parameter] public string Id { get; set; }
+    [Parameter] public string FEN { get; set; }
+    [Parameter] public EngineConfig Engine { get; set; }
+    [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
 
-  private string zobristHash;
-  public string ZobristHash
-  {
-    get { return ChessBoard.PositionHash().ToString(); }
-    set { zobristHash = value; }
-  }
-
-  private string currentName = string.Empty;
-  private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
-  private NNValues currentPosition = NNValues.Empty;
-  private string engineJson => "engineJson" + Id;
-  private bool runLogLiveStats;
-  private System.Text.RegularExpressions.Regex firstMoveInPV = new(@"(?:\d+\.\.\.\.|^\d+\.)\s*([^\s]+)", RegexOptions.Compiled);
-  private string whitePV;
-  private string fenUri = string.Empty;
-  private bool uciButtonPressed = false;
-  string EngineName => Engine == null ? "Engine not initialized" : Engine.Name;
-
-  private System.Text.Json.JsonSerializerOptions options =
-      new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true, AllowTrailingCommas = true };
-
-  private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  //private ElementReference qPlotReference;
-  private ElementReference nPlotReference;
-  private SearchInfoPlot qPlot;
-  private IJSObjectReference chessModule;
-  private string tableHeader = "Analysis";
-  private HashSet<PGNTypes.PgnGame> selectedItems = new();
-  public bool QChartSelected { get; set; } = false;
-  public CultureInfo currentCulture = CultureInfo.CurrentCulture;
-  private bool engine1 => Id.Contains("1") ? true : false;
-  private bool optimisticHead;
-  private int numberOfLines = 3;
-  private double numberOfNodes = 1;
-  private CancellationTokenSource cts = new();
-  private bool showNNdata = false;
-  private string moveHistory = string.Empty;
-  private bool keepNodesWhileSearching = true;
-  private double Qdiff = 2;
-  public bool autoSearchSwitch { get; set; } = true;
-  public bool showCharts { get; set; } = true;
-  private string neuralNet = "Fill in";
-  private string backend = "";
-  private bool searchInProgress = false;
-  private bool waitingForEngine = false;
-  private ChessLibrary.Analysis.Manager.SimpleEngineAnalyzer analyzer;
-  private List<NNValues> NNInfoList = new();
-  private List<string> InfoLineList = new();
-  string baseline0 = """backend=cuda-fp16,(gpu=0,value_head=winner)""";
-  string baseline1 = """backend=cuda-fp16,(gpu=1,value_head=winner)""";
-  string opt0 = """backend=cuda-fp16,(gpu=0,policy_head=optimistic,value_head=winner)""";
-  string opt1 = """backend=cuda-fp16,(gpu=1,policy_head=optimistic,value_head=winner)""";
-  HotKeysContext keyContext;
-  IBrowserFile browserFile;
-  List<KeyValuePair<int, EngineStatus>> dataList = new();
-  Dictionary<int, EngineStatus> data = new();
-  public bool IsOpt { get; set; } = false;
-  private IDialogReference dialogReference;
-  public double MinPolicyThreshold { get; set; }
-
-  private async Task OnMinPolicyThresholdChanged(double value)
-  {
-    MinPolicyThreshold = value;
-    OverlaySetting.MinPolicyThreshold = value;
-    await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
-  }
-
-  private async Task NodeCountChanged(ChangeEventArgs args)
-  {
-    // Ensure we have a valid node count (minimum 1)
-    if (double.TryParse(args.Value?.ToString(), out double parsedValue))
+    private string zobristHash;
+    public string ZobristHash
     {
-      Nodes = (int)Math.Max(1, parsedValue);
-    }
-    else
-    {
-      Nodes = 1;
+        get { return ChessBoard.PositionHash().ToString(); }
+        set { zobristHash = value; }
     }
 
-    await Task.CompletedTask;
-  }
+    private string currentName = string.Empty;
+    private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
+    private NNValues currentPosition = NNValues.Empty;
+    private string engineJson => "engineJson" + Id;
+    private bool runLogLiveStats;
+    private System.Text.RegularExpressions.Regex firstMoveInPV = new(@"(?:\d+\.\.\.\.|^\d+\.)\s*([^\s]+)", RegexOptions.Compiled);
+    private string whitePV;
+    private string fenUri = string.Empty;
+    private bool uciButtonPressed = false;
+    string EngineName => Engine == null ? "Engine not initialized" : Engine.Name;
 
-  private string GetOverlayLabel()
-  {
-    // Use abbreviations for longer overlay settings to keep label short
-    switch (selectedOverlaySetting)
+    private System.Text.Json.JsonSerializerOptions options =
+        new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true, AllowTrailingCommas = true };
+
+    private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    //private ElementReference qPlotReference;
+    private ElementReference nPlotReference;
+    private SearchInfoPlot qPlot;
+    private IJSObjectReference chessModule;
+    private string tableHeader = "Analysis";
+    private HashSet<PGNTypes.PgnGame> selectedItems = new();
+    public bool QChartSelected { get; set; } = false;
+    public CultureInfo currentCulture = CultureInfo.CurrentCulture;
+    private bool engine1 => Id.Contains("1") ? true : false;
+    private bool optimisticHead;
+    private int numberOfLines = 3;
+    private double numberOfNodes = 1;
+    private CancellationTokenSource cts = new();
+    private bool showNNdata = false;
+    private string moveHistory = string.Empty;
+    private bool keepNodesWhileSearching = true;
+    private double Qdiff = 2;
+    public bool autoSearchSwitch { get; set; } = true;
+    public bool showCharts { get; set; } = true;
+    private string neuralNet = "Fill in";
+    private string backend = "";
+    private bool searchInProgress = false;
+    private bool waitingForEngine = false;
+    private ChessLibrary.Analysis.Manager.SimpleEngineAnalyzer analyzer;
+    private List<NNValues> NNInfoList = new();
+    public List<string> InfoLineList = new();
+    string baseline0 = """backend=cuda-fp16,(gpu=0,value_head=winner)""";
+    string baseline1 = """backend=cuda-fp16,(gpu=1,value_head=winner)""";
+    string opt0 = """backend=cuda-fp16,(gpu=0,policy_head=optimistic,value_head=winner)""";
+    string opt1 = """backend=cuda-fp16,(gpu=1,policy_head=optimistic,value_head=winner)""";
+    HotKeysContext keyContext;
+    IBrowserFile browserFile;
+    public List<KeyValuePair<int, EngineStatus>> dataList = new();
+    Dictionary<int, EngineStatus> data = new();
+    public bool IsOpt { get; set; } = false;
+    private IDialogReference dialogReference;
+    public double MinPolicyThreshold { get; set; }
+
+    private async Task OnMinPolicyThresholdChanged(double value)
     {
-      case OverlaySettings.Policy:
-        return "Policy";
-      case OverlaySettings.QVDiff:
-        return "QVDiff";
-      case OverlaySettings.None:
-        return "None";
-      default:
-        return $"{selectedOverlaySetting}"; // For short names like Q, V, E, Nodes
+        MinPolicyThreshold = value;
+        OverlaySetting.MinPolicyThreshold = value;
+        await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
     }
-  }
 
-  private async Task OnOverlaySettingChanged(OverlaySettings newSetting)
-  {
-    selectedOverlaySetting = newSetting;
-    OverlaySetting.SetOverlaySetting(Id, selectedOverlaySetting);
-    await Notifier.UpdateDisplaySettings(newSetting, Id);
-    StateHasChanged();
-  }
-
-  private string GetChartHeight()
-  {
-    //OverlaySetting.MinPolicyThreshold = MinPolicyThreshold;
-    return $"{200 + (numberOfLines - 1) * 15}px";
-  }
-
-  async Task OpenDialog()
-  {
-    if (analyzer == null)
+    private async Task NodeCountChanged(ChangeEventArgs args)
     {
-      logger.LogInformation("No engine loaded");
-      return;
+        // Ensure we have a valid node count (minimum 1)
+        if (double.TryParse(args.Value?.ToString(), out double parsedValue))
+        {
+            Nodes = (int)Math.Max(1, parsedValue);
+        }
+        else
+        {
+            Nodes = 1;
+        }
+
+        await Task.CompletedTask;
     }
-    var fontSize = 20;
 
-    var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = true };
-    if (analyzer == null)
-      return;
+    private string GetOverlayLabel()
+    {
+        // Use abbreviations for longer overlay settings to keep label short
+        switch (selectedOverlaySetting)
+        {
+            case OverlaySettings.Policy:
+                return "Policy";
+            case OverlaySettings.QVDiff:
+                return "QVDiff";
+            case OverlaySettings.None:
+                return "None";
+            default:
+                return $"{selectedOverlaySetting}"; // For short names like Q, V, E, Nodes
+        }
+    }
 
-    var parameters = new DialogParameters
+    private async Task OnOverlaySettingChanged(OverlaySettings newSetting)
+    {
+        selectedOverlaySetting = newSetting;
+        OverlaySetting.SetOverlaySetting(Id, selectedOverlaySetting);
+        await Notifier.UpdateDisplaySettings(newSetting, Id);
+        StateHasChanged();
+    }
+
+    private string GetChartHeight()
+    {
+        //OverlaySetting.MinPolicyThreshold = MinPolicyThreshold;
+        return $"{200 + (numberOfLines - 1) * 15}px";
+    }
+
+    async Task OpenDialog()
+    {
+        if (analyzer == null)
+        {
+            logger.LogInformation("No engine loaded");
+            return;
+        }
+        var fontSize = 20;
+
+        var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = true };
+        if (analyzer == null)
+            return;
+
+        var parameters = new DialogParameters
     {
     {"FontSize",  fontSize },
     {"Engine", analyzer.Engine }
 
     };
-    var header = $"Current settings for {Engine.Name}";
-    dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>(header, parameters, options);
-  }
-
-  void CloseDialog() => dialogReference?.Close();
-
-  private string FormatNPS(double nps)
-  {
-    if (nps > 1_000_000_000)
-    {
-      var bill = nps / 1_000_000_000;
-      return bill.ToString("F1") + "Bnps"; //Gnps
-    }
-    else if (nps > 1_000_000)
-    {
-      var mill = nps / 1_000_000;
-      return mill.ToString("F1") + "Mnps"; //Mnps
+        var header = $"Current settings for {Engine.Name}";
+        dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>(header, parameters, options);
     }
 
-    else if (nps > 1_000)
+    void CloseDialog() => dialogReference?.Close();
+
+    private string FormatNPS(double nps)
     {
-      var thousand = nps / 1000;
-      return thousand.ToString("F1") + "Knps"; //Knps
-    }
-
-    else
-    {
-      return nps.ToString("F1") + " nps"; //nps
-    }
-  }
-
-  private string FormatNodes(double nodes)
-  {
-    if (nodes > 1_000_000_000)
-    {
-      var mill = nodes / 1_000_000_000;
-      return mill.ToString("F1") + "B nodes"; //G nodes
-    }
-    else if (nodes > 1_000_000)
-    {
-      var mill = nodes / 1_000_000;
-      return mill.ToString("F1") + "M nodes";
-    }
-
-    else if (nodes > 1_000)
-    {
-      var thousand = nodes / 1_000;
-      return thousand.ToString("F1") + "K nodes";
-    }
-
-    else
-    {
-      return nodes.ToString("F1") + " nodes";
-    }
-  }
-
-  private async Task PlayMoveFromTable(TableRowClickEventArgs<NNValues> moveInfo)
-  {
-    InfoLineList.Clear();
-    var idx = ChessBoard.CurrentIndex;
-    if (ChessBoard.LongSANMovesPlayed.Count > idx)
-    {
-      //new mainline initiated here
-      var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
-      ChessBoard.ResetBoardState();
-      ChessBoard.PlayCommands(command);
-    }
-    ChessBoard.CurrentIndex = idx + 1;
-    if (autoSearchSwitch)
-    {
-      searchInProgress = true;
-      await qPlot.ResetPlot(false);
-      var move = moveInfo.Item.SANMove;
-      ChessBoard.PlaySimpleShortSan(move);
-      fen = ChessBoard.FEN();
-      await OnEngineMoveMade.InvokeAsync(move);
-      await Notifier.UpdateFenToBoard(fen);
-    }
-    StateHasChanged();
-  }
-
-  private async Task PlayMoveFromTable(TableRowClickEventArgs<KeyValuePair<int, EngineStatus>> status)
-  {
-    InfoLineList.Clear();
-    var idx = ChessBoard.CurrentIndex;
-    if (ChessBoard.LongSANMovesPlayed.Count > idx)
-    {
-      //new mainline initiated here
-      var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
-      ChessBoard.ResetBoardState();
-      ChessBoard.PlayCommands(command);
-    }
-    ChessBoard.CurrentIndex = idx + 1;
-    if (autoSearchSwitch)
-    {
-      searchInProgress = true;
-      var getMove = firstMoveInPV.Match(status.Item.Value.PV);
-      if (getMove.Success)
-      {
-        await qPlot.ResetPlot(false);
-        var move = getMove.Groups[1].Value;
-        ChessBoard.PlaySimpleShortSan(move);
-        var moveFen = ChessBoard.MovesAndFenPlayed.Last();
-        fen = ChessBoard.FEN();
-        await OnEngineMoveMade.InvokeAsync(move);
-        await Notifier.UpdateFenMoveToBoard(moveFen);
-      }
-      StateHasChanged();
-    }
-  }
-
-  private async Task GoInfinite()
-  {
-    if (analyzer == null)
-    {
-      if (qPlot == null)
-        qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
-      else
-      {
-        await qPlot.ResetPlot(false);
-      }
-      analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe);
-      qPlot.EngineName = analyzer.GetEngineName();
-      var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
-      neuralNet = $"{analyzer.GetNetwork()}";
-      backend = analyzer.BackendInfo();
-      qPlot.NN = analyzer.GetNetwork();
-    }
-
-    searchInProgress = true;
-    analyzer?.GoInfinite();
-    StateHasChanged();
-  }
-
-  private void ToggleOptimisticAndBase()
-  {
-    if (analyzer == null)
-      return;
-
-    optimisticHead = !optimisticHead;
-    var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
-    neuralNet = $"{analyzer.GetNetwork()}";
-
-
-    //first engine here
-    if (optimisticHead)
-    {
-      if (Id.Contains("1"))
-      {
-        var option1 = EngineOption.Create("BackendOptions", opt0);
-        analyzer?.AddSetoption(option1);
-        backend = opt0;
-      }
-
-      if (Id.Contains("2"))
-      {
-        var option2 = EngineOption.Create("BackendOptions", opt1);
-        analyzer?.AddSetoption(option2);
-        backend = opt1;
-      }
-    }
-
-    else
-    {
-      if (Id.Contains("1"))
-      {
-        var option1 = EngineOption.Create("BackendOptions", baseline0);
-        analyzer?.AddSetoption(option1);
-        backend = baseline0;
-      }
-
-      if (Id.Contains("2"))
-      {
-        var option2 = EngineOption.Create("BackendOptions", baseline1);
-        analyzer?.AddSetoption(option2);
-        backend = baseline1;
-      }
-    }
-    StateHasChanged();
-  }
-
-  private async Task LoadNNFile(InputFileChangeEventArgs e)
-  {
-    var pgnName = e.File.Name;
-    logger.LogInformation("Loading network file {File}", pgnName);
-    var env = Environment.CurrentDirectory;
-    var fullPath = Path.Combine(env, "NN", pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
-    neuralNet = e.File.Name;
-
-    if (qPlot != null)
-      qPlot.NN = neuralNet;
-    logger.LogInformation("New Network loaded {Network}", neuralNet);
-
-    var engineToCheck = analyzer?.Engine;
-    if (engineToCheck == null)
-    {
-      logger.LogWarning("No engine loaded, cannot set weights file");
-      return;
-    }
-    else
-    {
-      logger.LogInformation("Engine loaded, setting weights file");
-    }
-    var option = EngineOption.Create("WeightsFile", fullPath);
-    analyzer?.AddSetoption(option);
-    //File.Delete(fullPath);
-  }
-
-  private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
-  {
-    //SetDefaultContempt();
-    waitingForEngine = true;
-    searchInProgress = false;
-    StateHasChanged();
-    analyzer?.Engine.ShutDownEngine();
-    var name = e.File.Name;
-    logger.LogInformation("Engine.json file opened {File}", name);
-    var env = Environment.CurrentDirectory;
-    var fullPath = Path.Combine(env, "NN", name);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
-    var jsonFile = e.File.Name;
-    logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
-    var engineConfig = JSON.readSingleEngineConfig(fullPath);
-    var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
-    await OnNewEngineLoaded.InvokeAsync(args);
-    Engine = engineConfig;
-    NNInfoList.Clear();
-    analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe);
-    neuralNet = analyzer.GetNetwork();
-    backend = analyzer.BackendInfo();
-    File.Delete(fullPath);
-    StateHasChanged();
-  }
-
-  private void SetDefaultContempt()
-  {
-    var options = ChessLibrary.EngineHelper.contemptPlaySettings.ToArray();
-    var opts = ChessLibrary.EngineHelper.createContemptSetoptions(options);
-    if (analyzer == null)
-      return;
-    foreach (var item in opts)
-    {
-      analyzer.AddSetoption(item);
-    }
-  }
-
-  private async Task Analyze()
-  {
-    if (Engine == null)
-    {
-      return;
-    }
-    //logger.LogCritical(nameof(AnalyzeWithEngine) + ChessBoard.FEN());
-    InfoLineList.Clear();
-    if (qPlot == null)
-      qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
-    else
-    {
-      await qPlot.ResetPlot(false);
-    }
-    searchInProgress = true;
-    await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
-    await InvokeAsync(StateHasChanged);
-    if (analyzer == null)
-    {
-      waitingForEngine = true;
-      StateHasChanged();
-      analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe);
-      backend = analyzer.BackendInfo();
-
-      qPlot.EngineName = analyzer.GetEngineName();
-      var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
-      neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
-      qPlot.NN = analyzer.GetNetwork();
-      try
-      {
-        analyzer.SearchNodes((int)numberOfNodes, fen, keepNodesWhileSearching);
-      }
-      catch (Exception ex)
-      {
-        logger.LogInformation(ex.Message);
-        throw;
-      }
-    }
-
-    else
-    {
-      analyzer.SearchNodes((int)numberOfNodes, fen, keepNodesWhileSearching);
-    }
-
-    await InvokeAsync(StateHasChanged);
-  }
-
-  private async Task StopSearch()
-  {
-    if (analyzer != null)
-      analyzer.Stop();
-    searchInProgress = false;
-    await Task.CompletedTask;
-  }
-
-  private async void UpdateMe(EngineUpdate update)
-  {
-    switch (update)
-    {
-      case EngineUpdate.Done player:
-        //logger.LogInformation(player.Player);
-        break;
-
-      case EngineUpdate.Ready ready:
-        showCharts = ready.HasLiveStat;
-        showNNdata = false;
-        searchInProgress = false;
-        waitingForEngine = false;
-        //logger.LogInformation(player.Player);
-        break;
-
-      case EngineUpdate.Info i:
-        //logger.LogInformation(i.Info);
-        InfoLineList.Insert(0, (i.Info));
-        break;
-
-      case EngineUpdate.Eval e:
-        break;
-
-      case EngineUpdate.BestMove b:
-        whitePV = b.Item.PV;
-        searchInProgress = false;
-        waitingForEngine = false;
-        //await InvokeAsync(() => searchInProgress = false);
-        await InvokeAsync(() => StateHasChanged());
-        break;
-
-      case EngineUpdate.UCIInfo info:
-        if (uciButtonPressed)
+        if (nps > 1_000_000_000)
         {
-          await InvokeAsync(() => OnUCIReceived.InvokeAsync(info.Data));
+            var bill = nps / 1_000_000_000;
+            return bill.ToString("F1") + "Bnps"; //Gnps
         }
-        break;
-
-      case EngineUpdate.Status s:
-        var status = s.Item;
-        Update(status);
-        break;
-
-      case EngineUpdate.NNSeq n:
-        if (n.NNSeq.Count > 0)
+        else if (nps > 1_000_000)
         {
-          NNInfoList.Clear();
-          n.NNSeq.Reverse();
-          currentPosition = n.NNSeq.FirstOrDefault();
-          NNInfoList.AddRange(n.NNSeq.Skip(1));
-          qPlot.AddData(NNInfoList);
-          //var enabled = OverlaySetting.HasOverlaySetting(Id);
-          if (NNInfoList.Count > 0)
-            await Notifier.MovesWithId(NNInfoList, Id);
-          var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
-          await qPlot.UpdateLogLiveCharts(NNInfoList, maxLines, Qdiff);
+            var mill = nps / 1_000_000;
+            return mill.ToString("F1") + "Mnps"; //Mnps
         }
-        break;
-    }
-  }
 
-  private void ShowSearchPlot()
-  {
-    showNNdata = !showNNdata;
-  }
+        else if (nps > 1_000)
+        {
+            var thousand = nps / 1000;
+            return thousand.ToString("F1") + "Knps"; //Knps
+        }
 
-  private async Task ResetEngine()
-  {
-    if (analyzer == null)
-    {
-      logger.LogInformation("No engine loaded");
-      return;
+        else
+        {
+            return nps.ToString("F1") + " nps"; //nps
+        }
     }
 
-    tableHeader = "Analysis";
-
-    analyzer?.Reset();
-    if (qPlot != null)
+    private string FormatNodes(double nodes)
     {
-      await qPlot.ResetPlot(false);
+        if (nodes > 1_000_000_000)
+        {
+            var mill = nodes / 1_000_000_000;
+            return mill.ToString("F1") + "B nodes"; //G nodes
+        }
+        else if (nodes > 1_000_000)
+        {
+            var mill = nodes / 1_000_000;
+            return mill.ToString("F1") + "M nodes";
+        }
+
+        else if (nodes > 1_000)
+        {
+            var thousand = nodes / 1_000;
+            return thousand.ToString("F1") + "K nodes";
+        }
+
+        else
+        {
+            return nodes.ToString("F1") + " nodes";
+        }
     }
-    NNInfoList.Clear();
-    InfoLineList.Clear();
-    data.Clear();
-    dataList.Clear();
-    StateHasChanged();
-  }
 
-  private void RunUCICommand()
-  {
-    if (analyzer == null)
+    private async Task PlayMoveFromTable(TableRowClickEventArgs<NNValues> moveInfo)
     {
-      logger.LogInformation("No engine loaded");
-      return;
+        InfoLineList.Clear();
+        var idx = ChessBoard.CurrentIndex;
+        if (ChessBoard.LongSANMovesPlayed.Count > idx)
+        {
+            //new mainline initiated here
+            var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
+            ChessBoard.ResetBoardState();
+            ChessBoard.PlayCommands(command);
+        }
+        ChessBoard.CurrentIndex = idx + 1;
+        if (autoSearchSwitch)
+        {
+            searchInProgress = true;
+            await qPlot.ResetPlot(false);
+            var move = moveInfo.Item.SANMove;
+            ChessBoard.PlaySimpleShortSan(move);
+            fen = ChessBoard.FEN();
+            await OnEngineMoveMade.InvokeAsync(move);
+            await Notifier.UpdateFenToBoard(fen);
+        }
+        StateHasChanged();
     }
-    uciButtonPressed = true;
-    analyzer?.UCI();
-    StateHasChanged();
-  }
 
-  private string CalcWDL(WDLType wdlType)
-  {
-    var wdl = wdlType.Value();
-    var total = wdl.Win + wdl.Draw + wdl.Loss;
-    var (win, draw, loss) = (wdl.Win / total, wdl.Draw / total, wdl.Loss / total);
-    return $"W: {win:P0} D: {draw:P0} L: {loss:P0}";
-  }
-
-  private async void Update(CoreTypes.EngineStatus status)
-  {
-    var nodes = FormatNodes(status.Nodes);
-    var nps = FormatNPS(status.NPS);
-    var k = status.MultiPV;
-    data[k] = status;
-    var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
-    var wdlString = status.WDL != null ? CalcWDL(ordered[0].Value.WDL) : "W: N/A D: N/A L: N/A";
-    tableHeader = $"Analysis: {nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
-    dataList = ordered;
-    whitePV = ordered[0].Value.PV;
-    await InvokeAsync(() => StateHasChanged());
-  }
-
-
-  public async Task OnNotifyFen(string newPos)
-  {
-    fen = newPos; //ChessBoard.FEN();
-    if (autoSearchSwitch)
+    private async Task PlayMoveFromTable(TableRowClickEventArgs<KeyValuePair<int, EngineStatus>> status)
     {
-      if (searchInProgress)
-      {
-        analyzer?.Stop();
-        searchInProgress = false;
+        InfoLineList.Clear();
+        var idx = ChessBoard.CurrentIndex;
+        if (ChessBoard.LongSANMovesPlayed.Count > idx)
+        {
+            //new mainline initiated here
+            var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
+            ChessBoard.ResetBoardState();
+            ChessBoard.PlayCommands(command);
+        }
+        ChessBoard.CurrentIndex = idx + 1;
+        if (autoSearchSwitch)
+        {
+            searchInProgress = true;
+            var getMove = firstMoveInPV.Match(status.Item.Value.PV);
+            if (getMove.Success)
+            {
+                await qPlot.ResetPlot(false);
+                var move = getMove.Groups[1].Value;
+                ChessBoard.PlaySimpleShortSan(move);
+                var moveFen = ChessBoard.MovesAndFenPlayed.Last();
+                fen = ChessBoard.FEN();
+                await OnEngineMoveMade.InvokeAsync(move);
+                await Notifier.UpdateFenMoveToBoard(moveFen);
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task GoInfinite()
+    {
+        if (analyzer == null)
+        {
+            if (qPlot == null)
+                qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
+            else
+            {
+                await qPlot.ResetPlot(false);
+            }
+            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            qPlot.EngineName = analyzer.GetEngineName();
+            var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
+            neuralNet = $"{analyzer.GetNetwork()}";
+            backend = analyzer.BackendInfo();
+            qPlot.NN = analyzer.GetNetwork();
+        }
+
+        searchInProgress = true;
+        analyzer?.GoInfinite();
+        StateHasChanged();
+    }
+
+    private void ToggleOptimisticAndBase()
+    {
+        if (analyzer == null)
+            return;
+
+        optimisticHead = !optimisticHead;
+        var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
+        neuralNet = $"{analyzer.GetNetwork()}";
+
+
+        //first engine here
+        if (optimisticHead)
+        {
+            if (Id.Contains("1"))
+            {
+                var option1 = EngineOption.Create("BackendOptions", opt0);
+                analyzer?.AddSetoption(option1);
+                backend = opt0;
+            }
+
+            if (Id.Contains("2"))
+            {
+                var option2 = EngineOption.Create("BackendOptions", opt1);
+                analyzer?.AddSetoption(option2);
+                backend = opt1;
+            }
+        }
+
+        else
+        {
+            if (Id.Contains("1"))
+            {
+                var option1 = EngineOption.Create("BackendOptions", baseline0);
+                analyzer?.AddSetoption(option1);
+                backend = baseline0;
+            }
+
+            if (Id.Contains("2"))
+            {
+                var option2 = EngineOption.Create("BackendOptions", baseline1);
+                analyzer?.AddSetoption(option2);
+                backend = baseline1;
+            }
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadNNFile(InputFileChangeEventArgs e)
+    {
+        var pgnName = e.File.Name;
+        logger.LogInformation("Loading network file {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, "NN", pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+        neuralNet = e.File.Name;
+
         if (qPlot != null)
+            qPlot.NN = neuralNet;
+        logger.LogInformation("New Network loaded {Network}", neuralNet);
+
+        var engineToCheck = analyzer?.Engine;
+        if (engineToCheck == null)
         {
-          await qPlot?.ResetPlot(false);
-        }
-        if (analyzer != null)
-        {
-          await Task.Delay(200);
-          analyzer?.SearchNodes((int)numberOfNodes, fen, false);
-          searchInProgress = true;
+            logger.LogWarning("No engine loaded, cannot set weights file");
+            return;
         }
         else
         {
-          searchInProgress = false;
+            logger.LogInformation("Engine loaded, setting weights file");
         }
-      }
-      else
-      {
+        var option = EngineOption.Create("WeightsFile", fullPath);
+        analyzer?.AddSetoption(option);
+        //File.Delete(fullPath);
+    }
+
+    private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
+    {
+        //SetDefaultContempt();
+        waitingForEngine = true;
+        searchInProgress = false;
+        StateHasChanged();
+        analyzer?.Engine.ShutDownEngine();
+        var name = e.File.Name;
+        logger.LogInformation("Engine.json file opened {File}", name);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, "NN", name);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+        var jsonFile = e.File.Name;
+        logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
+        var engineConfig = JSON.readSingleEngineConfig(fullPath);
+        var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
+        await OnNewEngineLoaded.InvokeAsync(args);
+        Engine = engineConfig;
+        NNInfoList.Clear();
+        analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+        neuralNet = analyzer.GetNetwork();
+        backend = analyzer.BackendInfo();
+        File.Delete(fullPath);
+        StateHasChanged();
+    }
+
+    private void SetDefaultContempt()
+    {
+        var options = ChessLibrary.EngineHelper.contemptPlaySettings.ToArray();
+        var opts = ChessLibrary.EngineHelper.createContemptSetoptions(options);
+        if (analyzer == null)
+            return;
+        foreach (var item in opts)
+        {
+            analyzer.AddSetoption(item);
+        }
+    }
+
+    private async Task Analyze()
+    {
+        if (Engine == null)
+        {
+            return;
+        }
+        InfoLineList.Clear();
+        if (qPlot == null)
+            qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
+        else
+        {
+            await qPlot.ResetPlot(false);
+        }
+        searchInProgress = true;
+        await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
+        await InvokeAsync(StateHasChanged);
+        if (analyzer == null)
+        {
+            waitingForEngine = true;
+            StateHasChanged();
+            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            backend = analyzer.BackendInfo();
+
+            qPlot.EngineName = analyzer.GetEngineName();
+            var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
+            neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
+            qPlot.NN = analyzer.GetNetwork();
+            try
+            {
+                var command = ChessBoard.PositionWithMovesIndexed();
+                analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+            }
+            catch (Exception ex)
+            {
+                logger.LogInformation(ex.Message);
+                throw;
+            }
+        }
+
+        else
+        {
+            var command = ChessBoard.PositionWithMovesIndexed();
+            analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StopSearch()
+    {
+        if (analyzer != null)
+            analyzer.Stop();
+        searchInProgress = false;
+        await Task.CompletedTask;
+    }
+
+    private async void UpdateMe(EngineUpdate update)
+    {
+        switch (update)
+        {
+            case EngineUpdate.Done player:
+                //logger.LogInformation(player.Player);
+                break;
+
+            case EngineUpdate.Ready ready:
+                showCharts = ready.HasLiveStat;
+                showNNdata = false;
+                searchInProgress = false;
+                waitingForEngine = false;
+                //logger.LogInformation(player.Player);
+                break;
+
+            case EngineUpdate.Info i:
+                //logger.LogInformation(i.Info);
+                InfoLineList.Insert(0, (i.Info));
+                break;
+
+            case EngineUpdate.Eval e:
+                break;
+
+            case EngineUpdate.BestMove b:
+                whitePV = b.Item.PV;
+                searchInProgress = false;
+                waitingForEngine = false;
+                //await InvokeAsync(() => searchInProgress = false);
+                await InvokeAsync(() => StateHasChanged());
+                break;
+
+            case EngineUpdate.UCIInfo info:
+                if (uciButtonPressed)
+                {
+                    await InvokeAsync(() => OnUCIReceived.InvokeAsync(info.Data));
+                }
+                break;
+
+            case EngineUpdate.Status s:
+                var status = s.Item;
+                Update(status);
+                break;
+
+            case EngineUpdate.NNSeq n:
+                if (n.NNSeq.Count > 0)
+                {
+                    NNInfoList.Clear();
+                    n.NNSeq.Reverse();
+                    currentPosition = n.NNSeq.FirstOrDefault();
+                    NNInfoList.AddRange(n.NNSeq.Skip(1));
+                    qPlot.AddData(NNInfoList);
+                    //var enabled = OverlaySetting.HasOverlaySetting(Id);
+                    if (NNInfoList.Count > 0)
+                        await Notifier.MovesWithId(NNInfoList, Id);
+                    var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
+                    await qPlot.UpdateLogLiveCharts(NNInfoList, maxLines, Qdiff);
+                }
+                break;
+        }
+    }
+
+    private void ShowSearchPlot()
+    {
+        showNNdata = !showNNdata;
+    }
+
+    private async Task ResetEngine()
+    {
+        if (analyzer == null)
+        {
+            logger.LogInformation("No engine loaded");
+            return;
+        }
+
+        tableHeader = "Analysis";
+
+        analyzer?.Reset();
         if (qPlot != null)
         {
-          await qPlot?.ResetPlot(false);
+            await qPlot.ResetPlot(false);
         }
-        if (analyzer != null)
+        NNInfoList.Clear();
+        InfoLineList.Clear();
+        data.Clear();
+        dataList.Clear();
+        StateHasChanged();
+    }
+
+    private void RunUCICommand()
+    {
+        if (analyzer == null)
         {
-          await Task.Delay(100);
-          analyzer?.SearchNodes((int)numberOfNodes, fen, false);
-          searchInProgress = true;
+            logger.LogInformation("No engine loaded");
+            return;
         }
-      }
-    }
-    else
-    {
-      searchInProgress = false;
+        uciButtonPressed = true;
+        analyzer?.UCI();
+        StateHasChanged();
     }
 
-  }
-
-  protected override Task OnInitializedAsync()
-  {
-    MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
-    Notifier.NotifyFen += OnNotifyFen;
-
-    this.keyContext = this.HotKeys.CreateContext()
-
-        .Add(Key.Escape, (Func<Task>)(async () => await ResetEngine()), "reset engine")
-        .Add(ModKey.Ctrl, Key.s, (() => ToggleOptimisticAndBase()), "toggle optimistic and baseline")
-        .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await GoInfinite()), "go search")
-        .Add(ModKey.Ctrl, Key.h, (() => analyzer.Stop()), "stop search")
-        .Add(Key.F1, (Func<Task>)(async () => { numberOfNodes = 1; await Analyze(); }), "Analyze 1 node")
-        .Add(Key.F2, (Func<Task>)(async () => { numberOfNodes = 1_000; await Analyze(); }), "Analyze 1_000 nodes")
-        .Add(Key.F3, (Func<Task>)(async () => { numberOfNodes = 10_000; await Analyze(); }), "Analyze 10_000 nodes")
-        .Add(Key.F4, (Func<Task>)(async () => { numberOfNodes = 100_000; await Analyze(); }), "Analyze 100_000 nodes")
-        .Add(Key.F5, (Func<Task>)(async () => { numberOfNodes = 1_000_000; await Analyze(); }), "Analyze 1_000_000 nodes")
-        .Add(Key.F6, (Func<Task>)(async () => { numberOfNodes = 10_000_000; await Analyze(); }), "Analyze 10_000_000 nodes")
-        .Add(Key.F7, (Func<Task>)(async () => { numberOfNodes = 100_000_000; await Analyze(); }), "Analyze 100_000_000 nodes")
-        .Add(Key.F8, (Func<Task>)(async () => { numberOfNodes = 1_000_000_000; await Analyze(); }), "Analyze 1_000_000_000 nodes");
-
-    return base.OnInitializedAsync();
-  }
-
-  protected override async Task OnParametersSetAsync()
-  {
-    if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
+    private string CalcWDL(WDLType wdlType)
     {
-      logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
-      currentName = Engine.Name;
-      await qPlot?.ResetNPlot();
-      await InvokeAsync(NNInfoList.Clear);
-      analyzer.Engine.ShutDownEngine();
-      analyzer = null;
-      neuralNet = string.Empty;
-      OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
-      await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);
-      selectedOverlaySetting = OverlaySettings.None;
-      await Task.CompletedTask;
+        var wdl = wdlType.Value();
+        var total = wdl.Win + wdl.Draw + wdl.Loss;
+        var (win, draw, loss) = (wdl.Win / total, wdl.Draw / total, wdl.Loss / total);
+        return $"W: {win:P0} D: {draw:P0} L: {loss:P0}";
     }
 
-    var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
-    if (OverlaySetting.IsOverlaySettingsEnabled)
+    private async void Update(CoreTypes.EngineStatus status)
     {
-      if (overlaySettings != selectedOverlaySetting)
-      {
-        selectedOverlaySetting = overlaySettings;
-      }
+        var nodes = FormatNodes(status.Nodes);
+        var nps = FormatNPS(status.NPS);
+        var k = status.MultiPV;
+        data[k] = status;
+        var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
+        var wdlString = status.WDL != null ? CalcWDL(ordered[0].Value.WDL) : "W: N/A D: N/A L: N/A";
+        tableHeader = $"Analysis: {nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+        dataList = ordered;
+        whitePV = ordered[0].Value.PV;
+        await InvokeAsync(() => StateHasChanged());
     }
-    if (Engine != null)
+
+
+    public async Task OnNotifyFen(string newPos)
     {
-      runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
-      showCharts = runLogLiveStats;
-      if (runLogLiveStats && overlaySettings == OverlaySettings.None)
-      {
-        if (!OverlaySetting.IsOverlaySettingsEnabled)
+        fen = newPos;
+        if (autoSearchSwitch)
         {
-          OverlaySetting.SetOverlaySetting(Id, OverlaySettings.Policy);
-          selectedOverlaySetting = OverlaySettings.Policy;
+            if (searchInProgress)
+            {
+                analyzer?.Stop();
+                searchInProgress = false;
+                if (qPlot != null)
+                {
+                    await qPlot?.ResetPlot(false);
+                }
+                if (analyzer != null)
+                {
+                    //await Task.Delay(200);
+                    var command = ChessBoard.PositionWithMovesIndexed();
+                    analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+                    searchInProgress = true;
+                }
+                else
+                {
+                    searchInProgress = false;
+                }
+            }
+            else
+            {
+                if (qPlot != null)
+                {
+                    await qPlot?.ResetPlot(false);
+                }
+                if (analyzer != null)
+                {
+                    var command = ChessBoard.PositionWithMovesIndexed();
+                    analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+                    searchInProgress = true;
+                }
+            }
         }
-      }
+        else
+        {
+            searchInProgress = false;
+        }
     }
-    numberOfLines = Math.Max(1, ChartLines);
-    StateHasChanged();
-  }
 
-  protected override async Task OnAfterRenderAsync(bool firstRender)
-  {
-    if (firstRender)
+    protected override Task OnInitializedAsync()
     {
-      chessModule = await JsInteropService.ImportModuleAsync(JS);
-      optimisticHead = engine1;
-      var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
-      if (overlaySettings != OverlaySettings.None)
-      {
-        selectedOverlaySetting = overlaySettings;
-        await OnOverlaySettingChanged(selectedOverlaySetting);
-      }
-      if (Engine != null)
-      {
-        runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
-        showCharts = runLogLiveStats;
-        currentName = Engine.Name;
-      }
-      qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
-      if (string.IsNullOrEmpty(FEN) == false)
-      {
-        fen = FEN;
-      }
-      searchInProgress = false;
-      ChessBoard.inAnalysisMode = true;
-      numberOfLines = Math.Max(1, ChartLines);
-      numberOfNodes = Math.Max(1, Nodes);
-      Qdiff = 2;
-      StateHasChanged();
+        MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
+        Notifier.NotifyFen += OnNotifyFen;
+
+        this.keyContext = this.HotKeys.CreateContext()
+
+            .Add(Key.Escape, (Func<Task>)(async () => await ResetEngine()), "reset engine")
+            .Add(ModKey.Ctrl, Key.s, (() => ToggleOptimisticAndBase()), "toggle optimistic and baseline")
+            .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await GoInfinite()), "go search")
+            .Add(ModKey.Ctrl, Key.h, (() => analyzer.Stop()), "stop search")
+            .Add(Key.F1, (Func<Task>)(async () => { numberOfNodes = 1; await Analyze(); }), "Analyze 1 node")
+            .Add(Key.F2, (Func<Task>)(async () => { numberOfNodes = 1_000; await Analyze(); }), "Analyze 1_000 nodes")
+            .Add(Key.F3, (Func<Task>)(async () => { numberOfNodes = 10_000; await Analyze(); }), "Analyze 10_000 nodes")
+            .Add(Key.F4, (Func<Task>)(async () => { numberOfNodes = 100_000; await Analyze(); }), "Analyze 100_000 nodes")
+            .Add(Key.F5, (Func<Task>)(async () => { numberOfNodes = 1_000_000; await Analyze(); }), "Analyze 1_000_000 nodes")
+            .Add(Key.F6, (Func<Task>)(async () => { numberOfNodes = 10_000_000; await Analyze(); }), "Analyze 10_000_000 nodes")
+            .Add(Key.F7, (Func<Task>)(async () => { numberOfNodes = 100_000_000; await Analyze(); }), "Analyze 100_000_000 nodes")
+            .Add(Key.F8, (Func<Task>)(async () => { numberOfNodes = 1_000_000_000; await Analyze(); }), "Analyze 1_000_000_000 nodes");
+
+        return base.OnInitializedAsync();
     }
 
-    await Task.CompletedTask;
-  }
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
+        {
+            logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
+            currentName = Engine.Name;
+            await qPlot?.ResetNPlot();
+            await InvokeAsync(NNInfoList.Clear);
+            analyzer.Engine.ShutDownEngine();
+            analyzer = null;
+            neuralNet = string.Empty;
+            OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);
+            selectedOverlaySetting = OverlaySettings.None;
+            await Task.CompletedTask;
+        }
 
-  public async ValueTask DisposeAsync()
-  {
-    Notifier.NotifyFen -= OnNotifyFen;
-    analyzer?.Quit();
-    logger.LogInformation("Disposing {page}", "analyzePosition page");
-    this.keyContext?.DisposeAsync();
-    await ValueTask.CompletedTask;
-  }
+        var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
+        if (OverlaySetting.IsOverlaySettingsEnabled)
+        {
+            if (overlaySettings != selectedOverlaySetting)
+            {
+                selectedOverlaySetting = overlaySettings;
+            }
+        }
+        if (Engine != null)
+        {
+            runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
+            showCharts = runLogLiveStats;
+            if (runLogLiveStats && overlaySettings == OverlaySettings.None)
+            {
+                if (!OverlaySetting.IsOverlaySettingsEnabled)
+                {
+                    OverlaySetting.SetOverlaySetting(Id, OverlaySettings.Policy);
+                    selectedOverlaySetting = OverlaySettings.Policy;
+                }
+            }
+        }
+        numberOfLines = Math.Max(1, ChartLines);
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessModule = await JsInteropService.ImportModuleAsync(JS);
+            optimisticHead = engine1;
+            var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
+            if (overlaySettings != OverlaySettings.None)
+            {
+                selectedOverlaySetting = overlaySettings;
+                await OnOverlaySettingChanged(selectedOverlaySetting);
+            }
+            if (Engine != null)
+            {
+                runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
+                showCharts = runLogLiveStats;
+                currentName = Engine.Name;
+            }
+            qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
+            if (string.IsNullOrEmpty(FEN) == false)
+            {
+                fen = FEN;
+            }
+            searchInProgress = false;
+            ChessBoard.inAnalysisMode = true;
+            numberOfLines = Math.Max(1, ChartLines);
+            numberOfNodes = Math.Max(1, Nodes);
+            Qdiff = 2;
+            StateHasChanged();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Notifier.NotifyFen -= OnNotifyFen;
+        analyzer?.Quit();
+        logger.LogInformation("Disposing {page}", "analyzePosition page");
+        this.keyContext?.DisposeAsync();
+        await ValueTask.CompletedTask;
+    }
 }

@@ -30,14 +30,14 @@
       <HeaderContent>
         <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Round">R#</MudTableSortLabel></MudTh>
         <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameNumber">G#</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Result">Result</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPGNSummary(x)">Players</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.GetResultSummary(x)">Result</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPlayersSummary(x)">Players</MudTableSortLabel></MudTh>
       </HeaderContent>
       <RowTemplate>
         <MudTd DataLabel="R#">@context.GameMetaData.Round</MudTd>
         <MudTd DataLabel="G#">@context.GameNumber</MudTd>
-        <MudTd DataLabel="Result">@context.GameMetaData.Result</MudTd>
-        <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPGNSummary(context)</MudTd>
+        <MudTd DataLabel="Result">@Helper.GetResultSummary(context)</MudTd>
+                <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPlayersSummary(context)</MudTd>
       </RowTemplate>
       <PagerContent>
         <MudTablePager PageSizeOptions="new int[] { 20, 30, 50, 100, 250 }" />
@@ -54,13 +54,13 @@
     [Parameter] public List<PGNTypes.PgnGame> Games { get; set; } = new();
     [Parameter] public HashSet<PGNTypes.PgnGame> SelectedItems { get; set; } = new();
     [Parameter] public string SearchString { get; set; } = "";
-  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
     
     private void Cancel() => MudDialog.Cancel();
     
     private void SelectGame(TableRowClickEventArgs<PGNTypes.PgnGame> args)
     {
-        MudDialog.Close(DialogResult.Ok(args.Item));
+        MudDialog.Close(DialogResult.Ok((args.Item, SearchString)));
     }
     
     private bool FilterFunc(PGNTypes.PgnGame game)
@@ -76,6 +76,18 @@
 
         // Search in black player name
         if (game.GameMetaData.Black?.ToLower().Contains(searchTerm) == true)
+            return true;
+        
+        var eval = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Eval");
+        
+        // Search in eval
+        if (eval != null && eval.Value.ToLower().Contains(searchTerm) == true)
+            return true;        
+        
+        var move = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Move");
+        
+        // Search in Move
+        if (move != null && move.Value.ToLower().Contains(searchTerm) == true)
             return true;
 
         return false;

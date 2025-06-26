@@ -824,7 +824,7 @@ module PGNWriter =
       writer.WriteLine(sprintf "[Date \"%s\"]" g.GameMetaData.Date)
       writer.WriteLine(sprintf "[Result \"%s\"]" g.GameMetaData.Result)
       if String.IsNullOrEmpty (g.GameMetaData.Fen) |> not then
-        writer.WriteLine(sprintf "[Fen \"%s\"]" g.GameMetaData.Fen)
+        writer.WriteLine(sprintf "[FEN \"%s\"]" g.GameMetaData.Fen)
       for tags in g.GameMetaData.OtherTags do
         writer.WriteLine(sprintf "[%s \"%s\"]" tags.Key tags.Value)        
         // Write an empty line after tags     
@@ -1017,7 +1017,7 @@ module PGNWriter =
     writer.WriteLine(sprintf "[Opening \"%s\"]" (PGNHelper.getOpeningOnly header))
     writer.WriteLine(sprintf "[OpeningHash \"%s\"]" header.OpeningHash)
     if header.Fen <> "" then
-      writer.WriteLine(sprintf "[Fen \"%s\"]" header.Fen)
+      writer.WriteLine(sprintf "[FEN \"%s\"]" header.Fen)
     if header.Deviations > 0 then
       writer.WriteLine(sprintf "[Deviations \"%d\"]" header.Deviations)    
     
@@ -1829,6 +1829,9 @@ module MoveParser =
 
     let parseTagSection() =      
       removeNonStandardWhitespaces()
+      if input.StartsWith "##" then
+        position <- input.Length
+        state <- State.Start
       while position < input.Length && Peek() = '[' do
           parseTagPair()
           //skipWhiteSpace()
@@ -1840,7 +1843,7 @@ module MoveParser =
         //position <- input.Length
         state <- State.InMoveTextSection
       if position = input.Length || Peek() <> '[' then
-          if state = State.Start then
+          if state = State.Start && input.StartsWith "##" = false then
               state <- State.InMoveTextSection
       else
         raise <| Exception("Expected a tag pair")    

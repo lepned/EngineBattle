@@ -1,0 +1,454 @@
+@page "/play-vs-computer"
+
+@using System.Globalization
+@using WebGUI.Components.Layout.ChessboardLayout
+@using WebGUI.Services
+@using System.Timers
+@using static ChessLibrary.TypesDef.Engine
+@inject ILogger<PlayVsComputer> logger
+@inject NotifierService Notifier
+@inject OverlaySetting overlaySettings
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
+<PageTitle>Play vs Computer</PageTitle>
+<MudPaper Class="pa-4">
+    <MudGrid>
+        <MudItem xl=8 Class="d-flex">
+            <MudItem xl="1" sm="2">
+                <MudSelect T="string" Label="Time Control" @bind-Value="selectedTimeControl">
+                    <MudSelectItem Value="@("0+5")">0+5</MudSelectItem>
+                    <MudSelectItem Value="@("1+1")">1+1</MudSelectItem>
+                    <MudSelectItem Value="@("3+2")">3+2</MudSelectItem>
+                    <MudSelectItem Value="@("5+3")">5+3</MudSelectItem>
+                    <MudSelectItem Value="@("10+0")">10+0</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xl="4" sm="4" Class="d-flex align-center">
+                <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                        Label="Engine.json" Size="Size.Small" for="@engineJson" />
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartGame">Start Game</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="RestartGame" Class="ml-2">Restart</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ResignGame" Class="ml-2">Resign</MudButton>
+            </MudItem>
+        </MudItem>
+        <MudItem xl="12" Class="d-flex">
+            <MudItem xl="3" sm="6">
+                <MudText Typo="Typo.h6">White (You): @FormatTime(whiteTime)</MudText>
+            </MudItem>
+            <MudItem xl="3" sm="6">
+                <MudText Typo="Typo.h6">@($"Black ({(Engine?.Name == null ? "None" : Engine?.Name)})"): @FormatTime(blackTime)</MudText>
+            </MudItem>
+        </MudItem>
+        <MudItem xl="4">
+            <Chessboard @ref="chessboardRef" ShowFenField=false FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
+                        MakeMoveListClickable=true OnMoveMadeOnBoard="OnHumanMove" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
+        </MudItem>
+
+
+        <MudItem xs="6">
+            <MudText Typo="Typo.subtitle1">@gameStatus</MudText>
+        </MudItem>
+    </MudGrid>
+    <MudItem Class="d-flex">
+        <MudItem Class="mt-4" sm="3" lg="2">
+            <MudTextField HelperText="Path to file - game will be appended to file" Placeholder="C:/dev/chess/mygames.pgn" T="string" @bind-Value="gamesPath" Text="@gamesPath" />
+        </MudItem>
+        <MudItem sm="2" lg="1">
+            <MudButton Class="ml-3 mb-3 mt-3" Size="Size.Medium" OnClick="SaveAnalysis" StartIcon="@Icons.Material.Filled.Save">Save</MudButton>
+        </MudItem>
+    </MudItem>
+</MudPaper>
+
+@code {
+
+    [Parameter] public EngineConfig Engine { get; set; }
+    private string selectedTimeControl = "3+2";
+    private TimeSpan whiteTime;
+    private TimeSpan blackTime;
+    private int incrementSeconds = 2;
+    private int baseMinutes = 3;
+    private System.Timers.Timer clockTimer;
+    private bool humanIsWhite = true;
+    private bool isWhiteTurn = true;
+    private bool gameActive = false;
+    private string gameStatus = "";
+    private Chess.Board board = new();
+    //private bool engineThinking = false;
+    private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private string moveHistory = string.Empty;
+    private int numberOfNodes = 1;
+    private bool keepNodesWhileSearching = false;
+    private string engineJson => "engineJson" + 101;
+    private string gamesPath = "C:/dev/chess/mygames.pgn"; // Default path for saving games, can be changed by user
+    private Chessboard chessboardRef;
+
+    private ChessLibrary.Analysis.Manager.SimpleEngineAnalyzer analyzer;
+    IBrowserFile browserFile;
+
+    protected override void OnInitialized()
+    {
+        ParseTimeControl();
+        ResetClocks();
+    }
+
+    private void SwitchSides()
+    {
+        humanIsWhite = !humanIsWhite;
+    }
+
+    private void ParseTimeControl()
+    {
+        var parts = selectedTimeControl.Split('+');
+        baseMinutes = int.Parse(parts[0]);
+        incrementSeconds = int.Parse(parts[1]);
+    }
+
+    private void StartGame()
+    {
+        ParseTimeControl();
+        ResetClocks();
+        board.ResetBoardState();
+        var whiteToMove = board.Position.STM == 0;
+        isWhiteTurn = whiteToMove;
+        gameActive = true;
+        gameStatus = humanIsWhite && whiteToMove ? "Your move." : "Computer to move.";
+        analyzer?.NewGame();
+        StartClock();
+        StateHasChanged();
+    }
+
+    private void RestartGame()
+    {
+        chessboardRef?.ResetGameState();
+        StartGame();
+    }
+
+    private void ResignGame()
+    {
+        gameActive = false;
+        gameStatus = "You resigned! Computer wins.";
+        StopClock();
+        StateHasChanged();
+        analyzer?.Stop();
+    }
+
+    private void ResetClocks()
+    {
+        whiteTime = TimeSpan.FromMinutes(baseMinutes);
+        blackTime = TimeSpan.FromMinutes(baseMinutes);
+    }
+
+    private void StartClock()
+    {
+        clockTimer?.Dispose();
+        clockTimer = new System.Timers.Timer(1000);
+        clockTimer.Elapsed += OnClockTick;
+        clockTimer.Start();
+    }
+
+    private void StopClock()
+    {
+        clockTimer?.Stop();
+        clockTimer?.Dispose();
+        clockTimer = null;
+    }
+
+    private void OnClockTick(object sender, ElapsedEventArgs e)
+    {
+        var whiteToMove = board.Position.STM == 0;
+        if (!gameActive) return;
+        if (whiteToMove)
+        {
+            whiteTime = whiteTime.Subtract(TimeSpan.FromSeconds(1));
+            if (whiteTime.TotalSeconds <= 0)
+            {
+                whiteTime = TimeSpan.Zero;
+                gameStatus = "You lost on time!";
+                gameActive = false;
+                StopClock();
+            }
+        }
+        else
+        {
+            blackTime = blackTime.Subtract(TimeSpan.FromSeconds(1));
+            if (blackTime.TotalSeconds <= 0)
+            {
+                blackTime = TimeSpan.Zero;
+                gameStatus = "Computer lost on time!";
+                gameActive = false;
+                StopClock();
+            }
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnHumanMove(string move)
+    {
+        var whiteToMove = board.Position.STM == 0;
+        if (humanIsWhite && !whiteToMove)
+        {
+            if (!gameActive) return;           
+
+            logger.LogInformation($"Human move played: {move}, FEN: {board.FEN()}, WhiteToMove: {whiteToMove}");
+            whiteTime = whiteTime.Add(TimeSpan.FromSeconds(incrementSeconds));
+            isWhiteTurn = false;
+        }
+        else if (!humanIsWhite && whiteToMove)
+        {
+            if (!gameActive) return;
+            
+            logger.LogInformation($"Human move played: {move}, FEN: {board.FEN()}, WhiteToMove: {whiteToMove}");
+            blackTime = whiteTime.Add(TimeSpan.FromSeconds(incrementSeconds));
+            isWhiteTurn = true;
+        }
+        else
+        {
+            logger.LogInformation("Human move logic failed here...");
+            return;
+        }
+        gameStatus = "Computer to move.";
+        //board.CurrentIndex++;
+
+        if (CheckGameEnd()) return;
+        await Play();
+    }
+
+    private bool CheckGameEnd()
+    {
+        // Checkmate: if in check and no legal moves
+        bool noLegalMoves = !board.AnyLegalMove();
+        var pos = board.Position;
+        bool inCheck = ChessLibrary.MoveGeneration.InCheck(in pos) != 0UL;
+        var whiteToMove = board.Position.STM == 0;
+        if (noLegalMoves && inCheck)
+        {
+            gameStatus = humanIsWhite && whiteToMove ? "Checkmate! Computer wins." : "Checkmate! You win.";
+            gameActive = false;
+            StopClock();
+            return true;
+        }
+        // Stalemate: not in check and no legal moves
+        if (noLegalMoves && !inCheck)
+        {
+            gameStatus = "Stalemate! Draw.";
+            gameActive = false;
+            StopClock();
+            return true;
+        }
+        // Draw by insufficient material
+        if (board.InsufficentMaterial())
+        {
+            gameStatus = "Draw! Insufficient material.";
+            gameActive = false;
+            StopClock();
+            return true;
+        }
+        // Draw by threefold repetition
+        if (board.ClaimThreeFoldRep())
+        {
+            gameStatus = "Draw! Threefold repetition.";
+            gameActive = false;
+            StopClock();
+            return true;
+        }
+        // Draw by 50-move rule (not implemented here, but can be added)
+        if (whiteTime.TotalSeconds <= 0)
+        {
+            var msg = humanIsWhite ? "You lost on time!" : "Computer lost on time!";
+            gameStatus = msg;
+            gameActive = false;
+            StopClock();
+            return true;
+        }
+        if (blackTime.TotalSeconds <= 0)
+        {
+            var msg = humanIsWhite ? "Computer lost on time!" : "You lost on time!";
+            gameStatus = msg;
+            gameActive = false;
+            StopClock();
+            return true;
+        }
+        return false;
+    }
+
+    private string FormatTime(TimeSpan t)
+    {
+        return t.ToString(@"mm\:ss");
+    }
+
+    private void SetDefaultContempt()
+    {
+        var options = ChessLibrary.EngineHelper.contemptPlaySettings.ToArray();
+        var opts = ChessLibrary.EngineHelper.createContemptSetoptions(options);
+        if (analyzer == null)
+            return;
+        foreach (var item in opts)
+        {
+            analyzer.AddSetoption(item);
+        }
+    }
+
+    private async Task EngineMoveReady(MoveAndFen move)
+    {
+        var whiteToMove = board.Position.STM == 0;
+        board.PlayLongSanMove(move.Move.LongSan);
+        board.CurrentIndex++;
+        var lastMove = board.MovesAndFenPlayed.LastOrDefault();
+        if (lastMove != null)
+        {
+            await Notifier.UpdateFenMoveToBoard(lastMove);
+        }
+        fen = board.FEN();
+        blackTime = whiteToMove ? whiteTime.Add(TimeSpan.FromSeconds(incrementSeconds)) : blackTime.Add(TimeSpan.FromSeconds(incrementSeconds));
+        isWhiteTurn = !whiteToMove;
+        if (CheckGameEnd())
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        gameStatus = "Your move.";
+        //engineThinking = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Play()
+    {
+        //engineThinking = true;
+        if (Engine == null)
+        {
+            return;
+        }
+
+        if (analyzer == null)
+        {
+            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, board, logger, UpdateMe, false);
+            try
+            {
+                analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
+            }
+            catch (Exception ex)
+            {
+                logger.LogInformation(ex.Message);
+                throw;
+            }
+        }
+
+        else
+        {
+            var timeOnlyWhite = new TimeOnly(whiteTime.Ticks);
+            var timeOnlyBlack = new TimeOnly(blackTime.Ticks);
+            var incWhite = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(incrementSeconds));
+            var incBlack = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(incrementSeconds));
+            var incrCommand = TypesDef.TimeControl.TimeControlCommands.createTimeControlWithIncrement(timeOnlyWhite, timeOnlyBlack, incWhite, incBlack);
+            Console.WriteLine(incrCommand);
+            var nodeLimitCommand = TypesDef.TimeControl.TimeControlCommands.createNodes(numberOfNodes);
+            analyzer.Play(incrCommand);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StopSearch()
+    {
+        if (analyzer != null)
+            analyzer.Stop();
+
+        await Task.CompletedTask;
+    }
+
+    private async void UpdateMe(EngineUpdate update)
+    {
+        switch (update)
+        {
+            case EngineUpdate.Done player:
+                //logger.LogInformation(player.Player);
+                break;
+
+            case EngineUpdate.Ready ready:
+                //logger.LogInformation(player.Player);
+                break;
+
+            case EngineUpdate.Info i:
+                //logger.LogInformation(i.Info);
+                break;
+
+            case EngineUpdate.Eval e:
+                break;
+
+            case EngineUpdate.BestMove b:
+                await EngineMoveReady(b.Item.MoveAndFen);
+                await InvokeAsync(() => StateHasChanged());
+                break;
+
+            case EngineUpdate.UCIInfo info:
+                break;
+
+            case EngineUpdate.Status s:
+                var status = s.Item;
+                break;
+
+            case EngineUpdate.NNSeq n:
+                break;
+        }
+    }
+
+    private void OnNewFENOnBoard(string newFen)
+    {
+        logger.LogInformation($"New FEN on board: {newFen}");
+        fen = newFen;
+    }
+
+    private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
+    {
+        //engineThinking = false;
+        StateHasChanged();
+        analyzer?.Engine.ShutDownEngine();
+        var name = e.File.Name;
+        logger.LogInformation("Engine.json file opened {File}", name);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, "NN", name);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+        logger.LogInformation("New engine.json file loaded {jsonFile}", e.File.Name);
+        var engineConfig = JSON.readSingleEngineConfig(fullPath);
+        Engine = engineConfig;
+        analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, board, logger, UpdateMe, false);
+        File.Delete(fullPath);
+        StateHasChanged();
+    }
+
+    private async Task SaveAnalysis(MouseEventArgs args)
+    {
+        logger.LogInformation("File saved to {path}", gamesPath);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine();
+        //add header for the game
+        sb.AppendLine($"[Event \"Play vs computer\"]");
+        sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+        sb.AppendLine($"[Fen \"{board.StartPosition}\"]");
+        sb.AppendLine();
+        sb.AppendLine(board.GetMoveHistory());
+        File.AppendAllText(gamesPath, sb.ToString());
+        await Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        StopClock();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        analyzer?.Quit();
+        logger.LogInformation("Disposing engines in {page}", "play-vs-computer page");
+        await Task.CompletedTask;
+    }
+}
