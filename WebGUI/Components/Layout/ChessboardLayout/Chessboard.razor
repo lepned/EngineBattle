@@ -15,129 +15,129 @@
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
-  <MudPaper Elevation="3" Class="pa-1">
-    <MudStack Row="true" Spacing="0">
-      <MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
-                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-        <img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
-             style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-      </MudIconButton>
-      <MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
-                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-        <img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-      </MudIconButton>
-      <MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
-                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-        <img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-      </MudIconButton>
-      <MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
-                     Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-        <img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+    <MudPaper Elevation="3" Class="pa-1">
+        <MudStack Row="true" Spacing="0">
+            <MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
+                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                <img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
+                     style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+            </MudIconButton>
+            <MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
+                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                <img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+            </MudIconButton>
+            <MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
+                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                <img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+            </MudIconButton>
+            <MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
+                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                <img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
 
-      </MudIconButton>
-    </MudStack>
-  </MudPaper>
+            </MudIconButton>
+        </MudStack>
+    </MudPaper>
 </div>
 
 <MudGrid Justify="Justify.Center">
-  @if (ShowPlayerInfo)
-  {
+    @if (ShowPlayerInfo)
+    {
+        <MudItem sm=12 md="12" lg="12">
+            @BlackPlayerInfo
+        </MudItem>
+    }
     <MudItem sm=12 md="12" lg="12">
-      @BlackPlayerInfo
+        <div style="height:100%" @ref="board"></div>
     </MudItem>
-  }
-  <MudItem sm=12 md="12" lg="12">
-    <div style="height:100%" @ref="board"></div>
-  </MudItem>
 
-  @if (!String.IsNullOrEmpty(OpeningMoves))
-  {
-    <span style=@openingStyle class="mud-text">@OpeningName</span>
-  }
+    @if (!String.IsNullOrEmpty(OpeningMoves))
+    {
+        <span style=@openingStyle class="mud-text">@OpeningName</span>
+    }
 
-  @if (ShowPlayerInfo)
-  {
-    <MudItem Class="m-0" sm=12 md="12" lg="12">
-      @WhitePlayerInfo
-    </MudItem>
-  }
+    @if (ShowPlayerInfo)
+    {
+        <MudItem Class="m-0" sm=12 md="12" lg="12">
+            @WhitePlayerInfo
+        </MudItem>
+    }
 
-  @if (ShowChessNavButtons)
-  {
-    <MudItem lg=12 Class="justify-content-center d-flex">
+    @if (ShowChessNavButtons)
+    {
+        <MudItem lg=12 Class="justify-content-center d-flex">
 
-      <MudFab Class="ml-4 " OnClick=StartOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
-      <MudFab Class="ml-2 " OnClick=PreviousMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
-      <MudFab Class="ml-2 " OnClick=PlayMoves HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
-      <MudFab Class="ml-2 " OnClick=NextMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
-      <MudFab Class="ml-2 " OnClick=EndOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
+            <MudFab Class="ml-4 " OnClick=StartOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
+            <MudFab Class="ml-2 " OnClick=PreviousMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
+            <MudFab Class="ml-2 " OnClick=PlayMoves HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
+            <MudFab Class="ml-2 " OnClick=NextMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+            <MudFab Class="ml-2 " OnClick=EndOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
 
-      <MudTooltip Text="Flip board">
-        <MudFab Class="ml-2" OnClick=RotateBoard HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
-      </MudTooltip>
+            <MudTooltip Text="Flip board">
+                <MudFab Class="ml-2" OnClick=RotateBoard HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
+            </MudTooltip>
 
-      <MudTooltip Text="Copy fen">
-        <MudFab Class="ml-2" OnClick=WriteTextAsync HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
-      </MudTooltip>
+            <MudTooltip Text="Copy fen">
+                <MudFab Class="ml-2" OnClick=WriteTextAsync HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
+            </MudTooltip>
 
-      <MudTooltip Text="Load fen">
-        <MudFab Class="ml-2" OnClick=UpdateFenWithMovesInput HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
-      </MudTooltip>
+            <MudTooltip Text="Load fen">
+                <MudFab Class="ml-2" OnClick=UpdateFenWithMovesInput HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
+            </MudTooltip>
 
-      <MudTooltip Text="Reset board state">
-        <MudFab Class="ml-2 mr-2" OnClick=ResetGameState HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
-      </MudTooltip>
-    </MudItem>
-  }
+            <MudTooltip Text="Reset board state">
+                <MudFab Class="ml-2 mr-2" OnClick=ResetGameState HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
+            </MudTooltip>
+        </MudItem>
+    }
 
 
-  @if (ShowMoveList && MakeMoveListClickable == false)
-  {
-    <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
-      @*  <div>
+    @if (ShowMoveList && MakeMoveListClickable == false)
+    {
+        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
+            @*  <div>
     <span>Move history:</span>
     </div>*@
-      <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
-        <span style="color:skyblue ">@OpeningMoves</span>
-        <span> @MoveHistory </span>
-      </div>
-    </MudItem>
-  }
-
-  @if (ShowMoveList && MakeMoveListClickable)
-  {
-    MoveList = ChessBoard.MovesAndFenPlayed;
-    var list = ChessBoard.GetNumberedMoveList();
-    <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
-
-      <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
-        @foreach (var (move, idx) in list.Select((move, idx) => (move, idx)))
-        {
-          <span @onclick="@(() => OnItemClick(idx))">@move&nbsp</span>
-        }
-      </div>
-    </MudItem>
-  }
-
-  @if (ShowFenField)
-  {
-    <MudItem sm=12 md="12" lg="12">
-
-      <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
-                    FullWidth="false" T=string Value=fenWithMoves ValueChanged="OnValueChanged" Style="font-size:12px"
-                    Immediate="true"
-                    Variant="Variant.Filled" />
-    </MudItem>
-  }
-
-  <div>
-    @if (EnablePGNreader)
-    {
-      <MudItem lg="12">
-        <MudFab HtmlTag="label" Color="Color.Default" Label="Load pgn file" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-      </MudItem>
+            <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
+                <span style="color:skyblue ">@OpeningMoves</span>
+                <span> @MoveHistory </span>
+            </div>
+        </MudItem>
     }
-  </div>
+
+    @if (ShowMoveList && MakeMoveListClickable)
+    {
+        MoveList = ChessBoard.MovesAndFenPlayed;
+        var list = ChessBoard.GetNumberedMoveList();
+        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
+
+            <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
+                @foreach (var (move, idx) in list.Select((move, idx) => (move, idx)))
+                {
+                    <span @onclick="@(() => OnItemClick(idx))">@move&nbsp</span>
+                }
+            </div>
+        </MudItem>
+    }
+
+    @if (ShowFenField)
+    {
+        <MudItem sm=12 md="12" lg="12">
+
+            <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
+                          FullWidth="false" T=string Value=fenWithMoves ValueChanged="OnValueChanged" Style="font-size:12px"
+                          Immediate="true"
+                          Variant="Variant.Filled" />
+        </MudItem>
+    }
+
+    <div>
+        @if (EnablePGNreader)
+        {
+            <MudItem lg="12">
+                <MudFab HtmlTag="label" Color="Color.Default" Label="Load pgn file" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+            </MudItem>
+        }
+    </div>
 
 </MudGrid>
 
@@ -162,6 +162,7 @@
     [Parameter] public int MoveListHeight { get; set; }
     [Parameter] public string MoveHistory { get; set; }
 
+    private Board moveBoard = new Board();
     private string pendingPromotionMove;
     private int promotionButtonSize = 50; // Set to your preferred size
     private double promotionButtonSizePx => promotionButtonSize * 0.85; // Adjust size for the images
@@ -334,6 +335,7 @@
             //logger.LogInformation(nameof(UpdateNewMove) + " method with fen: " + fenWithMoves);
             var lastNNMoves = GetNNValues(currentId);
             await DisplayMoveAnnotation(lastNNMoves, currentId);
+            StateHasChanged();
         }
     }
 
@@ -355,7 +357,10 @@
 
     public async Task WriteTextAsync()
     {
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", fenWithMoves);
+        moveBoard.ResetBoardState();
+        moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
+        var fen = moveBoard.FEN();
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", fen);
     }
 
     async Task FenWithMovesReleased(FocusEventArgs args)
@@ -420,335 +425,336 @@
     {
         fenWithMoves = fen; //ChessBoard.FEN();
         if (chessJSmodule is not null && chessGUI is not null)
-    {
-      await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fenWithMoves, withCallback);
-      moveList = string.Empty;
-    }
-    await Task.CompletedTask;
-  }
-
-  private string FormatNodes(double nodes)
-  {
-    if (nodes > 1_000_000_000)
-    {
-      var mill = nodes / 1_000_000_000;
-      return mill.ToString("F1") + "B"; //G nodes
-    }
-    else if (nodes > 1_000_000)
-    {
-      var mill = nodes / 1_000_000;
-      return mill.ToString("F1") + "M";
-    }
-
-    else if (nodes > 1_000)
-    {
-      var thousand = nodes / 1_000;
-      return thousand.ToString("F1") + "K";
-    }
-
-    else
-    {
-      return nodes.ToString("F0");
-    }
-  }
-
-  private List<object> GetDisplayData(List<NNValues> moves, OverlaySettings overlay)
-  {    
-    MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
-    var currentOverlaySetting = overlay;
-    if (!OverlaySetting.IsOverlaySettingsEnabled || moves.Count == 0)
-    {
-      return new List<object>();
-    }    
-
-    if (currentOverlaySetting == OverlaySettings.Policy)
-    {
-      return
-          moves
-          .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
-    }
-    else if (currentOverlaySetting == OverlaySettings.Q)
-    {
-      return
-          moves
-          .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
-    }
-
-    else if (currentOverlaySetting == OverlaySettings.V)
-    {
-      return
-          moves
-          .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
-    }
-
-    else if (currentOverlaySetting == OverlaySettings.QVDiff)
-    {
-      return
-          moves
-          .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
-    }
-
-    else if (currentOverlaySetting == OverlaySettings.E)
-    {
-      return
-          moves
-          .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
-    }
-
-    else if (currentOverlaySetting == OverlaySettings.Nodes)
-    {
-      return
-          moves
-          .Where(e => e.P > MinPolicyThreshold)
-          .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
-    }
-
-    return new List<object>();
-  }
-
-  //set circles on the board from a collection of moves
-  private async Task DisplayMoveAnnotation(List<NNValues> moves, string id)
-  {
-    if (chessJSmodule is not null && chessGUI is not null)
-    {
-      var overlay = OverlaySetting.GetOverlaySetting(id);
-      var data = GetDisplayData(moves, overlay);
-      try
-      {
-        if (data.Count > 0)
         {
-          await chessJSmodule.InvokeVoidAsync("addPolicyCircles", board, data);
+            await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fenWithMoves, withCallback);
+            moveList = string.Empty;
+        }
+        await Task.CompletedTask;
+    }
+
+    private string FormatNodes(double nodes)
+    {
+        if (nodes > 1_000_000_000)
+        {
+            var mill = nodes / 1_000_000_000;
+            return mill.ToString("F1") + "B"; //G nodes
+        }
+        else if (nodes > 1_000_000)
+        {
+            var mill = nodes / 1_000_000;
+            return mill.ToString("F1") + "M";
+        }
+
+        else if (nodes > 1_000)
+        {
+            var thousand = nodes / 1_000;
+            return thousand.ToString("F1") + "K";
+        }
+
+        else
+        {
+            return nodes.ToString("F0");
+        }
+    }
+
+    private List<object> GetDisplayData(List<NNValues> moves, OverlaySettings overlay)
+    {
+        MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
+        var currentOverlaySetting = overlay;
+        if (!OverlaySetting.IsOverlaySettingsEnabled || moves.Count == 0)
+        {
+            return new List<object>();
+        }
+
+        if (currentOverlaySetting == OverlaySettings.Policy)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
+        }
+        else if (currentOverlaySetting == OverlaySettings.Q)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
+        }
+
+        else if (currentOverlaySetting == OverlaySettings.V)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
+        }
+
+        else if (currentOverlaySetting == OverlaySettings.QVDiff)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
+        }
+
+        else if (currentOverlaySetting == OverlaySettings.E)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
+        }
+
+        else if (currentOverlaySetting == OverlaySettings.Nodes)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
+        }
+
+        return new List<object>();
+    }
+
+    //set circles on the board from a collection of moves
+    private async Task DisplayMoveAnnotation(List<NNValues> moves, string id)
+    {
+        if (chessJSmodule is not null && chessGUI is not null)
+        {
+            var overlay = OverlaySetting.GetOverlaySetting(id);
+            var data = GetDisplayData(moves, overlay);
+            try
+            {
+                if (data.Count > 0)
+                {
+                    await chessJSmodule.InvokeVoidAsync("addPolicyCircles", board, data);
+                }
+                else
+                {
+                    await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+                }
+            }
+            catch (JSException jsEx)
+            {
+                logger.LogError(jsEx, "JavaScript error in addPolicyCircles.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Unexpected error in DisplayMoveAnnotation.");
+            }
+        }
+    }
+
+    private async Task SetPositionAndMove(MoveAndFen input, bool withCallback = false, bool withAnnotation = false, bool invokeMove = true)
+    {
+        if (chessJSmodule is not null && chessGUI is not null)
+        {
+            await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
+        }
+        //StateHasChanged();
+    }
+
+    private async Task StartOfGame()
+    {
+        stopAutoPlay = true;
+        ChessBoard.CurrentIndex = 0;
+        fenWithMoves = ChessBoard.StartPosition;
+        ChessBoard.LoadFen(fenWithMoves);
+        await SetPosition(fenWithMoves, false);
+        await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
+        StateHasChanged();
+    }
+
+    private async Task EndOfGame()
+    {
+        stopAutoPlay = true;
+        var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
+        if (fenAndMove != null)
+        {
+            ChessBoard.CurrentIndex = ChessBoard.LongSANMovesPlayed.Count;
+            fenWithMoves = fenAndMove.FenAfterMove;
+            await SetPositionAndMove(fenAndMove, false);
+            ChessBoard.LoadFen(fenWithMoves);
+            await OnNewFENOnBoard.InvokeAsync(fenAndMove.FenAfterMove);
+        }
+        StateHasChanged();
+    }
+
+    private async Task NextMove()
+    {
+        stopAutoPlay = true;
+        ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
+        var next = ChessBoard.TryGetNextMoveAndFen(fenWithMoves);
+        if (next != null)
+        {
+            var move = next.Value;
+            fenWithMoves = move.FenAfterMove;
+            ChessBoard.LoadFen(fenWithMoves);
+            await SetPositionAndMove(move, invokeMove: false);
+            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+        }
+        StateHasChanged();
+    }
+
+    private async Task PreviousMove()
+    {
+        stopAutoPlay = true;
+        moveBoard.ResetBoardState();
+        moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
+        ChessBoard.CurrentIndex = Math.Max(0, ChessBoard.CurrentIndex - 1);
+        fenWithMoves = moveBoard.FEN();
+        var prev = ChessBoard.TryGetPreviousMoveAndFen(fenWithMoves);
+        if (prev != null)
+        {
+            var move = prev.Value;
+            fenWithMoves = move.FenAfterMove;
+            ChessBoard.LoadFen(fenWithMoves);
+            await SetPosition(fenWithMoves);
+            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+        }
+        StateHasChanged();
+    }
+
+    private async Task PlayMoves()
+    {
+        stopAutoPlay = false;
+        var moves = ChessBoard.MovesAndFenPlayed.Count;
+        while (stopAutoPlay == false && ChessBoard.CurrentIndex < moves)
+        {
+            var fenAndMove =
+                ChessBoard.CurrentIndex == 0 ?
+              ChessBoard.MovesAndFenPlayed[0] :
+              ChessBoard.MovesAndFenPlayed[ChessBoard.CurrentIndex];
+            fenWithMoves = fenAndMove.FenAfterMove;
+            ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
+            ChessBoard.LoadFen(fenWithMoves);
+            await SetPositionAndMove(fenAndMove);
+            await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
+            await Task.Delay(300);
+        }
+
+        stopAutoPlay = true;
+    }
+
+    public async Task OnReceivedFen(string newPos)
+    {
+        if (fenWithMoves != newPos)
+        {
+            fenWithMoves = newPos;
+            await SetPosition(newPos, false);
+        }
+        StateHasChanged();
+    }
+
+    public async Task OnNotifyMoveAndFen(MoveAndFen input)
+    {
+        if (fenWithMoves != input.FenAfterMove)
+        {
+            fenWithMoves = input.FenAfterMove;
+            await SetPositionAndMove(input, false);
+        }
+        var lastNNMoves = GetNNValues(currentId);
+        await DisplayMoveAnnotation(lastNNMoves, currentId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
+    {
+        if (overlay == OverlaySettings.None)
+        {
+            await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
         }
         else
         {
-          await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+            currentId = id;
+            var lastNNMoves = GetNNValues(id);
+            await DisplayMoveAnnotation(lastNNMoves, id);
         }
-      }
-      catch (JSException jsEx)
-      {
-        logger.LogError(jsEx, "JavaScript error in addPolicyCircles.");
-      }
-      catch (Exception ex)
-      {
-        logger.LogError(ex, "Unexpected error in DisplayMoveAnnotation.");
-      }
-    }
-  }
-  
-  private async Task SetPositionAndMove(MoveAndFen input, bool withCallback = false, bool withAnnotation = false, bool invokeMove = true)
-  {
-    if (chessJSmodule is not null && chessGUI is not null)
-    {
-      await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
-    }
-    //StateHasChanged();
-  }
-
-  private async Task StartOfGame()
-  {
-    stopAutoPlay = true;
-    ChessBoard.CurrentIndex = 0;
-    fenWithMoves = ChessBoard.StartPosition;
-    ChessBoard.LoadFen(fenWithMoves);
-    await SetPosition(fenWithMoves, false);
-    await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
-    StateHasChanged();
-  }
-
-  private async Task EndOfGame()
-  {
-    stopAutoPlay = true;
-    var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
-    if (fenAndMove != null)
-    {
-      ChessBoard.CurrentIndex = ChessBoard.LongSANMovesPlayed.Count;
-      fenWithMoves = fenAndMove.FenAfterMove;
-      await SetPositionAndMove(fenAndMove, false);
-      ChessBoard.LoadFen(fenWithMoves);
-      await OnNewFENOnBoard.InvokeAsync(fenAndMove.FenAfterMove);
-    }
-    StateHasChanged();
-  }
-
-  private async Task NextMove()
-  {
-    stopAutoPlay = true;
-    fenWithMoves = ChessBoard.FEN();
-    ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
-    var next = ChessBoard.TryGetNextMoveAndFen(fenWithMoves);
-    if (next != null)
-    {
-      var move = next.Value;
-      fenWithMoves = move.FenAfterMove;
-      ChessBoard.LoadFen(fenWithMoves);
-      await SetPositionAndMove(move, invokeMove: false);
-      await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
-    }
-    StateHasChanged();
-  }
-
-  private async Task PreviousMove()
-  {
-    stopAutoPlay = true;
-    ChessBoard.CurrentIndex = Math.Max(0, ChessBoard.CurrentIndex - 1);
-    fenWithMoves = ChessBoard.FEN();
-    var next = ChessBoard.TryGetPreviousMoveAndFen(fenWithMoves);
-    if (next != null)
-    {
-      var move = next.Value;
-      fenWithMoves = move.FenAfterMove;
-      ChessBoard.LoadFen(fenWithMoves);
-      await SetPosition(fenWithMoves);
-      await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
-    }
-    StateHasChanged();
-  }
-
-  private async Task PlayMoves()
-  {
-    stopAutoPlay = false;
-    var moves = ChessBoard.MovesAndFenPlayed.Count;
-    while (stopAutoPlay == false && ChessBoard.CurrentIndex < moves)
-    {
-      var fenAndMove =
-          ChessBoard.CurrentIndex == 0 ?
-        ChessBoard.MovesAndFenPlayed[0] :
-        ChessBoard.MovesAndFenPlayed[ChessBoard.CurrentIndex];
-      fenWithMoves = fenAndMove.FenAfterMove;
-      ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
-      ChessBoard.LoadFen(fenWithMoves);
-      await SetPositionAndMove(fenAndMove);
-      await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
-      await Task.Delay(300);
+        await Task.CompletedTask;
     }
 
-    stopAutoPlay = true;
-  }
-
-  public async Task OnReceivedFen(string newPos)
-  {
-    if (fenWithMoves != newPos)
+    public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
     {
-      fenWithMoves = newPos;
-      await SetPosition(newPos, false);
-    }
-    StateHasChanged();
-  }
-
-  public async Task OnNotifyMoveAndFen(MoveAndFen input)
-  {
-    if (fenWithMoves != input.FenAfterMove)
-    {
-      fenWithMoves = input.FenAfterMove;
-      await SetPositionAndMove(input, false);
-    }
-    var lastNNMoves = GetNNValues(currentId);
-    await DisplayMoveAnnotation(lastNNMoves, currentId);
-    await InvokeAsync(StateHasChanged);
-  }
-
-  public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
-  {    
-    if (overlay == OverlaySettings.None)
-    {
-      await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
-    }
-    else
-    {
-      currentId = id;
-      var lastNNMoves = GetNNValues(id);
-      await DisplayMoveAnnotation(lastNNMoves, id);
-    }
-    await Task.CompletedTask;
-  }
-
-  public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
-  {
-    var list = moves.ToList();
-    var lastNNMoves = GetNNValues(id);
-    lastNNMoves.Clear();
-    lastNNMoves.AddRange(moves);
-    if (id == currentId)
-    {
-      await DisplayMoveAnnotation(lastNNMoves, id);
-    }    
-  }
-
-  protected override async Task OnAfterRenderAsync(bool firstRender)
-  {
-    if (firstRender)
-    {
-      fenWithMoves = FENposition;
-      await PrepareChessboard();
-    }
-    if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
-    {
-      moveListFontSize = MoveListFontSize;
-      moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
-      openingStyle = $"font-size:{moveListFontSize}px";
-      StateHasChanged();
+        var list = moves.ToList();
+        var lastNNMoves = GetNNValues(id);
+        lastNNMoves.Clear();
+        lastNNMoves.AddRange(moves);
+        if (id == currentId)
+        {
+            await DisplayMoveAnnotation(lastNNMoves, id);
+        }
     }
 
-    if (MoveListHeight > 0 && MoveListHeight != moveListHeight)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-      moveListHeight = MoveListHeight;
-      moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
-      StateHasChanged();
+        if (firstRender)
+        {
+            fenWithMoves = FENposition;
+            await PrepareChessboard();
+        }
+        if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
+        {
+            moveListFontSize = MoveListFontSize;
+            moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
+            openingStyle = $"font-size:{moveListFontSize}px";
+            StateHasChanged();
+        }
+
+        if (MoveListHeight > 0 && MoveListHeight != moveListHeight)
+        {
+            moveListHeight = MoveListHeight;
+            moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
+            StateHasChanged();
+        }
+        await Task.CompletedTask;
     }
-    await Task.CompletedTask;
-  }
 
-  protected override async Task OnInitializedAsync()
-  {
-    this.keyContext = this.HotKeys.CreateContext()
-    .Add(Key.ArrowRight, (Func<Task>)(async () => await NextMove()), "Next move")
-    .Add(Key.ArrowLeft, (Func<Task>)(async () => await PreviousMove()), "Prev move")
-    .Add(Key.P, (Func<Task>)(async () => await PlayMoves()), "Play moves")
-    .Add(Key.R, (Func<Task>)(async () => await RotateBoard()), "Rotate board")
-    //.Add(Key.Escape, (async () => await ResetEngine()), "Reset engines")
-    .Add(Key.Home, (Func<Task>)(async () => await StartOfGame()), "Start of game")
-    .Add(Key.End, (Func<Task>)(async () => await EndOfGame()), "End of game");
-    await base.OnInitializedAsync();
-  }
-
-  protected override void OnInitialized()
-  {
-    Notifier.NotifyFenToBoard += OnReceivedFen;
-    Notifier.NotifyFenAndMove += OnNotifyMoveAndFen;
-    Notifier.NotifyMovesWithId += OnNotifyMoves;
-    Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
-    fenWithMoves = startPos;
-    base.OnInitialized();
-  }
-
-  async ValueTask IAsyncDisposable.DisposeAsync()
-  {
-    try
+    protected override async Task OnInitializedAsync()
     {
-      if (chessGUI is not null)
-      {
-        await chessGUI.DisposeAsync();
-      }
-      Dispose();
+        this.keyContext = this.HotKeys.CreateContext()
+        .Add(Key.ArrowRight, (Func<Task>)(async () => await NextMove()), "Next move")
+        .Add(Key.ArrowLeft, (Func<Task>)(async () => await PreviousMove()), "Prev move")
+        .Add(Key.P, (Func<Task>)(async () => await PlayMoves()), "Play moves")
+        .Add(Key.R, (Func<Task>)(async () => await RotateBoard()), "Rotate board")
+        //.Add(Key.Escape, (async () => await ResetEngine()), "Reset engines")
+        .Add(Key.Home, (Func<Task>)(async () => await StartOfGame()), "Start of game")
+        .Add(Key.End, (Func<Task>)(async () => await EndOfGame()), "End of game");
+        await base.OnInitializedAsync();
     }
-    catch (Exception)
-    {
-      logger.LogError("Error disposing chessboard component.");
-    }
-  }
 
-  public void Dispose()
-  {
-    this.keyContext?.DisposeAsync();
-    Notifier.NotifyFenToBoard -= OnReceivedFen;
-    Notifier.NotifyFenAndMove -= OnNotifyMoveAndFen;
-    Notifier.NotifyMovesWithId -= OnNotifyMoves;
-    Notifier.NotifyDisplaySettings -= OnNotifyOverlaySettings;
-    objRef?.Dispose();
-  }
+    protected override void OnInitialized()
+    {
+        Notifier.NotifyFenToBoard += OnReceivedFen;
+        Notifier.NotifyFenAndMove += OnNotifyMoveAndFen;
+        Notifier.NotifyMovesWithId += OnNotifyMoves;
+        Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
+        fenWithMoves = startPos;
+        base.OnInitialized();
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        try
+        {
+            if (chessGUI is not null)
+            {
+                await chessGUI.DisposeAsync();
+            }
+            Dispose();
+        }
+        catch (Exception)
+        {
+            logger.LogError("Error disposing chessboard component.");
+        }
+    }
+
+    public void Dispose()
+    {
+        this.keyContext?.DisposeAsync();
+        Notifier.NotifyFenToBoard -= OnReceivedFen;
+        Notifier.NotifyFenAndMove -= OnNotifyMoveAndFen;
+        Notifier.NotifyMovesWithId -= OnNotifyMoves;
+        Notifier.NotifyDisplaySettings -= OnNotifyOverlaySettings;
+        objRef?.Dispose();
+    }
 }

@@ -487,19 +487,16 @@
         board.ResetBoardState();
         board.StartPosition = fenP;
         board.LoadFen(fenP);
-        var moveIndex = board.PlyCount;
         foreach (var row in game.Moves)
         {
             if (row.WhiteSan != "")
             {
                 board.PlaySimpleShortSan(row.WhiteSan);
-                moveIndex++;
             }
 
             if (row.BlackSan != "")
             {
                 board.PlaySimpleShortSan(row.BlackSan);
-                moveIndex++;
             }
         }
         var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
@@ -517,7 +514,7 @@
         }
         else
         {
-            board.CurrentIndex = board.MovesAndFenPlayed.Count - 1;
+            board.CurrentIndex = board.MovesAndFenPlayed.Count;
             moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
             fen = board.FEN();
         }
