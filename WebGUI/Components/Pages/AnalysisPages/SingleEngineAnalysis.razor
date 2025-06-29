@@ -479,7 +479,7 @@
     private async Task LoadAndOpenPGNGame(PGNTypes.PgnGame game)
     {
         gameIndex = games.IndexOf(game);        
-        currentGame = game.GameMetaData.White + " - " + game.GameMetaData.Black + ": " + game.GameMetaData.Result;
+        currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
         var chart = new GamePgnChart(chessModule, pgnChart, game.GameMetaData.White, game.GameMetaData.Black, "Evaluation", "Score");
         chart.AssignEvalsFromPGN(game);
         await chart.SetEvalChartData();
@@ -532,34 +532,55 @@
         await LoadAndOpenPGNGame(game);
     }
 
+
     private async Task NextPGNGame()
     {
-        if (games.Count <= gameIndex + 1)
+        var filteredGames = games.Where(FilterFunc).ToList();
+
+        if (filteredGames.Count == 0)
         {
             return;
         }
-        gameIndex++;
-        var numberOfEpdGames = epdGames.Count;
-        selectedItems.Clear();
-        selectedItems.Add(games[gameIndex]);
-        var game = games[gameIndex];
-        await LoadAndOpenPGNGame(game);
+
+        // Find current game in filtered list
+        var currentGame = games.ElementAtOrDefault(gameIndex);
+        var currentIndexInFiltered = currentGame != null ? filteredGames.IndexOf(currentGame) : -1;
+
+        // Move to next game in filtered list
+        if (currentIndexInFiltered >= 0 && currentIndexInFiltered < filteredGames.Count - 1)
+        {
+            var nextGame = filteredGames[currentIndexInFiltered + 1];
+            gameIndex = games.IndexOf(nextGame);
+            selectedItems.Clear();
+            selectedItems.Add(nextGame);
+            await LoadAndOpenPGNGame(nextGame);
+        }
     }
 
     private async Task PreviousPGNGame()
     {
-        if (gameIndex - 1 < 0)
+        var filteredGames = games.Where(FilterFunc).ToList();
+
+        if (filteredGames.Count == 0)
         {
             return;
         }
 
-        gameIndex--;
-        selectedItems.Clear();
-        selectedItems.Add(games[gameIndex]);
-        var game = games[gameIndex];
-        await LoadAndOpenPGNGame(game);
-    }
+        // Find current game in filtered list
+        var currentGame = games.ElementAtOrDefault(gameIndex);
+        var currentIndexInFiltered = currentGame != null ? filteredGames.IndexOf(currentGame) : -1;
 
+        // Move to previous game in filtered list
+        if (currentIndexInFiltered > 0)
+        {
+            var previousGame = filteredGames[currentIndexInFiltered - 1];
+            gameIndex = games.IndexOf(previousGame);
+            selectedItems.Clear();
+            selectedItems.Add(previousGame);
+            await LoadAndOpenPGNGame(previousGame);
+        }
+    }
+    
     private void ShowSearchPlot()
     {
         showNNdata = !showNNdata;
