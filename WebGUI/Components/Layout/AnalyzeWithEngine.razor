@@ -93,16 +93,14 @@
         <MudItem Class="ma-1">
             <MudTextField HelperText="PV" ReadOnly=true Variant="Variant.Filled" Style="font-size:14px; font-weight:400; color:blue; background-color:white" Class="mud-text pl-1" Text=@whitePV T=string Lines="2" />
         </MudItem>
-        <MudItem style="font-size:small">
-            @* (Hash: @ZobristHash) *@
 
-        </MudItem>
-
-        <MudItem hidden="@(!showCharts)" lg="12">
+        <MudGrid Class="ml-1 mt-1" hidden="@(!showCharts)" >
             <MudSlider Class="slider" @bind-Value="numberOfLines" Min="1" Max="10" Step="1"
                        Color="Color.Info">N chartlines: @numberOfLines.ToString()</MudSlider>
-            <div style="height:@GetChartHeight();" class="chart" @ref=nPlotReference></div>
-        </MudItem>
+            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showNPlot"> @(showNPlot ? "N-plot chart" : "Q-plot chart") </MudSwitch>
+            <div hidden="@(!showNPlot)" style="height:@GetChartHeight();" class="chart ml-1" @ref=nPlotReference></div>
+            <div hidden="@(showNPlot)" style="height:@GetChartHeight();" class="chart ml-1" @ref=qPlotReference></div>
+        </MudGrid>
 
         <MudItem Class="mt-3 ml-1">
             @if (currentPosition != null && currentPosition.Nodes > 0)
@@ -165,7 +163,7 @@
                             <MudTd DataLabel="Raw" Class="mud-td-two-lines">
                                 @context.Value.PV
                             </MudTd>
-                            
+
                         </RowTemplate>
                     </MudTable>
                 </div>
@@ -193,6 +191,7 @@
         set { zobristHash = value; }
     }
 
+    private bool showNPlot = true;
     private string currentName = string.Empty;
     private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
     private NNValues currentPosition = NNValues.Empty;
@@ -208,9 +207,9 @@
         new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true, AllowTrailingCommas = true };
 
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    //private ElementReference qPlotReference;
     private ElementReference nPlotReference;
-    private SearchInfoPlot qPlot;
+    private ElementReference qPlotReference;
+    private SearchInfoPlot searchInfoPlot;
     private IJSObjectReference chessModule;
     private string tableHeader = "Analysis";
     private HashSet<PGNTypes.PgnGame> selectedItems = new();
@@ -311,12 +310,10 @@
         if (analyzer == null)
             return;
 
-        var parameters = new DialogParameters
-    {
-    {"FontSize",  fontSize },
-    {"Engine", analyzer.Engine }
+        var parameters = new DialogParameters{
+            {"FontSize",  fontSize },
+            {"Engine", analyzer.Engine }};
 
-    };
         var header = $"Current settings for {Engine.Name}";
         dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>(header, parameters, options);
     }
@@ -388,7 +385,7 @@
         if (autoSearchSwitch)
         {
             searchInProgress = true;
-            await qPlot.ResetPlot(false);
+            await searchInfoPlot.ResetPlot(false);
             var move = moveInfo.Item.SANMove;
             ChessBoard.PlaySimpleShortSan(move);
             fen = ChessBoard.FEN();
@@ -416,7 +413,7 @@
             var getMove = firstMoveInPV.Match(status.Item.Value.PV);
             if (getMove.Success)
             {
-                await qPlot.ResetPlot(false);
+                await searchInfoPlot.ResetPlot(false);
                 var move = getMove.Groups[1].Value;
                 ChessBoard.PlaySimpleShortSan(move);
                 var moveFen = ChessBoard.MovesAndFenPlayed.Last();
@@ -432,18 +429,20 @@
     {
         if (analyzer == null)
         {
-            if (qPlot == null)
-                qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
+            if (searchInfoPlot == null)
+            {
+                searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            }
             else
             {
-                await qPlot.ResetPlot(false);
+                await searchInfoPlot.ResetPlot(false);
             }
             analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
-            qPlot.EngineName = analyzer.GetEngineName();
+            searchInfoPlot.EngineName = analyzer.GetEngineName();
             var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
             neuralNet = $"{analyzer.GetNetwork()}";
             backend = analyzer.BackendInfo();
-            qPlot.NN = analyzer.GetNetwork();
+            searchInfoPlot.NN = analyzer.GetNetwork();
         }
 
         searchInProgress = true;
@@ -510,9 +509,10 @@
             await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
         }
         neuralNet = e.File.Name;
-
-        if (qPlot != null)
-            qPlot.NN = neuralNet;
+        if (searchInfoPlot == null)
+        {
+            searchInfoPlot.NN = neuralNet;
+        }
         logger.LogInformation("New Network loaded {Network}", neuralNet);
 
         var engineToCheck = analyzer?.Engine;
@@ -579,11 +579,13 @@
             return;
         }
         InfoLineList.Clear();
-        if (qPlot == null)
-            qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
+        if (searchInfoPlot == null)
+        {
+            searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+        }
         else
         {
-            await qPlot.ResetPlot(false);
+            await searchInfoPlot?.ResetPlot(false);
         }
         searchInProgress = true;
         await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
@@ -594,11 +596,10 @@
             StateHasChanged();
             analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
             backend = analyzer.BackendInfo();
-
-            qPlot.EngineName = analyzer.GetEngineName();
+            searchInfoPlot.EngineName = analyzer.GetEngineName();
             var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
             neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
-            qPlot.NN = analyzer.GetNetwork();
+            searchInfoPlot.NN = neuralNet;
             try
             {
                 var command = ChessBoard.PositionWithMovesIndexed();
@@ -678,13 +679,13 @@
                     NNInfoList.Clear();
                     n.NNSeq.Reverse();
                     currentPosition = n.NNSeq.FirstOrDefault();
-                    NNInfoList.AddRange(n.NNSeq.Skip(1));
-                    qPlot.AddData(NNInfoList);
-                    //var enabled = OverlaySetting.HasOverlaySetting(Id);
+                    NNInfoList.AddRange(n.NNSeq);
+                    var skipTopNode = NNInfoList.Skip(1).ToList();
+                    searchInfoPlot.AddData(skipTopNode);
                     if (NNInfoList.Count > 0)
                         await Notifier.MovesWithId(NNInfoList, Id);
                     var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
-                    await qPlot.UpdateLogLiveCharts(NNInfoList, maxLines, Qdiff);
+                    await searchInfoPlot?.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff);
                 }
                 break;
         }
@@ -706,9 +707,9 @@
         tableHeader = "Analysis";
 
         analyzer?.Reset();
-        if (qPlot != null)
+        if (searchInfoPlot != null)
         {
-            await qPlot.ResetPlot(false);
+            await searchInfoPlot.ResetPlot(true);
         }
         NNInfoList.Clear();
         InfoLineList.Clear();
@@ -751,7 +752,6 @@
         await InvokeAsync(() => StateHasChanged());
     }
 
-
     public async Task OnNotifyFen(string newPos)
     {
         fen = newPos;
@@ -761,9 +761,9 @@
             {
                 analyzer?.Stop();
                 searchInProgress = false;
-                if (qPlot != null)
+                if (searchInfoPlot != null)
                 {
-                    await qPlot?.ResetPlot(false);
+                    await searchInfoPlot?.ResetPlot(false);
                 }
                 if (analyzer != null)
                 {
@@ -779,9 +779,9 @@
             }
             else
             {
-                if (qPlot != null)
+                if (searchInfoPlot != null)
                 {
-                    await qPlot?.ResetPlot(false);
+                    await searchInfoPlot?.ResetPlot(false);
                 }
                 if (analyzer != null)
                 {
@@ -826,7 +826,7 @@
         {
             logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
             currentName = Engine.Name;
-            await qPlot?.ResetNPlot();
+            await searchInfoPlot?.ResetNPlot();
             await InvokeAsync(NNInfoList.Clear);
             analyzer.Engine.ShutDownEngine();
             analyzer = null;
@@ -880,7 +880,7 @@
                 showCharts = runLogLiveStats;
                 currentName = Engine.Name;
             }
-            qPlot = new SearchInfoPlot(chessModule, nPlotReference, "Cp-value", fen, neuralNet);
+            searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
             if (string.IsNullOrEmpty(FEN) == false)
             {
                 fen = FEN;

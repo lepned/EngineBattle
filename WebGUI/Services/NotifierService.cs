@@ -12,6 +12,7 @@ namespace WebGUI.Services
   public enum OverlaySettings
   {
     Policy,
+    SearchPolicy,
     Nodes,
     Q,
     V,

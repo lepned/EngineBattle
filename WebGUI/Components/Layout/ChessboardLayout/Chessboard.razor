@@ -457,14 +457,20 @@
         }
     }
 
-    private List<object> GetDisplayData(List<NNValues> moves, OverlaySettings overlay)
+    private List<object> GetDisplayData(List<NNValues> nnMoves, OverlaySettings overlay)
     {
         MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
         var currentOverlaySetting = overlay;
-        if (!OverlaySetting.IsOverlaySettingsEnabled || moves.Count == 0)
+        if (!OverlaySetting.IsOverlaySettingsEnabled || nnMoves.Count == 0)
         {
             return new List<object>();
         }
+        var firstMove = nnMoves.FirstOrDefault();
+        if(firstMove.Nodes == 1)
+        {
+            currentOverlaySetting = OverlaySettings.Policy;
+        }
+        var moves = nnMoves.Skip(1).ToList();
 
         if (currentOverlaySetting == OverlaySettings.Policy)
         {
@@ -472,6 +478,13 @@
                 moves
                 .Where(e => e.P > MinPolicyThreshold)
                 .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
+        }
+        if (currentOverlaySetting == OverlaySettings.SearchPolicy)
+        {
+            return
+                moves
+                .Where(e => e.P > MinPolicyThreshold)
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100/(float)firstMove.Nodes).ToString("F1") }).ToList();
         }
         else if (currentOverlaySetting == OverlaySettings.Q)
         {
@@ -522,7 +535,7 @@
         if (chessJSmodule is not null && chessGUI is not null)
         {
             var overlay = OverlaySetting.GetOverlaySetting(id);
-            var data = GetDisplayData(moves, overlay);
+            var data = GetDisplayData(moves, overlay);            
             try
             {
                 if (data.Count > 0)
