@@ -81,6 +81,8 @@
                 Label="WeightsFile" Size="Size.Small" for="@Id" />
         <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
                 Label="Engine.json" Size="Size.Small" for="@engineJson" />
+        <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Class="ml-4 mt-1" Style="height:30px; max-width:130px;" HelperText="your command" @bind-Value="text" />
+        <MudButton Class="ml-0 mt-2 tiny-button" Size="Size.Small" OnClick="DumpEngineStats" Variant="Variant.Filled">run command</MudButton>
     </MudItem>
 
     <div class="ml-4 mt-2">
@@ -191,6 +193,7 @@
         set { zobristHash = value; }
     }
 
+    private string text = "dump-info";
     private bool showNPlot = true;
     private string currentName = string.Empty;
     private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
@@ -319,6 +322,12 @@
     }
 
     void CloseDialog() => dialogReference?.Close();
+
+    private void DumpEngineStats()
+    {
+        var command = text; //"dump-info";
+        analyzer?.DumpStats(command);
+    }
 
     private string FormatNPS(double nps)
     {

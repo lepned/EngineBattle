@@ -212,6 +212,8 @@ module Manager =
           engine.SendUCICommand (PositionWithMoves commands)
           engine.SendUCICommand (GoNodes nodes)
       
+      member x.DumpStats command = engine.SendUCICommand (RawCommand command)
+
       member x.Play (goCommand: string) =
         engine.SendUCICommand Stop    
         if board.AnyLegalMove() |> not then
