@@ -533,6 +533,9 @@ module Program =
                     | Status engineStatus -> 
                         if verbose then
                             printfn "\tPlayer %s with PV: %s" engineStatus.PlayerName engineStatus.PV
+                    | PonderStatus engineStatus -> 
+                        if verbose then
+                            printfn "\tPlayer %s with Nodes: %d" engineStatus.PlayerName engineStatus.Nodes
                     | Time (player, time) -> 
                         if verbose then
                             printfn "\ttPlayer %s with time left %A" player time
@@ -577,6 +580,7 @@ module Program =
         | Info (player, info) -> updateProcessor.Post(Info (player,info))
         | Eval (player, evalType) -> updateProcessor.Post(Eval (player,evalType))
         | Status engineStatus -> updateProcessor.Post(Status engineStatus)
+        | PonderStatus status -> updateProcessor.Post(PonderStatus status)
         | Time (player, time) -> updateProcessor.Post(Time (player,time))
         | NNSeq nnSeq -> updateProcessor.Post(NNSeq nnSeq)
         | StartOfGame startGameInfo -> updateProcessor.Post(StartOfGame startGameInfo)

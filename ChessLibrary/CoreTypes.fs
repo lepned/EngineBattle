@@ -30,6 +30,7 @@ module TypesDef =
         | ForfeitLimits
         | Cancel
         | Illegal
+        | Disconnected of string
         | NotStarted
 
         override this.ToString() =
@@ -44,6 +45,7 @@ module TypesDef =
             | ForfeitLimits -> "FL"
             | Cancel -> "XX"
             | Illegal -> "IM"
+            | Disconnected p -> "DC"
             | NotStarted -> "NS"
 
         member this.Explanation =
@@ -58,6 +60,7 @@ module TypesDef =
             | ForfeitLimits -> "Time/node limit forfeit"
             | Cancel -> "Game was cancelled" 
             | Illegal -> "Illegal move"
+            | Disconnected p -> sprintf "%s Disconnected" p
             | NotStarted -> "Not started"
 
     let stringToResultReason (str: string): ResultReason =
@@ -72,6 +75,7 @@ module TypesDef =
         | "FL" -> ForfeitLimits
         | "XX" -> Cancel
         | "IM" -> Illegal
+        | "DC" -> Disconnected ""
         | "NS" -> NotStarted
         | _ -> failwith "Invalid ResultReason string"
 
@@ -426,7 +430,34 @@ module TypesDef =
       with 
         static member Create name value = { Name = name; Value = value }
 
-  
+    type EnginePonderStatus =
+      { mutable PlayerName: string
+        mutable Eval: EvalType
+        Nodes: int64
+        NPS: float
+        Depth: int
+        SD: int
+        TBhits: int64
+        WDL: WDLType }
+      with 
+        static member Empty =
+          { PlayerName = ""
+            Eval = EvalType.NA
+            Nodes = 0L
+            NPS = 0.0
+            Depth = 0
+            SD = 0
+            TBhits = 0L
+            WDL = WDLType.NotFound }
+        static member Create playerName eval nodes nps depth sd tbhits wdl =
+          { PlayerName = playerName
+            Eval = eval
+            Nodes = nodes
+            NPS = nps
+            Depth = depth
+            SD = sd
+            TBhits = tbhits
+            WDL = wdl }
 
     type EngineStatus =
       { mutable PlayerName: string
@@ -453,6 +484,18 @@ module TypesDef =
             PV = ""
             PVLongSAN = ""
             MultiPV = 1 }
+        static member Create playerName eval nodes nps depth sd tbhits wdl pv pvlongsan multipv =
+            {   PlayerName = playerName
+                Eval = eval
+                Nodes = nodes
+                NPS = nps
+                Depth = depth
+                SD = sd
+                TBhits = tbhits
+                WDL = wdl
+                PV = pv
+                PVLongSAN = pvlongsan
+                MultiPV = multipv }
 
     type NNValues = 
       { Player: string
@@ -474,7 +517,7 @@ module TypesDef =
             Q = 0.0
             V = 0.0
             E = 0.0
-            Raw = "" }
+            Raw = "" }        
 
     type BestMoveInfo = 
       { Player: string
@@ -494,6 +537,24 @@ module TypesDef =
         R3: int
         PiecesLeft: int
         AdjDrawML: int }
+        static member Empty =
+          { Player = ""
+            Move = ""
+            Ponder = ""
+            Eval = EvalType.NA
+            TimeLeft = TimeOnly.MinValue
+            MoveTime = TimeOnly.MinValue
+            Nodes = 0L
+            NPS = 0.0
+            FEN = Misc.startPosition
+            PV = ""
+            LongPV = ""
+            MoveAndFen = MoveAndFen.FirstEntry
+            MoveHistory = ""
+            Move50 = 0
+            R3 = 0
+            PiecesLeft = 32
+            AdjDrawML = 0 }
 
     type Result = 
       { Player1: string
@@ -678,6 +739,13 @@ module TypesDef =
           sprintf "%fs + %fs" (config.Fixed.ToTimeSpan().TotalSeconds) (config.Increment.ToTimeSpan().TotalSeconds)
 
     module TimeControlCommands =
+      let createTimeControlWithIncrementWithPonder (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) : string =
+        let white = int (TimeSpan(wtime.Ticks).TotalMilliseconds)
+        let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
+        let wInc = int (TimeSpan(winc.Ticks).TotalMilliseconds)
+        let bInc = int (TimeSpan(binc.Ticks).TotalMilliseconds)
+        sprintf "go ponder wtime %d btime %d winc %d binc %d" white black wInc bInc
+      
       let createTimeControlWithIncrement (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) : string =
         let white = int (TimeSpan(wtime.Ticks).TotalMilliseconds)
         let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
@@ -704,6 +772,13 @@ module TypesDef =
       let getNodeTime (nodes: int) = Nodes nodes 
 
       let uciTimeCommand (time: UnionType) wTime bTime =
+        match time with
+        | FixedTime _ -> createTimeControl wTime bTime
+        | WithIncrement (_, incr) -> createTimeControlWithIncrement wTime bTime incr incr
+        | WithMoves (_, incr, wMoves, bMoves) -> createTimeControlWithMovesToGo wTime bTime incr incr wMoves bMoves
+        | Nodes nodes -> createNodes nodes
+      
+      let uciTimePart (time: UnionType) wTime bTime =
         match time with
         | FixedTime _ -> createTimeControl wTime bTime
         | WithIncrement (_, incr) -> createTimeControlWithIncrement wTime bTime incr incr

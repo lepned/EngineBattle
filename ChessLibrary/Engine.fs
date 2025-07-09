@@ -770,11 +770,18 @@ module Engine =
       let mutable validate = true
     
       let write (s:string) = 
-        if name.ToLower().Contains "igel" then
-          proc.StandardInput.WriteLine(s)
-        else
-          proc.StandardInput.WriteLine(s + "\n")
-    
+        try
+            if proc <> null && not proc.HasExited then
+                if name.ToLower().Contains "igel" then
+                    proc.StandardInput.WriteLine(s)
+                else
+                    proc.StandardInput.WriteLine(s + "\n")
+            else
+                printfn "Warning: Attempted to write to disposed engine %s" name
+        with                    
+        | ex ->
+            printfn "Error writing to engine %s: %s" name ex.Message
+          
       let read () = proc.StandardOutput.ReadLine()
       let readAsync () = proc.StandardOutput.ReadLineAsync()
       member _.Process = proc
@@ -943,7 +950,17 @@ module Engine =
         let cmd = "quit"
         write cmd
         commands.Add cmd
-
+      
+      member this.PonderHit() = 
+        let cmd = "ponderhit"
+        write cmd
+        commands.Add cmd
+      
+      member this.GoPonder command = 
+        //let cmd = "go ponder"
+        write command
+        commands.Add command
+    
       member this.ReadLineAsync() = readAsync()
       member this.ReadLine() = read()
     
@@ -982,7 +999,16 @@ module Engine =
         with get () = isRunning 
         and set (v) = isRunning <- v
 
-      member this.HasExited() = if proc= null then true else proc.HasExited
+      member this.HasExited() = 
+        try
+            if proc = null then true 
+            else proc.HasExited
+        with
+        | :? ObjectDisposedException -> true
+        | :? InvalidOperationException -> true
+        | _ -> true
+      
+      //member this.HasExited() = if proc= null then true else proc.HasExited
 
 module EngineHelper =
   open Engine
