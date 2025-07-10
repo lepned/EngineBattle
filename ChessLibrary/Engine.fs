@@ -240,10 +240,7 @@ module Engine =
               state <- InMoveStatMode list
         | line when line.StartsWith("info") ->
             state <- RegularSearchMode 
-        | _  -> 
-          //if writeToConsole then
-            printfn "%s" line
-         
+        | _  -> ()         
       
         match state with
         |InMoveStatMode list ->
