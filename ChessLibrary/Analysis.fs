@@ -1250,8 +1250,8 @@ module PuzzleRunners =
 
   let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (boardBm: Chess.Board) (boardAm: Chess.Board) =
       for item in scores do             
-          let tc = if data.RunWithNodeLimit then $"Nodes: {data.Nodes}" else $"TimeMs: {data.TimeInSeconds}"
-          sw.WriteLine($"\n## Failed puzzles by {item.PlayerName} - overall performance: {item.Accuracy:F0} {tc}\n")                       
+          let tc = if data.RunWithNodeLimit then $"Nodes: {data.Nodes}" else $"TimeMs: {data.TimeInSeconds * 1000}"
+          sw.WriteLine($"\n## Failed puzzles by {item.PlayerName} - overall performance: {item.Accuracy:P0} {tc}\n")                       
           for (puzzle, movePlayed) in item.FailedPuzzles do                
               boardBm.LoadFen(puzzle.FEN)
               let bestMoveInLsan =

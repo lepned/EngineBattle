@@ -2156,14 +2156,14 @@ module TypesDef =
             n1 = 0L; n2 = 0L; pv = ""; tb = 0L; h = 0.0; ph = 0.0; wv = EvalType.NA;
             R50 = 0; Rd = 0; Rr = 0; mb = ""; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0 }
         member x.Annotation =
-          sprintf "d=%d, sd=%d, pd=%s, mt=%d, tl=%d, s=%d, n=%d, tb=%d, wv=%O, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
-            x.d x.sd x.pd x.mt x.tl x.s x.n x.tb x.wv x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
-        member x.MinimalAnnotation = //todo - only add minor info here
-          sprintf "d=%d, sd=%d, pd=%s, mt=%d, tl=%d, s=%d, n=%d, tb=%d, wv=%O"
-            x.d x.sd x.pd x.mt x.tl x.s x.n x.tb x.wv
+          sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
+            x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
+        member x.MinimalAnnotation = 
+          sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d"
+            x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb
 
     module Annotation =
-        open System.Text.RegularExpressions
+        
         let mPvRegex = new Regex(@"\bmultipv\s+(\d+)\b", RegexOptions.Compiled)
         let dRegex = new Regex(@"(?<!s)d=(\d+)", RegexOptions.Compiled)
         let sdRegex = new Regex(@"sd=(\d+)", RegexOptions.Compiled)
