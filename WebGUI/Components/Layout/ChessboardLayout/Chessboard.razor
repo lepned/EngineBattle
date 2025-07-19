@@ -484,7 +484,7 @@
             return
                 moves
                 .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100/(float)firstMove.Nodes).ToString("F1") }).ToList();
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0/(double)firstMove.Nodes).ToString("F1") }).ToList();
         }
         else if (currentOverlaySetting == OverlaySettings.Q)
         {

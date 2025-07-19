@@ -82,7 +82,7 @@
         <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
                 Label="Engine.json" Size="Size.Small" for="@engineJson" />
         <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Class="ml-4 mt-1" Style="height:30px; max-width:130px;" HelperText="your command" @bind-Value="text" />
-        <MudButton Class="ml-0 mt-2 tiny-button" Size="Size.Small" OnClick="DumpEngineStats" Variant="Variant.Filled">run command</MudButton>
+        <MudButton Class="ml-2 mt-2 mr-4 tiny-button" Size="Size.Small" OnClick="DumpEngineStats" Variant="Variant.Filled">run command</MudButton>
     </MudItem>
 
     <div class="ml-4 mt-2">
@@ -545,7 +545,7 @@
         waitingForEngine = true;
         searchInProgress = false;
         StateHasChanged();
-        analyzer?.Engine.ShutDownEngine();
+        analyzer?.Engine?.ShutDownEngine();
         var name = e.File.Name;
         logger.LogInformation("Engine.json file opened {File}", name);
         var env = Environment.CurrentDirectory;
@@ -837,7 +837,7 @@
             currentName = Engine.Name;
             await searchInfoPlot?.ResetNPlot();
             await InvokeAsync(NNInfoList.Clear);
-            analyzer.Engine.ShutDownEngine();
+            analyzer?.Engine?.ShutDownEngine();
             analyzer = null;
             neuralNet = string.Empty;
             OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
