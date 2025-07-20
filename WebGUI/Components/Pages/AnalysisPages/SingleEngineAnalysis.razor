@@ -20,7 +20,7 @@
 @inject JavaScriptInteropService JsInteropService
 @inject OverlaySetting overlaySettings
 
-<PageTitle> Analyze position - multiple view </PageTitle>
+<PageTitle> Analyze position - Single view </PageTitle>
 <InputFile id="configFile" OnChange="@OpenConfigFile" hidden />
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
@@ -39,6 +39,9 @@
             <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD-File" Size="Size.Small"
                     StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" />
         </MudItem>
+        <MudItem lg="5" Class="ml-10 mt-5">
+            <MudText>@pgnName</MudText>
+        </MudItem>
     </MudItem>
     <MudItem Class="d-flex">
         <MudItem Class="mr-2" md="5" xl="4">
@@ -49,11 +52,7 @@
                 <div style="height:250px;" class="chart" @ref=pgnChart></div>
             </MudItem>
         </MudItem>
-        <MudItem Class="mt-1 pl-2" md="5" xl="4">
-            @if (epdFileLoaded || tbFilesLoaded)
-            {
-                <p style="margin-top:5px;">@epdDesc</p>
-            }
+        <MudItem Class="mt-1 pl-2" md="5" xl="4">           
 
             <div @ref="chessBoard">
                 <Chessboard ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
@@ -96,14 +95,14 @@
                               Filter="FilterFunc">
 
                         <HeaderContent>
-                            <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Round">R#</MudTableSortLabel></MudTh>
                             <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameNumber">G#</MudTableSortLabel></MudTh>
+                            <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.Moves.Count">M#</MudTableSortLabel></MudTh>
                             <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Result">Result</MudTableSortLabel></MudTh>
                             <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPlayersSummary(x)">Players</MudTableSortLabel></MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd DataLabel="R#">@context.GameMetaData.Round</MudTd>
                             <MudTd DataLabel="G#">@context.GameNumber</MudTd>
+                            <MudTd DataLabel="M#">@context.Moves.Count</MudTd>
                             <MudTd DataLabel="Result">@Helper.GetResultSummary(context)</MudTd>
                             <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPlayersSummary(context)</MudTd>
                         </RowTemplate>
@@ -150,8 +149,7 @@
     private string gamesPath = "C:/dev/chess/mygames.pgn";
     private string epdDesc = "";
     bool pgnFileLoaded = false;
-    bool epdFileLoaded = false;
-    bool tbFilesLoaded = false;
+    bool epdFileLoaded = false;    
     EngineConfig Engine;
     private List<string> uciInfo = new();
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -498,12 +496,12 @@
         {
             if (row.WhiteSan != "")
             {
-                board.PlaySimpleShortSan(row.WhiteSan);
+                board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
             }
 
             if (row.BlackSan != "")
             {
-                board.PlaySimpleShortSan(row.BlackSan);
+                board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
             }
         }
         var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
@@ -526,8 +524,7 @@
             fen = board.FEN();
         }
         await Notifier.UpdateFen(fen);
-        await Notifier.UpdateFenAndMove(moveAndFen);
-        //await Notifier.UpdateFenToBoard(fen);
+        await Notifier.UpdateFenAndMove(moveAndFen);        
         moveHistory = board.GetMoveHistory();
         StateHasChanged();
     }
@@ -597,7 +594,6 @@
     {
         epdFileLoaded = false;
         pgnFileLoaded = false;
-        tbFilesLoaded = true;
         pgnName = e.File.Name;
         logger.LogInformation("Tablebase result file opened {File}", pgnName);
 
@@ -619,14 +615,13 @@
     {
         epdFileLoaded = true;
         pgnFileLoaded = false;
-        tbFilesLoaded = false;
         pgnName = e.File.Name;
         if (pgnName.EndsWith(".epd") == false)
         {
             logger.LogError("Not an EPD file {File}", pgnName);
             return;
         }
-        logger.LogInformation("PGN file opened {File}", pgnName);
+        logger.LogInformation("EPD file opened {File}", pgnName);
         var env = Environment.CurrentDirectory;
         var fullPath = Path.Combine(env, pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))
@@ -645,7 +640,6 @@
     private async Task OpenPGNFile(InputFileChangeEventArgs e)
     {
         epdFileLoaded = false;
-        tbFilesLoaded = false;
         pgnFileLoaded = true;
         pgnName = e.File.Name;
         if (pgnName.EndsWith(".pgn") == false)

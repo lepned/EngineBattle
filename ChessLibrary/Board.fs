@@ -205,7 +205,15 @@ type Board() =
         else      
           sprintf "%s" move
       f plyCount san
-      
+    
+    member this.NextMoveNumberString san = 
+      let f ply (move:string) = 
+        let n = ply / 2 + ply % 2
+        if ply % 2 = 1 then
+          sprintf "%d. %s" n move
+        else      
+          sprintf "%d ...%s" n move
+      f (plyCount + 1) san
     
     member this.CollectStat (move:_ inref) =
           //stats here - castles, captures and eps
@@ -542,6 +550,7 @@ type Board() =
             ToSq = move[2..3]
             Color = (if position.STM=0uy then "b" else "w")
             IsCastling = (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY 
+            Comments = String.Empty
           }
         moveAndFens.Add({Move=fenAndMoves; ShortSan=shortSan; FenAfterMove=this.FEN()})
       |None -> 
@@ -566,6 +575,7 @@ type Board() =
             ToSq = moveStr[2..3]
             Color = (if position.STM=0uy then "b" else "w")
             IsCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY 
+            Comments = String.Empty
           }
         moveAndFens.Add({Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos})
 
@@ -642,6 +652,34 @@ type Board() =
             ToSq = moveStr[2..3]
             Color = (if position.STM=0uy then "b" else "w")
             IsCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+            Comments = String.Empty
+          }
+        moveAndFens.Add({Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos})
+      | None ->        
+        let moveHistory = this.GetMoveHistory()
+        printfn $"{moveHistory}"
+        //printfn $"{this.PositionHash()}: failed to parse move {fromSan}"        
+        let hmm = TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal
+        printfn $"failed to parse move {fromSan} in {nameof this.PlaySimpleShortSan}"
+
+    member this.PlaySimpleShortSanWithComments (fromSan: string) (comments : string) = 
+      let islegal move = this.IllegalMove &move |> not
+      //let mutable index = 0      
+      let moveList = this.GenerateMoves ()
+      match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
+      | Some (move) ->         
+        let moveStr = TMoveOps.getSanLong move position.STM
+        this.MakeMove(&move)
+        longSanMoves.Add (moveStr.Trim())
+        let fenPos = BoardHelper.posToFen position
+        let fenAndMoves = 
+          {
+            LongSan = moveStr
+            FromSq = moveStr[0..1]
+            ToSq = moveStr[2..3]
+            Color = (if position.STM=0uy then "b" else "w")
+            IsCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+            Comments = comments
           }
         moveAndFens.Add({Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos})
       | None ->        

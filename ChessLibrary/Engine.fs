@@ -139,6 +139,7 @@ module Engine =
               ToSq = move[2..3]
               Color = "w"
               IsCastling = (tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY) 
+              Comments = String.Empty
               }                 
           let moveAndFen = {Move = moveDetail; ShortSan=shortSan; FenAfterMove = fen}
           let mutable posToCheck = moveBoard.Position
@@ -412,20 +413,49 @@ module Engine =
               let cmd = "uci"
               write cmd
               commands.Add cmd
-          | Stop -> 
-              let cmd = "stop"
-              write cmd
-              commands.Add cmd
+          | Stop ->
+                let cmd = "stop"
+                try
+                    // Check if the process is still running before attempting to write
+                    if not engineProcess.HasExited then
+                        write cmd
+                        commands.Add cmd                        
+                with
+                | _ ->
+                    // Engine process has already closed the pipe - this is expected during shutdown
+                    let msg = sprintf "Engine %s pipe already closed it seems" name
+                    printfn "%s" msg              
           | Quit -> 
-              let cmd = "quit"
-              write cmd
-              commands.Add cmd
-              let hasExited = engineProcess.WaitForExit(1000)
-              if not hasExited then
-                engineProcess.Kill()            
-              engineProcess.Close()
-              engineProcess.Dispose()            
-              printfn "Engine %s has been shut down." name
+                let cmd = "quit"
+                try
+                    // Check if the process is still running before attempting to write
+                    if not engineProcess.HasExited then
+                        write cmd
+                        commands.Add cmd
+                    let hasExited = engineProcess.WaitForExit(1000)
+                    if not hasExited then
+                        engineProcess.Kill()            
+                with
+                | :? System.IO.IOException as ex when ex.Message.Contains("pipe") ->
+                    // Engine process has already closed the pipe - this is expected during shutdown
+                     let msg = sprintf "Engine %s pipe already closed during shutdown" name
+                     printfn "%s" msg
+                | :? System.ObjectDisposedException ->
+                    // Process was already disposed - this is expected during shutdown
+                    let msg = sprintf "Engine %s process already disposed during shutdown" name
+                    printfn "%s" msg
+                | _ ->
+                    let msg = sprintf "Error during engine %s shutdown" name
+                    printfn "%s" msg
+                // Cleanup in a separate try-finally block
+                try
+                    engineProcess.Close()
+                    engineProcess.Dispose()
+                    printfn "Engine %s has been shut down." name
+                with
+                | :? System.ObjectDisposedException ->
+                    // Already disposed - ignore
+                    ()              
           | RawCommand cmd ->
               write cmd
               commands.Add cmd

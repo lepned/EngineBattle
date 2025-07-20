@@ -898,3 +898,19 @@ export function hidePromotionDialog() {
   }
 }
 
+export function scrollToElement(containerId, elementId) {
+    const container = document.getElementById(containerId);
+    const element = document.getElementById(elementId);
+
+    if (container && element) {
+        // Calculate the scroll position to center the element
+        const scrollTop = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.offsetHeight / 2);
+
+        // Smooth scroll to the position
+        container.scrollTo({
+            top: scrollTop,
+            behavior: 'smooth'
+        });
+    }
+}
+

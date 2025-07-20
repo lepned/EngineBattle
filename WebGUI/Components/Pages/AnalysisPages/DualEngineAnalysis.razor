@@ -39,6 +39,9 @@
             <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD-File" Size="Size.Medium"
                     StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" Style="white-space: nowrap;" />
         </MudItem>
+        <MudItem lg="5" Class="ml-10 mt-5">
+            <MudText>@pgnName</MudText>
+        </MudItem>
     </MudItem>
 
     <MudItem Class="d-flex">
@@ -195,12 +198,12 @@
         {
             if (row.WhiteSan != "")
             {
-                board.PlaySimpleShortSan(row.WhiteSan);
+                board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
             }
 
             if (row.BlackSan != "")
             {
-                board.PlaySimpleShortSan(row.BlackSan);
+                board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
             }
         }
         var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
@@ -701,7 +704,7 @@
             return;
         }
 
-        logger.LogInformation("PGN file opened {File}", pgnName);
+        logger.LogInformation("EPD file opened {File}", pgnName);
         var env = Environment.CurrentDirectory;
         var fullPath = Path.Combine(env, pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))

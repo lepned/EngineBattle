@@ -29,15 +29,15 @@
               Filter="FilterFunc">
       <HeaderContent>
         <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Round">R#</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameNumber">G#</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.Moves.Count">M#</MudTableSortLabel></MudTh>
         <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.GetResultSummary(x)">Result</MudTableSortLabel></MudTh>
                 <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPlayersSummary(x)">Players</MudTableSortLabel></MudTh>
       </HeaderContent>
-      <RowTemplate>
-        <MudTd DataLabel="R#">@context.GameMetaData.Round</MudTd>
+      <RowTemplate>        
         <MudTd DataLabel="G#">@context.GameNumber</MudTd>
+        <MudTd DataLabel="M#">@context.Moves.Count</MudTd>
         <MudTd DataLabel="Result">@Helper.GetResultSummary(context)</MudTd>
-                <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPlayersSummary(context)</MudTd>
+        <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPlayersSummary(context)</MudTd>
       </RowTemplate>
       <PagerContent>
         <MudTablePager PageSizeOptions="new int[] { 20, 30, 50, 100, 250 }" />

@@ -46,6 +46,16 @@
             @BlackPlayerInfo
         </MudItem>
     }
+
+    <MudItem sm=12 md="12" lg="12" Style="min-height: 60px; max-height: 60px;">
+        @if (!String.IsNullOrEmpty(Comment))
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="overflow-y: auto; max-height: 60px; word-wrap: break-word;">
+                @((MarkupString)Comment)
+            </MudText>
+        }
+    </MudItem>
+    
     <MudItem sm=12 md="12" lg="12">
         <div style="height:100%" @ref="board"></div>
     </MudItem>
@@ -93,10 +103,7 @@
 
     @if (ShowMoveList && MakeMoveListClickable == false)
     {
-        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
-            @*  <div>
-    <span>Move history:</span>
-    </div>*@
+        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">           
             <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
                 <span style="color:skyblue ">@OpeningMoves</span>
                 <span> @MoveHistory </span>
@@ -109,11 +116,12 @@
         MoveList = ChessBoard.MovesAndFenPlayed;
         var list = ChessBoard.GetNumberedMoveList();
         <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
-
             <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
                 @foreach (var (move, idx) in list.Select((move, idx) => (move, idx)))
                 {
-                    <span @onclick="@(() => OnItemClick(idx))">@move&nbsp</span>
+                    <span @onclick="@(() => OnItemClick(idx))"
+                          id="@($"move-{idx}")"
+                          style="@(idx == ChessBoard.CurrentIndex - 1 ? "font-weight: bold;color:skyblue" : "")">@move&nbsp</span>
                 }
             </div>
         </MudItem>
@@ -162,12 +170,14 @@
     [Parameter] public int MoveListHeight { get; set; }
     [Parameter] public string MoveHistory { get; set; }
 
+    private string Comment { get; set; }
     private Board moveBoard = new Board();
     private string pendingPromotionMove;
     private int promotionButtonSize = 50; // Set to your preferred size
     private double promotionButtonSizePx => promotionButtonSize * 0.85; // Adjust size for the images
     private TaskCompletionSource<string> promotionTcs;
 
+    private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.NextMoveNumberString(move.ShortSan)}</span>: <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
     private async Task SelectPromotion(string promotionPiece)
     {
         // Hide the promotion dialog
@@ -177,6 +187,16 @@
         {
             // Complete the pending task with the selected promotion piece
             promotionTcs.TrySetResult(promotionPiece);
+        }
+    }
+
+    private async Task ScrollToCurrentMove()
+    {
+        if (chessJSmodule is not null && ChessBoard.CurrentIndex > -1)
+        {
+            var scrollIndex = Math.Max(0, ChessBoard.CurrentIndex - 1); // Adjust for zero-based index
+            var moveId = $"move-{scrollIndex}";
+            await chessJSmodule.InvokeVoidAsync("scrollToElement", "moveListDiv", moveId);
         }
     }
 
@@ -247,12 +267,14 @@
         if (index != -1)
         {
             var move = MoveList[index];
+            Comment = CreateComments(move);
             var fen = move.FenAfterMove;
             fenWithMoves = fen;
             ChessBoard.CurrentIndex = index + 1;
             ChessBoard.LoadFen(fen);
             await SetPosition(fen);
             await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+            await ScrollToCurrentMove();
             StateHasChanged();
         }
     }
@@ -332,7 +354,6 @@
             }
 
             fenWithMoves = ChessBoard.PositionWithMoves();
-            //logger.LogInformation(nameof(UpdateNewMove) + " method with fen: " + fenWithMoves);
             var lastNNMoves = GetNNValues(currentId);
             await DisplayMoveAnnotation(lastNNMoves, currentId);
             StateHasChanged();
@@ -381,6 +402,7 @@
                 fenWithMoves = ChessBoard.FEN();
                 await SetPosition(fenWithMoves, false);
                 await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
+                await ScrollToCurrentMove();
             }
             StateHasChanged();
         }
@@ -466,7 +488,7 @@
             return new List<object>();
         }
         var firstMove = nnMoves.FirstOrDefault();
-        if(firstMove.Nodes == 1)
+        if (firstMove.Nodes == 1)
         {
             currentOverlaySetting = OverlaySettings.Policy;
         }
@@ -484,7 +506,7 @@
             return
                 moves
                 .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0/(double)firstMove.Nodes).ToString("F1") }).ToList();
+                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1") }).ToList();
         }
         else if (currentOverlaySetting == OverlaySettings.Q)
         {
@@ -535,7 +557,7 @@
         if (chessJSmodule is not null && chessGUI is not null)
         {
             var overlay = OverlaySetting.GetOverlaySetting(id);
-            var data = GetDisplayData(moves, overlay);            
+            var data = GetDisplayData(moves, overlay);
             try
             {
                 if (data.Count > 0)
@@ -569,12 +591,18 @@
 
     private async Task StartOfGame()
     {
+        var fenAndMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
+        if (fenAndMove != null)
+        {
+            Comment = CreateComments(fenAndMove);
+        }
         stopAutoPlay = true;
         ChessBoard.CurrentIndex = 0;
         fenWithMoves = ChessBoard.StartPosition;
         ChessBoard.LoadFen(fenWithMoves);
         await SetPosition(fenWithMoves, false);
         await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
+        await ScrollToCurrentMove();
         StateHasChanged();
     }
 
@@ -586,9 +614,11 @@
         {
             ChessBoard.CurrentIndex = ChessBoard.LongSANMovesPlayed.Count;
             fenWithMoves = fenAndMove.FenAfterMove;
+            Comment = CreateComments(fenAndMove);
             await SetPositionAndMove(fenAndMove, false);
             ChessBoard.LoadFen(fenWithMoves);
             await OnNewFENOnBoard.InvokeAsync(fenAndMove.FenAfterMove);
+            await ScrollToCurrentMove();
         }
         StateHasChanged();
     }
@@ -602,9 +632,11 @@
         {
             var move = next.Value;
             fenWithMoves = move.FenAfterMove;
+            Comment = CreateComments(move);
             ChessBoard.LoadFen(fenWithMoves);
             await SetPositionAndMove(move, invokeMove: false);
             await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+            await ScrollToCurrentMove();
         }
         StateHasChanged();
     }
@@ -621,9 +653,11 @@
         {
             var move = prev.Value;
             fenWithMoves = move.FenAfterMove;
+            Comment = String.IsNullOrEmpty(move.Move.Comments) ? Comment : CreateComments(move); ;
             ChessBoard.LoadFen(fenWithMoves);
             await SetPosition(fenWithMoves);
             await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+            await ScrollToCurrentMove();
         }
         StateHasChanged();
     }
@@ -634,16 +668,17 @@
         var moves = ChessBoard.MovesAndFenPlayed.Count;
         while (stopAutoPlay == false && ChessBoard.CurrentIndex < moves)
         {
-            var fenAndMove =
-                ChessBoard.CurrentIndex == 0 ?
+            var fenAndMove = ChessBoard.CurrentIndex == 0 ?
               ChessBoard.MovesAndFenPlayed[0] :
               ChessBoard.MovesAndFenPlayed[ChessBoard.CurrentIndex];
             fenWithMoves = fenAndMove.FenAfterMove;
+            Comment = CreateComments(fenAndMove);
             ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
             ChessBoard.LoadFen(fenWithMoves);
             await SetPositionAndMove(fenAndMove);
             await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
             await Task.Delay(300);
+            await ScrollToCurrentMove();
         }
 
         stopAutoPlay = true;
@@ -664,11 +699,13 @@
         if (fenWithMoves != input.FenAfterMove)
         {
             fenWithMoves = input.FenAfterMove;
+            Comment = CreateComments(input);
             await SetPositionAndMove(input, false);
         }
         var lastNNMoves = GetNNValues(currentId);
         await DisplayMoveAnnotation(lastNNMoves, currentId);
         await InvokeAsync(StateHasChanged);
+        await ScrollToCurrentMove();
     }
 
     public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)

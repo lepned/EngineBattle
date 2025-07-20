@@ -1161,6 +1161,7 @@ module Match =
                     ToSq = move[2..3]
                     Color = if board.Position.STM = 8uy then "w" else "b"
                     IsCastling = TMoveOps.isCastlingMove tmove
+                    Comments = String.Empty
                   }                 
                 let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
                 let mutable posToCheck = board.Position
@@ -1406,7 +1407,8 @@ module Match =
                     FromSq = move[0..1]
                     ToSq = move[2..3]
                     Color = if board.Position.STM = 8uy then "w" else "b"
-                    IsCastling = (tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY) 
+                    IsCastling = (tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY)
+                    Comments = String.Empty
                     }                 
                 let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
                 let mutable posToCheck = board.Position
@@ -1715,6 +1717,7 @@ module Match =
                     ToSq = move[2..3]
                     Color = if board.Position.STM = 8uy then "w" else "b"
                     IsCastling = TMoveOps.isCastlingMove tmove
+                    Comments = String.Empty
                     }                 
                 let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
                 let mutable posToCheck = board.Position
@@ -1848,6 +1851,10 @@ module Match =
                   list.Add msg
               
               makeShortSan list &board
+              //let fen = board.FEN()
+              //for m in list do                
+              //    if m.SANMove = "" then
+              //      logger.LogInformation($"Long SAN move reported: {m.LANMove} in {fen}")
               match Utilities.Engine.calcTopNn list with
               |Some (n1,n2,q1,q2, p1, pt) -> 
                 moveInfoData.n1 <- n1
@@ -2174,6 +2181,7 @@ module Match =
                     ToSq = move[2..3]
                     Color = if board.Position.STM = 8uy then "w" else "b"
                     IsCastling = TMoveOps.isCastlingMove tmove
+                    Comments = String.Empty
                     }                 
                 let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
                 let mutable posToCheck = board.Position

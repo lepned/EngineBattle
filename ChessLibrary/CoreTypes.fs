@@ -388,11 +388,11 @@ module TypesDef =
  
 
     /// For GUI use only.
-    type MoveDetail = { LongSan: string; FromSq: string; ToSq: string; Color: string; IsCastling: bool }
+    type MoveDetail = { LongSan: string; FromSq: string; ToSq: string; Color: string; IsCastling: bool; Comments: string }
       with 
-        static member Empty = { LongSan = ""; FromSq = ""; ToSq = ""; Color = ""; IsCastling = false }
+        static member Empty = { LongSan = ""; FromSq = ""; ToSq = ""; Color = ""; IsCastling = false; Comments = String.Empty }
         static member Create(longSan, fromsq, tosq, color, iscastling) = 
-          { LongSan = longSan; FromSq = fromsq; ToSq = tosq; Color = color; IsCastling = iscastling }
+          { LongSan = longSan; FromSq = fromsq; ToSq = tosq; Color = color; IsCastling = iscastling; Comments = String.Empty }
 
     type MoveAndFen = { Move: MoveDetail; ShortSan: string; FenAfterMove: string }
       with 
@@ -2156,8 +2156,8 @@ module TypesDef =
             n1 = 0L; n2 = 0L; pv = ""; tb = 0L; h = 0.0; ph = 0.0; wv = EvalType.NA;
             R50 = 0; Rd = 0; Rr = 0; mb = ""; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0 }
         member x.Annotation =
-          sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
-            x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
+          sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, pv=%s, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
+            x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb x.pv x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
         member x.MinimalAnnotation = 
           sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d"
             x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb
