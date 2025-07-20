@@ -1900,6 +1900,8 @@ module MoveParser =
                       if closingQuote > 0 then Some (afterId.Substring(1, closingQuote - 1))
                       else Some afterId
                   else Some afterId
+              elif String.IsNullOrEmpty fen |> not then
+                  Some fen
               else None
 
           // Look for an " bm " field anywhere in the line.
@@ -1918,6 +1920,7 @@ module MoveParser =
                     let closingQuote = afterId.IndexOf(';', 1)
                     if closingQuote > 0 then afterId.Substring(0, closingQuote) |> Some
                     else Some afterId
+              
               else None
         
           // Look for an " am " field anywhere in the line.

@@ -87,23 +87,12 @@
 
             @if (epdFileLoaded)
             {
-                <div style="overflow-y: auto; height: calc(100vh - 200px);">
-                    <MudTable FixedHeader=true style="border: none; padding: 0; background-color: transparent;" Items=@epdGames
-                              OnRowClick="OpenEPDGame" T="EPD.EPDEntry">
-                        <HeaderContent>
-                            <MudTh>AM</MudTh>
-                            <MudTh>ID</MudTh>
-                            <MudTh>BM</MudTh>
-                            <MudTh>FEN</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd>@context.AvoidMove?.Value.ToString()</MudTd>
-                            <MudTd>@context.Id?.Value.ToString()</MudTd>
-                            <MudTd>@context.BestMove?.Value.ToString()</MudTd>
-                            <MudTd>@context.FEN</MudTd>
-                        </RowTemplate>
-                    </MudTable>
-                </div>
+                <MudButton Color="Color.Primary"
+                           OnClick="OpenEPDDialog"
+                           StartIcon="@Icons.Material.Filled.List"
+                           Class="mt-2">
+                    View EPD List (@epdGames.Count)
+                </MudButton>               
             }
 
             @if (tbFilesLoaded)
@@ -151,6 +140,7 @@
     private ElementReference chessBoard;
     private IJSObjectReference chessModule;
     private HashSet<PGNTypes.PgnGame> selectedItems = new();
+    private HashSet<EPD.EPDEntry> selectedEPDItems = new();
     public bool QChartSelected { get; set; } = false;
     public CultureInfo currentCulture = CultureInfo.CurrentCulture;
     private CancellationTokenSource cts = new();
@@ -268,6 +258,38 @@
         if (!result.Canceled && pgnGame is PGNTypes.PgnGame game)
         {
             await LoadAndOpenPGNGame(game);
+        }
+    }
+
+    private async Task OpenEPDDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["EPDs"] = epdGames,
+            ["SelectedItems"] = selectedEPDItems,
+            ["SearchString"] = searchString
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraLarge,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            Position = DialogPosition.CenterRight
+        };
+        var dialog = await DialogService.ShowAsync<EPDListDialog>("Select EPD item", parameters, options);
+        var result = await dialog.Result;
+        if (result.Data is null)
+        {
+            logger.LogWarning("Dialog result data is null.");
+            return;
+        }
+        var (epdData, search) = ((EPD.EPDEntry, string))result.Data;
+        searchString = search;
+
+        if (!result.Canceled && epdData is EPD.EPDEntry epd)
+        {
+            await OpenEPDGame(epdData);
         }
     }
 
@@ -574,6 +596,19 @@
         StateHasChanged();
     }
 
+    private async Task OpenEPDGame(EPD.EPDEntry epd)
+    {        
+        var desc = $"{epd.ToString()} {epd.Other?.Value}";
+        epdDesc = desc;
+        board.ResetBoardState();
+        board.StartPosition = epd.FEN;
+        board.LoadFen(epd.FEN);
+        fen = board.FEN();
+        await Notifier.UpdateFen(fen);
+        await Notifier.UpdateFenToBoard(fen);
+        StateHasChanged();
+    }
+
     private async Task OpenPGNGame(TableRowClickEventArgs<PGNTypes.PgnGame> tableRowClickEventArgs)
     {
         var game = tableRowClickEventArgs.Item;
@@ -652,7 +687,6 @@
         epdGames = Parser.PGNHelper.readTableBaseResults(fullPath).Select(e => e.EPD).ToList();
         File.Delete(fullPath);
         StateHasChanged();
-        await Task.CompletedTask;
     }
 
     private async Task OpenEPDFile(InputFileChangeEventArgs e)
@@ -679,8 +713,8 @@
         epdGames = Parser.EPDExtractor.readEPDs(fullPath).Take(5000).ToList();
         gameIndex = 0;
         File.Delete(fullPath);
+        await OpenEPDDialog();
         StateHasChanged();
-        await Task.CompletedTask;
     }
 
     private async Task OpenPGNFile(InputFileChangeEventArgs e)

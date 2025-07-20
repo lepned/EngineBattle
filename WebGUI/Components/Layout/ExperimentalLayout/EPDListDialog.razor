@@ -1,0 +1,93 @@
+﻿@using WebGUI.Components.Layout
+@inject IDialogService DialogService
+
+<MudDialog Class="pa-2" Style="width: 35%; max-width: 35%;">
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.SportsEsports" Class="mr-2" />
+            <MudText Typo="Typo.h6">EPD List (@EPDs.Count games)</MudText>
+            <MudSpacer />
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="SearchString" Placeholder="Search for player..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Class="mt-0 mb-3" Immediate="true" />
+
+        <MudTable Style="border: none; padding: 0; background-color: transparent;"
+                  Items="@EPDs"
+                  T="TypesDef.EPD.EPDEntry"
+                  MultiSelection="true"
+                  @bind-SelectedItems="SelectedItems"
+                  OnRowClick="SelectGame"
+                  Virtualize="true"
+                  FixedHeader="true"
+                  Height="calc(65vh)"
+                  Hover="true"
+                  SortLabel="Sort By"
+                  Dense="true"
+                  Filter="FilterFunc">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel T="TypesDef.EPD.EPDEntry" SortBy="x => GetEpdIndex(x)">Nr</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="TypesDef.EPD.EPDEntry" SortBy="x => x.Id">Id</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="TypesDef.EPD.EPDEntry" SortBy="x => x.AvoidMove">Avoid move</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="TypesDef.EPD.EPDEntry" SortBy="x => x.BestMove">Best move</MudTableSortLabel></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="nr">@GetEpdIndex(context)</MudTd>
+                <MudTd DataLabel="id">@context.Id?.Value.ToString()</MudTd>
+                <MudTd DataLabel="bm">@(context.AvoidMove?.Value ?? "-")</MudTd>
+                <MudTd DataLabel="bm">@(context.BestMove?.Value ?? "-")</MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 20, 30, 50, 100, 250 }" />
+            </PagerContent>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Cancel">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+
+@code {
+    [Parameter] public List<TypesDef.EPD.EPDEntry> EPDs { get; set; } = new();
+    [Parameter] public HashSet<TypesDef.EPD.EPDEntry> SelectedItems { get; set; } = new();
+    [Parameter] public string SearchString { get; set; } = "";
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void SelectGame(TableRowClickEventArgs<TypesDef.EPD.EPDEntry> args)
+    {
+        MudDialog.Close(DialogResult.Ok((args.Item, SearchString)));
+    }
+
+    private int GetEpdIndex(EPD.EPDEntry epd)
+    {
+        var idx = EPDs.IndexOf(epd) + 1;
+        return idx < 0 ? 0 : idx;
+    }
+
+    private bool FilterFunc(TypesDef.EPD.EPDEntry epd)
+    {
+        if (string.IsNullOrWhiteSpace(SearchString))
+            return true;
+
+        string searchTerm = SearchString.Trim().ToLower();
+
+        //Search avoid move
+        if (epd.AvoidMove?.Value.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        // Search BestMove
+        if (epd.BestMove?.Value.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        // Search id
+        if (epd.Id?.Value.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        return false;
+    }
+}

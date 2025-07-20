@@ -120,16 +120,17 @@
                     <MudTable FixedHeader=true style="border: none; padding: 0; background-color: transparent;" Items=@epdGames
                               OnRowClick="OpenEPDGame" T="EPD.EPDEntry">
                         <HeaderContent>
+                            <MudTh>Nr</MudTh>
                             <MudTh>AM</MudTh>
-                            <MudTh>ID</MudTh>
                             <MudTh>BM</MudTh>
-                            <MudTh>FEN</MudTh>
+                            <MudTh>ID</MudTh>
                         </HeaderContent>
                         <RowTemplate>
+                            <MudTd>@GetEpdIndex(context)</MudTd>
                             <MudTd>@context.AvoidMove?.Value.ToString()</MudTd>
-                            <MudTd>@context.Id?.Value.ToString()</MudTd>
                             <MudTd>@context.BestMove?.Value.ToString()</MudTd>
-                            <MudTd>@context.FEN</MudTd>
+                            <MudTd>@context.Id?.Value.ToString()</MudTd>
+                            
                         </RowTemplate>
                     </MudTable>
                 </div>
@@ -176,6 +177,12 @@
     private Puzzle.AnalyzeConfig config = Puzzle.AnalyzeConfig.empty;
     private int nodes = 1;
     private string searchString = "";
+
+    private int GetEpdIndex(EPD.EPDEntry epd)
+    {
+        var idx = epdGames.IndexOf(epd) + 1;
+        return idx < 0 ? 0 : idx;
+    }
 
     private bool FilterFunc(PGNTypes.PgnGame game)
     {
