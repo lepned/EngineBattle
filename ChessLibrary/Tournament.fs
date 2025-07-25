@@ -895,15 +895,16 @@ module Match =
             moveInfoData.n <- nodes
             moveInfoData.s <- nps
             moveInfoData.tb <- tbhits
-            moveInfoData.pv <- pvLine
 
             if not (String.IsNullOrEmpty(pvLine)) then
               if player1.Name = engine.Name then
                 Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                 PVLine1 <- pvLine
+                moveInfoData.pv <- Player1PV
               else
                 Player2PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                 PVLine2 <- pvLine
+                moveInfoData.pv <- Player2PV
             let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
             let pv, pvLong = if engine.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
             let status = 
@@ -1885,15 +1886,16 @@ module Match =
                 moveInfoData.n <- nodes
                 moveInfoData.s <- nps
                 moveInfoData.tb <- tbhits
-                moveInfoData.pv <- pvLine
 
                 if not (String.IsNullOrEmpty(pvLine)) then
                   if player1.Name = playing.Name then
                     Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                     PVLine1 <- pvLine
+                    moveInfoData.pv <- Player1PV
                   else
                     Player2PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                     PVLine2 <- pvLine
+                    moveInfoData.pv <- Player2PV
                 let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
                 let pv, pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
                 let status = 
@@ -2344,15 +2346,16 @@ module Match =
                 moveInfoData.n <- nodes
                 moveInfoData.s <- nps
                 moveInfoData.tb <- tbhits
-                moveInfoData.pv <- pvLine
 
                 if not (String.IsNullOrEmpty(pvLine)) then
                   if player1.Name = playing.Name then
                     Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                     PVLine1 <- pvLine
+                    moveInfoData.pv <- Player1PV
                   else
                     Player2PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                     PVLine2 <- pvLine
+                    moveInfoData.pv <- Player2PV
                 let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
                 let pv, pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
                 let status = 
