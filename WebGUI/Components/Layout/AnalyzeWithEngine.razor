@@ -125,7 +125,11 @@
             @if (currentPosition != null && currentPosition.Nodes == 0)
             {
                 <MudItem>
-                    <MudText Class="mb-2 mb-4">@tableHeader</MudText>
+                    <MudText Class="mb-2 mb-4">@tableHeader                        
+                        <span style="font-weight:600; margin-left:12px;">
+                            ⏱ @elapsed.ToString(@"mm\:ss")@("." + (elapsed.Milliseconds / 100))
+                        </span>
+                    </MudText>
                 </MudItem>
             }
 
@@ -247,6 +251,32 @@
     public bool IsOpt { get; set; } = false;
     private IDialogReference dialogReference;
     public double MinPolicyThreshold { get; set; }
+    private System.Diagnostics.Stopwatch searchWatch = new();
+    private System.Timers.Timer uiTimer;
+    private TimeSpan elapsed = TimeSpan.Zero;
+
+    private void StartSearchTimer()
+    {
+        searchWatch.Reset();
+        searchWatch.Start();
+        elapsed = TimeSpan.Zero;
+        uiTimer?.Dispose();
+        uiTimer = new System.Timers.Timer(100); // 100ms for smooth ms updates
+        uiTimer.Elapsed += (s, e) =>
+        {
+            elapsed = searchWatch.Elapsed;
+            InvokeAsync(StateHasChanged);
+        };
+        uiTimer.Start();
+    }
+
+    private void StopSearchTimer()
+    {
+        searchWatch.Stop();
+        uiTimer?.Stop();
+        uiTimer?.Dispose();
+        uiTimer = null;
+    }
 
     private async Task OnMinPolicyThresholdChanged(double value)
     {
@@ -455,6 +485,7 @@
         }
 
         searchInProgress = true;
+        StartSearchTimer();
         analyzer?.GoInfinite();
         StateHasChanged();
     }
@@ -597,6 +628,7 @@
             await searchInfoPlot?.ResetPlot(false);
         }
         searchInProgress = true;
+        StartSearchTimer();
         await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
         await InvokeAsync(StateHasChanged);
         if (analyzer == null)
@@ -635,6 +667,7 @@
         if (analyzer != null)
             analyzer.Stop();
         searchInProgress = false;
+        StopSearchTimer();
         await Task.CompletedTask;
     }
 
@@ -667,6 +700,7 @@
                 searchInProgress = false;
                 waitingForEngine = false;
                 //await InvokeAsync(() => searchInProgress = false);
+                StopSearchTimer();
                 await InvokeAsync(() => StateHasChanged());
                 break;
 
