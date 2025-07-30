@@ -25,16 +25,34 @@
       <MudTextField Label="Number of solved puzzles to show" @bind-Value="@solvedNumber"></MudTextField>
     </MudPaper>
 
-    <MudFab Class="mb-3 mt-4 ml-5" HtmlTag="label" Color="Color.Default" Label="Pick and run puzzle config file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" Disabled=@disableRun />
+    <div class="d-flex align-items-center mb-3" style="gap: 1rem;">
+        <MudFab HtmlTag="label"
+                Color="Color.Default"
+                Label="Pick and run puzzle config file"
+                Size="Size.Large"
+                StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                for="fileInput"
+                Disabled=@disableRun
+                Class="mb-3 mt-2 ml-5" />
+                <MudProgressCircular Color="Color.Primary" Size="Size.Medium"
+                                 Indeterminate="true" style=@($"visibility:{SpinnerVisibility}; align-self: center;") />
+    </div>
+        <MudText Class="ml-6 mt-2" Typo="Typo.body1">
+            @if (disableRun && !string.IsNullOrEmpty(puzzleFileName))
+            {
+                <MudText Typo="Typo.body1">
+                    @((MarkupString)$"Processing puzzles from <b>{puzzleFileName}</b>...")
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body1">
+                    @((MarkupString)$"<b>{puzzleFileName}</b>")
+                </MudText>
+            }
 
-    @if (disableRun)
-    {
-      <MudItem>
-
-        <MudText Class="ml-6 mt-2" Typo="Typo.body1">Puzzle run in progress...</MudText>
-        <MudProgressCircular Class="ml-6 mt-3" Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
-      </MudItem>
-    }
+        </MudText>   
+   
   </MudItem>
   <MudItem Class="ml-10" xl="8" md="9">
     @if (PolicyScores.Count > 0)
@@ -207,13 +225,14 @@
   private Chess.Board chess = new();
   IBrowserFile browserFile;
   private string fileName;
+  private string puzzleFileName = string.Empty;
   private Puzzle.CsvPuzzleData[] puzzles;
   private List<Puzzle.Score> PolicyScores = new();
   private List<Puzzle.Score> ValueScores = new();
   private List<Puzzle.Score> SearchScores = new();
   private string Filter { get; set; } = ""; // "sacrifice, mate, endgame, defensive"; // "sacrifice, deflection, attraction, attack, fork, defensive";
-  int failedNumber = 15;
-  int solvedNumber = 15;
+  int failedNumber = 5;
+  int solvedNumber = 5;
   private string FolderName { get; set; } = String.Empty;
   private string fullPath = string.Empty;
   private bool disableRun = false;
@@ -222,6 +241,7 @@
   private string selectedType = "All";
   private string selectedEngine = "All";
   private HashSet<int> expandedScoreIds = new HashSet<int>();
+  private string SpinnerVisibility => disableRun ? "visible" : "hidden";
 
   private IEnumerable<string> AvailableEngines =>
     PolicyScores.Concat(ValueScores).Concat(SearchScores)
@@ -510,7 +530,7 @@
       return;
     }
     disableRun = true;
-    StateHasChanged();
+    //StateHasChanged();
 
     await Task.Factory.StartNew(async () =>
     {
@@ -518,7 +538,7 @@
       {
         // Load and normalize config
         var data = loadPuzzleConfig(normalizePath(fullPathName));
-
+        puzzleFileName = Path.GetFileName(data.PuzzleFile);
         //add drawn filters (optional) to puzzle filter
         if (!string.IsNullOrWhiteSpace(data.PuzzleFilter) && !string.IsNullOrWhiteSpace(Filter))
         {
@@ -528,6 +548,7 @@
         {
           data.PuzzleFilter = Filter;
         }
+        await InvokeAsync(StateHasChanged);
 
         //make the puzzle filter lower case and remove duplicates
         if (!string.IsNullOrWhiteSpace(data.PuzzleFilter))

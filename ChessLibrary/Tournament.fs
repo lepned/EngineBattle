@@ -1295,7 +1295,10 @@ module Match =
     let npsList = ResizeArray<float>()
     let gameMoveList = board.ShortSANMovesPlayed
 
-    let msg = $"Initializing players: {player1.Name} vs {player2.Name} with delay: {tourny.DelayBetweenGames}" 
+    let delaySeconds = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
+    let delayMilliseconds = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds
+    let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms)" player1.Name player2.Name delaySeconds delayMilliseconds
+    
     logger.LogInformation msg
     tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
     
@@ -1538,8 +1541,10 @@ module Match =
     let mutable wTime = wPlayer.Fixed
     let mutable bTime = bPlayer.Fixed
     let moveOverheadInTicks = tourny.MoveOverhead.Ticks
-
-    let msg = $"Initializing players: {player1.Name} vs {player2.Name} with delay: {tourny.DelayBetweenGames}" 
+    let delaySeconds = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
+    let delayMilliseconds = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds
+    let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms)" player1.Name player2.Name delaySeconds delayMilliseconds
+    
     logger.LogInformation msg
     tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
     
@@ -1979,7 +1984,10 @@ module Match =
     let mutable wTime = w 
     let mutable bTime = b
     let moveOverheadInTicks = tourny.MoveOverhead.Ticks
-    let msg = $"Initializing players: {player1.Name} vs {player2.Name} with delay: {tourny.DelayBetweenGames} in playSame mode" 
+    let delaySeconds = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
+    let delayMilliseconds = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds
+    let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms) in PreventMoveDeviation mode" player1.Name player2.Name delaySeconds delayMilliseconds
+    
     logger.LogInformation msg
     tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
     

@@ -1359,11 +1359,15 @@ module PuzzleRunners =
         eretResult
 
     let engineConfigsOnly = engineConfigs |> Seq.map fst
-    let concurrency = HardwareInfo.concurrencyLevel engineConfigsOnly (engineConfigs |> Seq.length)
+    let concurrency = 
+        if isnodes then 
+            HardwareInfo.concurrencyLevel engineConfigsOnly (engineConfigs |> Seq.length) 
+        else 
+            1
     printfn "Concurrency level: %d" concurrency
     
     let resultsNew = 
-        if concurrency > 0 then
+        if concurrency > 1 then
             engineConfigs
             |> Seq.toArray
             |> Array.Parallel.map runSingleEngine

@@ -15,233 +15,248 @@
 
 <PageTitle> ERET Puzzles tests</PageTitle>
 <MudItem Class="d-flex flex-column mr-5" style="height: 95vh;">
-  <MudItem Class="d-flex mr-3 mb-3">
-    <MudItem lg="3">
+    <MudItem Class="d-flex mr-3 mb-3">
+        <MudItem lg="3">
+            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">ERET parameters</MudText>
+            <MudPaper MaxWidth="300px" Class="ml-6 mb-3 mt-6">
+                <MudTextField Label="Number of failed puzzles to show" @bind-Value="@failedNumber"></MudTextField>
+                <MudTextField Label="Number of solved puzzles to show" @bind-Value="@solvedNumber"></MudTextField>
+            </MudPaper>
+            <div class="d-flex align-items-center mb-3" style="gap: 1rem;">
+                <MudFab HtmlTag="label"
+                        Color="Color.Default"
+                        Label="Pick and run puzzle config file"
+                        Size="Size.Large"
+                        StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                        for="fileInput"
+                        Disabled=@isProcessing
+                        Class="mb-3 mt-2 ml-5" />
+                <MudProgressCircular Color="Color.Primary" Size="Size.Medium"
+                                     Indeterminate="true" style=@($"visibility:{SpinnerVisibility}; align-self: center;") />
+            </div>
+            <MudText Class="ml-6 mt-2" Typo="Typo.body1">
+                @if (isProcessing && !string.IsNullOrEmpty(puzzleFileName))
+                {
+                    <MudText Typo="Typo.body1">
+                        @((MarkupString)$"Processing puzzles from <b>{puzzleFileName}</b>...")
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body1">
+                        @((MarkupString)$"<b>{puzzleFileName}</b>")
+                    </MudText>
+                }
 
-      <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">ERET parameters</MudText>
-      <MudPaper MaxWidth="300px" Class="ml-6 mb-3 mt-6">
-        <MudTextField Label="Number of failed puzzles to show" @bind-Value="@failedNumber"></MudTextField>
-        <MudTextField Label="Number of solved puzzles to show" @bind-Value="@solvedNumber"></MudTextField>
-        @* <MudTextField Label="SampleSize" @bind-Value="@sampleSize"></MudTextField>
-				<MudTextField Label="Nodes" @bind-Value="@nodes"></MudTextField>
-				<MudTextField Label="TimeInSeconds" @bind-Value="@timeInSecs"></MudTextField>
-				<MudTextField Label="Run with node limit" @bind-Value="@runWithNodes"></MudTextField> *@
-      </MudPaper>
-      <MudFab Class="ml-5 mb-3 mt-4" HtmlTag="label" Color="Color.Default" Label="Pick ConfigFile" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-      <MudText Color=Color.Primary Typo=Typo.h5 Class="ml-3 mb-3 mt-6 pl-3">@finalMessage</MudText>
-      @if (isProcessing)
-      {
-        <MudProgressCircular Class="ml-6 mt-3" Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
-      }
-      
+            </MudText>
+        </MudItem>
+        <MudItem lg="1">
+        </MudItem>
+        <MudItem lg="6" md="6">
+            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">ERET tests with time/node limits  </MudText>
+            <MudPaper>
+                <MudTable FixedHeader=true Dense=true Items="@Scores" T="ERETResults" SortLabel="Sort By">
+                    <HeaderContent>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => x.PlayerName)"> Engine</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => (decimal)x.Accuracy)"> Accuracy</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => (x.FailedPuzzles.Count + x.CorrectPuzzles.Count))"> Total</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => x.Desc)"> Desc</MudTableSortLabel></MudTh>
+
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Engine" Style="font-size:19px">@context.PlayerName</MudTd>
+                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@context.Accuracy.ToString("P1")</MudTd>
+                        <MudTd DataLabel="Total" Style="font-size:19px">@(context.FailedPuzzles.Count + context.CorrectPuzzles.Count)</MudTd>
+                        <MudTd DataLabel="Neural net" Style="font-size:16px">@context.Desc</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
     </MudItem>
-    <MudItem lg="1">
 
-    </MudItem>
-
-    <MudItem lg="6" md="6">
-      <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">ERET tests with time/node limits  </MudText>
-      <MudPaper>
-        <MudTable FixedHeader=true Dense=true Items="@Scores" T="ERETResults" SortLabel="Sort By">
-          <HeaderContent>
-            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => x.PlayerName)"> Engine</MudTableSortLabel></MudTh>
-            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => (decimal)x.Accuracy)"> Accuracy</MudTableSortLabel></MudTh>
-            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => (x.FailedPuzzles.Count + x.CorrectPuzzles.Count))"> Total</MudTableSortLabel></MudTh>
-            <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => x.Desc)"> Desc</MudTableSortLabel></MudTh>
-
-          </HeaderContent>
-          <RowTemplate>
-            <MudTd DataLabel="Engine" Style="font-size:19px">@context.PlayerName</MudTd>
-            <MudTd DataLabel="Accuracy" Style="font-size:19px">@context.Accuracy.ToString("P1")</MudTd>
-            <MudTd DataLabel="Total" Style="font-size:19px">@(context.FailedPuzzles.Count + context.CorrectPuzzles.Count)</MudTd>
-            <MudTd DataLabel="Neural net" Style="font-size:16px">@context.Desc</MudTd>
-          </RowTemplate>
-        </MudTable>
-      </MudPaper>
-    </MudItem>
-
-  </MudItem>
-
-  <div class="flex-grow-1 overflow-auto" style="overflow-x:hidden">
-    <MudItem xl="11">
-
-      @foreach (var score in Scores)
-      {
-        string descSolved = $"Solved puzzles by {score.PlayerName}";
-        var correctList = score.CorrectPuzzles.Take(solvedNumber).ToList();
-        string descFailed = $"Failed puzzles by {score.PlayerName}";
-        var failedList = score.FailedPuzzles.Take(failedNumber).ToList();
-        if (score.CorrectPuzzles.Count > 0)
-        {
-          <MudText Typo="Typo.h5" Class="ml-6 mb-6 mt-3"> @descSolved</MudText>
-          <MudGrid Class="ml-0 mb-4 mt-0 mr-0">
-            @foreach (var epd in correctList)
+    <div class="flex-grow-1 overflow-auto" style="overflow-x:hidden">
+        <MudItem xl="11">
+            @foreach (var score in Scores)
             {
-              <MudItem xs="6" sm="4" md="3" xl="2">
-                <EPDVisualization EPD="@epd" />
-              </MudItem>
+                string descSolved = $"Solved puzzles by {score.PlayerName}";
+                var correctList = score.CorrectPuzzles.Take(solvedNumber).ToList();
+                string descFailed = $"Failed puzzles by {score.PlayerName}";
+                var failedList = score.FailedPuzzles.Take(failedNumber).ToList();
+                if (score.CorrectPuzzles.Count > 0)
+                {
+                    <MudText Typo="Typo.h5" Class="ml-6 mb-6 mt-3"> @descSolved</MudText>
+                    <MudGrid Class="ml-0 mb-4 mt-0 mr-0">
+                        @foreach (var epd in correctList)
+                        {
+                            <MudItem xs="6" sm="4" md="3" xl="2">
+                                <EPDVisualization EPD="@epd" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
+                if (score.FailedPuzzles.Count > 0)
+                {
+                    <MudText Typo="Typo.h5" Class="ml-6 mb-6 mt-6"> @descFailed</MudText>
+                    <MudGrid Class="ml-0 mb-6 mt-6 mr-0">
+                        @foreach (var epd in failedList)
+                        {
+                            <MudItem xs="6" sm="4" md="3" xl="2">
+                                <EPDVisualization EPD="@epd.Item1" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
             }
-          </MudGrid>
-        }
-        if (score.FailedPuzzles.Count > 0)
-        {
-          <MudText Typo="Typo.h5" Class="ml-6 mb-6 mt-6"> @descFailed</MudText>
-          <MudGrid Class="ml-0 mb-6 mt-6 mr-0">
-            @foreach (var epd in failedList)
-            {
-              <MudItem xs="6" sm="4" md="3" xl="2">
-                <EPDVisualization EPD="@epd.Item1" />
-              </MudItem>
-            }
-          </MudGrid>
-        }
-      }
-    </MudItem>
-  </div>
+        </MudItem>
+    </div>
 
 </MudItem>
 
-
 @code {
-  private Chess.Board chess = new();
-  IBrowserFile browserFile;
-  private string fileName;
-  private List<ERETResults> Scores = new();
-  int failedNumber = 3;
-  int solvedNumber = 3;
-  private string fullPath = string.Empty;
-  private string finalMessage = "";
-  private EPD.EPDEntry epd = EPD.EPDEntry.Empty;
-  private string outputFileFolder = string.Empty;
-  private EretConfig data = EretConfig.empty;
-  private bool isProcessing = false;
+    private Chess.Board chess = new();
+    IBrowserFile browserFile;
+    private string fileName;
+    private string puzzleFileName = string.Empty;
+    private List<ERETResults> Scores = new();
+    int failedNumber = 3;
+    int solvedNumber = 3;
+    private string fullPath = string.Empty;
+    private string finalMessage = "";
+    private EPD.EPDEntry epd = EPD.EPDEntry.Empty;
+    private string outputFileFolder = string.Empty;
+    private EretConfig data = EretConfig.empty;
+    private bool isProcessing = false;
+    private string SpinnerVisibility => isProcessing ? "visible" : "hidden";
 
-  private async void Update(ERET update)
-  {
-    switch (update)
+    private async void Update(ERET update)
     {
-      case ERET.Start player:
+        switch (update)
+        {
+            case ERET.Start player:
 
-        break;
+                break;
 
-      case ERET.Puzzle p:
+            case ERET.Puzzle p:
 
-        break;
+                break;
 
-      case ERET.PlayerResult pRes:
-        Scores.Add(pRes.Item);
-        var playerPerf = $"\nPlayer: {pRes.Item.PlayerName} - Accuracy: {pRes.Item.Accuracy:P1} - Total: {pRes.Item.FailedPuzzles.Count + pRes.Item.CorrectPuzzles.Count} - Desc: {pRes.Item.Desc}\n";
-        logger.LogInformation(playerPerf);
+            case ERET.PlayerResult pRes:
+                Scores.Add(pRes.Item);
+                var playerPerf = $"\nPlayer: {pRes.Item.PlayerName} - Accuracy: {pRes.Item.Accuracy:P1} - Total: {pRes.Item.FailedPuzzles.Count + pRes.Item.CorrectPuzzles.Count} - Desc: {pRes.Item.Desc}\n";
+                logger.LogInformation(playerPerf);
+                await InvokeAsync(StateHasChanged);
+                break;
+
+            case ERET.AllResults allRes:
+                try
+                {
+                    var eretResults = allRes.Item.ToList();
+                    Scores.Clear();
+                    Scores.AddRange(eretResults);
+                    var normalizedFolder = Utilities.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
+                    var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
+                    var fileName = Path.Combine(normalizedFolder, $"failedEretPuzzles_{datePart}.epd");
+                    if (Directory.Exists(normalizedFolder))
+                    {
+                        using (StreamWriter sw = new(fileName, append: false, Encoding.UTF8))
+                        {
+                            var boardBm = new Chess.Board();
+                            var boardAm = new Chess.Board();
+                            Analysis.PuzzleRunners.writeToFile(data, eretResults, sw, boardBm, boardAm);
+                            Console.WriteLine($"Failed puzzles written to {fileName}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError("Failed to write results to file: {Message}", ex.Message);
+                    finalMessage = "Failed to write results to file. Check console for details.";
+                }
+                finally
+                {
+                    isProcessing = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+                break;
+
+            case ERET.ResultsInConsole resConsole:
+                var table = resConsole.Item;
+                Console.WriteLine(Environment.NewLine);
+                Console.WriteLine(table);
+                var escaped = Utilities.JSONParser.escapeString(outputFileFolder);
+
+                if (Directory.Exists(escaped))
+                {
+                    var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
+                    var outputPath = Path.Combine(escaped, $"EretSummary_{datePart}.txt");
+                    try
+                    {
+                        File.WriteAllText(outputPath, table);
+                        Console.WriteLine($"Console summary written to {outputPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to write results to file: {ex.Message}");
+                        finalMessage = "Failed to write results to file. Check console for details.";
+                    }
+                }
+                break;
+        }
+    }
+
+    private async Task OpenConfigFile(InputFileChangeEventArgs e)
+    {
+        isProcessing = true;
+        var pgnName = e.File.Name;
+        fileName = pgnName;
+        //finalMessage = $"Running tests on {fileName}";
+        logger.LogInformation("Config file opened {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        fullPath = Path.Combine(env, "wwwroot", pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
+        }
+
+        data = Utilities.JSONParser.loadEretConfig(fullPath);
+        puzzleFileName = Path.GetFileName(data.PuzzleFile);
+        finalMessage = $"Running tests on {puzzleFileName}";
         await InvokeAsync(StateHasChanged);
-        break;
+        outputFileFolder = data.FailedPuzzlesOutputFolder;
+        // Build engine configs
+        var engineConfigs = data.Engines
+          .SelectMany(e => Utilities.JSONParser.mapToEngPuzzleConfig(data.EngineFolder, e))
+          .ToList();
 
-      case ERET.AllResults allRes:
-        try
-        {
-          var eretResults = allRes.Item.ToList();
-          Scores.Clear();
-          Scores.AddRange(eretResults);
-          var normalizedFolder = Utilities.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
-          var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
-          var fileName = Path.Combine(normalizedFolder, $"failedEretPuzzles_{datePart}.epd");
-          if (Directory.Exists(normalizedFolder))
-          {           
-            using (StreamWriter sw = new(fileName, append: false, Encoding.UTF8))
-            {
-                var boardBm = new Chess.Board();
-                var boardAm = new Chess.Board();
-                Analysis.PuzzleRunners.writeToFile(data, eretResults, sw, boardBm, boardAm);
-                Console.WriteLine($"Failed puzzles written to {fileName}");
-            }
-          }
-        }
-        catch (Exception ex)
-        {
-          logger.LogError("Failed to write results to file: {Message}", ex.Message);
-          finalMessage = "Failed to write results to file. Check console for details.";
-        }
-        finally
-        {
-          isProcessing = false;
-          await InvokeAsync(StateHasChanged);
-        }
-        break;
+        List<ERETResults> results = new();
 
-      case ERET.ResultsInConsole resConsole:
-        var table = resConsole.Item;
-        Console.WriteLine(Environment.NewLine);
-        Console.WriteLine(table);
-        var escaped = Utilities.JSONParser.escapeString(outputFileFolder);
-
-        if (Directory.Exists(escaped))
-        {
-          var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
-          var outputPath = Path.Combine(escaped, $"EretSummary_{datePart}.txt");
-          try
+        await Task.Factory.StartNew(() =>
           {
-            File.WriteAllText(outputPath, table);
-            Console.WriteLine($"Console summary written to {outputPath}");
-          }
-          catch (Exception ex)
-          {
-            Console.WriteLine($"Failed to write results to file: {ex.Message}");
-            finalMessage = "Failed to write results to file. Check console for details.";
-          }
-        }        
-        break;
+              try
+              {
+                  var timeConfig = TimeControl.TimeControlCommands.getFixedTime(new TimeOnly(0, 0, data.TimeInSeconds));
+                  var nodesConfig = TimeControl.TimeControlCommands.getNodeTime(data.Nodes);
+                  if (data.RunWithNodeLimit)
+                  {
+                      results = Analysis.PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update);
+                  }
+                  else
+                  {
+                      results = Analysis.PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update);
+                  }
+              }
+              catch (Exception ex)
+              {
+                  logger.LogError("Eret failed to start/run - ");
+                  logger.LogError(ex.Message);
+                  throw;
+              }
+          });
+
+        finalMessage = $"Finished running tests on {puzzleFileName}";
+        File.Delete(fullPath);
     }
-  }
-
-  private async Task OpenConfigFile(InputFileChangeEventArgs e)
-  {
-    isProcessing = true;
-    await InvokeAsync(StateHasChanged);
-    var pgnName = e.File.Name;
-    fileName = pgnName;
-    finalMessage = $"Running tests on {fileName}";
-    logger.LogInformation("Config file opened {File}", pgnName);
-    var env = Environment.CurrentDirectory;
-    fullPath = Path.Combine(env, "wwwroot", pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
-    }
-
-    data = Utilities.JSONParser.loadEretConfig(fullPath);
-    outputFileFolder = data.FailedPuzzlesOutputFolder;
-    // Build engine configs
-    var engineConfigs = data.Engines
-      .SelectMany(e => Utilities.JSONParser.mapToEngPuzzleConfig(data.EngineFolder, e))
-      .ToList();
-
-    List<ERETResults> results = new();
-
-    await Task.Factory.StartNew(() =>
-      {
-        try
-        {
-          var timeConfig = TimeControl.TimeControlCommands.getFixedTime(new TimeOnly(0, 0, data.TimeInSeconds));
-          var nodesConfig = TimeControl.TimeControlCommands.getNodeTime(data.Nodes);
-          if (data.RunWithNodeLimit)
-          {
-            results = Analysis.PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update);
-          }
-          else
-          {
-            results = Analysis.PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update);
-          }
-        }
-        catch (Exception ex)
-        {
-          logger.LogError("Eret failed to start/run - ");
-          logger.LogError(ex.Message);
-          throw;
-        }
-      });
-      
-    finalMessage = $"Finished running tests on {fileName}";
-    File.Delete(fullPath);
-  }
 
 }
