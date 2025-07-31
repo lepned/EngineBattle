@@ -474,8 +474,6 @@ let generateCapturesInSpan (moves: TMove Span) (index: int outref) (position : P
         ep <- ClearLSB ep
 
 let makeMove (move : TMove inref) (position : Position byref) =
-    let rookM = PositionOps.rooksM &position
-    let rookO = PositionOps.rooksO &position
     let part = 1UL <<< int move.From
     let dest = 1UL <<< int move.To
     match (move.MoveType &&& TPieceType.PIECE_MASK) with
@@ -593,24 +591,13 @@ let makeMove (move : TMove inref) (position : Position byref) =
         PositionOps.changeSide(&position)
 
     | TPieceType.KING ->
-        position.Count50 <- position.Count50 + 1uy
+        position.Count50 <- position.Count50 + 1uy        
         if (move.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY then
+            position.Count50 <- 0uy //reset the 50 move rule counter
             // Delete the captured piece
             position.P0 <- position.P0 &&& ~~~dest
             position.P1 <- position.P1 &&& ~~~dest
             position.P2 <- position.P2 &&& ~~~dest
-    
-        position.PM <- position.PM ^^^ (part ||| dest)
-        position.P1 <- position.P1 ^^^ (part ||| dest)
-        position.P2 <- position.P2 ^^^ (part ||| dest)
-        //PositionOpsToString("Error", &PositionOps) |> printfn "Inside castling %s"
-        let canCastleShort = PositionOps.CanCastleSM &position
-        let canCastleLong = PositionOps.CanCastleLM &position
-        PositionOps.ResetCastleSM &position // update the castle rights
-        PositionOps.ResetCastleLM &position
-        position.EnPassant <- 8uy
-
-        if (move.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY then
             let shortOppRooks = 
               if position.STM = PositionOps.WHITE then
                 position.RookInfo.BlackKRInitPlacement + 56uy
@@ -625,10 +612,18 @@ let makeMove (move : TMove inref) (position : Position byref) =
             if move.To = shortOppRooks && (position.CastleFlags &&& 0x20uy) <> 0uy then 
                 PositionOps.ResetCastleSO &position // captured the opponent king side rook
             if move.To = longOppRooks && (position.CastleFlags &&& 0x10uy) <> 0uy then 
-                PositionOps.ResetCastleLO &position // captured the opponent queen side rook
-            position.Count50 <- 0uy
-
-        elif (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
+                PositionOps.ResetCastleLO &position // captured the opponent queen side rook            
+    
+        position.PM <- position.PM ^^^ (part ||| dest)
+        position.P1 <- position.P1 ^^^ (part ||| dest)
+        position.P2 <- position.P2 ^^^ (part ||| dest)
+        let canCastleShort = PositionOps.CanCastleSM &position
+        let canCastleLong = PositionOps.CanCastleLM &position
+        PositionOps.ResetCastleSM &position // update the castle rights
+        PositionOps.ResetCastleLM &position
+        position.EnPassant <- 8uy
+               
+        if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
             let rookShortSq = 
               if position.STM = PositionOps.WHITE then
                 position.RookInfo.WhiteKRInitPlacement |> int
@@ -674,6 +669,7 @@ let makeMove (move : TMove inref) (position : Position byref) =
               else                
                 PositionOpsToString("Error", &position) |> printfn "Not a legal castle move %s"                 
                 failwith $"Not a legal castle move {move} in this PositionOps {position}"
+
         PositionOps.changeSide(&position)
 
     |_ -> failwith $"Not a legal move {move} in this PositionOps {position}"
