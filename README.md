@@ -4,6 +4,9 @@
 
 **EngineBattle** is a comprehensive tool designed for running tournaments, testing, analyzing, and comparing chess engines. It simplifies puzzle-based testing, detailed analysis, tournament management, and provides interactive visualizations, making it ideal for chess developers, researchers, and streamers.
 
+![Tournament](WebGUI/wwwroot/Img/Tournament.png)
+*Example: Tournament GUI — follow live games, standings, and results with interactive visualizations.*
+
 ---
 
 ## 🚀 Key Features
@@ -231,6 +234,7 @@ The `ResultReason` type defines various reasons for the outcome of a chess game.
 - **Repetition (R3)**: The game ended in a draw by repetition.
 - **AdjudicatedEvaluation (AE)**: The game was adjudicated based on evaluation agreement.
 - **ForfeitLimits (FL)**: The game was forfeited due to time or node limits.
+- **Disconnected (DC)**: The game ended due to a disconnect.
 - **Cancel (XX)**: The game was canceled.
 - **Illegal (IM)**: The game ended due to an illegal move.
 - **NotStarted (NS)**: The game has not started.
@@ -246,6 +250,9 @@ Analysis mode uses a `AnalyzeConfig.json` file - [Link to AnalyzeConfig.json](An
 
 The dual analysis mode is designed to compare two engines at a time, displaying their evaluations, moves, and search statistics in a clear and concise manner.
 
+![Analysis](WebGUI/wwwroot/Img/AnalysisMode.png)
+*Example: Dual analysis mode — compare two engines side by side with synchronized move lists and evaluations.*
+
 
 ## Puzzle Testing Mode
 
@@ -255,6 +262,9 @@ The puzzle testing mode allows users to evaluate chess engines using a variety o
 The `PuzzleConfig.json` file defines the engines to be used, the puzzle file path, and the testing parameters. In this mode, engines are tested on puzzles sampled from the specified file, with options to filter puzzles by type, rating, or specific characteristics. The configuration also supports running tests with node limits or concurrent engine instances for efficient benchmarking.
 This mode is ideal for developers and researchers who want to test engine capabilities on specific puzzle types, such as mate-in-N problems, endgame studies, or tactical motifs. The results can be visualized to identify areas where engines excel or struggle, providing valuable feedback for engine improvement.
 For more information about how to run Lichess puzzles, see [LichessPuzzle.md](LichessPuzzle.md).
+
+![Puzzle](WebGUI/wwwroot/Img/PuzzleDemo.png)
+*Example: Visualization of a failed puzzle — the engine's move (red) vs. the correct move (green).*
 
 ### ERET Testing Mode
 
