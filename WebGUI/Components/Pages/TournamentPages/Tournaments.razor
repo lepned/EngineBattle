@@ -1134,7 +1134,7 @@
             case ChessLibrary.Tournament.Match.Update.NNSeq n:
                 try
                 {
-                    if (runWithLogLiveStats)
+                    if (runWithLogLiveStats && n.NNSeq.Count > 0)
                     {
                         n.NNSeq.Reverse();
                         searchInfoPlot.AddData(n.NNSeq);
@@ -1145,7 +1145,10 @@
                 catch (Exception)
                 {
                     var moves = n.NNSeq.Count;
-                    logger.LogError($"Failed in updating LogLiveStats Available moves: {moves}, chart wanted: {3} moves");
+                    var maxLines = Math.Min(moves, layoutOptions.Charts.NumberOfLines);
+                    var nnItem = n.NNSeq.FirstOrDefault();
+                    var name = maxLines == 0 ? "Player" : nnItem.Player;
+                    logger.LogError($"{name} failed to update LogLiveCharts. Available moves: {moves}, required for chart: {maxLines} moves.");
                 }
 
                 break;

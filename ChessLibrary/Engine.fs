@@ -692,6 +692,7 @@ module Engine =
 
 
   type ChessEngine(config : EngineConfig, initCommands: string seq) =
+      let initialCommands = initCommands |> ResizeArray
       let mutable passed = true
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
@@ -714,6 +715,10 @@ module Engine =
       let mutable commands = ResizeArray<string>()
       let mutable network = if isCeres then ceresNetworkName else ""
       let nonDefaultValues = System.Collections.Generic.Dictionary<string, (string * string)>()
+
+      let addCommand (list : string ResizeArray) (cmd: string) =
+        if not (list.Contains cmd) then
+          list.Add cmd
 
       let printNonDefaultValues () =
         printfn "\nCustomized SetOptions for %s:\n" name
@@ -811,6 +816,8 @@ module Engine =
           
       let read () = proc.StandardOutput.ReadLine()
       let readAsync () = proc.StandardOutput.ReadLineAsync()
+      
+      member _.InitCommands = initialCommands
       member _.Process = proc
       member _.PrintNonDefaultValues = printNonDefaultValues
       member _.IsLc0 = isLc0
@@ -829,7 +836,8 @@ module Engine =
           let cmd = sprintf "setoption name %s value %s" option.Name option.Value      
           write cmd
           assignNetworkName cmd
-          commands.Add cmd
+          addCommand initialCommands cmd
+          addCommand commands cmd
 
       member this.AddSetOption (option:EngineOption) =
         match UciOption.tryFindOption optionsMap option.Name with
@@ -839,10 +847,11 @@ module Engine =
             write cmd
             this.Config.Options[option.Name] <- option.Value
             assignNetworkName cmd
-            commands.Add cmd
+            addCommand initialCommands cmd
+            addCommand commands cmd            
         | _ -> ()
 
-      member this.SetMoveOverhead (optionName:string, milliSeconds: int) =
+      member _.SetMoveOverhead (optionName:string, milliSeconds: int) =
         match UciOption.tryFindOption optionsMap optionName with
         | Some option ->
             match option.OptionType with        
@@ -852,6 +861,8 @@ module Engine =
                   //create a setoption based on the option and the intValue
                   let cmd = sprintf "setoption name %s value %d" option.Name intValue                
                   write cmd
+                  addCommand initialCommands cmd
+                  addCommand commands cmd                  
             | _ -> ()
         | None -> printfn "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds
       
@@ -863,8 +874,7 @@ module Engine =
         for cmd in configCmds do      
           match UciOption.parseSetOptionCommand cmd with
           | Some (name, value) ->
-              if UciOption.validateSetOption optionsMap (name, value) then                  
-                //dict.[name] <- value
+              if UciOption.validateSetOption optionsMap (name, value) then
                 match UciOption.getNoneDefaultSetOption optionsMap (name, value) with
                 | Some (name, def,value) -> nonDefaultValues.[name] <- (def,value)
                 | None -> ()

@@ -645,6 +645,14 @@ module TournamentUtils =
           sprintf " %s {%s}" numberMove chessMoveInfo.MinimalAnnotation
         else
           sprintf "%s {%s}" numberMove chessMoveInfo.MinimalAnnotation
+    
+  let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: ChessEngine) =
+    logger.LogDebug($"\nInitializing {player1.Name} ....")
+    for cmd in player1.InitCommands do
+        logger.LogDebug($"{cmd}")
+    logger.LogDebug($"\nInitializing {player2.Name} ....")
+    for cmd in player2.InitCommands do
+        logger.LogDebug($"{cmd}")
   
   let bestQMove (nodes:int) (engine: ChessEngine) fenWithMoves (tboard:Board inref) =     
     let qList = ResizeArray<float*string*EvalType>()    
@@ -778,6 +786,7 @@ module Match =
       else
         Initialization.initEngines 0 tourny player1 player2
   
+      logEngineInitCommands logger player1 player2
       Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
       callback (GameStarted player1.Name)
       let mutable lastCheck = 0L
@@ -1325,6 +1334,7 @@ module Match =
       let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
       Initialization.initEngines openingDelayMs tourny player1 player2
     
+    logEngineInitCommands logger player1 player2    
     Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
     callback (GameStarted player1.Name)
     let mutable lastCheck = 0L
@@ -1570,8 +1580,9 @@ module Match =
       let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
       Initialization.initEngines openingDelayMs tourny player1 player2
     else
-      Initialization.initEngines 0 tourny player1 player2
+      Initialization.initEngines 0 tourny player1 player2    
     
+    logEngineInitCommands logger player1 player2    
     Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
     callback (GameStarted player1.Name)
     let mutable lastCheck = 0L
@@ -1620,8 +1631,8 @@ module Match =
             playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
 
         let! line = playing.ReadLineAsync() |> Async.AwaitTask
-        if tourny.VerboseLogging then
-          logger.LogDebug line  
+        //if tourny.VerboseLogging then
+        //  logger.LogDebug line  
         if String.IsNullOrEmpty line then
           logger.LogDebug $"Empty line or null from {playing.Name}"
         elif line.StartsWith "info engine" then
@@ -1844,11 +1855,7 @@ module Match =
               let mutable cont = moreItems
               while cont do
                 let newline = playing.ReadLine()
-                if tourny.VerboseLogging then
-                  logger.LogDebug($"In info string loop: {playing.Name} {newline}")
                 if newline.StartsWith "bestmove" then
-                  if tourny.VerboseLogging then
-                    logger.LogInformation(board.FEN() + ": new bestmove: " + newline)                
                   cont <- false                 
                 if newline.StartsWith "info string node" then
                   cont <- false  
@@ -1869,7 +1876,7 @@ module Match =
                 moveInfoData.q2 <- q2
                 moveInfoData.p1 <- p1
                 moveInfoData.pt <- pt
-              |None -> logger.LogDebug "No move found in log live stats"                
+              |None -> ()
                 
               if list.Count > 0 then
                 callback (NNSeq list)
@@ -2011,10 +2018,11 @@ module Match =
       let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
       let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
       let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
-      Initialization.initEngines openingDelayMs tourny player1 player2
+      Initialization.initEngines openingDelayMs tourny player1 player2      
     else
-      Initialization.initEngines 0 tourny player1 player2
+      Initialization.initEngines 0 tourny player1 player2    
     
+    logEngineInitCommands logger player1 player2
     Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
     callback (GameStarted player1.Name)
     let mutable lastCheck = 0L
@@ -2064,8 +2072,8 @@ module Match =
             playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
 
         let! line = playing.ReadLineAsync() |> Async.AwaitTask 
-        if tourny.VerboseLogging then
-          logger.LogDebug line
+        //if tourny.VerboseLogging then
+        //  logger.LogDebug line
         if String.IsNullOrEmpty line then
           logger.LogDebug $"Empty line or null from {playing.Name}"
         elif line.StartsWith "info engine" then
@@ -2311,11 +2319,7 @@ module Match =
               let mutable cont = moreItems
               while cont do
                 let newline = playing.ReadLine()
-                if tourny.VerboseLogging then
-                  logger.LogDebug($"In info string loop: {playing.Name} {newline}")
                 if newline.StartsWith "bestmove" then
-                  if tourny.VerboseLogging then
-                    logger.LogInformation(board.FEN() + ": new bestmove: " + newline)                
                   cont <- false                 
                 if newline.StartsWith "info string node" then
                   cont <- false  
@@ -2332,7 +2336,7 @@ module Match =
                 moveInfoData.q2 <- q2
                 moveInfoData.p1 <- p1
                 moveInfoData.pt <- pt
-              |None -> () //logger.LogCritical "No move found in log live stats"                
+              |None -> ()
                 
               if list.Count > 0 then
                 callback (NNSeq list)
