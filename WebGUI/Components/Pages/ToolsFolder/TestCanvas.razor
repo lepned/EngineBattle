@@ -78,10 +78,10 @@
 
   private async Task OpenEPDFile(InputFileChangeEventArgs e)
   {
-    var pgnName = e.File.Name;
-    logger.LogInformation("PGN file opened {File}", pgnName);
+    var epdName = e.File.Name;
+    logger.LogInformation("EPD file opened {File}", epdName);
     var env = Environment.CurrentDirectory;
-    var fullPath = Path.Combine(env, pgnName);
+    var fullPath = Path.Combine(env, epdName);
     await using (FileStream fs = new(fullPath, FileMode.Create))
     {
       browserFile = e.File;

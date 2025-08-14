@@ -1334,6 +1334,7 @@
                 break;
             case ChessLibrary.Tournament.Match.Update.TotalNumberOfPairs games:
                 totalNumberOfPairs = games.PairingsNumber;
+                tournament.Rounds = totalNumberOfPairs;
                 break;
             case ChessLibrary.Tournament.Match.Update.RoundNr data:
                 roundNr = data.Round;

@@ -141,6 +141,21 @@ module TypesDef =
             Fen = ""
             Raw = "" }
 
+    type PgnEvaluationResult =
+        { Pgn: PgnGame
+          MaxEval: float
+          EvalDiff: float
+          MaxMove: string
+          MaxEngine: string
+          Summary: string }
+        static member Create(pgn: PgnGame, maxEval: float, evalDiff: float, maxMove: string, maxEngine: string, summary: string) =
+            { Pgn = pgn
+              MaxEval = maxEval
+              EvalDiff = evalDiff
+              MaxMove = maxMove
+              MaxEngine = maxEngine
+              Summary = summary }
+    
     type GameResult = 
       | WhiteWins
       | BlackWins
@@ -1714,6 +1729,20 @@ module TypesDef =
         static member Empty = { RawInput = ""; FEN = "" ; BestMove = None; AvoidMove = None; Id = None; Other = None }
         override this.ToString() = this.RawInput
 
+    type EpdEvaluationResult =
+        { EPD: EPDEntry
+          MaxEval: float
+          EvalDiff: float
+          MaxMove: string
+          MaxEngine: string
+          Summary: string }
+        static member Create(epd: EPDEntry, maxEval: float, evalDiff: float, maxMove: string, maxEngine: string, summary: string) =
+            { EPD = epd
+              MaxEval = maxEval
+              EvalDiff = evalDiff
+              MaxMove = maxMove
+              MaxEngine = maxEngine
+              Summary = summary }
 
     type TablebaseEPDEntry =
       { EPD: EPDEntry

@@ -71,7 +71,10 @@
 		if (firstRender)
 		{
 			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-			if (!string.IsNullOrEmpty(EPD.Other?.Value))
+
+			bool evalHeaderInUse = !string.IsNullOrEmpty(EPD.Other?.Value) && EPD.Other.Value.Contains("eval");
+			
+			if (!string.IsNullOrEmpty(EPD.Other?.Value) && !EPD.Other.Value.Contains("eval"))
 			{
 				var correctAndWrongMove = EPD.Other.Value.Split(",");				
 				var correct = correctAndWrongMove[0].Trim();
@@ -87,10 +90,10 @@
 				await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, EPD.FEN, false, null, null, null, null);
 			}
 
-			header = GetHeader(EPD);
-			if (string.IsNullOrEmpty(header))
+			header = evalHeaderInUse ? "" : GetHeader(EPD);
+			subHeader = evalHeaderInUse ? EPD.Other.Value : GetSubHeader(EPD);
+			if (string.IsNullOrEmpty(header) && string.IsNullOrEmpty(subHeader))
 				header = "Header not found";
-			subHeader = GetSubHeader(EPD);
 			StateHasChanged();
 		}
 	}

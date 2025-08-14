@@ -599,7 +599,7 @@ module PuzzleEngineAnalysis =
         for engine in engines do    
             engine.StartProcess()
         let filtered =
-            seq {
+            [
               for epd in epds do
                 let fen = epd.FEN
                 board.LoadFen fen
@@ -624,15 +624,29 @@ module PuzzleEngineAnalysis =
                     |Some maxEvalDiff -> maxEvalDiff
                     |None -> 10000
                 let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= min && eval <= max) && evalDiff < maxEvalDiff        
+                
+                let formatNodes n =
+                    if n >= 1000000 then
+                        sprintf "%.1fM" (float n / 1000000.0)
+                    elif n >= 1000 then
+                        sprintf "%.1fK" (float n / 1000.0)
+                    else
+                        sprintf "%d" n
                 if passes then
-                  let evalAndMoveSummary = evals |> Array.map(fun (eval,m,nodes, name) -> sprintf "%s eval: %.0f after %d nodes move: %s" name eval nodes m ) |> String.concat ", "
+                  let evalAndMoveSummary = 
+                    evals 
+                    |> Array.map(fun (eval,m,nodes, name) -> 
+                            let nodes = formatNodes nodes
+                            sprintf "%s eval: %.0f (%s nodes), %s" name eval nodes m ) 
+                    |> String.concat ", "
                   let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
-                  printfn "EPD with fen %s passed:\n %s" epd.FEN summary
-                  yield (epd, maxEval, maxMove, maxEng, summary)  }
+                  printfn "Position with fen %s passed:\n %s" epd.FEN summary
+                  let posEvaluation = TypesDef.EPD.EpdEvaluationResult.Create(epd, maxEval, evalDiff, maxMove, maxEng, summary) 
+                  yield posEvaluation  ]
         for engine in engines do
             engine.StopProcess()
         filtered
-        |> Seq.sortByDescending (fun (_,eval,_,_,_) -> abs eval) 
+        |> List.sortByDescending(fun p -> if engines.Length > 0 then abs p.EvalDiff else  abs p.MaxEval)        
         |> ResizeArray
     with 
     | ex -> 
@@ -649,7 +663,7 @@ module PuzzleEngineAnalysis =
             else 
                 if nodes.Count = 1 then Some 10000 else int maxEvalDiff |> Some
 
-        let min, max = 
+        let minEv, maxEv = 
             match minEvalScore, maxEvalScore with
             |Some min, Some max -> int min, int max
             |Some min, None -> int min, 1000
@@ -657,78 +671,65 @@ module PuzzleEngineAnalysis =
             |None, None -> 0, 1000
 
         let board = Board()
-        let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine e) |> Seq.toArray
-        
-        let cores = Environment.ProcessorCount - 1
-        let getThreads (engine:EngineConfig) =
-            let threadValue = 
-                if engine.Options.ContainsKey("Threads") then
-                    let value = engine.Options["Threads"]
-                    match value with
-                    | :? int as intVal -> intVal
-                    | :? string as strVal -> 
-                        match Int32.TryParse(strVal) with
-                        | true, num -> num
-                        | _ -> 1
-                    | :? JsonElement as je when je.ValueKind = JsonValueKind.Number ->
-                        je.GetInt32()                    
-                    | :? JsonElement as je when je.ValueKind = JsonValueKind.String ->
-                        let str = je.GetString()
-                        match System.Int32.TryParse str with
-                        | (true, num) -> num
-                        | _ -> 1
-                    | _ -> 1
-                else
-                    1
-            if threadValue > cores then cores else threadValue
-
-        let sumEngineThreads = engines |> Seq.sumBy(fun e -> getThreads e.Config)
-        let chunkSize = if sumEngineThreads > cores then 1 else engines.Length
+        let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine e) |> Seq.toArray        
+        let maxConcurrencyCpu = max 1 (HardwareInfo.assessMaxCpuConcurrencyLevel engines)
+        let chunkSize = min maxConcurrencyCpu (engines.Length)        
         for engine in engines do    
             engine.StartProcess()
         let filtered =
-            seq {
+            [
                 for pgn in pgns do
-                board.ResetBoardState()        
-                board.LoadFen pgn.Fen
-                let moves = Deviation.movesFromPgn pgn
-                for move in moves do
-                    board.PlaySimpleShortSan move
-                let fen = board.FEN()
-                //throttled parallelism of evaluation
-                let evals =
-                    engines
-                    |> Array.chunkBySize chunkSize
-                    |> Array.collect(fun chunk ->
-                        chunk |> Array.mapi(fun idx eng -> async {
-                        let! (eval, move) = bestMoveByEvalAsync nodes[idx] eng fen
-                        return (eval, move), nodes[idx], eng.Name
-                       }))
-                    |> Async.Parallel  // Run all async operations in parallel
-                    |> Async.RunSynchronously  // Wait for all to complete
-                    |> Array.map(fun ((eval, move), n, name) -> abs eval, move, n, name)
+                    board.ResetBoardState()        
+                    board.LoadFen pgn.Fen
+                    let moves = Deviation.movesFromPgn pgn
+                    for move in moves do
+                        board.PlaySimpleShortSan move
+                    let fen = board.FEN()
+                    //throttled parallelism of evaluation
+                    let evals =
+                        engines
+                        |> Array.chunkBySize chunkSize
+                        |> Array.collect(fun chunk ->
+                            chunk |> Array.mapi(fun idx eng -> async {
+                            let! (eval, move) = bestMoveByEvalAsync nodes[idx] eng fen
+                            return (eval, move), nodes[idx], eng.Name
+                           }))
+                        |> Async.Parallel  // Run all async operations in parallel
+                        |> Async.RunSynchronously  // Wait for all to complete
+                        |> Array.map(fun ((eval, move), n, name) -> abs eval, move, n, name)
               
-                let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
-                let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min               
-                let evalDiff = maxEval - minEval    
-                //make sure all evals are within the range
-                let maxEvalDiff = 
-                    match maxEvalDiff with
-                    |Some maxEvalDiff -> maxEvalDiff
-                    |None -> 10000
-                let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= min && eval <= max) && evalDiff < maxEvalDiff              
-                if passes then
-                    let evalAndMoveSummary = 
-                        evals 
-                        |> Array.map(fun (eval,m,nodes, name) -> sprintf "%s eval: %.0f after %d nodes move: %s" name eval nodes m ) 
-                        |> String.concat ", "
-                    let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
-                    printfn "EPD with fen %s passed:\n %s" fen summary
-                    yield (pgn, maxEval, maxMove,maxEng, summary)  }
+                    let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
+                    let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min               
+                    let evalDiff = maxEval - minEval    
+                    //make sure all evals are within the range
+                    let maxEvalDiff = 
+                        match maxEvalDiff with
+                        |Some maxEvalDiff -> maxEvalDiff
+                        |None -> 10000
+                    let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= minEv && eval <= maxEv) && evalDiff < maxEvalDiff              
+                    //format number of nodes for all numbers like millions, billions etc.
+                    let formatNodes n =
+                        if n >= 1000000 then
+                            sprintf "%.1fM" (float n / 1000000.0)
+                        elif n >= 1000 then
+                            sprintf "%.1fK" (float n / 1000.0)
+                        else
+                            sprintf "%d" n
+                    if passes then
+                        let evalAndMoveSummary = 
+                            evals 
+                            |> Array.map(fun (eval,m,nodes, name) -> 
+                                let nodes = formatNodes nodes
+                                sprintf "%s eval: %.0f (%s), %s" name eval nodes m ) 
+                            |> String.concat ", "
+                        let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
+                        printfn "Position with fen %s passed:\n %s" fen summary
+                        let posEvaluation = TypesDef.PGNTypes.PgnEvaluationResult.Create(pgn, maxEval,evalDiff, maxMove, maxEng, summary)
+                        yield posEvaluation ]
         for engine in engines do
             engine.StopProcess()
         filtered     
-        |> Seq.sortByDescending (fun (_,eval,_,_,_) -> eval) 
+        |> List.sortByDescending (fun p -> if engines.Length > 0 then abs p.EvalDiff else  abs p.MaxEval) 
         |> ResizeArray
     with 
         | ex -> 
