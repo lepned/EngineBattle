@@ -574,6 +574,42 @@ module PuzzleEngineAnalysis =
     let move = infoString.Split().[1]    
     move
 
+  let onlyUniqueOpenings (pgns:seq<TypesDef.PGNTypes.PgnGame>) =
+        let processedGames = ResizeArray<TypesDef.PGNTypes.PgnGame>()
+        let board = Board()
+        let hashSet = HashSet<uint64>()
+
+        for pgn in pgns do
+          try
+            board.ResetBoardState()
+            if String.IsNullOrWhiteSpace pgn.Fen |> not then              
+               board.LoadFen pgn.Fen
+            for move in pgn.Moves do
+              if String.IsNullOrWhiteSpace move.WhiteSan |> not then
+                // Play the white move on the board
+                board.PlaySimpleShortSan move.WhiteSan
+              if String.IsNullOrWhiteSpace move.BlackSan |> not then
+                // Play the black move on the board
+                board.PlaySimpleShortSan move.BlackSan
+
+            let hash = board.DeviationHash()
+            if hashSet.Add hash then
+              processedGames.Add pgn
+            else
+              printfn "Transposed game found with hash %A, skipping..." hash
+          with ex ->
+            // Skip this PGN but continue processing others
+            printfn "Error processing PGN in removeTransposedOpenings: %s" ex.Message
+        
+        //report how many games with transpositions were removed
+        let removedCount = (pgns |> Seq.length) - processedGames.Count
+        if removedCount > 0 then
+            printfn "Removed %d transposed games." removedCount
+        else
+            printfn "No transposed games found."
+        processedGames
+  
+  
   let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList : ResizeArray<EngineConfig>) (epds:ResizeArray<EPDEntry>) (minEvalScore: string) (maxEvalScore : string) (maxEvalDiff : string) =
     try
         let minEvalScore = if String.IsNullOrWhiteSpace(minEvalScore) then None else Some minEvalScore
@@ -588,7 +624,7 @@ module PuzzleEngineAnalysis =
         let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine e) |> Seq.toArray
         let maxConcurrencyCpu = max 1 (HardwareInfo.assessMaxCpuConcurrencyLevel engines)
         let chunkSize = min maxConcurrencyCpu (engines.Length)
-
+        
         let min, max = 
             match minEvalScore, maxEvalScore with
             |Some min, Some max -> int min, int max
@@ -646,7 +682,7 @@ module PuzzleEngineAnalysis =
         for engine in engines do
             engine.StopProcess()
         filtered
-        |> List.sortByDescending(fun p -> if engines.Length > 0 then abs p.EvalDiff else  abs p.MaxEval)        
+        |> List.sortByDescending(fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)        
         |> ResizeArray
     with 
     | ex -> 
@@ -673,12 +709,13 @@ module PuzzleEngineAnalysis =
         let board = Board()
         let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine e) |> Seq.toArray        
         let maxConcurrencyCpu = max 1 (HardwareInfo.assessMaxCpuConcurrencyLevel engines)
-        let chunkSize = min maxConcurrencyCpu (engines.Length)        
+        let chunkSize = min maxConcurrencyCpu (engines.Length)
+        let openings = onlyUniqueOpenings pgns
         for engine in engines do    
             engine.StartProcess()
         let filtered =
             [
-                for pgn in pgns do
+                for pgn in openings do
                     board.ResetBoardState()        
                     board.LoadFen pgn.Fen
                     let moves = Deviation.movesFromPgn pgn
@@ -729,7 +766,7 @@ module PuzzleEngineAnalysis =
         for engine in engines do
             engine.StopProcess()
         filtered     
-        |> List.sortByDescending (fun p -> if engines.Length > 0 then abs p.EvalDiff else  abs p.MaxEval) 
+        |> List.sortByDescending (fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval) 
         |> ResizeArray
     with 
         | ex -> 

@@ -831,13 +831,18 @@ module PGNWriter =
       writer.WriteLine()
       let mutable ply = 1
       
-      for m in g.Moves do        
-        writer.Write(sprintf "%d.%s " ply m.WhiteSan)
-        ply <- ply + 1        
-        writer.Write(sprintf "%s " m.BlackSan)            
-      
       // Write SAN moves as pairs of white-black moves separated by spaces     
-      writer.Write("*")
+      for m in g.Moves do
+        writer.Write(sprintf "%d.%s " ply m.WhiteSan)
+        ply <- ply + 1
+        if String.IsNullOrWhiteSpace m.BlackSan |> not then
+            writer.Write(sprintf "%s " m.BlackSan)            
+      
+      if String.IsNullOrWhiteSpace g.GameMetaData.Result |> not then
+        writer.WriteLine(g.GameMetaData.Result.Trim())
+      else
+        // If no result is specified, write an asterisk
+        writer.Write("*")
       writer.WriteLine(Environment.NewLine)    
   
     writer.Close()
@@ -866,82 +871,164 @@ module PGNWriter =
         
       writer.Close()
 
-  /// Writes an opening PGN file.
-  /// <param name="pgnGames">The sequence of PGN games.</param>
-  /// <param name="filename">The filename.</param>
-  let writeOpeningPgnFile (pgnGames: PgnGame seq) (filename: string) =      
+  /// Extracts all opening moves from a PGN game by collecting moves up until the last book tag
+  /// Returns a list of SAN move strings
+  let getOpeningMovesFromPgn (pgnGame: PgnGame) : string list =
+    // Determine if a comment indicates a book move
+    let isBookComment (comment: string) = 
+        not (String.IsNullOrEmpty(comment)) && 
+        (comment.Contains("book", StringComparison.OrdinalIgnoreCase) || 
+            comment.Contains("Book exit", StringComparison.OrdinalIgnoreCase))
+    
+    // Find the last move with a book tag and whether it's a white or black move
+    let mutable lastMoveIdxWithBookTag = -1
+    let mutable lastBookTagIsWhite = false
+    
+    for i = 0 to pgnGame.Moves.Count - 1 do
+        let move = pgnGame.Moves.[i]
+        
+        if isBookComment move.WhiteComment then
+            lastMoveIdxWithBookTag <- i
+            lastBookTagIsWhite <- true
+        
+        if isBookComment move.BlackComment then
+            lastMoveIdxWithBookTag <- i
+            lastBookTagIsWhite <- false
+    
+    // If no book tags found, return empty list
+    if lastMoveIdxWithBookTag = -1 then
+        []
+    else
+        // Extract all SAN moves up to and including the last book tag
+        let openingMoves = ResizeArray<string>()
+        for i = 0 to lastMoveIdxWithBookTag do
+            let move = pgnGame.Moves.[i]
+            
+            // Add the white move if present
+            if not (String.IsNullOrWhiteSpace move.WhiteSan) then                    
+                openingMoves.Add(move.WhiteSan)
+            
+            // Add the black move if present
+            if not (String.IsNullOrWhiteSpace move.BlackSan) then
+                // Only add the black move at the last index if it has a book tag
+                if i < lastMoveIdxWithBookTag || not lastBookTagIsWhite then
+                    openingMoves.Add(move.BlackSan)
+        
+        openingMoves |> List.ofSeq
+
+
+
+  let writeNewOpeningBookBasedOnOlder (pgnGames: PgnGame seq) (filename: string) =
       if File.Exists(filename) |> not then
         //create file
         use stream = File.Create(filename)
         printfn "Created pgn-file at this location: %s" filename
         
       // Create a new text file using StreamWriter    
-      use writer = new StreamWriter(filename, append=true)
-      let mutable openingMoves = List.empty<string>      
-      let mutable lastRound = 0
+      use writer = new StreamWriter(filename, append=true)      
+      let totalGames = Seq.length pgnGames
       let mutable counter = 0
-      let mutable lastFenOpening = ""
-      for g in pgnGames do
-        let currentOpening = PGNHelper.getOpeningInfo g 
-        let sanMoves = 
-          let moves = g.Moves |> Seq.takeWhile (fun m -> m.WhiteComment.Contains "book" || m.BlackComment.Contains "book") |> Seq.toList
-          if moves.Length = 0 then
-            //take while white or black comment is empty
-            g.Moves |> Seq.takeWhile (fun m -> m.WhiteComment = "" || m.BlackComment = "") |> Seq.toList
-          else
-            moves
-        let onlyBookMoves = 
-          [
-            for m in sanMoves do
-              if m.WhiteComment.Contains "book" then
-                yield m.WhiteSan
-              elif String.IsNullOrEmpty m.WhiteComment then
-                yield m.WhiteSan
-              if m.BlackComment.Contains "book" then
-                yield m.BlackSan
-              elif String.IsNullOrEmpty m.BlackComment then
-                yield m.BlackSan
-          ]
-        let newOpening = 
-          if currentOpening.StartsWith "No opening name" then
-            match g.GameMetaData.Round.Split '.' |> Seq.tryHead with
-            | Some round -> 
-              if (int round)  <> lastRound then
-                lastRound <- (int round)
-                true
-              else 
-                false
-            | None -> 
-                let sameOpening =
-                    //compare openingMoves with onlyBookMoves here                
-                  if onlyBookMoves.Length > 0 && openingMoves.Length = onlyBookMoves.Length && openingMoves |> Seq.forall2 (=) onlyBookMoves then
-                    true
-                  //compare fen in case of epd opening names that only consists of FEN 
-                  elif g.GameMetaData.Fen <> String.Empty && g.GameMetaData.Fen = lastFenOpening then                
-                    true                
-                  else
-                    lastFenOpening <- g.GameMetaData.Fen
-                    false
-                not sameOpening
-          else
-            let sameOpening =
-              if onlyBookMoves.Length > 0 && openingMoves.Length = onlyBookMoves.Length && openingMoves |> Seq.forall2 (=) onlyBookMoves then
-                 true
-              //compare fen in case of epd opening names that only consists of FEN
-              elif g.GameMetaData.Fen <> String.Empty && g.GameMetaData.Fen = lastFenOpening then                
-                 true                
-              else
-                 lastFenOpening <- g.GameMetaData.Fen
-                 false
-            //printfn "Same opening: %b for current opening: %s" sameOpening currentOpening
-            not sameOpening
-            
-        openingMoves <- onlyBookMoves
-        if newOpening then
+      
+      for g in pgnGames do        
           counter <- counter + 1
           let roundNr = $"{counter}.1"
           writer.WriteLine(sprintf "[Event \"%s\"]" g.GameMetaData.Event)
           writer.WriteLine(sprintf "[Round \"%s\"]" roundNr)
+          if String.IsNullOrWhiteSpace g.GameMetaData.Fen |> not  then
+            writer.WriteLine(sprintf "[FEN \"%s\"]" g.GameMetaData.Fen)
+          let opening = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.ToLower().Contains "opening" )
+          let variation = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.ToLower().Contains "variation" )
+          let eco = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.Contains "ECO" )
+          match opening,variation, eco with
+          |Some h,Some v, Some eco -> 
+            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
+            writer.WriteLine(sprintf "[Variation \"%s\"]" v.Value )
+            writer.WriteLine(sprintf "[ECO \"%s\"]" eco.Value )
+          |Some h,Some v, _ -> 
+            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
+            writer.WriteLine(sprintf "[Variation \"%s\"]" v.Value )
+          |Some h,_ , Some eco -> 
+            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
+            writer.WriteLine(sprintf "[ECO \"%s\"]" eco.Value )  
+          |Some h, _, _ -> 
+            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
+          |_, _, Some eco -> 
+            writer.WriteLine(sprintf "[ECO \"%s\"]" eco.Value )
+          |_ -> ()
+          match g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.Contains "MaxEval" ) with
+            |Some e -> 
+                writer.WriteLine(sprintf "[MaxEval \"%s\"]" e.Value )
+            |_ -> ()          
+           
+           // Write an empty line after tags
+          writer.WriteLine()
+          let mutable moveNumber = 1
+          for m in g.Moves do
+              let hasWhiteMove = String.IsNullOrWhiteSpace m.WhiteSan |> not
+              if hasWhiteMove then
+                writer.Write(sprintf "%d.%s " moveNumber m.WhiteSan)
+              if String.IsNullOrWhiteSpace m.BlackSan |> not then
+                  if hasWhiteMove then
+                    writer.Write(sprintf "%s " m.BlackSan)
+                  else
+                    writer.Write(sprintf "%d...%s " moveNumber m.BlackSan)
+              moveNumber <- moveNumber + 1
+            
+          writer.Write("*")
+          writer.WriteLine(Environment.NewLine)    
+        
+      writer.Close()
+
+  /// Writes an opening PGN file.
+  /// <param name="pgnGames">The sequence of PGN games.</param>
+  /// <param name="filename">The filename.</param>
+  let writeOpeningPgnFile (pgnGames: PgnGame seq) (filename: string) =
+      if File.Exists(filename) |> not then
+        //create file
+        use stream = File.Create(filename)
+        printfn "Created pgn-file at this location: %s" filename
+        
+      // Create a new text file using StreamWriter    
+      use writer = new StreamWriter(filename, append=true)      
+      let totalGames = Seq.length pgnGames
+      let games = 
+        pgnGames 
+        |> Seq.filter (fun g -> g.GameMetaData.Event.ToLower().Contains "testing" |> not) 
+        //|> Seq.filter (fun g -> g.GameMetaData.Moves = 0) // Filter out games with no moves
+      let totalFilteredGames = Seq.length games
+      let difference = totalGames - totalFilteredGames
+      if difference > 0 then
+         printfn "Filtered out %d testing games from %d total games." difference totalGames
+
+      // Use HashSet to track unique openings - by moves and by FEN
+      let uniqueMoveSequences = System.Collections.Generic.HashSet<string>()
+      let uniqueFens = System.Collections.Generic.HashSet<string>()
+      let mutable counter = 0
+      
+      for g in games do
+        //let currentOpening = PGNHelper.getOpeningInfo g
+        let onlyBookMoves = getOpeningMovesFromPgn g        
+        // Create a key representing this opening
+        let moveSequenceKey = String.Join("|", onlyBookMoves)
+        
+        // Check if this opening is unique by moves or by FEN
+        let isUniqueByMoves = onlyBookMoves.Length > 0 && not (uniqueMoveSequences.Contains(moveSequenceKey))
+        let isUniqueByFen = not (String.IsNullOrEmpty g.GameMetaData.Fen) && not (uniqueFens.Contains(g.GameMetaData.Fen))
+        let isNewOpening = isUniqueByMoves || isUniqueByFen
+        if isNewOpening then
+            // Add to our tracking collections
+          if onlyBookMoves.Length > 0 then
+                uniqueMoveSequences.Add(moveSequenceKey) |> ignore
+                
+          if not (String.IsNullOrEmpty g.GameMetaData.Fen) then
+                uniqueFens.Add(g.GameMetaData.Fen) |> ignore
+                
+          counter <- counter + 1
+          let roundNr = $"{counter}.1"
+          writer.WriteLine(sprintf "[Event \"%s\"]" g.GameMetaData.Event)
+          writer.WriteLine(sprintf "[Round \"%s\"]" roundNr)
+          if String.IsNullOrWhiteSpace g.GameMetaData.Fen |> not  then
+            writer.WriteLine(sprintf "[FEN \"%s\"]" g.GameMetaData.Fen)
           let opening = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.ToLower().Contains "opening" )
           let variation = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.ToLower().Contains "variation" )
           let eco = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.Contains "ECO" )
@@ -964,12 +1051,14 @@ module PGNWriter =
            // Write an empty line after tags     
           writer.WriteLine()
           let mutable ply = 1
-          for m in sanMoves do
-            //if m.WhiteComment.Contains "book" then
-              writer.Write(sprintf "%d.%s " ply m.WhiteSan)
+          for m in onlyBookMoves do
+              if ply % 2 = 1 then
+                let moveNumber = (ply + 1) / 2
+                // Write white move with pair number
+                writer.Write(sprintf "%d.%s " moveNumber m)
+              else
+                  writer.Write(sprintf "%s " m)
               ply <- ply + 1
-            //if m.BlackComment.Contains "book" then
-              writer.Write(sprintf "%s " m.BlackSan)
             
            // Write SAN moves as pairs of white-black moves separated by spaces     
           writer.Write("*")
@@ -1410,7 +1499,7 @@ module MoveParser =
   let mutable currentHeader = { Key = ""; Value = "" }
   let mutable gameMetadata = { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; OtherTags = [] }
   let mutable move = { MoveNr = ""; WhiteSan = ""; WhiteComment = ""; BlackSan = ""; BlackComment = "" }
-  let mutable parsedCommentEndTag = true
+  let mutable parsedCommentEndTag = true  
   let moves = ResizeArray<Move>()
   let headers = ResizeArray<Header>()
   let resultPattern = "1-0/2"
@@ -1516,7 +1605,7 @@ module MoveParser =
       let whiteMove = move.WhiteSan <> "" && move.BlackSan = ""
       if whiteMove then
           move.WhiteComment <- comment
-      else
+      else if move.BlackSan <> "" then                  
           move.BlackComment <- comment
       if Peek() <> '}' then
         parsedCommentEndTag <- false        
@@ -1564,7 +1653,7 @@ module MoveParser =
       
       let digits = parseDigits() // Parse and store the digits
       skipWhiteSpace() // Skip any white space after the digits 
-      if position < input.Length && Peek() = '.' then        
+      if position < input.Length && Peek() = '.' then                
         if move.WhiteSan <> "" then
           while Peek() = '.' do
             expect '.' |> ignore // Expect and consume "."            
