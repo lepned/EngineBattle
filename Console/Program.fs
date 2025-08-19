@@ -508,8 +508,8 @@ module Program =
         args.Cancel <- false  // CHANGED: Allow the application to terminate
         exitEvent.Set() |> ignore
         Environment.Exit(0)  // Force exit
-    )
-
+    )    
+    
     /// Define the MailboxProcessor for handling updates asynchronously
     let createUpdateProcessor (verbose:bool) =
         MailboxProcessor.Start(fun inbox ->
@@ -538,14 +538,14 @@ module Program =
                             printfn "\tPlayer %s with Nodes: %d" engineStatus.PlayerName engineStatus.Nodes
                     | Time (player, time) -> 
                         if verbose then
-                            printfn "\ttPlayer %s with time left %A" player time
+                            printfn "\tPlayer %s with time left %A" player time
                     | NNSeq nnSeq -> 
                         if verbose then
                             printfn "NNSeq: %A" nnSeq
                     | StartOfGame startGameInfo -> printfn "%s" (startGameInfo.ToString())
                     | EndOfTournament info -> printfn "End Of Tournament:\n%s" (info.Summary())
                     | StartOfTournament info ->
-                        printfn "Start of tournament:\nNumber of games to play: %d \nSummary:\n%s\n" info.NumberOfGames (info.Tournament.Value.MinSummary())
+                        printfn "\nStart of tournament:\nNumber of games to play: %d \nSummary:\n%s\n" info.NumberOfGames (info.Tournament.Value.MinSummary())
                     | MessagesFromEngine (player, message) -> 
                         if verbose then
                             printfn "MessagesFromEngine: Player - %s, Message - %s" player message
@@ -553,7 +553,10 @@ module Program =
                         let openings = PairingHelper.getAllOpeningPairs (pairings |> Seq.toList)
                         //if verbose then 
                         printfn "%s" openings
-                    | PeriodicResults results -> printfn "Partial update after round %A" (results |> Seq.head)
+                    | PeriodicResults results ->
+                        match results |> Seq.tryHead with
+                        | Some _ -> printfn "Partial update after game %d" results.Count
+                        | None -> printfn "Partial update after game (no games played yet)"                    
                     | GameSummary summary -> printfn "\nTournament Summary: \n%s" summary
                     | TotalNumberOfPairs totalPairs -> 
                         if verbose then
@@ -595,17 +598,22 @@ module Program =
 
     let runner = Manager.Runner(logger, printUpdate, false, true)
     runner.AddTournament tourny
-    let start = Stopwatch.GetTimestamp()   
+    let start = Stopwatch.GetTimestamp()
+    let formatHms (ts: TimeSpan) = 
+        let hours = int ts.TotalHours 
+        let minutes = ts.Minutes 
+        let seconds = ts.Seconds 
+        sprintf "%dh %dm %ds" hours minutes seconds
 
     try
         let results = runner.Run()
         let endTime = Stopwatch.GetElapsedTime start
-        Console.WriteLine $"Tournament run done! - duration timespan: {endTime}"
-        if File.Exists tourny.PgnOutPath then
-            let results = runner.GetResults()
-            let scoreTable = runner.GetPlayerResults(results)
-            let table = runner.GenerateStatsCrosstable(results)
-            let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table            
+        let gamesPlayed = results |> Seq.length
+        let msg = $"Tournament completed - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallelConsoleOnly}"
+        Console.WriteLine msg
+        logger.LogInformation(msg)
+        if File.Exists tourny.PgnOutPath then            
+            let consoleRes, _, _ = PGNCalculator.getEngineDataResults (runner.GetPGNGames())            
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
         else
@@ -614,8 +622,7 @@ module Program =
             let table = runner.GenerateStatsCrosstable(results)
             let consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat scoreTable table
             Console.WriteLine consoleRes
-            logger.LogInformation(consoleRes)
-        printfn "Time: %A" endTime
+            logger.LogInformation(consoleRes)        
         
     with
     |ex -> printfn "Caught an exception: %s" ex.Message
@@ -696,7 +703,7 @@ module Program =
         | [] -> 
             printfn "No arguments provided to console app"
         | _ -> 
-            printfn "Arguments provided to console app: %A" cliArgs
+            printfn "\nArguments provided to console app: %A" cliArgs
             for arg in cliArgs do
                 match arg with
                 | Verb (Perft (depth, sampleSize)) ->

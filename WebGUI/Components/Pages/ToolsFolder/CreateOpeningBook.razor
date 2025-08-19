@@ -178,12 +178,9 @@
 
 		string outPutDir = $"{chess960Path}/BookEvals";
 		var filePath = Path.Combine(outPutDir, $"BookEval_{epdName}_{concatenatedString}.epd");
-		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
-		var evalSw = System.Diagnostics.Stopwatch.StartNew();
+		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");		
 		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(nodeList, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff);
-		evalSw.Stop();
-		var evalRate = positions.Count > 0 ? (positions.Count / System.Math.Max(1e-6, evalSw.Elapsed.TotalSeconds)) : 0.0;
-		logger.LogInformation($"Evaluation completed in {evalSw.Elapsed}. Rate: {evalRate:F2} games/s");
+		
 		if (!Directory.Exists(outPutDir))
 		{
 			Directory.CreateDirectory(outPutDir);
@@ -206,6 +203,8 @@
 
 		logger.LogInformation($"Done sorting openings based on {nodes} node(s) Eval with use of {concatenatedString}.");
 		logger.LogInformation($"Evaluated opening book {epdName}: {positionEvalsWithMoves.Count} openings passed evaluation out of {positions.Count} analyzed. Output written to {filePath}");
+		totalSw.Stop();
+		logger.LogInformation($"Total time: {FormatHms(totalSw.Elapsed)}.");
 	}
 
 	private void WriteEvaluatedPgnOpenings(string pgnName, List<PGNTypes.PgnGame> games)
@@ -255,13 +254,8 @@
 		string outPutDir = $"{chess960Path}/BookEvals";
 		var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.pgn");
 		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
-
-		var evalSw = System.Diagnostics.Stopwatch.StartNew();
-		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);
-		evalSw.Stop();
-		var evalRate = games.Count > 0 ? (games.Count / System.Math.Max(1e-6, evalSw.Elapsed.TotalSeconds)) : 0.0;
-		logger.LogInformation($"Evaluation completed in {evalSw.Elapsed}. Rate: {evalRate:F2} games/s");
-
+		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);		
+		
 		if (!Directory.Exists(outPutDir))
 		{
 			Directory.CreateDirectory(outPutDir);
@@ -274,7 +268,7 @@
 			{
 				foreach (var pgn in positionEvalsWithMoves)
 				{
-					logger.LogInformation($"Game nr: {pgn.Pgn.GameNumber} eval: {pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}");
+					//logger.LogInformation($"Game nr: {pgn.Pgn.GameNumber} eval: {pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}");
 					var eval = $"[MaxEval \"{pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}\"]";
 					var raw = pgn.Pgn.Raw.TrimStart(new char[] { ' ', '\r', '\n' });
 					raw = raw.TrimEnd(new char[] { ' ', '\r', '\n' });
@@ -302,7 +296,15 @@
 		logger.LogInformation($"Evaluated opening book {pgnName}: {positionEvalsWithMoves.Count} openings passed evaluation out of {games.Count} analyzed. Output written to {filePath}");
 
 		totalSw.Stop();
-		logger.LogInformation($"Total time: {totalSw.Elapsed}.");
+		logger.LogInformation($"Total time: {FormatHms(totalSw.Elapsed)}.");
+	}
+
+	public string FormatHms(TimeSpan ts)
+	{
+		int hours = (int)ts.TotalHours;
+		int minutes = ts.Minutes;
+		int seconds = ts.Seconds;
+		return $"{hours}h {minutes}m {seconds}s";
 	}
 
 	private void GenerateDoubleChess960Positions()

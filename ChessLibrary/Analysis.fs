@@ -636,7 +636,7 @@ module PuzzleEngineAnalysis =
             engine.StartProcess()
         let filtered =
             [
-              for epd in epds do
+              for id, epd in epds |> Seq.indexed do
                 let fen = epd.FEN
                 board.LoadFen fen
                 let evals =
@@ -676,7 +676,7 @@ module PuzzleEngineAnalysis =
                             sprintf "%s eval: %.0f (%s nodes), %s" name eval nodes m ) 
                     |> String.concat ", "
                   let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
-                  printfn "Position with fen %s passed:\n %s" epd.FEN summary
+                  printfn "Position %d with fen %s passed:\n %s" (id + 1) epd.FEN summary
                   let posEvaluation = TypesDef.EPD.EpdEvaluationResult.Create(epd, maxEval, evalDiff, maxMove, maxEng, summary) 
                   yield posEvaluation  ]
         for engine in engines do
@@ -715,7 +715,7 @@ module PuzzleEngineAnalysis =
             engine.StartProcess()
         let filtered =
             [
-                for pgn in openings do
+                for pgnIdx, pgn in openings |> Seq.indexed do
                     board.ResetBoardState()        
                     board.LoadFen pgn.Fen
                     let moves = Deviation.movesFromPgn pgn
@@ -760,7 +760,7 @@ module PuzzleEngineAnalysis =
                                 sprintf "%s eval: %.0f (%s), %s" name eval nodes m ) 
                             |> String.concat ", "
                         let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
-                        printfn "Position with fen %s passed:\n %s" fen summary
+                        printfn "Position %d with fen %s passed:\n %s" (pgnIdx + 1) fen summary
                         let posEvaluation = TypesDef.PGNTypes.PgnEvaluationResult.Create(pgn, maxEval,evalDiff, maxMove, maxEng, summary)
                         yield posEvaluation ]
         for engine in engines do
