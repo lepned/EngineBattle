@@ -5,7 +5,7 @@
   "CPU": "i9-13900K CPU 32 Threads",
   "RAM": "32 Gb RAM",
   "GPU": "1x RTX 3080",
-  "LogoFileName": "MainLogoEB.png",
+  "MainLogoFileName": "MainLogoEB.png",
   "VerboseLogging": false,
   "VerboseMoveAnnotation": false,
   "MinMoveTimeInMS": 400,

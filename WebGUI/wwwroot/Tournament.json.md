@@ -12,7 +12,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **CPU**: The CPU specifications.
 - **RAM**: The amount of RAM available.
 - **GPU**: The GPU specifications.
-- **LogoFileName**: The filename of the tournament logo.
+- **MainLogoFileName**: The filename of the tournament logo.
 - **VerboseLogging**: Enable or disable verbose logging.
 - **VerboseMoveAnnotation**: Enable or disable detailed move annotations in the output (such as extra engine analysis for each move).
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
@@ -115,7 +115,7 @@ This document provides an overview of the `tournament.json` configuration file u
   "CPU": "i9-13900K CPU 32 Threads",
   "RAM": "32 Gb RAM",
   "GPU": "1x RTX 3080",
-  "LogoFileName": "MainLogoEB.png",
+  "MainLogoFileName": "MainLogoEB.png",
   "VerboseLogging": false,
   "VerboseMoveAnnotation": false,
   "MinMoveTimeInMS": 400,
