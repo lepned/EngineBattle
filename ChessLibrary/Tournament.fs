@@ -492,7 +492,7 @@ module Adjudication =
                 |"Win" -> if board.Position.STM = 0uy then "1-0" else "0-1"
                 |"Draw" -> "1/2-1/2"
                 |"Loss" -> if board.Position.STM = 0uy then "0-1" else "1-0"
-                |_ -> "Tablebase result not found"
+                |_ -> "*" //"Tablebase result not found"
               //let stm = if board.Position.STM = 0uy then "white to move" else "black to move"
               //let dtz = match tb.Dtz with |Some d -> d |_ -> "DTZ not found"
               //printfn "Tablebase result: %s: %s %s - DTZ: %s W:%s, D:%s, L:%s" stm w res dtz (String.concat ", " tb.WinningMoves) (String.concat ", " tb.DrawingMoves) (String.concat ", " tb.LosingMoves)
@@ -712,6 +712,66 @@ module Match =
     | RoundNr of Round: string
     | PeriodicResults of results: ResizeArray<Result>
     | GameSummary of summary: string      
+  
+  // NEW: prefer app shutdown/cancellation over “engine disconnected”
+  let private isAppShuttingDown (cts: CancellationTokenSource) =
+    cts.IsCancellationRequested
+    || Environment.HasShutdownStarted
+    || AppDomain.CurrentDomain.IsFinalizingForUnload()
+  
+    // Centralized logging + crash result builder for unexpected exceptions during a game
+  let private handleGameException
+      (logger: ILogger)
+      (ex: exn)
+      (cts: CancellationTokenSource)
+      (gametimer: int64)
+      (board: Board)
+      (engine1: ChessEngine)
+      (engine2: ChessEngine)
+      (pair: Pairing) : Result =
+    System.Threading.Thread.Sleep(1000) // small grace period to let processes settle
+    let white, black = pair.White.Name, pair.Black.Name
+    let shutdown = isAppShuttingDown cts
+    let e1Exited = engine1.HasExited()
+    let e2Exited = engine2.HasExited()
+
+    match shutdown, e1Exited, e2Exited with
+    | true, _, _ ->
+        logger.LogInformation(ex, "Shutdown/cancellation during game {White} vs {Black}", white, black)
+    | _, true, true ->
+        logger.LogInformation(ex, "Shutdown/cancellation during game {White} vs {Black}", white, black)
+    | _, true, _ ->
+        logger.LogCritical(ex, "Engine {Engine} exited/crashed during game {White} vs {Black}", engine1.Name, white, black)
+    | _, _, true ->
+        logger.LogCritical(ex, "Engine {Engine} exited/crashed during game {White} vs {Black}", engine2.Name, white, black)
+    | _ ->
+        logger.LogCritical(ex, "Exception during game {White} vs {Black} (engines still running)", white, black)
+
+    let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+    let moves = board.ShortSANMovesPlayed
+
+    let cancel () = createResult white black moves "1/2-1/2" ResultReason.Cancel dur
+    let disconnected name res = createResult white black moves res (ResultReason.Disconnected name) dur
+
+    if shutdown || (e1Exited && e2Exited) then
+      cancel ()
+    elif e1Exited then
+      disconnected engine1.Name "0-1"
+    elif e2Exited then
+      disconnected engine2.Name "1-0"
+    else
+      cancel ()  
+  
+  // cancel-aware read: returns "" if cancelled
+  let readLineCancelAware (eng: ChessEngine) (cts: CancellationTokenSource) = async {
+      let readTask = eng.ReadLineAsync()
+      let cancelTask = Task.Delay(Timeout.Infinite, cts.Token)
+      let! completed = Task.WhenAny(readTask :> Task, cancelTask) |> Async.AwaitTask
+      if obj.ReferenceEquals(completed, (readTask :> Task)) then
+        return! readTask |> Async.AwaitTask
+      else
+        return ""
+    }
   
   let playWithPondering
       (sb : StringBuilder)
@@ -1043,20 +1103,27 @@ module Match =
           //let! line2 = opponent.ReadLineAsync() |> Async.AwaitTask
           //processOpponentsInfoLine line2 opponent.Name
           //printfn "%s" line
-          if playing.HasExited() then
-            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-            let res = createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur
-            callback(EndOfGame res)
-            logger.LogInformation($"Player has exited {playing.Name}")
-            return res
-        
-          elif cts.IsCancellationRequested then
+          
+          if isAppShuttingDown cts then
             let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
             let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
             callback(EndOfGame res)
-            logger.LogInformation($"Cancel requested when engine ready to play: {playing.Name}")
+            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
             return res
+          elif playing.HasExited() then
+            do! Async.Sleep 1000
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res, msg =
+                if opponent.HasExited() then
+                    createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur,
+                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
+                else
+                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
+                    createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
+                    $"Player has exited {playing.Name}"
+            callback(EndOfGame res)
+            logger.LogInformation msg
+            return res                 
       
           elif String.IsNullOrEmpty line then
             logger.LogDebug $"Empty line from {playing.Name}, continuing..."
@@ -1379,21 +1446,27 @@ module Match =
         elif line.StartsWith "info engine" then
           Update.MessagesFromEngine ("Ceres", line) |> callback
           logger.LogInformation line
-        if playing.HasExited() then
-          //lost on disconnection/failure
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-          let res = createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur
-          callback(EndOfGame res)
-          logger.LogInformation($"Player has exited {playing.Name}")
-          return res
-          
-        elif cts.IsCancellationRequested then
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" Misc.ResultReason.Cancel dur
-          callback(EndOfGame res)
-          logger.LogInformation($"Cancel requested when engine ready to play: {playing.Name}")
-          return res
+        
+        if isAppShuttingDown cts then
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
+            callback(EndOfGame res)
+            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
+            return res
+        elif playing.HasExited() then
+            do! Async.Sleep 1000
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res, msg =
+                if opponent.HasExited() then
+                    createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur,
+                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
+                else
+                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
+                    createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
+                    $"Player has exited {playing.Name}"
+            callback(EndOfGame res)
+            logger.LogInformation msg
+            return res                 
           
         else          
           if line.StartsWith("bestmove") then    
@@ -1638,22 +1711,28 @@ module Match =
         elif line.StartsWith "info engine" then
           MessagesFromEngine ("Ceres", line) |> callback
           logger.LogInformation line
-        if playing.HasExited() then
-          //lost on disconnection/failure          
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-          let res = createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur
-          callback(EndOfGame res)
-          logger.LogInformation($"Player has exited {playing.Name}")
-          return res
-          
-        elif cts.IsCancellationRequested then
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
-          callback(EndOfGame res)
-          logger.LogInformation($"Cancel requested when engine ready to play: {playing.Name}")
-          return res
-          
+        
+        if isAppShuttingDown cts then
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
+            callback(EndOfGame res)
+            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
+            return res
+        elif playing.HasExited() then
+            do! Async.Sleep 1000
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res, msg =
+                if opponent.HasExited() then
+                    createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur,
+                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
+                else
+                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
+                    createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
+                    $"Player has exited/crashed {playing.Name}"
+            callback(EndOfGame res)
+            logger.LogInformation msg
+            return res
+        
         else          
           if line.StartsWith("bestmove") then                          
             let duration = Stopwatch.GetElapsedTime(moveTimer)            
@@ -1967,7 +2046,7 @@ module Match =
             false, "", ""
         else
           false, "", ""              
-
+          
     sb.Clear() |> ignore
     let append (txt:string) = sb.Append txt |> ignore
     if tourny.TestOptions.WriteToConsole then
@@ -2069,8 +2148,9 @@ module Match =
           elif timeConfig.NodeLimit then            
               playing.GoNodes timeConfig.Nodes            
           else
-            playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
-
+            playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)        
+        
+        //let! line = readLineCancelAware playing
         let! line = playing.ReadLineAsync() |> Async.AwaitTask 
         //if tourny.VerboseLogging then
         //  logger.LogDebug line
@@ -2079,22 +2159,28 @@ module Match =
         elif line.StartsWith "info engine" then
           MessagesFromEngine ("Ceres", line) |> callback
           logger.LogInformation line
-        if playing.HasExited() then
-          //lost on disconnection/failure
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-          let res = createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur
-          callback(EndOfGame res)
-          logger.LogInformation($"Player has exited {playing.Name}")
-          return res
-          
-        elif cts.IsCancellationRequested then
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
-          callback(EndOfGame res)
-          logger.LogInformation($"Cancel requested when engine ready to play: {playing.Name}")
-          return res
-          
+        
+        if isAppShuttingDown cts then
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
+            callback(EndOfGame res)
+            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
+            return res
+        elif playing.HasExited() then
+            do! Async.Sleep 1000
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let res, msg =
+                if opponent.HasExited() then
+                    createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur,
+                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
+                else
+                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
+                    createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
+                    $"Player has exited {playing.Name}"
+            callback(EndOfGame res)
+            logger.LogInformation msg
+            return res                 
+
         else          
           if line.StartsWith("bestmove") then
             let duration = Stopwatch.GetElapsedTime(moveTimer)            
@@ -2641,19 +2727,8 @@ module Match =
                 else
                   play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
               with
-              | ex ->
-                // Engine crashed - create a disconnect result
-                logger.LogError(ex, "Engine crashed during game between {white} vs {black}", pair.White.Name, pair.Black.Name)
-                let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                let crashResult = 
-                  if engine1.HasExited() then
-                    createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "0-1" (ResultReason.Disconnected engine1.Name) dur
-                  elif engine2.HasExited() then
-                    createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "1-0" (ResultReason.Disconnected engine2.Name) dur
-                  else
-                    // If we can't determine which engine crashed, default to draw
-                    createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "1/2-1/2" ResultReason.Cancel dur
-                crashResult
+              | ex -> handleGameException logger ex cts gametimer board engine1 engine2 pair
+
           if result.Reason <> ResultReason.Cancel then
             results <- result :: results
                     
@@ -2684,7 +2759,9 @@ module Match =
                 LongSanMoves = board.LongSANMovesPlayed |> ResizeArray                 
               }
           let moveSection = sb.ToString()
-          if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
+          if result.Reason <> ResultReason.Cancel 
+            && not cts.IsCancellationRequested 
+            && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
             pgnGameWriterAgent.Post (Parser.PGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
             //PGNHelper.writePgnGame tourny.PgnOutPath gameData moveSection result
           if tourny.VerboseLogging then
@@ -2706,6 +2783,7 @@ module Match =
   }
 
   let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) = async {        
+    
     //Utilities.Validation.validateAllEnginesAndSomeSettings tourny.EngineSetup.Engines    
     let mutable gameNr = 0
     logger.LogInformation($"Round robin tournament about to start")
@@ -2850,19 +2928,8 @@ module Match =
                   play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
                   //playWithPondering sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
               with
-              | ex ->
-                // Engine crashed - create a disconnect result
-                logger.LogError(ex, "Engine crashed during game between {white} vs {black}", pair.White.Name, pair.Black.Name)
-                let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                let crashResult = 
-                  if engine1.HasExited() then
-                    createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "0-1" (ResultReason.Disconnected engine1.Name) dur
-                  elif engine2.HasExited() then
-                    createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "1-0" (ResultReason.Disconnected engine2.Name) dur
-                  else
-                    // If we can't determine which engine crashed, default to draw
-                    createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "1/2-1/2" ResultReason.Cancel dur
-                crashResult
+              | ex -> handleGameException logger ex cts gametimer board engine1 engine2 pair
+
           let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
           if result.Reason <> ResultReason.Cancel then
             results <- result :: results          
@@ -3181,19 +3248,7 @@ module Match =
                                             return! play sb cts logger tourny currentBoard engine1 engine2 pair callback    
                                     
                                       with
-                                      | ex ->
-                                        // Engine crashed - create a disconnect result
-                                        logger.LogError(ex, "Engine crashed during game between {white} vs {black}", pair.White.Name, pair.Black.Name)
-                                        let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                                        let crashResult = 
-                                          if engine1.HasExited() then
-                                            createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "0-1" (ResultReason.Disconnected engine1.Name) dur
-                                          elif engine2.HasExited() then
-                                            createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "1-0" (ResultReason.Disconnected engine2.Name) dur
-                                          else
-                                            // If we can't determine which engine crashed, default to draw
-                                            createResult pair.White.Name pair.Black.Name board.ShortSANMovesPlayed "1/2-1/2" ResultReason.Cancel dur
-                                        return crashResult  }
+                                      | ex -> return handleGameException logger ex cts gametimer board engine1 engine2 pair  }
                               
                               let gameData : PGNTypes.GameMetadata = 
                                 {
@@ -3480,19 +3535,7 @@ module Match =
                                             return! play sb cts logger tourny currentBoard wEng bEng pair callback
                                     
                                     with
-                                    | ex ->
-                                        // Engine crashed - create a disconnect result
-                                        logger.LogError(ex, "Engine crashed during game between {white} vs {black}", pair.White.Name, pair.Black.Name)
-                                        let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                                        let crashResult = 
-                                            if wEng.HasExited() then
-                                                createResult pair.White.Name pair.Black.Name currentBoard.ShortSANMovesPlayed "0-1" (ResultReason.Disconnected wEng.Name) dur
-                                            elif bEng.HasExited() then
-                                                createResult pair.White.Name pair.Black.Name currentBoard.ShortSANMovesPlayed "1-0" (ResultReason.Disconnected bEng.Name) dur
-                                            else
-                                            // If we can't determine which engine crashed, default to draw
-                                                createResult pair.White.Name pair.Black.Name currentBoard.ShortSANMovesPlayed "1/2-1/2" ResultReason.Cancel dur
-                                        return crashResult }
+                                    | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
                               
                             let gameData : PGNTypes.GameMetadata = 
                                 {
@@ -3622,7 +3665,7 @@ module Manager =
       ConsoleUtils.printInColor ConsoleColor.Red $"Error loading tournament.json: {exn.Message} - please check your engine.json files"
       Tournament.Empty        
   
-  let startTournament cts (tournament : Tournament) (logger:ILogger) sendResponse consoleMode =
+  let startTournament (cts:CancellationTokenSource) (tournament : Tournament) (logger:ILogger) sendResponse consoleMode =
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()
@@ -3706,6 +3749,14 @@ module Manager =
     member _.AddTournament tourny = tournament <- tourny 
     member x.Run() = 
       try 
+        // Ensure external shutdowns are translated to our CTS cancellation
+        Console.CancelKeyPress.Add(fun args ->
+            cts.Cancel()
+            args.Cancel <- true
+        )
+        AppDomain.CurrentDomain.ProcessExit.Add(fun _ ->
+            try cts.Cancel() with _ -> ()
+        )
         resultsFromPGN <- x.GetResults() //x.GetFinalResults()
         startTournament cts tournament logger x.SendResponse consoleMode
       with e -> 
@@ -3713,7 +3764,8 @@ module Manager =
         logger.LogCritical ("failed to run tournament" + tournament.MinSummary())
         resultsFromPGN |> Seq.toList
         //raise e
-
+    
+    member _.LinkCancellation(token: CancellationToken) = token.Register(fun () -> cts.Cancel()) |> ignore
     member _.GetPlayerResults (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =
       let challengers = tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name
       let players = tournament.EngineSetup.Engines |> List.map _.Name

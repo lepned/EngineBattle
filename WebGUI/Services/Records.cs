@@ -5,7 +5,14 @@ using static ChessLibrary.TypesDef.CoreTypes;
 
 namespace WebGUI.Services
 {
-  public class EngineConfigEventArgs
+    // Provide ApplicationStopping token to the app
+    public sealed class ShutdownTokenProvider
+    {
+        public CancellationToken Token { get; }
+        public ShutdownTokenProvider(IHostApplicationLifetime lifetime)
+            => Token = lifetime.ApplicationStopping;
+    }
+    public class EngineConfigEventArgs
   {
     public EngineConfig EngineConfig { get; set; }
     public string OldName { get; set; }

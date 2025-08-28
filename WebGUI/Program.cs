@@ -1,12 +1,11 @@
 
-using Toolbelt.Blazor.Extensions.DependencyInjection;
 using MudBlazor.Services;
-using WebGUI.Services;
 using Serilog;
 using Serilog.Events;
-using WebGUI.Components;
 using System.Runtime.InteropServices;
-using static ChessLibrary.Utilities;
+using Toolbelt.Blazor.Extensions.DependencyInjection;
+using WebGUI.Components;
+using WebGUI.Services;
 
 static void EnsureTournamentJsonIsLoaded()
 {
@@ -35,6 +34,9 @@ var log = new LoggerConfiguration()
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+// Host shutdown timeout
+builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(3));
+
 // Process command-line arguments
 if (args.Length > 0)
 {
@@ -81,6 +83,9 @@ builder.Services.AddScoped<ChessConfigurationService>();
 builder.Services.AddScoped<JavaScriptInteropService>();
 builder.Services.AddScoped<ClipboardService>();
 builder.Services.AddSingleton<OverlaySetting>();
+// Register the shutdown token provider so UI/services can link the tournament
+builder.Services.AddSingleton<ShutdownTokenProvider>();
+
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var app = builder.Build();

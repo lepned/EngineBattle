@@ -18,6 +18,7 @@
 @inject NotifierService Notifier
 @inject ILogger<Tournaments> logger
 @inject HotKeys HotKeys
+@inject ShutdownTokenProvider shutdownTokenProvider
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -1556,6 +1557,7 @@
     private void RunTournament()
     {
         runner = new ChessLibrary.Tournament.Manager.Runner(logger, Update, true, false);
+        runner.LinkCancellation(shutdownTokenProvider.Token);
         tournament = runner.Tournament();
         Task.Factory.StartNew(() =>
             {
