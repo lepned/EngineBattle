@@ -713,6 +713,63 @@ module Match =
     | PeriodicResults of results: ResizeArray<Result>
     | GameSummary of summary: string      
   
+  // Centralized outcome for time-check
+  type TimeCheckOutcome =
+    | Continue of currentTime: TimeOnly * timeLeft: TimeOnly * newW: TimeOnly * newB: TimeOnly
+    | Forfeit of Result
+
+  // Single place to handle clock update and time forfeit check
+  let private updateClocksOrForfeit
+      (tourny: Tournament)
+      (logger: ILogger)
+      (gametimer: int64)
+      (playing: string)
+      (isWhite: bool)
+      (opponent: string)
+      (duration: TimeSpan)
+      (pFixedTime: TimeOnly)
+      (oFixedTime: TimeOnly)   
+      (pIncr: TimeOnly)
+      (moveOverheadInTicks: int64)
+      (useNodes: bool)
+      (gameMoveList: ResizeArray<string>) : TimeCheckOutcome =
+          
+    // how many ticks remain after the move (considering increment)
+    let currentTicksLeft = pFixedTime.Ticks + pIncr.Ticks - duration.Ticks
+
+    // If not node-limit, treat negative remainder (after move-overhead grace) as flag-fall
+    if (not useNodes) && currentTicksLeft + moveOverheadInTicks < 0L then
+      let moveTimeMs = TimeSpan.FromTicks(duration.Ticks).TotalMilliseconds
+      let timeAllottedTicks = pFixedTime.Ticks + pIncr.Ticks
+      let timeAllottedMs = TimeSpan.FromTicks(timeAllottedTicks).TotalMilliseconds
+      let msg =
+        $"{playing} lost on time - moveTime/budget = {moveTimeMs}/{timeAllottedMs}ms, ticks left: {currentTicksLeft}, MoveOverhead: {tourny.MoveOverhead.Ticks}"
+      logger.LogCritical msg
+
+      // Use total game duration (not duration.Milliseconds)
+      let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+      let resStr = if isWhite then "0-1" else "1-0"
+      let player1, player2 = if isWhite then playing, opponent else opponent, playing
+      let res = createResult player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur
+      Forfeit res
+    else
+      // clamp at zero, update clocks and compute "time left" after increment
+      let ticks = max currentTicksLeft 0L
+      if useNodes then
+        // Node-limit mode: keep times unchanged; report current active as-is
+        let currentTime = pFixedTime
+        // In node-limit mode we also keep timeLeft the same since clocks are irrelevant
+        let timeLeft = pFixedTime
+        let newW, newB = if isWhite then pFixedTime, oFixedTime else oFixedTime, pFixedTime
+        Continue (currentTime, timeLeft, newW, newB)
+      else
+        let updatedPlaying = TimeOnly ticks
+        let timeLeft = TimeOnly (ticks + pIncr.Ticks)
+        let newW, newB =
+          if isWhite then updatedPlaying, oFixedTime else oFixedTime, updatedPlaying
+        let currentTime = updatedPlaying
+        Continue (currentTime, timeLeft, newW, newB)
+
   // NEW: prefer app shutdown/cancellation over “engine disconnected”
   let private isAppShuttingDown (cts: CancellationTokenSource) =
     cts.IsCancellationRequested
@@ -1120,7 +1177,7 @@ module Match =
                 else
                     let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
                     createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
-                    $"Player has exited {playing.Name}"
+                    $"Player has exited/crashed {playing.Name}"
             callback(EndOfGame res)
             logger.LogInformation msg
             return res                 
@@ -1136,54 +1193,26 @@ module Match =
         
           elif line.StartsWith("bestmove") then
             let duration = Stopwatch.GetElapsedTime(moveTimer)
-            if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
-              let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
-              do! Async.Sleep delay
-        
             let incr = tourny.TimeControl.GetIncrementTime(playing.Config.TimeControlID)
-            let currentTicksLeft = 
-              if player1.Name = playing.Name then
-                wTime.Ticks + incr.Ticks - duration.Ticks
-              else 
-                bTime.Ticks + incr.Ticks - duration.Ticks
-        
             let useNodes = isNodeLimit playing
-            if (not useNodes) && currentTicksLeft + moveOverheadInTicks < 0L then
-              let moveTime = (TimeSpan.FromTicks duration.Ticks).TotalMilliseconds
-              let timeAlloted = if player1.Name = playing.Name then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
-              let timeAlloted = (TimeSpan.FromTicks timeAlloted).TotalMilliseconds
-              let msg = $"{playing.Name} lost on time - moveTime/budget = {moveTime}/{timeAlloted}ms, ticks left: {currentTicksLeft}, MoveOverhead: {tourny.MoveOverhead.Ticks}"
-              logger.LogCritical msg
-              let res = 
-                if playing.Name = player1.Name then
-                  createResult player1.Name player2.Name gameMoveList "0-1" ResultReason.ForfeitLimits duration.Milliseconds
-                else
-                  createResult player1.Name player2.Name gameMoveList "1-0" ResultReason.ForfeitLimits duration.Milliseconds 
-              callback(EndOfGame res)
-              return res
-            else  
-              let (currentTime, timeLeft) =
-                let ticks = max currentTicksLeft 0L                
-                if player1.Name = playing.Name then 
-                  if useNodes then
-                    wTime, wTime
-                  else    
-                    wTime <- TimeOnly ticks
-                    wTime, TimeOnly (ticks + incr.Ticks)
-                else 
-                  if useNodes then
-                    bTime, bTime
-                  else    
-                    bTime <- TimeOnly ticks
-                    bTime, TimeOnly (ticks + incr.Ticks)
-          
+            let isWhite = playing.Name = player1.Name
+            let wTimeCurrent, bTimeCurrent = if isWhite then wTime, bTime else bTime, wTime
+
+            match updateClocksOrForfeit tourny logger gametimer playing.Name isWhite opponent.Name duration wTimeCurrent bTimeCurrent incr moveOverheadInTicks useNodes gameMoveList with
+            | Forfeit res ->
+                callback(EndOfGame res)
+                return res
+            | Continue (currentTime, timeLeft, newW, newB) ->
+              wTime <- newW
+              bTime <- newB
               moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
               moveInfoData.mt <- int64 duration.TotalMilliseconds
-          
+              if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
+                  let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
+                  do! Async.Sleep delay          
+              
               // Parse bestmove with potential ponder move
-              let parts = line.Split()
-              let move = parts.[1].Trim()
-              let ponderMove = (if parts.Length > 3 && parts.[2] = "ponder" then parts.[3] else "").Trim()
+              let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
               let mutable bestMove = BestMoveInfo.Empty
               let mutable shortSan = String.Empty
 
@@ -1463,7 +1492,7 @@ module Match =
                 else
                     let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
                     createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
-                    $"Player has exited {playing.Name}"
+                    $"Player has exited/crashed {playing.Name}"
             callback(EndOfGame res)
             logger.LogInformation msg
             return res                 
@@ -1735,48 +1764,24 @@ module Match =
         
         else          
           if line.StartsWith("bestmove") then                          
-            let duration = Stopwatch.GetElapsedTime(moveTimer)            
-            if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
-              let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
-              do! Async.Sleep delay
+            let duration = Stopwatch.GetElapsedTime(moveTimer)
             let incr = tourny.TimeControl.GetIncrementTime(playing.Config.TimeControlID)
-            let currentTicksLeft = 
-              if player1.Name = playing.Name then
-                wTime.Ticks + incr.Ticks - duration.Ticks
-              else 
-                bTime.Ticks + incr.Ticks - duration.Ticks
             let useNodes = isNodeLimit playing
-            if (not useNodes) && currentTicksLeft + moveOverheadInTicks < 0L then
-              let moveTime = (TimeSpan.FromTicks duration.Ticks).TotalMilliseconds
-              let timeAlloted = if player1.Name = playing.Name then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
-              let timeAlloted = (TimeSpan.FromTicks timeAlloted).TotalMilliseconds
-              let msg = $"{playing.Name} lost on time - moveTime/budget = {moveTime}/{timeAlloted}ms, ticks left: {currentTicksLeft}, MoveOverhead: {tourny.MoveOverhead.Ticks}"
-              logger.LogCritical msg
-              let res = 
-                if playing.Name = player1.Name then
-                  createResult player1.Name player2.Name gameMoveList "0-1" ResultReason.ForfeitLimits duration.Milliseconds
-                else
-                  createResult player1.Name player2.Name gameMoveList "1-0" ResultReason.ForfeitLimits duration.Milliseconds 
-              callback(EndOfGame res)
-              return res
-            else  
-              let (currentTime, timeLeft) =
-                let ticks = max currentTicksLeft 0L                
-                if player1.Name = playing.Name then 
-                  if useNodes then
-                    wTime, wTime
-                  else    
-                    wTime <- TimeOnly ticks
-                    wTime, TimeOnly (ticks + incr.Ticks)
-                else 
-                  if useNodes then
-                    bTime, bTime
-                  else    
-                    bTime <- TimeOnly ticks
-                    bTime, TimeOnly (ticks + incr.Ticks)
-              
+            let isWhite = playing.Name = player1.Name
+            let wTimeCurrent, bTimeCurrent = if isWhite then wTime, bTime else bTime, wTime
+
+            match updateClocksOrForfeit tourny logger gametimer playing.Name isWhite opponent.Name duration wTimeCurrent bTimeCurrent incr moveOverheadInTicks useNodes gameMoveList with
+            | Forfeit res ->
+                callback(EndOfGame res)
+                return res
+            | Continue (currentTime, timeLeft, newW, newB) ->
+              wTime <- newW
+              bTime <- newB
               moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
               moveInfoData.mt <- int64 duration.TotalMilliseconds
+              if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
+                  let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
+                  do! Async.Sleep delay
               let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
 
               match tryGetTMoveFromCoordinateNotation &board move with
@@ -2176,50 +2181,32 @@ module Match =
                 else
                     let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
                     createResult player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur,
-                    $"Player has exited {playing.Name}"
+                    $"Player has exited/crashed {playing.Name}"
             callback(EndOfGame res)
             logger.LogInformation msg
             return res                 
 
         else          
           if line.StartsWith("bestmove") then
-            let duration = Stopwatch.GetElapsedTime(moveTimer)            
-            if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
-              let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
-              do! Async.Sleep delay
+            let duration = Stopwatch.GetElapsedTime(moveTimer)
             let incr = tourny.TimeControl.GetIncrementTime(playing.Config.TimeControlID)
-            let currentTicksLeft = 
-              if player1.Name = playing.Name then
-                wTime.Ticks + incr.Ticks - duration.Ticks
-              else 
-                bTime.Ticks + incr.Ticks - duration.Ticks
-
             let useNodes = isNodeLimit playing
-            if (not useNodes) && currentTicksLeft + moveOverheadInTicks < 0L then            
-              let moveTime = (TimeSpan.FromTicks duration.Ticks).TotalMilliseconds
-              let timeAlloted = if player1.Name = playing.Name then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
-              let timeAlloted = (TimeSpan.FromTicks timeAlloted).TotalMilliseconds
-              let msg = $"{playing.Name} lost on time - moveTime/budget = {moveTime}/{timeAlloted}ms, ticks left: {currentTicksLeft}, MoveOverhead: {tourny.MoveOverhead.Ticks}"
-              logger.LogCritical msg
-              let res = 
-                if playing.Name = player1.Name then
-                  createResult player1.Name player2.Name gameMoveList "0-1" ResultReason.ForfeitLimits duration.Milliseconds
-                else
-                  createResult player1.Name player2.Name gameMoveList "1-0" ResultReason.ForfeitLimits duration.Milliseconds 
-              callback(EndOfGame res)
-              return res
-            else  
-              let (currentTime, timeLeft) =
-                let ticks = max currentTicksLeft 0L
-                if player1.Name = playing.Name then 
-                  wTime <- TimeOnly ticks
-                  wTime, TimeOnly (ticks + incr.Ticks)
-                else 
-                  bTime <- TimeOnly ticks
-                  bTime, TimeOnly (ticks + incr.Ticks)
-              
+            let isWhite = playing.Name = player1.Name
+            let wTimeCurrent, bTimeCurrent = if isWhite then wTime, bTime else bTime, wTime
+
+            match updateClocksOrForfeit tourny logger gametimer playing.Name isWhite opponent.Name duration wTimeCurrent bTimeCurrent incr moveOverheadInTicks useNodes gameMoveList with
+            | Forfeit res ->
+                callback(EndOfGame res)
+                return res
+            | Continue (currentTime, timeLeft, newW, newB) ->
+              wTime <- newW
+              bTime <- newB
               moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
               moveInfoData.mt <- int64 duration.TotalMilliseconds
+              if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
+                  let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
+                  do! Async.Sleep delay  
+              
               let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
 
               match tryGetTMoveFromCoordinateNotation &board move with
