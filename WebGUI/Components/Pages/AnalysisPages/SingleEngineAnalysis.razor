@@ -45,14 +45,16 @@
     </MudItem>
     <MudItem Class="d-flex">
         <MudItem Class="mr-2" md="5" xl="4">
-            <AnalyzeWithEngine @ref="analysisWithEngine" FEN="@fen" Nodes=nodes OnUCIReceived="OnUCIReceived" ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade" ChartLines="chartLines"
-                               Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded" />
+            <AnalyzeWithEngine @ref="analysisWithEngine" FEN="@fen" OnUCIReceived="OnUCIReceived" 
+                ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
+                Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded" 
+                PGNgames="games" Player=@searchString Config="@config" />
             <MudText Class="ml-2" Typo="Typo.body1">@currentGame</MudText>
             <MudItem xl="12">
                 <div style="height:250px;" class="chart" @ref=pgnChart></div>
             </MudItem>
         </MudItem>
-        <MudItem Class="mt-1 pl-2" md="5" xl="4">           
+        <MudItem Class="mt-1 pl-2" md="5" xl="4">
 
             <div @ref="chessBoard">
                 <Chessboard ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
@@ -129,7 +131,7 @@
                             <MudTd>@context.AvoidMove?.Value.ToString()</MudTd>
                             <MudTd>@context.BestMove?.Value.ToString()</MudTd>
                             <MudTd>@context.Id?.Value.ToString()</MudTd>
-                            
+
                         </RowTemplate>
                     </MudTable>
                 </div>
@@ -149,7 +151,7 @@
     private string gamesPath = "C:/dev/chess/mygames.pgn";
     private string epdDesc = "";
     bool pgnFileLoaded = false;
-    bool epdFileLoaded = false;    
+    bool epdFileLoaded = false;
     EngineConfig Engine;
     private List<string> uciInfo = new();
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -184,6 +186,7 @@
 
     private bool FilterFunc(PGNTypes.PgnGame game)
     {
+		
         if (string.IsNullOrWhiteSpace(searchString))
             return true;
 
@@ -483,7 +486,7 @@
 
     private async Task LoadAndOpenPGNGame(PGNTypes.PgnGame game)
     {
-        gameIndex = games.IndexOf(game);        
+        gameIndex = games.IndexOf(game);
         currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
         var chart = new GamePgnChart(chessModule, pgnChart, game.GameMetaData.White, game.GameMetaData.Black, "Evaluation", "Score");
         chart.AssignEvalsFromPGN(game);
@@ -524,7 +527,7 @@
             fen = board.FEN();
         }
         await Notifier.UpdateFen(fen);
-        await Notifier.UpdateFenAndMove(moveAndFen);        
+        await Notifier.UpdateFenAndMove(moveAndFen);
         moveHistory = board.GetMoveHistory();
         StateHasChanged();
     }
@@ -584,7 +587,7 @@
             await LoadAndOpenPGNGame(previousGame);
         }
     }
-    
+
     private void ShowSearchPlot()
     {
         showNNdata = !showNNdata;

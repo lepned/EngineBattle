@@ -32,8 +32,8 @@ module Engine =
 
       let mutable state = EngineState.Start
       let mutable numberOfNodes = 0L
-      let mutable evalList : EvalType list = []
-      let mutable fullEvalList :EvalType list = []
+      let mutable evalList : TypesDef.Misc.EvalType list = []
+      let mutable fullEvalList :TypesDef.Misc.EvalType list = []
       let mutable nps = 0.0
       let mutable depth = 0
       let mutable Player1PV = String.Empty
@@ -50,6 +50,7 @@ module Engine =
       let engineProcess = new Process()
       let dict = System.Collections.Generic.Dictionary<string, obj>()
       let nonDefaultValues = System.Collections.Generic.Dictionary<string, (string * string)>()
+      let mutable inPolicyDistributionMode = false
 
       let ceresNetworkName = 
         //check if config.Options contains Network as key
@@ -129,7 +130,7 @@ module Engine =
             if evalList.Length > 0 then 
               evalList.[0] 
             else 
-              if fullEvalList.Length > 0 then fullEvalList[0] else EvalType.CP 0.0
+              if fullEvalList.Length > 0 then fullEvalList[0] else TypesDef.Misc.EvalType.CP 0.0
           let pv = Player1PV
           let fen = BoardHelper.posToFen moveBoard.Position
           let moveDetail = 
@@ -206,59 +207,63 @@ module Engine =
         |None -> ()
 
       let processLine callback (name:string) (line:string)  =
-        if writeToConsole then
-          printfn "%s" line
-        match line with
-        | line when line.StartsWith("readyok") ->
-            state <- RegularSearchMode 
-        | line when line.StartsWith("option") ->
-            match state with
-            |UCIMode list -> 
-              list.Add line             
-            |_ ->
-              let list = ResizeArray<string>()
-              list.Add line
-              state <- UCIMode list
-        | line when line.StartsWith("bestmove") ->        
-            state <- InBestMoveMode 
-        | line when line.StartsWith "info string" && line.Contains "N:" ->          
+        try
+            if writeToConsole then
+              printfn "%s" line
+            match line with
+            | line when line.StartsWith("readyok") ->
+                state <- RegularSearchMode 
+            | line when line.StartsWith("option") ->
+                match state with
+                |UCIMode list -> 
+                  list.Add line             
+                |_ ->
+                  let list = ResizeArray<string>()
+                  list.Add line
+                  state <- UCIMode list
+            | line when line.StartsWith("bestmove") ->        
+                state <- InBestMoveMode 
+            | line when line.StartsWith "info string" && line.Contains "N:" ->          
+                match state with
+                |InMoveStatMode list ->
+                  if line.StartsWith "info string node" |> not then
+                    let nn = Utilities.Regex.getInfoStringData name line
+                    list.Add nn
+                  else
+                    let nn = Utilities.Regex.getInfoStringData name line
+                    if nn.Nodes = 1 then //will only be one node in policy test like go nodes 1
+                      let bp = list |> Seq.maxBy(fun e -> e.P)
+                      bp.Q <- nn.Q
+                    list.Add nn
+                |_ -> 
+                  let list = ResizeArray<NNValues>()  
+                  if line.StartsWith "info string node" |> not then
+                    let nn = Utilities.Regex.getInfoStringData name line
+                    list.Add nn
+                  state <- InMoveStatMode list
+            | line when line.StartsWith("info") ->
+                state <- RegularSearchMode 
+            | _  -> ()         
+      
             match state with
             |InMoveStatMode list ->
-              if line.StartsWith "info string node" |> not then
-                let nn = Utilities.Regex.getInfoStringData name line
-                list.Add nn
-              else
-                let nn = Utilities.Regex.getInfoStringData name line
-                if nn.Nodes = 1 then //will only be one node in policy test like go nodes 1
-                  let bp = list |> Seq.maxBy(fun e -> e.P)
-                  bp.Q <- nn.Q
-                list.Add nn
-            |_ -> 
-              let list = ResizeArray<NNValues>()  
-              if line.StartsWith "info string node" |> not then
-                let nn = Utilities.Regex.getInfoStringData name line
-                list.Add nn
-              state <- InMoveStatMode list
-        | line when line.StartsWith("info") ->
-            state <- RegularSearchMode 
-        | _  -> ()         
-      
-        match state with
-        |InMoveStatMode list ->
-          if line.StartsWith "info string node" then
-            makeShortSan list &moveBoard
-            callback (NNSeq list)
+              if line.StartsWith "info string node" then
+                makeShortSan list &moveBoard
+                callback (NNSeq list)
+                state <- Start
+            | RegularSearchMode ->
+                regular callback name line
+            | InBestMoveMode ->
+                bestLine callback name line
+                state <- Start
+            | UCIMode list ->
+                if line.StartsWith("uciok") then           
+                  callback (UCIInfo list)
+                  state <- Start
+            |_ -> ()
+        with ex ->
             state <- Start
-        | RegularSearchMode ->
-            regular callback name line
-        | InBestMoveMode ->
-            bestLine callback name line
-            state <- Start
-        | UCIMode list ->
-            if line.StartsWith("uciok") then           
-              callback (UCIInfo list)
-              state <- Start
-        |_ -> ()
+            printfn "Error processing line from engine %s: %s" name ex.Message
 
       let printCommands () =
         printfn "%sConfigurations for %s:%s" Environment.NewLine name Environment.NewLine
@@ -297,6 +302,33 @@ module Engine =
           sprintf "setoption name %s value %d" "MultiPV" 10
         ]
 
+      let distribution = ResizeArray<NNValues>()
+      
+      let myCallback (update: EngineUpdate) =
+        match update with        
+        | EngineUpdate.NNSeq list -> distribution.AddRange list
+        | _ -> ()
+            
+      
+      let tryGetMovePolicyAndTop (data:string) (move:string) =
+        processLine myCallback name data
+        
+        match distribution |> Seq.tryFind (fun x -> x.LANMove = move) with
+        |Some movePolicy -> 
+            let topPolicy = 
+                match distribution |> Seq.sortByDescending(fun x -> x.P)|> Seq.tryHead with
+                |Some top -> top
+                |None -> failwith "Could not find top policy"
+            let rankForMovePlayed = 
+                distribution 
+                |> Seq.sortByDescending(fun x -> x.P) 
+                |> Seq.toArray 
+                |> Array.findIndex(fun x -> x.LANMove = move) 
+                |> (+) 1
+            Some (rankForMovePlayed, movePolicy, topPolicy)
+        |None -> None            
+
+      
       let setupProcess() =
           let mutable pos = moveBoard.Position
           moveBoard.IsFRC <- PositionOps.isFRC &pos
@@ -379,6 +411,7 @@ module Engine =
       member _.GetNoneDefaultSetOptions() = nonDefaultValues        
       member _.GetAllDefaultOptions() = dict
       member this.IsLc0 = isLc0
+      member val InPolicyDistributionMode = inPolicyDistributionMode with get, set
       member val IsFRC = moveBoard.IsFRC with get, set
       member _.PrintUCI() = printCommands()
       member _.Network = network
@@ -406,6 +439,8 @@ module Engine =
           assignNetworkName cmd
           commands.Add cmd
           dict.[opt.Key] <- opt.Value
+      
+
 
       member this.SendUCICommand (command: UCICommand) =
           match command with
@@ -517,6 +552,10 @@ module Engine =
               assignNetworkName cmd
               commands.Add cmd
         
+          | PolicyDistribution game ->
+              distribution.Clear()              
+              inPolicyDistributionMode <- true
+              
           | SetMoveOverhead (optionName, ms) ->         
               match UciOption.tryFindOption optionsMap optionName with
               | Some option ->
@@ -696,16 +735,23 @@ module Engine =
       let mutable passed = true
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
-      let ceresNetworkName = 
+      let mutable network = String.Empty // if isCeres then ceresNetworkName else ""
+      
+      let assignNetworkName (option:string) =        
         let argsExists = String.IsNullOrEmpty config.Args |> not
         if isCeres && argsExists then
-          let network = config.Args.Split(':')
-          if network.Length > 1 then
-            network.[1]
-          else
-            ""
-        else
-          ""
+            let CeresNet = config.Args.Split(':')
+            if CeresNet.Length > 1 then
+                network <- CeresNet.[1]
+          
+        if option.ToLower().Contains("weights") || option.ToLower().Contains("network") || option.ToLower().Contains("evalfile") then
+            let arr = option.Split(' ')
+            let path = arr[arr.Length - 1]
+            //I only want to get the network name from the path not the full path
+            let name = Path.GetFileNameWithoutExtension path
+            if String.IsNullOrEmpty name |> not then
+                network <- name      
+            
       let optionsMap = System.Collections.Generic.Dictionary<string, UciOption.UciOption>()
       let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
       let name = config.Name
@@ -713,7 +759,6 @@ module Engine =
       let configCmds = initCommands
       let mutable proc = defaultof<Process>
       let mutable commands = ResizeArray<string>()
-      let mutable network = if isCeres then ceresNetworkName else ""
       let nonDefaultValues = System.Collections.Generic.Dictionary<string, (string * string)>()
 
       let addCommand (list : string ResizeArray) (cmd: string) =
@@ -769,13 +814,7 @@ module Engine =
               proc.Close()
               proc.Dispose()
 
-      let assignNetworkName (option:string) =
-        if option.ToLower().Contains("weights") || option.ToLower().Contains("evalfile") then
-          let arr = option.Split(' ')
-          let path = arr[arr.Length - 1]
-          //I only want to get the network name from the path not the full path
-          let name = Path.GetFileNameWithoutExtension path
-          network <- name      
+      
     
       let assignThread () = 
           let task =  Task.Factory.StartNew(
@@ -908,7 +947,6 @@ module Engine =
         if proc.HasExited then
           printfn "Engine %s has already exited" name
         else
-          this.Quit()
           terminateProcess proc 3000        
     
       member _.PassedValidation = passed

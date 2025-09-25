@@ -184,10 +184,12 @@ type Board() =
         |> Seq.truncate currentIndex
         |> Seq.fold(fun state m -> sprintf "%s %s" state m) $"position fen {fen} moves"
 
-    member this.PositionWithMoves() = 
-      let start = sprintf $"position fen {startPos} moves"
-      this.LongSANMovesPlayed |> Seq.fold(fun state m -> 
-        sprintf "%s %s" state m) start
+    member this.PositionWithMoves() =       
+      if this.LongSANMovesPlayed.Count = 0 then
+        sprintf $"position fen {startPos}"
+      else
+        let start = sprintf $"position fen {startPos} moves"
+        this.LongSANMovesPlayed |> Seq.fold(fun state m -> sprintf "%s %s" state m) start
 
     member this.PositionWithFenAndMoves (fen:string) =
       if longSanMoves.Count = 0 then
@@ -257,6 +259,7 @@ type Board() =
           let newPos = BoardHelper.getPosFromFen(fen)                    
           position <- newPos
           mostCurrentFEN <- fen.Value
+          //startPos <- fen.Value
         plyCount <- int position.Ply
         game.[plyCount] <- PositionOps.copy &position
         isFRC <- PositionOps.isFRC &position
@@ -1333,11 +1336,28 @@ module BoardUtils =
       match tryGetTMoveFromCoordinateNotation &board nnMove.LANMove with
       |Some tmove -> 
         nnMove.SANMove <- getSanNotationFromTMove &board tmove
-      |None ->                     
+      |None ->         
         if nnMove.LANMove.Trim() = "e1a1" then nnMove.SANMove <- "0-0-0"
         elif nnMove.LANMove.Trim() = "e8a8" then nnMove.SANMove <- "0-0-0"
         elif nnMove.LANMove.Trim() = "e1h1" then nnMove.SANMove <- "0-0"
-        elif nnMove.LANMove.Trim() = "e8h8" then nnMove.SANMove <- "0-0"        
+        elif nnMove.LANMove.Trim() = "e8h8" then nnMove.SANMove <- "0-0"
+        //elif nnMove.LANMove.Trim() = "e8g8" then nnMove.SANMove <- "0-0" 
+        //elif nnMove.LANMove.Trim() = "e1g1" then nnMove.SANMove <- "0-0"
+        //elif nnMove.LANMove.Trim() = "e8c8" then nnMove.SANMove <- "0-0-0"
+        //elif nnMove.LANMove.Trim() = "e1c1" then nnMove.SANMove <- "0-0-0"
+        
+        let transformedLanMove = 
+            let trim = nnMove.LANMove.Trim().ToLower()
+            match trim with
+            | "e1a1" -> "e1c1"
+            | "e8a8" -> "e8c8"
+            | "e1h1" -> "e1g1"
+            | "e8h8" -> "e8g8"
+            |_ -> trim
+        match tryGetTMoveFromCoordinateNotation &board transformedLanMove with
+        |Some _ -> 
+            nnMove.LANMove <- transformedLanMove
+        |None -> ()    
 
   let makeRandomMove (rnd:Random) (board: Board inref) =
       let position = board.Position

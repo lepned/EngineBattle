@@ -777,6 +777,7 @@ module PGNWriter =
       Result = data.Result
       Reason = data.Reason
       GameTime = data.GameTime
+      OutOfOpeningEvals = []
     }
   
   /// Writes the opening PGN moves.
@@ -1092,6 +1093,11 @@ module PGNWriter =
   /// <param name="writer">The StreamWriter.</param>
   /// <param name="header">The game metadata.</param>
   let writePGNHeaderSection (writer: StreamWriter) (header: GameMetadata) =
+    let haveEvals, evals = 
+        match header.StartEvals with
+        |[] -> false, ""
+        |[x] -> true, sprintf "%s" x.ValueStr
+        |x::y::_ -> true, sprintf "%s, %s" x.ValueStr y.ValueStr
     // Write header data as tags using brackets [ ]
     writer.WriteLine(sprintf "[Event \"%s\"]" header.Event)
     writer.WriteLine(sprintf "[Site \"%s\"]" header.Site)
@@ -1104,6 +1110,8 @@ module PGNWriter =
     writer.WriteLine(sprintf "[Ply \"%s\"]" (header.Moves.ToString()))
     writer.WriteLine(sprintf "[GameTime \"%s\"]" (header.GameTime.ToString()))
     writer.WriteLine(sprintf "[Opening \"%s\"]" (PGNHelper.getOpeningOnly header))
+    if haveEvals then
+      writer.WriteLine(sprintf "[StartEvals \"%s\"]" evals)
     writer.WriteLine(sprintf "[OpeningHash \"%s\"]" header.OpeningHash)
     if header.Fen <> "" then
       writer.WriteLine(sprintf "[FEN \"%s\"]" header.Fen)
@@ -1497,7 +1505,7 @@ module MoveParser =
   let mutable input = String.Empty
   let mutable state = Start
   let mutable currentHeader = { Key = ""; Value = "" }
-  let mutable gameMetadata = { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; OtherTags = [] }
+  let mutable gameMetadata = { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
   let mutable move = { MoveNr = ""; WhiteSan = ""; WhiteComment = ""; BlackSan = ""; BlackComment = "" }
   let mutable parsedCommentEndTag = true  
   let moves = ResizeArray<Move>()
@@ -1511,7 +1519,7 @@ module MoveParser =
     result <- String.Empty
     state <- Start
     currentHeader <- { Key = ""; Value = "" }
-    gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; OtherTags = [] }
+    gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
     move <- Move.Empty 
     moves.Clear()
     headers.Clear()
@@ -2253,7 +2261,7 @@ module PGNParser =
                       result <- String.Empty
                       rawGame.Clear() |> ignore
                       state <- Start
-                      gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; OtherTags = [] }
+                      gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
                       moves.Clear()
                       headers.Clear()
             if moves.Count > 0 then
@@ -2321,7 +2329,7 @@ module PGNParser =
                       rawGame.Clear() |> ignore
                       state <- Start
                       result <- String.Empty
-                      gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; OtherTags = [] }
+                      gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
                       moves.Clear()
                       headers.Clear()
             if moves.Count > 0 then
@@ -2383,7 +2391,7 @@ module PGNParser =
                           }
                         move <- Move.Empty
                         rawGame.Clear() |> ignore                      
-                        gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; OtherTags = [] }
+                        gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
                         moves.Clear()
                         headers.Clear()
               

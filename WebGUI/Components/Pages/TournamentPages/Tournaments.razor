@@ -163,13 +163,13 @@
                 <div style=@liveChartStyle class="chart rhs" @ref=liveQPlotReference></div>
             </MudItem>
 
-            <MudItem hidden="@(!tournament.LayoutOption.Charts.ShowEval)" Class="my-5">
+            <MudItem hidden="@(!ShowEval())" Class="my-5">
                 <div style=@moveChartStyle class="chart rhs" @ref=evalChart></div>
             </MudItem>
             <MudItem hidden="@(!ShowTime())" Class="my-5">
                 <div style=@moveChartStyle class="chart rhs" @ref=timeUsageChart></div>
             </MudItem>
-            <MudItem hidden="@(!tournament.LayoutOption.Charts.ShowNPS)" Class="my-5">
+            <MudItem hidden="@(!ShowNPS())" Class="my-5">
                 <div style=@moveChartStyle class="chart rhs" @ref=npsChart></div>
             </MudItem>
             <MudItem hidden="@(!ShowNodes())" Class="my-5">
@@ -311,6 +311,7 @@
     public async Task OnBrowserResize()
     {
         await Task.Delay(300);
+        var nCharts = CalcNumberOfChartsToShow();
         var unzoomedHeight = await chessModule.InvokeAsync<double>("getUnzoomedViewportHeight");
         windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight");
         var elementsAboveCycleTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "rhs");
@@ -355,7 +356,7 @@
 
         if (absTableDiff > 0)
         {
-            pairingTableHeight = Math.Max(0, (int)(absTableDiff - 180));
+            pairingTableHeight = Math.Max(0, (int)(absTableDiff - (65 + 27 * nCharts)));
         }
 
         await InvokeAsync(StateHasChanged);
@@ -363,6 +364,21 @@
         //logger.LogInformation($"Extra: {extraLimit} Window height: {windowHeight} height: {height} standingTableHeight: {standingTableHeight} shouldCycle: {shouldCycle} pvBoardHeight: {pvBoardHeight} elementsAboveStandings: {elementsAboveStandings} infoB: {infoB} streamingBoardHeight: {streamingBoardHeight} pvLabelsHeight: {pvLabelsHeight} boardHeight: {boardHeight} cyclingTableHeight: {cyclingTableHeight}");
     }
 
+    private int CalcNumberOfChartsToShow()
+    {
+        int count = 0;
+        if (runWithLogLiveStats)
+            count += 2;
+        if (ShowEval())
+            count++;
+        if (ShowTime())
+            count++;
+        if (ShowNodes())
+            count++;
+        if (ShowNPS())
+            count++;
+        return count;
+    }
 
     public void Callback(string lanMove, double policy, double frac)
     {
@@ -376,6 +392,12 @@
     {
         pvStyleWhite = $"font-size:{layout.Fonts.PVLabelFont}px;";
         pvStyleBlack = $"font-size:{layout.Fonts.PVLabelFont}px;";
+    }
+
+    private bool ShowEval()
+    {
+        var showEval = tournament.LayoutOption.Charts.ShowEval;
+        return runWithLogLiveStats ? showEval : true;
     }
 
     private bool ShowTime()
@@ -1581,7 +1603,7 @@
             timer.Dispose();
         if (oneSecondTimer != null)
             oneSecondTimer.Dispose();
-
+        
         StateHasChanged();
     }
 

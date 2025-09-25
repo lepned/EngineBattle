@@ -18,6 +18,7 @@ open TypesDef.CoreTypes
 open TypesDef.Tournament
 open Parser
 open LowLevelUtilities
+open TypesDef.Misc
 
 module UciOptions =
 

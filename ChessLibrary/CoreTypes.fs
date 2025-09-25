@@ -18,7 +18,36 @@ module TypesDef =
   module Misc =
     /// The starting position in FEN notation.
     let startPosition = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-
+    type EvalType =
+      | CP of Info: float
+      | Mate of Info: int
+      | NA
+      with 
+        override this.ToString() =
+          match this with
+          | CP info -> if Math.Abs(info) < 0.005 then "0.00" else sprintf "%.2f" info
+          | Mate info -> if info > 0 then sprintf "M%d" info else sprintf "-M%d" (abs info)
+          | NA -> "None"
+        member x.Value =
+          match x with 
+          | CP cp -> cp
+          | Mate m -> float m
+          | _ -> failwith "EvalType is NA"
+        member x.ValueStr =
+          match x with 
+          | CP cp -> cp.ToString()
+          | Mate m -> sprintf "M%d" m
+          | _ -> failwith "EvalType is NA"
+        member x.WinAdj v =
+          match x with 
+          | CP cp -> abs cp > v
+          | Mate _ -> true
+          | _ -> failwith "EvalType is NA"
+        member x.DrawAdj v =
+          match x with 
+          | CP cp -> abs cp < v
+          | Mate _ -> true
+          | _ -> failwith "EvalType is NA" 
     type ResultReason =
         | Checkmate
         | Stalemate
@@ -109,12 +138,13 @@ module TypesDef =
         OpeningName: string
         Fen: string
         Deviations: int
+        StartEvals: Misc.EvalType list
         OtherTags: Header list }
       with 
         static member Empty =
           { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = "";
             Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime = 0L;
-            Moves = 0; OpeningName = ""; Fen = ""; Deviations = 0; OtherTags = [] }
+            Moves = 0; OpeningName = ""; Fen = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
         member x.Opening =
           let rec loop (list: Header list) =
             match list with
@@ -194,38 +224,8 @@ module TypesDef =
   // -----------------------------------------------------------------------------
 // CORE TYPES
 // -----------------------------------------------------------------------------  
-  module CoreTypes =
-    type EvalType =
-      | CP of Info: float
-      | Mate of Info: int
-      | NA
-      with 
-        override this.ToString() =
-          match this with
-          | CP info -> if Math.Abs(info) < 0.005 then "0.00" else sprintf "%.2f" info
-          | Mate info -> if info > 0 then sprintf "M%d" info else sprintf "-M%d" (abs info)
-          | NA -> "None"
-        member x.Value =
-          match x with 
-          | CP cp -> cp
-          | Mate m -> float m
-          | _ -> failwith "EvalType is NA"
-        member x.ValueStr =
-          match x with 
-          | CP cp -> cp.ToString()
-          | Mate m -> sprintf "M%d" m
-          | _ -> failwith "EvalType is NA"
-        member x.WinAdj v =
-          match x with 
-          | CP cp -> abs cp > v
-          | Mate _ -> true
-          | _ -> failwith "EvalType is NA"
-        member x.DrawAdj v =
-          match x with 
-          | CP cp -> abs cp < v
-          | Mate _ -> true
-          | _ -> failwith "EvalType is NA"  
-  
+  module CoreTypes =     
+    open Misc
     type EngineConfig =
         { mutable Name: string
           Alias: string
@@ -515,7 +515,7 @@ module TypesDef =
     type NNValues = 
       { Player: string
         mutable SANMove: string
-        LANMove: string
+        mutable LANMove: string
         Nodes: int64
         P: float
         mutable Q: float
@@ -577,12 +577,15 @@ module TypesDef =
         Moves: int
         Result: string
         Reason: Misc.ResultReason
-        GameTime: int64 }
+        GameTime: int64
+        OutOfOpeningEvals: EvalType list }
         override x.ToString() =
           let time = float x.GameTime / 1000.0
           sprintf "%s vs %s: %s (%s), %d moves, %.1f seconds" x.Player1 x.Player2 x.Result (x.Reason.Explanation) x.Moves time
     let createResult p1 p2 (moves: ResizeArray<string>) result reason gameTime =
-      { Player1 = p1; Player2 = p2; Moves = moves.Count; Result = result; Reason = reason; GameTime = gameTime }
+      { Player1 = p1; Player2 = p2; Moves = moves.Count; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []}
+    let createResultWithEval p1 p2 (moves: ResizeArray<string>) result reason gameTime evals =
+      { Player1 = p1; Player2 = p2; Moves = moves.Count; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals}
 
 
     type PlayerResult = 
@@ -654,6 +657,23 @@ module TypesDef =
       override this.ToString() =
         sprintf "Start of game number %d: %s vs %s" this.CurrentGameNr this.WhitePlayer.Name this.BlackPlayer.Name
 
+    type PolicyRankInfo = 
+        {            
+            QRank: int
+            PolicyRank: int
+            BestMove: NNValues
+            PlayedMove: NNValues
+            IsWhite: bool
+        }
+        with            
+            static member Create(qRank: int, policyRank: int, bestMove: NNValues, playedMove: NNValues, isWhite: bool) =
+                {                    
+                    QRank = qRank
+                    PolicyRank = policyRank
+                    BestMove = bestMove
+                    PlayedMove = playedMove
+                    IsWhite = isWhite
+                }
 
   // -----------------------------------------------------------------------------
   // TIME CONTROL & RELATED COMMANDS
@@ -752,6 +772,11 @@ module TypesDef =
         member x.TimeInfo(idx: int) =
           let config = x.GetTimeConfig idx
           sprintf "%fs + %fs" (config.Fixed.ToTimeSpan().TotalSeconds) (config.Increment.ToTimeSpan().TotalSeconds)
+        member x.GetFullTimeInMS(idx: int) =
+          let config = x.GetTimeConfig idx
+          let fixedMs = int (TimeSpan(config.Fixed.Ticks).TotalMilliseconds)
+          let incrMs = int (TimeSpan(config.Increment.Ticks).TotalMilliseconds)
+          (fixedMs + incrMs)
 
     module TimeControlCommands =
       let createTimeControlWithIncrementWithPonder (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) : string =
@@ -907,6 +932,7 @@ module TypesDef =
         PauseAfterRound: int
         DelayBetweenGames: TimeOnly
         MoveOverhead: TimeOnly
+        OrdoExePath: string
         Adjudication: Adjudication
         TestOptions: TestOptions
         Opening: Opening
@@ -1159,6 +1185,7 @@ module TypesDef =
           Challengers = 0
           Rounds = 0
           PauseAfterRound = 0
+          OrdoExePath = String.Empty
           TimeControl = Unchecked.defaultof<TimeControl.TimeControl>
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
           Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0 }
@@ -1812,12 +1839,15 @@ module TypesDef =
               RunWithNodeLimit = false
               FailedPuzzlesOutputFolder = ""
             }
-
+    
+   
     type AnalyzeConfig = {
         EngineFolder: string
         Engines: ResizeArray<PuzzleEngine>        
         Nodes: int
-        ChartLines: int
+        ChartLines: int        
+        PolicyDistributionMinMaxFilter : string
+        CombineWhiteAndBlackMoves: bool
     }
       with 
         static member empty =
@@ -1825,7 +1855,9 @@ module TypesDef =
               EngineFolder = ""
               Engines = ResizeArray<PuzzleEngine>()
               Nodes = 1
-              ChartLines = 4
+              ChartLines = 4              
+              PolicyDistributionMinMaxFilter = ""
+              CombineWhiteAndBlackMoves = true
              }
 
     type PuzzleEngineConverter() =
@@ -2097,6 +2129,7 @@ module TypesDef =
   module Engine =   
     open CoreTypes
     open TimeControl
+    open Misc
 
     type EngineState =
         | Start
@@ -2121,6 +2154,7 @@ module TypesDef =
         | SetOption of EngineOption
         | SetOptions of EngineOption seq
         | SetMoveOverhead of optionName: string * milliSeconds: int
+        | PolicyDistribution of PGNTypes.PgnGame
 
     type EngineUpdate =
         | Done of Player: string
@@ -2132,6 +2166,7 @@ module TypesDef =
         | BestMove of BestMoveInfo
         | BestMoveSimple of Move: string * Ponder: string option
         | UCIInfo of Data: ResizeArray<string>
+        | PolicyDistributionOutCome of ResizeArray<Int32 * (float * string * bool) * (float * string * bool)>
 
     type EngineMoveStat = 
       { Player: string

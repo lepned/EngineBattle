@@ -17,8 +17,10 @@ open TypesDef.CoreTypes
 open TypesDef.Engine
 open TypesDef.EPD
 open TypesDef.Puzzle
+open TypesDef.Misc
 open Chess
 open Utilities
+open System.Threading.Tasks
 
 module Helper =  
   
@@ -35,7 +37,25 @@ module Helper =
       Binary.Cuda, neuralNetSetoptionCmd "C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-2000000.pb.gz"
       Binary.Cuda, neuralNetSetoptionCmd "C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-2790000.pb.gz"
     ]  
-
+  
+  let waitForEngineIsReady (engine: ChessEngine) = async { 
+    try 
+        if engine.HasExited() then
+            engine.StartProcess() |> ignore                   
+        engine.UciNewGame()
+        // Bounded wait for "readyok"
+        let timeout = 180000 // 3m default
+        let readyTask = Task.Run(fun () -> engine.WaitForReadyOk())
+        let! completed = Task.WhenAny(readyTask, Task.Delay(timeout)) |> Async.AwaitTask
+        if obj.ReferenceEquals(completed, readyTask) then
+            return readyTask.Result
+        else
+            // Timed out            
+            return false
+    with _ -> 
+        return false 
+  }
+    
   let run (engine:ChessEngine) (tourny:Tournament) (board:Board) (name, fen) = 
     let mutable status = EngineStatus.Empty
     let tc = tourny.FindTimeControl engine.Config.TimeControlID
@@ -126,6 +146,228 @@ module Helper =
     return results
   }
 
+  let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
+        let replayBoard = Board()
+        replayBoard.PlayCommands pos
+        let getMoveStats () =
+            let list = ResizeArray<NNValues>()
+            engine.Position pos        
+            engine.GoNodes 1
+            let mutable cont = true
+            while cont do 
+              let line = engine.ReadLine()
+              if String.IsNullOrEmpty line then
+                () //ignore
+              elif line.StartsWith "bestmove" then          
+                cont <- false                
+              elif line.StartsWith "info string" && line.Contains "N:" then
+                let nnMsg = Utilities.Regex.getInfoStringData engine.Name line                
+                list.Add(nnMsg)              
+                let moreItems = if line.StartsWith "info string node" then false else true              
+                let mutable contNN = moreItems
+                while contNN do
+                    let newline = engine.ReadLine()              
+                    if newline.StartsWith "info string node" then
+                        contNN <- false  
+                    else
+                        let msg = Utilities.Regex.getInfoStringData engine.Name newline
+                        list.Add msg
+            list
+        
+        let getHighestQvalueForMove newPos =            
+            engine.Position newPos        
+            engine.GoNodes 1
+            let mutable res = None
+            let mutable cont = true
+            while cont do 
+              let line = engine.ReadLine()
+              if String.IsNullOrEmpty line then
+                () //ignore
+              elif line.StartsWith "bestmove" then          
+                cont <- false
+              elif line.StartsWith "info string node" && line.Contains "N:" then
+                res <- Utilities.Regex.getInfoStringData engine.Name line |> Some                        
+              //elif line.StartsWith "info string" && line.Contains "N:" then
+              //  res <- Utilities.Regex.getInfoStringData engine.Name line |> Some                        
+            res
+
+        let list = getMoveStats ()
+        let qList = ResizeArray<NNValues>()
+        let loop () =            
+            for item in list do
+                replayBoard.ResetBoardState()
+                replayBoard.PlayCommands pos
+                let newMove = item.LANMove
+                replayBoard.PlayLongSanMove newMove
+                let isMate = replayBoard.IsMate()
+                if isMate then
+                    item.Q <- if replayBoard.Position.STM = 0uy then -1.0 else 1.0
+                    item.LANMove <- move
+                    qList.Add item
+                else
+                    let newPos = replayBoard.PositionWithMoves()
+                    match getHighestQvalueForMove newPos with
+                    |Some nn ->  
+                        nn.Q <- nn.Q * -1.0
+                        if item.LANMove = move then
+                            nn.LANMove <- move                
+                        qList.Add nn
+                    |None -> printfn "Could not find Q value for move %s" move
+        loop()
+        let test = qList |> Seq.tryFind(fun e -> e.LANMove = move)
+        if test.IsNone then
+            replayBoard.ResetBoardState()
+            replayBoard.PlayCommands pos
+            BoardUtils.makeShortSan list &replayBoard
+            loop()
+        
+        match list |> Seq.tryFind (fun x -> x.LANMove = move) with
+        |Some movePolicy -> 
+            let topPolicy = 
+                match list |> Seq.sortByDescending(fun x -> x.P)|> Seq.tryHead with
+                |Some top -> top
+                |None -> failwith "Could not find top policy"            
+            let policyRanked = 
+                list 
+                |> Seq.sortByDescending(fun x -> x.P) 
+                |> Seq.toArray 
+                |> Array.findIndex(fun x -> x.LANMove = move) 
+                |> (+) 1
+            let qrankForMovePlayed = 
+                qList 
+                |> Seq.sortByDescending(fun x -> x.Q) 
+                |> Seq.toArray 
+                |> Array.findIndex(fun x -> x.LANMove = move) 
+                |> (+) 1
+            Some (qrankForMovePlayed,policyRanked, movePolicy, topPolicy)
+        |None -> None
+            
+
+  let tryGetMovePolicyAndTop (move:string) (engine: ChessEngine) (pos:string)  =
+        let mutable cont = true        
+        engine.Position pos        
+        engine.GoNodes 1
+        let list = ResizeArray<NNValues>()
+        while cont do 
+          let line = engine.ReadLine()
+          if String.IsNullOrEmpty line then
+            () //ignore
+          elif line.StartsWith "bestmove" then          
+            cont <- false                
+          elif line.StartsWith "info string" && line.Contains "N:" then
+            let nnMsg = Utilities.Regex.getInfoStringData engine.Name line
+            if list.Count > 0 then
+                list.Clear()
+            list.Add(nnMsg)              
+            let moreItems = if line.StartsWith "info string node" then false else true              
+            let mutable contNN = moreItems
+            while contNN do
+                let newline = engine.ReadLine()              
+                if newline.StartsWith "info string node" then
+                    contNN <- false  
+                else
+                    let msg = Utilities.Regex.getInfoStringData engine.Name newline
+                    list.Add msg
+        match list |> Seq.tryFind (fun x -> x.LANMove = move) with
+        |Some movePolicy -> 
+            let topPolicy = 
+                match list |> Seq.sortByDescending(fun x -> x.P)|> Seq.tryHead with
+                |Some top -> top
+                |None -> failwith "Could not find top policy"
+            let rankForMovePlayed = 
+                list 
+                |> Seq.sortByDescending(fun x -> x.P) 
+                |> Seq.toArray 
+                |> Array.findIndex(fun x -> x.LANMove = move) 
+                |> (+) 1
+            Some (-1, rankForMovePlayed, movePolicy, topPolicy)
+        |None -> 
+            let board = Board()
+            board.PlayCommands pos
+            BoardUtils.makeShortSan list &board 
+            match list |> Seq.tryFind (fun x -> x.LANMove = move) with
+            |Some movePolicy -> 
+                let topPolicy = 
+                    match list |> Seq.sortByDescending(fun x -> x.P)|> Seq.tryHead with
+                    |Some top -> top
+                    |None -> failwith "Could not find top policy"
+                let rankForMovePlayed = 
+                    list 
+                    |> Seq.sortByDescending(fun x -> x.P) 
+                    |> Seq.toArray 
+                    |> Array.findIndex(fun x -> x.LANMove = move) 
+                    |> (+) 1
+                Some (-1, rankForMovePlayed, movePolicy, topPolicy)
+            |_ -> None
+
+  let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float)   =  
+        let policies = ResizeArray<PolicyRankInfo>()
+        let startFen = board.StartPosition
+        let playoutBoard = Board()
+        let checkWhite = player.ToLower() = "w"
+        let checkBlack = player.ToLower() = "b"
+        let checkAll = player.ToLower() = "all"
+        playoutBoard.LoadFen startFen
+        playoutBoard.StartPosition <- startFen        
+        for move in board.MovesAndFenPlayed do            
+            let pos = playoutBoard.PositionWithMoves()
+            let isWhite = playoutBoard.Position.STM = 0uy 
+            let checkMove = 
+                if checkAll then 
+                    true
+                elif checkWhite then 
+                    isWhite
+                elif checkBlack then 
+                    not isWhite
+                else 
+                    false
+            if checkMove && move.Move.Comments.ToLower().Contains "book" |> not then
+                match tryGetMoveWithQAndTop move.Move.LongSan engine pos with                
+                |Some (qRank, pRank, move, topMove) -> 
+                    let topQEval = abs topMove.Q
+                    if topQEval <= qMax  && topQEval >= qMin then                            
+                        BoardUtils.makeShortSan [move;topMove] &playoutBoard
+                        let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite)
+                        policies.Add (policy)
+                |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
+            playoutBoard.PlayLongSanMove move.Move.LongSan            
+        engine.Network, policies
+    
+  let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float)   =  
+        let policies = ResizeArray<PolicyRankInfo>()
+        let startFen = board.StartPosition
+        let playoutBoard = Board()
+        let checkWhite = player.ToLower() = "w"
+        let checkBlack = player.ToLower() = "b"
+        let checkAll = player.ToLower() = "all"
+        playoutBoard.LoadFen startFen
+        playoutBoard.StartPosition <- startFen        
+        for move in board.MovesAndFenPlayed do            
+            let pos = playoutBoard.PositionWithMoves()
+            let isWhite = playoutBoard.Position.STM = 0uy 
+            let checkMove = 
+                if checkAll then 
+                    true
+                elif checkWhite then 
+                    isWhite
+                elif checkBlack then 
+                    not isWhite
+                else 
+                    false
+            if checkMove && move.Move.Comments.ToLower().Contains "book" |> not then
+                match tryGetMovePolicyAndTop move.Move.LongSan engine pos with                
+                |Some (qRank, pRank, move, topMove) -> 
+                    let topQEval = abs topMove.Q
+                    if topQEval <= qMax  && topQEval >= qMin then                            
+                        BoardUtils.makeShortSan [move;topMove] &playoutBoard
+                        let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite)
+                        policies.Add (policy)
+                |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
+            playoutBoard.PlayLongSanMove move.Move.LongSan            
+        engine.Network, policies
+
+        
+
 module Manager =  
   
   type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineUpdate>, writeToConsole) =
@@ -136,13 +378,37 @@ module Manager =
       let sendAnalysisResponse (update: EngineUpdate) =
         callback.Invoke update
 
+      let mutable ChessEngine = None
+      let distributionEngine() : ChessEngine = 
+        match ChessEngine with
+        |Some eng -> eng
+        |None ->           
+            let eng = EngineHelper.createEngine engineConfig
+            let isReady = Helper.waitForEngineIsReady eng |> Async.RunSynchronously
+            if not isReady then
+                failwith $"Engine {eng.Name} did not respond to isready command"
+            ChessEngine <- Some eng
+            eng
+
       let engine = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig, writeToConsole)
       
       member x.Engine = engine
+      member x.TryGetMovePolicyAndTopForPosSequence(player:string, qMin:float, qMax:float) = 
+        let distEngine = distributionEngine()        
+        Helper.tryGetMovePolicyAndTopForPosSequence distEngine board player 0.4 0.6 //(qMin qMax)
+
+      member x.TryGetMoveQAndTopForPosSequence(player:string, qMin:float, qMax:float) = 
+        let distEngine = distributionEngine()        
+        Helper.tryGetMoveQAndTopForPosSequence distEngine board player 0.4 0.6 //(qMin qMax)
       
       member x.Stop() = 
         engine.SendUCICommand Stop
-
+            
+      member x.StopDistributionEngine() = 
+        let distEngine = distributionEngine()
+        distEngine.StopProcess()
+        ChessEngine <- None
+        
       member x.Reset() = 
         engine.SendUCICommand Stop
         engine.SendUCICommand UciNewGame
@@ -163,6 +429,7 @@ module Manager =
       member x.GetNetwork () = engine.Network        
 
       member _.BackendInfo() = engine.GetBackEnd()
+      
       member x.GoInfinite() = 
         engine.SendUCICommand Stop        
         let moves = board.GetMoveHistory()
@@ -170,7 +437,7 @@ module Manager =
         if board.AnyLegalMove() |> not then
           let fen = board.FEN()
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
-        else
+        else          
           let command = board.PositionWithMovesIndexed()
           printfn "Search command: %s" command
           engine.SendUCICommand (PositionWithMoves command)
@@ -180,10 +447,10 @@ module Manager =
         engine.SendUCICommand Stop
         let commands = board.PositionWithMovesIndexed()
         moveBoard.ResetBoardState()
-        moveBoard.PlayCommands commands
+        moveBoard.PlayCommands commands        
         let moves = moveBoard.GetMoveHistory()
         moveBoard.PrintPosition moves        
-        if moveBoard.AnyLegalMove() |> not then
+        if moveBoard.AnyLegalMove() |> not then          
           let fen = moveBoard.FEN()
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
         else
@@ -453,7 +720,7 @@ module PuzzleEngineAnalysis =
             let redMsg = sprintf "An error occurred while configuring value head engine for %s: \n\t%s\n" config.Name ex.Message
             LowLevelUtilities.ConsoleUtils.redConsole redMsg
             None //raise ex
-    
+  
   let bestPolicyMoveWithPolicy (bm:string) (nodes:int) (engine: ChessEngine) (pos:string)  =  
     let mutable cont = true
     let mutable infoString = ""

@@ -18,6 +18,7 @@
 		<Compile Include="ArgsParser.fs" />
 		<Compile Include="Engine.fs" />
 		<Compile Include="Analysis.fs" />
+		<None Include="Tests\cccDownloader.fsx" />
 		<Compile Include="Tests\Chess960TestPositions.fs" />
 		<None Include="Tests\Script1.fsx" />
 		<None Include="Tests\testOfCliWrap.fsx" />

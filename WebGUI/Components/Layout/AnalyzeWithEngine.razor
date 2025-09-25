@@ -96,7 +96,7 @@
             <MudTextField HelperText="PV" ReadOnly=true Variant="Variant.Filled" Style="font-size:14px; font-weight:400; color:blue; background-color:white" Class="mud-text pl-1" Text=@whitePV T=string Lines="2" />
         </MudItem>
 
-        <MudGrid Class="ml-1 mt-1" hidden="@(!showCharts)" >
+        <MudGrid Class="ml-1 mt-1" hidden="@(!showCharts)">
             <MudSlider Class="slider" @bind-Value="numberOfLines" Min="1" Max="10" Step="1"
                        Color="Color.Info">N chartlines: @numberOfLines.ToString()</MudSlider>
             <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showNPlot"> @(showNPlot ? "N-plot chart" : "Q-plot chart") </MudSwitch>
@@ -125,7 +125,8 @@
             @if (currentPosition != null && currentPosition.Nodes == 0)
             {
                 <MudItem>
-                    <MudText Class="mb-2 mb-4">@tableHeader                        
+                    <MudText Class="mb-2 mb-4">
+                        @tableHeader
                         <span style="font-weight:600; margin-left:12px;">
                             ⏱ @elapsed.ToString(@"mm\:ss")@("." + (elapsed.Milliseconds / 100))
                         </span>
@@ -180,16 +181,19 @@
 
 
 @code {
-    [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
-    [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
-    [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
-    [Parameter] public int ChartLines { get; set; }
-    [Parameter] public int Nodes { get; set; }
-    [Parameter] public string Id { get; set; }
-    [Parameter] public string FEN { get; set; }
-    [Parameter] public EngineConfig Engine { get; set; }
-    [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
+        [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
+        [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
+        [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
+        [Parameter] public string Id { get; set; }
+        [Parameter] public string FEN { get; set; }
+        [Parameter] public EngineConfig Engine { get; set; }
+        [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
+        [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
+        [Parameter] public string Player { get; set; }
+        [Parameter] public TypesDef.Puzzle.AnalyzeConfig Config { get; set; }
 
+    private int Nodes = 0;
+    private int ChartLines = 3;
     private string zobristHash;
     public string ZobristHash
     {
@@ -645,6 +649,7 @@
             {
                 var command = ChessBoard.PositionWithMovesIndexed();
                 analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+                //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
             }
             catch (Exception ex)
             {
@@ -657,6 +662,7 @@
         {
             var command = ChessBoard.PositionWithMovesIndexed();
             analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+            //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
         }
 
         await InvokeAsync(StateHasChanged);
@@ -716,6 +722,11 @@
                 Update(status);
                 break;
 
+            case EngineUpdate.PolicyDistributionOutCome ds:
+                var list = ds.Item;
+                //CheckAnalysisCallback(list);
+                break;
+
             case EngineUpdate.NNSeq n:
                 if (n.NNSeq.Count > 0)
                 {
@@ -737,6 +748,385 @@
     private void ShowSearchPlot()
     {
         showNNdata = !showNNdata;
+    }
+
+
+    private void DoQAnalysis()
+    {
+        try
+        {
+            var fen = ChessBoard.FEN();
+            var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
+            var fenWithAllMoves = ChessBoard.PositionWithMoves();
+            var history = ChessBoard.GetMoveHistory();
+            logger.LogInformation($"Starting analysis with {fen} and moves {history}");
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            }
+            var engineName = "all";
+
+            var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            float minVal = 0f, maxVal = 1f; // init to satisfy definite assignment
+
+            var ok =
+                parts.Length == 2 &&
+                float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+            var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+
+            //var (min, max) = (0.0f, 1.0f); //(0.2f, 0.8f);
+            var (neuralNet, res) = analyzer?.TryGetMoveQAndTopForPosSequence(engineName, min, max);
+            analyzer?.StopDistributionEngine();
+            foreach (var item in res)
+            {
+                var player = item.IsWhite ? "White" : "Black";
+                logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
+                    player, item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
+            }
+            // NEW: draw the rank-per-move sequence on the Q-plot area
+            _ = searchInfoPlot?.SetRankSequence(res, neuralNet);
+
+            var whiteRank1s = res.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = res.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = res.Count(t => t.IsWhite);
+            var blackTotal = res.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = res.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = res.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            //distribution graph of rank1, rank2 etc
+            var distribution = res.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / res.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            //finally write to console the top 4 ranks fractions
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / res.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, res.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                // Combined single-bar with 11+ tail and 1..10 individual (1..6 at least)
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10);
+            }
+            else
+            {
+                // Or split bars with the same 11+ tail
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7);
+            }
+
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+            //throw;
+        }
+
+    }
+
+    private async Task CheckAnalysis()
+    {
+        try
+        {
+            await Task.Delay(100);
+            //await MeasurePolicyVsOutcome(decisiveOnly: true);
+            var fen = ChessBoard.FEN();
+            var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
+            var fenWithAllMoves = ChessBoard.PositionWithMoves();
+            var history = ChessBoard.GetMoveHistory();
+            logger.LogInformation($"Starting analysis with {fen} and moves {history}");
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            }
+            var engineName = "all";
+
+            var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            float minVal = 0f, maxVal = 1f; // init to satisfy definite assignment
+
+            var ok =
+                parts.Length == 2 &&
+                float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+            var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+
+            //var (min, max) = (0.0f, 1.0f); //(0.2f, 0.8f);
+            var (neuralNet, res) = analyzer?.TryGetMovePolicyAndTopForPosSequence(engineName, min, max);
+            analyzer?.StopDistributionEngine();
+            foreach (var item in res)
+            {
+                var player = item.IsWhite ? "White" : "Black";
+                logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
+                    player, item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
+            }
+            // NEW: draw the rank-per-move sequence on the Q-plot area
+            _ = searchInfoPlot?.SetRankSequence(res, neuralNet);
+
+            var whiteRank1s = res.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = res.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = res.Count(t => t.IsWhite);
+            var blackTotal = res.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = res.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = res.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            //distribution graph of rank1, rank2 etc
+            var distribution = res.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / res.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            //finally write to console the top 4 ranks fractions
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / res.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, res.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                // Combined single-bar with 11+ tail and 1..10 individual (1..6 at least)
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10);                
+            }
+            else
+            {
+                // Or split bars with the same 11+ tail
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7);
+            }
+
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+            throw;
+        }
+
+    }
+
+    private void CheckAllGamesAnalysis()
+    {
+        try
+        {
+            StateHasChanged();
+            var results = new List<PolicyRankInfo>();
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            }
+
+            var playerInSearch = Player.Trim();
+
+            foreach (var game in PGNgames)
+            {
+                // if (game.GameMetaData.Result == "1/2-1/2") continue; // skip draws if requested
+                // if (game.GameMetaData.Result == "1-0" && (playerInSearch == game.GameMetaData.Black))  continue; // skip draws if requested
+                // if (game.GameMetaData.Result == "0-1" && (playerInSearch == game.GameMetaData.White))  continue; // skip draws if requested
+
+                logger.LogInformation("Analyzing game {White} - {Black} result {Result} round {Round}",
+                    game.GameMetaData.White, game.GameMetaData.Black, game.GameMetaData.Result, game.GameMetaData.Round);
+                LoadAndOpenPGNGame(game);
+                var fen = ChessBoard.FEN();
+                var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);                
+                var playerIsWhite = game.GameMetaData.White.Trim() == playerInSearch;
+                var player = String.Empty;
+                if (game.GameMetaData.White.Trim() == playerInSearch)
+                {
+                    player = "w";
+                }
+                else if (game.GameMetaData.Black.Trim() == playerInSearch)
+                {
+                    player = "b";
+                }
+                else
+                {
+                    player = "all";
+                }
+                
+                var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                float minVal = 0f, maxVal = 1f; // init to satisfy definite assignment
+
+                var ok =
+                    parts.Length == 2 &&
+                    float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                    float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                    minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+                var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+                //var (min, max) = (0.45f, 0.55f);
+                var (neuralNetUsed, res) = analyzer?.TryGetMovePolicyAndTopForPosSequence(player, min, max);
+                results.AddRange(res);
+                neuralNet = neuralNetUsed;
+            }
+
+            analyzer?.StopDistributionEngine();
+
+            var whiteRank1s = results.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = results.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = results.Count(t => t.IsWhite);
+            var blackTotal = results.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = results.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = results.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            //distribution graph of rank1, rank2 etc
+            var distribution = results.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+            
+            var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / results.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            //finally write to console the top 4 ranks fractions
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / results.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, results.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                // Combined single-bar with 11+ tail and 1..10 individual (1..6 at least)
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10);                
+            }
+            else
+            {
+                // Or split bars with the same 11+ tail
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7);                
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+            throw;
+        }
+    }
+
+    private void LoadAndOpenPGNGame(PGNTypes.PgnGame game)
+    {
+        var board = ChessBoard;
+        var gameIndex = PGNgames.IndexOf(game);
+        var currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
+        var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
+        board.ResetBoardState();
+        board.StartPosition = fenP;
+        board.LoadFen(fenP);
+        foreach (var row in game.Moves)
+        {
+            if (row.WhiteSan != "")
+            {
+                board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
+            }
+
+            if (row.BlackSan != "")
+            {
+                board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
+            }
+        }
+
+        board.CurrentIndex = board.MovesAndFenPlayed.Count;
+        fen = board.FEN();
+        //MoveAndFen moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        // await Notifier.UpdateFen(fen);
+        // await Notifier.UpdateFenAndMove(moveAndFen);
     }
 
     private async Task ResetEngine()
@@ -813,6 +1203,7 @@
                     //await Task.Delay(200);
                     var command = ChessBoard.PositionWithMovesIndexed();
                     analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+                    //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
                     searchInProgress = true;
                 }
                 else
@@ -830,6 +1221,7 @@
                 {
                     var command = ChessBoard.PositionWithMovesIndexed();
                     analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
+                    //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
                     searchInProgress = true;
                 }
             }
@@ -851,6 +1243,9 @@
             .Add(ModKey.Ctrl, Key.s, (() => ToggleOptimisticAndBase()), "toggle optimistic and baseline")
             .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await GoInfinite()), "go search")
             .Add(ModKey.Ctrl, Key.h, (() => analyzer.Stop()), "stop search")
+            .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
+            .Add(ModKey.Ctrl, Key.q, (() => DoQAnalysis()), "check Q-rank")
+            .Add(ModKey.Ctrl, Key.a, (() => CheckAllGamesAnalysis()), "check all games policy")
             .Add(Key.F1, (Func<Task>)(async () => { numberOfNodes = 1; await Analyze(); }), "Analyze 1 node")
             .Add(Key.F2, (Func<Task>)(async () => { numberOfNodes = 1_000; await Analyze(); }), "Analyze 1_000 nodes")
             .Add(Key.F3, (Func<Task>)(async () => { numberOfNodes = 10_000; await Analyze(); }), "Analyze 10_000 nodes")
@@ -930,6 +1325,7 @@
             }
             searchInProgress = false;
             ChessBoard.inAnalysisMode = true;
+            ChartLines = Config == null ? ChartLines : Config.ChartLines;
             numberOfLines = Math.Max(1, ChartLines);
             numberOfNodes = Math.Max(1, Nodes);
             Qdiff = 2;

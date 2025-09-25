@@ -46,8 +46,8 @@
 
     <MudItem Class="d-flex">
         <MudItem Class="mr-2" lg="4">
-            <AnalyzeWithEngine @ref="analysisWithEngine1" FEN="@fen" Nodes="nodes1" ChartLines="chartLines" OnUCIReceived="OnUCIReceived" ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
-                               Id="nnInput1" Engine="Engine1" OnNewEngineLoaded="OnNewEngineLoaded" />
+            <AnalyzeWithEngine @ref="analysisWithEngine1" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
+                               Id="nnInput1" Engine="Engine1" OnNewEngineLoaded="OnNewEngineLoaded" Config="@config" />
             <MudText Class="ml-2" Typo="Typo.body1">@currentGame</MudText>
             <MudItem xl="12">
                 <div style="height:250px;" class="chart" @ref=pgnChart></div>
@@ -118,7 +118,8 @@
         </MudItem>
 
         <MudItem Class="ml-3" lg="4">
-            <AnalyzeWithEngine @ref="analysisWithEngine2" FEN="@fen" ChartLines="chartLines" Nodes="nodes2" OnUCIReceived="OnUCIReceived" ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2" OnNewEngineLoaded="OnNewEngineLoaded" />
+            <AnalyzeWithEngine @ref="analysisWithEngine2" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
+                               OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2" OnNewEngineLoaded="OnNewEngineLoaded" Config="@config" />
         </MudItem>
 
 
