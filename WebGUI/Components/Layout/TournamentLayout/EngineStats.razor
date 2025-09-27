@@ -126,9 +126,9 @@
   [Parameter]
   public string MainLogoFileName { get; set; }
 
-  private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"img/{MainLogoFileName}";
+  private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"Img/{MainLogoFileName}";
 
-  private string LogoBackup = "img/MainLogoEB.png";
+  private string LogoBackup = "Img/MainLogoEB.png";
   private int fontSize = 8;
   private string FontNormal;
   private string FontHeader;

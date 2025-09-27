@@ -283,8 +283,8 @@
     private PeriodicTimer timer;
     private PeriodicTimer oneSecondTimer;
     private string openingMoves;
-    private string whiteEngineLogo = "img/EngineBattle.png";
-    private string blackEngineLogo = "img/EngineBattle1.png";
+    private string whiteEngineLogo = "Img/EngineBattle.png";
+    private string blackEngineLogo = "Img/EngineBattle1.png";
     private string blackDev = "";
     private string whiteDev = "";
     private string speedDiff = "";
@@ -1401,7 +1401,7 @@
         whitePlayer = info.WhitePlayer.Name;
         whiteDev = info.WhitePlayer.Dev;
         if (String.IsNullOrEmpty(info.WhitePlayer.LogoPath))
-            whiteEngineLogo = "img/chessLogo.jpg";
+            whiteEngineLogo = "Img/chessLogo.jpg";
         else
             whiteEngineLogo = info.WhitePlayer.LogoPath;
         whiteTimeOnly = info.WhiteTime;
@@ -1409,7 +1409,7 @@
         blackPlayer = info.BlackPlayer.Name;
         blackDev = info.BlackPlayer.Dev;
         if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
-            blackEngineLogo = "img/chessLogo.jpg";
+            blackEngineLogo = "Img/chessLogo.jpg";
         else
             blackEngineLogo = info.BlackPlayer.LogoPath;
         blackTimeOnly = info.BlackTime;
