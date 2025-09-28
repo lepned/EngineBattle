@@ -476,6 +476,7 @@ let generateCapturesInSpan (moves: TMove Span) (index: int outref) (position : P
 let makeMove (move : TMove inref) (position : Position byref) =
     let part = 1UL <<< int move.From
     let dest = 1UL <<< int move.To
+    position.Ply <- position.Ply + 1uy
     match (move.MoveType &&& TPieceType.PIECE_MASK) with
     | TPieceType.PAWN ->
         if (move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY then

@@ -55,7 +55,7 @@
             </MudText>
         }
     </MudItem>
-    
+
     <MudItem sm=12 md="12" lg="12">
         <div style="height:100%" @ref="board"></div>
     </MudItem>
@@ -103,7 +103,7 @@
 
     @if (ShowMoveList && MakeMoveListClickable == false)
     {
-        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">           
+        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
             <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
                 <span style="color:skyblue ">@OpeningMoves</span>
                 <span> @MoveHistory </span>
@@ -177,7 +177,7 @@
     private double promotionButtonSizePx => promotionButtonSize * 0.85; // Adjust size for the images
     private TaskCompletionSource<string> promotionTcs;
 
-    private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.NextMoveNumberString(move.ShortSan)}</span>: <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
+    private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
     private async Task SelectPromotion(string promotionPiece)
     {
         // Hide the promotion dialog
@@ -192,9 +192,9 @@
 
     private async Task ScrollToCurrentMove()
     {
-        if (chessJSmodule is not null && ChessBoard.CurrentIndex > -1)
+        if (chessJSmodule is not null && ChessBoard.Position.Ply >= 0)
         {
-            var scrollIndex = Math.Max(0, ChessBoard.CurrentIndex - 1); // Adjust for zero-based index
+            var scrollIndex = Math.Max(0, (int)ChessBoard.Position.Ply); // Adjust for zero-based index
             var moveId = $"move-{scrollIndex}";
             await chessJSmodule.InvokeVoidAsync("scrollToElement", "moveListDiv", moveId);
         }
@@ -267,11 +267,11 @@
         if (index != -1)
         {
             var move = MoveList[index];
-            Comment = CreateComments(move);
             var fen = move.FenAfterMove;
             fenWithMoves = fen;
             ChessBoard.CurrentIndex = index + 1;
             ChessBoard.LoadFen(fen);
+            Comment = CreateComments(move);
             await SetPosition(fen);
             await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
             await ScrollToCurrentMove();
@@ -355,6 +355,8 @@
 
             fenWithMoves = ChessBoard.PositionWithMoves();
             var lastNNMoves = GetNNValues(currentId);
+            var lastFenMove = ChessBoard.MovesAndFenPlayed.Last();
+            Comment = CreateComments(lastFenMove);
             await DisplayMoveAnnotation(lastNNMoves, currentId);
             StateHasChanged();
         }
@@ -592,10 +594,6 @@
     private async Task StartOfGame()
     {
         var fenAndMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
-        if (fenAndMove != null)
-        {
-            Comment = CreateComments(fenAndMove);
-        }
         stopAutoPlay = true;
         ChessBoard.CurrentIndex = 0;
         fenWithMoves = ChessBoard.StartPosition;
@@ -603,6 +601,10 @@
         await SetPosition(fenWithMoves, false);
         await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
         await ScrollToCurrentMove();
+        if (fenAndMove != null)
+        {
+            Comment = CreateComments(fenAndMove);
+        }
         StateHasChanged();
     }
 
@@ -614,9 +616,9 @@
         {
             ChessBoard.CurrentIndex = ChessBoard.LongSANMovesPlayed.Count;
             fenWithMoves = fenAndMove.FenAfterMove;
-            Comment = CreateComments(fenAndMove);
             await SetPositionAndMove(fenAndMove, false);
             ChessBoard.LoadFen(fenWithMoves);
+            Comment = CreateComments(fenAndMove);
             await OnNewFENOnBoard.InvokeAsync(fenAndMove.FenAfterMove);
             await ScrollToCurrentMove();
         }
@@ -632,8 +634,8 @@
         {
             var move = next.Value;
             fenWithMoves = move.FenAfterMove;
-            Comment = CreateComments(move);
             ChessBoard.LoadFen(fenWithMoves);
+            Comment = CreateComments(move);
             await SetPositionAndMove(move, invokeMove: false);
             await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
             await ScrollToCurrentMove();
@@ -653,9 +655,9 @@
         {
             var move = prev.Value;
             fenWithMoves = move.FenAfterMove;
-            Comment = String.IsNullOrEmpty(move.Move.Comments) ? Comment : CreateComments(move); ;
             ChessBoard.LoadFen(fenWithMoves);
-            await SetPosition(fenWithMoves);
+            Comment = CreateComments(move);
+            await SetPositionAndMove(move, invokeMove: false);
             await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
             await ScrollToCurrentMove();
         }
@@ -672,9 +674,9 @@
               ChessBoard.MovesAndFenPlayed[0] :
               ChessBoard.MovesAndFenPlayed[ChessBoard.CurrentIndex];
             fenWithMoves = fenAndMove.FenAfterMove;
-            Comment = CreateComments(fenAndMove);
             ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
             ChessBoard.LoadFen(fenWithMoves);
+            Comment = CreateComments(fenAndMove);
             await SetPositionAndMove(fenAndMove);
             await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
             await Task.Delay(300);
@@ -698,14 +700,14 @@
     {
         if (input == null)
         {
-            return;   
+            return;
         }
         if (fenWithMoves != input.FenAfterMove)
         {
             fenWithMoves = input.FenAfterMove;
-            Comment = CreateComments(input);
             await SetPositionAndMove(input, false);
         }
+        Comment = CreateComments(input);
         var lastNNMoves = GetNNValues(currentId);
         await DisplayMoveAnnotation(lastNNMoves, currentId);
         await InvokeAsync(StateHasChanged);

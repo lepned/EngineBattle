@@ -1367,11 +1367,11 @@ module Match =
                         if res.Reason = ResultReason.Checkmate then
                             let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
                             let status = {lastEngineStatus with Eval = EvalType.Mate 0}
-                            let numberAndMove = (board.MoveNumberString shortSan) + "#"
+                            let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
                             annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                             callback(BestMove (bm, status))
                         else
-                            let numberAndMove = board.MoveNumberString shortSan
+                            let numberAndMove = board.SanMoveNumberString shortSan
                             annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                             callback(BestMove (bestMove, lastEngineStatus))              
                             moveInfoData <- ChessMoveInfo.Empty
@@ -1383,7 +1383,7 @@ module Match =
                                 logger.LogInformation (sprintf "Info %A: " res)
                         return res
                     |None ->
-                        let numberAndMove = board.MoveNumberString shortSan
+                        let numberAndMove = board.SanMoveNumberString shortSan
                         annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                         moveInfoData <- ChessMoveInfo.Empty
                         callback(BestMove (bestMove, lastEngineStatus))                  
@@ -1613,7 +1613,7 @@ module Match =
                 depth <- 0
                 selfdepth <- 0
                 npsList.Clear()
-                let numberAndMove = board.MoveNumberString shortSan
+                let numberAndMove = board.SanMoveNumberString shortSan
                 annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append                            
                 //tablebase adjudication here
                 match Adjudication.adjudicateByEval board fullEvalList tourny player1.Name player2.Name playing.Name gametimer gameMoveList moves with
@@ -1939,11 +1939,11 @@ module Match =
                       if res.Reason = ResultReason.Checkmate then
                         let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
                         let status = {lastEngineStatus with Eval = EvalType.Mate 0}
-                        let numberAndMove = (board.MoveNumberString shortSan) + "#"
+                        let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
                         annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                         callback(BestMove (bm, status))
                       else
-                        let numberAndMove = board.MoveNumberString shortSan
+                        let numberAndMove = board.SanMoveNumberString shortSan
                         annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                         callback(BestMove (bestMove, lastEngineStatus))
                   
@@ -1956,7 +1956,7 @@ module Match =
                         logger.LogInformation (sprintf "Info %A: " res)
                       return res
                     |None ->
-                      let numberAndMove = board.MoveNumberString shortSan
+                      let numberAndMove = board.SanMoveNumberString shortSan
                       annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                       moveInfoData <- ChessMoveInfo.Empty
                       callback(BestMove (bestMove, lastEngineStatus))
@@ -2403,11 +2403,11 @@ module Match =
                       if res.Reason = ResultReason.Checkmate then
                         let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
                         let status = {lastEngineStatus with Eval = EvalType.Mate 0}
-                        let numberAndMove = (board.MoveNumberString shortSan) + "#"
+                        let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
                         annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                         callback(BestMove (bm, status))
                       else
-                        let numberAndMove = board.MoveNumberString shortSan
+                        let numberAndMove = board.SanMoveNumberString shortSan
                         annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                         callback(BestMove (bestMove, lastEngineStatus))
                   
@@ -2421,7 +2421,7 @@ module Match =
                       //logger.LogInformation $"Number of disagreement moves in the game = {Q1DifferentFromN1}"
                       return res
                     |None ->
-                      let numberAndMove = board.MoveNumberString shortSan
+                      let numberAndMove = board.SanMoveNumberString shortSan
                       annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
                       moveInfoData <- ChessMoveInfo.Empty
                       callback(BestMove (bestMove, lastEngineStatus))

@@ -561,7 +561,7 @@ module Engine =
               | Some option ->
                   match option.OptionType with        
                   | UciOption.Spin (min, max, _) -> 
-                      let intValue = int ms
+                      let intValue = int64 ms
                       if intValue >= min && intValue <= max then
                         //create a setoption based on the option and the intValue
                         let cmd = sprintf "setoption name %s value %d" option.Name intValue
@@ -895,7 +895,7 @@ module Engine =
         | Some option ->
             match option.OptionType with        
             | UciOption.Spin (min, max, _) -> 
-                let intValue = int milliSeconds
+                let intValue = int64 milliSeconds
                 if intValue >= min && intValue <= max then
                   //create a setoption based on the option and the intValue
                   let cmd = sprintf "setoption name %s value %d" option.Name intValue                

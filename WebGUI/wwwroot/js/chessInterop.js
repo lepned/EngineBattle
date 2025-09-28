@@ -844,6 +844,27 @@ export function changeColorInEvalPlot(chart, data) {
   });
 }
 
+export function updateMoveIndicator(div, moveIndex, color = '#FFD400') {
+    if (!div || !div.layout) return;
+
+    const lineShape = {
+        type: 'line',
+        xref: 'x',
+        yref: 'paper',
+        x0: moveIndex,
+        x1: moveIndex,
+        y0: 0,
+        y1: 1,
+        line: { color: color, width: 2 },
+        name: 'moveIndicator'
+    };
+
+    const existing = (div.layout.shapes || []).filter(s => s.name !== 'moveIndicator');
+    existing.push(lineShape);
+
+    Plotly.relayout(div, { shapes: existing });
+}
+
 export function openBrowserWindow(content) {
   var doc = window.open().document;
   doc.write("<pre>");

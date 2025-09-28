@@ -177,12 +177,18 @@
     private Puzzle.AnalyzeConfig config = Puzzle.AnalyzeConfig.empty;
     private int nodes = 1;
     private string searchString = "";
+    private GamePgnChart chart;
 
     private int GetEpdIndex(EPD.EPDEntry epd)
     {
         var idx = epdGames.IndexOf(epd) + 1;
         return idx < 0 ? 0 : idx;
     }
+
+    private Task UpdateChartMoveIndicatorAsync()
+    => chart is null
+        ? Task.CompletedTask
+        : chart.UpdateMoveIndicatorAsync(board.MoveNumber());
 
     private bool FilterFunc(PGNTypes.PgnGame game)
     {
@@ -488,7 +494,7 @@
     {
         gameIndex = games.IndexOf(game);
         currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
-        var chart = new GamePgnChart(chessModule, pgnChart, game.GameMetaData.White, game.GameMetaData.Black, "Evaluation", "Score");
+        chart = new GamePgnChart(chessModule, pgnChart, game.GameMetaData.White, game.GameMetaData.Black, "Evaluation", "Score");
         chart.AssignEvalsFromPGN(game);
         await chart.SetEvalChartData();
         var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
@@ -528,6 +534,7 @@
         }
         await Notifier.UpdateFen(fen);
         await Notifier.UpdateFenAndMove(moveAndFen);
+        await UpdateChartMoveIndicatorAsync();
         moveHistory = board.GetMoveHistory();
         StateHasChanged();
     }
@@ -679,6 +686,7 @@
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         await Notifier.UpdateFen(fen);
+        await UpdateChartMoveIndicatorAsync();
         await InvokeAsync(() => StateHasChanged());
     }
 
@@ -687,6 +695,7 @@
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         await Notifier.UpdateFen(fen);
+        await UpdateChartMoveIndicatorAsync();
     }
 
     public async void OnEngineMoveMade(string move)

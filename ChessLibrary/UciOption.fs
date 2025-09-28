@@ -5,7 +5,7 @@ open System
 
 type UciOptionType =
     | Check of bool  // default value
-    | Spin of int * int * int  // (min, max, default)
+    | Spin of int64 * int64 * int64  // (min, max, default)
     | Combo of string list * string  // (options, default)
     | Button
     | String of string  // default value
@@ -60,6 +60,11 @@ let parseOption (line: string) =
         match tryFindIndex keyword with
         | Some index when index + 1 < parts.Length -> Some (parts.[index + 1 ..] |> Array.toList)
         | _ -> None
+    
+    let tryParseInt64 (s:string) =
+        match Int64.TryParse s with
+        | true, v -> Some v
+        | _ -> None
 
     let name =
         match tryFindIndex "name", tryFindIndex "type" with
@@ -72,9 +77,9 @@ let parseOption (line: string) =
               let defaultVal = getValue "default" |> Option.map (fun v -> v = "true") |> Option.defaultValue false
               Check defaultVal
           | Some "spin" ->
-              let min = getValue "min" |> Option.map int |> Option.defaultValue 0
-              let max = getValue "max" |> Option.map int |> Option.defaultValue 0
-              let defaultVal = getValue "default" |> Option.map int |> Option.defaultValue 0
+              let min = getValue "min" |> Option.bind tryParseInt64 |> Option.defaultValue 0L
+              let max = getValue "max" |> Option.bind tryParseInt64 |> Option.defaultValue 0L
+              let defaultVal = getValue "default" |> Option.bind tryParseInt64 |> Option.defaultValue 0L
               Spin (min, max, defaultVal)
           | Some "combo" ->
               let defaultVal = getValue "default" |> Option.defaultValue ""
@@ -121,9 +126,11 @@ let validateOption (optionsMap:Dictionary<string, UciOption>) (name: string, val
     | Some option ->
         match option.OptionType with
         | Check _ -> value = "true" || value = "false"
-        | Spin (min, max, _) -> 
-            let intValue = int value
-            intValue >= min && intValue <= max
+        | Spin (min, max, _) ->             
+            match System.Int64.TryParse(value) with
+            | true, intValue ->
+                intValue >= min && intValue <= max
+            | _ -> false
         | Combo (options, _) -> List.contains value options
         | Button -> true  // No validation needed for button
         | String _ -> true  // No specific validation for strings
@@ -148,7 +155,7 @@ let validateSetOption  (optionsMap:Dictionary<string, UciOption>) (name: string,
         match option.OptionType with
         | Check _ -> value = "true" || value = "false"
         | Spin (min, max, _) -> 
-            match System.Int32.TryParse(value) with
+            match System.Int64.TryParse(value) with
             | true, intValue -> intValue >= min && intValue <= max
             | _ -> false
         | Combo (legalValues, _) -> List.contains value legalValues

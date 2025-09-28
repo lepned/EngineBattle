@@ -198,24 +198,24 @@ type Board() =
       else
         longSanMoves |> Seq.fold(fun state m -> 
           sprintf "%s %s" state m) $"position fen {fen} moves"
+
+    member this.SanMoveNumberString san = 
+      if String.IsNullOrWhiteSpace(san) then
+        ""
+      else
+          let ply = position.Ply |> int
+          let moveNr = ((ply + 1) / 2)
+          if position.STM = 0uy then //white is to move which means black just moved
+            if moveNr = 0 then //start of game
+              sprintf "%d. %s" 1 san
+            else
+              sprintf "%d ...%s" moveNr san
+          else
+            sprintf "%d. %s" moveNr san
     
-    member this.MoveNumberString san = 
-      let f ply (move:string) = 
-        if ply % 2 = 1 then
-          let n = ply / 2 + ply % 2
-          sprintf "%d. %s" n move
-        else      
-          sprintf "%s" move
-      f plyCount san
-    
-    member this.NextMoveNumberString san = 
-      let f ply (move:string) = 
-        let n = ply / 2 + ply % 2
-        if ply % 2 = 1 then
-          sprintf "%d. %s" n move
-        else      
-          sprintf "%d ...%s" n move
-      f (plyCount + 1) san
+    member this.MoveNumber() = 
+      let ply = int position.Ply
+      max 1 ((ply + 1) / 2)
     
     member this.CollectStat (move:_ inref) =
           //stats here - castles, captures and eps
@@ -407,9 +407,9 @@ type Board() =
     member this.MakeMove (move:TMove inref) =
       game.[iPosition] <- PositionOps.copy(&position)
       iPosition <- iPosition + 1
-      plyCount <- plyCount + 1
+      //plyCount <- plyCount + 1
       makeMove &move &position
-      position.Ply <- max (position.Ply + 1uy) (byte plyCount)
+      plyCount <- int32 position.Ply      
       let hash = this.PositionHash()
       this.HashKeys.Add hash
       this.MovesPlayed.Add move      
@@ -452,9 +452,11 @@ type Board() =
     member this.UnMakeMove () =                
       iPosition <- iPosition - 1
       position <- game.[iPosition]
+      plyCount <- int32 position.Ply
       if plyCount = 0 then
         printfn "ply count should never be less than zero"
-      plyCount <- plyCount - 1
+      else
+        plyCount <- plyCount - 1
 
     member this.PrintPosition (label:string) = 
       PositionOpsToString(label, &position) |> printfn "%s"
