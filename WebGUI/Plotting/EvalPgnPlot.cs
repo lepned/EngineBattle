@@ -13,7 +13,7 @@ namespace WebGUI.Plotting
         public string PlayerBlack { get; set; }
         public double[] PlayerWhiteData { get; set; } = Array.Empty<double>();
         public double[] PlayerBlackData { get; set; } = Array.Empty<double>();
-        public List<int> MoveElements { get; set; } = new List<int>();
+        public List<int> MoveElements { get; set; } = new List<int>(Enumerable.Range(1, 500));
 
         private string titleColor = "#c1c1c4";
         private string blackColor = "#141519";
@@ -32,6 +32,7 @@ namespace WebGUI.Plotting
         private object blackLine;
         private readonly string moveIndicatorColor = "#FFD400";
         private int? currentMoveIndex;
+        private const double MoveIndicatorMaxY = 10d;
 
         public GamePgnChart(IJSObjectReference chessMod, ElementReference chart, string white, string black, string title, string yTitle)
         {
@@ -125,25 +126,31 @@ namespace WebGUI.Plotting
 
         private double PseudoLogTransform(double x)
         {
-            var cap10 = Math.Abs(x) > 10 ? 10 * Math.Sign(x) : x;
+            var cap10 = Math.Abs(x) > MoveIndicatorMaxY ? MoveIndicatorMaxY * Math.Sign(x) : x;
             return cap10;
         }
 
         public void AssignEvalsFromPGN(PgnGame game)
         {
             ClearData(PlayerWhite, PlayerBlack);
-            var moveStats = Parser.PGNExtractor.extractEngineStats(game);
+            var moveStats = Parser.PGNExtractor.extractEngineStats(game).Moves.ToArray();
+            var last = moveStats.LastOrDefault();
+            if (last != null && last.wv == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
+            {
+                if (moveStats.Length > 0)
+                {
+                    moveStats = moveStats[..^1]; // slice array excluding last element
+                }                
+            }
             PlayerWhiteData =
-              moveStats.Moves
+              moveStats
               .Where(e => e.Player == PlayerWhite)
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
-
+            
             PlayerBlackData =
-              moveStats.Moves
+              moveStats
               .Where(e => e.Player == PlayerBlack)
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
-            var maxNumberOfMoves = Math.Max(PlayerWhiteData.Length, PlayerBlackData.Length);
-            MoveElements = maxNumberOfMoves == 0 ? new List<int>() : Enumerable.Range(1, maxNumberOfMoves).ToList();
         }
 
         public void ClearData(string white, string black)
@@ -152,7 +159,7 @@ namespace WebGUI.Plotting
             {
                 PlayerWhiteData = Array.Empty<double>();
                 PlayerBlackData = Array.Empty<double>();
-                MoveElements.Clear();                
+                //MoveElements.Clear();                
                 PlayerWhite = white;
                 PlayerBlack = black;
             }
@@ -167,6 +174,53 @@ namespace WebGUI.Plotting
             {
                 Console.WriteLine($"An error occurred in ClearData method: {ex.Message}");
             }
+        }
+
+        private double[] GetDynamicYRange()
+        {
+            var all = PlayerWhiteData.Concat(PlayerBlackData).ToArray();
+            if (all.Length == 0)
+            {
+                return new[] { -MoveIndicatorMaxY, MoveIndicatorMaxY };
+            }
+
+            double min = all.Min();
+            double max = all.Max();
+
+            // Handle flat data
+            if (Math.Abs(max - min) < 1e-9)
+            {
+                if (min == 0)
+                {
+                    min = -1;
+                    max = 1;
+                }
+                else
+                {
+                    var paddingFlat = Math.Max(0.25, Math.Abs(min) * 0.1);
+                    min -= paddingFlat;
+                    max += paddingFlat;
+                }
+            }
+
+            // Add a small padding
+            const double pad = 0.5;
+            min -= pad;
+            max += pad;
+
+            // Clamp to ±MoveIndicatorMaxY
+            min = Math.Max(-MoveIndicatorMaxY, min);
+            max = Math.Min(MoveIndicatorMaxY, max);
+
+            // Ensure a minimal span
+            if (max - min < 0.5)
+            {
+                var mid = (max + min) / 2.0;
+                min = Math.Max(-MoveIndicatorMaxY, mid - 0.25);
+                max = Math.Min(MoveIndicatorMaxY, mid + 0.25);
+            }
+
+            return new[] { min, max };
         }
 
         public async Task SetEvalChartData()
@@ -184,18 +238,18 @@ namespace WebGUI.Plotting
                 zeroline = false,
                 color = whiteColor
             };
-
+            var yRange = GetDynamicYRange();
             var yaxis = new
             {
                 gridcolor = whiteGridColor,
                 gridwidth = 1,
-                rangemode = "tozero",
+                //rangemode = "tozero",
                 nticks = 8,
                 tickformat = ".1f",
                 showgrid = true,
                 tickfont = new { size = fontSizeTickFont },
                 color = whiteColor,
-                range = new[] { 0, MoveElements.Count }
+                range = yRange,
             };
 
             var layout = new

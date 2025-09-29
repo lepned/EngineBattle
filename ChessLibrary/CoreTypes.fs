@@ -2245,6 +2245,7 @@ module TypesDef =
         let evalRegex = new Regex(@"wv=(-?\d+(\.\d*)?|-M\d*|M\d*)", RegexOptions.Compiled)
         let evalRegexCeres = new Regex(@"([+-]?\d+\.\d+)/(\d+)\s?(\d+\.\d+)s", RegexOptions.Compiled)
         let banksiaRegex = new Regex(@"([+-]?\d+\.\d+)/(\d+)\s(\d+)\s(\d+)", RegexOptions.Compiled)
+        let mateRegex = new Regex(@"([+-]?\d+(\.\d*)?|-M\d*|M\d*)/(\d+)\s+(\d+(\.\d*)?)s", RegexOptions.Compiled)
 
         // Parsing helper functions...
         let parseRegex myDefault format line (regex: Regex) =
@@ -2294,7 +2295,23 @@ module TypesDef =
               let eval = float test.Groups.[1].Value * (if isBlack then -1.0 else 1.0)
               let depth = int test.Groups.[2].Value
               let time = float test.Groups.[3].Value
-              { EngineMoveStat.Empty with Player = player; wv = eval; d = depth; mt = int64 time }
+              { EngineMoveStat.Empty with Player = player; wv = eval; d = depth; mt = int64 time }            
+            elif mateRegex.IsMatch line then
+                let regexAlt = new Regex(@"([+-]?\d+(\.\d*)?|-M\d*|M\d*)/(\d+)\s+(\d+(\.\d*)?)s", RegexOptions.Compiled)
+                if regexAlt.IsMatch line then
+                  let test = regexAlt.Match(line)
+                  let value = test.Groups.[1].Value
+                  let eval =
+                    match value.[0] with
+                    | '-' when value.Length > 1 && value.[1] = 'M' -> -200.0
+                    | 'M' -> 200.0
+                    | _ -> match System.Double.TryParse(value) with | true, num -> num | _ -> 0.0
+                  let depth = int test.Groups.[3].Value
+                  let time = float test.Groups.[4].Value
+                  { EngineMoveStat.Empty with Player = player; wv = eval * (if isBlack then -1.0 else 1.0); d = depth; mt = int64 (time * 1000.0) }
+                else
+                  { EngineMoveStat.Empty with Player = player }
+
             else
               { EngineMoveStat.Empty with Player = player }
           else
