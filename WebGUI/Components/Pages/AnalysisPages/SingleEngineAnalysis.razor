@@ -28,15 +28,15 @@
 <MudItem Class="p-3">
     <MudItem Class="d-flex">
         <MudItem lg="1">
-            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Config-File" Size="Size.Small" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="configFile" />
+            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Config" Size="Size.Small" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="configFile" />
 
         </MudItem>
         <MudItem lg="1">
-            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="PGN-File" Size="Size.Small"
+            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="PGN" Size="Size.Small"
                     StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
         </MudItem>
         <MudItem lg="1">
-            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD-File" Size="Size.Small"
+            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD" Size="Size.Small"
                     StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" />
         </MudItem>
         <MudItem lg="5" Class="ml-10 mt-5">
@@ -54,7 +54,7 @@
                 <div style="height:250px;" class="chart" @ref=pgnChart></div>
             </MudItem>
         </MudItem>
-        <MudItem Class="mt-1 pl-2" md="5" xl="4">
+        <MudItem Class="mt-1 pl-2" md="4" xl="4">
 
             <div @ref="chessBoard">
                 <Chessboard ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"

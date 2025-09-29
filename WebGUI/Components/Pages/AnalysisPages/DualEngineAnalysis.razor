@@ -25,21 +25,21 @@
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
 @* <InputFile id="tbInput" OnChange="@OpenTBTestFile" hidden /> *@
-<MudItem Class="p-3">
+<MudItem Class="pl-3">
     <MudItem Class="d-flex">
         <MudItem lg="1">
-            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Config-File" Size="Size.Medium" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="configFile" />
+            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Config" Size="Size.Medium" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="configFile" />
 
         </MudItem>
         <MudItem lg="1">
-            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="PGN-File" Size="Size.Medium"
+            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="PGN" Size="Size.Medium"
                     StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
         </MudItem>
         <MudItem lg="1">
-            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD-File" Size="Size.Medium"
+            <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD" Size="Size.Medium"
                     StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" Style="white-space: nowrap;" />
         </MudItem>
-        <MudItem lg="5" Class="ml-10 mt-5">
+        <MudItem lg="4" Class="ml-10 mt-5">
             <MudText>@pgnName</MudText>
         </MudItem>
     </MudItem>
@@ -117,7 +117,7 @@
 
         </MudItem>
 
-        <MudItem Class="ml-3" lg="4">
+        <MudItem Class="ml-3 mr-3" lg="4">
             <AnalyzeWithEngine @ref="analysisWithEngine2" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
                                OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2" OnNewEngineLoaded="OnNewEngineLoaded" Config="@config" />
         </MudItem>

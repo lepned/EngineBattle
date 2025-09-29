@@ -22,8 +22,8 @@
 <InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
 
 <MudItem Class="m-2">
-    <MudText Typo=Typo.h5 Class="pa-1 ma-1">Engine: @EngineName</MudText>
-    <MudGrid Class="pa-1 ma-1">
+    <MudText Typo=Typo.h5 Class="pa-1 ma-1 ml-2">Engine: @EngineName</MudText>
+    <MudGrid Class="pa-1 ml-1 mr-1 mt-1">
         <MudItem Class="pa-1 ma-1" lg="2">
             <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" Size="Size.Small" OnClick=Analyze> Start search </MudButton>
         </MudItem>
@@ -40,10 +40,9 @@
             <MudButton Class="tiny-button" Disabled=@(searchInProgress || waitingForEngine) Variant="Variant.Outlined" OnClick=OpenDialog> Settings </MudButton>
         </MudItem>
     </MudGrid>
-
-    <MudItem>
-        <MudGrid Class="mt-3">
-            <MudItem lg="2" Class="pa-1 ml-8 ma-1" hidden="@(!runLogLiveStats)">
+    
+        <MudGrid Class="ml-1 mt-1 align-items-start">
+            <MudItem lg="2" Class="pa-1 ml-2 mt-3" hidden="@(!runLogLiveStats)">
                 <MudText Typo="Typo.caption" Class="mb-1 ml-1" Style="white-space: nowrap;">Overlay mode</MudText>
                 <MudMenu FullWidth="true"
                          Label="@GetOverlayLabel()"
@@ -55,34 +54,47 @@
                         <MudMenuItem OnClick="@(() => OnOverlaySettingChanged(setting))">@setting</MudMenuItem>
                     }
                 </MudMenu>
-
             </MudItem>
-            <div hidden="@(selectedOverlaySetting == OverlaySettings.None)">
-                <MudSlider Class="slider"
+            <MudItem >
+                <MudStack Spacing="0">
+                    <MudItem>
+                    <span style="font-size:12px;">
+                        Min Policy: @MinPolicyThreshold.ToString("P1")
+                    </span>
+                    </MudItem>
+                <MudSlider Class="slider"                    
                            Value="@((double)MinPolicyThreshold)"
                            ValueChanged="@((double sliderValue) => OnMinPolicyThresholdChanged(sliderValue))"
                            Min="0"
                            Max="0.05"
                            Step="0.005"
                            Color="Color.Info">
-                    MinPolicy: @MinPolicyThreshold.ToString("P1")
                 </MudSlider>
-            </div>
-            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@autoSearchSwitch"> Auto search @(autoSearchSwitch ? "On" : "Off") </MudSwitch>
-            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showCharts"> Charts @(showCharts ? "On" : "Off") </MudSwitch>
-
+                </MudStack>
+            </MudItem>
+            <MudItem>
+                <MudStack Spacing="1">
+                    <MudSwitch Size=Size.Small T="bool" Style="font-size:12px;" @bind-Value="@autoSearchSwitch"> Auto search @(autoSearchSwitch ? "On" : "Off") </MudSwitch>
+                    <MudSwitch Size=Size.Small T="bool" Style="font-size:12px;" @bind-Value="@showCharts"> Charts @(showCharts ? "On" : "Off") </MudSwitch>
+                </MudStack>
+            </MudItem>        
         </MudGrid>
-    </MudItem>
+    
     <MudItem Class="d-flex ml-3 mt-4">
-        <MudItem sm="3">
-            <MudNumericField Style="height:50px;" HideSpinButtons=true Format="N0" Label="Node limit" Variant="Variant.Filled" @bind-Value="numberOfNodes" Culture=currentCulture @onchange="NodeCountChanged" />
+        <MudItem sm="2" lg="3">
+            <MudNumericField Style="height:50px; width:140px; font-size:13px;" HideSpinButtons=true Format="N0" Label="Node limit" Variant="Variant.Filled" @bind-Value="numberOfNodes" Culture=currentCulture @onchange="NodeCountChanged" />
         </MudItem>
-        <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
-                Label="WeightsFile" Size="Size.Small" for="@Id" />
-        <MudFab Class="ml-5 mt-3" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
-                Label="Engine.json" Size="Size.Small" for="@engineJson" />
-        <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Class="ml-4 mt-1" Style="height:30px; max-width:130px;" HelperText="your command" @bind-Value="text" />
-        <MudButton Class="ml-2 mt-2 mr-4 tiny-button" Size="Size.Small" OnClick="DumpEngineStats" Variant="Variant.Filled">run command</MudButton>
+        <MudFab Class="ml-5 mt-1" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                Label="Weights" style="font-size:11px;" Size=Size.Small for="@Id" />
+        <MudFab Class="ml-5 mt-1" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
+                Label="Engine" style="font-size:11px;" Size=Size.Small for="@engineJson" />
+        <MudItem Class="ml-5">
+            <MudStack Spacing="0">
+                <MudButton Class="ml-2 mr-3 tiny-button" Size="Size.Small" OnClick="DumpEngineStats" Variant="Variant.Filled">run cmd</MudButton>
+                <MudTextField Class="ml-2 mt-1" Variant="Variant.Outlined" Margin="Margin.Dense" Style="height:30px; max-width:130px; font-size:12px;" @bind-Value="text" />
+            </MudStack>
+        </MudItem>
+        
     </MudItem>
 
     <div class="ml-4 mt-2">
@@ -91,15 +103,23 @@
     </div>
 
     <MudItem Class="pa-1 ma-1">
-
         <MudItem Class="ma-1">
-            <MudTextField HelperText="PV" ReadOnly=true Variant="Variant.Filled" Style="font-size:14px; font-weight:400; color:blue; background-color:white" Class="mud-text pl-1" Text=@whitePV T=string Lines="2" />
+            <MudItem Class="ml-1">
+                <MudTextField HelperText="PV"
+                              ReadOnly="true"
+                              Variant="Variant.Text"
+                              Lines="3"
+                              Text="@whitePV"
+                              T="string"
+                              Class="pl-1"
+                              Style="font-size:14px; padding-left:6px; font-weight:400; color:blue; background-color:white;" />
+            </MudItem>
         </MudItem>
 
-        <MudGrid Class="ml-1 mt-1" hidden="@(!showCharts)">
+        <MudGrid Class="ml-1 mt-1 mr-2" hidden="@(!showCharts)">
             <MudSlider Class="slider" @bind-Value="numberOfLines" Min="1" Max="10" Step="1"
-                       Color="Color.Info">N chartlines: @numberOfLines.ToString()</MudSlider>
-            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showNPlot"> @(showNPlot ? "N-plot chart" : "Q-plot chart") </MudSwitch>
+                       Color="Color.Info"><span style="font-size:13px;"> N chartlines: @numberOfLines.ToString()</span> </MudSlider>
+            <MudSwitch T="bool" Class="ml-4 mt-1" @bind-Value="@showNPlot"><span style="font-size:13px;" > @(showNPlot ? "N-plot chart" : "Q-plot chart") </span>  </MudSwitch>
             <div hidden="@(!showNPlot)" style="height:@GetChartHeight();" class="chart ml-1" @ref=nPlotReference></div>
             <div hidden="@(showNPlot)" style="height:@GetChartHeight();" class="chart ml-1" @ref=qPlotReference></div>
         </MudGrid>
@@ -108,16 +128,21 @@
             @if (currentPosition != null && currentPosition.Nodes > 0)
             {
                 <MudItem>
-                    <MudText Class="mb-0">@tableHeader</MudText>
+                    <MudText Class="mb-0">
+                        @tableHeader
+                    </MudText>
                 </MudItem>
                 <MudItem Class="d-flex">
                     <MudItem sm="9" Class="mb-2 mt-4">
                         <MudText Typo="Typo.body1">
                             Current position Q: @currentPosition.Q.ToString("N2") (V: @currentPosition.V.ToString("N2")))
+                            <span style="font-weight:600; margin-left:12px;">
+                                ⏱ Elapsed @elapsed.ToString(@"mm\:ss\.f")
+                            </span>
                         </MudText>
                     </MudItem>
-                    <MudItem sm="3">
-                        <MudButton Class="analyzeButton" Size="Size.Small" Variant="Variant.Text" Disabled="NNInfoList.Count == 0" OnClick=ShowSearchPlot> Switch to raw output </MudButton>
+                    <MudItem sm="3" Class="mt-1">
+                        <MudButton Class="analyzeButton" Size="Size.Small" Variant="Variant.Text" Disabled="NNInfoList.Count == 0" OnClick=ShowSearchPlot> Raw output </MudButton>
                     </MudItem>
                 </MudItem>
             }
@@ -128,7 +153,7 @@
                     <MudText Class="mb-2 mb-4">
                         @tableHeader
                         <span style="font-weight:600; margin-left:12px;">
-                            ⏱ @elapsed.ToString(@"mm\:ss")@("." + (elapsed.Milliseconds / 100))
+                            ⏱ Elapsed @elapsed.ToString(@"mm\:ss\.f")
                         </span>
                     </MudText>
                 </MudItem>
@@ -181,16 +206,16 @@
 
 
 @code {
-        [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
-        [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
-        [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
-        [Parameter] public string Id { get; set; }
-        [Parameter] public string FEN { get; set; }
-        [Parameter] public EngineConfig Engine { get; set; }
-        [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
-        [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
-        [Parameter] public string Player { get; set; }
-        [Parameter] public TypesDef.Puzzle.AnalyzeConfig Config { get; set; }
+    [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
+    [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
+    [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
+    [Parameter] public string Id { get; set; }
+    [Parameter] public string FEN { get; set; }
+    [Parameter] public EngineConfig Engine { get; set; }
+    [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
+    [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
+    [Parameter] public string Player { get; set; }
+    [Parameter] public TypesDef.Puzzle.AnalyzeConfig Config { get; set; }
 
     private int Nodes = 0;
     private int ChartLines = 3;
@@ -237,7 +262,7 @@
     private double Qdiff = 2;
     public bool autoSearchSwitch { get; set; } = false;
     public bool showCharts { get; set; } = true;
-    private string neuralNet = "Fill in";
+    private string neuralNet = "Not set";
     private string backend = "";
     private bool searchInProgress = false;
     private bool waitingForEngine = false;
@@ -950,7 +975,7 @@
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
                     neuralNet,
                     minDistinctRanks: 2,
-                    tailStart: 10);                
+                    tailStart: 10);
             }
             else
             {
@@ -997,7 +1022,7 @@
                     game.GameMetaData.White, game.GameMetaData.Black, game.GameMetaData.Result, game.GameMetaData.Round);
                 LoadAndOpenPGNGame(game);
                 var fen = ChessBoard.FEN();
-                var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);                
+                var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
                 var playerIsWhite = game.GameMetaData.White.Trim() == playerInSearch;
                 var player = String.Empty;
                 if (game.GameMetaData.White.Trim() == playerInSearch)
@@ -1012,7 +1037,7 @@
                 {
                     player = "all";
                 }
-                
+
                 var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -1059,7 +1084,7 @@
                 .Select(g => new { Rank = g.Key, Count = g.Count() })
                 .OrderBy(g => g.Rank)
                 .ToList();
-            
+
             var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
 
             foreach (var item in distribution)
@@ -1079,7 +1104,7 @@
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
                     neuralNet,
                     minDistinctRanks: 2,
-                    tailStart: 10);                
+                    tailStart: 10);
             }
             else
             {
@@ -1090,7 +1115,7 @@
                     blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
                     neuralNet,
                     minDistinctRanks: 2,
-                    tailStart: 7);                
+                    tailStart: 7);
             }
         }
         catch (Exception ex)

@@ -122,12 +122,12 @@
 
 .tiny-button {
     font-size: 10px;
-    padding: 2px 6px;
+    padding: 2px 2px;
     height: 35px;
     line-height: 20px;
-    min-width: 80px;
-    margin-right: 8px; /* Add horizontal spacing between buttons */
-    margin-bottom: 8px; /* Add vertical spacing between buttons if they wrap */
+    min-width: 60px;
+    margin-right: 5px; /* Add horizontal spacing between buttons */
+    margin-bottom: 5px; /* Add vertical spacing between buttons if they wrap */
 }
 
 
@@ -384,15 +384,15 @@
 }
 
 .slider {
-  max-width: 120px;
-  margin-left: 13px;
-  margin-top: 0px;
+  max-width: 100px;
+  margin-left: 5px;
+  margin-bottom: 0px;
 }
 
 .wideSlider {
   max-width: 400px;
   margin-left: 10px;
-  margin-top: 10px;
+  margin-top: 2px;
 }
 
 .config {
@@ -451,9 +451,13 @@
 }
 
 .chart {
-  background-color: #373740;
-  margin: 5px;
-  margin-right: 10px;
+    background-color: #373740;
+    margin: 5px;
+    margin-right: 10px;
+    width: 100%;
+    max-width: 100%; /* allow shrink */
+    flex: 1 1 auto;
+    overflow: hidden;
 }
 
 /* CSS class to highlight a square */
