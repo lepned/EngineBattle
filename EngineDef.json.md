@@ -45,7 +45,7 @@ This document provides an overview of the `EngineDef.json` configuration file us
   "TimeControlID": 1,
   "Rating": 3600,
   "Dev": "by The Stockfish developers.",
-  "LogoPath": "img/SF-TCEC.png",
+  "LogoPath": "Img/SF-TCEC.png",
   "Protocol": "UCI",
   "ContemptEnabled": false,
   "NegativeContemptAllowed": false,

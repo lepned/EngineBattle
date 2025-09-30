@@ -16,6 +16,7 @@
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",
+  "OrdoExePath": "",
   "Adjudication": {
     "DrawOption": {
       "DrawMoveLength": 5,

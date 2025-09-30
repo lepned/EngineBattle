@@ -8,7 +8,7 @@
       "TimeControlID": 1,
       "Rating" : 3580,
       "Dev": "by The LCZero Authors.",
-      "LogoPath": "img/lc0.png",
+      "LogoPath": "Img/lc0.png",
       "Protocol": "UCI",
       "ContemptEnabled": false,
       "NegativeContemptAllowed": false,

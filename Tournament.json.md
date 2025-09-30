@@ -23,6 +23,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **PauseAfterRound**: Pause duration after each round in seconds.
 - **DelayBetweenGames**: Delay between games in HH:MM:SS:MMM format.
 - **MoveOverhead**: Move overhead time in HH:MM:SS:MMM format.
+- **OrdoExePath**: Path to Ordo.exe.
 
 ### Adjudication Options
 
@@ -126,6 +127,7 @@ This document provides an overview of the `tournament.json` configuration file u
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",
+  "OrdoExePath": "",
   "Adjudication": {
     "DrawOption": {
       "DrawMoveLength": 5,

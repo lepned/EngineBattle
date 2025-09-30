@@ -5,7 +5,7 @@
     "TimeControlID": 1,
     "Rating": 3680,
     "Dev": "by The Stockfish developers.",
-    "LogoPath": "img/SF-TCEC.png",
+    "LogoPath": "Img/SF-TCEC.png",
     "Protocol": "UCI",
     "ContemptEnabled": false,
     "NegativeContemptAllowed": false,
