@@ -649,7 +649,7 @@ module TournamentUtils =
           ()
         else
           logger.LogDebug("Engine {Engine} read timed out after {Timeout}ms (no output; still thinking)", eng.Name, timeoutMs)
-        return ""
+        return String.Empty
   }
 
   // Backwards-compatible name used elsewhere; now uses the pump

@@ -124,18 +124,32 @@
       state.LoadFen(fen);
       whiteToMove = input.Move.Color == "b";
       await SetPositionAndMove(input);
+        }
     }
+
+  private static bool ValidatePV(string pv)
+  {
+    if (String.IsNullOrEmpty(pv) || pv.Length < 4)
+    {
+        return false;            
+    }
+    return true;    
   }
 
   public async Task UpdateLastPVMove(string pvMove, string oppPvMove, bool withArrows)
   {
-    if (withArrows && state.LastPV != pvMove && !String.IsNullOrEmpty(pvMove))
+    if (!ValidatePV(pvMove))
+    {
+        Logger.LogWarning($"Invalid PV move received in {nameof(UpdateLastPVMove)}: '{pvMove}'");
+        await Task.CompletedTask;
+    }
+    else if (withArrows && state.LastPV != pvMove)
     {
       state.LastPV = pvMove;
       if (chessJSmodule is not null)
-      {
+      {        
         var (fromSq, toSq) = (pvMove.Substring(0, 2), pvMove.Substring(2, 2));
-        if (!String.IsNullOrEmpty(oppPvMove))
+        if (ValidatePV(oppPvMove))
         {
           var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
           var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
@@ -156,10 +170,15 @@
     }
   }
 
-  public async void UpdatePonderMoveWithPolicy(string ponderMove, double policy, double frac)
+  public async Task UpdatePonderMoveWithPolicy(string ponderMove, double policy, double frac)
   {
-    if ((state.LastPonderMove != ponderMove && ponderMove == state.LastPV) || state.LastFraction != frac)
+    if (!ValidatePV(ponderMove))
     {
+        Logger.LogWarning($"Invalid PV move received: '{ponderMove}'");
+        await Task.CompletedTask;
+    }
+    else if ((state.LastPonderMove != ponderMove && ponderMove == state.LastPV) || state.LastFraction != frac)
+    {      
       if (chessJSmodule is not null)
       {
         var (fromSq, toSq) = (ponderMove.Substring(0, 2), ponderMove.Substring(2, 2));

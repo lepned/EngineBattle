@@ -35,10 +35,10 @@ namespace WebGUI.Plotting
         private string whiteColor = "rgba(245, 245, 245, 0.75)";
         private string whiteGridColor = "#484952";
         //add callback action field here
-        private Action<string, double, double> _callback;
+        private readonly Func<string, double, double, Task> _callback;
         //private string blackGridColor = "#484952";
 
-        public SearchInfoPlot(IJSObjectReference chessMod, ElementReference Qchart, ElementReference Nchart, string yTitle, string fen, string net, Action<string, double, double> callback)
+        public SearchInfoPlot(IJSObjectReference chessMod, ElementReference Qchart, ElementReference Nchart, string yTitle, string fen, string net, Func<string, double, double, Task> callback)
         {
             _callback = callback;
             chessModule = chessMod;
@@ -1116,12 +1116,11 @@ namespace WebGUI.Plotting
             }
 
             var nDict = NvaluesDict;
-            if (moves.Any())
-            {
+            if (moves.Count > 0 && _callback is not null)
+            {                
                 var move = moves[0];
                 var frac = nDict[move.SANMove].Last();
-                // var frac = move.Nodes / n;
-                _callback?.Invoke(move.LANMove, move.P, frac);
+                await _callback?.Invoke(move.LANMove, move.P, frac);                
             }
 
             var traces = new List<object>();

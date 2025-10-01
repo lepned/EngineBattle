@@ -380,11 +380,11 @@
         return count;
     }
 
-    public void Callback(string lanMove, double policy, double frac)
+    public async Task Callback(string lanMove, double policy, double frac)
     {
         if (BestMoveWithPolicy)
         {
-            streamingBoard.UpdatePonderMoveWithPolicy(lanMove, policy, frac);
+            await streamingBoard.UpdatePonderMoveWithPolicy(lanMove, policy, frac);
         }
     }
 
