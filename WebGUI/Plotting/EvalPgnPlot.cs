@@ -61,7 +61,7 @@ namespace WebGUI.Plotting
 
             margin = new
             {
-                l = 55,
+                l = 60,
                 r = 15,
                 b = 30,
                 t = 50,
@@ -164,13 +164,13 @@ namespace WebGUI.Plotting
             PlayerWhiteData =
               moveStats
               .Where(e => e.Player == PlayerWhite)
-              .Select(e => (double)e.mt).ToArray();
+              .Select(e => (double)e.mt/1000).ToArray();
 
             PlayerBlackData =
               moveStats
               .Where(e => e.Player == PlayerBlack)
-              .Select(e => (double)e.mt).ToArray();
-            Title = "Time Usage (ms)";
+              .Select(e => (double)e.mt/1000).ToArray();
+            Title = "Time Usage (sec)";
             await SetChartTimeUsageData();
         }
 
@@ -415,6 +415,7 @@ namespace WebGUI.Plotting
                 tickfont = new { size = fontSizeTickFont },
                 color = whiteColor,
                 range = yRange,
+                automargin = true
             };
 
             var layout = new
@@ -521,7 +522,8 @@ namespace WebGUI.Plotting
                 rangemode = "tozero",
                 nticks = nticks,
                 showgrid = true,
-                color = whiteColor
+                color = whiteColor,
+                automargin = true
             };
 
             var layout = new
@@ -623,7 +625,7 @@ namespace WebGUI.Plotting
                 gridwidth = 1,
                 rangemode = "tozero",
                 nticks = nticks,
-                showgrid = true
+                showgrid = true               
             };
 
             var yaxis2 = new
@@ -739,19 +741,6 @@ namespace WebGUI.Plotting
 
             var yaxis = new
             {
-                tickformatstops = new[] // use var to infer the type and [] to create an array
-                {
-                    new // use new with object initializer to create an anonymous type
-                    {
-                        dtickrange = new object[] { null, 1000 }, // use object[] to hold null and int values
-                        value = "d" // use string for value
-                    },
-                    new
-                    {
-                        dtickrange = new object[] { 1000, null },
-                        value = ".2s"
-                    }
-                },
 
                 tickfont = new { size = fontSizeTickFont },
                 tickmode = "auto",
@@ -761,7 +750,8 @@ namespace WebGUI.Plotting
                 nticks = nticks,
                 tickformat = ".1f",
                 showgrid = true,
-                color = whiteColor
+                color = whiteColor,
+                automargin = true
             };
 
             var layout = new

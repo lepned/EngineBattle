@@ -2310,7 +2310,7 @@ module TypesDef =
                   if c.Success then
                     let eval = float c.Groups.[1].Value * (if isBlack then -1.0 else 1.0)
                     let depth = int c.Groups.[2].Value
-                    let time = float c.Groups.[3].Value
+                    let time = if c.Groups.[3].Success then (int64 (float c.Groups.[3].Value * 1000.0)) else 0L                    
                     { EngineMoveStat.Empty with Player = player; wv = eval; d = depth; mt = int64 time }
                   else
                     let d = mateRegex.Match(line)
