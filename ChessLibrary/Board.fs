@@ -536,10 +536,16 @@ type Board() =
               Some san
           else
             loop t
-      loop (moveList|>Array.toList)
-    
-    member this.PlayLongSanMove move =      
-      //let mutable index = 0
+      loop (moveList|>Array.toList)    
+
+    member this.FindEpMove move =      
+        let islegal move = this.IllegalMove &move |> not
+        let moveList = this.GenerateMoves()
+        match TMoveOps.getTMoveFromShortSan move moveList position.STM islegal with
+        |Some tmove -> (tmove.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY               
+        |None -> false        
+
+    member this.PlayLongSanMove move =
       let moveList = this.GenerateMoves()
       
       match TMoveOps.getTmoveFromSanMove moveList move position.STM with
@@ -558,9 +564,7 @@ type Board() =
             Comments = String.Empty
           }
         moveAndFens.Add({Move=fenAndMoves; ShortSan=shortSan; FenAfterMove=this.FEN()})
-      |None -> 
-        //let moveL = this.GenerateMoves()
-        ()
+      |None -> ()
     
 
     member this.PlayOpeningMove (fromSan: string) = 

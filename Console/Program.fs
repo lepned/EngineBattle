@@ -116,6 +116,7 @@ module TestPath =
   let pgnTest13 = "C:/Dev/Chess/PGNs/Results/TCEC-S25-Superfinal.pgn"
   let pgnTest14 = "C:/Dev/Chess/PGNs/Results/TCEC-everything.pgn"
   let pgnTest15 = "C:/Dev/Chess/PGNs/CeresValueTempTest_07.pgn"
+  let pgnTest16 = "C:/Dev/Chess/PGNs/match_run2.pgn"
   let ccc = "C:/Dev/Chess/pgns/ccc22-rapid-semifinals.pgn"
   let selection = "C:/Dev/Chess/PGNs/Results/TCEC/Selection"
   let allTcec = "C:/Dev/Chess/PGNs/Results/TCEC"
@@ -299,6 +300,8 @@ module Program =
           .SetMinimumLevel(LogLevel.Critical)
           |> ignore
 
+  let logPath = Path.Combine("..", "logs", "log-{Date}.txt");
+  
   /// <summary>
   /// Creates and configures the host for the application.
   /// </summary>
@@ -306,7 +309,7 @@ module Program =
       Log.Logger <- LoggerConfiguration() // Create a Serilog logger configuration
         .MinimumLevel.Information() // Set the minimum log level
         //.WriteTo.Console() // Write to console
-        .WriteTo.File("log.txt") // Write to file
+        .WriteTo.File(logPath) // Write to file
         .CreateLogger() // Create the logger
       Host.CreateDefaultBuilder()
           .ConfigureLogging(configureLogging)
@@ -638,7 +641,12 @@ module Program =
     if test then      
       try 
         let start = Stopwatch.GetTimestamp()
-        
+        //let games = Test.removeEPOpeningsInPGNFile TestPath.pgnTest16
+        //printfn "Number of games after removing EP: %d" (games |> Seq.length)        
+        //let pgnFile = "C:/Dev/Chess/PGNs/Results/match_run2_epRemoved.pgn"
+        //use writer = new StreamWriter(pgnFile)
+        //for game in games do            
+        //    writer.Write(game.Raw)
         //Test.ParsingTests.testRemovePlayerFromPGN "Ceres"
         //let getMates = Test.ParsingTests.getAllMatesFromPGN Test.ParsingTests.queenOddsGames false
         //if getMates |> Seq.isEmpty then
