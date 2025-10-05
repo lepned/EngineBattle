@@ -2246,6 +2246,10 @@ module TypesDef =
         let evalRegexCeres = new Regex(@"([+-]?\d+\.\d+)/(\d+)\s?(\d+\.\d+)s", RegexOptions.Compiled)
         let banksiaRegex = new Regex(@"([+-]?\d+\.\d+)/(\d+)\s(\d+)\s(\d+)", RegexOptions.Compiled)
         let mateRegex = new Regex(@"([+-]?\d+(\.\d*)?|-M\d*|M\d*)/(\d+)\s+(\d+(\.\d*)?)s", RegexOptions.Compiled)
+        let moveBracketsOptionalBraces =
+            new Regex(@"^\s*\{?\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:/(\d+))?(?:\s+([0-9]*\.?[0-9]+)s)?\s*,\s*tl\s*=\s*([0-9]*\.?[0-9]+)s\s*\}?\s*$",
+                RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
+
 
         // Parsing helper functions...
         let parseRegex myDefault format line (regex: Regex) =
@@ -2281,57 +2285,65 @@ module TypesDef =
         let getEngineStatData player isBlack (line: string) =
           if String.IsNullOrEmpty line then
             { EngineMoveStat.Empty with Player = player }
-          elif not (evalRegex.IsMatch line) then
-            if banksiaRegex.IsMatch line then
-              let test = banksiaRegex.Match(line)
-              let eval = float test.Groups.[1].Value * (if isBlack then -1.0 else 1.0)
-              let depth = int test.Groups.[2].Value
-              let time = (int64 test.Groups.[3].Value) / 1000L
-              let nodes = int64 test.Groups.[4].Value
-              let nps = float nodes / float time
-              { EngineMoveStat.Empty with Player = player; wv = eval; n = nodes; mt = time * 1000L; d = depth; s = int64 nps }
-            elif evalRegexCeres.IsMatch line then
-              let test = evalRegexCeres.Match(line)
-              let eval = float test.Groups.[1].Value * (if isBlack then -1.0 else 1.0)
-              let depth = int test.Groups.[2].Value
-              let time = float test.Groups.[3].Value
-              { EngineMoveStat.Empty with Player = player; wv = eval; d = depth; mt = int64 time }            
-            elif mateRegex.IsMatch line then
-                let regexAlt = new Regex(@"([+-]?\d+(\.\d*)?|-M\d*|M\d*)/(\d+)\s+(\d+(\.\d*)?)s", RegexOptions.Compiled)
-                if regexAlt.IsMatch line then
-                  let test = regexAlt.Match(line)
-                  let value = test.Groups.[1].Value
-                  let eval =
-                    match value.[0] with
-                    | '-' when value.Length > 1 && value.[1] = 'M' -> -200.0
-                    | 'M' -> 200.0
-                    | _ -> match System.Double.TryParse(value) with | true, num -> num | _ -> 0.0
-                  let depth = int test.Groups.[3].Value
-                  let time = float test.Groups.[4].Value
-                  { EngineMoveStat.Empty with Player = player; wv = eval * (if isBlack then -1.0 else 1.0); d = depth; mt = int64 (time * 1000.0) }
-                else
-                  { EngineMoveStat.Empty with Player = player }
-
-            else
-              { EngineMoveStat.Empty with Player = player }
           else
-            { EngineMoveStat.Empty with
-                Player = player
-                d = intParser line dRegex
-                sd = intParser line sdRegex
-                mt = int64Parser line mtRegex
-                tl = int64Parser line tlRegex
-                s = npsParser line sRegex
-                n = int64Parser line nRegex
-                wv = evalParser line
-                tb = int64Parser line tbRegex
-                n1 = int64Parser line n1Regex
-                n2 = int64Parser line n2Regex
-                q1 = floatParser line q1Regex
-                q2 = floatParser line q2Regex
-                p1 = floatParser line p1Regex
-                pt = floatParser line ptRegex }
-
+            // Avoid calling IsMatch and Match twice for the same regex by matching once and reusing the Match result.
+            let evalMatch = evalRegex.Match(line)
+            if not evalMatch.Success then
+              let m = moveBracketsOptionalBraces.Match(line)
+              if m.Success then
+                let eval = if m.Groups.[1].Success then (float m.Groups.[1].Value * (if isBlack then -1.0 else 1.0)) else 0.0
+                let depth = if m.Groups.[2].Success then int m.Groups.[2].Value else 0
+                let moveTime = if m.Groups.[3].Success then (int64 (float m.Groups.[3].Value * 1000.0)) else 0L
+                let timeLeft = if m.Groups.[4].Success then (int64 (float m.Groups.[4].Value * 1000.0)) else 0L
+                { EngineMoveStat.Empty with Player = player; wv = eval; d = depth; mt = moveTime; tl = timeLeft }
+              else
+                let b = banksiaRegex.Match(line)
+                if b.Success then
+                  let eval = float b.Groups.[1].Value * (if isBlack then -1.0 else 1.0)
+                  let depth = int b.Groups.[2].Value
+                  let time = (int64 b.Groups.[3].Value) / 1000L
+                  let nodes = int64 b.Groups.[4].Value
+                  let nps = if time = 0L then 0.0 else float nodes / float time
+                  { EngineMoveStat.Empty with Player = player; wv = eval; n = nodes; mt = time * 1000L; d = depth; s = int64 nps }
+                else
+                  let c = evalRegexCeres.Match(line)
+                  if c.Success then
+                    let eval = float c.Groups.[1].Value * (if isBlack then -1.0 else 1.0)
+                    let depth = int c.Groups.[2].Value
+                    let time = float c.Groups.[3].Value
+                    { EngineMoveStat.Empty with Player = player; wv = eval; d = depth; mt = int64 time }
+                  else
+                    let d = mateRegex.Match(line)
+                    if d.Success then
+                      let value = d.Groups.[1].Value
+                      let eval =
+                        match value.[0] with
+                        | '-' when value.Length > 1 && value.[1] = 'M' -> -200.0
+                        | 'M' -> 200.0
+                        | _ -> match System.Double.TryParse(value) with | true, num -> num | _ -> 0.0
+                      let depth = int d.Groups.[3].Value
+                      let time = float d.Groups.[4].Value
+                      { EngineMoveStat.Empty with Player = player; wv = eval * (if isBlack then -1.0 else 1.0); d = depth; mt = int64 (time * 1000.0) }
+                    else
+                      { EngineMoveStat.Empty with Player = player }
+            else
+              // When evalRegex matched, use the existing small parsers (they each do their own Match).
+              { EngineMoveStat.Empty with
+                  Player = player
+                  d = intParser line dRegex
+                  sd = intParser line sdRegex
+                  mt = int64Parser line mtRegex
+                  tl = int64Parser line tlRegex
+                  s = npsParser line sRegex
+                  n = int64Parser line nRegex
+                  wv = evalParser line
+                  tb = int64Parser line tbRegex
+                  n1 = int64Parser line n1Regex
+                  n2 = int64Parser line n2Regex
+                  q1 = floatParser line q1Regex
+                  q2 = floatParser line q2Regex
+                  p1 = floatParser line p1Regex
+                  pt = floatParser line ptRegex }
   // -----------------------------------------------------------------------------
   // TESTS & SAMPLE PARSING
   // -----------------------------------------------------------------------------

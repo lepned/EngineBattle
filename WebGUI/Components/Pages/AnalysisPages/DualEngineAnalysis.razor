@@ -49,6 +49,15 @@
             <AnalyzeWithEngine @ref="analysisWithEngine1" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
                                Id="nnInput1" Engine="Engine1" OnNewEngineLoaded="OnNewEngineLoaded" Config="@config" />
             <MudText Class="ml-2" Typo="Typo.body1">@currentGame</MudText>
+            <!-- Chart selection UI -->
+            <MudItem Class="d-flex align-items-end mt-2 mb-1" Style="width:150px;">
+                <MudSelect T="CustomChartType" Dense="true" Class="mr-3" Value="@selectedChart" ValueChanged="@OnChartTypeChanged">
+                    <MudSelectItem T="CustomChartType" Value="@CustomChartType.Evaluation">Evaluation</MudSelectItem>
+                    <MudSelectItem T="CustomChartType" Value="@CustomChartType.Nodes">Nodes</MudSelectItem>
+                    <MudSelectItem T="CustomChartType" Value="@CustomChartType.TimeUsage">Time Usage</MudSelectItem>
+                    <MudSelectItem T="CustomChartType" Value="@CustomChartType.NPS">NPS</MudSelectItem>
+                </MudSelect>
+            </MudItem>
             <MudItem xl="12">
                 <div style="height:250px;" class="chart" @ref=pgnChart></div>
             </MudItem>
@@ -165,6 +174,19 @@
     private string searchString = "";
     private GamePgnChart chart;
 
+    // Chart selection - using CustomChartType from WebGUI.Plotting
+    private CustomChartType selectedChart = CustomChartType.Evaluation;
+
+    private async Task OnChartTypeChanged(CustomChartType newChartType)
+    {
+        selectedChart = newChartType;
+        if (chart != null)
+        {
+            await chart.SwitchChartTypeAsync(newChartType);
+        }
+        StateHasChanged();
+    }
+
     private Task UpdateChartMoveIndicatorAsync()
     => chart is null
         ? Task.CompletedTask
@@ -192,10 +214,30 @@
     {        
         gameIndex = games.IndexOf(game);
         var numberOfEpdGames = epdGames.Count;        
-        currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
-        chart = new GamePgnChart(chessModule, pgnChart, game.GameMetaData.White, game.GameMetaData.Black, "Evaluation", "Score");
-        chart.AssignEvalsFromPGN(game);
-        await chart.SetEvalChartData();
+        currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";        
+        // create the chart object (initialized with module reference)
+        chart = new GamePgnChart(chessModule, pgnChart, game, "Evaluation", "Score");
+
+        // Use the new async method to assign data and render the chart
+        switch (selectedChart)
+        {
+            case CustomChartType.Evaluation:
+                await chart.AssignEvalsFromPGNAsync();
+                break;
+            case CustomChartType.Nodes:
+                await chart.AssignNodesFromPGNAsync();
+                break;
+            case CustomChartType.TimeUsage:
+                await chart.AssignTimeUsageFromPGNAsync();
+                break;
+            case CustomChartType.NPS:
+                await chart.AssignNPSFromPGNAsync();
+                break;
+            default:
+                await chart.AssignEvalsFromPGNAsync();
+                break;
+        }
+        
         var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
         board.ResetBoardState();
         board.StartPosition = fenP;

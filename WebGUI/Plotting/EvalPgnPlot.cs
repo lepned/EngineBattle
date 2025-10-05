@@ -5,6 +5,14 @@ using static ChessLibrary.TypesDef.PGNTypes;
 
 namespace WebGUI.Plotting
 {
+    public enum CustomChartType
+    {
+        Evaluation,
+        Nodes,
+        TimeUsage,
+        NPS
+    }
+
     public class GamePgnChart
     {
         public string Title { get; set; }
@@ -14,6 +22,7 @@ namespace WebGUI.Plotting
         public double[] PlayerWhiteData { get; set; } = Array.Empty<double>();
         public double[] PlayerBlackData { get; set; } = Array.Empty<double>();
         public List<int> MoveElements { get; set; } = new List<int>(Enumerable.Range(1, 500));
+        public PgnGame Game { get; set; }
 
         private string titleColor = "#c1c1c4";
         private string blackColor = "#141519";
@@ -21,6 +30,8 @@ namespace WebGUI.Plotting
         private string whiteGridColor = "#484952";
         private int fontSizeTitle = 20;
         private int fontSizeTickFont = 15;
+        private int nticks = 6;
+        private bool liveUpdateStarted = false;
 
         private IJSObjectReference chessModule;
         ElementReference chartElement;
@@ -33,13 +44,18 @@ namespace WebGUI.Plotting
         private readonly string moveIndicatorColor = "#FFD400";
         private int? currentMoveIndex;
         private const double MoveIndicatorMaxY = 10d;
+        private int startMoveIndex = 1;
+        private Chess.Board board = new Chess.Board();
 
-        public GamePgnChart(IJSObjectReference chessMod, ElementReference chart, string white, string black, string title, string yTitle)
-        {
+        public GamePgnChart(IJSObjectReference chessMod, ElementReference chart, PgnGame game, string title, string yTitle)
+        {            
+            board.LoadFen(game.Fen);
+            startMoveIndex = board.MoveNumber();
             chessModule = chessMod;
             chartElement = chart;
-            PlayerWhite = white;
-            PlayerBlack = black;
+            Game = game;
+            PlayerWhite = game.GameMetaData.White;
+            PlayerBlack = game.GameMetaData.Black;
             Title = title;
             YTitle = yTitle;
 
@@ -130,28 +146,148 @@ namespace WebGUI.Plotting
             return cap10;
         }
 
-        public void AssignEvalsFromPGN(PgnGame game)
+        // New async version that updates the chart after assigning data
+        public async Task AssignTimeUsageFromPGNAsync(CustomChartType chartType = CustomChartType.TimeUsage)
         {
+            var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
-            var moveStats = Parser.PGNExtractor.extractEngineStats(game).Moves.ToArray();
+            currentMoveIndex = currIdx;
+            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
+            var last = moveStats.LastOrDefault();
+            if (last != null && last.mt == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
+            {
+                if (moveStats.Length > 0)
+                {
+                    moveStats = moveStats[..^1];
+                }
+            }
+            PlayerWhiteData =
+              moveStats
+              .Where(e => e.Player == PlayerWhite)
+              .Select(e => (double)e.mt).ToArray();
+
+            PlayerBlackData =
+              moveStats
+              .Where(e => e.Player == PlayerBlack)
+              .Select(e => (double)e.mt).ToArray();
+            Title = "Time Usage (ms)";
+            await SetChartTimeUsageData();
+        }
+
+        public async Task AssignNodesFromPGNAsync(CustomChartType chartType = CustomChartType.Nodes)
+        {
+            var currIdx = currentMoveIndex;
+            ClearData(PlayerWhite, PlayerBlack);
+            currentMoveIndex = currIdx;
+            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
+            var last = moveStats.LastOrDefault();
+            if (last != null && last.n == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
+            {
+                if (moveStats.Length > 0)
+                {
+                    moveStats = moveStats[..^1];
+                }
+            }
+            PlayerWhiteData =
+              moveStats
+              .Where(e => e.Player == PlayerWhite)
+              .Select(e => (double)e.n).ToArray();
+
+            PlayerBlackData =
+              moveStats
+              .Where(e => e.Player == PlayerBlack)
+              .Select(e => (double)e.n).ToArray();
+
+            Title = "Nodes";
+            await SetChartNodeData();
+        }
+
+        public async Task AssignNPSFromPGNAsync(CustomChartType chartType = CustomChartType.Nodes)
+        {
+            var currIdx = currentMoveIndex;
+            ClearData(PlayerWhite, PlayerBlack);
+            currentMoveIndex = currIdx;
+            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
+            var last = moveStats.LastOrDefault();
+            if (last != null && last.s == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
+            {
+                if (moveStats.Length > 0)
+                {
+                    moveStats = moveStats[..^1];
+                }
+            }
+            PlayerWhiteData =
+              moveStats
+              .Where(e => e.Player == PlayerWhite)
+              .Select(e => (double)e.s).ToArray();
+
+            PlayerBlackData =
+              moveStats
+              .Where(e => e.Player == PlayerBlack)
+              .Select(e => (double)e.s).ToArray();
+
+            Title = "NPS";
+            await SetChartNPSData();
+        }
+
+        // New async version that updates the chart after assigning data
+        public async Task AssignEvalsFromPGNAsync(CustomChartType chartType = CustomChartType.Evaluation)
+        {
+            var currIdx = currentMoveIndex;
+            ClearData(PlayerWhite, PlayerBlack);
+            currentMoveIndex = currIdx;
+            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
             var last = moveStats.LastOrDefault();
             if (last != null && last.wv == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
             {
                 if (moveStats.Length > 0)
                 {
-                    moveStats = moveStats[..^1]; // slice array excluding last element
-                }                
+                    moveStats = moveStats[..^1];
+                }
             }
             PlayerWhiteData =
               moveStats
               .Where(e => e.Player == PlayerWhite)
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
-            
+
             PlayerBlackData =
               moveStats
               .Where(e => e.Player == PlayerBlack)
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
+            Title = "Evaluation";
+            await SetEvalChartData();
         }
+
+        // Method to update chart based on chart type
+        public async Task UpdateChartAsync(CustomChartType chartType)
+        {
+            switch (chartType)
+            {
+                case CustomChartType.Evaluation:
+                    await AssignEvalsFromPGNAsync(CustomChartType.Evaluation);                    
+                    break;
+                case CustomChartType.Nodes:
+                    await AssignNodesFromPGNAsync(CustomChartType.Nodes);
+                    break;
+                case CustomChartType.TimeUsage:
+                    await AssignTimeUsageFromPGNAsync(CustomChartType.TimeUsage);                    
+                    break;
+                case CustomChartType.NPS:
+                    await AssignNPSFromPGNAsync(CustomChartType.NPS);
+                    break;
+            }
+            await UpdateMoveIndicatorAsync(currentMoveIndex ?? 0);
+        }
+
+        // Method to switch chart types dynamically
+        public async Task SwitchChartTypeAsync(CustomChartType newChartType)
+        {
+            liveUpdateStarted = false; // Force full re-render
+            await UpdateChartAsync(newChartType);
+        }
+
+        // Check if chart has data
+        public bool HasData() => PlayerWhiteData.Length > 0 || PlayerBlackData.Length > 0;
 
         public void ClearData(string white, string black)
         {
@@ -162,6 +298,8 @@ namespace WebGUI.Plotting
                 //MoveElements.Clear();                
                 PlayerWhite = white;
                 PlayerBlack = black;
+                liveUpdateStarted = false; // Reset flag to force full re-render
+                currentMoveIndex = null; // Reset move indicator
             }
             //catch js exception
             catch (JSException ex)
@@ -173,6 +311,33 @@ namespace WebGUI.Plotting
             catch (Exception ex)
             {
                 Console.WriteLine($"An error occurred in ClearData method: {ex.Message}");
+            }
+        }
+
+        // Async version that also resets the chart visuals in JS (mirrors LivePlot behavior)
+        public async Task ClearDataAsync(string white, string black)
+        {
+            try
+            {
+                PlayerWhiteData = Array.Empty<double>();
+                PlayerBlackData = Array.Empty<double>();
+                PlayerWhite = white;
+                PlayerBlack = black;
+                liveUpdateStarted = false;
+                currentMoveIndex = null;
+                // reset traces in JS
+                await Task.WhenAll(
+                    SetEvalChartData(),
+                    SetChartNodeData(),
+                    SetChartTimeUsageData());
+            }
+            catch (JSException ex)
+            {
+                Console.WriteLine($"An error occurred in JS {nameof(ClearDataAsync)}: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"An error occurred in {nameof(ClearDataAsync)}: {ex.Message}");
             }
         }
 
@@ -273,7 +438,7 @@ namespace WebGUI.Plotting
 
             var trace1 = new
             {
-                x = MoveElements.ToArray(),
+                x = MoveElements.Skip(startMoveIndex-1).ToArray(),
                 y = PlayerWhiteData,
                 type = "scatter",
                 name = PlayerWhite,
@@ -284,7 +449,7 @@ namespace WebGUI.Plotting
 
             var trace2 = new
             {
-                x = MoveElements.ToArray(),
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
                 y = PlayerBlackData,
                 type = "scatter",
                 name = PlayerBlack,
@@ -302,6 +467,378 @@ namespace WebGUI.Plotting
             if (chessModule is not null && chartElement.Context is not null)
             {
                 await chessModule.InvokeVoidAsync("setLineEvalChartData", chartElement, layout, config);
+            }
+        }
+
+        // --- Added chart methods copied/adapted from LivePlot.cs ---
+
+        private bool SameYaxis()
+        {
+            if (PlayerBlackData.Length == 0 || PlayerWhiteData.Length == 0)
+                return true;
+
+            var avgW = PlayerWhiteData.Average();
+            var avgB = PlayerBlackData.Average();
+
+            var max = Math.Max(Math.Abs(avgW), Math.Abs(avgB));
+            if (avgW == 0 || avgB == 0)
+                return true;
+
+            return max / Math.Abs(avgB) < 10 && max / Math.Abs(avgW) < 10;
+        }
+
+        public async Task SetChartNodeData()
+        {
+            if (SameYaxis())
+                await SetSingleChartNodeData();
+            else
+                await SetDoubleChartNodeData();
+        }
+
+        public async Task SetChartNPSData()
+        {
+            if (SameYaxis())
+                await SetSingleChartNodeData();
+            else
+                await SetDoubleChartNodeData();
+        }
+
+        public async Task SetSingleChartNodeData()
+        {
+            var xaxis = new
+            {
+                tickfont = new { size = fontSizeTickFont },
+                showgrid = false,
+                zeroline = false,
+                color = whiteColor
+            };
+
+            var yaxis = new
+            {
+                tickfont = new { size = fontSizeTickFont },
+                gridcolor = whiteGridColor,
+                gridwidth = 1,
+                rangemode = "tozero",
+                nticks = nticks,
+                showgrid = true,
+                color = whiteColor
+            };
+
+            var layout = new
+            {
+                title = new
+                {
+                    text = Title,
+                    font = new
+                    {
+                        size = fontSizeTitle,
+                        color = titleColor
+                    },
+                },
+                paper_bgcolor = "rgba(0,0,0,0)",
+                plot_bgcolor = "rgba(0,0,0,0)",
+                showlegend = false,
+                xaxis = xaxis,
+                yaxis = yaxis,
+                margin = margin,
+            };
+
+
+            var trace1 = new
+            {
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                y = PlayerWhiteData,
+                type = "scatter",
+                name = PlayerWhite,
+                mode = "lines+markers",
+                marker = whiteMarker,
+                line = whiteLine,
+            };
+
+            var trace2 = new
+            {
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                y = PlayerBlackData,
+                type = "scatter",
+                name = PlayerBlack,
+                mode = "lines+markers",
+                marker = blackMarker,
+                line = blackLine
+            };
+
+            var config = new
+            {
+                trace1 = trace1,
+                trace2 = trace2
+            };
+
+            if (chessModule is not null && chartElement.Context is not null)
+            {
+                if (liveUpdateStarted == false)
+                {
+                    await chessModule.InvokeVoidAsync("setSingleNodeChart", chartElement, layout, config);
+                }
+                else
+                {
+                    if (PlayerWhiteData.Length == PlayerBlackData.Length)
+                    {
+                        await chessModule.InvokeVoidAsync("updateLineEvalChartData", chartElement, trace2, 1);
+                    }
+                    else
+                    {
+                        await chessModule.InvokeVoidAsync("updateLineEvalChartData", chartElement, trace1, 0);
+                    }
+                }
+
+                if (liveUpdateStarted == false)
+                {
+                    var bothPlayedAMove =
+                        PlayerWhiteData.Length > 0 && PlayerWhiteData.Any(e => e > 0) &&
+                        PlayerBlackData.Length > 0 && PlayerBlackData.Any(e => e > 0);
+
+                    if (bothPlayedAMove)
+                        liveUpdateStarted = true;
+                }
+            }
+        }
+
+        public async Task SetDoubleChartNodeData()
+        {
+            var xaxis = new
+            {
+                tickfont = new { size = fontSizeTickFont },
+                showgrid = false,
+                zeroline = false,
+                showline = false,
+                showzeroline = false,
+                color = whiteColor
+            };
+
+            var yaxis = new
+            {
+                tickfont = new { size = fontSizeTickFont },
+                automargin = true,
+                color = whiteColor,
+                gridcolor = whiteGridColor,
+                gridwidth = 1,
+                rangemode = "tozero",
+                nticks = nticks,
+                showgrid = true
+            };
+
+            var yaxis2 = new
+            {
+                title = new { text = "Black", standoff = 10 },
+                titlefont = new { color = "black", size = fontSizeTickFont },
+                tickfont = new { size = fontSizeTickFont },
+                automargin = true,
+                color = whiteColor,
+                linwidth = 2,
+                linecolor = blackColor,
+                gridwidth = 1,
+                rangemode = "tozero",
+                nticks = nticks,
+                side = "right",
+                showgrid = false,
+                zeroline = false,
+                showline = false,
+            };
+
+            var layout = new
+            {
+                title = new
+                {
+                    text = Title,
+                    font = new
+                    {
+                        size = fontSizeTitle,
+                        color = titleColor
+                    },
+                },
+
+                showlegend = false,
+                paper_bgcolor = "rgba(0,0,0,0)",
+                plot_bgcolor = "rgba(0,0,0,0)",
+                xaxis = xaxis,
+                yaxis = yaxis,
+                yaxis2 = yaxis2,
+                margin = margin,
+            };
+
+            var trace1 = new
+            {
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                y = PlayerWhiteData,
+                type = "scatter",
+                name = PlayerWhite,
+                yaxis = "y1",
+                mode = "lines+markers",
+                marker = whiteMarker,
+                line = whiteLine,
+            };
+
+            var trace2 = new
+            {
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                y = PlayerBlackData,
+                type = "scatter",
+                name = PlayerBlack,
+                yaxis = "y2",
+                mode = "lines+markers",
+                marker = blackMarker,
+                line = blackLine
+            };
+
+            var config = new
+            {
+                trace1 = trace1,
+                trace2 = trace2,
+            };
+
+            if (chessModule is not null && chartElement.Context is not null)
+            {
+
+                if (liveUpdateStarted == false)
+                {
+                    await chessModule.InvokeVoidAsync("setDoubleNodeChart", chartElement, layout, config);
+                }
+
+                else
+                {
+                    if (PlayerWhiteData.Length == PlayerBlackData.Length)
+                    {
+                        await chessModule.InvokeVoidAsync("updateLineEvalChartData", chartElement, trace2, 1);
+                    }
+                    else
+                    {
+                        await chessModule.InvokeVoidAsync("updateLineEvalChartData", chartElement, trace1, 0);
+                    }
+                }
+
+                if (liveUpdateStarted == false)
+                {
+                    var bothPlayedAMove =
+                        PlayerWhiteData.Length > 0 && PlayerWhiteData.Any(e => e > 0) &&
+                        PlayerBlackData.Length > 0 && PlayerBlackData.Any(e => e > 0);
+
+                    if (bothPlayedAMove)
+                        liveUpdateStarted = true;
+                }
+            }
+        }
+
+        public async Task SetChartTimeUsageData()
+        {
+            var xaxis = new
+            {
+                tickfont = new { size = fontSizeTickFont },
+                showgrid = false,
+                zeroline = false,
+                color = whiteColor
+            };
+
+            var yaxis = new
+            {
+                tickformatstops = new[] // use var to infer the type and [] to create an array
+                {
+                    new // use new with object initializer to create an anonymous type
+                    {
+                        dtickrange = new object[] { null, 1000 }, // use object[] to hold null and int values
+                        value = "d" // use string for value
+                    },
+                    new
+                    {
+                        dtickrange = new object[] { 1000, null },
+                        value = ".2s"
+                    }
+                },
+
+                tickfont = new { size = fontSizeTickFont },
+                tickmode = "auto",
+                gridcolor = whiteGridColor,
+                gridwidth = 1,
+                rangemode = "tozero",
+                nticks = nticks,
+                tickformat = ".1f",
+                showgrid = true,
+                color = whiteColor
+            };
+
+            var layout = new
+            {
+                title = new
+                {
+                    text = Title,
+                    font = new
+                    {
+                        size = fontSizeTitle,
+                        color = titleColor
+                    },
+                },
+                paper_bgcolor = "rgba(0,0,0,0)",
+                plot_bgcolor = "rgba(0,0,0,0)",
+                showlegend = false,
+                xaxis = xaxis,
+                yaxis = yaxis,
+                margin = margin,
+            };
+
+            var trace1 = new
+            {
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                y = PlayerWhiteData,
+                type = "scatter",
+                name = PlayerWhite,
+                mode = "lines+markers",
+                marker = whiteMarker,
+                line = whiteLine,
+            };
+
+            var trace2 = new
+            {
+                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                y = PlayerBlackData,
+                type = "scatter",
+                name = PlayerBlack,
+                mode = "lines+markers",
+                marker = blackMarker,
+                line = blackLine
+            };
+
+            var config = new
+            {
+                trace1 = trace1,
+                trace2 = trace2
+            };
+
+            if (chessModule is not null && chartElement.Context is not null)
+            {
+                if (liveUpdateStarted == false)
+                {
+                    await chessModule.InvokeVoidAsync("setTimeUsageChartData", chartElement, layout, config);
+                }
+
+                else
+                {
+                    if (PlayerWhiteData.Length == PlayerBlackData.Length)
+                    {
+                        await chessModule.InvokeVoidAsync("updateLineEvalChartData", chartElement, trace2, 1);
+                    }
+                    else
+                    {
+                        await chessModule.InvokeVoidAsync("updateLineEvalChartData", chartElement, trace1, 0);
+                    }
+                }
+
+                if (liveUpdateStarted == false)
+                {
+                    var bothPlayedAMove =
+                        PlayerWhiteData.Length > 0 && PlayerWhiteData.Any(e => e > 0) &&
+                        PlayerBlackData.Length > 0 && PlayerBlackData.Any(e => e > 0);
+
+                    if (bothPlayedAMove)
+                        liveUpdateStarted = true;
+                }
             }
         }
     }
