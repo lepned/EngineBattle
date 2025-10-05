@@ -22,16 +22,18 @@ static void EnsureTournamentJsonIsLoaded()
     }
 }
 
+var logPath = Path.Combine("..", "logs", "log-{Date}.txt");
+
 var log = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.AspNetCore.Components", LogEventLevel.Warning)
     .WriteTo.File(
-        path: "..\\logs\\log-{Date}.txt",
+        path: logPath,
         rollingInterval: RollingInterval.Day,
         rollOnFileSizeLimit: true,
         fileSizeLimitBytes: 10_000_000)
-    .CreateLogger();
+        .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 // Host shutdown timeout
