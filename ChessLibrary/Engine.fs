@@ -272,7 +272,9 @@ module Engine =
             printfn "%s" cmd
 
       let write (s:string) = 
-        if name.ToLower().Contains "igel" then
+        if engineProcess.HasExited then
+          printfn  "Engine %s has exited - please reset engine." name
+        elif name.ToLower().Contains "igel" then
           engineProcess.StandardInput.WriteLine(s)
         else
           engineProcess.StandardInput.WriteLine(s + "\n")
@@ -328,7 +330,8 @@ module Engine =
             Some (rankForMovePlayed, movePolicy, topPolicy)
         |None -> None            
 
-      
+      let mutable lastExitCode : int option = None
+      let stderrBuffer = ResizeArray<string>()
       let setupProcess() =
           let mutable pos = moveBoard.Position
           moveBoard.IsFRC <- PositionOps.isFRC &pos
@@ -336,11 +339,31 @@ module Engine =
           engineProcess.StartInfo.UseShellExecute <- false
           engineProcess.StartInfo.RedirectStandardInput <- true
           engineProcess.StartInfo.RedirectStandardOutput <- true
+          engineProcess.StartInfo.RedirectStandardError <- true
           if String.IsNullOrEmpty config.Args |> not then
             printfn "Args passed: %s" config.Args
             engineProcess.StartInfo.Arguments <- config.Args
           elif isLc0 then
             engineProcess.StartInfo.Arguments <- "--show-hidden"
+          // Capture stderr asynchronously
+          engineProcess.ErrorDataReceived.Add(fun args ->
+                try
+                    if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
+                        stderrBuffer.Add args.Data
+                        printfn "[STDERR %s]: %s" name args.Data
+                with _ -> ()
+            )
+            
+            // Track exit events
+          engineProcess.Exited.Add(fun _ ->
+                try
+                    lastExitCode <- Some engineProcess.ExitCode
+                    if engineProcess.ExitCode <> 0 then
+                        printfn "⚠️ Engine %s exited with code %d" name engineProcess.ExitCode
+                with _ -> ()
+            )
+          engineProcess.EnableRaisingEvents <- true
+          
           engineProcess.OutputDataReceived.Add(fun args -> 
               if not (String.IsNullOrEmpty args.Data) then
                 if inUciResponsMode then  
@@ -359,8 +382,11 @@ module Engine =
                   //let duration = Stopwatch.GetElapsedTime(startTimer)
                   //printfn "Duration: %A" duration
                   processLine callbackFunc name args.Data)
-          engineProcess.Start() |> ignore
-          engineProcess.BeginOutputReadLine()
+          if engineProcess.Start() then
+              engineProcess.BeginOutputReadLine()
+              engineProcess.BeginErrorReadLine()  // Start stderr capture
+          else
+              failwith (sprintf "Engine %s could not be started" name)
           write "uci"
           let ok = waitForInitialization ((new CancellationTokenSource(280000)).Token) "uci" //wait for maximum 5 seconds        
           if not ok then
@@ -400,14 +426,21 @@ module Engine =
             failwith "Engine did not respond to isready command."
           //else
           //  printfn "Engine %s responded 'readyok' to isready command." name
-
+          
+          if stderrBuffer.Count > 0 then
+             for err in stderrBuffer do
+               printfn "[STDERR %s]: %s" name err
           let withLiveLog = configCmds |> Seq.exists (fun e -> e.Contains("LogLiveStats"))
           getAllDefaultOptions()
           callback(EngineUpdate.Ready (name, withLiveLog))
 
       do
           setupProcess()
-      
+      member _.ErrorOutput = stderrBuffer :> seq<string>
+      member _.LastExitCode = lastExitCode
+      member _.GetDiagnostics() = 
+        sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
+            name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
       member _.GetNoneDefaultSetOptions() = nonDefaultValues        
       member _.GetAllDefaultOptions() = dict
       member this.IsLc0 = isLc0
@@ -425,6 +458,7 @@ module Engine =
       member this.Path = config.Path
       member this.GetUCICommands() = optionsMap
       member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit
+      member this.HasExited = engineProcess.HasExited
       
       member this.CurrentPositionCommand() = moveBoard.PositionWithMovesIndexed()
 
@@ -439,8 +473,6 @@ module Engine =
           assignNetworkName cmd
           commands.Add cmd
           dict.[opt.Key] <- opt.Value
-      
-
 
       member this.SendUCICommand (command: UCICommand) =
           match command with
@@ -459,7 +491,8 @@ module Engine =
                 | _ ->
                     // Engine process has already closed the pipe - this is expected during shutdown
                     let msg = sprintf "Engine %s pipe already closed it seems" name
-                    printfn "%s" msg              
+                    printfn "%s" msg 
+                    this.GetDiagnostics() |> printfn "%s"
           | Quit -> 
                 let cmd = "quit"
                 try
@@ -490,7 +523,7 @@ module Engine =
                 with
                 | :? System.ObjectDisposedException ->
                     // Already disposed - ignore
-                    ()              
+                    this.GetDiagnostics() |> printfn "%s"              
           | RawCommand cmd ->
               write cmd
               commands.Add cmd
@@ -575,7 +608,7 @@ module Engine =
       let mutable uciDict = Dictionary<string,string>()
       let mutable lookup = fun query -> Utilities.UCI.createDefaultSetOptionCommandForName uciDict query   
       let name = config.Name    
-      let configCmds = initCommands
+      let configCmds = initCommands      
       let mutable proc = defaultof<Process>
       let mutable commands = ResizeArray<string>()
       let mutable network = ""
@@ -732,6 +765,7 @@ module Engine =
 
   type ChessEngine(config : EngineConfig, initCommands: string seq) =
       let initialCommands = initCommands |> ResizeArray
+      let initConfigOptions = config.Options |> Seq.toArray
       let mutable passed = true
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
@@ -815,7 +849,51 @@ module Engine =
               proc.Dispose()
 
       
-    
+      let mutable lastExitCode : int option = None
+      let stderrBuffer = ResizeArray<string>()
+
+      let assignThread () = 
+        let task = Task.Factory.StartNew(fun () -> 
+            let engine = new Process()
+            engine.StartInfo.FileName <- config.Path
+            engine.StartInfo.UseShellExecute <- false
+            engine.StartInfo.RedirectStandardInput <- true
+            engine.StartInfo.RedirectStandardOutput <- true
+            engine.StartInfo.RedirectStandardError <- true  // CRITICAL
+            
+            if String.IsNullOrEmpty config.Args |> not then
+                engine.StartInfo.Arguments <- config.Args
+            elif isLc0 && config.Args.Contains("--show-hidden") |> not then
+                engine.StartInfo.Arguments <- "--show-hidden"
+            
+            // Capture stderr asynchronously
+            engine.ErrorDataReceived.Add(fun args ->
+                try
+                    if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
+                        stderrBuffer.Add args.Data
+                        printfn "[STDERR %s]: %s" name args.Data
+                with _ -> ()
+            )
+            
+            // Track exit events
+            engine.Exited.Add(fun _ ->
+                try
+                    lastExitCode <- Some engine.ExitCode
+                    if engine.ExitCode <> 0 then
+                        printfn "⚠️ Engine %s exited with code %d" name engine.ExitCode
+                with _ -> ()
+            )
+            engine.EnableRaisingEvents <- true
+            
+            if engine.Start() then
+                proc <- engine
+                engine.BeginOutputReadLine()
+                engine.BeginErrorReadLine()  // Start stderr capture
+            else
+                printfn "\n❌ %s could not be started" name
+        )
+        task.Wait()
+
       let assignThread () = 
           let task =  Task.Factory.StartNew(
             fun () -> 
@@ -855,8 +933,15 @@ module Engine =
           
       let read () = proc.StandardOutput.ReadLine()
       let readAsync () = proc.StandardOutput.ReadLineAsync()
+
+      member _.GetExitCode() = lastExitCode
+      member _.ErrorOutput = stderrBuffer :> seq<string>
+      member _.LastExitCode = lastExitCode
+      member _.GetDiagnostics() = 
+        sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
+            name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
       
-      member _.InitCommands = initialCommands
+      member _.InitCommands = initCommands
       member _.Process = proc
       member _.PrintNonDefaultValues = printNonDefaultValues
       member _.IsLc0 = isLc0
@@ -884,7 +969,7 @@ module Engine =
             this.Stop()
             let cmd = sprintf "setoption name %s value %s" option.Name option.Value      
             write cmd
-            this.Config.Options[option.Name] <- option.Value
+            this.Config.Options[option.Name] <- option.Value // todo - not sure this is a good idea
             assignNetworkName cmd
             addCommand initialCommands cmd
             addCommand commands cmd            
@@ -906,41 +991,50 @@ module Engine =
         | None -> printfn "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds
       
       member this.StartProcess() =
-        assignThread ()
-        let ok = this.ReadUciOptions()
-        if not ok then
-          failwith "Engine did not respond to UCI command."
-        for cmd in configCmds do      
-          match UciOption.parseSetOptionCommand cmd with
-          | Some (name, value) ->
-              if UciOption.validateSetOption optionsMap (name, value) then
-                match UciOption.getNoneDefaultSetOption optionsMap (name, value) with
-                | Some (name, def,value) -> nonDefaultValues.[name] <- (def,value)
-                | None -> ()
-              if validate && UciOption.validateSetOption optionsMap (name, value) |> not then
-                passed <- false               
-                LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
-          | None ->
-              passed <- false
-              LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
-          write cmd
-          assignNetworkName cmd        
-          commands.Add cmd      
-        let nOk, uciNameOpt = optionsMap.TryGetValue "name" 
-        let aOk, uciAuthorOpt = optionsMap.TryGetValue "author"      
-        match (nOk, uciNameOpt.OptionType), (aOk, uciAuthorOpt.OptionType) with
-        | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> printfn "Engine name: %s and author: %s" n a
-        | _ -> ()
+        try
+            assignThread ()
+            let ok = this.ReadUciOptions()
+            if not ok then
+              failwith "Engine did not respond to UCI command."
+            for cmd in configCmds do      
+              match UciOption.parseSetOptionCommand cmd with
+              | Some (name, value) ->
+                  if UciOption.validateSetOption optionsMap (name, value) then
+                    match UciOption.getNoneDefaultSetOption optionsMap (name, value) with
+                    | Some (name, def,value) -> nonDefaultValues.[name] <- (def,value)
+                    | None -> ()
+                  if validate && UciOption.validateSetOption optionsMap (name, value) |> not then
+                    passed <- false               
+                    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
+              | None ->
+                  passed <- false
+                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
+              write cmd
+              assignNetworkName cmd        
+              commands.Add cmd      
+            let nOk, uciNameOpt = optionsMap.TryGetValue "name" 
+            let aOk, uciAuthorOpt = optionsMap.TryGetValue "author"      
+            match (nOk, uciNameOpt.OptionType), (aOk, uciAuthorOpt.OptionType) with
+            | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> printfn "Engine name: %s and author: %s" n a
+            | _ -> ()
       
-        let ok = this.WaitForReadyOk()
-        write "ucinewgame"
-        if not ok then
-          failwith "Engine did not respond to isready command." 
-        if validate then
-            if passed then
-              LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
-            else
-              LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
+            let ok = this.WaitForReadyOk()
+            write "ucinewgame"
+            if not ok then
+              failwith "Engine did not respond to isready command." 
+            if validate then
+                if passed then
+                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
+                  let diagnostics = this.GetDiagnostics()
+                  if String.IsNullOrEmpty diagnostics |> not then
+                     LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
+                else
+                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
+                  failwith "Setoption validation failed."
+        with
+        | :? OperationCanceledException -> failwith "Engine initialization timed out."
+        | :? System.Threading.Channels.ChannelClosedException -> failwith "Engine channel was closed unexpectedly."
+        | ex -> failwith (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
 
       member this.DoNotValidate() = validate <- false
       member this.StopProcess() =       
@@ -1060,16 +1154,30 @@ module Engine =
               printfn "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message
               false
 
-      member this.WaitForReadyOk() = 
+      member this.WaitForReadyOk(?timeoutMs: int) = 
+        let timeout = defaultArg timeoutMs 120000
         write "isready"
-        let rec waitForReadyOk() = async {          
-            let! line = this.ReadLineAsync() |> Async.AwaitTask
-            if line = "readyok" then                  
+        
+        async {
+          let rec readUntilReady() = async {
+            try
+              let! line = Async.AwaitTask(this.ReadLineAsync())
+              if line = "readyok" then 
                 return true
-            else
-                return! waitForReadyOk() }
-        waitForReadyOk() |> Async.RunSynchronously
-    
+              else 
+                return! readUntilReady()
+            with
+            | :? OperationCanceledException -> return false
+          }
+          
+          try
+            let! completed = Async.StartChild(readUntilReady(), timeout)
+            return! completed
+          with
+          | :? TimeoutException -> return false
+        }
+        |> Async.RunSynchronously
+      
       member this.IsRunning
         with get () = isRunning 
         and set (v) = isRunning <- v

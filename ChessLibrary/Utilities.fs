@@ -774,6 +774,18 @@ module Validation =
               let combinedPath = Path.Combine(config.NetworkPath, weightsPath)
               Errors [sprintf "Neural net in combined path %s or in direct path %s for %s does not exist" combinedPath weightsPath config.Name]
 
+  let validatePonderingAllowed (config: EngineConfig) (tourny: Tournament) =
+      //todo: need to validate that Ponder uci option are available for the engine/config, not all engines support pondering
+      if tourny.AllowPondering then
+          match config.Options |> Seq.tryFind (fun kvp -> kvp.Key.Contains "Ponder") with
+          | None -> Errors ["Ponder option not found in engine options for " + config.Name]
+          | Some nn ->
+              let ponderValue = nn.Value |> string
+              match ponderValue.ToLower() with
+              | "true" -> Ok
+              | _ -> Errors [sprintf "Ponder option in %s must be set to true, but found: %s" config.Name ponderValue]
+      else Ok
+  
   let validateChessEngineCmds (config: EngineConfig) =
       [
         validatePath config 
@@ -884,6 +896,7 @@ module Validation =
           validateUniqueNames tourny.EngineSetup.Engines
           validateEngineNames tourny.EngineSetup.Engines
           for config in tourny.EngineSetup.Engines do
+              validatePonderingAllowed config tourny
               validateChessEngineCmds config
           // Add more validation functions here as needed
       ] |> accumulateErrors

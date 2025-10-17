@@ -647,6 +647,10 @@
         {
             return;
         }
+        if (analyzer != null && analyzer.Engine.HasExited)
+        {
+            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);            
+        }
         InfoLineList.Clear();
         if (searchInfoPlot == null)
         {
@@ -1160,6 +1164,11 @@
         {
             logger.LogInformation("No engine loaded");
             return;
+        }
+        if (analyzer.Engine.HasExited)
+        {
+            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            searchInProgress = false;
         }
 
         tableHeader = "Analysis";

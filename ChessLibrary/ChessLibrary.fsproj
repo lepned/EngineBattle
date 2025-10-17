@@ -6,6 +6,7 @@
     </PropertyGroup>
 
 	<ItemGroup>
+		<Compile Include="Exception.fs" />
 		<Compile Include="UciOption.fs" />
 		<Compile Include="ConsoleHandler.fs" />
 		<Compile Include="QBBOperations.fs" />

@@ -10,6 +10,7 @@ open System.Collections.Generic
 open Microsoft.FSharp.Core.Operators.Unchecked
 open System.Diagnostics
 open Microsoft.Extensions.Logging
+open System.Collections.Concurrent
 open ChessLibrary
 open ChessLibrary.Engine
 open ChessLibrary.Parser
@@ -26,7 +27,7 @@ open ChessLibrary.Chess
 open ChessLibrary.Chess.BoardUtils
 open ChessLibrary.Utilities
 open ChessLibrary.LowLevelUtilities
-open System.Collections.Concurrent
+open ChessLibrary.CustomException
 
 module Initialization = 
   
@@ -39,13 +40,20 @@ module Initialization =
   let private pumps = ConcurrentDictionary<ChessEngine, Channel<string> * CancellationTokenSource>(RefEq())
 
   let private startPump (eng: ChessEngine) =
-    let ch = Channel.CreateUnbounded<string>(UnboundedChannelOptions(SingleReader = false, SingleWriter = true))
+    let ch =
+      Channel.CreateBounded<string>(
+        BoundedChannelOptions(capacity = 4096,
+                              SingleWriter = true,
+                              SingleReader = true,
+                              FullMode = BoundedChannelFullMode.Wait))
+
     let cts = new CancellationTokenSource()
     
     let rec loop (attempts:int) = async {
       try
         if cts.Token.IsCancellationRequested then
           try ch.Writer.TryComplete() |> ignore with _ -> ()
+          return ()
         else
           let! line = eng.ReadLineAsync() |> Async.AwaitTask
           if not (isNull line) then
@@ -74,6 +82,10 @@ module Initialization =
     let (ch, _) = pumps.GetOrAdd(eng, fun _ -> startPump eng)
     ch
 
+  /// Preferred: expose the reader so ONE router can consume it.
+  let getReader (eng: ChessEngine) : ChannelReader<string> =
+    (getPump eng).Reader
+
   // Cleanup function to stop pumps and dispose resources
   let stopPump (eng: ChessEngine) =
     match pumps.TryRemove(eng) with
@@ -89,11 +101,11 @@ module Initialization =
     try
       let! available = reader.WaitToReadAsync(ct).AsTask() |> Async.AwaitTask
       if not available then 
-        return ""
+        return String.Empty
       else
         match reader.TryRead() with
         | true, line -> return line
-        | _ -> return ""
+        | _ -> return String.Empty
     with
     | :? OperationCanceledException -> return ""
     | :? System.Threading.Channels.ChannelClosedException -> return ""
@@ -102,7 +114,8 @@ module Initialization =
   // Read with timeout (no overlapping reads on the underlying stream)
   let readLineWithTimeout (eng: ChessEngine) (timeoutMs:int) (logger:ILogger) (ct:CancellationToken) = async {
     use linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct)
-    linkedCts.CancelAfter(timeoutMs)
+    //linkedCts.CancelAfter(timeoutMs)
+    linkedCts.CancelAfter(3000)
     try
       let! line = readLine eng linkedCts.Token
       if String.IsNullOrEmpty line then
@@ -126,6 +139,15 @@ module Initialization =
         // Pump completed; treat as no output
         return String.Empty
   }
+  
+  /// Try to read a line immediately (non-blocking) from an engine's pump.
+  /// Returns Some line if available, otherwise None.
+  let tryReadNow (eng: ChessEngine) : string option =
+    let reader = (getPump eng).Reader
+    match reader.TryRead() with
+    | true, line when not (isNull line) && line <> "" -> Some line
+    | _ -> None
+    
 
   // Backwards-compatible name used elsewhere; now uses the pump
   let readLineCancelAware (eng: ChessEngine) (cts: CancellationTokenSource) = async {
@@ -141,75 +163,106 @@ module Initialization =
       return true } 
 
   let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILogger) = async { 
+    let pumpCleanupDelay = 200
+    let engineStopDelay = 300
+    let engineStartDelay = 2000
+    let engineRecoveryDelay = 1000
+    
     try 
-        // Stop old pump first if it exists
+        // Phase 1: Stop existing pump
+        logger.LogDebug("Stopping pump for engine {Engine}", engine.Name)
         stopPump engine
-        do! Async.Sleep 100
+        do! Async.Sleep pumpCleanupDelay
         
-        // Handle both running and exited engines
-        if engine.HasExited() then
-            logger.LogDebug("Engine {Engine} has exited, starting fresh", engine.Name)
-            engine.StartProcess() |> ignore
-            do! Async.Sleep 200 // Give process time to initialize
-        else
-            // Engine is still running - need to reset it
-            logger.LogDebug("Engine {Engine} still running, resetting", engine.Name)
-            try
-                // Try graceful reset first
-                engine.Stop()
-                do! Async.Sleep 100
-                
-                // If it didn't exit, force stop
-                if not (engine.HasExited()) then
-                    logger.LogWarning("Engine {Engine} didn't stop gracefully, forcing", engine.Name)
-                    engine.StopProcess()
-                    do! Async.Sleep 200
-                
-                // Now start fresh
-                engine.StartProcess() |> ignore
-                do! Async.Sleep 200
-            with ex ->
-                logger.LogWarning(ex, "Error resetting engine {Engine}, forcing restart", engine.Name)
-                try engine.StopProcess() with _ -> ()
-                do! Async.Sleep 200
-                engine.StartProcess() |> ignore
-                do! Async.Sleep 200
-        
-        // 3. Verify engine is running
-        if engine.HasExited() then
-            logger.LogError("Engine {Engine} failed to start", engine.Name)
-            //return false
-        
-        // 4. Configure engine
-        let engineOption : EngineOption = { Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
-        engine.AddSetOption engineOption
-        
-        if tourny.MoveOverhead.Ticks > 0 then
-            let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
-            engine.SetMoveOverhead("overhead", ms)
-        
-        engine.UciNewGame()
-
-        // 5. Wait for readyok with proper timeout
-        let timeout = 300000 // 5m timeout for engine to be ready
-        let readyTask = Task.Run(fun () -> engine.WaitForReadyOk())
-        let! completed = Task.WhenAny(readyTask, Task.Delay(timeout)) |> Async.AwaitTask
-        
-        if obj.ReferenceEquals(completed, readyTask) then
-            let result = readyTask.Result
-            if result then
-                logger.LogDebug("Engine {Engine} ready", engine.Name)
+        // Phase 2: Handle engine process state
+        let! processReady = async {
+            if engine.HasExited() then
+                logger.LogDebug("Engine {Engine} has exited, starting fresh", engine.Name)
+                try
+                    engine.StartProcess() |> ignore
+                    do! Async.Sleep engineStartDelay
+                    return true
+                with ex ->
+                    logger.LogError(ex, "Failed to start engine {Engine}", engine.Name)
+                    return false
             else
-                logger.LogError("Engine {Engine} returned false for readyok", engine.Name)
-            return result
-        else
-            // Timed out
-            logger.LogError("Engine {Engine} timed out waiting for readyok after {Timeout}ms", engine.Name, timeout)
+                logger.LogDebug("Engine {Engine} still running, resetting", engine.Name)
+                try
+                    // Graceful stop attempt
+                    engine.Stop()
+                    do! Async.Sleep engineStopDelay
+                    
+                    // Force stop if needed
+                    if not (engine.HasExited()) then
+                        logger.LogWarning("Engine {Engine} didn't stop gracefully, forcing", engine.Name)
+                        engine.StopProcess()
+                        do! Async.Sleep engineStopDelay
+                    
+                    // Restart
+                    engine.StartProcess() |> ignore
+                    do! Async.Sleep engineStartDelay
+                    return true
+                with ex ->
+                    logger.LogWarning(ex, "Error resetting engine {Engine}, forcing restart", engine.Name)
+                    engine.StopProcess()
+                    do! Async.Sleep engineRecoveryDelay
+                    engine.StartProcess() |> ignore
+                    do! Async.Sleep engineStartDelay
+                    return true
+        }
+        
+        if not processReady then
             return false
-            
+        else
+            // Phase 3: Verify process is running
+            if engine.HasExited() then
+                logger.LogError("Engine {Engine} failed to start after all attempts", engine.Name)
+                return false
+            else
+                // Phase 4: UCI Configuration
+                logger.LogDebug("Configuring engine {Engine}: Chess960={Chess960}", 
+                    engine.Name, tourny.IsChess960)
+                    
+                let engineOption : EngineOption = { 
+                    Name = "UCI_Chess960"
+                    Value = sprintf "%b" tourny.IsChess960 
+                }
+                engine.AddSetOption engineOption
+                
+                if tourny.MoveOverhead.Ticks > 0 then
+                    let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
+                    logger.LogDebug("Setting move overhead for {Engine}: {Overhead}ms", engine.Name, ms)
+                    engine.SetMoveOverhead("overhead", ms)
+                
+                engine.UciNewGame()
+
+                // Phase 5: Wait for ready acknowledgment
+                let timeout = 120000
+                logger.LogDebug("Waiting for engine {Engine} readyok (timeout: {Timeout}ms)", 
+                    engine.Name, timeout)
+                    
+                let readyOk = engine.WaitForReadyOk(timeout)
+                
+                if readyOk then
+                    logger.LogDebug("Engine {Engine} ready", engine.Name)
+                    return true
+                else
+                    logger.LogError("Engine {Engine} timed out waiting for readyok", engine.Name)
+                    return false
+                
     with ex -> 
-        logger.LogError(ex, "Exception initializing engine {Engine}", engine.Name)
-        return false }  
+        logger.LogWarning(ex, "Exception initializing engine {Engine}, performing cleanup", engine.Name)
+        
+        // Cleanup on failure
+        try
+            stopPump engine
+            if not (engine.HasExited()) then
+                engine.StopProcess()
+        with cleanupEx ->
+            logger.LogWarning(cleanupEx, "Error during cleanup for engine {Engine}", engine.Name)
+            
+        return false 
+  }
   
   let appendGameDescription (sb:StringBuilder) (tourny:Tournament) (player1:ChessEngine) (player2:ChessEngine) (openingMoves: ResizeArray<string>) fen =
     let append (txt:string) = sb.Append txt |> ignore
@@ -270,51 +323,70 @@ module Initialization =
           printfn "DynamicContempt set for %s: %d vs %s" engine2.Name ratingDiff engine1.Name
       else 
         printfn "No contempt set (rating diff negative) for %s: %d vs %s" engine2.Name ratingDiff engine1.Name
-
+  
   let initEngines openingDelayMs (tourny:Tournament) (engine1: ChessEngine) (engine2: ChessEngine) (logger: ILogger) =          
     async {
-        // 1. First, ensure any existing pumps are stopped
-        stopPump engine1
-        stopPump engine2
-    
-        // 2. Small delay to let pumps fully clean up
-        do! Async.Sleep 200
-          
-        let delayBetweenGamesMs = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int
-          
-        // 3. Pass logger to waitForEngineIsReady
-        let startEngines = [
-            waitForEngineIsReady tourny engine1 logger
-            waitForEngineIsReady tourny engine2 logger
-        ]
-        let pauseUntilTournamentIsReady = [
-            createAsyncDelay openingDelayMs
-            createAsyncDelay delayBetweenGamesMs
-        ]
-        
-        let! res =
-            startEngines @ pauseUntilTournamentIsReady
-            |> Async.Parallel
-          
-        // 4. CRITICAL FIX: Only check engine results (first 2)
-        let engineResults = res |> Array.take 2
-        let failed = engineResults |> Array.exists(fun e -> not e)
-          
-        if failed then
-            let failedEngines = 
-                [| (engine1, engineResults.[0]); (engine2, engineResults.[1]) |]
-                |> Array.filter (fun (_, ok) -> not ok)
-                |> Array.map fst
+        try
+            // 1. First, ensure any existing pumps are stopped
+            stopPump engine1
+            stopPump engine2
+
+            // 2. Small delay to let pumps fully clean up
+            do! Async.Sleep 200
+            
+            let delayBetweenGamesMs = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int
+            
+            // 3. Pass logger to waitForEngineIsReady
+            let startEngines = [
+                waitForEngineIsReady tourny engine1 logger
+                waitForEngineIsReady tourny engine2 logger
+            ]
+            let pauseUntilTournamentIsReady = [
+                createAsyncDelay openingDelayMs
+                createAsyncDelay delayBetweenGamesMs
+            ]
+            
+            let! res =
+                startEngines @ pauseUntilTournamentIsReady
+                |> Async.Parallel
               
-            let engineNames = String.Join(", ", failedEngines |> Array.map (fun e -> e.Name))
-            logger.LogCritical("Failed to start engines: {FailedEngines}", engineNames)
-            do! Async.Sleep(1000)
+            // 4. CRITICAL FIX: Only check engine results (first 2)
+            let engineResults = res |> Array.take 2
+            let failed = engineResults |> Array.exists(fun e -> not e)
               
-            // Re-enable the failwith
-            return failwithf "Failed to start engines: %s" engineNames
-          
-        checkAndPrepareContempt engine1 engine2         
-      } |> Async.RunSynchronously  
+            if failed then
+                let failedEngines = 
+                    [| (engine1, engineResults.[0]); (engine2, engineResults.[1]) |]
+                    |> Array.filter (fun (_, ok) -> not ok)
+                    |> Array.map fst
+                  
+                let engineNames = String.Join(", ", failedEngines |> Array.map (fun e -> e.Name))
+                logger.LogCritical("Failed to start engines: {FailedEngines}", engineNames)
+                raise (EngineStartupException($"Failed to start: {engineNames}"))
+                //return false
+            else              
+                checkAndPrepareContempt engine1 engine2
+                //return true
+          with ex ->
+            // Log the error with context
+            logger.LogError(ex, "Exception during initEngines for {White} vs {Black}", engine1.Name, engine2.Name)
+            
+            // Best-effort cleanup in a single try-catch to avoid nested exceptions
+            try
+                stopPump engine1
+                stopPump engine2
+                
+                if not (engine1.HasExited()) then
+                    engine1.StopProcess()
+                    
+                if not (engine2.HasExited()) then
+                    engine2.StopProcess()
+            with cleanupEx ->
+                logger.LogWarning(cleanupEx, "Error during cleanup in initEngines")
+                raise (EngineStartupException cleanupEx.Message)
+            raise ex
+            
+      } |> Async.RunSynchronously
   
 module FathomRunner =
     open System.Runtime.InteropServices 
@@ -788,8 +860,6 @@ module Adjudication =
     //  |_ -> false
 
 module TournamentUtils =
-  
-  
 
   let validateEnginesInTournament (tourny : Tournament)  =
     async {
@@ -913,7 +983,7 @@ module Match =
     | TotalNumberOfPairs of PairingsNumber: int
     | RoundNr of Round: string
     | PeriodicResults of results: ResizeArray<Result>
-    | GameSummary of summary: string      
+    | GameSummary of summary: string
   
 
   // cancel-aware read now uses pump (already in TournamentUtils)
@@ -925,6 +995,33 @@ module Match =
     let player1, player2 = if isWhite then playing, opponent else opponent, playing
     createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals
   
+  
+  //let private logError (logger:ILogger) (failure: EngineFailure) =    
+  //  match failure with
+  //  | Timeout (timeoutMs, wasThinking) ->
+  //      logger.LogCritical("Engine timeout after {TimeoutMs} ms (was thinking: {WasThinking})", timeoutMs, wasThinking)
+  //  | Disconnect (exitCode, stderr) ->
+  //      let exitCodeStr = exitCode |> Option.map string |> Option.defaultValue "unknown"
+  //      let stderrStr = String.concat "; " (stderr |> List.truncate 5)
+  //      logger.LogCritical("Engine disconnected (exit code: {ExitCode}). Stderr: {Stderr}", exitCodeStr, stderrStr)
+  //  | Hang (silentDurationMs, lastOutput) ->
+  //      let lastOutputStr = lastOutput |> Option.defaultValue "none"
+  //      logger.LogError("Engine hang detected after {SilentDurationMs} ms of silence. Last output: {LastOutput}", silentDurationMs, lastOutputStr)
+  //  | IllegalMove (attemptedMove, positionFen) ->
+  //      logger.LogCritical("Illegal move detected: {AttemptedMove} in position {PositionFen}", attemptedMove, positionFen)
+  //  | ProcessCrash diagnostics ->
+  //      logger.LogCritical("Engine process crashed. Diagnostics: {Diagnostics}", diagnostics)
+  //  | Communication message ->
+  //      logger.LogError("Engine communication error: {Message}", message)
+  //  | Startup message ->
+  //      logger.LogCritical("Engine startup error: {Message}", message)
+  //  | AppShuttingDown message ->
+  //      logger.LogCritical("Engine app shutting down: {Message}", message)
+  //  | ExceptionThrown (message, ex) ->
+  //      logger.LogError("Engine exception thrown: {Message}", message)
+  //      logger.LogError("Engine exception details: {Exception}", ex)
+  //  | NoError -> ()
+
   let private updateClocks
       (duration: TimeSpan)
       (pFixedTime: TimeOnly)        
@@ -955,239 +1052,560 @@ module Match =
   
     // Centralized logging + crash result builder for unexpected exceptions during a game
   let private handleGameException
-      (logger: ILogger)
-      (ex: exn)
-      (cts: CancellationTokenSource)
-      (gametimer: int64)
-      (board: Board)
-      (engine1: ChessEngine)
-      (engine2: ChessEngine)
-      (pair: Pairing) : Result =
+    (logger: ILogger)
+    (ex: exn)
+    (cts: CancellationTokenSource)
+    (gametimer: int64)
+    (board: Board)
+    (engine1: ChessEngine)
+    (engine2: ChessEngine)
+    (pair: Pairing) : Result =
+  
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-    System.Threading.Thread.Sleep(1000) // small grace period to let processes settle
     let white, black = pair.White.Name, pair.Black.Name
     let shutdown = isAppShuttingDown cts
-    let e1Exited = engine1.HasExited()
-    let e2Exited = engine2.HasExited()
     let moves = board.ShortSANMovesPlayed
-    let cancel () = createResult white black moves "1/2-1/2" ResultReason.Cancel dur
-    let disconnected name res = createResult white black moves res (ResultReason.Disconnected name) dur
-    Initialization.stopPump engine1
-    Initialization.stopPump engine2
-    match shutdown, e1Exited, e2Exited with
-    | _, true, true ->
-        logger.LogCritical(ex, "Shutdown/cancellation during game {White} vs {Black}", white, black)        
-        cancel ()
-    | true, _, _ ->
-        logger.LogCritical(ex, "Shutdown/cancellation during game {White} vs {Black}", white, black)        
-        if engine1.HasExited() |> not then engine1.StopProcess()
-        if engine2.HasExited() |> not then engine2.StopProcess()
-        cancel ()
-    | _, true, _ ->
-        logger.LogCritical(ex, "Engine {Engine} exited/crashed during game {White} vs {Black}", engine1.Name, white, black)
-        engine2.StopProcess()
-        disconnected engine1.Name "0-1"
-    | _, _, true ->
-        logger.LogCritical(ex, "Engine {Engine} exited/crashed during game {White} vs {Black}", engine2.Name, white, black)
-        engine1.StopProcess()
-        disconnected engine2.Name "1-0"
-    | _ ->
-        logger.LogCritical(ex, "Exception during game {White} vs {Black} (engines still running)", white, black)
-        engine1.StopProcess()
-        engine2.StopProcess()
-        cancel ()
-  
+
+    // Helper to create results
+    let createCancelResult () = 
+        createResult white black moves "1/2-1/2" ResultReason.Cancel dur
+    
+    let createDisconnectedResult engineName resultStr = 
+        createResult white black moves resultStr (ResultReason.Disconnected engineName) dur
+    
+    // Stop pumps immediately
+    try 
+        Initialization.stopPump engine1
+        Initialization.stopPump engine2
+    with _ -> ()
+    
+    // Enhanced diagnostics check
+    let checkEngineWithDiagnostics (eng: ChessEngine) =
+        try
+            let exited = eng.HasExited()
+            if exited then
+                let diag = eng.GetDiagnostics()
+                let stderr = 
+                    eng.ErrorOutput 
+                    |> Seq.truncate 10 
+                    |> String.concat "; "
+                logger.LogCritical(
+                    "Engine {Engine} crashed. Diagnostics: {Diag} | Stderr: {Stderr}", 
+                    eng.Name, diag, stderr)
+            exited
+        with _ -> true
+    
+    // Async poll with exponential backoff
+    let pollEngineStatusAsync maxAttempts = async {
+        let rec poll attempt (delay:int) =
+            async {
+                if attempt >= maxAttempts then
+                    return (checkEngineWithDiagnostics engine1, checkEngineWithDiagnostics engine2)
+                else
+                    let e1 = checkEngineWithDiagnostics engine1
+                    let e2 = checkEngineWithDiagnostics engine2
+                    if e1 || e2 then 
+                        return (e1, e2)
+                    else
+                        do! Async.Sleep delay
+                        return! poll (attempt + 1) (min (delay * 2) 1000)
+            }
+        return! poll 0 100
+    }
+    
+    let e1Exited, e2Exited = pollEngineStatusAsync 5 |> Async.RunSynchronously
+    
+    // Classify exception type
+    let isPipeOrIoError =
+        match ex with
+        | :? System.IO.IOException -> true
+        | :? System.ObjectDisposedException -> true
+        | :? InvalidOperationException as ioe ->
+            let msg = ioe.Message.ToLowerInvariant()
+            msg.Contains("standardoutput") || msg.Contains("standardinput")
+        | _ ->
+            let msg = ex.Message.ToLowerInvariant()
+            msg.Contains("pipe") || msg.Contains("broken") || msg.Contains("closed")
+    
+    // Async cleanup helper
+    let forceStopEngineAsync (eng: ChessEngine) = async {
+        try
+            if not (eng.HasExited()) then
+                eng.StopProcess()
+                do! Async.Sleep 1000
+        with cleanupEx ->
+            logger.LogWarning(cleanupEx, "Error stopping {Engine}", eng.Name)
+    }
+    
+    // Decision tree with async cleanup
+    let result =
+        match shutdown, e1Exited, e2Exited with
+        // Both engines crashed
+        | _, true, true ->
+            logger.LogCritical(ex, "Both engines crashed: {White} vs {Black}", white, black)
+            createCancelResult ()
+        
+        // Application shutdown
+        | true, _, _ ->
+            logger.LogCritical(ex, "App shutdown during game: {White} vs {Black}", white, black)
+            async {
+                do! forceStopEngineAsync engine1
+                do! forceStopEngineAsync engine2
+            } |> Async.RunSynchronously
+            createCancelResult ()
+        
+        // Engine1 crashed
+        | false, true, false ->
+            logger.LogCritical(ex, "{Engine} crashed: {White} vs {Black}", engine1.Name, white, black)
+            forceStopEngineAsync engine2 |> Async.RunSynchronously
+            createDisconnectedResult engine1.Name "0-1"
+        
+        // Engine2 crashed
+        | false, false, true ->
+            logger.LogCritical(ex, "{Engine} crashed: {White} vs {Black}", engine2.Name, white, black)
+            forceStopEngineAsync engine1 |> Async.RunSynchronously
+            createDisconnectedResult engine2.Name "1-0"
+        
+        // Both alive - investigate further
+        | false, false, false ->
+            if isPipeOrIoError then
+                // No stderr clues - poll again with longer timeout
+                let e1b, e2b = pollEngineStatusAsync 10 |> Async.RunSynchronously
+                match e1b, e2b with
+                | true, false ->
+                    logger.LogCritical("After polling: {Engine} exited", engine1.Name)
+                    forceStopEngineAsync engine2 |> Async.RunSynchronously
+                    createDisconnectedResult engine1.Name "0-1"
+                    
+                | false, true ->
+                    logger.LogCritical("After polling: {Engine} exited", engine2.Name)
+                    forceStopEngineAsync engine1 |> Async.RunSynchronously
+                    createDisconnectedResult engine2.Name "1-0"
+                    
+                | true, true ->
+                    logger.LogCritical("After polling: both engines exited")
+                    createCancelResult ()
+                    
+                | false, false ->
+                    logger.LogError(ex, "Unresolved pipe error: {White} vs {Black}", white, black)
+                    async {
+                        do! forceStopEngineAsync engine1
+                        do! forceStopEngineAsync engine2
+                    } |> Async.RunSynchronously
+                    createCancelResult ()
+            else
+                // Unexpected exception
+                logger.LogCritical(ex, "Unexpected error: {White} vs {Black}", white, black)
+                async {
+                    do! forceStopEngineAsync engine1
+                    do! forceStopEngineAsync engine2
+                } |> Async.RunSynchronously
+                createCancelResult ()
+    
+    result
+
   let firstTwoEvals fullEvalList = 
     match fullEvalList |> List.rev with
-    |[] -> []
-    |[x] -> [x]
-    |x::y::_ -> [x;y]
-
+    | [] -> []
+    | [x] -> [x]
+    | x::y::_ -> [x; y]
   
+  /// Start a background writer that reads from engine.ReadLineAsync()
+  /// and writes lines into the provided channel for the duration of the game.
+  let private startEngineChannelWriter
+    (engine: ChessEngine)
+    (engineChannel: Channel<string>)
+    (parentCts: CancellationTokenSource)
+    (logger: ILogger) 
+    (inPonderMode: unit -> bool) 
+    (callback: Update -> unit)
+    (isWhite: unit -> bool) =
+
+    let cts = CancellationTokenSource.CreateLinkedTokenSource(parentCts.Token)
+    // Poll/throttle settings for ponder updates
+    let mutable ponderPollIntervalMs = 1000L
+    let sw = Stopwatch.StartNew()
+    let rec loop () = async {
+      try
+        if cts.Token.IsCancellationRequested then
+          try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
+          logger.LogInformation("Engine channel writer for {Engine} is stopping due to cancellation", engine.Name)
+          return ()
+        else
+          let! line = engine.ReadLineAsync() |> Async.AwaitTask
+          let inPonder = inPonderMode()
+          let isWhite = isWhite()   
+          if not (isNull line) then            
+              match line with
+               |line when inPonder && sw.ElapsedMilliseconds > ponderPollIntervalMs && line.StartsWith "info depth" ->
+                    match Regex.getEssentialData line (not isWhite) with
+                    | Some (d, eval, nodes, nps, _pvLine, tbhits, wdl, sd, _mPv) ->
+                        let status = {
+                            PlayerName = engine.Name; Eval = eval; Depth = d; SD = sd
+                            Nodes = nodes; NPS = float nps; TBhits = tbhits
+                            WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound }
+                        callback (PonderStatus status)
+                        sw.Restart()
+                    | None -> ()
+                                     
+               |line when inPonder && line.StartsWith "bestmove" -> 
+                    sw.Restart()
+               |line when not inPonder ->   
+                    engineChannel.Writer.TryWrite(line) |> ignore                    
+               | _ -> ()
+              
+          return! loop()
+      with
+      | :? OperationCanceledException
+      | :? ObjectDisposedException ->
+          try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
+      | ex ->
+          logger.LogWarning(ex, "Engine channel writer error for {Engine}", engine.Name)
+          try engineChannel.Writer.TryComplete(ex) |> ignore with _ -> ()
+    }
+
+    Async.Start(loop(), cts.Token)
+    cts
+
+  //start a game with pondering enabled
   let playWithPondering
-      (sb : StringBuilder)
-      (cts : CancellationTokenSource)
-      (logger : ILogger)
-      (tourny : Tournament) 
-      (board : Board)
-      (player1 : ChessEngine) 
-      (player2 : ChessEngine)
-      (pairing: Pairing)
-      callback  =    
-  
-      let moveList = Array.init 256 (fun _ -> defaultof<TMove> )
-      sb.Clear() |> ignore
-      let append (txt:string) = sb.Append txt |> ignore
-  
-      if tourny.TestOptions.WriteToConsole then
-        player1.ShowCommands()
-        player2.ShowCommands()
-      let stm = board.Position.STM
-      let mutable lastEngineStatus = EngineStatus.Empty
-      let mutable pos = 0UL
-      let mutable moves = 0
-      let mutable numberOfNodes = 0L
-      let mutable evalList : EvalType list = []
-      let mutable fullEvalList :EvalType list = []
-      let npsList = ResizeArray<float>()
-      let gameMoveList = board.ShortSANMovesPlayed
-      let moveCount = gameMoveList.Count
-      //// Pondering state
-      let mutable expectedPonderMove = ""
-      let mutable correctPonderMove = ""
-      let mutable expectedPonderMovePlayer1 = ""
-      let mutable expectedPonderMovePlayer2 = ""
-      //let mutable nextPonderMove = ""
-      let mutable isPonderHit = false
+    (sb : StringBuilder)
+    (cts : CancellationTokenSource)
+    (logger : ILogger)
+    (tourny : Tournament) 
+    (board : Board)
+    (player1 : ChessEngine) 
+    (player2 : ChessEngine)
+    (pairing: Pairing)
+    callback  = 
 
-      let findTimeSetting (player : ChessEngine) =
-        tourny.FindTimeControl (player.Config.TimeControlID)
-      let isNodeLimit player = (findTimeSetting player).NodeLimit
-      let wPlayer = (findTimeSetting player1)
-      let bPlayer = (findTimeSetting player2)    
-      let mutable wTime = wPlayer.Fixed
-      let mutable bTime = bPlayer.Fixed
-      let moveOverheadInTicks = tourny.MoveOverhead.Ticks
+    let player1Channel = Channel.CreateBounded<string>(BoundedChannelOptions(capacity = 4096, SingleWriter = true, SingleReader = true, FullMode = BoundedChannelFullMode.Wait))    
+    let player2Channel = Channel.CreateBounded<string>(BoundedChannelOptions(capacity = 4096, SingleWriter = true, SingleReader = true, FullMode = BoundedChannelFullMode.Wait))
+    
+    let mutable player1WriterCts : CancellationTokenSource option = None
+    let mutable player2WriterCts : CancellationTokenSource option = None
+  
+    // State    
+    let mutable ponderer : (ChessEngine * string) option = None
+    let mutable lastMovePlayed = ""
+    let mutable continueGame = true
+    let mutable result = Result.Empty
+    let mutable player1inPonderMode = false
+    let mutable player2inPonderMode = false
+    let mutable ponderHit = false
+    let mutable currentPos = Position.Default
 
-      let msg = $"Initializing players: {player1.Name} vs {player2.Name} with pondering enabled, delay: {tourny.DelayBetweenGames}" 
-      logger.LogInformation msg
-      tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
-  
-      let gameStartInfo : StartGameInfo = 
-        {
-          WhitePlayer = player1.Config
-          BlackPlayer = player2.Config
-          StartPos = board.FEN()
-          OpeningMovesAndFen = ResizeArray<MoveAndFen>(board.MovesAndFenPlayed)
-          WhiteTime = wTime
-          BlackTime = bTime
-          WhiteToMove = stm = 0uy
-          OpeningName = tourny.OpeningName
-          CurrentGameNr = pairing.GameNr
-        }
-      board.MovesAndFenPlayed.Clear()
-      let mutable moveInfoData = ChessMoveInfo.Empty
-  
-      callback(StartOfGame gameStartInfo)
-      if not tourny.ConsoleOnly then     
-        let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
-        let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
-        let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
-        Initialization.initEngines openingDelayMs tourny player1 player2 logger
+    // Helper functions to always derive current player from board state
+    let whoseTurn stm = if stm = 0uy then player1 else player2
+    let opponent stm = if stm = 0uy then player2 else player1
+    let isWhiteTurn stm = stm = 0uy
+
+    // ------- helpers & local state (unchanged setup) -------
+    let moveList = Array.init 256 (fun _ -> defaultof<TMove> )
+    sb.Clear() |> ignore
+    let append (txt:string) = sb.Append txt |> ignore
+
+    if tourny.TestOptions.WriteToConsole then
+      player1.ShowCommands()
+      player2.ShowCommands()
+
+    let mutable lastEngineStatus = EngineStatus.Empty
+    let mutable moves = 0
+    let mutable numberOfNodes = 0L
+    let mutable evalList : EvalType list = []
+    let mutable fullEvalList :EvalType list = []
+    let npsList = ResizeArray<float>()
+    let gameMoveList = board.ShortSANMovesPlayed
+
+    let findTimeSetting (player : ChessEngine) =
+      tourny.FindTimeControl (player.Config.TimeControlID)
+    let isNodeLimit player = (findTimeSetting player).NodeLimit
+    let wPlayer = (findTimeSetting player1)
+    let bPlayer = (findTimeSetting player2)    
+    let mutable wTime = wPlayer.Fixed
+    let mutable bTime = bPlayer.Fixed
+    let moveOverheadInTicks = tourny.MoveOverhead.Ticks
+
+    let msg = $"Initializing players: {player1.Name} vs {player2.Name} with pondering enabled" 
+    logger.LogInformation msg
+    tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
+    
+    let gameStartInfo : StartGameInfo = 
+      {
+        WhitePlayer = player1.Config
+        BlackPlayer = player2.Config
+        StartPos = board.FEN()
+        OpeningMovesAndFen = ResizeArray<MoveAndFen>(board.MovesAndFenPlayed)
+        WhiteTime = wTime
+        BlackTime = bTime
+        WhiteToMove = board.Position.STM = 0uy
+        OpeningName = tourny.OpeningName
+        CurrentGameNr = pairing.GameNr
+      }
+    board.MovesAndFenPlayed.Clear()
+    let mutable moveInfoData = ChessMoveInfo.Empty
+
+    callback(StartOfGame gameStartInfo)
+    if not tourny.ConsoleOnly then     
+      let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
+      let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
+      let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
+      Initialization.initEngines openingDelayMs tourny player1 player2 logger
+    else
+      Initialization.initEngines 0 tourny player1 player2 logger
+
+    try
+      player1WriterCts <- Some 
+        (startEngineChannelWriter player1 player1Channel cts logger
+        (fun () -> player1inPonderMode) 
+        callback
+        (fun () -> board.Position.STM = 0uy))
+      player2WriterCts <- Some 
+        (startEngineChannelWriter player2 player2Channel cts logger 
+        (fun () -> player2inPonderMode) 
+        callback
+        (fun () -> board.Position.STM = 0uy))
+    with ex ->
+      logger.LogWarning(ex, "Failed to start per-game engine channel writers")
+
+    // Helper to get the channel reader for the current playing engine
+    let getEngineReaderFor (eng: ChessEngine) =
+      if eng.Name = player1.Name then player1Channel.Reader else player2Channel.Reader
+    
+    logEngineInitCommands logger player1 player2
+    Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
+    callback (GameStarted player1.Name)
+
+    let mutable lastCheck = 0L
+    let gametimer = Stopwatch.GetTimestamp()
+    let mutable moveTimer = Stopwatch.StartNew()
+    let mutable depth = 0
+    let mutable selfdepth = 0
+    let mutable Player1PV = String.Empty
+    let mutable Player2PV = String.Empty
+    let mutable PVLine1 = String.Empty
+    let mutable PVLine2 = String.Empty
+    let fen0 = board.FEN()
+    logger.LogDebug $"After opening moves, FEN={fen0}"
+
+    // extracted helper to encapsulate all "PROCESS BESTMOVE" logic
+    let processBestMove (currentPlaying: ChessEngine) (currentOpponent: ChessEngine) isWhite (line:string)  = async {
+      let duration = moveTimer.Elapsed
+      let incr = tourny.TimeControl.GetIncrementTime(currentPlaying.Config.TimeControlID)
+      let useNodes = isNodeLimit currentPlaying
+      let playerTime = if isWhite then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
+      let remainingTicks = playerTime - duration.Ticks
+      let lostOnTime = (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L)
+
+      if lostOnTime then
+        let firstTwo = firstTwoEvals fullEvalList
+        let res = lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo        
+        result <- res
+        continueGame <- false      
       else
-        Initialization.initEngines 0 tourny player1 player2 logger
-  
-      logEngineInitCommands logger player1 player2
-      Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
-      callback (GameStarted player1.Name)
-      let mutable lastCheck = 0L
-      let gametimer = Stopwatch.GetTimestamp()
-      let mutable moveTimer = Stopwatch.GetTimestamp()
-      let mutable depth = 0
-      let mutable selfdepth = 0
-      let mutable Player1PV = String.Empty
-      let mutable Player2PV = String.Empty
-      let mutable PVLine1 = String.Empty
-      let mutable PVLine2 = String.Empty
-      let mutable Q1DifferentFromN1 = 0
-      let fen = board.FEN()
-      logger.LogDebug $"After opening moves, FEN={fen}"
+        if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
+          let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
+          do! Async.Sleep delay
 
-      // Shared processing function for "info" lines
-      let processOpponentsInfoLine (line: string) name =
-        let elapsed = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-        let diff = elapsed - lastCheck
-        let interval = 1000       
-        
-        if line.StartsWith "info" then              
-          let isWhite = name = player1.Name              
-          match Regex.getEssentialData line isWhite with
-          |Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv ) ->                 
+        // Update clocks
+        let (currentTime, timeLeft) =
+          if isWhite then updateClocks duration wTime incr useNodes
+          else updateClocks duration bTime incr useNodes
+        if isWhite then wTime <- currentTime else bTime <- currentTime
+        moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
+        moveInfoData.mt <- int64 duration.TotalMilliseconds
+
+        let parts = line.Split()
+        let move = parts.[1]
+        let ponderMove = if line.Contains "ponder" then parts.[3] else ""
+        lastMovePlayed <- move
+        let mutable shortSan = String.Empty
+
+        match tryGetTMoveFromCoordinateNotation &board move with
+        | Some tmove ->
+            let mutable moveAdj = tmove
+            shortSan <- getSanNotationFromTMove &board tmove
+            board.LongSANMovesPlayed.Add(move)
+            gameMoveList.Add(shortSan)
+            board.MakeMove(&moveAdj)
+            let ponderSan = getShortSanFromLongSan &board ponderMove
+            moveInfoData.pd <- ponderSan
+            moves <- moves + 1
+
+            let eval =
+              if evalList.Length > 0 then evalList.[0]
+              elif fullEvalList.Length > 0 then fullEvalList.[0]
+              else EvalType.CP 0.0
+
+            let pv, pvLong = if currentPlaying.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
+            let nps =
+              let last = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
+              if last <> 0.0 then last
+              else float numberOfNodes / duration.TotalSeconds
+
+            let posNow = board.Position
+            let fenNow = BoardHelper.posToFen posNow
+            let moveDetail = {
+              LongSan = move
+              FromSq = move[0..1]
+              ToSq = move[2..3]
+              Color = if board.Position.STM = 8uy then "w" else "b"
+              IsCastling = TMoveOps.isCastlingMove tmove
+              Comments = String.Empty
+            }
+            let moveAndFen = { Move = moveDetail; ShortSan = shortSan; FenAfterMove = fenNow }
+            let mutable posToCheck = board.Position
+            let piecesLeft = PositionOps.numberOfPieces &posToCheck
+            fullEvalList <- eval :: fullEvalList
+
+            let movesLeft =
+              Adjudication.movesLeftBeforeDrawAdjudication
+                eval fullEvalList
+                tourny.Adjudication.DrawOption.MinDrawMove
+                (tourny.Adjudication.DrawOption.DrawMoveLength * 2)
+                tourny.Adjudication.DrawOption.MaxDrawScore
+
+            let bestMove : BestMoveInfo = {
+              Player = currentPlaying.Name
+              Move = move
+              Ponder = ponderSan
+              Eval = eval
+              TimeLeft = timeLeft
+              MoveTime = TimeOnly(duration.Ticks)
+              NPS = nps
+              Nodes = numberOfNodes
+              FEN = fenNow
+              PV = pv
+              LongPV = pvLong
+              MoveAndFen = moveAndFen
+              MoveHistory = board.GetShortSanMoveHistory()
+              Move50 = board.Position.Count50 |> int
+              R3 = board.RepetitionNr()
+              PiecesLeft = piecesLeft
+              AdjDrawML = movesLeft
+            }
+
+            evalList <- []
+            depth <- 0
+            selfdepth <- 0
+            npsList.Clear()
+
+            match Adjudication.adjudicateByEval logger board fullEvalList tourny player1.Name player2.Name currentPlaying.Name gametimer gameMoveList moves with
+            | Some res ->
+                if res.Reason = ResultReason.Checkmate then
+                  let bm = { bestMove with MoveHistory = bestMove.MoveHistory + "#" }
+                  let status = { lastEngineStatus with Eval = EvalType.Mate 0 }
+                  let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
+                  annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                  callback(BestMove (bm, status))
+                else
+                  let numberAndMove = board.SanMoveNumberString shortSan
+                  annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                  callback(BestMove (bestMove, lastEngineStatus))
+                  moveInfoData <- ChessMoveInfo.Empty                  
+                result <- res
+                continueGame <- false
+            | None ->
+                let numberAndMove = board.SanMoveNumberString shortSan
+                annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                moveInfoData <- ChessMoveInfo.Empty
+                callback(BestMove (bestMove, lastEngineStatus))
+                //check ponder move status
+                match ponderer with
+                | Some (pEngine, pMove) when pEngine.Name = currentOpponent.Name && lastMovePlayed = pMove ->                    
+                    ponderHit <- true
+                    //logger.LogInformation($"PONDER HIT by {currentOpponent.Name} on move {pMove}")
+                | Some (pEngine, pMove) when pEngine.Name = currentOpponent.Name && lastMovePlayed <> pMove ->
+                    //we pondered, but our opponent played a different move
+                    ponderHit <- false
+                    //logger.LogInformation($"PONDER MISS by {currentOpponent.Name}, expected {pMove}, got {lastMovePlayed}")
+                    pEngine.Stop() //stop pondering
+                    do! Async.Sleep 200                    
+                    
+                | _ -> ponderHit <- false
+                
+                if not (String.IsNullOrEmpty ponderSan) then
+                  if currentPlaying.Name = player1.Name then
+                    player1inPonderMode <- true
+                    player2inPonderMode <- false
+                  else
+                    player1inPonderMode <- false
+                    player2inPonderMode <- true
+                  ponderer <- Some (currentPlaying, ponderMove)
+                 
+                  let timeConfig = findTimeSetting currentPlaying
+                  let timeType = tourny.TimeControl.GetTime(timeConfig)
+                  let timeCommand = (TypesDef.TimeControl.TimeControlCommands.uciTimePart timeType wTime bTime)
+                  let ponderCommand = sprintf "%s ponder" timeCommand
+                  //logger.LogDebug($"PONDER COMMAND: Sending ponder to {currentPlaying.Name}: {ponderCommand}")
+                  let ponderPosition = board.PositionWithMoves() + " " + ponderMove
+                  currentPlaying.Position ponderPosition
+                  currentPlaying.GoPonder ponderCommand
+
+                else
+                  ponderer <- None
+                  player1inPonderMode <- false
+                  player2inPonderMode <- false
+        | _ ->
+            // Illegal move
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let firstTwo = firstTwoEvals fullEvalList
+            let res = 
+                if currentPlaying.Name = player1.Name then
+                    createResultWithEval player1.Name player2.Name gameMoveList "0-1" ResultReason.Illegal dur firstTwo
+                else
+                    createResultWithEval player1.Name player2.Name gameMoveList "1-0" ResultReason.Illegal dur firstTwo
+            //log error, send end of game
+            logger.LogCritical($"Illegal move from {currentPlaying.Name}: {move} FEN={board.FEN()}")            
+            result <- res
+            continueGame <- false
+    }
+    
+    // Info line processor
+    let processInfoLine (channel:ChannelReader<string>) (engine: ChessEngine) (line: string) = async {
+      let elapsed = int64 moveTimer.Elapsed.TotalMilliseconds
+      let diff = elapsed - lastCheck
+      let interval = 500
+
+      if not tourny.TestOptions.PolicyTest && line.StartsWith "info string" && line.Contains "N:" then
+        let nnMsg = Regex.getInfoStringData engine.Name line 
+        let list = ResizeArray<NNValues>()
+        list.Add nnMsg
+        let mutable cont = not (line.StartsWith "info string node")
+        if not cont && tourny.VerboseLogging then
+          logger.LogDebug "Only one move in log live stats"
+
+        while cont do
+          let! newline = channel.ReadAsync(cts.Token).AsTask() |> Async.AwaitTask
+          if tourny.VerboseLogging then
+            logger.LogDebug($"In info string loop: {engine.Name} {newline}")
+          if String.IsNullOrEmpty newline then
+            cont <- false
+          elif newline.StartsWith "bestmove" then
+            //if tourny.VerboseLogging then logger.LogInformation(board.FEN() + ": new bestmove: " + newline)
+            cont <- false
+          elif newline.StartsWith "info string node" then
+            cont <- false
+          else
+            let msg = Utilities.Regex.getInfoStringData engine.Name newline
+            list.Add msg
+
+        makeShortSan list &board
+        match Utilities.Engine.calcTopNn list with
+        | Some (n1,n2,q1,q2,p1,pt) ->
+            moveInfoData.n1 <- n1; moveInfoData.n2 <- n2
+            moveInfoData.q1 <- q1; moveInfoData.q2 <- q2
+            moveInfoData.p1 <- p1; moveInfoData.pt <- pt
+        | None -> logger.LogDebug "No move found in log live stats"
+        if list.Count > 0 then callback (NNSeq list)
+
+      elif line.StartsWith "info" then
+        let isWhite = engine.Name = player1.Name
+        match Regex.getEssentialData line isWhite with
+        | Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv) ->
             numberOfNodes <- nodes
-            if d > depth then
-              depth <- d
-            if sd > selfdepth then  
-              selfdepth <- sd
-            //npsList.Add(float nps)
-            //evalList <- eval :: evalList
-            //moveInfoData.d <- depth
-            //moveInfoData.sd <- selfdepth
-            //moveInfoData.wv <- eval
-            //moveInfoData.n <- nodes
-            //moveInfoData.s <- nps
-            //moveInfoData.tb <- tbhits
-            //moveInfoData.pv <- pvLine
-            
-            let status = 
-                { 
-                  PlayerName = name
-                  Eval = eval
-                  Depth = d
-                  SD = sd
-                  Nodes = nodes
-                  NPS = float nps
-                  TBhits = tbhits
-                  WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound                  
-                }        
-        
-            if diff > interval && eval <> EvalType.NA then                  
-              lastCheck <- elapsed
-              callback(PonderStatus status)
-        
-          |None -> ()
-
-      let processInfoLine (engine: ChessEngine) (line: string) = async {
-        let elapsed = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-        let diff = elapsed - lastCheck
-        let interval = 1000
-       
-        if not tourny.TestOptions.PolicyTest && line.StartsWith "info string" && line.Contains "N:" then
-          let nnMsg = Regex.getInfoStringData engine.Name line 
-          let list = ResizeArray<NNValues>()
-          list.Add(nnMsg)              
-          let moreItems = line.StartsWith "info string node" |> not
-          if not moreItems && tourny.VerboseLogging then
-            logger.LogDebug "Only one move in log live stats"
-          let mutable cont = moreItems
-          while cont do
-            let! newline = Initialization.readLine engine cts.Token
-            if tourny.VerboseLogging then
-              logger.LogDebug($"In info string loop: {engine.Name} {newline}")
-            if String.IsNullOrEmpty newline then
-              cont <- false
-            elif newline.StartsWith "bestmove" then
-              if tourny.VerboseLogging then
-                logger.LogInformation(board.FEN() + ": new bestmove: " + newline)                
-              cont <- false                 
-            elif newline.StartsWith "info string node" then
-              cont <- false  
-            else
-              let msg = Utilities.Regex.getInfoStringData engine.Name newline
-              list.Add msg
-      
-          makeShortSan list &board
-          match Utilities.Engine.calcTopNn list with
-          |Some (n1,n2,q1,q2, p1, pt) -> 
-            moveInfoData.n1 <- n1
-            moveInfoData.n2 <- n2
-            moveInfoData.q1 <- q1
-            moveInfoData.q2 <- q2
-            moveInfoData.p1 <- p1
-            moveInfoData.pt <- pt
-          |None -> logger.LogDebug "No move found in log live stats"                
-        
-          if list.Count > 0 then
-            callback (NNSeq list)
-
-        elif line.StartsWith "info" then              
-          let isWhite = engine.Name = player1.Name
-          match Regex.getEssentialData line isWhite with
-          |Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv ) ->                 
-            numberOfNodes <- nodes
-            if d > depth then
-              depth <- d
-            if sd > selfdepth then  
-              selfdepth <- sd
+            if d > depth then depth <- d
+            if sd > selfdepth then selfdepth <- sd
             npsList.Add(float nps)
             evalList <- eval :: evalList
             moveInfoData.d <- depth
@@ -1197,7 +1615,7 @@ module Match =
             moveInfoData.s <- nps
             moveInfoData.tb <- tbhits
 
-            if not (String.IsNullOrEmpty(pvLine)) then
+            if not (String.IsNullOrEmpty pvLine) then
               if player1.Name = engine.Name then
                 Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                 PVLine1 <- pvLine
@@ -1206,601 +1624,118 @@ module Match =
                 Player2PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                 PVLine2 <- pvLine
                 moveInfoData.pv <- Player2PV
-            let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
+
+            let npsLast = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
             let pv, pvLong = if engine.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
-            let status = 
-                { 
-                  PlayerName = engine.Name
-                  Eval = eval
-                  Depth = d
-                  SD = sd
-                  Nodes = nodes
-                  NPS = nps
-                  TBhits = tbhits
-                  WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
-                  PV = pv
-                  PVLongSAN = pvLong
-                  MultiPV = mPv
-                }
-        
+
+            let status = {
+              PlayerName = engine.Name
+              Eval = eval; Depth = d; SD = sd; Nodes = nodes; NPS = npsLast
+              TBhits = tbhits
+              WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
+              PV = pv; PVLongSAN = pvLong; MultiPV = mPv
+            }
             lastEngineStatus <- status
-        
-            if diff > interval && eval <> EvalType.NA then                  
+
+            if diff > interval then
               lastCheck <- elapsed
-              callback(Status status)
-        
-          |None -> ()
-      }
-
-      let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {       
-        if cts.IsCancellationRequested then
-          let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let firstTwoEvals = firstTwoEvals fullEvalList
-          let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals          
-          logger.LogCritical($"Cancel requested when engine ready to play: {playing.Name}")
-          callback(EndOfGame res)
-          return res
-        else
-          let moreThanOneMoves = gameMoveList.Count - moveCount > 1
-          let movesPlayed = gameMoveList.Count - moveCount > 0
+              callback (Status status)
+        | None -> ()
+    }
     
-          if position <> pos then
-            moveTimer <- Stopwatch.GetTimestamp()
-            pos <- position
-            let fenAndMoves = board.PositionWithMoves()
-            if tourny.VerboseLogging then
-              logger.LogDebug $"Current position: {fenAndMoves}"
-        
-            lastCheck <- int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let timeConfig = findTimeSetting playing
-            //ponder logic for player
-            if isPonderHit then                
-                playing.PonderHit()
-                isPonderHit <- false
-                logger.LogInformation($"Ponder hit for {playing.Name} with move: {correctPonderMove}")
-                //expectedPonderMove <- String.Empty
-            
-            else                   
-                printfn "%s was sent stop command because of no ponderhit" playing.Name
-                
-                if moreThanOneMoves then                    
-                    playing.Stop()
-                    //wait for bestmove from stopped engine and ignore it
-                    let mutable cont = true
-                    while cont do
-                        let! line = Initialization.readLine playing cts.Token
-                        if line.StartsWith "bestmove" then
-                            cont <- false
-                            logger.LogInformation($"Ignoring bestmove from {playing.Name} after stop command: {line}")
-                        elif line.StartsWith "info" then
-                            do! processInfoLine playing line                   
-                        elif String.IsNullOrEmpty line |> not then
-                            logger.LogDebug($"Unexpected line from {playing.Name}: {line}")
-                        else
-                            logger.LogDebug($"Empty line from {playing.Name}, continuing...")
-                playing.Position fenAndMoves
-                if tourny.TestOptions.ValueTest then  
-                    if playing.IsLc0 then
-                        playing.GoNodes 2
-                    else
-                        playing.GoValue()
-                elif tourny.TestOptions.PolicyTest then
-                    playing.GoNodes 1
-                elif timeConfig.NodeLimit then            
-                    playing.GoNodes timeConfig.Nodes            
-                else
-                    playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
-                    //opponent.GoPonder "go ponder"
-                    logger.LogInformation ($"Starting {playing.Name} with time: {tourny.TimeControl.GetTime(timeConfig)} - in move")
-          
-          let tasks =
-              if movesPlayed then
-                [
-                    async {
-                      let! line = Initialization.readLine playing cts.Token
-                      return "playing", line
-                    }
-                    async {
-                      let! line = Initialization.readLine playing cts.Token
-                      return "opponent", line
-                    }
-                  ] 
-              else
-                [
-                    async {
-                      let! line = Initialization.readLine playing cts.Token
-                      return "playing", line
-                    }
-                ]
-          let! results =  tasks |> Async.Parallel    
-
-          // Process the results - prioritize the playing engine's response
-          let playingResult = results |> Array.tryFind (fun (source, _) -> source = "playing")
-          let opponentResult = results |> Array.tryFind (fun (source, _) -> source = "opponent")
-    
-          // Process opponent's info line if available (non-blocking)
-          match opponentResult with
-          | Some (_, line) when not (String.IsNullOrEmpty line) -> 
-              processOpponentsInfoLine line opponent.Name
-          | _ -> ()
-    
-          // Process playing engine's response (main logic)
-          match playingResult with
-          | None ->
-            logger.LogDebug $"No response from {playing.Name}, continuing..."
-            return! playEngine playing opponent position
-          | Some (_, line) ->
-                    
-          if isAppShuttingDown cts then
+    async {
+        let cancel() =            
             let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let firstTwoEvals = firstTwoEvals fullEvalList
-            let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals
-            callback(EndOfGame res)
-            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
-            return res
-          elif playing.HasExited() then
-            do! Async.Sleep 1000
-            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let res, msg =
-                let firstTwoEvals = firstTwoEvals fullEvalList            
-                if opponent.HasExited() then
-                    createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals,
-                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
-                else
-                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-                    createResultWithEval player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur firstTwoEvals ,
-                    $"Player has exited/crashed {playing.Name}"
-            callback(EndOfGame res)
-            logger.LogInformation msg
-            return res                 
-      
-          elif String.IsNullOrEmpty line then
-            logger.LogDebug $"Empty line from {playing.Name}, continuing..."
-            return! playEngine playing opponent position
+            let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
+            logger.LogInformation($"Cancel requested")
+            result <- res
         
-          elif line.StartsWith "info engine" then
-            MessagesFromEngine ("Ceres", line) |> callback
-            logger.LogInformation line
-            return! playEngine playing opponent position
-        
-          elif line.StartsWith("bestmove") then
-            let duration = Stopwatch.GetElapsedTime(moveTimer)
-            let incr = tourny.TimeControl.GetIncrementTime(playing.Config.TimeControlID)
-            let useNodes = isNodeLimit playing
-            let isWhite = playing.Name = player1.Name
-            let playerTime = if isWhite then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
-            let remainingTicks = playerTime - duration.Ticks
-            let lostOnTime = (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L)
-            if lostOnTime then
-                let firstTwoEvals = firstTwoEvals fullEvalList            
-                let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
-                return res
-            else             
-                if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
-                    let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
-                    do! Async.Sleep delay         
-                           
-                let (currentTime, timeLeft) = 
-                    if isWhite then
-                        updateClocks duration wTime incr useNodes
-                    else
-                        updateClocks duration bTime incr useNodes
-                if isWhite then wTime <- currentTime else bTime <- currentTime                  
-                  
-                moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
-                moveInfoData.mt <- int64 duration.TotalMilliseconds
-                let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
-                let mutable bestMove = BestMoveInfo.Empty
-                let mutable shortSan = String.Empty
-
-                match tryGetTMoveFromCoordinateNotation &board move with
-                |Some tmove ->
-                    let mutable moveAdj = tmove
-                    shortSan <- getSanNotationFromTMove &board tmove                      
-                    board.LongSANMovesPlayed.Add(move)                
-                    gameMoveList.Add(shortSan)
-                    board.MakeMove(&moveAdj)
-                    let ponderSan = getShortSanFromLongSan &board ponderMove
-                    moveInfoData.pd <- ponderSan
-                    moves <- moves + 1
-
-                    let timeConfig = findTimeSetting playing
-                    let timeType = tourny.TimeControl.GetTime(timeConfig)
-                    let timeCommand = (TypesDef.TimeControl.TimeControlCommands.uciTimePart timeType wTime bTime)//.Substring(3) //remove the "go " part                
-                    let ponderCommand = sprintf "%s ponder" timeCommand                
-                    let newFenAndMoves = board.PositionWithMoves() + " " + ponderMove
-                    logger.LogInformation $"{playing.Name} with bestmove line: {line} -----> move: {move}, expected: {expectedPonderMove}"
-                    playing.Position newFenAndMoves
-                    playing.GoPonder ponderCommand
-                    let msg = $"Ponder command for {playing.Name}: {ponderCommand}\n fen: {newFenAndMoves}"
-                    printfn "%s" msg
-                    isPonderHit <- expectedPonderMove = move
-                    if isPonderHit then                    
-                        correctPonderMove <- move
-                        printfn "%s will be sent ponderhit command" opponent.Name
-                    expectedPonderMove <- ponderMove
-
-                    let eval = 
-                        if evalList.Length > 0 then evalList.[0] 
-                        elif fullEvalList.Length > 0 then fullEvalList[0] 
-                        else EvalType.CP 0.0
-            
-                    let pv, pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
-                    let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
-                    let nps = 
-                        if nps <> 0. then 
-                            nps 
-                        else 
-                            let s = float numberOfNodes/float duration.TotalSeconds
-                            moveInfoData.s <- int64 s
-                            s
-            
-                    let pos = board.Position
-                    let fen = BoardHelper.posToFen pos
-                    let moveDetail = 
-                        {
-                        LongSan = move
-                        FromSq = move[0..1]
-                        ToSq = move[2..3]
-                        Color = if board.Position.STM = 8uy then "w" else "b"
-                        IsCastling = TMoveOps.isCastlingMove tmove
-                        Comments = String.Empty
-                        }                 
-                    let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
-                    let mutable posToCheck = board.Position
-                    let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                    fullEvalList <- eval::fullEvalList
-                    let movesLeft = 
-                        Adjudication.movesLeftBeforeDrawAdjudication
-                            eval
-                            fullEvalList
-                            tourny.Adjudication.DrawOption.MinDrawMove
-                            (tourny.Adjudication.DrawOption.DrawMoveLength * 2)
-                            tourny.Adjudication.DrawOption.MaxDrawScore
-                    bestMove <- 
-                        {   Player = playing.Name
-                            Move = move
-                            Ponder = ponderSan
-                            Eval = eval
-                            TimeLeft = timeLeft
-                            MoveTime = TimeOnly(duration.Ticks)
-                            NPS = nps
-                            Nodes = numberOfNodes
-                            FEN = fen
-                            PV = pv 
-                            LongPV = pvLong
-                            MoveAndFen = moveAndFen
-                            MoveHistory = board.GetShortSanMoveHistory()
-                            Move50 = board.Position.Count50 |> int
-                            R3 = board.RepetitionNr()
-                            PiecesLeft = piecesLeft
-                            AdjDrawML = movesLeft
-                        }                  
+        try
+            while continueGame && not cts.IsCancellationRequested do
+                let sideToMove = board.Position.STM
+                let currentPlaying = whoseTurn sideToMove
+                let currentOpponent = opponent sideToMove
+                let isWhite = isWhiteTurn sideToMove
                 
-                    if bestMove.R3 > 1 && tourny.VerboseLogging then
-                        logger.LogDebug($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
-            
-                    evalList <- []
-                    depth <- 0
-                    selfdepth <- 0
-                    npsList.Clear()
-            
-                    if moveInfoData.q2 > moveInfoData.q1 then                  
-                        Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
-                    if moveInfoData.n2 > moveInfoData.n1 then                  
-                        Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
-                    if tourny.VerboseLogging then
-                        logger.LogDebug $"FEN={board.FEN()}"
-            
-                    // Check for game ending conditions
-                    match Adjudication.adjudicateByEval logger board fullEvalList tourny player1.Name player2.Name playing.Name gametimer gameMoveList moves with
-                    |Some res -> 
-                        if res.Reason = ResultReason.Checkmate then
-                            let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
-                            let status = {lastEngineStatus with Eval = EvalType.Mate 0}
-                            let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
-                            annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
-                            callback(BestMove (bm, status))
-                        else
-                            let numberAndMove = board.SanMoveNumberString shortSan
-                            annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
-                            callback(BestMove (bestMove, lastEngineStatus))              
-                            moveInfoData <- ChessMoveInfo.Empty
-                            callback(EndOfGame res)
-                            let mutable posToCheck = board.Position
-                            let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                            if tourny.VerboseLogging then
-                                logger.LogInformation($"Adjudication by eval: {res.Reason}, Pieces left: {piecesLeft} ")
-                                logger.LogInformation (sprintf "Info %A: " res)
-                        return res
-                    |None ->
-                        let numberAndMove = board.SanMoveNumberString shortSan
-                        annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
-                        moveInfoData <- ChessMoveInfo.Empty
-                        callback(BestMove (bestMove, lastEngineStatus))                  
-                        return! playEngine opponent playing (board.PositionHash())
-                |_ ->                
+                if currentPlaying.HasExited() then
+                    do! Async.Sleep 1000
                     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                    if board.AnyLegalMove() |> not then
-                        let firstTwoEvals = firstTwoEvals fullEvalList                            
-                        if board.IsMate() then                            
-                            let res = 
-                                if playing.Name = player1.Name then
-                                    createResultWithEval player1.Name player2.Name gameMoveList "0-1" ResultReason.Checkmate dur firstTwoEvals
-                                else
-                                    createResultWithEval player1.Name player2.Name gameMoveList "1-0" ResultReason.Checkmate dur firstTwoEvals
-                            callback(EndOfGame res)                    
-                            logger.LogInformation($"Checkmate: {res.Reason}")
-                            return res
-                        else                    
-                            let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Stalemate dur firstTwoEvals
-                            callback(EndOfGame res)
-                            logger.LogInformation($"Stalemate: {res.Reason}")
-                            return res
-                    else                     
-                            return! playEngine playing opponent (board.PositionHash())
-             
-          else
-            // Process info lines using the shared function
-            do! processInfoLine playing line
-            return! playEngine playing opponent position
-        } 
-  
-      let startPos = board.PositionHash()
-      if board.Position.STM = 0uy then
-        playEngine player1 player2 startPos
-      else
-        playEngine player2 player1 startPos
-  
-  let playGoValue
-    (sb : StringBuilder)
-    (cts : CancellationTokenSource)
-    (logger : ILogger)
-    (tourny : Tournament) 
-    (board : Board)
-    (player1 : ChessEngine) 
-    (player2 : ChessEngine)
-    callback  =
-        
-    sb.Clear() |> ignore 
-    let append (txt:string) = sb.Append txt |> ignore
-    if tourny.TestOptions.WriteToConsole then
-      player1.ShowCommands()
-      player2.ShowCommands()
-    let stm = board.Position.STM
-    let mutable pos = 0UL
-    let mutable moves = 0
-    let mutable numberOfNodes = 0L
-    let mutable evalList : EvalType list = []
-    let mutable fullEvalList :EvalType list = []
-    let npsList = ResizeArray<float>()
-    let gameMoveList = board.ShortSANMovesPlayed
-
-
-    let delaySeconds = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
-    let delayMilliseconds = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds
-    let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms)" player1.Name player2.Name delaySeconds delayMilliseconds
-    
-    logger.LogInformation msg
-    tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
-    
-    let gameStartInfo : StartGameInfo = 
-      {
-        WhitePlayer = player1.Config
-        BlackPlayer = player2.Config
-        StartPos = board.FEN() // board.PositionWithMoves()
-        OpeningMovesAndFen = ResizeArray<MoveAndFen>(board.MovesAndFenPlayed)
-        WhiteTime = TimeOnly.MinValue
-        BlackTime = TimeOnly.MinValue
-        WhiteToMove = stm = 0uy
-        OpeningName = tourny.OpeningName
-        CurrentGameNr = tourny.CurrentGameNr
-      }
-    board.MovesAndFenPlayed.Clear()
-    let mutable moveInfoData = Engine.ChessMoveInfo.Empty
-    
-    callback(StartOfGame gameStartInfo)
-    let nodeLimit = tourny.EngineSetup.Engines |> List.map(fun e -> tourny.FindTimeControl e.TimeControlID) |> List.forall(fun e -> e.NodeLimit)
-    let neuralNetTest = tourny.TestOptions.PolicyTest || tourny.TestOptions.ValueTest || nodeLimit
-    if neuralNetTest = false then     
-      let moveTime = float tourny.MinMoveTimeInMS / 1000.0
-      let timeCalc = float board.OpeningMovesPlayed.Count * moveTime
-      let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
-      Initialization.initEngines openingDelayMs tourny player1 player2 logger
-    
-    logEngineInitCommands logger player1 player2    
-    Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
-    callback (GameStarted player1.Name)
-    let mutable lastCheck = 0L
-    let gametimer = Stopwatch.GetTimestamp()
-    let mutable moveTimer = Stopwatch.GetTimestamp()
-    let mutable depth = 0
-    let mutable selfdepth = 0
-    let mutable Player1PV = String.Empty
-    let mutable Player2PV = String.Empty
-    let mutable PVLine1 = String.Empty
-    let mutable PVLine2 = String.Empty
-    let fen = board.FEN()
-    if tourny.VerboseLogging then
-      logger.LogDebug $"After opening moves, FEN={fen}"
-    let tboard = Chess.Board()
-    tboard.IsFRC <- tourny.IsChess960
-    let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
-      let mutable posWithMoves = ""
-      if cts.IsCancellationRequested then
-        let msg = $"Game between {player1.Name} vs {player2.Name} was cancelled"
-        let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-        let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" Misc.ResultReason.Cancel dur
-        logger.LogCritical(msg)
-        callback(EndOfGame res)
-        //callback(EndOfTournament tourny)
-        return res
-      else
-        if position <> pos then            
-          moveTimer <- Stopwatch.GetTimestamp()
-          pos <- position          
-          posWithMoves <- board.PositionWithMoves()          
-          if tourny.VerboseLogging then
-            logger.LogDebug $"Current position: {posWithMoves}"
-          playing.Position posWithMoves          
-          lastCheck <- int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-        
-        let! (q, line, eval) = bestQMove 1 playing posWithMoves tboard    
-        if tourny.VerboseLogging then
-          logger.LogDebug line  
-        if String.IsNullOrEmpty line then
-          logger.LogDebug $"Empty line or null from {playing.Name}"
-        elif line.StartsWith "info engine" then
-          Update.MessagesFromEngine ("Ceres", line) |> callback
-          logger.LogInformation line
-        
-        if isAppShuttingDown cts then
-            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let firstTwoEvals = firstTwoEvals fullEvalList
-            let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals
-            callback(EndOfGame res)
-            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
-            return res
-        elif playing.HasExited() then
-            do! Async.Sleep 1000
-            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let firstTwoEvals = firstTwoEvals fullEvalList
-            let res, msg =
-                if opponent.HasExited() then
-                    createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals,
-                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
-                else
-                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-                    createResultWithEval player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur firstTwoEvals,
-                    $"Player has exited/crashed {playing.Name}"
-            callback(EndOfGame res)
-            logger.LogInformation msg
-            return res                 
-          
-        else          
-          if line.StartsWith("bestmove") then    
-              let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
-              match tryGetTMoveFromCoordinateNotation &board move with
-              |Some tmove ->
-                let mutable moveAdj = tmove
-                let shortSan = getSanNotationFromTMove &board tmove
-                board.LongSANMovesPlayed.Add(move)                
-                gameMoveList.Add(shortSan)
-                board.MakeMove(&moveAdj)
-                let ponderSan = getShortSanFromLongSan &board ponderMove
-                moveInfoData.pd <- ponderSan                
-                moves <- moves + 1
-                fullEvalList <- eval::fullEvalList
-                let eval = 
-                  if evalList.Length > 0 then evalList.[0] 
-                  elif fullEvalList.Length > 0 then fullEvalList[0] 
-                  else EvalType.CP 0.0
-                let pv,pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
-                let fen = BoardHelper.posToFen board.Position
-                let moveDetail = 
-                  {
-                    LongSan = move
-                    FromSq = move[0..1]
-                    ToSq = move[2..3]
-                    Color = if board.Position.STM = 8uy then "w" else "b"
-                    IsCastling = (tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY)
-                    Comments = String.Empty
-                    }                 
-                let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
-                let mutable posToCheck = board.Position
-                let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                fullEvalList <- eval::fullEvalList
-                let movesLeft = 
-                  Adjudication.movesLeftBeforeDrawAdjudication
-                    eval
-                    fullEvalList
-                    tourny.Adjudication.DrawOption.MinDrawMove
-                    (tourny.Adjudication.DrawOption.DrawMoveLength * 2)
-                    tourny.Adjudication.DrawOption.MaxDrawScore
-                let bestMove = 
-                  { Player = playing.Name
-                    Move = move
-                    Ponder = ponderSan
-                    Eval = eval
-                    TimeLeft = TimeOnly.MinValue
-                    MoveTime = TimeOnly.MinValue
-                    NPS = 0.
-                    Nodes = numberOfNodes
-                    FEN = fen
-                    PV = pv 
-                    LongPV = pvLong
-                    MoveAndFen = moveAndFen
-                    MoveHistory = board.GetMoveHistory()
-                    Move50 = board.Position.Count50 |> int
-                    R3 = board.RepetitionNr()
-                    PiecesLeft = piecesLeft
-                    AdjDrawML = movesLeft
-                    }                  
-                    
-                if bestMove.R3 > 1 && tourny.VerboseLogging then
-                  logger.LogInformation($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
-                callback(BestMove (bestMove, EngineStatus.Empty))
-                evalList <- []
-                depth <- 0
-                selfdepth <- 0
-                npsList.Clear()
-                let numberAndMove = board.SanMoveNumberString shortSan
-                annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append                            
-                //tablebase adjudication here
-                match Adjudication.adjudicateByEval logger board fullEvalList tourny player1.Name player2.Name playing.Name gametimer gameMoveList moves with
-                |Some res -> 
-                  callback(EndOfGame res)
-                  let mutable posToCheck = board.Position
-                  let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                  if tourny.VerboseLogging then
-                    logger.LogInformation($"Adjudication by eval: {res.Reason}, Pieces left: {piecesLeft} ")
-                    logger.LogInformation (sprintf "Info %A: " res)
-                  return res
-                |None ->
-                  return! playEngine opponent playing (board.PositionHash())
-              |_ ->  
-                let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                let firstTwoEvals = firstTwoEvals fullEvalList
-            
-                //check if there is any legal move in the position
-                if board.AnyLegalMove() |> not then
-                  //either checkmate or stalemate
-                  if board.IsMate() then                   
-                    let res = 
-                      if playing.Name = player1.Name then
-                        createResultWithEval player1.Name player2.Name gameMoveList "0-1" Misc.ResultReason.Checkmate dur firstTwoEvals
-                      else
-                        createResultWithEval player1.Name player2.Name gameMoveList "1-0" Misc.ResultReason.Checkmate dur firstTwoEvals
-                    callback(EndOfGame res)
-                    logger.LogInformation($"Checkmate: {res.Reason}")
-                    return res
-                  else                    
-                    let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" Misc.ResultReason.Stalemate dur firstTwoEvals
-                    callback(EndOfGame res)
-                    logger.LogInformation($"Stalemate: {res.Reason}")
-                    return res
-                else
-                  let res = 
-                    if playing.Name = player1.Name then
-                      createResultWithEval player1.Name player2.Name gameMoveList "0-1" Misc.ResultReason.Illegal dur firstTwoEvals
+                    let firstTwoEvals = firstTwoEvals fullEvalList
+                    let res, msg =
+                        if currentOpponent.HasExited() then
+                            let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals
+                            res, $"Shutdown detected after {currentPlaying.Name} exited; returning Cancel"
+                        else
+                            let resValue = if currentPlaying.Name = player1.Name then "0-1" else "1-0"                    
+                            createResultWithEval player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected currentPlaying.Name) dur firstTwoEvals,
+                            $"Player has exited/crashed {currentPlaying.Name}"                    
+                    logger.LogInformation msg
+                    let diagnosis = currentPlaying.GetDiagnostics()            
+                    logger.LogCritical diagnosis
+                    result <- res
+                    continueGame <- false
+                
+                if currentPos <> board.Position then
+                    currentPos <- board.Position
+                    let timeConfig = findTimeSetting currentPlaying
+                    if ponderHit then
+                        try currentPlaying.PonderHit() with ex -> logger.LogWarning(ex, "Failed to send ponderhit to {Engine}", currentPlaying.Name)                    
+                        ponderHit <- false
+                        do! Async.Sleep 200
                     else
-                      createResultWithEval player1.Name player2.Name gameMoveList "1-0" Misc.ResultReason.Illegal dur firstTwoEvals
-                  callback(EndOfGame res)
-                  let fenAndMoves = board.PositionWithMoves()
-                  logger.LogCritical($"{playing.Name} failed in bestmove logic with the following response {line} after these moves: \n{fenAndMoves}")
-                  return res
-                 
-          else            
-            return! playEngine playing opponent position
-        } 
-    let startPos = board.PositionHash()
-    if board.Position.STM = 0uy then
-      playEngine player1 player2 startPos
-    else
-      playEngine player2 player1 startPos
+                        let fenAndMoves = board.PositionWithMoves()
+                        currentPlaying.Position fenAndMoves
+                        if timeConfig.NodeLimit then
+                            currentPlaying.GoNodes timeConfig.Nodes
+                        else                        
+                            currentPlaying.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
+                    moveTimer.Restart()
+                    lastCheck <- 250L
+
+                //reading from the per-game channel for the engine
+                let engineReader = getEngineReaderFor currentPlaying
+                try
+                    let! line = engineReader.ReadAsync(cts.Token).AsTask() |> Async.AwaitTask
+                    if line.StartsWith "bestmove" then
+                        do! processBestMove currentPlaying currentOpponent isWhite line                
+                    else                
+                        do! processInfoLine engineReader currentPlaying line        
+                with
+                | :? OperationCanceledException ->                    
+                    logger.LogInformation("playWithPondering: ReadAsync cancelled, cancelling game loop")
+                    cancel()
+                    continueGame <- false
+                | :? System.Threading.Channels.ChannelClosedException ->
+                    // channel closed (writer finished) -> treat as cancellation/stop
+                    logger.LogInformation("playWithPondering: engine channel closed")
+                    cancel()
+                    continueGame <- false
+                | ex ->
+                    logger.LogWarning(ex, "Error reading engine channel in playWithPondering")
+                    // treat as cancellation to ensure we return a result
+                    cancel()
+                    continueGame <- false
+           
+        finally
+            // Cleanup on exit: cancel and dispose per-game writer CTSs and complete channels
+            match player1WriterCts with
+            | Some pcts -> try pcts.Cancel(); pcts.Dispose() with _ -> ()
+            | None -> ()
+            match player2WriterCts with
+            | Some pcts -> try pcts.Cancel(); pcts.Dispose() with _ -> ()
+            | None -> ()
+            callback (EndOfGame result)
+            try player1Channel.Writer.TryComplete() |> ignore with _ -> ()
+            try player2Channel.Writer.TryComplete() |> ignore with _ -> ()
+            
+        return result
+    }   
 
 
-  let play
+  // Unified play implementation: use optional replay dicts to enable "do not deviate" mode.
+  let playGeneric
+    (replayOptWhite: ReferenceGameReplay option)
+    (replayOptBlack: ReferenceGameReplay option)
     (sb : StringBuilder)
     (cts : CancellationTokenSource)
     (logger : ILogger)
@@ -1840,7 +1775,7 @@ module Match =
     let delaySeconds = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
     let delayMilliseconds = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds
     let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms)" player1.Name player2.Name delaySeconds delayMilliseconds
-    
+    //let mutable enginesInitialized = false
     logger.LogInformation msg
     tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
     
@@ -1860,15 +1795,18 @@ module Match =
     let mutable moveInfoData = ChessMoveInfo.Empty
     
     callback(StartOfGame gameStartInfo)
-    if not tourny.ConsoleOnly then     
-      let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
-      let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
-      let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
-      Initialization.initEngines openingDelayMs tourny player1 player2 logger
-    else
-      Initialization.initEngines 0 tourny player1 player2 logger 
+    try
+        if not tourny.ConsoleOnly then     
+          let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
+          let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
+          let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
+          Initialization.initEngines openingDelayMs tourny player1 player2 logger
+        else
+          Initialization.initEngines 0 tourny player1 player2 logger 
+    with ex -> raise (CustomException.EngineStartupException (ex.Message))
     
-    logEngineInitCommands logger player1 player2    
+    // preserve existing logging/description behavior
+    logEngineInitCommands logger player1 player2
     Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
     callback (GameStarted player1.Name)
     let mutable lastCheck = 0L
@@ -1887,12 +1825,10 @@ module Match =
     let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
       
       if cts.IsCancellationRequested then
-        //let msg = $"Game between {player1.Name} vs {player2.Name} cancelled"
         let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
         let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
         logger.LogCritical($"Cancel requested when engine ready to play: {playing.Name}")
         callback(EndOfGame res)
-        //callback(EndOfTournament tourny)
         return res
       else
         if position <> pos then          
@@ -1934,6 +1870,10 @@ module Match =
             let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals            
             callback(EndOfGame res)
             logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
+            let diag1 = playing.GetDiagnostics()            
+            logger.LogCritical diag1
+            let diag2 = opponent.GetDiagnostics()
+            logger.LogCritical diag2
             return res
         elif playing.HasExited() then
             do! Async.Sleep 1000
@@ -1949,6 +1889,8 @@ module Match =
                     $"Player has exited/crashed {playing.Name}"
             callback(EndOfGame res)
             logger.LogInformation msg
+            let diagnosis = playing.GetDiagnostics()            
+            logger.LogCritical diagnosis
             return res
         
         else          
@@ -1961,6 +1903,8 @@ module Match =
           if lostOnTime then
             let firstTwoEvals = firstTwoEvals fullEvalList              
             let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
+            let diagnosis = playing.GetDiagnostics()            
+            logger.LogCritical diagnosis
             return res
           else             
               if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
@@ -1968,6 +1912,9 @@ module Match =
                   do! Async.Sleep delay
           
               if line.StartsWith("bestmove") then
+                  // make move mutable so "do not deviate" can substitute an old move if needed
+                  let mutable move = line.Split().[1]
+                  let ponderMove = if line.Contains "ponder" then (line.Split().[3]) else ""
                   let (currentTime, timeLeft) = 
                     if isWhite then
                       updateClocks duration wTime wIncr useNodes
@@ -1980,451 +1927,27 @@ module Match =
                   
                   moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
                   moveInfoData.mt <- int64 duration.TotalMilliseconds
-          
-                  let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
+                  
                   match tryGetTMoveFromCoordinateNotation &board move with
                   |Some tmove ->
                     let mutable moveAdj = tmove
-                    let shortSan = getSanNotationFromTMove &board tmove                      
-                    board.LongSANMovesPlayed.Add(move)                
-                    gameMoveList.Add(shortSan)
-                    board.MakeMove(&moveAdj)
-                    let ponderSan = getShortSanFromLongSan &board ponderMove
-                    moveInfoData.pd <- ponderSan
-                    moves <- moves + 1                  
-                    let eval = 
-                      if evalList.Length > 0 then evalList.[0] 
-                      elif fullEvalList.Length > 0 then fullEvalList[0] 
-                      else EvalType.CP 0.0
-                
-                    let pv, pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
-                    let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
-                    let nps = 
-                      if nps <> 0. then 
-                        nps 
-                      else 
-                        let s = float numberOfNodes/float duration.TotalSeconds
-                        moveInfoData.s <- int64 s
-                        s
-                
-                    let pos = board.Position
-                    let fen = BoardHelper.posToFen pos
-                    let moveDetail = 
-                      {
-                        LongSan = move
-                        FromSq = move[0..1]
-                        ToSq = move[2..3]
-                        Color = if board.Position.STM = 8uy then "w" else "b"
-                        IsCastling = TMoveOps.isCastlingMove tmove
-                        Comments = String.Empty
-                        }                 
-                    let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
-                    let mutable posToCheck = board.Position
-                    let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                    fullEvalList <- eval::fullEvalList
-                    let movesLeft = 
-                      Adjudication.movesLeftBeforeDrawAdjudication
-                        eval
-                        fullEvalList
-                        tourny.Adjudication.DrawOption.MinDrawMove
-                        (tourny.Adjudication.DrawOption.DrawMoveLength * 2)
-                        tourny.Adjudication.DrawOption.MaxDrawScore
-                    let bestMove = 
-                      { Player = playing.Name
-                        Move = move
-                        Ponder = ponderSan
-                        Eval = eval
-                        TimeLeft = timeLeft
-                        MoveTime = TimeOnly(duration.Ticks)
-                        NPS = nps
-                        Nodes = numberOfNodes
-                        FEN = fen
-                        PV = pv 
-                        LongPV = pvLong
-                        MoveAndFen = moveAndFen
-                        MoveHistory = board.GetShortSanMoveHistory()
-                        Move50 = board.Position.Count50 |> int
-                        R3 = board.RepetitionNr()
-                        PiecesLeft = piecesLeft
-                        AdjDrawML = movesLeft
-                        }                  
-                    
-                    if bestMove.R3 > 1 && tourny.VerboseLogging then
-                      logger.LogDebug($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
-                
-                    evalList <- []
-                    depth <- 0
-                    selfdepth <- 0
-                    npsList.Clear()
-                
-                    if moveInfoData.q2 > moveInfoData.q1 then                  
-                      Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
-                    if moveInfoData.n2 > moveInfoData.n1 then                  
-                      Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
-                    if tourny.VerboseLogging then
-                      logger.LogDebug $"FEN={board.FEN()}"
-                
-                    //tablebase adjudication here
-                    match Adjudication.adjudicateByEval logger board fullEvalList tourny player1.Name player2.Name playing.Name gametimer gameMoveList moves with
-                    |Some res -> 
-                      if res.Reason = ResultReason.Checkmate then
-                        let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
-                        let status = {lastEngineStatus with Eval = EvalType.Mate 0}
-                        let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
-                        annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
-                        callback(BestMove (bm, status))
-                      else
-                        let numberAndMove = board.SanMoveNumberString shortSan
-                        annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
-                        callback(BestMove (bestMove, lastEngineStatus))
-                  
-                      moveInfoData <- ChessMoveInfo.Empty
-                      callback(EndOfGame res)
-                      let mutable posToCheck = board.Position
-                      let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                      if tourny.VerboseLogging then
-                        logger.LogInformation($"Adjudication by eval: {res.Reason}, Pieces left: {piecesLeft} ")
-                        logger.LogInformation (sprintf "Info %A: " res)
-                      return res
-                    |None ->
-                      let numberAndMove = board.SanMoveNumberString shortSan
-                      annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
-                      moveInfoData <- ChessMoveInfo.Empty
-                      callback(BestMove (bestMove, lastEngineStatus))
-                      return! playEngine opponent playing (board.PositionHash())
-                  |_ ->                
-                    let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                    //check if there is any legal move in the position
-                    let firstTwoEvals = firstTwoEvals fullEvalList                        
-                    if board.AnyLegalMove() |> not then
-                      //either checkmate or stalemate
-                      if board.IsMate() then                   
-                        let res = 
-                          if playing.Name = player1.Name then
-                            createResultWithEval player1.Name player2.Name gameMoveList "0-1" ResultReason.Checkmate dur firstTwoEvals
-                          else
-                            createResultWithEval player1.Name player2.Name gameMoveList "1-0" ResultReason.Checkmate dur firstTwoEvals
-                        callback(EndOfGame res)                    
-                        logger.LogInformation($"Checkmate: {res.Reason}")
-                        return res
-                      else                    
-                        let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Stalemate dur firstTwoEvals
-                        callback(EndOfGame res)
-                        logger.LogInformation($"Stalemate: {res.Reason}")
-                        return res
-                    else
-                      let res = 
-                        if playing.Name = player1.Name then
-                          createResultWithEval player1.Name player2.Name gameMoveList "0-1" ResultReason.Illegal dur firstTwoEvals
-                        else
-                          createResultWithEval player1.Name player2.Name gameMoveList "1-0" ResultReason.Illegal dur firstTwoEvals
-                      callback(EndOfGame res)
-                      let fenAndMoves = board.PositionWithMoves()
-                      logger.LogCritical($"{playing.Name} failed in bestmove logic with the following response {line} after these moves: \n{fenAndMoves}")
-                      return res               
-                 
-              else
-                let elapsed = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                let diff = elapsed - lastCheck
-                let interval = 1000
-               
-                if not tourny.TestOptions.PolicyTest && line.StartsWith "info string" && line.Contains "N:" then
-                  let nnMsg = Regex.getInfoStringData playing.Name line 
-                  let list = ResizeArray<NNValues>()
-                  list.Add(nnMsg)              
-                  let moreItems = line.StartsWith "info string node" |> not
-                  if not moreItems && tourny.VerboseLogging then
-                    logger.LogDebug "Only one move in log live stats"
-                  let mutable cont = moreItems
-                  while cont do
-                    let! newline = Initialization.readLine playing cts.Token
-                    if newline.StartsWith "bestmove" then
-                      cont <- false                 
-                    if newline.StartsWith "info string node" then
-                      cont <- false  
-                    else
-                      let msg = Utilities.Regex.getInfoStringData playing.Name newline
-                      list.Add msg
-              
-                  makeShortSan list &board
-                  match Utilities.Engine.calcTopNn list with
-                  |Some (n1,n2,q1,q2, p1, pt) -> 
-                    moveInfoData.n1 <- n1
-                    moveInfoData.n2 <- n2
-                    moveInfoData.q1 <- q1
-                    moveInfoData.q2 <- q2
-                    moveInfoData.p1 <- p1
-                    moveInfoData.pt <- pt
-                  |None -> ()
-                
-                  if list.Count > 0 then
-                    callback (NNSeq list)
-
-                elif line.StartsWith "info" then              
-                  let isWhite = playing.Name = player1.Name              
-                  match Regex.getEssentialData line isWhite with
-                  |Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv ) ->                 
-                    numberOfNodes <- nodes
-                    if d > depth then
-                      depth <- d
-                    if sd > selfdepth then  
-                      selfdepth <- sd
-                    npsList.Add(float nps)
-                    evalList <- eval :: evalList
-                    moveInfoData.d <- depth
-                    moveInfoData.sd <- selfdepth
-                    moveInfoData.wv <- eval
-                    moveInfoData.n <- nodes
-                    moveInfoData.s <- nps
-                    moveInfoData.tb <- tbhits
-
-                    if not (String.IsNullOrEmpty(pvLine)) then
-                      if player1.Name = playing.Name then
-                        Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
-                        PVLine1 <- pvLine
-                        moveInfoData.pv <- Player1PV
-                      else
-                        Player2PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
-                        PVLine2 <- pvLine
-                        moveInfoData.pv <- Player2PV
-                    let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
-                    let pv, pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
-                    let status = 
-                        { 
-                          PlayerName = playing.Name
-                          Eval = eval
-                          Depth = d
-                          SD = sd
-                          Nodes = nodes
-                          NPS = nps //avgNps
-                          TBhits = tbhits
-                          WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
-                          PV = pv
-                          PVLongSAN = pvLong
-                          MultiPV = mPv
-                        }
-                
-                    lastEngineStatus <- status
-                    if diff > interval && eval <> EvalType.NA then                  
-                      lastCheck <- elapsed
-                      callback(Status status)
-                
-                  |None -> ()
-            
-                return! playEngine playing opponent position
-            } 
-    let startPos = board.PositionHash()
-    if board.Position.STM = 0uy then
-      playEngine player1 player2 startPos
-    else
-      playEngine player2 player1 startPos
-
-  let playDoNotDeviate
-    (replayWhite: ReferenceGameReplay)
-    (replayBlack: ReferenceGameReplay)
-    (sb : StringBuilder)
-    (cts : CancellationTokenSource)
-    (logger : ILogger)
-    (tourny : Tournament) 
-    (board : Board)
-    (player1 : ChessEngine) 
-    (player2 : ChessEngine)
-    (pairing : Pairing)
-    callback  =
-    
-    let moveList = Array.init 256 (fun _ -> defaultof<TMove> )
-    let deviationOccured (player:ChessEngine) move =      
-      let hash = board.DeviationHash()
-      let replay = if player.Name = player1.Name then replayWhite else replayBlack
-      match replay.TryGet hash with
-      |None -> false, "", ""
-      |Some replayData ->       
-        if replayData.Move <> move then          
-          if replayData.Engine = player.Name then            
-            true, replayData.Move, player.Name
-          else
-            false, "", ""
-        else
-          false, "", ""              
-          
-    sb.Clear() |> ignore
-    let append (txt:string) = sb.Append txt |> ignore
-    if tourny.TestOptions.WriteToConsole then
-      player1.ShowCommands()
-      player2.ShowCommands()
-    let stm = board.Position.STM
-    let mutable lastEngineStatus = EngineStatus.Empty
-    let mutable pos = 0UL
-    let mutable moves = 0
-    let mutable numberOfNodes = 0L
-    let mutable evalList : EvalType list = []
-    let mutable fullEvalList :EvalType list = []
-    let npsList = ResizeArray<float>()
-    let gameMoveList = board.ShortSANMovesPlayed  
-   
-    let findTimeSetting (player : ChessEngine) = 
-      tourny.FindTimeControl (player.Config.TimeControlID)
-    let isNodeLimit player = (findTimeSetting player).NodeLimit
-    let w = (findTimeSetting player1).Fixed
-    let b = (findTimeSetting player2).Fixed    
-    let mutable wTime = w 
-    let mutable bTime = b
-    let wIncr = tourny.TimeControl.GetIncrementTime(player1.Config.TimeControlID)
-    let bIncr = tourny.TimeControl.GetIncrementTime(player2.Config.TimeControlID)
-    let moveOverheadInTicks = tourny.MoveOverhead.Ticks
-    let delaySeconds = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
-    let delayMilliseconds = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds
-    let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms) in PreventMoveDeviation mode" player1.Name player2.Name delaySeconds delayMilliseconds
-    
-    logger.LogInformation msg
-    tourny.CurrentGameNr <- tourny.CurrentGameNr + 1
-    
-    let gameStartInfo : StartGameInfo = 
-      {
-        WhitePlayer = player1.Config
-        BlackPlayer = player2.Config
-        StartPos = board.FEN()
-        OpeningMovesAndFen = ResizeArray<MoveAndFen>(board.MovesAndFenPlayed)
-        WhiteTime = wTime
-        BlackTime = bTime
-        WhiteToMove = stm = 0uy
-        OpeningName = tourny.OpeningName
-        CurrentGameNr = pairing.GameNr // tourny.CurrentGameNr
-      }
-    board.MovesAndFenPlayed.Clear()
-    let mutable moveInfoData = ChessMoveInfo.Empty
-    
-    callback(StartOfGame gameStartInfo)
-    if not tourny.ConsoleOnly then     
-      let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
-      let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
-      let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
-      Initialization.initEngines openingDelayMs tourny player1 player2 logger   
-    else
-      Initialization.initEngines 0 tourny player1 player2 logger
-    
-    logEngineInitCommands logger player1 player2
-    Initialization.appendGameDescription sb tourny player1 player2 (board.OpeningMovesPlayed) (board.FEN())
-    callback (GameStarted player1.Name)
-    let mutable lastCheck = 0L
-    let gametimer = Stopwatch.GetTimestamp()
-    let mutable moveTimer = Stopwatch.GetTimestamp()
-    let mutable depth = 0
-    let mutable selfdepth = 0
-    let mutable Player1PV = String.Empty
-    let mutable Player2PV = String.Empty
-    let mutable PVLine1 = String.Empty
-    let mutable PVLine2 = String.Empty
-    let mutable Q1DifferentFromN1 = 0
-    let fen = board.FEN()
-    if tourny.VerboseLogging then
-      logger.LogDebug $"After opening moves, FEN={fen}"    
-
-    let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
-      let replay = if playing.Name = player1.Name then replayWhite else replayBlack
-      if cts.IsCancellationRequested then
-        let msg = $"Game between {player1.Name} vs {player2.Name} was cancelled"
-        let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-        let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
-        logger.LogCritical(msg)
-        callback(EndOfGame res)        
-        return res
-      else
-        if position <> pos then            
-          moveTimer <- Stopwatch.GetTimestamp()
-          pos <- position
-          //experimenting with endgame speedup
-          let mutable posToCheck = board.Position
-          //let piecesLeft = PositionOps.numberOfPieces &posToCheck
-          let fenAndMoves = board.PositionWithMoves()
-          if tourny.VerboseLogging then
-            logger.LogDebug $"Current position: {fenAndMoves}"
-          playing.Position fenAndMoves
-          lastCheck <- int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-          let timeConfig = findTimeSetting playing
-          if tourny.TestOptions.ValueTest then  
-            if playing.IsLc0 then
-              playing.GoNodes 2
-            else
-              playing.GoValue()
-          elif tourny.TestOptions.PolicyTest then
-            playing.GoNodes 1
-          elif timeConfig.NodeLimit then
-              playing.GoNodes timeConfig.Nodes              
-          else
-            playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
-        
-        let isWhite = playing.Name = player1.Name        
-        let timeLeftTicks = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
-        let timeOutInMs = (TimeSpan(timeLeftTicks).TotalMilliseconds |> int32) + 1000        
-        let! line = Initialization.readLineWithTimeout playing timeOutInMs logger cts.Token
-
-        if String.IsNullOrEmpty line then
-          logger.LogDebug $"Empty line or null from {playing.Name}"
-        elif line.StartsWith "info engine" then
-          MessagesFromEngine ("Ceres", line) |> callback
-          logger.LogInformation line
-        
-        if isAppShuttingDown cts then
-            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let firstTwoEvals = firstTwoEvals fullEvalList
-            let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals
-            callback(EndOfGame res)
-            logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
-            return res
-        elif playing.HasExited() then
-            do! Async.Sleep 1000
-            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-            let firstTwoEvals = firstTwoEvals fullEvalList
-            let res, msg =
-                if opponent.HasExited() then
-                    createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals,
-                    $"Shutdown detected after {playing.Name} exited; returning Cancel"
-                else
-                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"
-                    createResultWithEval player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur firstTwoEvals,
-                    $"Player has exited/crashed {playing.Name}"
-            callback(EndOfGame res)
-            logger.LogInformation msg
-            return res                 
-
-        else          
-          let duration = Stopwatch.GetElapsedTime(moveTimer)          
-          let useNodes = isNodeLimit playing
-          let isWhite = playing.Name = player1.Name
-          let playerTime = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
-          let remainingTicks = playerTime - duration.Ticks
-          let lostOnTime = (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L)
-          if lostOnTime then
-            let firstTwoEvals = firstTwoEvals fullEvalList
-            let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
-            return res
-          else             
-              if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
-                  let delay = tourny.MinMoveTimeInMS - (duration.TotalMilliseconds |> int)
-                  do! Async.Sleep delay
-          
-              if line.StartsWith("bestmove") then              
-                  let (currentTime, timeLeft) = 
-                    if isWhite then
-                      updateClocks duration wTime wIncr useNodes
-                    else
-                      updateClocks duration bTime bIncr useNodes
-                  if isWhite then
-                    wTime <- currentTime
-                  else
-                    bTime <- currentTime                  
-                  
-                  moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
-                  moveInfoData.mt <- int64 duration.TotalMilliseconds
-                  let move, ponderMove = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
-
-                  match tryGetTMoveFromCoordinateNotation &board move with
-                  |Some tmove ->
                     let mutable shortSan = getSanNotationFromTMove &board tmove
-                    let mutable move = move
-                    let deviated, oldMove, engName = deviationOccured playing move
-                    if deviated then 
+                    // Deviation logic only when replay dictionaries provided
+                    let deviated, oldMove, engName =
+                      match replayOptWhite, replayOptBlack with
+                      | Some rw, Some rb ->
+                          let hash = board.DeviationHash()
+                          let replay = if playing.Name = player1.Name then rw else rb
+                          match replay.TryGet(hash) with
+                          | None -> false, "", ""
+                          | Some rd ->
+                              if rd.Move <> move then
+                                if rd.Engine = playing.Name then true, rd.Move, rd.Engine
+                                else false, "", ""
+                              else false, "", ""
+                      | _ -> false, "", ""
+                    
+                    if deviated then
                       match tryGetTMoveFromCoordinateNotation &board oldMove with
                       |Some orgMove ->
                         shortSan <- getSanNotationFromTMove &board orgMove
@@ -2436,7 +1959,7 @@ module Match =
                         board.LongSANMovesPlayed.Add(move)
                         gameMoveList.Add(shortSan)
                         board.MakeMove &orgMove
-                      |_ -> //quick fix for FRC castling move
+                      |_ -> // quick fix for FRC castling move or illegal previous move
                         if TMoveOps.isCastlingMove tmove && board.IsFRC then                      
                           LowLevelUtilities.ConsoleUtils.printInColor 
                             ConsoleColor.Red
@@ -2449,8 +1972,13 @@ module Match =
                         gameMoveList.Add(shortSan)
                         board.MakeMove &tmove
                     else
+                      // record replay entry only when replay dictionaries are supplied
                       let devHash = board.DeviationHash()
-                      replay[devHash] <- {Engine=playing.Name; Move = move; TimeLeftInMs = moveInfoData.tl; Hash = pairing.OpeningHash }
+                      match replayOptWhite, replayOptBlack with
+                      | Some rw, Some rb ->
+                          let replay = if playing.Name = player1.Name then rw else rb
+                          replay[devHash] <- {Engine=playing.Name; Move = move; TimeLeftInMs = moveInfoData.tl; Hash = pairing.OpeningHash }
+                      | _ -> ()
                       board.LongSANMovesPlayed.Add(move)                
                       gameMoveList.Add(shortSan)
                       board.MakeMove &tmove
@@ -2517,20 +2045,22 @@ module Match =
                     
                     if bestMove.R3 > 1 && tourny.VerboseLogging then
                       logger.LogDebug($"Ply {board.PlyCount} - Repetition occurred: {bestMove.R3} time(s)")
+                
                     evalList <- []
                     depth <- 0
                     selfdepth <- 0
                     npsList.Clear()
-                    if moveInfoData.q2 > moveInfoData.q1 then
-                      //logger.LogCritical $"{playing.Name} did selected a suboptimal Q-move q1/n1={moveInfoData.q1}/{moveInfoData.n1}, q2/n2={moveInfoData.q2}/{moveInfoData.n2}"
+                
+                    if moveInfoData.q2 > moveInfoData.q1 then                  
                       Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
                     if moveInfoData.n2 > moveInfoData.n1 then                  
                       Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
                     if tourny.VerboseLogging then
                       logger.LogDebug $"FEN={board.FEN()}"
+                
                     //tablebase adjudication here
                     match Adjudication.adjudicateByEval logger board fullEvalList tourny player1.Name player2.Name playing.Name gametimer gameMoveList moves with
-                    |Some res ->                   
+                    |Some res -> 
                       if res.Reason = ResultReason.Checkmate then
                         let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
                         let status = {lastEngineStatus with Eval = EvalType.Mate 0}
@@ -2549,7 +2079,6 @@ module Match =
                       if tourny.VerboseLogging then
                         logger.LogInformation($"Adjudication by eval: {res.Reason}, Pieces left: {piecesLeft} ")
                         logger.LogInformation (sprintf "Info %A: " res)
-                      //logger.LogInformation $"Number of disagreement moves in the game = {Q1DifferentFromN1}"
                       return res
                     |None ->
                       let numberAndMove = board.SanMoveNumberString shortSan
@@ -2589,6 +2118,11 @@ module Match =
                       return res               
                  
               else
+                if fullEvalList.Length > 1 then
+                    if playing.Name.Contains "Ceres" then
+                        let engineOption = EngineOption.Create "device" "3"
+                        playing.AddSetOption engineOption
+                        
                 let elapsed = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
                 let diff = elapsed - lastCheck
                 let interval = 1000
@@ -2683,6 +2217,33 @@ module Match =
       playEngine player1 player2 startPos
     else
       playEngine player2 player1 startPos
+
+  let play
+    (sb : StringBuilder)
+    (cts : CancellationTokenSource)
+    (logger : ILogger)
+    (tourny : Tournament) 
+    (board : Board)
+    (player1 : ChessEngine) 
+    (player2 : ChessEngine)
+    (pairing: Pairing)
+    callback  =
+    playGeneric None None sb cts logger tourny board player1 player2 pairing callback
+
+  let playDoNotDeviate
+    (replayWhite: ReferenceGameReplay)
+    (replayBlack: ReferenceGameReplay)
+    (sb : StringBuilder)
+    (cts : CancellationTokenSource)
+    (logger : ILogger)
+    (tourny : Tournament) 
+    (board : Board)
+    (player1 : ChessEngine) 
+    (player2 : ChessEngine)
+    (pairing : Pairing)
+    callback  =
+    playGeneric (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing callback
+
   
   let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) = async {    
     let mutable gameNr = 0
@@ -2915,6 +2476,20 @@ module Match =
           let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
           let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1 }"
           Update.RoundNr roundTxt |> callback
+          let logException ex =
+              let createContext() = {
+                  EngineName   = engine1.Name
+                  OpponentName = engine2.Name
+                  GameNumber   = pair.GameNr
+                  MoveNumber   = board.MoveNumber()
+                  TimeControl  = tourny.TimeControl.ToString()
+                  TimeRemaining= None
+                  PositionFen  = board.FEN()
+                  LastCommand  = None
+                  TimestampUtc = DateTime.UtcNow
+                  MoveHistory = board.GetMoveHistory()}
+              EngineFailures.log logger ex (createContext())
+
           let result =
               let gametimer = Stopwatch.GetTimestamp()
               try
@@ -2922,13 +2497,21 @@ module Match =
                   let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name                  
                   playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
                 else
-                  play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                  if tourny.AllowPondering then
+                    playWithPondering sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                  else
+                    play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
               with
-              | ex -> handleGameException logger ex cts gametimer board engine1 engine2 pair
+              | :? EngineStartupException as ex ->
+                    logException ex
+                    handleGameException logger ex cts gametimer board engine1 engine2 pair
+              | ex -> 
+                    logException ex
+                    // Decide: swallow, rethrow, or translate to a domain Result                                 
+                    handleGameException logger ex cts gametimer board engine1 engine2 pair
 
-          if result.Reason <> ResultReason.Cancel then
-            results <- result :: results
-                    
+          results <- result :: results
+
           let gameData : PGNTypes.GameMetadata = 
             { OpeningHash = pair.OpeningHash
               Event = tourny.Description
@@ -3120,21 +2703,46 @@ module Match =
           let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
           let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1 }"
           Update.RoundNr roundTxt |> callback          
+          let logException ex =
+              let w = tourny.TimeControlTextForPlayer engine1.Config.TimeControlID
+              let b = tourny.TimeControlTextForPlayer engine2.Config.TimeControlID
+              let timeInfo = $"[{w}; {b}]"
+              let createContext() = {
+                  EngineName   = engine1.Name
+                  OpponentName = engine2.Name
+                  GameNumber   = pair.GameNr
+                  MoveNumber   = board.MoveNumber()
+                  TimeControl  = timeInfo
+                  TimeRemaining= None
+                  PositionFen  = board.FEN()
+                  LastCommand  = None
+                  TimestampUtc = DateTime.UtcNow
+                  MoveHistory = board.GetMoveHistory()}
+              EngineFailures.log logger ex (createContext())
+          
           let result =
               let gametimer = Stopwatch.GetTimestamp()
               try
                 if tourny.PreventMoveDeviation then              
-                  let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name                  
+                  let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name
                   playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
                 else
-                  play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
-                  //playWithPondering sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                  //play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                  if tourny.AllowPondering then
+                    playWithPondering sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                  else
+                    play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously              
               with
-              | ex -> handleGameException logger ex cts gametimer board engine1 engine2 pair
+              | :? EngineStartupException as ex ->
+                    logException ex
+                    handleGameException logger ex cts gametimer board engine1 engine2 pair
+              | ex -> 
+                    logException ex
+                    // Decide: swallow, rethrow, or translate to a domain Result                        
+                    handleGameException logger ex cts gametimer board engine1 engine2 pair
 
-          let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
-          if result.Reason <> ResultReason.Cancel then
-            results <- result :: results          
+          let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false              
+          results <- result :: results
 
           let gameData : PGNTypes.GameMetadata = 
             {
@@ -3167,7 +2775,7 @@ module Match =
           let moveSection = sb.ToString()
           if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
             pgnGameWriterAgent.Post (Parser.PGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
-            //PGNHelper.writePgnGame tourny.PgnOutPath gameData moveSection result
+            
           if tourny.VerboseLogging then
             logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
           // First, stop the pumps (this stops background readers)
@@ -3175,7 +2783,7 @@ module Match =
           Initialization.stopPump engine2
 
           // Small delay to let pumps finish their cleanup
-          do! Async.Sleep 100
+          do! Async.Sleep 200
           
           if forceStopEngines || numberOfPlayers > 2 || cts.IsCancellationRequested then
             if engine1.HasExited() |> not then 

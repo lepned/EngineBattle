@@ -125,6 +125,28 @@
     //RefreshBoards();
     await InvokeAsync(StateHasChanged);
   }
+    private async Task SafeInvokeAsync(string identifier, params object[] args)
+    {
+        try
+        {
+            await chessJSmodule.InvokeVoidAsync(identifier, args);
+        }
+        catch (JSException jsEx) when (jsEx.Message.Contains("Cannot set properties of undefined"))
+        {
+            // Known animation timing issue with chessboard2.min.js - safe to ignore
+            Console.WriteLine($"Suppressed known animation error in {identifier}: {jsEx.Message}");
+        }
+        catch (JSException jsEx)
+        {
+            // Log other JS errors for debugging
+            Console.WriteLine($"JS error in {identifier}: {jsEx.Message}");
+        }
+    }
+
+    private async Task ResizeChessboardSafe(ElementReference element)
+    {
+        await SafeInvokeAsync("resizeChessboard2", element);
+    }
 
   private async Task Next()
   {
@@ -132,8 +154,8 @@
     currentIndex = carousel.SelectedIndex;
     if (currentIndex == 1)
     {
-      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard3);
-      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard4);
+      await ResizeChessboardSafe(pvBoard3);
+      await ResizeChessboardSafe(pvBoard4);
       activePV = "PV deviation";
       pvTextColor = Color.Tertiary;
       hideDeviation = false;
@@ -141,8 +163,8 @@
     }
     else
     {
-      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard1);
-      await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard2);
+      await ResizeChessboardSafe(pvBoard1);
+      await ResizeChessboardSafe(pvBoard2);
       activePV = "PV complete";
       hideDeviation = true;
       hideFullPV = false;
@@ -157,10 +179,10 @@
   protected async Task UpdateRequested(int size)
   {
     InitializeChessboards();
-    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard1);
-    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard2);
-    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard3);
-    await chessJSmodule.InvokeVoidAsync("resizeChessboard2", pvBoard4);
+    await ResizeChessboardSafe(pvBoard1);
+    await ResizeChessboardSafe(pvBoard2);
+    await ResizeChessboardSafe(pvBoard3);
+    await ResizeChessboardSafe(pvBoard4);
     await InvokeAsync(StateHasChanged);
   }
 
@@ -169,10 +191,9 @@
     var (element, state) = GetElementReference(id);
     if (element.Context is not null)
     {
-      //Console.WriteLine($"State for player: {state.PlayerName} depth: {state.LastDepth} pv:{state.LastPV}");
-      //await chessJSmodule.InvokeVoidAsync("createChessboard", element, state.MoveAndFenType.FenAfterMove);
       var input = state.MoveAndFenType;
-      await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+      await SafeInvokeAsync("setPVBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+      
     }
     else
     {
@@ -185,12 +206,8 @@
     var (element, state) = GetElementReference(id);
     if (element.Context is not null)
     {
-      await chessJSmodule.InvokeVoidAsync("createChessboard", element, state.MoveAndFenType.FenAfterMove);
-    }
-    else
-    {
-
-    }
+       await SafeInvokeAsync("createChessboard", element, state.MoveAndFenType.FenAfterMove);
+    }   
   }
 
   private void CreateChessboards()
@@ -241,7 +258,7 @@
   {
     var (element, _) = GetElementReference(id);
     if (element.Context is not null)
-      await chessJSmodule.InvokeVoidAsync("setPosition2", element, fen);
+       await SafeInvokeAsync("setPosition2", element, fen);
   }
 
   private async Task SetPosition(string fen)
@@ -262,11 +279,7 @@
       var (element, _) = GetElementReference(id);
       if (element.Context is not null)
       {
-        // if (clear)
-        // {
-        //   await chessJSmodule.InvokeVoidAsync("clearBoard2", element);
-        // }
-        await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
+          await SafeInvokeAsync("setPVBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
       }
     }
     //await Task.CompletedTask;
@@ -294,8 +307,7 @@
         var fenAndMove = state.PlayPVMoves(moves, fen);
         if (!string.IsNullOrEmpty(fenAndMove.ShortSan))
         {
-          //Console.WriteLine($"ShortSan: {fenAndMove.ShortSan}");
-          await SetPVMoveWithAnnotation(fenAndMove, id, false);
+           await SetPVMoveWithAnnotation(fenAndMove, id, false);
         }
       }
       else

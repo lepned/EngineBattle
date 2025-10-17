@@ -582,6 +582,8 @@ module TypesDef =
         override x.ToString() =
           let time = float x.GameTime / 1000.0
           sprintf "%s vs %s: %s (%s), %d moves, %.1f seconds" x.Player1 x.Player2 x.Result (x.Reason.Explanation) x.Moves time
+        static member Empty =
+          { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = Misc.ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = [] }
     let createResult p1 p2 (moves: ResizeArray<string>) result reason gameTime =
       { Player1 = p1; Player2 = p2; Moves = moves.Count; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []}
     let createResultWithEval p1 p2 (moves: ResizeArray<string>) result reason gameTime evals =
@@ -925,6 +927,7 @@ module TypesDef =
         MinMoveTimeInMS: int
         Gauntlet: bool
         PreventMoveDeviation: bool
+        AllowPondering: bool
         Challengers: int
         [<JsonIgnore>] mutable IsChess960: bool
         [<JsonIgnore>] mutable DeviationCounter: int
@@ -1181,6 +1184,7 @@ module TypesDef =
           Gauntlet = false
           IsChess960 = false
           PreventMoveDeviation = false
+          AllowPondering = false
           DeviationCounter = 0
           Challengers = 0
           Rounds = 0
