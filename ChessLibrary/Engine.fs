@@ -1019,9 +1019,9 @@ module Engine =
             | _ -> ()
       
             let ok = this.WaitForReadyOk()
-            write "ucinewgame"
             if not ok then
               failwith "Engine did not respond to isready command." 
+            write "ucinewgame"
             if validate then
                 if passed then
                   LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
@@ -1030,11 +1030,11 @@ module Engine =
                      LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
                 else
                   LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
-                  failwith "Setoption validation failed."
+                  raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
         with
-        | :? OperationCanceledException -> failwith "Engine initialization timed out."
-        | :? System.Threading.Channels.ChannelClosedException -> failwith "Engine channel was closed unexpectedly."
-        | ex -> failwith (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
+        | :? OperationCanceledException -> printfn "Engine initialization timed out."
+        | :? Channels.ChannelClosedException -> printfn "Engine channel was closed unexpectedly."
+        | ex -> printfn "An unexpected error occurred while starting engine %s: \n%s" name ex.Message
 
       member this.DoNotValidate() = validate <- false
       member this.StopProcess() =       
@@ -1286,18 +1286,30 @@ module EngineHelper =
 
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {
-      if delay > 0 then
-        do! Async.Sleep(delay*1000)
-      if engine.HasExited() then
-        engine.StartProcess() |> ignore
-      engine.IsReady()
-      let! line = engine.ReadLineAsync() |> Async.AwaitTask
-      match line with
-      | line when line.StartsWith("readyok") -> 
-          return $"{engine.Name} isready"
-      | _ -> 
-        do! Async.Sleep(200)
-        return! waitForEngineIsReady 0 engine }
+        try
+          if delay > 0 then
+            do! Async.Sleep(delay*1000)
+          if engine.HasExited() then
+            engine.StartProcess()
+          let ready = engine.WaitForReadyOk()
+          if ready then
+            return $"{engine.Name} isready"
+          else
+            return $"{engine.Name} failed to start properly and is not ready"          
+        with
+        | :? System.IO.IOException as ex ->
+            printfn "IO error reading from engine %s: %s" engine.Name ex.Message
+            return $"{engine.Name} IO error"
+        | :? System.ObjectDisposedException ->
+            printfn "Engine %s process has been disposed" engine.Name
+            return $"{engine.Name} disposed"
+        | :? System.Threading.Tasks.TaskCanceledException ->
+            printfn "Read operation timed out for engine %s" engine.Name
+            return $"{engine.Name} timeout"
+        | ex ->
+            printfn "An unexpected error occurred while waiting for engine %s to be ready: %s" engine.Name ex.Message
+            return $"{engine.Name} error"
+    }
 
   let initEngine delay (engine: ChessEngine)  =
     async {
@@ -1305,7 +1317,8 @@ module EngineHelper =
         do! Async.Sleep(delay)
       if engine.HasExited() then
         engine.StartProcess()      
-        do! waitForEngineIsReady delay engine |> Async.Ignore
+        let! res = waitForEngineIsReady delay engine
+        printfn "%s" res
     } |> Async.RunSynchronously
 
   let initEngines delay (engine1: ChessEngine) (engine2: ChessEngine) =

@@ -1197,8 +1197,18 @@ module JSON =
       JsonSerializer.Deserialize<EngineConfig[]>(json, JsonSerializerOptions(AllowTrailingCommas = true))
 
   let readSingleEngineConfig path =
-    let json = File.ReadAllText(path)
-    JsonSerializer.Deserialize<EngineConfig>(json, JsonSerializerOptions(AllowTrailingCommas = true))
+    try
+        let json = File.ReadAllText(path)
+        let fileName = Path.GetFileName(path)
+        match Validation.readAndValidateEngineConfigJson json fileName with
+        | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, JsonSerializerOptions(AllowTrailingCommas = true))
+        | Validation.Invalid msgs -> 
+          msgs |> List.iter (fun m -> ConsoleUtils.printInColor ConsoleColor.Red m)
+          failwith "Invalid engine definition"
+    with
+    | ex -> 
+      printfn "Error in reading engine config from file: %s" path
+      sprintf "Complete error message: %s" ex.Message |> failwith
 
   let readEngineDef folder fileName = 
     try
@@ -1252,7 +1262,7 @@ module JSON =
   
   let loadBaseConfig (jsonPath: string) =
       let json = File.ReadAllText(jsonPath)
-      let options = JsonSerializerOptions()      
+      let options = new JsonSerializerOptions(AllowTrailingCommas = true)      
       options.PropertyNameCaseInsensitive <- true
       JsonSerializer.Deserialize<EngineConfig>(json, options)
 
@@ -1465,68 +1475,88 @@ module JSONParser =
         else
             failwithf "File not found: %s" filePath
   
+    let private applyNetToConfig (baseConfig: EngineConfig) (net: string) =
+        // Clone options so we don't mutate the original dictionary instance
+        let newOptions = JSON.cloneOptions baseConfig.Options
+
+        if newOptions.ContainsKey("WeightsFile") then
+            newOptions.["WeightsFile"] <- box net
+        elif newOptions.ContainsKey("Network") then
+            match newOptions.["Network"] with
+            | :? JsonElement as jsonElem when jsonElem.ValueKind = JsonValueKind.String ->
+                let prev = jsonElem.GetString()
+                match prev.Split(':') |> Seq.tryHead with
+                | Some prefix ->
+                    let prefixNet = prefix + ":" + net
+                    newOptions.["Network"] <- box prefixNet
+                | _ -> ()
+            | :? string as prev ->
+                match prev.Split(':') |> Seq.tryHead with
+                | Some prefix ->
+                    let prefixNet = prefix + ":" + net
+                    newOptions.["Network"] <- box prefixNet
+                | _ -> ()
+            | _ -> ()
+        else
+            // Keep the behaviour from the original code: warn if no network option found
+            ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network' option to set net '%s'" baseConfig.Name net)
+
+        // Build a nicer display name using the net filename (without extension)
+        let netName = Path.GetFileNameWithoutExtension net
+        let firstName = baseConfig.Name.Split(' ') |> Seq.head
+        { baseConfig with Name = firstName + " " + netName; Options = newOptions }
+
     let mapToEngConfig  (engineFolder: string) (engine: TypesDef.Puzzle.PuzzleEngine) =
         match engine with
         | TypesDef.Puzzle.Engine (name, _) -> 
-            [Path.Combine(engineFolder, name) |> JSON.readSingleEngineConfig]
+            let fullpath = Path.Combine(engineFolder, name) 
+            let engineConfig = JSON.readSingleEngineConfig fullpath                
+            let options = engineConfig.Options
+            let networkFound = options.ContainsKey("WeightsFile") || options.ContainsKey("Network")
+            if not networkFound then
+                ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network' option to set" name)
+            [ engineConfig ]
         | TypesDef.Puzzle.EngineWithNets (name, _, nets) -> 
             let fullPath = Path.Combine(engineFolder, name)
+            // Load base config once and clone per-net
+            let baseConfig = JSON.readSingleEngineConfig fullPath
             [
                 for net in nets do
-                    let engineConfig = JSON.readSingleEngineConfig fullPath
-                    let options = engineConfig.Options
-                    
-                    if options.ContainsKey("WeightsFile") then
-                        options.["WeightsFile"] <- box net
-                       
-                    elif options.ContainsKey("Network") then
-                        match options.["Network"] with
-                        | :? JsonElement as jsonElem when jsonElem.ValueKind = JsonValueKind.String -> 
-                            let prev = jsonElem.GetString()
-                            match prev.Split(':') |> Seq.tryHead with
-                            | Some prefix -> 
-                                let prefixNet = prefix + ":" + net
-                                options.["Network"] <-  box prefixNet
-                            |_ -> ()
-                        | _ -> ()
-                        
-                    let netName = Path.GetFileNameWithoutExtension net
-                    let firstName = engineConfig.Name.Split(' ') |> Seq.head
-                    let engineConfig = {engineConfig with Name = firstName + " " + netName}                                
-                    yield engineConfig
+                    yield applyNetToConfig baseConfig net
             ] 
 
     let mapToEngPuzzleConfig  (engineFolder: string) (engine: TypesDef.Puzzle.PuzzleEngine) =
-        match engine with
-        | TypesDef.Puzzle.Engine (name, nodes) -> 
-            [Path.Combine(engineFolder, name) |> JSON.readSingleEngineConfig, nodes]
-        | TypesDef.Puzzle.EngineWithNets (name, nodes, nets) -> 
-            let fullPath = Path.Combine(engineFolder, name)
-            [
-                for net in nets do
-                    let engineConfig = JSON.readSingleEngineConfig fullPath
+        try
+            match engine with
+            | TypesDef.Puzzle.Engine (name, nodes) -> 
+                try
+                    let fullpath = Path.Combine(engineFolder, name) 
+                    let engineConfig = JSON.readSingleEngineConfig fullpath                
                     let options = engineConfig.Options
-                    
-                    if options.ContainsKey("WeightsFile") then
-                        options.["WeightsFile"] <- box net
-                       
-                    elif options.ContainsKey("Network") then
-                        match options.["Network"] with
-                        | :? JsonElement as jsonElem when jsonElem.ValueKind = JsonValueKind.String -> 
-                            let prev = jsonElem.GetString()
-                            match prev.Split(':') |> Seq.tryHead with
-                            | Some prefix -> 
-                                let prefixNet = prefix + ":" + net
-                                options.["Network"] <-  box prefixNet
-                            |_ -> ()
-                        | _ -> ()
-                        
-                    let netName = Path.GetFileNameWithoutExtension net
-                    let firstName = engineConfig.Name.Split(' ') |> Seq.head
-                    let engineConfig = {engineConfig with Name = firstName + " " + netName}                                
-                    yield engineConfig, nodes
-            ] 
+                    let networkFound = options.ContainsKey("WeightsFile") || options.ContainsKey("Network")
+                    if not networkFound then
+                        ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network'" name)
+                    [ engineConfig, nodes ]
+                with ex ->
+                    ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Error reading engine config '%s': %s" name ex.Message)
+                    []
+            | TypesDef.Puzzle.EngineWithNets (name, nodes, nets) -> 
+                let fullPath = Path.Combine(engineFolder, name)
+                // map each net safely, skip those that fail
+                let mapNet (net: string) =
+                    try
+                        let baseConfig = JSON.readSingleEngineConfig fullPath
+                        let cfg = applyNetToConfig baseConfig net
+                        Some (cfg, nodes)
+                    with ex ->
+                        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Error mapping engine '%s' with net '%s': %s" name net ex.Message)
+                        None
 
+                nets |> Seq.choose mapNet |> Seq.toList
+        with ex ->
+            ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Unexpected error in mapToEngPuzzleConfig: %s" ex.Message)
+            []
+    
 module PGNCalculator =
   // Define a function to get a list of all players from a list of results
   let getAllPlayers results =
