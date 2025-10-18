@@ -179,7 +179,7 @@ module Initialization =
             if engine.HasExited() then
                 logger.LogDebug("Engine {Engine} has exited, starting fresh", engine.Name)
                 try
-                    engine.StartProcess() |> ignore
+                    engine.StartProcess()
                     do! Async.Sleep engineStartDelay
                     return true
                 with ex ->
@@ -2118,10 +2118,10 @@ module Match =
                       return res               
                  
               else
-                if fullEvalList.Length > 1 then
-                    if playing.Name.Contains "Ceres" then
-                        let engineOption = EngineOption.Create "device" "3"
-                        playing.AddSetOption engineOption
+                //if fullEvalList.Length > 1 then
+                //    if playing.Name.Contains "Ceres" then
+                //        let engineOption = EngineOption.Create "device" "3"
+                //        playing.AddSetOption engineOption
                         
                 let elapsed = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
                 let diff = elapsed - lastCheck
