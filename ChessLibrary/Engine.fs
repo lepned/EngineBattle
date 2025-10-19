@@ -1155,7 +1155,7 @@ module Engine =
               false
 
       member this.WaitForReadyOk(?timeoutMs: int) = 
-        let timeout = defaultArg timeoutMs 120000
+        let timeout = defaultArg timeoutMs 180000
         write "isready"
         
         async {

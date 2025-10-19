@@ -18,7 +18,7 @@ let ``getPosFromFen should parse FEN string into position`` () =
     let position = getPosFromFen (Some fen)
     Assert.Equal(PositionOps.WHITE, position.STM)
     Assert.Equal(0uy, position.Count50)
-    Assert.Equal(0uy, position.Ply)
+    Assert.Equal(0us, position.Ply)
   //--- Knight & King dispatchers ----------------------------------------------------
 [<Theory>]
 [<InlineData(0)>] // A1

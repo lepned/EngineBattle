@@ -1234,13 +1234,13 @@ module TypesDef =
         mutable Count50: byte
         mutable Rep: byte
         mutable STM: byte
-        mutable Ply: byte
+        mutable Ply: uint16
         mutable RookInfo: RookPlacementInfo }
       with
         static member Default =
           { PM = 0UL; P0 = 0UL; P1 = 0UL; P2 = 0UL;
             CastleFlags = 0uy; EnPassant = 8uy; Count50 = 0uy; Rep = 0uy;
-            STM = 0uy; Ply = 0uy; RookInfo = RookPlacementInfo() }
+            STM = 0uy; Ply = 0us; RookInfo = RookPlacementInfo() }
 
     module PositionOps =
       let copy (board: Position inref) : Position =
@@ -1251,8 +1251,8 @@ module TypesDef =
       let createEmptyTBoard () =
         { PM = 0UL; P0 = 0UL; P1 = 0UL; P2 = 0UL;
           CastleFlags = 0uy; EnPassant = 0uy; Count50 = 0uy; Rep = 0uy;
-          STM = 0uy; Ply = 0uy; RookInfo = RookPlacementInfo() }
-    
+          STM = 0uy; Ply = 0us; RookInfo = RookPlacementInfo() }
+
       // (Additional inline functions for castling, occupancy, etc.)
       let WHITE = 0uy
       let BLACK = 8uy

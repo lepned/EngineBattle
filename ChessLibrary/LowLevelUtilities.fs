@@ -355,9 +355,9 @@ module BoardHelper =
       let rest = fen.Substring(cursor).TrimStart().Split(' ')
       if rest.Length = 2 then
         pos.Count50 <- byte rest.[0]
-        let ply = byte rest.[1]
-        if ply > 0uy then
-          pos.Ply <-  (if sidetomove = PositionOps.BLACK then (ply - 1uy) * 2uy + 1uy else (ply - 1uy) * 2uy)
+        let ply = uint16 rest.[1]
+        if ply > 0us then
+          pos.Ply <-  (if sidetomove = PositionOps.BLACK then (ply - 1us) * 2us + 1us else (ply - 1us) * 2us)
     if sidetomove = PositionOps.BLACK then
         PositionOps.changeSide (&pos)
     pos
@@ -478,9 +478,9 @@ module BoardHelper =
       let rest = fen.Substring(cursor).TrimStart().Split(' ')
       if rest.Length = 2 then
         pos.Count50 <- byte rest.[0]
-        let ply = byte rest.[1]
-        if ply > 0uy then
-          pos.Ply <-  (if sidetomove = PositionOps.BLACK then (ply - 1uy) * 2uy + 1uy else (ply - 1uy) * 2uy) 
+        let ply = uint16 rest.[1]
+        if ply > 0us then
+          pos.Ply <-  (if sidetomove = PositionOps.BLACK then (ply - 1us) * 2us + 1us else (ply - 1us) * 2us) 
     if sidetomove = PositionOps.BLACK then
         PositionOps.changeSide (&pos)
     position <- pos
@@ -638,7 +638,7 @@ module BoardHelper =
         
     let epChar = char (byte 'a' + pos.EnPassant) |> string
     let epStr = if stm = PositionOps.WHITE then (epChar + string 6) else (epChar + string 3)    
-    let moveNr = pos.Ply / 2uy + 1uy    
+    let moveNr = pos.Ply / 2us + 1us
 
     sb.Append(" " + (if pos.EnPassant = 8uy then "-" else epStr)) |> ignore
     sb.Append(" " + string pos.Count50 + " " + moveNr.ToString()) |> ignore

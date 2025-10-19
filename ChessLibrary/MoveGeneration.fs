@@ -134,7 +134,7 @@ let PositionOpsToString(label: string, position: Position inref) =
     let epStr = if pos.STM = PositionOps.WHITE then (epChar + string 6) else (epChar + string 3)    
     add "\n EP: "
     add (" " + (if pos.EnPassant = 8uy then "-" else epStr))
-    let moveNr = pos.Ply / 2uy + 1uy
+    let moveNr = pos.Ply / 2us + 1us
     add "\n move count: "
     add (string pos.Count50 + " " + moveNr.ToString())
     let incheck = InCheck &position <> 0UL
@@ -476,7 +476,7 @@ let generateCapturesInSpan (moves: TMove Span) (index: int outref) (position : P
 let makeMove (move : TMove inref) (position : Position byref) =
     let part = 1UL <<< int move.From
     let dest = 1UL <<< int move.To
-    position.Ply <- position.Ply + 1uy
+    position.Ply <- position.Ply + 1us
     match (move.MoveType &&& TPieceType.PIECE_MASK) with
     | TPieceType.PAWN ->
         if (move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY then
