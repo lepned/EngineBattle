@@ -1812,7 +1812,8 @@ module Match =
           let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
           Initialization.initEngines openingDelayMs tourny player1 player2 logger
         else
-          Initialization.initEngines 0 tourny player1 player2 logger 
+          if player1.HasExited() || player2.HasExited() then            
+            Initialization.initEngines 0 tourny player1 player2 logger 
     with ex -> raise (CustomException.EngineStartupException (ex.Message))
     
     // preserve existing logging/description behavior
@@ -3565,25 +3566,29 @@ module Manager =
       // Raise the callback with a proper Update response
       match update with
       | Match.PeriodicResults results -> 
-          let pgnGames = x.GetPGNGames()
-          if pgnGames.Count > 0 then
-              let consoleResString, data, _ = PGNCalculator.getEngineDataResults pgnGames
-              let ordoPath = executablePath()
-              if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then                
-                  let cmd = Utilities.OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath ""
-                  let ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n"
-                  Console.WriteLine(ordoCommandString)
-                  let ordo = Utilities.OrdoHelper.runCommandAsync cmd data |> Async.AwaitTask |> Async.RunSynchronously
-                  let gameUpdate = Match.Update.GameSummary ordo
-                  callback.Invoke gameUpdate
+          try 
+              let pgnGames = x.GetPGNGames()
+              if pgnGames.Count > 0 then
+                  let consoleResString, data, _ = PGNCalculator.getEngineDataResults pgnGames
+                  let ordoPath = executablePath()
+                  if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then                
+                      let cmd = Utilities.OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath ""
+                      let ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n"
+                      Console.WriteLine(ordoCommandString)
+                      let ordo = Utilities.OrdoHelper.runCommandAsync cmd data |> Async.AwaitTask |> Async.RunSynchronously
+                      let gameUpdate = Match.Update.GameSummary ordo
+                      callback.Invoke gameUpdate
+                  else
+                      let gameUpdate = Match.Update.GameSummary consoleResString                  
+                      callback.Invoke gameUpdate
               else
-                  let gameUpdate = Match.Update.GameSummary consoleResString                  
-                  callback.Invoke gameUpdate
-          else
-            let pRes = x.GetPlayerResults results
-            let cross = x.GenerateStatsCrosstable results            
-            let table = OrdoHelper.getResultsAndPairsInConsoleFormat pRes cross            
-            callback.Invoke (Match.Update.GameSummary table)
+                let pRes = x.GetPlayerResults results
+                let cross = x.GenerateStatsCrosstable results            
+                let table = OrdoHelper.getResultsAndPairsInConsoleFormat pRes cross            
+                callback.Invoke (Match.Update.GameSummary table)
+          with e ->
+              let msg = $"Error generating periodic results: {e.Message}"
+              printfn "%s" msg
       |_ -> callback.Invoke update
         
     member _.AddTournament tourny = tournament <- tourny 

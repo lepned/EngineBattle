@@ -332,12 +332,13 @@ module OrdoHelper =
     converted  
     
 
-  // Execute the command asynchronously and capture the output
+    // Execute the command asynchronously and capture the output
   let runCommandAsync (cmd:Command) (engineData : EngineLineData seq) =
       task {
           try
+              let cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(1.0))
               let sb = new StringBuilder()
-              let! result = cmd.ExecuteBufferedAsync()
+              let! result = cmd.ExecuteBufferedAsync(cts.Token)
               //let msg = removeTopThreeLines (result.StandardOutput.Trim())
               sb.Append "\n```" |> ignore
               let msg = addDataFromEBToOrdo result.StandardOutput engineData
@@ -348,6 +349,8 @@ module OrdoHelper =
                 sb.AppendLine (sprintf "Standard Error: %s" result.StandardError) |> ignore
               return sb.ToString()
           with
+          | :? OperationCanceledException -> 
+              return "Ordo command execution timed out after 1 second"
           | ex -> return sprintf "An error occurred: %s" (ex.Message)
       }
 
