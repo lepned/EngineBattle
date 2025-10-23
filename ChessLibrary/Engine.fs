@@ -765,7 +765,7 @@ module Engine =
 
   type ChessEngine(config : EngineConfig, initCommands: string seq) =
       let initialCommands = initCommands |> ResizeArray
-      let initConfigOptions = config.Options |> Seq.toArray
+      let defaultTimeoutMs = 180000
       let mutable passed = true
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
@@ -982,11 +982,14 @@ module Engine =
             | UciOption.Spin (min, max, _) -> 
                 let intValue = int64 milliSeconds
                 if intValue >= min && intValue <= max then
-                  //create a setoption based on the option and the intValue
-                  let cmd = sprintf "setoption name %s value %d" option.Name intValue                
-                  write cmd
-                  addCommand initialCommands cmd
-                  addCommand commands cmd                  
+                  match config.Options |> Seq.tryFind (fun e -> e.Key = optionName) with
+                  | Some _ -> ()
+                  | None ->
+                      //create a setoption based on the option and the intValue
+                      let cmd = sprintf "setoption name %s value %d" option.Name intValue                
+                      write cmd
+                      addCommand initialCommands cmd
+                      addCommand commands cmd                  
             | _ -> ()
         | None -> printfn "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds
       
@@ -1018,9 +1021,6 @@ module Engine =
             | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> printfn "Engine name: %s and author: %s" n a
             | _ -> ()
       
-            let ok = this.WaitForReadyOk()
-            if not ok then
-              failwith "Engine did not respond to isready command." 
             write "ucinewgame"
             if validate then
                 if passed then
@@ -1155,7 +1155,7 @@ module Engine =
               false
 
       member this.WaitForReadyOk(?timeoutMs: int) = 
-        let timeout = defaultArg timeoutMs 180000
+        let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
         write "isready"
         
         async {
@@ -1171,7 +1171,7 @@ module Engine =
           }
           
           try
-            let! completed = Async.StartChild(readUntilReady(), timeout)
+            let! completed = Async.StartChild(readUntilReady(), timeoutInMs)
             return! completed
           with
           | :? TimeoutException -> return false
@@ -1317,8 +1317,11 @@ module EngineHelper =
         do! Async.Sleep(delay)
       if engine.HasExited() then
         engine.StartProcess()      
-        let! res = waitForEngineIsReady delay engine
-        printfn "%s" res
+      let ok = engine.WaitForReadyOk() // wait for readyok
+      if not ok then
+          failwith "Engine did not respond to isready command."            
+      else
+          printfn "Engine %s isready" engine.Name
     } |> Async.RunSynchronously
 
   let initEngines delay (engine1: ChessEngine) (engine2: ChessEngine) =

@@ -180,6 +180,9 @@ module Initialization =
                 logger.LogDebug("Engine {Engine} has exited, starting fresh", engine.Name)
                 try
                     engine.StartProcess()
+                    let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                    if not ok then
+                       failwith "Engine did not respond to isready command."
                     do! Async.Sleep engineStartDelay
                     return true
                 with ex ->
@@ -199,15 +202,21 @@ module Initialization =
                         do! Async.Sleep engineStopDelay
                     
                     // Restart
-                    engine.StartProcess() |> ignore
+                    engine.StartProcess()
                     do! Async.Sleep engineStartDelay
+                    let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                    if not ok then
+                        failwith "Engine did not respond to isready command."
                     return true
                 with ex ->
                     logger.LogWarning(ex, "Error resetting engine {Engine}, forcing restart", engine.Name)
                     engine.StopProcess()
                     do! Async.Sleep engineRecoveryDelay
-                    engine.StartProcess() |> ignore
+                    engine.StartProcess()
                     do! Async.Sleep engineStartDelay
+                    let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                    if not ok then
+                        failwith "Engine did not respond to isready command."
                     return true
         }
         
@@ -237,11 +246,12 @@ module Initialization =
                 engine.UciNewGame()
 
                 // Phase 5: Wait for ready acknowledgment
-                let timeout = 120000
+                let timeoutInSec = max 180 tourny.EngineStartupTimeoutInSec
+                let timeoutInMs = timeoutInSec * 1000
                 logger.LogDebug("Waiting for engine {Engine} readyok (timeout: {Timeout}ms)", 
-                    engine.Name, timeout)
+                    engine.Name, timeoutInMs)
                     
-                let readyOk = engine.WaitForReadyOk(timeout)
+                let readyOk = engine.WaitForReadyOk(timeoutInMs)
                 
                 if readyOk then
                     logger.LogDebug("Engine {Engine} ready", engine.Name)
@@ -867,7 +877,7 @@ module TournamentUtils =
       let mutable valid = tourny.EngineSetup.Engines.Length > 1
       for engConfig in tourny.EngineSetup.Engines do
         let engine = engConfig |> EngineHelper.createEngine
-        engine.StartProcess()
+        engine.StartProcess()        
         if valid then
           valid <- engine.PassedValidation
           engine.PrintNonDefaultValues()
@@ -2960,8 +2970,7 @@ module Match =
                     logger.LogWarning($"Engine {engine.Name} has exited, attempting restart")                        
                     try
                         engine.StartProcess()
-                        engine.IsReady()
-                        let ok = engine.WaitForReadyOk()                            
+                        let ok = engine.WaitForReadyOk() // Wait for "readyok" response
                         if ok then
                             logger.LogCritical($"Successfully restarted engine {engine.Name}")
                             return true
@@ -3263,9 +3272,8 @@ module Match =
                     if engine.HasExited() then
                         logger.LogWarning($"Engine {engine.Name} has exited, attempting restart")                        
                         try
-                            engine.StartProcess()
-                            engine.IsReady()
-                            let ok = engine.WaitForReadyOk()                            
+                            engine.StartProcess()                            
+                            let ok = engine.WaitForReadyOk() // Wait for "readyok" response
                             if ok then
                                 logger.LogCritical($"Successfully restarted engine {engine.Name}")
                                 return true

@@ -928,6 +928,7 @@ module TypesDef =
         Gauntlet: bool
         PreventMoveDeviation: bool
         AllowPondering: bool
+        EngineStartupTimeoutInSec: int
         Challengers: int
         [<JsonIgnore>] mutable IsChess960: bool
         [<JsonIgnore>] mutable DeviationCounter: int
@@ -1185,6 +1186,7 @@ module TypesDef =
           IsChess960 = false
           PreventMoveDeviation = false
           AllowPondering = false
+          EngineStartupTimeoutInSec = 180
           DeviationCounter = 0
           Challengers = 0
           Rounds = 0

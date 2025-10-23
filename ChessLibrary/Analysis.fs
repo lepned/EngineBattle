@@ -41,14 +41,13 @@ module Helper =
   let waitForEngineIsReady (engine: ChessEngine) = async { 
     try 
         if engine.HasExited() then
-            engine.StartProcess() |> ignore                   
-        engine.UciNewGame()
+            engine.StartProcess()
         // Bounded wait for "readyok"
-        let timeout = 180000 // 3m default
-        let readyTask = Task.Run(fun () -> engine.WaitForReadyOk())
-        let! completed = Task.WhenAny(readyTask, Task.Delay(timeout)) |> Async.AwaitTask
-        if obj.ReferenceEquals(completed, readyTask) then
-            return readyTask.Result
+        let timeoutInMs = 5*60*1000 // 5m default
+        let ok = engine.WaitForReadyOk(timeoutInMs)
+        if ok then
+            // Engine is ready
+            return true
         else
             // Timed out            
             return false
@@ -670,7 +669,10 @@ module PuzzleEngineAnalysis =
 
   let getPuzzlePolicyEngine config = 
     let engine = EngineHelper.createEngine(config)
-    engine.StartProcess()    
+    engine.StartProcess()
+    let ok = engine.WaitForReadyOk() // wait for readyok
+    if not ok then
+        failwith "Engine did not respond to isready command."
     engine
 
   let getPuzzleValueEngine config =   
@@ -680,9 +682,10 @@ module PuzzleEngineAnalysis =
     try
         let engine = EngineHelper.createEngineWithoutValidation(config)        
         engine.StartProcess()
+        
         let options = engine.GetDefaultOptions()
         if isLc0 then
-            engine.StopProcess()                
+            engine.StopProcess()
             if options.ContainsKey "ValueOnly" then                
                 let dict = Dictionary<string, obj>(config.Options)
                 //for some unknow reason we need to remove the backend options in some older lc0 version for valuehead to work
@@ -697,6 +700,9 @@ module PuzzleEngineAnalysis =
                 let config = if isLc0 then {config with Options = dict} else config
                 let engine = EngineHelper.createEngineWithoutValidation(config)
                 engine.StartProcess()
+                let ok = engine.WaitForReadyOk() // wait for readyok
+                if not ok then
+                    failwith "Engine did not respond to isready command."
                 Some engine                  
             else            
                 let redMsg = sprintf "\nValueOnly option is not available for %s with args: %s, will try valuehead argument next." config.Name config.Args
@@ -710,8 +716,14 @@ module PuzzleEngineAnalysis =
                 let config = if isLc0 then {config with Args = "valuehead"} else config
                 let engine = EngineHelper.createEngineWithoutValidation(config)
                 engine.StartProcess()
+                let ok = engine.WaitForReadyOk() // wait for readyok
+                if not ok then
+                    failwith "Engine did not respond to isready command."
                 Some engine
         elif isCeres then
+            let ok = engine.WaitForReadyOk() // wait for readyok
+            if not ok then
+                failwith "Engine did not respond to isready command."
             Some engine
         else
             None
@@ -901,6 +913,9 @@ module PuzzleEngineAnalysis =
 
         for engine in engines do    
             engine.StartProcess()
+            let ok = engine.WaitForReadyOk() // wait for readyok
+            if not ok then
+                failwith "Engine did not respond to isready command."
         let filtered =
             [
               for id, epd in epds |> Seq.indexed do
@@ -980,6 +995,9 @@ module PuzzleEngineAnalysis =
         let openings = onlyUniqueOpenings pgns
         for engine in engines do    
             engine.StartProcess()
+            let ok = engine.WaitForReadyOk() // wait for readyok
+            if not ok then
+                failwith "Engine did not respond to isready command."
         let filtered =
             [
                 for pgnIdx, pgn in openings |> Seq.indexed do
@@ -1044,6 +1062,9 @@ module PuzzleEngineAnalysis =
     let board = Board()
     let engine = EngineHelper.createEngine engineConf
     engine.StartProcess()
+    let ok = engine.WaitForReadyOk() // wait for readyok
+    if not ok then
+       failwith "Engine did not respond to isready command."
     let failedPuzzles = ResizeArray<TablebaseEPDEntry>()
     let correctPuzzles = ResizeArray<TablebaseEPDEntry>()
     for puzzle in puzzles do    
