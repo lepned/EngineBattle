@@ -1156,6 +1156,7 @@ module Engine =
 
       member this.WaitForReadyOk(?timeoutMs: int) = 
         let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
+        let timeoutInMs = if timeoutInMs < 60000 then defaultTimeoutMs else timeoutInMs
         write "isready"
         
         async {
