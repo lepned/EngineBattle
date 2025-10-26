@@ -117,8 +117,8 @@ module Helper =
     
     tourny.CurrentGameNr <- gamesAlreadyPlayed.Length    
     let sb = StringBuilder()
-    let mutable engine1 = tourny.EngineSetup.Engines[0] |> EngineHelper.createEngine
-    let mutable engine2 = tourny.EngineSetup.Engines[1] |> EngineHelper.createEngine
+    let mutable engine1 = EngineHelper.createEngine (tourny.EngineSetup.Engines[0], Some logger)
+    let mutable engine2 = EngineHelper.createEngine (tourny.EngineSetup.Engines[1], Some logger)
 
     EngineHelper.initEngines 0 engine1 engine2
     let results = ResizeArray<EngineStatus>()
@@ -382,7 +382,7 @@ module Manager =
         match ChessEngine with
         |Some eng -> eng
         |None ->           
-            let eng = EngineHelper.createEngine engineConfig
+            let eng = EngineHelper.createEngine (engineConfig, Some logger)
             let isReady = Helper.waitForEngineIsReady eng |> Async.RunSynchronously
             if not isReady then
                 failwith $"Engine {eng.Name} did not respond to isready command"
@@ -680,7 +680,7 @@ module PuzzleEngineAnalysis =
     let isCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
     
     try
-        let engine = EngineHelper.createEngineWithoutValidation(config)        
+        let engine = EngineHelper.createEngineWithoutValidation(config, None)        
         engine.StartProcess()
         
         let options = engine.GetDefaultOptions()
@@ -698,7 +698,7 @@ module PuzzleEngineAnalysis =
                 if not (dict.ContainsKey "ValueOnly") then
                     dict.Add("ValueOnly", true)
                 let config = if isLc0 then {config with Options = dict} else config
-                let engine = EngineHelper.createEngineWithoutValidation(config)
+                let engine = EngineHelper.createEngineWithoutValidation(config, None)
                 engine.StartProcess()
                 let ok = engine.WaitForReadyOk() // wait for readyok
                 if not ok then
@@ -714,7 +714,7 @@ module PuzzleEngineAnalysis =
                   LowLevelUtilities.ConsoleUtils.yellowConsole redMsg
                 //for Lc0 rewrite
                 let config = if isLc0 then {config with Args = "valuehead"} else config
-                let engine = EngineHelper.createEngineWithoutValidation(config)
+                let engine = EngineHelper.createEngineWithoutValidation(config, None)
                 engine.StartProcess()
                 let ok = engine.WaitForReadyOk() // wait for readyok
                 if not ok then
@@ -900,7 +900,7 @@ module PuzzleEngineAnalysis =
                 if nodes.Count = 1 then Some 10000 else int maxEvalDiff |> Some
 
         let board = Board()
-        let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine e) |> Seq.toArray
+        let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine (e, None)) |> Seq.toArray
         let maxConcurrencyCpu = max 1 (HardwareInfo.assessMaxCpuConcurrencyLevel engines)
         let chunkSize = min maxConcurrencyCpu (engines.Length)
         
@@ -989,7 +989,7 @@ module PuzzleEngineAnalysis =
             |None, None -> 0, 1000
 
         let board = Board()
-        let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine e) |> Seq.toArray        
+        let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine (e, None)) |> Seq.toArray
         let maxConcurrencyCpu = max 1 (HardwareInfo.assessMaxCpuConcurrencyLevel engines)
         let chunkSize = min maxConcurrencyCpu (engines.Length)
         let openings = onlyUniqueOpenings pgns
@@ -1060,7 +1060,7 @@ module PuzzleEngineAnalysis =
   
   let performQValueTestOnTB nodes (engineConf:EngineConfig) (puzzles:ResizeArray<TablebaseEPDEntry>) = task {          
     let board = Board()
-    let engine = EngineHelper.createEngine engineConf
+    let engine = EngineHelper.createEngine (engineConf, None)
     engine.StartProcess()
     let ok = engine.WaitForReadyOk() // wait for readyok
     if not ok then
@@ -1150,7 +1150,7 @@ module EngineAgent =
   let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
       MailboxProcessor.Start(fun inbox ->
         // Spin up one engine instance
-        let engine = getPuzzlePolicyEngine engineCfg
+        let engine = getPuzzlePolicyEngine (engineCfg,None)
         engine.Name <- engine.Name
 
         let rec loop() = async {
@@ -1631,7 +1631,7 @@ module PuzzleRunners =
     let runSingleEngine (engineConfig: (EngineConfig * int)) =
         let board = Board()
         let engineConfigOnly, _ = engineConfig
-        let puzzlePolicyEngine = getPuzzlePolicyEngine engineConfigOnly         
+        let puzzlePolicyEngine = getPuzzlePolicyEngine (engineConfigOnly, None)
         puzzlePolicyEngine.Name <- puzzlePolicyEngine.Name          
         let failedPuzzles = ResizeArray<EPDEntry * string>()
         let correctPuzzles = ResizeArray<EPDEntry>()

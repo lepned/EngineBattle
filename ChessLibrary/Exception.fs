@@ -113,9 +113,9 @@ module CustomException =
                 | None   -> "(none)"
             let ts = ctx.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)
             // Keep concise (ops tools prefer short lines); details are captured in structured fields.
-            $"[{ts}Z] {kind} | " +
+            $"\n[{ts}Z] {kind} | " +
             $"Engine={ctx.EngineName} vs {ctx.OpponentName} | G#{ctx.GameNumber} M#{ctx.MoveNumber} | " +
-            $"TC={ctx.TimeControl} TR={tr} | Pos={ctx.PositionFen} | Hist={ctx.MoveHistory} | LastCmd={lc} | Ex={ex.Message}"
+            $"TC={ctx.TimeControl} TR={tr} | Pos={ctx.PositionFen} | Hist={ctx.MoveHistory} | LastCmd={lc} | Ex={ex.Message}\n"
 
         /// Structured log with per-exception enrichment
         let log (logger: ILogger) (ex: exn) (ctx: CatchContext) =

@@ -30,132 +30,6 @@ open ChessLibrary.LowLevelUtilities
 open ChessLibrary.CustomException
 
 module Initialization = 
-  
-  type private RefEq<'T when 'T : not struct>() =
-    interface IEqualityComparer<'T> with
-      member _.Equals(a, b) = obj.ReferenceEquals(a, b)
-      member _.GetHashCode(a) = Runtime.CompilerServices.RuntimeHelpers.GetHashCode(a)
-
-  // Store both channel and CTS for cleanup
-  let private pumps = ConcurrentDictionary<ChessEngine, Channel<string> * CancellationTokenSource>(RefEq())
-
-  let private startPump (eng: ChessEngine) =
-    let ch =
-      Channel.CreateBounded<string>(
-        BoundedChannelOptions(capacity = 4096,
-                              SingleWriter = true,
-                              SingleReader = true,
-                              FullMode = BoundedChannelFullMode.Wait))
-
-    let cts = new CancellationTokenSource()
-    
-    let rec loop (attempts:int) = async {
-      try
-        if cts.Token.IsCancellationRequested then
-          try ch.Writer.TryComplete() |> ignore with _ -> ()
-          return ()
-        else
-          let! line = eng.ReadLineAsync() |> Async.AwaitTask
-          if not (isNull line) then
-            ch.Writer.TryWrite(line) |> ignore
-          return! loop 0
-      with
-      | :? InvalidOperationException
-      | :? ObjectDisposedException ->
-          // Process not started yet or disposed; back off briefly
-          if attempts < 40 && not cts.Token.IsCancellationRequested then
-            do! Async.Sleep 50
-            return! loop (attempts + 1)
-          else
-            try ch.Writer.TryComplete() |> ignore with _ -> ()
-      | :? OperationCanceledException ->
-          try ch.Writer.TryComplete() |> ignore with _ -> ()
-      | ex ->
-          // Log unexpected errors if needed
-          try ch.Writer.TryComplete(ex) |> ignore with _ -> ()
-    }
-    
-    Async.Start(loop 0, cts.Token)
-    ch, cts
-
-  let private getPump (eng: ChessEngine) =
-    let (ch, _) = pumps.GetOrAdd(eng, fun _ -> startPump eng)
-    ch
-
-  /// Preferred: expose the reader so ONE router can consume it.
-  let getReader (eng: ChessEngine) : ChannelReader<string> =
-    (getPump eng).Reader
-
-  // Cleanup function to stop pumps and dispose resources
-  let stopPump (eng: ChessEngine) =
-    match pumps.TryRemove(eng) with
-    | true, (ch, cts) ->
-        cts.Cancel()
-        cts.Dispose()
-        ch.Writer.TryComplete() |> ignore
-    | _ -> ()
-
-  // Unified read: waits for availability, then TryRead (no throw when closed)
-  let readLine (eng: ChessEngine) (ct: CancellationToken) = async {
-    let reader = (getPump eng).Reader
-    try
-      let! available = reader.WaitToReadAsync(ct).AsTask() |> Async.AwaitTask
-      if not available then 
-        return String.Empty
-      else
-        match reader.TryRead() with
-        | true, line -> return line
-        | _ -> return String.Empty
-    with
-    | :? OperationCanceledException -> return ""
-    | :? System.Threading.Channels.ChannelClosedException -> return ""
-  }
-  
-  // Read with timeout (no overlapping reads on the underlying stream)
-  let readLineWithTimeout (eng: ChessEngine) (timeoutMs:int) (logger:ILogger) (ct:CancellationToken) = async {
-    use linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct)
-    //linkedCts.CancelAfter(timeoutMs)
-    linkedCts.CancelAfter(3000)
-    try
-      let! line = readLine eng linkedCts.Token
-      if String.IsNullOrEmpty line then
-        if ct.IsCancellationRequested || Environment.HasShutdownStarted then
-          ()
-        elif eng.HasExited() then
-          logger.LogWarning("Engine {Engine} read timed out after {Timeout}ms (process exited)", eng.Name, timeoutMs)
-        else
-          logger.LogDebug("Engine {Engine} read timed out after {Timeout}ms (no output; still thinking)", eng.Name, timeoutMs)
-      return line
-    with
-    | :? OperationCanceledException ->
-        if eng.HasExited() then
-          logger.LogWarning("Engine {Engine} read timed out after {Timeout}ms (process exited)", eng.Name, timeoutMs)
-        elif ct.IsCancellationRequested then
-          ()
-        else
-          logger.LogDebug("Engine {Engine} read timed out after {Timeout}ms (no output; still thinking)", eng.Name, timeoutMs)
-        return String.Empty
-    | :? System.Threading.Channels.ChannelClosedException ->
-        // Pump completed; treat as no output
-        return String.Empty
-  }
-  
-  /// Try to read a line immediately (non-blocking) from an engine's pump.
-  /// Returns Some line if available, otherwise None.
-  let tryReadNow (eng: ChessEngine) : string option =
-    let reader = (getPump eng).Reader
-    match reader.TryRead() with
-    | true, line when not (isNull line) && line <> "" -> Some line
-    | _ -> None
-    
-
-  // Backwards-compatible name used elsewhere; now uses the pump
-  let readLineCancelAware (eng: ChessEngine) (cts: CancellationTokenSource) = async {
-    try
-      return! readLine eng cts.Token
-    with
-    | :? OperationCanceledException -> return ""
-  }
 
   let createAsyncDelay (delay:int) =
     async { 
@@ -168,13 +42,10 @@ module Initialization =
     let engineStartDelay = 2000
     let engineRecoveryDelay = 1000
     
-    try 
-        // Phase 1: Stop existing pump
-        logger.LogDebug("Stopping pump for engine {Engine}", engine.Name)
-        stopPump engine
+    try         
         do! Async.Sleep pumpCleanupDelay
         
-        // Phase 2: Handle engine process state
+        //Handle engine process state
         let! processReady = async {
             if engine.HasExited() then
                 logger.LogDebug("Engine {Engine} has exited, starting fresh", engine.Name)
@@ -223,29 +94,22 @@ module Initialization =
         if not processReady then
             return false
         else
-            // Phase 3: Verify process is running
+            //Verify process is running
             if engine.HasExited() then
                 logger.LogError("Engine {Engine} failed to start after all attempts", engine.Name)
                 return false
             else
-                // Phase 4: UCI Configuration
-                logger.LogDebug("Configuring engine {Engine}: Chess960={Chess960}", 
-                    engine.Name, tourny.IsChess960)
                     
-                let engineOption : EngineOption = { 
-                    Name = "UCI_Chess960"
-                    Value = sprintf "%b" tourny.IsChess960 
-                }
+                let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
                 engine.AddSetOption engineOption
                 
                 if tourny.MoveOverhead.Ticks > 0 then
                     let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
-                    logger.LogDebug("Setting move overhead for {Engine}: {Overhead}ms", engine.Name, ms)
                     engine.SetMoveOverhead("overhead", ms)
                 
                 engine.UciNewGame()
 
-                // Phase 5: Wait for ready acknowledgment
+                //Wait for ready acknowledgment
                 let timeoutInSec = max 180 tourny.EngineStartupTimeoutInSec
                 let timeoutInMs = timeoutInSec * 1000
                 logger.LogDebug("Waiting for engine {Engine} readyok (timeout: {Timeout}ms)", 
@@ -265,7 +129,6 @@ module Initialization =
         
         // Cleanup on failure
         try
-            stopPump engine
             if not (engine.HasExited()) then
                 engine.StopProcess()
         with cleanupEx ->
@@ -336,17 +199,12 @@ module Initialization =
   
   let initEngines openingDelayMs (tourny:Tournament) (engine1: ChessEngine) (engine2: ChessEngine) (logger: ILogger) =          
     async {
-        try
-            // 1. First, ensure any existing pumps are stopped
-            stopPump engine1
-            stopPump engine2
-
-            // 2. Small delay to let pumps fully clean up
+        try            
             do! Async.Sleep 200
             
             let delayBetweenGamesMs = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int
             
-            // 3. Pass logger to waitForEngineIsReady
+            //Pass logger to waitForEngineIsReady
             let startEngines = [
                 waitForEngineIsReady tourny engine1 logger
                 waitForEngineIsReady tourny engine2 logger
@@ -360,7 +218,7 @@ module Initialization =
                 startEngines @ pauseUntilTournamentIsReady
                 |> Async.Parallel
               
-            // 4. CRITICAL FIX: Only check engine results (first 2)
+            //Only check engine results (first 2)
             let engineResults = res |> Array.take 2
             let failed = engineResults |> Array.exists(fun e -> not e)
               
@@ -373,19 +231,15 @@ module Initialization =
                 let engineNames = String.Join(", ", failedEngines |> Array.map (fun e -> e.Name))
                 logger.LogCritical("Failed to start engines: {FailedEngines}", engineNames)
                 raise (EngineStartupException($"Failed to start: {engineNames}"))
-                //return false
+                
             else              
                 checkAndPrepareContempt engine1 engine2
-                //return true
+                
           with ex ->
             // Log the error with context
             logger.LogError(ex, "Exception during initEngines for {White} vs {Black}", engine1.Name, engine2.Name)
-            
-            // Best-effort cleanup in a single try-catch to avoid nested exceptions
-            try
-                stopPump engine1
-                stopPump engine2
-                
+           
+            try                
                 if not (engine1.HasExited()) then
                     engine1.StopProcess()
                     
@@ -876,7 +730,7 @@ module TournamentUtils =
       Utilities.Validation.validateTournamentInput tourny
       let mutable valid = tourny.EngineSetup.Engines.Length > 1
       for engConfig in tourny.EngineSetup.Engines do
-        let engine = engConfig |> EngineHelper.createEngine
+        let engine = EngineHelper.createEngine (engConfig, None)
         engine.StartProcess()        
         if valid then
           valid <- engine.PassedValidation
@@ -952,7 +806,7 @@ module TournamentUtils =
       let mutable infoString = ""
       let mutable eval = EvalType.NA
       while cont do
-        let! line = Initialization.readLine engine CancellationToken.None        
+        let! line = engine.ReadLineAsyncWithTimeout CancellationToken.None |> Async.AwaitTask  // Initialization.readLine engine CancellationToken.None        
         if line.StartsWith "bestmove" then
           cont <- false
         elif line.StartsWith "info string node" then
@@ -997,7 +851,7 @@ module Match =
   
 
   // cancel-aware read now uses pump (already in TournamentUtils)
-  let readLineCancelAware (eng: ChessEngine) (cts: CancellationTokenSource) = Initialization.readLineCancelAware eng cts
+  //let readLineCancelAware (eng: ChessEngine) (cts: CancellationTokenSource) = Initialization.readLineCancelAware eng cts
 
   let lostOnTimeResult (playing: string) (opponent: string) (isWhite: bool) (gameMoveList: ResizeArray<string>) (gametimer: int64) evals : Result =
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
@@ -1082,12 +936,6 @@ module Match =
     
     let createDisconnectedResult engineName resultStr = 
         createResult white black moves resultStr (ResultReason.Disconnected engineName) dur
-    
-    // Stop pumps immediately
-    try 
-        Initialization.stopPump engine1
-        Initialization.stopPump engine2
-    with _ -> ()
     
     // Enhanced diagnostics check
     let checkEngineWithDiagnostics (eng: ChessEngine) =
@@ -1830,6 +1678,7 @@ module Match =
     let mutable PVLine1 = String.Empty
     let mutable PVLine2 = String.Empty
     let mutable Q1DifferentFromN1 = 0
+    let mutable ct : CancellationToken = CancellationToken.None
     let fen = board.FEN()
     logger.LogDebug $"After opening moves, FEN={fen}"
 
@@ -1843,6 +1692,11 @@ module Match =
         return res
       else
         if position <> pos then          
+          let isWhite = playing.Name = player1.Name        
+          let timeLeftTicks = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
+          let timeOutInMs = (TimeSpan(timeLeftTicks).TotalMilliseconds |> int32) + 2000
+          ct <- (new CancellationTokenSource(timeOutInMs)).Token
+          
           moveTimer <- Stopwatch.GetTimestamp()
           pos <- position
           let fenAndMoves = board.PositionWithMoves()
@@ -1863,11 +1717,10 @@ module Match =
           else            
             playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
         
-        let isWhite = playing.Name = player1.Name        
-        let timeLeftTicks = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
-        let timeOutInMs = (TimeSpan(timeLeftTicks).TotalMilliseconds |> int32) + 1000        
+        
+        let! line = playing.ReadLineAsyncWithTimeout(ct) |> Async.AwaitTask        
         // use channel-based timeout read
-        let! line = Initialization.readLineWithTimeout playing timeOutInMs logger cts.Token        
+        //let! line = Initialization.readLineWithTimeout playing timeOutInMs logger cts.Token        
         
         if String.IsNullOrEmpty line then
           logger.LogDebug $"Empty line or null from {playing.Name}"
@@ -1888,6 +1741,10 @@ module Match =
             return res
         elif playing.HasExited() then
             do! Async.Sleep 1000
+            match playing.GetExitCode() with            
+            | Some code -> logger.LogCritical $"Engine {playing.Name} has exited with exitcode {code}"
+            | None -> logger.LogCritical $"Engine {playing.Name} has exited unexpectedly"
+            
             let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
             let firstTwoEvals = firstTwoEvals fullEvalList
             let res, msg =
@@ -1912,9 +1769,11 @@ module Match =
           let remainingTicks = playerTime - duration.Ticks
           let lostOnTime = (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L)
           if lostOnTime then
-            let firstTwoEvals = firstTwoEvals fullEvalList              
+            let firstTwoEvals = firstTwoEvals fullEvalList
+            if playing.HasExited() then
+                logger.LogCritical($"Engine {playing.Name} has exited while lost on time")
             let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
-            let diagnosis = playing.GetDiagnostics()            
+            let diagnosis = playing.GetDiagnostics()
             logger.LogCritical diagnosis
             return res
           else             
@@ -2147,7 +2006,7 @@ module Match =
                     logger.LogDebug "Only one move in log live stats"
                   let mutable cont = moreItems
                   while cont do
-                    let! newline = Initialization.readLine playing cts.Token
+                    let! newline = playing.ReadLineAsyncWithTimeout cts.Token |> Async.AwaitTask
                     if newline.StartsWith "bestmove" then
                       cont <- false                 
                     if newline.StartsWith "info string node" then
@@ -2480,20 +2339,22 @@ module Match =
             board.LongSANMovesPlayed |> Seq.fold(fun state m -> 
               sprintf "%s %s" state m) start            
           logger.LogInformation("{position}", posWithMoves)
-          let engine1 = pair.White |> EngineHelper.createEngine
-          let engine2 = pair.Black |> EngineHelper.createEngine
-          
+          let engine1 = EngineHelper.createEngine (pair.White, Some logger)
+          let engine2 = EngineHelper.createEngine (pair.Black, Some logger)
+
           let openingsAlreadyPlayed = gamesAlreadyPlayed |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pair.OpeningHash) |> Seq.length
           let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
           let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1 }"
           Update.RoundNr roundTxt |> callback
           let logException ex =
+              let tcPlayer1 , tcPlayer2 = (tourny.FindTimeControl (pair.White.TimeControlID)).ToString(), (tourny.FindTimeControl (pair.Black.TimeControlID)).ToString()
+              let tcText = sprintf "%s: %s vs %s: %s" pair.White.Name tcPlayer1 pair.Black.Name tcPlayer2
               let createContext() = {
                   EngineName   = engine1.Name
                   OpponentName = engine2.Name
                   GameNumber   = pair.GameNr
                   MoveNumber   = board.MoveNumber()
-                  TimeControl  = tourny.TimeControl.ToString()
+                  TimeControl  = tcText
                   TimeRemaining= None
                   PositionFen  = board.FEN()
                   LastCommand  = None
@@ -2562,8 +2423,7 @@ module Match =
             engine1.StopProcess()
           if engine2.HasExited() |> not then
             engine2.StopProcess()
-          Initialization.stopPump engine1
-          Initialization.stopPump engine2
+
           do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
           board.ResetBoardState()
           gameNr <- gameNr + 1
@@ -2700,11 +2560,11 @@ module Match =
           logger.LogInformation("{position}", posWithMoves)
 
           if numberOfPlayers > 2 then
-            engine1 <- pair.White |> EngineHelper.createEngine
-            engine2 <- pair.Black |> EngineHelper.createEngine
+            engine1 <- EngineHelper.createEngine (pair.White, Some logger)
+            engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
           if engine1 = defaultof<ChessEngine> || engine2 = defaultof<ChessEngine> then
-            engine1 <- pair.White |> EngineHelper.createEngine
-            engine2 <- pair.Black |> EngineHelper.createEngine
+            engine1 <- EngineHelper.createEngine (pair.White, Some logger)
+            engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
           if engine1.Name = pair.Black.Name || engine2.Name = pair.White.Name then
             let (eng1,eng2) = engine2, engine1
             engine1 <- eng1
@@ -2789,10 +2649,7 @@ module Match =
             
           if tourny.VerboseLogging then
             logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
-          // First, stop the pumps (this stops background readers)
-          Initialization.stopPump engine1
-          Initialization.stopPump engine2
-
+         
           // Small delay to let pumps finish their cleanup
           do! Async.Sleep 200
           
@@ -2925,7 +2782,7 @@ module Match =
         prepareGameReplay nextGame replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960
       
       let allEngines =
-        tourny.EngineSetup.Engines |> List.map(fun e -> EngineHelper.createEngine e)
+        tourny.EngineSetup.Engines |> List.map(fun e -> EngineHelper.createEngine (e, Some logger))
       
       let getPairsForTwoEnginesOnlyForParallelRun (engine1:string) (engine2 : string) =          
           [
@@ -2949,8 +2806,8 @@ module Match =
       let initializePairForParalellRun (e1:ChessEngine, e2:ChessEngine) (n:int) =
         [
           for _ = 1 to n do
-            let eng1 = EngineHelper.createEngine e1.Config
-            let eng2 = EngineHelper.createEngine e2.Config
+            let eng1 = EngineHelper.createEngine (e1.Config, Some logger)
+            let eng2 = EngineHelper.createEngine (e2.Config, Some logger)
             Initialization.initEngines 0 tourny eng1 eng2 logger
             yield eng1, eng2
         ]      
@@ -3252,7 +3109,7 @@ module Match =
                     let engines = 
                         [| 1..concurrency |]
                         |> Array.Parallel.map (fun _ ->
-                            let eng = EngineHelper.createEngine e
+                            let eng = EngineHelper.createEngine (e, Some logger)
                             EngineHelper.initEngine 0 eng
                             ch.Writer.TryWrite(eng) |> ignore
                             eng.Name, ch )

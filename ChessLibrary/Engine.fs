@@ -17,6 +17,7 @@ open TypesDef.TMove
 open TypesDef.Position
 open TypesDef.TimeControl
 open Chess.BoardUtils
+open Microsoft.Extensions.Logging
 
 module Engine =
 
@@ -763,7 +764,20 @@ module Engine =
       member this.ReadLine() = read()
 
 
-  type ChessEngine(config : EngineConfig, initCommands: string seq) =
+  type ChessEngine(config : EngineConfig, initCommands: string seq, logger: ILogger option) =
+      let logCritical text =
+        match logger with
+        | Some log -> log.LogCritical text
+        | None -> printfn "%s" text
+      let logInformation text =
+        match logger with
+        |Some log -> log.LogInformation text
+        | None -> printfn "%s" text
+      let logDebug text =
+        match logger with
+        |Some log -> log.LogDebug text
+        | None -> printfn "%s" text
+
       let initialCommands = initCommands |> ResizeArray
       let defaultTimeoutMs = 180000
       let mutable passed = true
@@ -822,8 +836,7 @@ module Engine =
           | UciOption.Combo (options, def) -> dict.Add(opt.Key, def)
           | UciOption.String s -> dict.Add(opt.Key, s)
           |_ -> ()
-        dict      
-
+        dict
 
       let printCommands () =
         printfn "%sConfigurations for %s:%s" Environment.NewLine name Environment.NewLine
@@ -921,6 +934,7 @@ module Engine =
       let write (s:string) = 
         try
             if proc <> null && not proc.HasExited then
+                logDebug (sprintf "Writing to %s: %s" name s)
                 if name.ToLower().Contains "igel" then
                     proc.StandardInput.WriteLine(s)
                 else
@@ -933,6 +947,7 @@ module Engine =
           
       let read () = proc.StandardOutput.ReadLine()
       let readAsync () = proc.StandardOutput.ReadLineAsync()
+      let readAsyncWithTimeout (token: CancellationToken) = proc.StandardOutput.ReadLineAsync(token).AsTask()
 
       member _.GetExitCode() = lastExitCode
       member _.ErrorOutput = stderrBuffer :> seq<string>
@@ -991,13 +1006,14 @@ module Engine =
                       addCommand initialCommands cmd
                       addCommand commands cmd                  
             | _ -> ()
-        | None -> printfn "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds
+        | None -> logInformation (sprintf "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds)
       
       member this.StartProcess() =
         try
             assignThread ()
             let ok = this.ReadUciOptions()
             if not ok then
+              logCritical "Engine did not respond to UCI command."
               failwith "Engine did not respond to UCI command."
             for cmd in configCmds do      
               match UciOption.parseSetOptionCommand cmd with
@@ -1018,7 +1034,7 @@ module Engine =
             let nOk, uciNameOpt = optionsMap.TryGetValue "name" 
             let aOk, uciAuthorOpt = optionsMap.TryGetValue "author"      
             match (nOk, uciNameOpt.OptionType), (aOk, uciAuthorOpt.OptionType) with
-            | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> printfn "Engine name: %s and author: %s" n a
+            | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> logInformation (sprintf "Engine name: %s and author: %s" n a)
             | _ -> ()
       
             write "ucinewgame"
@@ -1032,14 +1048,14 @@ module Engine =
                   LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
                   raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
         with
-        | :? OperationCanceledException -> printfn "Engine initialization timed out."
-        | :? Channels.ChannelClosedException -> printfn "Engine channel was closed unexpectedly."
-        | ex -> printfn "An unexpected error occurred while starting engine %s: \n%s" name ex.Message
+        | :? OperationCanceledException -> logCritical "Engine initialization timed out."
+        | :? Channels.ChannelClosedException -> logCritical "Engine channel was closed unexpectedly."
+        | ex -> logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
 
       member this.DoNotValidate() = validate <- false
       member this.StopProcess() =       
         if proc.HasExited then
-          printfn "Engine %s has already exited" name
+          logInformation (sprintf "Engine %s has already exited" name)
         else
           terminateProcess proc 3000        
     
@@ -1051,27 +1067,27 @@ module Engine =
       member this.GetUCICommands() = this.Uci() //optionsMap    
     
       member this.Uci() =
-        let cmd = "uci"
+        let cmd = "uci"        
         write cmd
         commands.Add cmd
 
       member this.IsReady() =
-        let cmd = "isready"
+        let cmd = "isready"        
         write cmd
         commands.Add cmd
 
       member this.UciNewGame() =
-        let cmd = "ucinewgame"
+        let cmd = "ucinewgame"        
         write cmd
         commands.Add cmd
 
       member this.Position(position: string) =
-        let cmd = position
+        let cmd = position        
         write cmd
         commands.Add cmd
 
       member this.PositionGoFen (fen: string) =
-        let position = sprintf "position fen %s" fen
+        let position = sprintf "position fen %s" fen        
         write position
         commands.Add position
     
@@ -1093,13 +1109,13 @@ module Engine =
 
       member this.Go (timeControl : UnionType, wTime, bTime) = 
         isRunning <- true
-        let cmd = TimeControlCommands.uciTimeCommand timeControl wTime bTime
+        let cmd = TimeControlCommands.uciTimeCommand timeControl wTime bTime        
         write cmd
         commands.Add cmd
 
       member this.GoNodes (nodes:int) = 
         isRunning <- true
-        let cmd = TimeControlCommands.createNodes nodes
+        let cmd = TimeControlCommands.createNodes nodes        
         write cmd
         commands.Add cmd
 
@@ -1116,68 +1132,87 @@ module Engine =
         commands.Add cmd
 
       member this.Quit() = 
-        let cmd = "quit"
+        let cmd = "quit"        
         write cmd
         commands.Add cmd
       
       member this.PonderHit() = 
-        let cmd = "ponderhit"
+        let cmd = "ponderhit"        
         write cmd
         commands.Add cmd
       
       member this.GoPonder command = 
-        //let cmd = "go ponder"
+        //let cmd = "go ponder"        
         write command
         commands.Add command
     
       member this.ReadLineAsync() = readAsync()
+      member this.ReadLineAsyncWithTimeout(token: CancellationToken) = readAsyncWithTimeout token
       member this.ReadLine() = read()
     
       member this.ReadUciOptions() =       
         try
-          write("uci")
+          use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
+          write("uci")          
           let rec readUci() = async {          
-              let! line = this.ReadLineAsync() |> Async.AwaitTask
+              let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
               printfn "%s" line
               let mutable ret = line
               while ret <> "uciok" && not proc.HasExited  do
                   UciOption.addOptionToMap optionsMap ret
-                  let! resp = this.ReadLineAsync() |> Async.AwaitTask
+                  let! resp = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
                   ret <- resp
-              return ret = "uciok" }
+              let isOk = ret = "uciok"
+              if not isOk then
+                logCritical (sprintf "Engine %s did not respond with uciok" name)
+              else
+                logInformation (sprintf "Engine %s responded with uciok" name)
+              return isOk }
           readUci() |> Async.RunSynchronously
         with
+          | :? OperationCanceledException -> 
+              logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
+              false
           | :? System.IO.IOException as ex ->
-              printfn "Error reading UCI options: %s" ex.Message
+              logCritical (sprintf "Error reading UCI options: %s" ex.Message)
               false
           |ex -> 
-              printfn "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message
+              logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
               false
 
       member this.WaitForReadyOk(?timeoutMs: int) = 
         let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
         let timeoutInMs = if timeoutInMs < 60000 then defaultTimeoutMs else timeoutInMs
+        let cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutInMs))
         write "isready"
-        
-        async {
-          let rec readUntilReady() = async {
-            try
-              let! line = Async.AwaitTask(this.ReadLineAsync())
+        let rec readUntilReady() = async {
+          try
+            if this.HasExited() then
+              logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
+              return false
+            elif cts.Token.IsCancellationRequested then
+              logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+              return false
+            else
+              let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
+              
               if line = "readyok" then 
+                logInformation (sprintf "Engine %s responded with readyok" name)
                 return true
               else 
                 return! readUntilReady()
-            with
-            | :? OperationCanceledException -> return false
-          }
-          
-          try
-            let! completed = Async.StartChild(readUntilReady(), timeoutInMs)
-            return! completed
           with
-          | :? TimeoutException -> return false
+          | :? OperationCanceledException -> 
+              logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+              return false
+          | ex ->
+              logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
+              return false
         }
-        |> Async.RunSynchronously
+        
+        let res = readUntilReady() |> Async.RunSynchronously
+        cts.Dispose()
+        res
       
       member this.IsRunning
         with get () = isRunning 
@@ -1228,12 +1263,11 @@ module EngineHelper =
       sprintf "setoption name %s value %d" "MinibatchSize" 256
       sprintf "setoption name %s value %d" "Threads" 1
       sprintf "setoption name %s value %b" "VerboseMoveStats" true
-      //sprintf "setoption name %s value %s" "WeightsFile" "C:/Dev/Chess/Networks/32930"
       sprintf "setoption name %s value %b" "ValueOnly" true
     ]
+  
   let createInitialUCICommands (config:EngineConfig) =
-      seq {
-        //"uci"
+      seq {       
         for option in config.Options do
           let mutable value = option.Value.ToString()            
           let (ok,v) = Boolean.TryParse value
@@ -1242,17 +1276,16 @@ module EngineHelper =
           elif option.Key = "WeightsFile" && Utilities.Validation.checkPathExists value |> not then          
             let combine = Path.Combine(config.NetworkPath, value)
             value <- combine
-          sprintf "setoption name %s value %s" option.Key value
-        //"ucinewgame"
+          sprintf "setoption name %s value %s" option.Key value        
       }
 
-  let createEngineWithoutValidation (config:EngineConfig) : ChessEngine = 
+  let createEngineWithoutValidation (config:EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : ChessEngine = 
       let cmds = createInitialUCICommands config
-      let eng = new ChessEngine(config, cmds)
+      let eng = new ChessEngine(config, cmds, logger)
       eng.DoNotValidate()
       eng
 
-  let createEngine (config:EngineConfig) : ChessEngine = 
+  let createEngine (config:EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : ChessEngine = 
       let validation = Utilities.Validation.validateChessEngineCmds config
       match validation with
       |Utilities.Validation.Errors errors -> 
@@ -1261,7 +1294,7 @@ module EngineHelper =
         failwith "Engine could not be created"
       |Utilities.Validation.Ok -> 
           let cmds = createInitialUCICommands config
-          new ChessEngine(config, cmds)
+          new ChessEngine(config, cmds, logger)
 
   let createPuzzleEngine (config:EngineConfig) : PuzzleChessEngine = 
       let validation = Utilities.Validation.validateChessEngineCmds config
@@ -1398,11 +1431,7 @@ module EngineHelper =
       }
 
 
-
-  type EvalResult = {
-      EngineName: string
-      Eval: float
-  }
+  type EvalResult = { EngineName: string; Eval: float  }
 
   let analyzePosition (engine1: ChessEngine) (engine2: ChessEngine) (position: string) (time: int) =
       let board = new Chess.Board()
@@ -1495,7 +1524,7 @@ module HardwareInfo =
   open EngineHelper
   
   let estimateEngineRam (config: EngineConfig) : uint64 =
-        let engine = createEngine config
+        let engine = createEngine (config, None)
         engine.StartProcess()
         initEngine 0 engine        
         // snapshot working‐set

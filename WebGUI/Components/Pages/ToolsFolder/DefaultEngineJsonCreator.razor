@@ -54,7 +54,7 @@
     CoreTypes.EngineConfig config = null;
     var path = Path.Combine(engineFolder, pgnName);
     config = CoreTypes.EngineConfig.EmptyWithPath(path);
-    engine = EngineHelper.createEngine(config);
+    engine = EngineHelper.createEngine (config, null);
     engine.StartProcess();
     engine.StopProcess();
     var defs = engine.GetDefaultOptions();
