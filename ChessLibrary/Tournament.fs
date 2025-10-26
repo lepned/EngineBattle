@@ -857,8 +857,7 @@ module Match =
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let resStr = if isWhite then "0-1" else "1-0"
     let player1, player2 = if isWhite then playing, opponent else opponent, playing
-    createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals
-  
+    createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals  
   
   //let private logError (logger:ILogger) (failure: EngineFailure) =    
   //  match failure with
@@ -1258,7 +1257,8 @@ module Match =
       if lostOnTime then
         let firstTwo = firstTwoEvals fullEvalList
         if currentPlaying.HasExited() then
-           logger.LogCritical($"Engine {currentPlaying.Name} has exited while lost on time")
+           logger.LogCritical($"Engine {currentPlaying.Name} has exited while lost on time")        
+        logger.LogCritical("Engine {Engine} lost on time. Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}", currentPlaying.Name, (if isWhite then wTime.ToTimeSpan().TotalMilliseconds else bTime.ToTimeSpan().TotalMilliseconds), duration.TotalMilliseconds)
         let res = lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo
         result <- res
         continueGame <- false      
@@ -1796,6 +1796,7 @@ module Match =
             let firstTwoEvals = firstTwoEvals fullEvalList
             if playing.HasExited() then
                 logger.LogCritical($"Engine {playing.Name} has exited while lost on time")
+            logger.LogCritical("Engine {Engine} lost on time. Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}", playing.Name, (if isWhite then wTime.ToTimeSpan().TotalMilliseconds else bTime.ToTimeSpan().TotalMilliseconds), duration.TotalMilliseconds)
             let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
             let diagnosis = playing.GetDiagnostics()
             logger.LogCritical diagnosis
