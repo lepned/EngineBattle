@@ -1257,7 +1257,9 @@ module Match =
 
       if lostOnTime then
         let firstTwo = firstTwoEvals fullEvalList
-        let res = lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo        
+        if currentPlaying.HasExited() then
+           logger.LogCritical($"Engine {currentPlaying.Name} has exited while lost on time")
+        let res = lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo
         result <- res
         continueGame <- false      
       else
@@ -1488,7 +1490,7 @@ module Match =
 
             let status = {
               PlayerName = engine.Name
-              Eval = eval; Depth = d; SD = sd; Nodes = nodes; NPS = npsLast
+              Eval = eval; Depth = d; SD = sd; Nodes = nodes; NPS = npsLast; EPS = 0.0
               TBhits = tbhits
               WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
               PV = pv; PVLongSAN = pvLong; MultiPV = mPv
@@ -1718,17 +1720,39 @@ module Match =
             playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
         
         
-        let! line = playing.ReadLineAsyncWithTimeout(ct) |> Async.AwaitTask        
-        // use channel-based timeout read
-        //let! line = Initialization.readLineWithTimeout playing timeOutInMs logger cts.Token        
+        let! line = playing.ReadLineAsyncWithTimeout(ct) |> Async.AwaitTask
         
         if String.IsNullOrEmpty line then
           logger.LogDebug $"Empty line or null from {playing.Name}"
+          if playing.HasExited() then
+            do! Async.Sleep 1000
+            match playing.GetExitCode() with            
+            | Some code -> logger.LogCritical $"Engine {playing.Name} has exited with exitcode {code}"
+            | None -> logger.LogCritical $"Engine {playing.Name} has exited unexpectedly"
+            // create result and return
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let firstTwoEvals = firstTwoEvals fullEvalList
+            let res, msg =
+                if opponent.HasExited() then
+                    let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals
+                    res, $"Shutdown detected after {playing.Name} exited; returning Cancel"
+                else
+                    let resValue = if playing.Name = player1.Name then "0-1" else "1-0"                    
+                    createResultWithEval player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur firstTwoEvals,
+                    $"Player has exited/crashed {playing.Name}"
+            logger.LogInformation msg
+            callback(EndOfGame res)
+            return res         
+            
+          else
+            return! playEngine playing opponent position
+
         elif line.StartsWith "info engine" then
           MessagesFromEngine ("Ceres", line) |> callback
           logger.LogInformation line
-        
-        if isAppShuttingDown cts then
+          return! playEngine playing opponent position        
+            
+        elif isAppShuttingDown cts then
             let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
             let firstTwoEvals = firstTwoEvals fullEvalList
             let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals            
@@ -2066,6 +2090,7 @@ module Match =
                           SD = sd
                           Nodes = nodes
                           NPS = nps //avgNps
+                          EPS = 0.0
                           TBhits = tbhits
                           WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
                           PV = pv

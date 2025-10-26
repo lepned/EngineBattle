@@ -179,8 +179,8 @@ module Engine =
       let regular callback (engineName:string) (line:string) =
         let mutable avgNps = 0.0
         let isWhite = moveBoard.Position.STM = 0uy
-        match Utilities.Regex.getEssentialData line isWhite with
-        |Some (d, eval, nodes, nps, pvLine, tbHits, wdl, sd, mPv ) ->         
+        match Utilities.Regex.getEssentialDataWithEPS line isWhite with
+        |Some (d, eval, nodes, nps, eps, pvLine, tbHits, wdl, sd, mPv ) ->         
           numberOfNodes <- nodes
           if d > depth then
             depth <- d        
@@ -197,6 +197,7 @@ module Engine =
               SD = sd
               Nodes = nodes
               NPS = float nps
+              EPS = float eps
               TBhits = tbHits
               WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
               PV = pvUpdate
@@ -765,18 +766,19 @@ module Engine =
 
 
   type ChessEngine(config : EngineConfig, initCommands: string seq, logger: ILogger option) =
+      let printToConsole txt = printfn "%s" txt
       let logCritical text =
         match logger with
         | Some log -> log.LogCritical text
-        | None -> printfn "%s" text
+        | None -> () //printfn "%s" text
       let logInformation text =
         match logger with
-        |Some log -> log.LogInformation text
-        | None -> printfn "%s" text
+        | Some log -> log.LogInformation text
+        | None -> () //printfn "%s" text
       let logDebug text =
         match logger with
-        |Some log -> log.LogDebug text
-        | None -> printfn "%s" text
+        | Some log -> log.LogDebug text
+        | None -> () // printfn "%s" text
 
       let initialCommands = initCommands |> ResizeArray
       let defaultTimeoutMs = 180000

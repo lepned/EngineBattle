@@ -2081,6 +2081,7 @@ module Regex =
   let sDepthRegex = new Regex(@"seldepth\s(\d+)", RegexOptions.Compiled)
   let nodesRegex = new Regex(@"nodes\s+(\d+)", RegexOptions.Compiled)
   let npsRegex = new Regex(@"nps\s+(\d+)", RegexOptions.Compiled)
+  let epsRegex = new Regex(@"eps\s+(\d+)", RegexOptions.Compiled)
   let pvRegex = new Regex(@"score.*pv\s(.*)", RegexOptions.Compiled)  //@"pv\s(.*)")
   let tbhitsRegex = new Regex("tbhits\s+(\d+)", RegexOptions.Compiled)
   let evalRegex = new Regex(@"score\s+(cp|mate)\s+(-?\d+)", RegexOptions.Compiled) 
@@ -2166,6 +2167,38 @@ module Regex =
   let stringParser line regex = parseRegex "" (fun x -> x.TrimEnd() ) line regex
   let wdlParser line = parseWDL line
  
+  let move = new Regex("info string\s+(\w+)", RegexOptions.Compiled)
+  let nodes = new Regex("N:\s+(\d+)", RegexOptions.Compiled)
+  let p = new Regex("P:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
+  let q = new Regex("Q:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
+  let v = new Regex("V:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
+  let e = new Regex("E:\s+(\d+\.\d+)", RegexOptions.Compiled) 
+
+  let getEssentialDataWithEPS (line:string) isWhite =
+    if line.StartsWith "info" then
+      let eval = 
+        match evalParser line with
+          |NA -> NA
+          |CP eval -> 
+            let eval = if eval = -0.0 then 0.0 else eval
+            (if isWhite then eval/100.0 else - eval / 100.0) |> CP
+          |Mate m -> (if isWhite then m else -m) |> Mate
+      if eval = NA then
+        None
+      else
+        (intParser line depthRegex, 
+        eval,
+        int64Parser line nodesRegex,
+        int64Parser line npsRegex,
+        int64Parser line epsRegex,
+        stringParser line pvRegex,
+        int64Parser line tbhitsRegex,
+        wdlParser line,
+        intParser line sDepthRegex,
+        intParser line mPvRegex  ) |> Some
+    else
+      None   
+
   let getEssentialData (line:string) isWhite =
     if line.StartsWith "info" then
       let eval = 
@@ -2188,14 +2221,8 @@ module Regex =
         intParser line sDepthRegex,
         intParser line mPvRegex  ) |> Some
     else
-      None   
-
-  let move = new Regex("info string\s+(\w+)", RegexOptions.Compiled)
-  let nodes = new Regex("N:\s+(\d+)", RegexOptions.Compiled)
-  let p = new Regex("P:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
-  let q = new Regex("Q:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
-  let v = new Regex("V:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
-  let e = new Regex("E:\s+(\d+\.\d+)", RegexOptions.Compiled) 
+      None 
+  
   //info string f8c5  (139 ) N:      19 (+ 0) (P:  0.75%) (WGT:      19.000) (WL: -0.99998) 
   //(D: 0.000) (M: 63.2) (STD: 0.00000) (STDF: 1.00000) (VS: 0.99996) (E: 0.00388) (Q: -0.99998) (U: 0.57593) (S: -0.42405) (V:  -.----) 
 

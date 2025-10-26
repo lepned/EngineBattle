@@ -1213,7 +1213,15 @@
         data[k] = status;
         var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
         var wdlString = status.WDL != null ? CalcWDL(ordered[0].Value.WDL) : "W: N/A D: N/A L: N/A";
-        tableHeader = $"Analysis: {nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+        if (status.EPS == 0)
+        {
+            tableHeader = $"Analysis: {nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";            
+        }
+        else
+        {
+            var eps = FormatNPS(status.EPS);
+            tableHeader = $"Analysis: {nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+        }
         dataList = ordered;
         whitePV = ordered[0].Value.PV;
         await InvokeAsync(() => StateHasChanged());

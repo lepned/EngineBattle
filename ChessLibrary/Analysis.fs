@@ -87,6 +87,7 @@ module Helper =
               SD = sd
               Nodes = nodes
               NPS = float nps
+              EPS = 0.0
               TBhits = tbHits
               WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
               PV = pvLine
@@ -1271,7 +1272,8 @@ module EngineAgent =
             Score.empty
             //failwith "Failed to start engine agent. Engine could not be created."
       else
-       // Partition the puzzles among agents
+          printfn "Starting value network test with %d concurrent agents..." concurrencyLevel
+          // Partition the puzzles among agents
           let puzzleChunks =
               puzzles
               |> Array.indexed
@@ -1358,7 +1360,8 @@ module EngineAgent =
           |> Array.groupBy (fun (idx, _) -> idx % concurrency)
           |> Array.map (fun (_, items) -> items |> Array.map snd)
     
-    // Map each agent to its workload and collect async work items
+      printfn "Starting policy/search test with %d concurrent agents..." concurrency
+      // Map each agent to its workload and collect async work items
       let agentJobs =
           Array.zip agents puzzleChunks
           |> Array.map (fun (agent, agentPuzzles) ->

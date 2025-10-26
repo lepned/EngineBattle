@@ -479,6 +479,7 @@ module TypesDef =
         mutable Eval: EvalType
         Nodes: int64
         NPS: float
+        EPS: float
         Depth: int
         SD: int
         TBhits: int64
@@ -492,6 +493,7 @@ module TypesDef =
             Eval = EvalType.NA
             Nodes = 0L
             NPS = 0.0
+            EPS = 0.0
             Depth = 0
             SD = 0
             TBhits = 0L
@@ -504,6 +506,7 @@ module TypesDef =
                 Eval = eval
                 Nodes = nodes
                 NPS = nps
+                EPS = 0.0
                 Depth = depth
                 SD = sd
                 TBhits = tbhits
