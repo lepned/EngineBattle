@@ -82,7 +82,26 @@
     
     <MudItem Class="d-flex ml-3 mt-4">
         <MudItem sm="2" lg="3">
-            <MudNumericField Style="height:50px; width:140px; font-size:13px;" HideSpinButtons=true Format="N0" Label="Node limit" Variant="Variant.Filled" @bind-Value="numberOfNodes" Culture=currentCulture @onchange="NodeCountChanged" />
+            <MudStack Spacing="0" Class="align-items-start">
+                <MudNumericField Style="height:50px; width:140px; font-size:13px;"
+                                 HideSpinButtons="true"
+                                 Format="N0"
+                                 Label="@GetLimitLabel()"
+                                 Variant="Variant.Filled"
+                                 Value="@(searchMode == SearchMode.Nodes ? numberOfNodes : numberOfTimeMs)"
+                                 ValueChanged="@((double v) => OnLimitChanged(v))"
+                                 Culture="currentCulture" />
+                <div style="height:2px;"></div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <MudSwitch T="bool"
+                               @bind-Value="timeMode"
+                               Size="Size.Small"
+                               Class="mt-0" />
+                    <span style="font-size:12px; color:var(--mud-palette-text-secondary);">
+                        @(timeMode ? "Time (ms)" : "Nodes")
+                    </span>
+                </div>
+            </MudStack>
         </MudItem>
         <MudFab Class="ml-5 mt-1" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.DownloadForOffline"
                 Label="Weights" style="font-size:11px;" Size=Size.Small for="@Id" />
@@ -284,6 +303,49 @@
     private System.Timers.Timer uiTimer;
     private TimeSpan elapsed = TimeSpan.Zero;
 
+    private enum SearchMode { Nodes, Time }
+
+    private SearchMode searchMode = SearchMode.Nodes;
+    private double numberOfTimeMs = 3000; // default 3000 ms
+    private string GetLimitLabel() => searchMode == SearchMode.Nodes ? "Node limit" : "Time (ms)";
+    private bool timeMode
+    {
+        get => searchMode == SearchMode.Time;
+        set => OnSearchModeChanged(value ? SearchMode.Time : SearchMode.Nodes);
+    }
+
+    private void OnSearchModeChanged(SearchMode mode)
+    {
+        searchMode = mode;
+        StateHasChanged();
+    }
+
+    private void OnLimitChanged(double value)
+    {
+        // Keep minimum sane values
+        if (searchMode == SearchMode.Nodes)
+            numberOfNodes = Math.Max(1, value);
+        else
+            numberOfTimeMs = Math.Max(1, value);
+    }
+
+    private void StartSearchWithMode(string positionWithMovesCommand)
+    {
+        if (analyzer == null)
+            return;
+
+        if (searchMode == SearchMode.Nodes)
+        {
+            analyzer.SearchNodesWithCommand((int)numberOfNodes, positionWithMovesCommand, keepNodesWhileSearching);
+            return;
+        }
+
+        // TIME mode: strictly use "go movetime {ms}" (milliseconds)
+        var ms = (int)Math.Max(1, Math.Round(numberOfTimeMs));
+        var goCmd = $"go movetime {ms}";
+        analyzer.Play(goCmd);
+    }
+
     private void StartSearchTimer()
     {
         searchWatch.Reset();
@@ -386,6 +448,31 @@
     {
         var command = text; //"dump-info";
         analyzer?.DumpStats(command);
+    }
+
+    private string FormatEPS(double eps)
+    {
+        if (eps > 1_000_000_000)
+        {
+            var bill = eps / 1_000_000_000;
+            return bill.ToString("F1") + "Beps"; //G eps
+        }
+        else if (eps > 1_000_000)
+        {
+            var mill = eps / 1_000_000;
+            return mill.ToString("F1") + "Meps"; //M eps
+        }
+
+        else if (eps > 1_000)
+        {
+            var thousand = eps / 1000;
+            return thousand.ToString("F1") + "Keps"; //K eps
+        }
+
+        else
+        {
+            return eps.ToString("F1") + " eps"; //eps
+        }
     }
 
     private string FormatNPS(double nps)
@@ -677,12 +764,11 @@
             try
             {
                 var command = ChessBoard.PositionWithMovesIndexed();
-                analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
-                //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
+                StartSearchWithMode(command);
             }
             catch (Exception ex)
             {
-                logger.LogInformation(ex.Message);
+                logger.LogError(ex.Message);
                 throw;
             }
         }
@@ -690,8 +776,7 @@
         else
         {
             var command = ChessBoard.PositionWithMovesIndexed();
-            analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
-            //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
+            StartSearchWithMode(command);
         }
 
         await InvokeAsync(StateHasChanged);
@@ -1097,7 +1182,7 @@
                 logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
             }
 
-            //finally write to console the top 4 ranks fractions
+            //finally write to console the top 5 ranks fractions
             var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
             var top5frac = (double)top5 / results.Count() * 100;
             logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, results.Count(), top5frac);
@@ -1219,7 +1304,7 @@
         }
         else
         {
-            var eps = FormatNPS(status.EPS);
+            var eps = FormatEPS(status.EPS);
             tableHeader = $"Analysis: {nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
         }
         dataList = ordered;
@@ -1244,8 +1329,7 @@
                 {
                     //await Task.Delay(200);
                     var command = ChessBoard.PositionWithMovesIndexed();
-                    analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
-                    //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
+                    StartSearchWithMode(command);
                     searchInProgress = true;
                 }
                 else
@@ -1262,8 +1346,7 @@
                 if (analyzer != null)
                 {
                     var command = ChessBoard.PositionWithMovesIndexed();
-                    analyzer.SearchNodesWithCommand((int)numberOfNodes, command, keepNodesWhileSearching);
-                    //analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
+                    StartSearchWithMode(command);
                     searchInProgress = true;
                 }
             }

@@ -303,45 +303,21 @@ namespace WebGUI.Plotting
             }
             else
             {
-                switch (n)
+                color = n switch
                 {
-                    case 0:
-                        color = "#1f77b4"; // Blue
-                        break;
-                    case 1:
-                        color = "#ff7f0e"; // Orange
-                        break;
-                    case 2:
-                        color = "#2ca02c"; // Green
-                        break;
-                    case 3:
-                        color = "#9467bd"; // Purple
-                        break;
-                    case 4:
-                        color = "#ffbb78"; // Light Orange
-                        break;
-                    case 5:
-                        color = "#7f7f7f"; // Gray
-                        break;
-                    case 6:
-                        color = "#e377c2"; // Pink 
-                        break;
-                    case 7:
-                        color = "#17becf"; // Cyan
-                        break;
-                    case 8:
-                        color = "#bcbd22"; // Yellow-Green
-                        break;
-                    case 9:
-                        color = "#8c564b"; // Brown
-                        break;
-                    case 10:
-                        color = "#aec7e8"; // Light Blue
-                        break;
-                    default:
-                        color = "#7f7f7f"; // Default to light gray if index is out of range
-                        break;
-                }
+                    0 => "#1f77b4",// Blue
+                    1 => "#ff7f0e",// Orange
+                    2 => "#2ca02c",// Green
+                    3 => "#9467bd",// Purple
+                    4 => "#ffbb78",// Light Orange
+                    5 => "#7f7f7f",// Gray
+                    6 => "#e377c2",// Pink 
+                    7 => "#17becf",// Cyan
+                    8 => "#bcbd22",// Yellow-Green
+                    9 => "#8c564b",// Brown
+                    10 => "#aec7e8",// Light Blue
+                    _ => "#7f7f7f",// Default to light gray if index is out of range
+                };
             }
 
             return new

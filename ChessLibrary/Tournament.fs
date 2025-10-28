@@ -2056,8 +2056,8 @@ module Match =
 
                 elif line.StartsWith "info" then              
                   let isWhite = playing.Name = player1.Name
-                  match Utilities.Regex.getEssentialData line isWhite with
-                  |Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv ) ->                 
+                  match Utilities.Regex.getEssentialDataWithEPS line isWhite with
+                  |Some (d, eval, nodes, nps, eps, pvLine, tbhits, wdl, sd, mPv ) ->                 
                     numberOfNodes <- nodes                
                     if d > depth then
                       depth <- d
@@ -2091,7 +2091,7 @@ module Match =
                           SD = sd
                           Nodes = nodes
                           NPS = nps //avgNps
-                          EPS = 0.0
+                          EPS = float eps
                           TBhits = tbhits
                           WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
                           PV = pv
