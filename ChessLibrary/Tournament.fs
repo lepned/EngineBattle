@@ -112,8 +112,8 @@ module Initialization =
                 //Wait for ready acknowledgment
                 let timeoutInSec = max 180 tourny.EngineStartupTimeoutInSec
                 let timeoutInMs = timeoutInSec * 1000
-                logger.LogDebug("Waiting for engine {Engine} readyok (timeout: {Timeout}ms)", 
-                    engine.Name, timeoutInMs)
+                //logger.LogDebug("Waiting for engine {Engine} readyok (timeout: {Timeout}ms)", 
+                //    engine.Name, timeoutInMs)
                     
                 let readyOk = engine.WaitForReadyOk(timeoutInMs)
                 
@@ -786,10 +786,10 @@ module TournamentUtils =
     
   let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: ChessEngine) =
     logger.LogDebug($"\nInitializing {player1.Name} ....")
-    for cmd in player1.InitCommands do
+    for cmd in player1.GetVerifiedCommands() do
         logger.LogDebug($"{cmd}")
     logger.LogDebug($"\nInitializing {player2.Name} ....")
-    for cmd in player2.InitCommands do
+    for cmd in player2.GetVerifiedCommands() do
         logger.LogDebug($"{cmd}")
   
   let bestQMove (nodes:int) (engine: ChessEngine) fenWithMoves (tboard:Board) = async {
@@ -1683,6 +1683,8 @@ module Match =
     let mutable ct : CancellationToken = CancellationToken.None
     let fen = board.FEN()
     logger.LogDebug $"After opening moves, FEN={fen}"
+    let unknown = "Unknown command"
+
 
     let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
       
@@ -1722,7 +1724,7 @@ module Match =
         
         let! line = playing.ReadLineAsyncWithTimeout(ct) |> Async.AwaitTask
         
-        if String.IsNullOrEmpty line then
+        if String.IsNullOrWhiteSpace line then
           logger.LogDebug $"Empty line or null from {playing.Name}"
           if playing.HasExited() then
             do! Async.Sleep 1000
@@ -1983,8 +1985,7 @@ module Match =
                       return! playEngine opponent playing (board.PositionHash())
                   |_ ->                
                     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
-                    let firstTwoEvals = firstTwoEvals fullEvalList
-                    //check if there is any legal move in the position
+                    let firstTwoEvals = firstTwoEvals fullEvalList                    
                     if board.AnyLegalMove() |> not then
                       //either checkmate or stalemate
                       if board.IsMate() then                   
@@ -2012,12 +2013,7 @@ module Match =
                       logger.LogCritical($"{playing.Name} failed in bestmove logic with the following response {line} after these moves: \n{fenAndMoves}")
                       return res               
                  
-              else
-                //if fullEvalList.Length > 1 then
-                //    if playing.Name.Contains "Ceres" then
-                //        let engineOption = EngineOption.Create "device" "3"
-                //        playing.AddSetOption engineOption
-                        
+              else                
                 let elapsed = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
                 let diff = elapsed - lastCheck
                 let interval = 1000

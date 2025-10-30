@@ -13,7 +13,7 @@
     </MudItem>
     <MudText Class="mud-centerTxt pt-2" Color=@color1 Typo=Typo.h4>@Engine1.Eval </MudText>
     <MudText Style=@FontNormal Class="mud-centerTxt">@Engine1.Depth/@Engine1.SD</MudText>
-    <MudText Style=@FontNormal Class="mud-centerTxt"> @FormatNPS(Engine1.NPS) </MudText>
+        <MudText Style=@FontNormal Class="mud-centerTxt"> @(Engine1.EPS > 0 ? FormatNPS(Engine1.NPS) + " (" + FormatEPS(Engine1.EPS) + ")" : FormatNPS(Engine1.NPS)) </MudText>
     <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine1.Nodes) </MudText>
     <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine1.TBhits) </MudText>
     <MudText Style=@FontWDL Class="mud-centerTxt"> @GetWDLString(Engine1.WDL) </MudText>
@@ -45,7 +45,7 @@
     </MudItem>
     <MudText Class="mud-centerTxt pt-2" Color=@color2 Typo=Typo.h4>@Engine2.Eval </MudText>
     <MudText Style=@FontNormal Class="mud-centerTxt">@Engine2.Depth/@Engine2.SD</MudText>
-    <MudText Style=@FontNormal Class="mud-centerTxt"> @FormatNPS(Engine2.NPS) </MudText>
+        <MudText Style=@FontNormal Class="mud-centerTxt"> @(Engine2.EPS > 0 ? FormatNPS(Engine2.NPS) + " (" + FormatEPS(Engine2.EPS) + ")" : FormatNPS(Engine2.NPS)) </MudText>
     <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine2.Nodes) </MudText>
     <MudText Style=@FontNormal Class="mud-centerTxt">@FormatNodes(Engine2.TBhits) </MudText>
     <MudText Style=@FontWDL Class="mud-centerTxt"> @GetWDLString(Engine2.WDL) </MudText>
@@ -178,6 +178,31 @@
     else
     {
       return nodes.ToString("F1"); //nps
+    }
+  }
+
+  private string FormatEPS(double nps)
+  {
+    if (nps > 1_000_000_000)
+    {
+        var mill = (decimal)nps / 1_000_000_000;
+        return mill.ToString("F1") + "Geps"; //G eps
+    }
+    else if (nps > 1_000_000)
+    {
+        var mill = (decimal)nps / 1_000_000;
+        return mill.ToString("F1") + "Meps"; //M eps
+    }
+
+    else if (nps > 1_000)
+    {
+        var thousand = (decimal)nps / 1_000;
+        return thousand.ToString("F1") + "Keps"; //Keps
+    }
+
+    else
+    {
+        return nps.ToString("F1") + " eps"; //nps
     }
   }
 
