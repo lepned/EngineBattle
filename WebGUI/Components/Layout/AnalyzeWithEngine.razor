@@ -592,7 +592,7 @@
             {
                 await searchInfoPlot.ResetPlot(false);
             }
-            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            await StartAnalyzer();
             searchInfoPlot.EngineName = analyzer.GetEngineName();
             var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
             neuralNet = $"{analyzer.GetNetwork()}";
@@ -687,7 +687,7 @@
     }
 
     private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
-    {
+    {        
         //SetDefaultContempt();
         waitingForEngine = true;
         searchInProgress = false;
@@ -709,7 +709,8 @@
         await OnNewEngineLoaded.InvokeAsync(args);
         Engine = engineConfig;
         NNInfoList.Clear();
-        analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+        analyzer = null;
+        await StartAnalyzer();
         neuralNet = analyzer.GetNetwork();
         backend = analyzer.BackendInfo();
         File.Delete(fullPath);
@@ -728,6 +729,19 @@
         }
     }
 
+    private async Task StartAnalyzer()
+    {
+        if (analyzer == null)
+        {
+            analyzer = await Task.Factory.StartNew(() =>
+            {
+                return new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            });
+            analyzer.Board = ChessBoard;
+        }
+        await Task.CompletedTask;
+    }
+
     private async Task Analyze()
     {
         if (Engine == null)
@@ -736,7 +750,8 @@
         }
         if (analyzer != null && analyzer.Engine.HasExited)
         {
-            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);            
+            analyzer = null;
+            await StartAnalyzer(); 
         }
         InfoLineList.Clear();
         if (searchInfoPlot == null)
@@ -755,7 +770,7 @@
         {
             waitingForEngine = true;
             StateHasChanged();
-            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            await StartAnalyzer();            
             backend = analyzer.BackendInfo();
             searchInfoPlot.EngineName = analyzer.GetEngineName();
             var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
@@ -865,7 +880,7 @@
     }
 
 
-    private void DoQAnalysis()
+    private async Task DoQAnalysis()
     {
         try
         {
@@ -877,7 +892,7 @@
             if (analyzer == null)
             {
                 logger.LogInformation("No engine loaded");
-                analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+                await StartAnalyzer();
             }
             var engineName = "all";
 
@@ -989,7 +1004,7 @@
             if (analyzer == null)
             {
                 logger.LogInformation("No engine loaded");
-                analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+                await StartAnalyzer();
             }
             var engineName = "all";
 
@@ -1087,7 +1102,7 @@
 
     }
 
-    private void CheckAllGamesAnalysis()
+    private async Task CheckAllGamesAnalysis()
     {
         try
         {
@@ -1096,7 +1111,7 @@
             if (analyzer == null)
             {
                 logger.LogInformation("No engine loaded");
-                analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+                await StartAnalyzer();
             }
 
             var playerInSearch = Player.Trim();
@@ -1237,8 +1252,7 @@
         }
 
         board.CurrentIndex = board.MovesAndFenPlayed.Count;
-        fen = board.FEN();
-        //MoveAndFen moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        fen = board.FEN();        
         // await Notifier.UpdateFen(fen);
         // await Notifier.UpdateFenAndMove(moveAndFen);
     }
@@ -1252,7 +1266,8 @@
         }
         if (analyzer.Engine.HasExited)
         {
-            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            analyzer = null;
+            await StartAnalyzer();
             searchInProgress = false;
         }
 
@@ -1369,7 +1384,7 @@
             .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await GoInfinite()), "go search")
             .Add(ModKey.Ctrl, Key.h, (() => analyzer.Stop()), "stop search")
             .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
-            .Add(ModKey.Ctrl, Key.q, (() => DoQAnalysis()), "check Q-rank")
+            .Add(ModKey.Ctrl, Key.q, (Func<Task>)(async () => await DoQAnalysis()), "check Q-rank")
             .Add(ModKey.Ctrl, Key.a, (() => CheckAllGamesAnalysis()), "check all games policy")
             .Add(Key.F1, (Func<Task>)(async () => { numberOfNodes = 1; await Analyze(); }), "Analyze 1 node")
             .Add(Key.F2, (Func<Task>)(async () => { numberOfNodes = 1_000; await Analyze(); }), "Analyze 1_000 nodes")
@@ -1391,8 +1406,6 @@
             currentName = Engine.Name;
             await searchInfoPlot?.ResetNPlot();
             await InvokeAsync(NNInfoList.Clear);
-            analyzer?.Engine?.ShutDownEngine();
-            analyzer = null;
             neuralNet = string.Empty;
             OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
             await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);

@@ -111,10 +111,7 @@ module Initialization =
 
                 //Wait for ready acknowledgment
                 let timeoutInSec = max 180 tourny.EngineStartupTimeoutInSec
-                let timeoutInMs = timeoutInSec * 1000
-                //logger.LogDebug("Waiting for engine {Engine} readyok (timeout: {Timeout}ms)", 
-                //    engine.Name, timeoutInMs)
-                    
+                let timeoutInMs = timeoutInSec * 1000                    
                 let readyOk = engine.WaitForReadyOk(timeoutInMs)
                 
                 if readyOk then
@@ -2067,6 +2064,7 @@ module Match =
                     moveInfoData.n <- nodes
                     moveInfoData.s <- nps
                     moveInfoData.tb <- tbhits
+                    moveInfoData.eps <- eps
 
                     if not (String.IsNullOrEmpty(pvLine)) then
                       if player1.Name = playing.Name then

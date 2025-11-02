@@ -2207,6 +2207,7 @@ module TypesDef =
         mutable mt: int64
         mutable tl: int64
         mutable s: int64
+        mutable eps: int64
         mutable n: int64
         mutable n1: int64
         mutable n2: int64
@@ -2225,15 +2226,15 @@ module TypesDef =
         mutable pt: float }
       with 
         static member Empty =
-          { d = 0; sd = 0; pd = ""; mt = 0L; tl = 0L; s = 0L; n = 0L;
+          { d = 0; sd = 0; pd = ""; mt = 0L; tl = 0L; s = 0L; eps = 0L; n = 0L;
             n1 = 0L; n2 = 0L; pv = ""; tb = 0L; h = 0.0; ph = 0.0; wv = EvalType.NA;
             R50 = 0; Rd = 0; Rr = 0; mb = ""; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0 }
         member x.Annotation =
-          sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, pv=%s, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
-            x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb x.pv x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
+          sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, pv=%s, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
+            x.wv x.mt x.s x.eps x.n x.d x.sd x.pd x.tl x.tb x.pv x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
         member x.MinimalAnnotation = 
-          sprintf "wv=%O, mt=%d, s=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d"
-            x.wv x.mt x.s x.n x.d x.sd x.pd x.tl x.tb
+          sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d"
+            x.wv x.mt x.s x.eps x.n x.d x.sd x.pd x.tl x.tb
 
     module Annotation =
         

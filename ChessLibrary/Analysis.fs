@@ -43,7 +43,7 @@ module Helper =
         if engine.HasExited() then
             engine.StartProcess()
         // Bounded wait for "readyok"
-        let timeoutInMs = 5*60*1000 // 5m default
+        let timeoutInMs = TimeSpan.FromHours(2).TotalMilliseconds |> int // 2h default
         let ok = engine.WaitForReadyOk(timeoutInMs)
         if ok then
             // Engine is ready
@@ -375,8 +375,7 @@ module Manager =
       let board : Chess.Board = board
       let moveBoard = Chess.Board()
       let logger : ILogger = logger
-      let sendAnalysisResponse (update: EngineUpdate) =
-        callback.Invoke update
+      let sendAnalysisResponse (update: EngineUpdate) = callback.Invoke update
 
       let mutable ChessEngine = None
       let distributionEngine() : ChessEngine = 
@@ -390,8 +389,9 @@ module Manager =
             ChessEngine <- Some eng
             eng
 
-      let engine = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig, writeToConsole)
+      let engine = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig, logger, writeToConsole)
       
+      member val Board = board with get, set
       member x.Engine = engine
       member x.TryGetMovePolicyAndTopForPosSequence(player:string, qMin:float, qMax:float) = 
         let distEngine = distributionEngine()        

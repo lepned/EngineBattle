@@ -22,7 +22,9 @@ open Microsoft.Extensions.Logging
 module Engine =
 
   // Define a class to manage the chess engine process and communicate with it 
-  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, writeToConsole: bool)  =
+  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool)  =
+      let logDebug (text: string) = logger.LogDebug text
+
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
       let moveBoard = Chess.Board()      
@@ -104,8 +106,7 @@ module Engine =
         let mutable cont = true
         async {
             while cont do
-                let mode =
-                    if uciMode = "uci" then inUciResponsMode else inIsreadyMode
+                let mode = if uciMode = "uci" then inUciResponsMode else inIsreadyMode
                 if mode then
                     do! Async.Sleep(200)
                     if cancellationToken.IsCancellationRequested then
@@ -275,11 +276,10 @@ module Engine =
 
       let write (s:string) =
         if engineProcess.HasExited then
-          printfn  "Engine %s has exited - please reset engine." name
-        elif name.ToLower().Contains "igel" then
-          engineProcess.StandardInput.WriteLine(s)
+          logger.LogCritical  (sprintf "Engine %s has exited - please reset engine." name)        
         else
-          engineProcess.StandardInput.WriteLine(s + "\n")
+            engineProcess.StandardInput.WriteLine(s)        
+            logDebug (sprintf "Writing to %s: %s" name s)
     
       let assignbackend (option:string) =
         if option.ToLower().Contains("backendoptions") then
@@ -388,7 +388,8 @@ module Engine =
           else
               failwith (sprintf "Engine %s could not be started" name)
           write "uci"
-          let ok = waitForInitialization ((new CancellationTokenSource(280000)).Token) "uci" //wait for maximum 5 seconds        
+          let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
+          let ok = waitForInitialization ((new CancellationTokenSource(timeout)).Token) "uci" //wait for maximum 2 hours
           if not ok then
             failwith "Engine did not respond to UCI command."
           //else 
@@ -420,7 +421,8 @@ module Engine =
           write "ucinewgame"
           inIsreadyMode <- true
           write "isready"
-          let ok = waitForInitialization((new CancellationTokenSource(280000)).Token) "readyok" //wait for maximum 10 seconds
+          let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
+          let ok = waitForInitialization((new CancellationTokenSource(timeout)).Token) "readyok" //wait for maximum 10 seconds
           if not ok then
             failwith "Engine did not respond to isready command."
           //else
@@ -1134,7 +1136,7 @@ module EngineHelper =
           let cmds = createInitialUCICommands config
           new ChessEngine(config, cmds, logger)
 
-  let createAltEngine (callback, config:EngineConfig, writeToConsole:bool) : ChessEngineWithUCIProcessing =     
+  let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : ChessEngineWithUCIProcessing =     
       let validation = Utilities.Validation.validateChessEngineCmds config
       match validation with
       |Utilities.Validation.Errors errors -> 
@@ -1143,7 +1145,7 @@ module EngineHelper =
         failwith "Engine could not be created"
       |Utilities.Validation.Ok -> 
           let cmds = createInitialUCICommands config
-          new ChessEngineWithUCIProcessing(callback, config, cmds, writeToConsole) 
+          new ChessEngineWithUCIProcessing(callback, config, cmds, logger, writeToConsole) 
 
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {
