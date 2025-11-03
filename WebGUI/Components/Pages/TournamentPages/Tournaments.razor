@@ -842,7 +842,7 @@
             return;
         timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
         oneSecondTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
-        var limit = TimeSpan.FromSeconds(10);
+        var limit = TimeSpan.FromSeconds(30);
         TimeOnly tOnly;
         var lastToPlay = whiteToMove;
 
@@ -922,7 +922,7 @@
                         var ticks = whiteTimeOnly.Ticks - t.Ticks;
                         whiteMoveTime = moveTimer;
                         tOnly = new TimeOnly(Math.Max(0, ticks));
-                        whiteTime = TimeLeftFormatted(tOnly);
+                        whiteTime = MoveTimeFormatted(tOnly);
                         await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
                     }
 
@@ -931,7 +931,7 @@
                         var ticks = blackTimeOnly.Ticks - t.Ticks;
                         blackMoveTime = moveTimer;
                         tOnly = new TimeOnly(Math.Max(0, ticks));
-                        blackTime = TimeLeftFormatted(tOnly);
+                        blackTime = MoveTimeFormatted(tOnly);
                         await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
                     }
                 }
@@ -1098,8 +1098,8 @@
                     blackLongPV = pvLong;
                     DrawP = b.Info.AdjDrawML;
                     blackTimeOnly = b.Info.TimeLeft;
-                    blackTime = TimeLeftFormatted(b.Info.TimeLeft);
-                    whiteMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+                    blackTime = oneSecondTimer != null ? TimeLeftFormatted(b.Info.TimeLeft) : MoveTimeFormatted(b.Info.TimeLeft);
+                    whiteMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeOnly.MinValue) : MoveTimeFormatted(TimeOnly.MinValue);
                     BlackMoveAndFen = b.Info.MoveAndFen;
                 }
                 else
@@ -1109,8 +1109,8 @@
                     whiteLongPV = pvLong;
                     DrawP = b.Info.AdjDrawML;
                     whiteTimeOnly = b.Info.TimeLeft;
-                    whiteTime = TimeLeftFormatted(b.Info.TimeLeft);
-                    blackMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+                    whiteTime = oneSecondTimer != null ? TimeLeftFormatted(b.Info.TimeLeft) : MoveTimeFormatted(b.Info.TimeLeft);
+                    blackMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeOnly.MinValue) : MoveTimeFormatted(TimeOnly.MinValue);
                     WhiteMoveAndFen = b.Info.MoveAndFen;
                 }
 
@@ -1421,15 +1421,15 @@
         Engine1.PlayerName = whitePlayer;
         Engine2 = EngineStatus.Empty;
         Engine2.PlayerName = blackPlayer;
-        blackMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
-        whiteMoveTime = MoveTimeFormatted(TimeOnly.MinValue);
+        blackMoveTime = TimeLeftFormatted(TimeOnly.MinValue);
+        whiteMoveTime = TimeLeftFormatted(TimeOnly.MinValue);
         pairings = runner.GetLastestPairings();
         ResetGameState();
         await PlayOpeningMoves(new List<MoveAndFen>(info.OpeningMovesAndFen));
     }
 
     private string MoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss.f"); //(“HH:mm:ss.fff”);
-    private string OneSecondMoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss.0");
+    private string OneSecondMoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss");
     private string TimeLeftFormatted(TimeOnly time) => time.ToString("HH:mm:ss");
 
     private void FinalStatusReceived(EngineStatus info)
