@@ -137,11 +137,20 @@
     medianSpeedTable =
       allRes.Where(e => e.Median)
       .OrderByDescending(e => e.AvgNPS).ToList();
+    var avgSpeedTable = 
+      allRes.Where(e => e.Median == false)
+          .OrderByDescending(e => e.AvgNPS).ToList();
+      
     logger.LogInformation("PGN file parsed {File}", pgnName);
 
     logger.LogInformation("\nMedian speed calculated\n");
     var summary = ConsoleHelper.writeSummaryEngineStatsToConsole(medianSpeedTable);
     logger.LogInformation(summary);
+
+    logger.LogInformation("\nAverage speed calculated\n");
+    var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(avgSpeedTable);
+    logger.LogInformation(avgSummary);
+
     //foreach (var stat in medianSpeedTable)
     //{
     //  var nodes = FormatNodes(stat.AvgNodes);

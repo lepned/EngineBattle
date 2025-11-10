@@ -1666,8 +1666,9 @@
             results = runner.GetResults();
             scoreTable = runner.GetPlayerResults(results);
             table = runner.GenerateStatsCrosstable(results);
+            var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;
             infoBannerInfo = new InfoBannerInfo(tournament);
-
+            infoBannerInfo.HeadToHead = headToHead;
             windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight") - 10;
             tournamentHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "main-screen");
             var cycleT = await chessModule.InvokeAsync<double>("calculateHeightByElementId", "cycleTable");
@@ -1753,10 +1754,12 @@
         SetPVStyle(layoutOptions);
         var bannerTime = infoBannerInfo.TimeLeftTxt;
         var bannerEnd = infoBannerInfo.TournamentEndsTxt;
+        var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;
         infoBannerInfo = new InfoBannerInfo(tournament);
         infoBannerInfo.TimeLeftTxt = bannerTime;
         infoBannerInfo.TournamentEndsTxt = bannerEnd;
         infoBannerInfo.Round = roundNr;
+        infoBannerInfo.HeadToHead = headToHead;
         await InvokeAsync(StateHasChanged);
         await Task.Delay(300);
         await chessModule.InvokeVoidAsync("triggerResizeEvent");

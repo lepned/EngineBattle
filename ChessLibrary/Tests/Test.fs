@@ -1252,6 +1252,20 @@ module ParsingTests =
     writer.Flush()
     printfn "Total number of games analyzed: %d" games
 
+let removeEPFensInPGNFile (pgnPath:string) =
+  let games = PGNParser.parsePgnFile pgnPath |> Seq.toList
+  let mutable gameNr = 0  
+  let board = new Board()
+  let list =
+      [for pgn in games do      
+          gameNr <- gameNr + 1
+          board.ResetBoardState()
+          board.LoadFen pgn.GameMetaData.Fen
+          if board.Position.EnPassant = 8uy then  
+            yield pgn
+      ]
+  list, games.Length
+
 let removeEPOpeningsInPGNFile (pgnPath:string) =
   let games = PGNParser.parsePgnFile pgnPath |> Seq.toList
   let mutable gameNr = 0

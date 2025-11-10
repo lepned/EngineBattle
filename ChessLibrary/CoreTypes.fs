@@ -415,11 +415,13 @@ module TypesDef =
         static member Init(fen) = { Move = MoveDetail.Empty; ShortSan = ""; FenAfterMove = fen }
 
     type SummaryEngineStat = 
-      { Player: string; Median: bool; Games: int; AvgNPS: float; AvgNodes: float; AvgDepth: float; AvgSelfDepth: float; Time: int64 }
+      { Player: string; Median: bool; Games: int; EPS: float; AvgNPS: float; AvgNodes: float; AvgDepth: float; AvgSelfDepth: float; Time: int64 }
 
     type EngineStatsPerGame = 
       { Player: string
         GameNr: int
+        AvgEPS: float
+        MedianEPS: float
         AvgNps: float
         MedianNps: float
         AvgNodes: float
@@ -432,6 +434,8 @@ module TypesDef =
         static member Empty = 
           { Player = "NA"
             GameNr = 0
+            AvgEPS = 0.0
+            MedianEPS = 0.0
             AvgNps = 0.0
             MedianNps = 0.0
             AvgNodes = 0.0
@@ -2184,6 +2188,7 @@ module TypesDef =
         mt: int64
         tl: int64
         s: int64
+        eps: int64
         n: int64
         wv: float
         tb: int64
@@ -2195,7 +2200,7 @@ module TypesDef =
         pt: float }
       with 
         static member Empty =
-          { Player = String.Empty; d = 0; sd = 0; mt = 0L; tl = 0L; s = 0L; n = 0L;
+          { Player = String.Empty; d = 0; sd = 0; mt = 0L; tl = 0L; s = 0L; eps = 0L; n = 0L;
             wv = 0.0; tb = 0L; n1 = 0L; n2 = 0L; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0 }
 
     type EngineStat = { White: string; Black: string; Moves: EngineMoveStat array }
@@ -2242,6 +2247,7 @@ module TypesDef =
         let dRegex = new Regex(@"(?<!s)d=(\d+)", RegexOptions.Compiled)
         let sdRegex = new Regex(@"sd=(\d+)", RegexOptions.Compiled)
         let sRegex = new Regex(@"s=(\d+\s*(kN/s|N/s)?)", RegexOptions.Compiled)
+        let epsRegex = new Regex(@"eps=(\d+)", RegexOptions.Compiled)
         let nRegex = new Regex(@"n=(\d+)", RegexOptions.Compiled)
         let tbRegex = new Regex(@"tb=(\d+)", RegexOptions.Compiled)
         let mtRegex = new Regex(@"mt=((\d{2}:\d{2}:\d{2})|(\d+))", RegexOptions.Compiled)
@@ -2337,23 +2343,25 @@ module TypesDef =
                     else
                       { EngineMoveStat.Empty with Player = player }
             else
-              // When evalRegex matched, use the existing small parsers (they each do their own Match).
-              { EngineMoveStat.Empty with
-                  Player = player
-                  d = intParser line dRegex
-                  sd = intParser line sdRegex
-                  mt = int64Parser line mtRegex
-                  tl = int64Parser line tlRegex
-                  s = npsParser line sRegex
-                  n = int64Parser line nRegex
-                  wv = evalParser line
-                  tb = int64Parser line tbRegex
-                  n1 = int64Parser line n1Regex
-                  n2 = int64Parser line n2Regex
-                  q1 = floatParser line q1Regex
-                  q2 = floatParser line q2Regex
-                  p1 = floatParser line p1Regex
-                  pt = floatParser line ptRegex }
+              // When evalRegex matched, use the existing small parsers (they each do their own Match).              
+                { 
+                    Player = player
+                    d = intParser line dRegex
+                    sd = intParser line sdRegex
+                    mt = int64Parser line mtRegex
+                    tl = int64Parser line tlRegex
+                    s = npsParser line sRegex
+                    eps = int64Parser line epsRegex
+                    n = int64Parser line nRegex
+                    wv = evalParser line
+                    tb = int64Parser line tbRegex
+                    n1 = int64Parser line n1Regex
+                    n2 = int64Parser line n2Regex
+                    q1 = floatParser line q1Regex
+                    q2 = floatParser line q2Regex
+                    p1 = floatParser line p1Regex
+                    pt = floatParser line ptRegex }
+              
   // -----------------------------------------------------------------------------
   // TESTS & SAMPLE PARSING
   // -----------------------------------------------------------------------------

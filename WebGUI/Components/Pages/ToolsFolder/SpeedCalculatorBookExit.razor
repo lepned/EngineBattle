@@ -149,6 +149,10 @@
       bookExitSpeed.Where(e => e.Median == false)
       .OrderByDescending(e => e.AvgNPS).ToList();
 
+    logger.LogInformation("\nBook exit average speed calculated\n");
+    var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(averageBookExitSpeedTable);
+    logger.LogInformation(avgSummary);
+
     var allIndividualGames =
       PGNStatistics.calculateBookExitMedianAndAvgSpeedPerGameInPgnFile(games).ToList();
     logger.LogInformation("\nBook exit speed per game calculated\n");

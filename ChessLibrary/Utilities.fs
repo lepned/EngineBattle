@@ -627,15 +627,15 @@ module ConsoleHelper =
   let writeSummaryEngineStats (stat: SummaryEngineStat) n =
       let speed nps = Formatting.formatNPS nps
       let time = Formatting.formatMoveTime stat.Time
-      let line = sprintf "%-*s : %-7d %-11s %-11s %-8.0f %-7.0f %-7s" 
-                    n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) stat.AvgDepth stat.AvgSelfDepth time
+      let line = sprintf "%-*s : %-7d %-11s %-11s %-11s %-8.0f %-7.0f %-7s" 
+                    n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) (speed stat.EPS) stat.AvgDepth stat.AvgSelfDepth time
       line
  
   let writeEngineStatHeader (n:int) : string =    
       sprintf "%-*s : %-5s %-10s %-10s %-10s %-10s %-8s %-8s %-8s %-8s" n "# PLAYER" "Game#" "AvgNodes" "MedNodes" "AvgNPS" "MedNPS" "AvgDepth" "MedDepth" "AvgSD" "MedSD"
 
   let writeSummaryEngineStatHeader (n:int) : string =    
-      sprintf "%-*s : %-7s %-11s %-11s %-8s %-7s %-7s" n "# PLAYER" "Games" "Nodes" "NPS" "Depth" "SD" "Time"
+      sprintf "%-*s : %-7s %-11s %-11s %-11s %-8s %-7s %-7s" n "# PLAYER" "Games" "Nodes" "NPS" "EPS" "Depth" "SD" "Time"
 
   let writeEngineStatsToConsole (engineStats: EngineStatsPerGame seq) = 
       let sb = System.Text.StringBuilder()

@@ -117,6 +117,7 @@ module TestPath =
   let pgnTest14 = "C:/Dev/Chess/PGNs/Results/TCEC-everything.pgn"
   let pgnTest15 = "C:/Dev/Chess/PGNs/CeresValueTempTest_07.pgn"
   let pgnTest16 = "C:/Dev/Chess/PGNs/match_run2.pgn"
+  let pgnTest17 = "C:/Dev/Chess/PGNs/UHO_4060_v4.pgn"
   let ccc = "C:/Dev/Chess/pgns/ccc22-rapid-semifinals.pgn"
   let selection = "C:/Dev/Chess/PGNs/Results/TCEC/Selection"
   let allTcec = "C:/Dev/Chess/PGNs/Results/TCEC"
@@ -128,6 +129,7 @@ module TestPath =
   let ceres3 = "C:/Dev/Chess/PGNs/Ceres/match_TOURN_Ceres1_Ceres2_638721916003216067.pgn"
   let ceresFolder = "C:/Dev/Chess/PGNs/Ceres"
   let navsLatestPGN = "C:/Dev/Chess/PGNs/ContemptTest.pgn"
+  
   
   
   /// <summary>
@@ -641,9 +643,9 @@ module Program =
     if test then      
       try 
         let start = Stopwatch.GetTimestamp()
-        //let games = Test.removeEPOpeningsInPGNFile TestPath.pgnTest16
-        //printfn "Number of games after removing EP: %d" (games |> Seq.length)        
-        //let pgnFile = "C:/Dev/Chess/PGNs/Results/match_run2_epRemoved.pgn"
+        //let games, total = Test.removeEPFensInPGNFile TestPath.pgnTest17
+        //printfn "Total games processed: %d, removed: %d" total (total - games.Length)
+        //let pgnFile = "C:/Dev/Chess/PGNs/Results/UHO_4060_v4_epRemoved.pgn"
         //use writer = new StreamWriter(pgnFile)
         //for game in games do            
         //    writer.Write(game.Raw)

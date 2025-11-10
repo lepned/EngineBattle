@@ -237,6 +237,21 @@ module PGNStatistics =
       |> Array.sortBy id
       |> median
 
+  let calculateMedianEPS (moves: EngineMoveStat array) = 
+      moves 
+      |> Array.filter (fun e -> e.eps > 0)
+      |> Array.map (fun e -> float e.eps)
+      |> Array.sortBy id
+      |> median
+
+  let calculateAvgEPS (moves: EngineMoveStat array) = 
+      let vals =
+          moves 
+          |> Array.filter (fun e -> e.eps > 0)
+          |> Array.map (fun e -> float e.eps)
+          |> Array.sortBy id
+      if Array.isEmpty vals then 0.0 else Array.average vals
+  
   /// Calculates the median depth.
   /// <param name="moves">The array of engine move statistics.</param>
   /// <returns>The median depth.</returns>
@@ -609,6 +624,8 @@ module PGNStatistics =
           {
             Player=p
             GameNr=game.GameNumber
+            AvgEPS= calculateAvgEPS moves
+            MedianEPS = calculateMedianEPS moves
             AvgNps= npsMap move |> float
             MedianNps= npsMap move |> float
             AvgNodes= nodeMap move |> float
@@ -634,6 +651,7 @@ module PGNStatistics =
         else
           let avg = averageNpsWithoutOutliers moves
           let npsMed = calculateMedianNps moves
+          let epsMed = calculateMedianEPS moves
           let nodesMed = calculateMedianNodes moves
           let depthMed = calculateMedianDepth moves
           let sdMed = calculateMedianSelfdepth moves
@@ -645,6 +663,8 @@ module PGNStatistics =
           {
             Player=p
             GameNr=game.GameNumber
+            AvgEPS= calculateAvgEPS moves
+            MedianEPS = epsMed
             AvgNps=npsAvg
             MedianNps=npsMed
             AvgNodes=nodesAvg
@@ -683,6 +703,8 @@ module PGNStatistics =
     |> Array.Parallel.map (fun p -> 
         let moves = getAllEngineMovesForPlayer p allMoves
         let avg = averageNpsWithoutOutliers moves
+        let epsAvg = calculateAvgEPS moves
+        let epsMed = calculateMedianEPS moves
         let npsMed = calculateMedianNps moves
         let nodesMed = calculateMedianNodes moves
         let depthMed = calculateMedianDepth moves
@@ -695,8 +717,8 @@ module PGNStatistics =
         let sdAvg = max depthAvg (avg sdMap)
         let games = calcNumberOfGames p allGames
         [|
-          {Player=p; Median=true; AvgNPS=npsMed; Games=games; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
-          {Player=p; Median = false; AvgNPS=npsAvg; Games=games; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}          
+          {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
+          {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}          
         |]) |> Array.concat
 
   /// Calculates the median and average book exit speed summary in a PGN file.
@@ -711,6 +733,8 @@ module PGNStatistics =
         let moves = getAllEngineMovesForPlayer p allMoves
         let avg = averageNpsWithoutOutliers moves
         let npsMed = calculateMedianNps moves
+        let epsAvg = calculateAvgEPS moves
+        let epsMed = calculateMedianEPS moves
         let nodesMed = calculateMedianNodes moves
         let depthMed = calculateMedianDepth moves
         let sdMed = calculateMedianSelfdepth moves
@@ -722,8 +746,8 @@ module PGNStatistics =
         let sdAvg = max depthAvg (avg sdMap)
         let games = calcNumberOfGames p allGames
         [|
-          {Player=p; Median=true; AvgNPS=npsMed; Games=games; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
-          {Player=p; Median = false; AvgNPS=npsAvg; Games=games; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}          
+          {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
+          {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}          
         |]) |> Array.concat
 
   /// Calculates the median speed for all players in a PGN file.
@@ -737,13 +761,14 @@ module PGNStatistics =
     |> Array.Parallel.map (fun p -> 
         let moves = getAllEngineMovesForPlayer p allMoves
         let nps = calculateMedianNps moves
+        let epsMed = calculateMedianEPS moves
         let nodes = calculateMedianNodes moves
         let depth = calculateMedianDepth moves
         let sd = calculateMedianSelfdepth moves
         let moveTime = calculateMedianMoveTime moves
         let sd = max sd depth
         let games = calcNumberOfGames p allGames
-        {Player=p; Median = true; AvgNPS=nps; Games=games; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = moveTime |> int64})
+        {Player=p; Median = true; AvgNPS=nps; Games=games; EPS=epsMed; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = moveTime |> int64})
 
   /// Calculates the average speed for all players in a PGN file.
   /// <param name="games">The sequence of PGN games.</param>
@@ -757,11 +782,12 @@ module PGNStatistics =
         let moves = getAllEngineMovesForPlayer p allMoves
         let avg = averageNpsWithoutOutliers moves
         let nps = avg npsMap
+        let epsAvg = calculateAvgEPS moves
         let nodes = avg nodeMap
         let depth = avg depthMap
         let sd = max depth (avg sdMap)
         let games = calcNumberOfGames p allGames
-        {Player=p; Median = false; AvgNPS=nps; Games=games; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = 0L})
+        {Player=p; Median = false; AvgNPS=nps; Games=games; EPS=epsAvg; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = 0L})
 
 module PGNWriter =
   /// Gets the results from a PGN game.
