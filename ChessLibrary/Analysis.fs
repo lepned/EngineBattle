@@ -670,7 +670,6 @@ module PuzzleEngineAnalysis =
 
   let getPuzzlePolicyEngine config = 
     let engine = EngineHelper.createEngine(config)
-    engine.StartProcess()
     let ok = engine.WaitForReadyOk() // wait for readyok
     if not ok then
         failwith "Engine did not respond to isready command."
@@ -681,8 +680,7 @@ module PuzzleEngineAnalysis =
     let isCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
     
     try
-        let engine = EngineHelper.createEngineWithoutValidation(config, None)        
-        engine.StartProcess()
+        let engine = EngineHelper.createEngineWithoutValidation(config, None)
         
         let options = engine.GetDefaultOptions()
         if isLc0 then
@@ -700,7 +698,6 @@ module PuzzleEngineAnalysis =
                     dict.Add("ValueOnly", true)
                 let config = if isLc0 then {config with Options = dict} else config
                 let engine = EngineHelper.createEngineWithoutValidation(config, None)
-                engine.StartProcess()
                 let ok = engine.WaitForReadyOk() // wait for readyok
                 if not ok then
                     failwith "Engine did not respond to isready command."
@@ -716,7 +713,6 @@ module PuzzleEngineAnalysis =
                 //for Lc0 rewrite
                 let config = if isLc0 then {config with Args = "valuehead"} else config
                 let engine = EngineHelper.createEngineWithoutValidation(config, None)
-                engine.StartProcess()
                 let ok = engine.WaitForReadyOk() // wait for readyok
                 if not ok then
                     failwith "Engine did not respond to isready command."
@@ -912,8 +908,7 @@ module PuzzleEngineAnalysis =
             |None, Some max -> 0, int max
             |None, None -> 0, 1000
 
-        for engine in engines do    
-            engine.StartProcess()
+        for engine in engines do
             let ok = engine.WaitForReadyOk() // wait for readyok
             if not ok then
                 failwith "Engine did not respond to isready command."
@@ -994,8 +989,7 @@ module PuzzleEngineAnalysis =
         let maxConcurrencyCpu = max 1 (HardwareInfo.assessMaxCpuConcurrencyLevel engines)
         let chunkSize = min maxConcurrencyCpu (engines.Length)
         let openings = onlyUniqueOpenings pgns
-        for engine in engines do    
-            engine.StartProcess()
+        for engine in engines do
             let ok = engine.WaitForReadyOk() // wait for readyok
             if not ok then
                 failwith "Engine did not respond to isready command."
@@ -1062,7 +1056,6 @@ module PuzzleEngineAnalysis =
   let performQValueTestOnTB nodes (engineConf:EngineConfig) (puzzles:ResizeArray<TablebaseEPDEntry>) = task {          
     let board = Board()
     let engine = EngineHelper.createEngine (engineConf, None)
-    engine.StartProcess()
     let ok = engine.WaitForReadyOk() // wait for readyok
     if not ok then
        failwith "Engine did not respond to isready command."

@@ -781,7 +781,97 @@ module Engine =
       let read () = proc.StandardOutput.ReadLine()
       let readAsync () = proc.StandardOutput.ReadLineAsync()
       let readAsyncWithTimeout (token: CancellationToken) = proc.StandardOutput.ReadLineAsync(token).AsTask()
+      let getDiagnostics() = 
+        sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
+            name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
 
+      let readUciOptions() =
+        try
+          use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
+          write("uci")          
+          let rec readUci() = async {          
+              let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
+              printfn "%s" line
+              let mutable ret = line
+              while ret <> "uciok" && not proc.HasExited  do
+                  UciOption.addOptionToMap optionsMap ret
+                  let! resp = readAsyncWithTimeout cts.Token |> Async.AwaitTask
+                  ret <- resp
+              let isOk = ret = "uciok"
+              if not isOk then
+                logCritical (sprintf "Engine %s did not respond with uciok" name)
+              else
+                logInformation (sprintf "Engine %s responded with uciok" name)
+              return isOk }
+          readUci() |> Async.RunSynchronously
+        with
+          | :? OperationCanceledException -> 
+              logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
+              false
+          | :? System.IO.IOException as ex ->
+              logCritical (sprintf "Error reading UCI options: %s" ex.Message)
+              false
+          |ex -> 
+              logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
+              false
+      
+      let startProcess() =
+        try
+            assignThread ()
+            let ok = readUciOptions()
+            if not ok then
+              logCritical "Engine did not respond to UCI command."
+              failwith "Engine did not respond to UCI command."
+            //configCmds |> Seq.iter (fun cmd -> printfn "%s"  (sprintf "Initial command for %s: %s" name cmd))
+            //let options = createVerifiedOptions configCmds
+            //options |> Seq.iter (fun cmd -> printfn "%s" (sprintf "Verified command for %s: %s" name cmd))
+            if proc <> null && not proc.HasExited then
+              logDebug (sprintf "Engine %s is already running." name)
+            else
+              assignThread ()
+              logDebug (sprintf "Engine %s started successfully." name)
+            let verifiedCommands = createVerifiedOptions configCmds 
+            for cmd in verifiedCommands do    
+              match UciOption.parseSetOptionCommand cmd with
+              | Some (name, value) ->
+                  if UciOption.validateSetOption optionsMap (name, value) then                    
+                    //cmdUci <- cmdUci.Replace(name, optionsMap.[name].Name)
+                    match UciOption.getNoneDefaultSetOption optionsMap (name, value) with
+                    | Some (name, def,value) -> nonDefaultValues.[name] <- (def,value)
+                    | None -> ()
+                  if validate && UciOption.validateSetOption optionsMap (name, value) |> not then
+                    passed <- false               
+                    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
+              | None ->
+                  passed <- false
+                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
+              write cmd
+              assignNetworkName cmd        
+              commands.Add cmd      
+            let nOk, uciNameOpt = optionsMap.TryGetValue "name" 
+            let aOk, uciAuthorOpt = optionsMap.TryGetValue "author"      
+            match (nOk, uciNameOpt.OptionType), (aOk, uciAuthorOpt.OptionType) with
+            | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> logInformation (sprintf "Engine name: %s and author: %s" n a)
+            | _ -> ()
+      
+            //write "ucinewgame"
+            if validate then
+                if passed then
+                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
+                  let diagnostics = getDiagnostics()
+                  if String.IsNullOrEmpty diagnostics |> not then
+                     LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
+                else
+                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
+                  raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
+        with
+        | :? OperationCanceledException -> logCritical "Engine initialization timed out."
+        | :? Channels.ChannelClosedException -> logCritical "Engine channel was closed unexpectedly."
+        | ex -> logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)      
+      
+      do
+         startProcess ()
+         
       member _.GetExitCode() = lastExitCode
       member _.ErrorOutput = stderrBuffer :> seq<string>
       member _.LastExitCode = lastExitCode
@@ -844,55 +934,8 @@ module Engine =
             | _ -> ()
         | None -> logInformation (sprintf "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds)
       
-      member this.StartProcess() =
-        try
-            assignThread ()
-            let ok = this.ReadUciOptions()
-            if not ok then
-              logCritical "Engine did not respond to UCI command."
-              failwith "Engine did not respond to UCI command."
-            //configCmds |> Seq.iter (fun cmd -> printfn "%s"  (sprintf "Initial command for %s: %s" name cmd))
-            //let options = createVerifiedOptions configCmds
-            //options |> Seq.iter (fun cmd -> printfn "%s" (sprintf "Verified command for %s: %s" name cmd))
-            let verifiedCommands = createVerifiedOptions configCmds 
-            for cmd in verifiedCommands do    
-              match UciOption.parseSetOptionCommand cmd with
-              | Some (name, value) ->
-                  if UciOption.validateSetOption optionsMap (name, value) then                    
-                    //cmdUci <- cmdUci.Replace(name, optionsMap.[name].Name)
-                    match UciOption.getNoneDefaultSetOption optionsMap (name, value) with
-                    | Some (name, def,value) -> nonDefaultValues.[name] <- (def,value)
-                    | None -> ()
-                  if validate && UciOption.validateSetOption optionsMap (name, value) |> not then
-                    passed <- false               
-                    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
-              | None ->
-                  passed <- false
-                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
-              write cmd
-              assignNetworkName cmd        
-              commands.Add cmd      
-            let nOk, uciNameOpt = optionsMap.TryGetValue "name" 
-            let aOk, uciAuthorOpt = optionsMap.TryGetValue "author"      
-            match (nOk, uciNameOpt.OptionType), (aOk, uciAuthorOpt.OptionType) with
-            | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> logInformation (sprintf "Engine name: %s and author: %s" n a)
-            | _ -> ()
-      
-            write "ucinewgame"
-            if validate then
-                if passed then
-                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
-                  let diagnostics = this.GetDiagnostics()
-                  if String.IsNullOrEmpty diagnostics |> not then
-                     LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
-                else
-                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
-                  raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
-        with
-        | :? OperationCanceledException -> logCritical "Engine initialization timed out."
-        | :? Channels.ChannelClosedException -> logCritical "Engine channel was closed unexpectedly."
-        | ex -> logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
-
+      member this.StartProcess() = startProcess()
+        
       member this.DoNotValidate() = validate <- false
       member this.StopProcess() =       
         if proc.HasExited then
@@ -990,35 +1033,7 @@ module Engine =
       member this.ReadLineAsyncWithTimeout(token: CancellationToken) = readAsyncWithTimeout token
       member this.ReadLine() = read()
     
-      member this.ReadUciOptions() =       
-        try
-          use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
-          write("uci")          
-          let rec readUci() = async {          
-              let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-              printfn "%s" line
-              let mutable ret = line
-              while ret <> "uciok" && not proc.HasExited  do
-                  UciOption.addOptionToMap optionsMap ret
-                  let! resp = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-                  ret <- resp
-              let isOk = ret = "uciok"
-              if not isOk then
-                logCritical (sprintf "Engine %s did not respond with uciok" name)
-              else
-                logInformation (sprintf "Engine %s responded with uciok" name)
-              return isOk }
-          readUci() |> Async.RunSynchronously
-        with
-          | :? OperationCanceledException -> 
-              logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
-              false
-          | :? System.IO.IOException as ex ->
-              logCritical (sprintf "Error reading UCI options: %s" ex.Message)
-              false
-          |ex -> 
-              logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
-              false
+      member this.ReadUciOptions() = readUciOptions()         
 
       member this.WaitForReadyOk(?timeoutMs: int) = 
         let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
@@ -1189,11 +1204,13 @@ module EngineHelper =
 
   let initEngines delay (engine1: ChessEngine) (engine2: ChessEngine) =
     async {
-      if engine1.HasExited() |> not && (delay > 0) then
+      if engine1.HasExited() |> not && engine2.HasExited() |> not && (delay > 0) then
         do! Async.Sleep(delay)
-      if engine1.HasExited() || engine2.HasExited() then
-        engine1.StartProcess()
-        engine2.StartProcess()
+      elif engine1.HasExited() || engine2.HasExited() then
+        if engine1.HasExited() then
+          engine1.StartProcess()
+        if engine2.HasExited() then
+          engine2.StartProcess()
         let res =
           [waitForEngineIsReady delay engine1; waitForEngineIsReady delay engine2]
           |> Async.Parallel 
@@ -1354,7 +1371,6 @@ module HardwareInfo =
   
   let estimateEngineRam (config: EngineConfig) : uint64 =
         let engine = createEngine (config, None)
-        engine.StartProcess()
         initEngine 0 engine        
         // snapshot working‐set
         let ws = uint64 engine.Process.WorkingSet64

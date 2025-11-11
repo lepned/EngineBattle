@@ -65,16 +65,6 @@ module Initialization =
                     // Graceful stop attempt
                     engine.Stop()
                     do! Async.Sleep engineStopDelay
-                    
-                    // Force stop if needed
-                    if not (engine.HasExited()) then
-                        logger.LogWarning("Engine {Engine} didn't stop gracefully, forcing", engine.Name)
-                        engine.StopProcess()
-                        do! Async.Sleep engineStopDelay
-                    
-                    // Restart
-                    engine.StartProcess()
-                    do! Async.Sleep engineStartDelay
                     let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
                     if not ok then
                         failwith "Engine did not respond to isready command."
@@ -99,14 +89,6 @@ module Initialization =
                 logger.LogError("Engine {Engine} failed to start after all attempts", engine.Name)
                 return false
             else
-                    
-                let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
-                engine.AddSetOption engineOption
-                
-                if tourny.MoveOverhead.Ticks > 0 then
-                    let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
-                    engine.SetMoveOverhead("overhead", ms)
-                
                 engine.UciNewGame()
 
                 //Wait for ready acknowledgment
@@ -728,7 +710,6 @@ module TournamentUtils =
       let mutable valid = tourny.EngineSetup.Engines.Length > 1
       for engConfig in tourny.EngineSetup.Engines do
         let engine = EngineHelper.createEngine (engConfig, None)
-        engine.StartProcess()        
         if valid then
           valid <- engine.PassedValidation
           engine.PrintNonDefaultValues()
@@ -1200,6 +1181,13 @@ module Match =
     let mutable moveInfoData = ChessMoveInfo.Empty
 
     callback(StartOfGame gameStartInfo)
+    let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+    player1.AddSetOption engineOption
+    player2.AddSetOption engineOption                
+    if tourny.MoveOverhead.Ticks > 0 then
+        let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
+        player1.SetMoveOverhead("overhead", ms)
+        player2.SetMoveOverhead("overhead", ms)
     if not tourny.ConsoleOnly then     
       let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
       let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
@@ -1653,6 +1641,14 @@ module Match =
     
     callback(StartOfGame gameStartInfo)
     try
+        let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+        player1.AddSetOption engineOption
+        player2.AddSetOption engineOption                
+        if tourny.MoveOverhead.Ticks > 0 then
+            let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
+            player1.SetMoveOverhead("overhead", ms)
+            player2.SetMoveOverhead("overhead", ms)
+        
         if not tourny.ConsoleOnly then     
           let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
           let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
@@ -2246,7 +2242,6 @@ module Match =
           //  printfn "Previous game found in PGN: %s, %s for pairing %s, %s" g.GameMetaData.White g.GameMetaData.Black pairing.White.Name pairing.Black.Name
           
           let replayBoard = Board()
-          replayBoard.IsFRC <- tourny.IsChess960
           let tryInitBoard () = 
             if pairing.Opening.Fen <> "" then
               replayBoard.LoadFen pairing.Opening.Fen

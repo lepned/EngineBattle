@@ -195,6 +195,13 @@ module Formatting =
     elif nps >= 1_000.0 then sprintf "%.1fKnps" (nps / 1_000.0)
     else sprintf "%.1f nps" nps
 
+  let inline formatEPS (eps:double) =
+    if eps = 0 then "NA"      
+    elif eps > 1_000_000_000.0 then sprintf "%.1fGeps" (eps / 1_000_000_000.0)
+    elif eps > 1_000_000.0 then sprintf "%.1fMeps" (eps / 1_000_000.0)
+    elif eps >= 1_000.0 then sprintf "%.1fKeps" (eps / 1_000.0)
+    else sprintf "%.1f eps" eps
+
   let formatMoveTime (moveTime: int64) = 
     let hours = moveTime / 3600000L
     let remainingAfterHours = moveTime % 3600000L
@@ -617,25 +624,44 @@ module ConsoleHelper =
         printfn "No engines in tournament"
         
 
-  let writeEngineStatsPerGame (engineStat: EngineStatsPerGame) n =
+  let writeEngineStatsPerGame (engineStat: EngineStatsPerGame) n includeEps =
       let speed nps = Formatting.formatNPS nps
-      let line = sprintf "%-*s : %-5d %-10s %-10s %-10s %-10s %-8.0f %-8.0f %-8.0f %-8.0f" 
+      let eps = Formatting.formatEPS engineStat.AvgEPS
+      let line = 
+        if includeEps then
+            sprintf "%-*s : %-5d %-10s %-10s %-10s %-10s %-8.0f %-8.0f %-8.0f %-8.0f %-9s" 
+                      n engineStat.Player engineStat.GameNr (speed engineStat.AvgNodes) (speed engineStat.MedianNodes) (speed engineStat.AvgNps)
+                      (speed engineStat.MedianNps) engineStat.AvgDepth engineStat.MedianDepth engineStat.AvgSD engineStat.MedianSD eps
+        else
+            sprintf "%-*s : %-5d %-10s %-10s %-10s %-10s %-8.0f %-8.0f %-8.0f %-8.0f" 
                     n engineStat.Player engineStat.GameNr (speed engineStat.AvgNodes) (speed engineStat.MedianNodes) (speed engineStat.AvgNps)
                     (speed engineStat.MedianNps) engineStat.AvgDepth engineStat.MedianDepth engineStat.AvgSD engineStat.MedianSD
       line
 
-  let writeSummaryEngineStats (stat: SummaryEngineStat) n =
+  let writeSummaryEngineStats (stat: SummaryEngineStat) n includeEps =
       let speed nps = Formatting.formatNPS nps
+      let eps = Formatting.formatEPS stat.EPS
       let time = Formatting.formatMoveTime stat.Time
-      let line = sprintf "%-*s : %-7d %-11s %-11s %-11s %-8.0f %-7.0f %-7s" 
-                    n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) (speed stat.EPS) stat.AvgDepth stat.AvgSelfDepth time
+      let line =
+          if includeEps then
+            sprintf "%-*s : %-7d %-11s %-11s %-11s %-8.0f %-7.0f %-7s" 
+                        n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) eps stat.AvgDepth stat.AvgSelfDepth time            
+          else
+            sprintf "%-*s : %-7d %-11s %-11s %-8.0f %-7.0f %-7s" 
+                        n stat.Player stat.Games (speed stat.AvgNodes) (speed stat.AvgNPS) stat.AvgDepth stat.AvgSelfDepth time
       line
  
-  let writeEngineStatHeader (n:int) : string =    
-      sprintf "%-*s : %-5s %-10s %-10s %-10s %-10s %-8s %-8s %-8s %-8s" n "# PLAYER" "Game#" "AvgNodes" "MedNodes" "AvgNPS" "MedNPS" "AvgDepth" "MedDepth" "AvgSD" "MedSD"
+  let writeEngineStatHeader (n:int) includeEps : string =    
+      if includeEps then
+        sprintf "%-*s : %-5s %-10s %-10s %-10s %-10s %-8s %-8s %-8s %-8s %-9s" n "# PLAYER" "Game#" "AvgNodes" "MedNodes" "AvgNPS" "MedNPS" "AvgDepth" "MedDepth" "AvgSD" "MedSD" "AvgEPS"
+      else
+        sprintf "%-*s : %-5s %-10s %-10s %-10s %-10s %-8s %-8s %-8s %-8s" n "# PLAYER" "Game#" "AvgNodes" "MedNodes" "AvgNPS" "MedNPS" "AvgDepth" "MedDepth" "AvgSD" "MedSD"
 
-  let writeSummaryEngineStatHeader (n:int) : string =    
-      sprintf "%-*s : %-7s %-11s %-11s %-11s %-8s %-7s %-7s" n "# PLAYER" "Games" "Nodes" "NPS" "EPS" "Depth" "SD" "Time"
+  let writeSummaryEngineStatHeader (n:int) includeEps : string =    
+      if includeEps then
+        sprintf "%-*s : %-7s %-11s %-11s %-11s %-8s %-7s %-7s" n "# PLAYER" "Games" "Nodes" "NPS" "EPS" "Depth" "SD" "Time"
+      else
+        sprintf "%-*s : %-7s %-11s %-11s %-8s %-7s %-7s" n "# PLAYER" "Games" "Nodes" "NPS" "Depth" "SD" "Time"
 
   let writeEngineStatsToConsole (engineStats: EngineStatsPerGame seq) = 
       let sb = System.Text.StringBuilder()
@@ -644,9 +670,10 @@ module ConsoleHelper =
       appendLine "\n```\n"
       //find longest player name
       let longestName = engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
-      writeEngineStatHeader longestName |> appendLine
+      let includeEps = engineStats |> Seq.exists (fun e -> e.AvgEPS > 0.0)
+      writeEngineStatHeader longestName includeEps |> appendLine
       for engineStat in engineStats do      
-        writeEngineStatsPerGame engineStat longestName |> appendLine
+        writeEngineStatsPerGame engineStat longestName includeEps |> appendLine
       appendLine "\n```"      
       let res = sb.ToString()
       res
@@ -656,11 +683,12 @@ module ConsoleHelper =
       let appendLine (txt:string) = sb.AppendLine txt |> ignore
       sb.Clear() |> ignore
       appendLine "\n```\n"
+      let includeEps = engineStats |> Seq.exists (fun e -> e.EPS > 0.0)
       //find longest player name
       let longestName = engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
-      writeSummaryEngineStatHeader longestName |> appendLine
+      writeSummaryEngineStatHeader longestName includeEps |> appendLine
       for engineStat in engineStats do      
-        writeSummaryEngineStats engineStat longestName |> appendLine
+        writeSummaryEngineStats engineStat longestName includeEps |> appendLine
       appendLine "\n```"      
       let res = sb.ToString()
       res
