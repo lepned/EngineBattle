@@ -417,6 +417,18 @@ module TypesDef =
     type SummaryEngineStat = 
       { Player: string; Median: bool; Games: int; EPS: float; AvgNPS: float; AvgNodes: float; AvgDepth: float; AvgSelfDepth: float; Time: int64 }
 
+    type PieceCountStat = 
+      { Player: string
+        PieceCount: int
+        AvgEps: float
+        AvgNps: float }
+      with 
+        static member Empty = 
+          { Player = "NA"
+            PieceCount = 0
+            AvgEps = 0.0
+            AvgNps = 0.0 }
+
     type EngineStatsPerGame = 
       { Player: string
         GameNr: int
@@ -2197,11 +2209,12 @@ module TypesDef =
         q1: float
         q2: float
         p1: float
-        pt: float }
+        pt: float
+        pcs: int }
       with 
         static member Empty =
           { Player = String.Empty; d = 0; sd = 0; mt = 0L; tl = 0L; s = 0L; eps = 0L; n = 0L;
-            wv = 0.0; tb = 0L; n1 = 0L; n2 = 0L; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0 }
+            wv = 0.0; tb = 0L; n1 = 0L; n2 = 0L; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0; pcs = 0 }
 
     type EngineStat = { White: string; Black: string; Moves: EngineMoveStat array }
 
@@ -2228,18 +2241,19 @@ module TypesDef =
         mutable q1: float
         mutable q2: float
         mutable p1: float
-        mutable pt: float }
+        mutable pt: float
+        mutable pcs: byte }
       with 
         static member Empty =
           { d = 0; sd = 0; pd = ""; mt = 0L; tl = 0L; s = 0L; eps = 0L; n = 0L;
             n1 = 0L; n2 = 0L; pv = ""; tb = 0L; h = 0.0; ph = 0.0; wv = EvalType.NA;
-            R50 = 0; Rd = 0; Rr = 0; mb = ""; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0 }
+            R50 = 0; Rd = 0; Rr = 0; mb = ""; q1 = 0.0; q2 = 0.0; p1 = 0.0; pt = 0.0; pcs = 0uy }
         member x.Annotation =
-          sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, pv=%s, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
-            x.wv x.mt x.s x.eps x.n x.d x.sd x.pd x.tl x.tb x.pv x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
+          sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d, pcs=%d, pv=%s, n1=%d, n2=%d, q1=%.2f, q2=%.2f, p1=%.2f, pt=%.2f"
+            x.wv x.mt x.s x.eps x.n x.d x.sd x.pd x.tl x.tb x.pcs x.pv x.n1 x.n2 x.q1 x.q2 x.p1 x.pt
         member x.MinimalAnnotation = 
-          sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, sd=%d, pd=%s, tl=%d, tb=%d"
-            x.wv x.mt x.s x.eps x.n x.d x.sd x.pd x.tl x.tb
+          sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, pcs=%d, sd=%d, pd=%s, tl=%d, tb=%d"
+            x.wv x.mt x.s x.eps x.n x.d x.pcs x.sd x.pd x.tl x.tb
 
     module Annotation =
         
@@ -2248,6 +2262,7 @@ module TypesDef =
         let sdRegex = new Regex(@"sd=(\d+)", RegexOptions.Compiled)
         let sRegex = new Regex(@"s=(\d+\s*(kN/s|N/s)?)", RegexOptions.Compiled)
         let epsRegex = new Regex(@"eps=(\d+)", RegexOptions.Compiled)
+        let pcsRegex = new Regex(@"pcs=(\d+)", RegexOptions.Compiled)
         let nRegex = new Regex(@"n=(\d+)", RegexOptions.Compiled)
         let tbRegex = new Regex(@"tb=(\d+)", RegexOptions.Compiled)
         let mtRegex = new Regex(@"mt=((\d{2}:\d{2}:\d{2})|(\d+))", RegexOptions.Compiled)
@@ -2360,7 +2375,8 @@ module TypesDef =
                     q1 = floatParser line q1Regex
                     q2 = floatParser line q2Regex
                     p1 = floatParser line p1Regex
-                    pt = floatParser line ptRegex }
+                    pt = floatParser line ptRegex
+                    pcs = intParser line pcsRegex}
               
   // -----------------------------------------------------------------------------
   // TESTS & SAMPLE PARSING

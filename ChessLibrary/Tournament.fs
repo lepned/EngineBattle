@@ -1238,7 +1238,9 @@ module Match =
       let playerTime = if isWhite then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
       let remainingTicks = playerTime - duration.Ticks
       let lostOnTime = (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L)
-
+      let mutable posToCheck = board.Position
+      let piecesLeft = PositionOps.numberOfPieces &posToCheck
+      
       if lostOnTime then
         let firstTwo = firstTwoEvals fullEvalList
         if currentPlaying.HasExited() then
@@ -1259,6 +1261,7 @@ module Match =
         if isWhite then wTime <- currentTime else bTime <- currentTime
         moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
         moveInfoData.mt <- int64 duration.TotalMilliseconds
+        moveInfoData.pcs <- byte piecesLeft
 
         let parts = line.Split()
         let move = parts.[1]
@@ -1298,9 +1301,7 @@ module Match =
               IsCastling = TMoveOps.isCastlingMove tmove
               Comments = String.Empty
             }
-            let moveAndFen = { Move = moveDetail; ShortSan = shortSan; FenAfterMove = fenNow }
-            let mutable posToCheck = board.Position
-            let piecesLeft = PositionOps.numberOfPieces &posToCheck
+            let moveAndFen = { Move = moveDetail; ShortSan = shortSan; FenAfterMove = fenNow }            
             fullEvalList <- eval :: fullEvalList
 
             let movesLeft =
@@ -1446,8 +1447,8 @@ module Match =
 
       elif line.StartsWith "info" then
         let isWhite = engine.Name = player1.Name
-        match Regex.getEssentialData line isWhite with
-        | Some (d, eval, nodes, nps, pvLine, tbhits, wdl, sd, mPv) ->
+        match Regex.getEssentialDataWithEPS line isWhite with
+        | Some (d, eval, nodes, nps, eps, pvLine, tbhits, wdl, sd, mPv) ->
             numberOfNodes <- nodes
             if d > depth then depth <- d
             if sd > selfdepth then selfdepth <- sd
@@ -1459,6 +1460,7 @@ module Match =
             moveInfoData.n <- nodes
             moveInfoData.s <- nps
             moveInfoData.tb <- tbhits
+            moveInfoData.eps <- eps
 
             if not (String.IsNullOrEmpty pvLine) then
               if player1.Name = engine.Name then
@@ -1676,8 +1678,6 @@ module Match =
     let mutable ct : CancellationToken = CancellationToken.None
     let fen = board.FEN()
     logger.LogDebug $"After opening moves, FEN={fen}"
-    let unknown = "Unknown command"
-
 
     let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
       
@@ -1814,9 +1814,11 @@ module Match =
                     wTime <- currentTime
                   else
                     bTime <- currentTime                  
-                  
+                  let mutable posToCheck = board.Position
+                  let piecesLeft = PositionOps.numberOfPieces &posToCheck
                   moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
                   moveInfoData.mt <- int64 duration.TotalMilliseconds
+                  moveInfoData.pcs <- byte piecesLeft
                   
                   match tryGetTMoveFromCoordinateNotation &board move with
                   |Some tmove ->
@@ -1903,8 +1905,6 @@ module Match =
                         Comments = String.Empty
                         }                 
                     let moveAndFen = {Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen}
-                    let mutable posToCheck = board.Position
-                    let piecesLeft = PositionOps.numberOfPieces &posToCheck
                     fullEvalList <- eval::fullEvalList
                     let movesLeft = 
                       Adjudication.movesLeftBeforeDrawAdjudication
@@ -1964,8 +1964,6 @@ module Match =
                   
                       moveInfoData <- ChessMoveInfo.Empty
                       callback(EndOfGame res)
-                      let mutable posToCheck = board.Position
-                      let piecesLeft = PositionOps.numberOfPieces &posToCheck
                       if tourny.VerboseLogging then
                         logger.LogInformation($"Adjudication by eval: {res.Reason}, Pieces left: {piecesLeft} ")
                         logger.LogInformation (sprintf "Info %A: " res)

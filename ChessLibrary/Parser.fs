@@ -242,8 +242,28 @@ module PGNStatistics =
       |> Array.filter (fun e -> e.eps > 0)
       |> Array.map (fun e -> float e.eps)
       |> Array.sortBy id
-      |> median
+      |> median  
+  
+  //group engineMoveStat array by #pieces
+  let groupMoveDataPerPieceCount (moves: EngineMoveStat array) =      
+    moves
+    |> Array.filter (fun e -> e.pcs > 0)
+    |> Array.groupBy (fun e -> e.pcs)
 
+    // safe: grouping can be empty -> callers expect empty array in that case
+  let calculateAvgEPSAndNPSPerPieceCount (moves: EngineMoveStat array) =
+    groupMoveDataPerPieceCount moves
+    |> Array.map (fun (pcs, moveStats) ->
+        // collect only positive values
+        let epsVals = moveStats |> Array.choose (fun e -> if e.eps > 0 then Some (float e.eps) else None)
+        let npsVals = moveStats |> Array.choose (fun e -> if e.s > 0 then Some (float e.s) else None)
+
+        let avgEPS = if Array.isEmpty epsVals then 0.0 else Array.average epsVals
+        let avgNPS = if Array.isEmpty npsVals then 0.0 else Array.average npsVals
+
+        (pcs, avgEPS, avgNPS)
+    )  
+  
   let calculateAvgEPS (moves: EngineMoveStat array) = 
       let vals =
           moves 
@@ -568,6 +588,96 @@ module PGNStatistics =
     |> Array.Parallel.map (calculateNodeRatioPerGame maxMoves)
     |> Array.concat
 
+  //calculate pieceCountData into PieceCountStat per PGN file
+
+  let calculatePieceCountDataPerPgnFile (games:PgnGame seq) =
+    let players = getPlayersFromPGN games
+    let allGames = PGNExtractor.extractAllEngineStatsInPGN games
+    let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN 
+    let res =
+        players
+        |> Array.Parallel.map (fun p -> 
+            let moves = getAllEngineMovesForPlayer p allMoves
+            let hasMoves = moves |> Array.exists (fun e -> e.n > 0)
+            if not hasMoves then
+              [||]
+            else
+              calculateAvgEPSAndNPSPerPieceCount moves
+              |> Array.map (fun (pcs, eps, nps) -> { Player = p; PieceCount = pcs; AvgEps = eps; AvgNps = nps })
+              )  
+        |> Array.concat
+    if res.Length = 0 then
+      [||]
+    else
+      res 
+      |> Array.filter (fun e -> e.AvgEps > 0)
+      |> Array.sortBy (fun e -> e.Player, e.PieceCount)
+      |> Array.groupBy (fun e -> e.Player)
+      
+
+  let printPieceCountDataPerPgnFile (filePath:string) (data: (string * PieceCountStat array) array) =
+    // Prepare header and rows
+    let headers = [| "Player"; "PieceCount"; "AvgEps"; "AvgNps" |]
+
+    // Convert data to rows of strings
+    let rows =
+        data
+        |> Array.collect (fun (player, stats) ->
+            stats
+            |> Array.map (fun stat ->
+                [|
+                    player
+                    stat.PieceCount.ToString()
+                    sprintf "%.2f" stat.AvgEps
+                    sprintf "%.2f" stat.AvgNps
+                |]
+            )
+        )
+
+    // Compute column widths (max of header and each column's values)
+    let colCount = headers.Length
+    let widths =
+        Array.init colCount (fun colIdx ->
+            let headerLen = headers.[colIdx].Length
+            let maxDataLen =
+                if rows.Length = 0 then 0
+                else rows |> Array.map (fun r -> r.[colIdx].Length) |> Array.max
+            max headerLen maxDataLen
+        )
+
+    // Build lines
+    let sb = StringBuilder()
+    let pad (s:string) idx = s.PadRight(widths.[idx])
+
+    // Header line
+    let headerLine =
+        headers
+        |> Array.mapi (fun i h -> pad h i)
+        |> String.concat " | "
+    sb.AppendLine(headerLine) |> ignore
+
+    // Separator line
+    let sepLine =
+        widths
+        |> Array.map (fun w -> String.replicate w "-")
+        |> String.concat "-+-"
+    sb.AppendLine(sepLine) |> ignore
+
+    // Data rows
+    for row in rows do
+        let line =
+            row
+            |> Array.mapi (fun i v -> pad v i)
+            |> String.concat " | "
+        sb.AppendLine(line) |> ignore
+
+    // Ensure directory exists then write file
+    let directory = Path.GetDirectoryName(filePath)
+    if not (String.IsNullOrEmpty(directory)) && not (Directory.Exists(directory)) then
+        printfn "Path not valid: %s" filePath     
+    else
+        File.WriteAllText(filePath, sb.ToString())
+  
   /// Calculates the node ratio per PGN file.
   /// <param name="games">The sequence of PGN games.</param>
   /// <returns>An array of search data.</returns>
