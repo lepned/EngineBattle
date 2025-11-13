@@ -9,267 +9,269 @@
 <PageTitle>Median Speed calculation</PageTitle>
 
 <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Calculate backend speed statistics from PGN-file</MudText>
-
 <MudFab Class="ml-3 mb-3 mt-6" HtmlTag="label" Color="Color.Default" Label="Load pgn file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-
 <MudText Color=Color.Primary Typo=Typo.h6 Class="ml-3 mb-3 mt-6 pl-3">@fileOpenName</MudText>
 
-<!-- Engine selector: choose one engine or All Engines -->
-<MudSelect T="string" Label="Engine" Value="@selectedEngine" ValueChanged="OnEngineChanged" Clearable="true" Class="ml-3 mb-3 mt-6 pl-3" Dense="true">
-    <MudSelectItem T="string" Value="@AllEnginesSentinel">All Engines</MudSelectItem>
-    @foreach (var engine in EngineOptions)
-    {
-        <MudSelectItem T="string" Value="@engine">@engine</MudSelectItem>
-    }
-</MudSelect>
-
-<MudTable Style="max-width:50%;" Items="@FlattenedRows" Striped="true" Hover="false" Dense="true">
-    <HeaderContent>
-        <MudTh>Engine Name</MudTh>
-        <MudTh>Piece Count</MudTh>
-        <MudTh>Avg NPS</MudTh>
-        <MudTh>Avg EPS</MudTh>
-        <MudTh>Diff</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Engine Name">@context.FileName</MudTd>
-        <MudTd DataLabel="Piece Count">@context.PieceCount</MudTd>
-        <MudTd DataLabel="Avg NPS">@FormatNPS(context.AvgNps, true)</MudTd>
-        <MudTd DataLabel="Avg EPS">@FormatNPS(context.AvgEps, false)</MudTd>
-        <MudTd DataLabel="Diff">@FormatNPS(context.AvgNps - context.AvgEps, true)</MudTd>
-    </RowTemplate>
+<MudTable T="PieceCountRow" Style="max-width:75%;" Items="@FlattenedRows" Striped="true" Hover="false" Dense="true" SortLabel="Sort By">
+	<HeaderContent>
+		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.FileName)">Engine Name</MudTableSortLabel></MudTh>
+		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.PieceCount)">Piece Count</MudTableSortLabel></MudTh>
+		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.AvgNps)">Avg NPS</MudTableSortLabel></MudTh>
+		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.AvgEps)">Avg EPS</MudTableSortLabel></MudTh>
+		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.AvgNps - x.AvgEps)">Diff</MudTableSortLabel></MudTh>
+	</HeaderContent>
+	<RowTemplate>
+		<MudTd DataLabel="Engine Name">@context.FileName</MudTd>
+		<MudTd DataLabel="Piece Count">@context.PieceCount</MudTd>
+		<MudTd DataLabel="Avg NPS">@FormatNPS(context.AvgNps, true)</MudTd>
+		<MudTd DataLabel="Avg EPS">@FormatNPS(context.AvgEps, false)</MudTd>
+		<MudTd DataLabel="Diff">@FormatNPS(context.AvgNps - context.AvgEps, true)</MudTd>
+	</RowTemplate>
 </MudTable>
+<MudPaper Style="max-width:75%;" Class="ml-1 mr-4 mt-4" Elevation="0">
+	<MudGrid Style="max-width:80%;">
+		<MudTextField  Class="ml-3 mb-3 mt-6 pl-3" Label="Set output file path" @bind-Value="dummyOutputFilePath" Variant="Variant.Outlined" />
+		<MudButton Class="ml-3 mb-3 mt-6 pl-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="() => PrintPieceCountData()">Write Piece Count Performance Data to File</MudButton>
+	</MudGrid>
+	<!-- Engine selector: choose one engine or All Engines -->
+	<MudSelect Style="max-width:50%;" T="string" Label="Engine" Value="@selectedEngine" ValueChanged="OnEngineChanged" Clearable="true" Class="ml-3 mb-3 mt-6 pl-3" Dense="true">
+		<MudSelectItem T="string" Value="@AllEnginesSentinel">All Engines</MudSelectItem>
+		@foreach (var engine in EngineOptions)
+		{
+			<MudSelectItem T="string" Value="@engine">@engine</MudSelectItem>
+		}
+	</MudSelect>
 
-<MudTextField Class="ml-3 mb-3 mt-6 pl-3" Label="Dummy output file path" @bind-Value="dummyOutputFilePath" Variant="Variant.Outlined" FullWidth="true" />
-
-<MudButton Class="ml-3 mb-3 mt-6 pl-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="() => PrintPieceCountData()">Write Piece Count Performance Data to File</MudButton>
-
-<MudButton Class="ml-3 mb-3 mt-6 pl-3" Variant="Variant.Outlined" Color="Color.Secondary" OnClick="@PlotPieceCountChart">Plot Piece-Count Chart</MudButton>
-<div style="height:500px; width:1000px;" class="chart" @ref=pieceChartElement></div>
+	<MudButton Class="ml-3 mb-3 mt-6 pl-3" Variant="Variant.Outlined" Color="Color.Secondary" OnClick="@PlotPieceCountChart">Plot Piece-Count Chart</MudButton>
+	<div style="height:500px; width:1000px;" class="chart" @ref=pieceChartElement></div>
+</MudPaper>
 
 @code {
-    // model for a single table row
-    private record PieceCountRow(string FileName, int PieceCount, double AvgNps, double AvgEps);
+	// model for a single table row
+	private record PieceCountRow(string FileName, int PieceCount, double AvgNps, double AvgEps);
 
-    // original grouped source (from F#)
-    private Tuple<string, PieceCountStat[]>[] pieceCountDataPerPgnFile = Array.Empty<Tuple<string, PieceCountStat[]>>();
+	// original grouped source (from F#)
+	private Tuple<string, PieceCountStat[]>[] pieceCountDataPerPgnFile = Array.Empty<Tuple<string, PieceCountStat[]>>();
 
-    // selected engine filter (sentinel "ALL_ENGINES" means no filtering)
-    private const string AllEnginesSentinel = "ALL_ENGINES";
-    private string selectedEngine = AllEnginesSentinel;
+	// selected engine filter (sentinel "ALL_ENGINES" means no filtering)
+	private const string AllEnginesSentinel = "ALL_ENGINES";
+	private const double MaxNpsToEpsRatio = 10.0; // filter: AvgNps must be less than this * AvgEps
+	private string selectedEngine = AllEnginesSentinel;
 
-    // compute available engine names for the selector
-    private IEnumerable<string> EngineOptions => pieceCountDataPerPgnFile
-        .Select(g => g?.Item1 ?? string.Empty)
-        .Where(n => !string.IsNullOrEmpty(n))
-        .Distinct()
-        .OrderBy(n => n);
+	// compute available engine names for the selector
+	private IEnumerable<string> EngineOptions => pieceCountDataPerPgnFile
+		.Select(g => g?.Item1 ?? string.Empty)
+		.Where(n => !string.IsNullOrEmpty(n))
+		.Distinct()
+		.OrderBy(n => n);
 
-    // flattened rows consumed by MudTable, now filtered by selectedEngine sentinel
-    private PieceCountRow[] FlattenedRows => pieceCountDataPerPgnFile
-        .Where(g => selectedEngine == AllEnginesSentinel || (g?.Item1 ?? string.Empty) == selectedEngine)
-        .SelectMany(g => (g?.Item2 ?? Array.Empty<PieceCountStat>()).Select(s => new PieceCountRow(g?.Item1 ?? string.Empty, s.PieceCount, s.AvgNps, s.AvgEps)))
-        .OrderByDescending(r => r.AvgNps - r.AvgEps)
-        .ToArray();
+	// flattened rows consumed by MudTable, now filtered by selectedEngine sentinel
+	// also filter out AvgNps outliers: require AvgEps > 0 and AvgNps < MaxNpsToEpsRatio * AvgEps
+	private IEnumerable<PieceCountRow> FlattenedRows => pieceCountDataPerPgnFile
+		.Where(g => selectedEngine == AllEnginesSentinel || (g?.Item1 ?? string.Empty) == selectedEngine)
+		.SelectMany(g => (g?.Item2 ?? Array.Empty<PieceCountStat>()).Select(s => new PieceCountRow(g?.Item1 ?? string.Empty, s.PieceCount, s.AvgNps, s.AvgEps)))
+		.Where(r => r.AvgEps > 0 && r.AvgNps < MaxNpsToEpsRatio * r.AvgEps)
+		.OrderByDescending(r => r.AvgNps - r.AvgEps);
 
-    private string fileOpenName = "";
-    IBrowserFile browserFile;
-    string dummyOutputFilePath = "C:/dev/chess/speedOutput.txt";
+	private string fileOpenName = "";
+	IBrowserFile browserFile;
+	string dummyOutputFilePath = "C:/dev/chess/speedOutput.txt";
 
-    // JS module and element reference for plotting
-    private IJSObjectReference chessModule;
+	// JS module and element reference for plotting
+	private IJSObjectReference chessModule;
 
-    private ElementReference pieceChartElement;
+	private ElementReference pieceChartElement;
 
-    private void PrintPieceCountData()
-    {
-        // iterate grouped data for file-level logging, keep file writer as before
-        foreach (var fileData in pieceCountDataPerPgnFile)
-        {
-            logger.LogInformation("File: {FileName}", fileData.Item1);
-            foreach (var stat in fileData.Item2)
-            {
-                var formattedNps = FormatNPS(stat.AvgNps, true);
-                var formattedEps = FormatNPS(stat.AvgEps, false);
-                logger.LogInformation("Piece Count: {PieceCount}, Avg NPS: {AvgNPS}, Avg EPS: {AvgEps}",
-                    stat.PieceCount, formattedNps, formattedEps);
-            }
-        }
+	private void PrintPieceCountData()
+	{
+		// iterate grouped data for file-level logging, keep file writer as before
+		foreach (var fileData in pieceCountDataPerPgnFile)
+		{
+			logger.LogInformation("File: {FileName}", fileData.Item1);
+			foreach (var stat in fileData.Item2)
+			{
+				var formattedNps = FormatNPS(stat.AvgNps, true);
+				var formattedEps = FormatNPS(stat.AvgEps, false);
+				logger.LogInformation("Piece Count: {PieceCount}, Avg NPS: {AvgNPS}, Avg EPS: {AvgEps}",
+					stat.PieceCount, formattedNps, formattedEps);
+			}
+		}
 
-        // F# print function expects the grouped shape, so pass original array
-        Parser.PGNStatistics.printPieceCountDataPerPgnFile(dummyOutputFilePath, pieceCountDataPerPgnFile);
-    }
+		// F# print function expects the grouped shape, so pass original array
+		Parser.PGNStatistics.printPieceCountDataPerPgnFile(dummyOutputFilePath, pieceCountDataPerPgnFile);
+	}
 
-    private async Task OpenPGNFile(InputFileChangeEventArgs e)
-    {
-        var pgnName = e.File.Name;
-        fileOpenName = pgnName;
-        logger.LogInformation("PGN file opened {File}", pgnName);
-        var env = Environment.CurrentDirectory;
-        var fullPath = Path.Combine(env, pgnName);
-        await using (FileStream fs = new(fullPath, FileMode.Create))
-        {
-            browserFile = e.File;
-            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-        }
+	private async Task OpenPGNFile(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		fileOpenName = pgnName;
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
 
-        var games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
-        logger.LogInformation("PGN file parsed {File}", pgnName);
+		var games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+		logger.LogInformation("PGN file parsed {File}", pgnName);
 
-        // keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
-        pieceCountDataPerPgnFile = Parser.PGNStatistics.calculatePieceCountDataPerPgnFile(games);
-        logger.LogInformation("Groups: {Count}", pieceCountDataPerPgnFile.Length);
-        StateHasChanged();
+		// keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
+		pieceCountDataPerPgnFile = Parser.PGNStatistics.calculatePieceCountDataPerPgnFile(games);
+		logger.LogInformation("Groups: {Count}", pieceCountDataPerPgnFile.Length);
+		StateHasChanged();
 
-        // attempt to plot automatically after load (filtered by current selection)
-        await PlotPieceCountChart();
+		// attempt to plot automatically after load (filtered by current selection)
+		await PlotPieceCountChart();
 
-        File.Delete(fullPath);
-        StateHasChanged();
-        await Task.CompletedTask;
-    }
+		File.Delete(fullPath);
+		StateHasChanged();
+		await Task.CompletedTask;
+	}
 
-    private string FormatNPS(double nps, bool isNPS)
-    {
-        if (nps > 1_000_000_000)
-        {
-            var mill = nps / 1_000_000_000;
-            return isNPS ? mill.ToString("F1") + " G nps" : mill.ToString("F1") + " G eps";
-        }
-        else if (nps > 1_000_000)
-        {
-            var mill = nps / 1_000_000;
-            return isNPS ? mill.ToString("F1") + " M nps" : mill.ToString("F1") + " M eps";
-        }
-        else if (nps > 1_000)
-        {
-            var thousand = nps / 1_000;
-            return isNPS ? thousand.ToString("F1") + " K nps" : thousand.ToString("F1") + " K eps";
-        }
-        else
-        {
-            return isNPS ? nps.ToString("F1") + " nps" : nps.ToString("F1") + " eps";
-        }
-    }
+	private string FormatNPS(double nps, bool isNPS)
+	{
+		if (nps > 1_000_000_000)
+		{
+			var mill = nps / 1_000_000_000;
+			return isNPS ? mill.ToString("F1") + " G nps" : mill.ToString("F1") + " G eps";
+		}
+		else if (nps > 1_000_000)
+		{
+			var mill = nps / 1_000_000;
+			return isNPS ? mill.ToString("F1") + " M nps" : mill.ToString("F1") + " M eps";
+		}
+		else if (nps > 1_000)
+		{
+			var thousand = nps / 1_000;
+			return isNPS ? thousand.ToString("F1") + " K nps" : thousand.ToString("F1") + " K eps";
+		}
+		else
+		{
+			return isNPS ? nps.ToString("F1") + " nps" : nps.ToString("F1") + " eps";
+		}
+	}
 
-    // called when selector value changes
-    private async Task OnEngineChanged(string engine)
-    {
-        selectedEngine = string.IsNullOrEmpty(engine) ? AllEnginesSentinel : engine;
-        StateHasChanged();
-        await PlotPieceCountChart();
-    }
+	// called when selector value changes
+	private async Task OnEngineChanged(string engine)
+	{
+		selectedEngine = string.IsNullOrEmpty(engine) ? AllEnginesSentinel : engine;
+		StateHasChanged();
+		await PlotPieceCountChart();
+	}
 
-    // Build and call JS to render piece-count chart:
-    private async Task PlotPieceCountChart()
-    {
-        string whiteColor = "rgba(245, 245, 245, 0.95)";
-        string mutedWhite = "rgba(230, 230, 230, 0.9)";
-        try
-        {
-            // aggregate FlattenedRows by piece count (already filtered by selectedEngine)
-            var grouped = FlattenedRows
-                .GroupBy(r => r.PieceCount)
-                .OrderBy(g => g.Key)
-                .ToArray();
+	// Build and call JS to render piece-count chart:
+	private async Task PlotPieceCountChart()
+	{
+		string whiteColor = "rgba(245, 245, 245, 0.95)";
+		string mutedWhite = "rgba(230, 230, 230, 0.9)";
+		try
+		{
+			// aggregate FlattenedRows by piece count (already filtered by selectedEngine and outliers)
+			var grouped = FlattenedRows
+				.GroupBy(r => r.PieceCount)
+				.OrderBy(g => g.Key)
+				.ToArray();
 
-            if (grouped.Length == 0)
-            {
-                // clear or no-op if no data
-                return;
-            }
+			if (grouped.Length == 0)
+			{
+				// clear or no-op if no data
+				return;
+			}
 
-            var x = grouped.Select(g => g.Key).ToArray();
-            var avgNps = grouped.Select(g => g.Average(r => r.AvgNps)).ToArray();
-            var avgEps = grouped.Select(g => g.Average(r => r.AvgEps)).ToArray();
+			var x = grouped.Select(g => g.Key).ToArray();
+			var avgNps = grouped.Select(g => g.Average(r => r.AvgNps)).ToArray();
+			var avgEps = grouped.Select(g => g.Average(r => r.AvgEps)).ToArray();
 
-            // Layout uses light colors for text so it is readable on dark backgrounds
-            var layout = new
-            {
-                title = new { text = $"Piece Count vs Speed" + (selectedEngine == AllEnginesSentinel ? "" : $" - {selectedEngine}"), font = new { size = 18, color = whiteColor } },
-                font = new { color = whiteColor }, // default text color (axes, legend, etc.)
-                legend = new { font = new { color = whiteColor } },
-                xaxis = new
-                {
-                    title = new { text = "Piece Count", font = new { size = 12, color = mutedWhite } },
-                    tickfont = new { size = 12, color = mutedWhite },
-                    color = mutedWhite
-                },
-                yaxis = new
-                {
-                    title = new { text = "Speed (nodes / evals)", font = new { size = 12, color = mutedWhite } },
-                    tickfont = new { size = 12, color = mutedWhite },
-                    color = mutedWhite
-                },
-                paper_bgcolor = "rgba(0,0,0,0)",
-                plot_bgcolor = "rgba(0,0,0,0)"
-            };
+			// Layout uses light colors for text so it is readable on dark backgrounds
+			var layout = new
+			{
+				title = new { text = $"Piece Count vs Speed" + (selectedEngine == AllEnginesSentinel ? "" : $" - {selectedEngine}"), font = new { size = 18, color = whiteColor } },
+				font = new { color = whiteColor }, // default text color (axes, legend, etc.)
+				legend = new { font = new { color = whiteColor } },
+				xaxis = new
+				{
+					title = new { text = "Piece Count", font = new { size = 12, color = mutedWhite } },
+					tickfont = new { size = 12, color = mutedWhite },
+					color = mutedWhite,
+					dtick = 2
+				},
+				yaxis = new
+				{
+					title = new { text = "Speed (NPS/EPS)", font = new { size = 12, color = mutedWhite } },
+					tickfont = new { size = 12, color = mutedWhite },
+					color = mutedWhite
+				},
+				paper_bgcolor = "rgba(0,0,0,0)",
+				plot_bgcolor = "rgba(0,0,0,0)"
+			};
 
-            var trace1 = new
-            {
-                x = x,
-                y = avgNps,
-                type = "scatter",
-                name = "Avg NPS",
-                mode = "lines+markers"
-            };
+			var trace1 = new
+			{
+				x = x,
+				y = avgNps,
+				type = "scatter",
+				name = "Avg NPS",
+				mode = "lines+markers"
+			};
 
-            var trace2 = new
-            {
-                x = x,
-                y = avgEps,
-                type = "scatter",
-                name = "Avg EPS",
-                mode = "lines+markers"
-            };
+			var trace2 = new
+			{
+				x = x,
+				y = avgEps,
+				type = "scatter",
+				name = "Avg EPS",
+				mode = "lines+markers"
+			};
 
-            // IMPORTANT: chessInterop.js helper setDoubleNodeChart expects config.trace1 and config.trace2
-            var config = new
-            {
-                trace1,
-                trace2
-            };
+			// IMPORTANT: chessInterop.js helper setDoubleNodeChart expects config.trace1 and config.trace2
+			var config = new
+			{
+				trace1,
+				trace2
+			};
 
-            // load module if needed (adjust path if your module path differs)
-            if (chessModule == null)
-            {
-                chessModule = await JsInteropService.ImportModuleAsync(JSRuntime);
-            }
-            if (pieceChartElement.Context is not null)
-            {
-                await chessModule.InvokeVoidAsync("setDoubleNodeChart", pieceChartElement, layout, config);
-            }
+			// load module if needed (adjust path if your module path differs)
+			if (chessModule == null)
+			{
+				chessModule = await JsInteropService.ImportModuleAsync(JSRuntime);
+			}
+			if (pieceChartElement.Context is not null)
+			{
+				await chessModule.InvokeVoidAsync("setDoubleNodeChart", pieceChartElement, layout, config);
+			}
 
-        }
-        catch (JSException jsEx)
-        {
-            logger.LogError(jsEx, "JS interop failed while plotting piece count chart");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to build or plot piece count chart");
-        }
-    }
+		}
+		catch (JSException jsEx)
+		{
+			logger.LogError(jsEx, "JS interop failed while plotting piece count chart");
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex, "Failed to build or plot piece count chart");
+		}
+	}
 
-    protected override Task OnInitializedAsync()
-    {
-        return base.OnInitializedAsync();
-    }
+	protected override Task OnInitializedAsync()
+	{
+		return base.OnInitializedAsync();
+	}
 
-    public async ValueTask DisposeAsync()
-    {
-        if (chessModule is not null)
-        {
-            try
-            {
-                await chessModule.DisposeAsync();
-            }
-            catch { }
-        }
-    }
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        chessModule = await JsInteropService.ImportModuleAsync(JSRuntime);
-        await base.OnAfterRenderAsync(firstRender);
-    }
+	public async ValueTask DisposeAsync()
+	{
+		if (chessModule is not null)
+		{
+			try
+			{
+				await chessModule.DisposeAsync();
+			}
+			catch { }
+		}
+	}
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		chessModule = await JsInteropService.ImportModuleAsync(JSRuntime);
+		await base.OnAfterRenderAsync(firstRender);
+	}
 }
