@@ -97,7 +97,10 @@
 
     private void SwitchSides()
     {
+        var whiteToMove = board.Position.STM == 0;
         humanIsWhite = !humanIsWhite;
+        gameStatus = humanIsWhite && whiteToMove ? "Your move." : "Computer to move.";
+		StateHasChanged();
     }
 
     private void ParseTimeControl()
@@ -296,7 +299,6 @@
     {
         var whiteToMove = board.Position.STM == 0;
         board.PlayLongSanMove(move.Move.LongSan);
-        board.CurrentIndex++;
         var lastMove = board.MovesAndFenPlayed.LastOrDefault();
         if (lastMove != null)
         {
@@ -321,6 +323,7 @@
         //engineThinking = true;
         if (Engine == null)
         {
+			logger.LogInformation("No engine loaded to play against.");
             return;
         }
 

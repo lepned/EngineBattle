@@ -121,7 +121,7 @@
                 {
                     <span @onclick="@(() => OnItemClick(idx))"
                           id="@($"move-{idx}")"
-                          style="@(idx == ChessBoard.CurrentIndex - 1 ? "font-weight: bold;color:skyblue" : "")">@move&nbsp</span>
+                          style="@(idx == ChessBoard.Position.Ply - 1 ? "font-weight: bold;color:skyblue" : "")">@move&nbsp</span>
                 }
             </div>
         </MudItem>
@@ -263,13 +263,11 @@
     private async void OnItemClick(int index)
     {
         stopAutoPlay = true;
-        ChessBoard.CurrentIndex = index;
         if (index != -1)
         {
             var move = MoveList[index];
             var fen = move.FenAfterMove;
             fenWithMoves = fen;
-            ChessBoard.CurrentIndex = index + 1;
             ChessBoard.LoadFen(fen);
             Comment = CreateComments(move);
             await SetPosition(fen);
@@ -337,18 +335,17 @@
     {
         if (invokeMove)
         {
-            var idx = ChessBoard.CurrentIndex;
-            if (ChessBoard.LongSANMovesPlayed.Count > idx)
+            var moveIsProvided = !string.IsNullOrEmpty(move);
+            if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
             {
                 //new mainline initiated here
-                var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
+                var command = ChessBoard.PositionWithMovesIndexed();
                 ChessBoard.ResetBoardState();
                 ChessBoard.PlayCommands(command);
             }
 
-            if (string.IsNullOrEmpty(move) == false)
+            if (moveIsProvided)
             {
-                ChessBoard.CurrentIndex = ChessBoard.CurrentIndex + 1;
                 ChessBoard.PlayLongSanMove(move);
                 await OnMoveMadeOnBoard.InvokeAsync(move);
             }
@@ -588,14 +585,12 @@
         {
             await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
         }
-        //StateHasChanged();
     }
 
     private async Task StartOfGame()
     {
         var fenAndMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
         stopAutoPlay = true;
-        ChessBoard.CurrentIndex = 0;
         fenWithMoves = ChessBoard.StartPosition;
         ChessBoard.LoadFen(fenWithMoves);
         await SetPosition(fenWithMoves, false);
@@ -614,7 +609,6 @@
         var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
         if (fenAndMove != null)
         {
-            ChessBoard.CurrentIndex = ChessBoard.LongSANMovesPlayed.Count;
             fenWithMoves = fenAndMove.FenAfterMove;
             await SetPositionAndMove(fenAndMove, false);
             ChessBoard.LoadFen(fenWithMoves);
@@ -628,7 +622,6 @@
     private async Task NextMove()
     {
         stopAutoPlay = true;
-        ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
         var next = ChessBoard.TryGetNextMoveAndFen(fenWithMoves);
         if (next != null)
         {
@@ -648,7 +641,6 @@
         stopAutoPlay = true;
         moveBoard.ResetBoardState();
         moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
-        ChessBoard.CurrentIndex = Math.Max(0, ChessBoard.CurrentIndex - 1);
         fenWithMoves = moveBoard.FEN();
         var prev = ChessBoard.TryGetPreviousMoveAndFen(fenWithMoves);
         if (prev != null)
@@ -668,13 +660,12 @@
     {
         stopAutoPlay = false;
         var moves = ChessBoard.MovesAndFenPlayed.Count;
-        while (stopAutoPlay == false && ChessBoard.CurrentIndex < moves)
+        while (stopAutoPlay == false && ChessBoard.Position.Ply < moves)
         {
-            var fenAndMove = ChessBoard.CurrentIndex == 0 ?
+            var fenAndMove = ChessBoard.Position.Ply == 0 ?
               ChessBoard.MovesAndFenPlayed[0] :
-              ChessBoard.MovesAndFenPlayed[ChessBoard.CurrentIndex];
+              ChessBoard.MovesAndFenPlayed[ChessBoard.Position.Ply];
             fenWithMoves = fenAndMove.FenAfterMove;
-            ChessBoard.CurrentIndex = Math.Min(ChessBoard.LongSANMovesPlayed.Count, ChessBoard.CurrentIndex + 1);
             ChessBoard.LoadFen(fenWithMoves);
             Comment = CreateComments(fenAndMove);
             await SetPositionAndMove(fenAndMove);

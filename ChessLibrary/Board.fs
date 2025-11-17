@@ -22,7 +22,6 @@ let moveList = new ThreadLocal<TMove array> (fun () -> Array.zeroCreate<TMove>(M
 
 type Board() =        
     let mutable isFRC = false
-    let mutable currentIndex = 0
     let mutable startPos = ""
     let mutable mostCurrentFEN = ""
     let mutable captures = 0L
@@ -31,9 +30,7 @@ type Board() =
     let mutable iPosition = 0
     let mutable numberOfMoves = 0L
     let mutable game = Array.init MAX_PLY (fun _ -> Position.Default)
-    let mutable position = game.[0]
-    //let mutable movesLists = new ThreadLocal<TMove array array> (fun () -> Array.init MAX_PLY (fun _ -> Array.init MAX_MOVES (fun _ -> defaultof<TMove> )))
-    let mutable plyCount = 0
+    let mutable position = game.[0]    
     let mutable hashKeys = ResizeArray<uint64>()
     let sbPool = Utils.StringBuilderPool(10,20)
     let moves = ResizeArray<TMove>()
@@ -51,9 +48,6 @@ type Board() =
       finally
           Monitor.Exit(lockObject)
 
-     //debugging
-    //let moveHis = "1. Nf3 e6 2. g3 d5 3. d4 Bd6 4. b3 Nf6 5. Bb2 b6 6. Bg2 c5 7. e3 cxd4 8. exd4 Nc6 9. O-O Ba6 10. Re1 O-O 11. Nbd2 Nb4 12. a3 Nc6 13. Rc1 Re8 14. c4 Ng4 15. cxd5 exd5 16. Rxc6 Bd3 17. Ne5 Bxe5 18. dxe5 Rc8 19. Rxc8 Qxc8 20. Bxd5 Bc2 21. Qf3 Nxe5 22. Bxe5 Rf8 23. Qc3 g6 24. Qxc8 Rxc8 25. Rc1 Rc5 26. Bc4 Bf5 27. Bxf7+ Kxf7 28. Rxc5 Bd3 29. Rc7+ Ke6 30. Bf4 g5 31. Bxg5 h6 32. Bxh6 a5 33. Rc6+ Kd5 34. Rxb6 a4 35. bxa4 Bc4 36. Nxc4 Kxc4 37. a5 Kc5 38. Rb1 Kc6 39. a6 Kd7 40. a7 Ke6 41. a8=Q Kf5 42. Qh1 Kg4 43. a4 Kh5 44. Bc1 Kg4 45. a5 Kh3 46. a6 Kg4 47. a7 Kh3 48. a8=Q Kg4 49. Qag2 Kh5 50. h4 Kg4 51. h5 Kf5 52. h6 Kg4 53. h7 Kf5 54. h8=Q Kg4 55. Q8h2 Kf5 56. g4+ Kf6 57. g5+ Kg6 58. Qhg3 Kg7 59. g6 Kg8 60. g7 Kf7 61. g8=Q+ Kf6 62. Q8g4 Kf7 63. f4 Kf6 64. Q4f3 Kf5"
-    
     let reset() =
       iPosition <- 0
       moves.Clear()
@@ -69,10 +63,8 @@ type Board() =
       updatePosition update      
       startPos <- BoardHelper.posToFen position
       mostCurrentFEN <- startPos
-      isFRC <- false
-      plyCount <- 0
+      isFRC <- false      
       numberOfMoves <- 0L
-      currentIndex <- 0
       numberOfMoves <- 0L
 
     let initBoard () =
@@ -110,7 +102,7 @@ type Board() =
     member this.DeviationHash () = Utilities.Hash.deviationHash position
 
     member this.TryGetNextMoveAndFen (fen:string) =      
-      match moveAndFens |> Seq.tryFindIndex(fun p -> p.FenAfterMove = fen) with
+      match moveAndFens |> Seq.tryFindIndex(fun m -> m.FenAfterMove = fen) with
       |Some idx ->
         if moveAndFens.Count - 1 > idx then 
           Some moveAndFens[idx + 1] 
@@ -129,7 +121,7 @@ type Board() =
           |None -> None
 
     member this.TryGetPreviousMoveAndFen (fen:string) =      
-      match moveAndFens |> Seq.tryFindIndex(fun p -> p.FenAfterMove = fen) with
+      match moveAndFens |> Seq.tryFindIndex(fun m -> m.FenAfterMove = fen) with
       |Some idx -> 
         if idx = 0 then
           Some {MoveAndFen.FirstEntry with FenAfterMove=startPos}
@@ -151,10 +143,6 @@ type Board() =
 
     member val MovesAndFenPlayed = moveAndFens with get, set
 
-    member this.CurrentIndex
-      with get() = currentIndex 
-      and set(v) = currentIndex <- v
-
     member this.StartPosition 
       with get() = startPos
       and set(v) = startPos <- v
@@ -163,16 +151,11 @@ type Board() =
       with get() = mostCurrentFEN
       and set(v) = mostCurrentFEN <- v
 
-    member this.PositionWithMovesUpToMoveNr moveNr =     
-      let start = sprintf $"position fen {startPos} moves"
-      this.LongSANMovesPlayed
-        |> Seq.truncate moveNr
-        |> Seq.fold(fun state m -> sprintf "%s %s" state m) start
-
     member this.PositionWithMovesIndexed () = 
       let start = sprintf $"position fen {startPos} moves"
+      let plyNr = this.Position.Ply |> int
       this.LongSANMovesPlayed
-        |> Seq.truncate currentIndex
+        |> Seq.truncate plyNr
         |> Seq.fold(fun state m -> sprintf "%s %s" state m) start
 
     member this.PositionWithFenAndMovesIndexed (fen:string) =
@@ -180,8 +163,9 @@ type Board() =
         let res = sprintf $"position fen {fen} moves"
         res
       else
+        let plyNr = this.Position.Ply |> int
         longSanMoves 
-        |> Seq.truncate currentIndex
+        |> Seq.truncate plyNr
         |> Seq.fold(fun state m -> sprintf "%s %s" state m) $"position fen {fen} moves"
 
     member this.PositionWithMoves() =       
@@ -217,8 +201,8 @@ type Board() =
       let ply = int position.Ply
       max 1 ((ply + 1) / 2)
     
+    //stats - castles, captures and eps
     member this.CollectStat (move:_ inref) =
-          //stats here - castles, captures and eps
       if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
         castles <- castles + 1L
       elif (move.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY then
@@ -243,8 +227,7 @@ type Board() =
       and set(v) = eps <- v
 
     member this.PlyCount 
-      with get() = plyCount
-      and set(v) = plyCount <- v
+      with get() = int position.Ply
     
     member this.Position 
         with get() = position
@@ -259,9 +242,7 @@ type Board() =
           let newPos = BoardHelper.getPosFromFen(fen)                    
           position <- newPos
           mostCurrentFEN <- fen.Value
-          //startPos <- fen.Value
-        plyCount <- int position.Ply
-        game.[plyCount] <- PositionOps.copy &position
+        game.[int position.Ply] <- PositionOps.copy &position
         isFRC <- PositionOps.isFRC &position
       
     member this.FEN() = BoardHelper.posToFen position
@@ -317,12 +298,11 @@ type Board() =
       let mutable priorMoves = this.MovesAndFenPlayed |> Seq.takeWhile (fun e -> e.FenAfterMove <> fen)
       let currentMove = this.MovesAndFenPlayed |> Seq.tryFind (fun e -> e.FenAfterMove = fen)
       let ply = if openingMoves.Count = 0 then game.[0].Ply |> int else openingMoves.Count
-        // add current move to the prior moves
+      // add current move to the prior moves
       match currentMove with
       | Some move -> priorMoves <- Seq.append priorMoves (seq { yield move })
       | None -> ()
-      let sb = sbPool.Get()      
-      //let ply = openingMoves.Count        
+      let sb = sbPool.Get()
       let mutable nr = ply
       let mutable moveNr = 
         if ply % 2 = 1 then
@@ -396,25 +376,15 @@ type Board() =
         generateCapturesInSpan span &index &position      
         generateQuietsInSpan span &index &position this.IsFRC
         span.Slice(0, index).ToArray()
-
-    //member this.GenerateMovesFast () =
-    //  let mutable index = 0
-    //  let span = movesLists.Value.[plyCount].AsSpan()
-    //  generateCapturesInSpan span &index &position      
-    //  generateQuietsInSpan span &index &position this.IsFRC 
-    //  span.Slice(0, index)
           
     member this.MakeMove (move:TMove inref) =
       game.[iPosition] <- PositionOps.copy(&position)
       iPosition <- iPosition + 1
-      //plyCount <- plyCount + 1
-      makeMove &move &position
-      plyCount <- int32 position.Ply      
+      makeMove &move &position 
       let hash = this.PositionHash()
       this.HashKeys.Add hash
       this.MovesPlayed.Add move      
       //this.CollectStat &move
-      //printfn "Position hash: %d" hash
 
     member this.ClaimThreeFoldRep () =       
       let key = this.PositionHash()
@@ -452,11 +422,6 @@ type Board() =
     member this.UnMakeMove () =                
       iPosition <- iPosition - 1
       position <- game.[iPosition]
-      plyCount <- int32 position.Ply
-      if plyCount = 0 then
-        printfn "ply count should never be less than zero"
-      else
-        plyCount <- plyCount - 1
 
     member this.PrintPosition (label:string) = 
       PositionOpsToString(label, &position) |> printfn "%s"
@@ -465,8 +430,7 @@ type Board() =
       MoveGeneration.getPieceAndColorOnSquare(&position, square)
     
     // Check if the current position is a repetition or not, and set Rep field   
-    member this.UpdateRepetition() =
-      position.Rep <- this.RepetitionNr() |> byte
+    member this.UpdateRepetition() = position.Rep <- this.RepetitionNr() |> byte
 
     member this.RepetitionNr() =
       let key = this.PositionHash()
@@ -500,7 +464,6 @@ type Board() =
       }
     
     member this.AnyLegalMove() =
-      //let mutable index = 0
       this.GenerateMoves ()
       |> Array.exists(fun m -> BoardHelper.Illegal &m &position |> not)      
 
@@ -510,8 +473,7 @@ type Board() =
     member this.IllegalMove (move: TMove inref) =
       BoardHelper.Illegal &move &position
     
-    member this.getSANFromEngineAN (move:string) =      
-      //let mutable index = 0
+    member this.getSANFromEngineAN (move:string) = 
       let moveList = this.GenerateMoves ()
       let rec loop moves =
         match moves with
@@ -564,8 +526,7 @@ type Board() =
             Comments = String.Empty
           }
         moveAndFens.Add({Move=fenAndMoves; ShortSan=shortSan; FenAfterMove=this.FEN()})
-      |None -> ()
-    
+      |None -> ()    
 
     member this.PlayOpeningMove (fromSan: string) = 
       let islegal move = this.IllegalMove &move |> not      
@@ -588,9 +549,7 @@ type Board() =
           }
         moveAndFens.Add({Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos})
 
-      | None ->         
-            //let hmm = TMove.getTMoveFromShortSan fromSan moveList position.STM islegal
-            failwith $"failed to parse opening move {fromSan}"
+      | None -> failwith $"failed to parse opening move {fromSan}"
 
     member this.PlayPgnToPly (pgn : PGNTypes.PgnGame, lastPly : int) =
       this.ResetBoardState()
@@ -616,7 +575,7 @@ type Board() =
       this.ResetBoardState()
       let fen = 
         if String.IsNullOrEmpty(pgn.Fen) then 
-          "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+          Misc.startPosition
         else pgn.Fen
       this.LoadFen(fen)
       let mutable moveidx = 1
@@ -640,16 +599,9 @@ type Board() =
     
     member this.PlaySimpleShortSan (fromSan: string) = 
       let islegal move = this.IllegalMove &move |> not
-      //let mutable index = 0      
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
       | Some (move) -> 
-        //let moveHistory = this.GetMoveHistory()
-        //if moveHistory = moveHis then
-        //  this.PrintPosition($"Current position state:")
-        //  let shortSan = TMove.getShortSanMoveFromTmove moveList move position
-        //  let ha =TMove.getTMoveFromShortSan fromSan moveList position.STM islegal
-        //  printfn $"found move {fromSan} in {nameof this.PlaySimpleShortSan}"
         let moveStr = TMoveOps.getSanLong move position.STM
         this.MakeMove(&move)
         longSanMoves.Add (moveStr.Trim())
@@ -667,13 +619,10 @@ type Board() =
       | None ->        
         let moveHistory = this.GetMoveHistory()
         printfn $"{moveHistory}"
-        //printfn $"{this.PositionHash()}: failed to parse move {fromSan}"        
-        let hmm = TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal
         printfn $"failed to parse move {fromSan} in {nameof this.PlaySimpleShortSan}"
 
     member this.PlaySimpleShortSanWithComments (fromSan: string) (comments : string) = 
       let islegal move = this.IllegalMove &move |> not
-      //let mutable index = 0      
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
       | Some (move) ->         
@@ -694,8 +643,6 @@ type Board() =
       | None ->        
         let moveHistory = this.GetMoveHistory()
         printfn $"{moveHistory}"
-        //printfn $"{this.PositionHash()}: failed to parse move {fromSan}"        
-        let hmm = TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal
         printfn $"failed to parse move {fromSan} in {nameof this.PlaySimpleShortSan}"
 
     // Method that needs to be made thread-safe
@@ -705,7 +652,6 @@ type Board() =
           this.LoadFen fen
           for m in moves do
             this.PlayLongSanMove m
-          currentIndex <- plyCount
           if this.MovesAndFenPlayed.Count > 0 then
             let movesAndFen = this.MovesAndFenPlayed |> Seq.last
             movesAndFen
@@ -717,7 +663,6 @@ type Board() =
       this.LoadFen fen
       for m in moves do
         this.PlayLongSanMove m
-      currentIndex <- plyCount
       if this.MovesAndFenPlayed.Count > 0 then
         let movesAndFen = this.MovesAndFenPlayed |> Seq.last
         movesAndFen
@@ -735,7 +680,6 @@ type Board() =
         this.CurrentFEN <- fen
         for m in moves do
           this.PlayLongSanMove m
-        currentIndex <- plyCount
       |_ -> ()      
     
     member this.PlayFenWithMoves (fenMoves : string) =
@@ -746,7 +690,6 @@ type Board() =
       this.StartPosition <- fen
       for m in moves do
         this.PlayLongSanMove m
-      currentIndex <- plyCount
 
 module Deviation =
   

@@ -528,15 +528,13 @@
     private async Task PlayMoveFromTable(TableRowClickEventArgs<NNValues> moveInfo)
     {
         InfoLineList.Clear();
-        var idx = ChessBoard.CurrentIndex;
-        if (ChessBoard.LongSANMovesPlayed.Count > idx)
+        if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
         {
             //new mainline initiated here
-            var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
+            var command = ChessBoard.PositionWithMovesIndexed();
             ChessBoard.ResetBoardState();
             ChessBoard.PlayCommands(command);
         }
-        ChessBoard.CurrentIndex = idx + 1;
         if (autoSearchSwitch)
         {
             searchInProgress = true;
@@ -552,16 +550,14 @@
 
     private async Task PlayMoveFromTable(TableRowClickEventArgs<KeyValuePair<int, EngineStatus>> status)
     {
-        InfoLineList.Clear();
-        var idx = ChessBoard.CurrentIndex;
-        if (ChessBoard.LongSANMovesPlayed.Count > idx)
+        InfoLineList.Clear();        
+        if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
         {
             //new mainline initiated here
-            var command = ChessBoard.PositionWithMovesUpToMoveNr(idx);
+            var command = ChessBoard.PositionWithMovesIndexed();
             ChessBoard.ResetBoardState();
             ChessBoard.PlayCommands(command);
         }
-        ChessBoard.CurrentIndex = idx + 1;
         if (autoSearchSwitch)
         {
             searchInProgress = true;
@@ -1251,7 +1247,6 @@
             }
         }
 
-        board.CurrentIndex = board.MovesAndFenPlayed.Count;
         fen = board.FEN();        
         // await Notifier.UpdateFen(fen);
         // await Notifier.UpdateFenAndMove(moveAndFen);

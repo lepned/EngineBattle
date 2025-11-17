@@ -173,7 +173,7 @@ module Engine =
           depth <- 0
         |_ ->
           let msg = $"{engineName} played an illegal move here: {line} "
-          let boardState = $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.CurrentIndex} "
+          let boardState = $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.Position.Ply} "
           printfn "%s" msg
           printfn "%s" boardState
 

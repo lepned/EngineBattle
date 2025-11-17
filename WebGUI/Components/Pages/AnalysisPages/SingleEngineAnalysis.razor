@@ -337,7 +337,6 @@
             }
 
             fen = board.FEN();
-            board.CurrentIndex = parsedMoves.Count();
             await Notifier.UpdateFenToBoard(fen);
         }
         else
@@ -364,7 +363,6 @@
                 }
                 var history = board.GetMoveHistory();
                 fen = board.FEN();
-                board.CurrentIndex = parsedMoves.Count();
                 await Notifier.UpdateFenToBoard(fen);
             }
 
@@ -567,13 +565,11 @@
             move = ExtractMove(move);
             var idx = board.MovesAndFenPlayed.TakeWhile(e => e.ShortSan != move).Count();
             idx = Math.Min(idx, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
-            board.CurrentIndex = idx + 1;
             fen = board.MovesAndFenPlayed[idx].FenAfterMove;
             moveAndFen = board.MovesAndFenPlayed[idx];
         }
         else
         {
-            board.CurrentIndex = board.MovesAndFenPlayed.Count;
             moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
             fen = board.FEN();
         }

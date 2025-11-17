@@ -4,6 +4,7 @@
 @implements IDisposable
 @inject IJSRuntime JS
 @inject JavaScriptInteropService JsInteropService
+@inject ILogger<Standings> Logger
 
 @inject NotifierService notify
 
@@ -90,7 +91,22 @@
         catch (JSException jsEx)
         {
             // Log other JS errors for debugging
-            Console.WriteLine($"JS error in {identifier}: {jsEx.Message}");
+            Logger.LogError($"JS error in {identifier}: {jsEx.Message}");
+        }
+        catch (TaskCanceledException tcEx)
+        {
+            // Task was canceled - this happens when the circuit is busy or timing out
+            Logger.LogWarning($"JS interop task canceled in {identifier}: {tcEx.Message}");
+        }
+        catch (OperationCanceledException ocEx)
+        {
+            // Operation was canceled
+            Logger.LogWarning($"JS interop operation canceled in {identifier}: {ocEx.Message}");
+        }
+        catch (Exception ex)
+        {
+            // Log any other unexpected exceptions
+            Logger.LogError($"Unexpected error in {identifier}: {ex.GetType().Name} - {ex.Message}");
         }
     }
     private async Task ScrollToEnd()
@@ -223,17 +239,24 @@
         }
     }
 
-    private async void DoScroll()
+    private async Task DoScroll()
     {
         if (!ShouldCycle) return;
 
-        if (activeTableIndex == 1)
+        try
         {
-            await ScrollToEnd();
+            if (activeTableIndex == 1)
+            {
+                await ScrollToEnd();
+            }
+            else
+            {
+                await ScrollToTop();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            await ScrollToTop();
+            Logger.LogError($"Error in DoScroll: {ex.GetType().Name} - {ex.Message}");
         }
     }
 

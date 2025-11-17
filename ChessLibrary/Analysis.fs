@@ -486,10 +486,10 @@ module Manager =
         if board.AnyLegalMove() |> not then
           let fen = board.FEN()
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
-        else                   
-          let command = board.PositionWithMoves()
-          printfn "Search command: %s" command
-          engine.SendUCICommand (PositionWithMoves command)          
+        else
+          let cmdIndexed = board.PositionWithMovesIndexed()
+          printfn "Search indexed command: %s" cmdIndexed
+          engine.SendUCICommand (PositionWithMoves cmdIndexed)          
           engine.SendUCICommand (RawCommand goCommand)
 
 module PuzzleDataUtils =
