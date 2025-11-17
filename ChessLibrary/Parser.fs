@@ -1130,7 +1130,7 @@ module PGNWriter =
       let totalGames = Seq.length pgnGames
       let games = 
         pgnGames 
-        |> Seq.filter (fun g -> g.GameMetaData.Event.ToLower().Contains "testing" |> not) 
+        //|> Seq.filter (fun g -> g.GameMetaData.Event.ToLower().Contains "testing" |> not) 
         //|> Seq.filter (fun g -> g.GameMetaData.Moves = 0) // Filter out games with no moves
       let totalFilteredGames = Seq.length games
       let difference = totalGames - totalFilteredGames
