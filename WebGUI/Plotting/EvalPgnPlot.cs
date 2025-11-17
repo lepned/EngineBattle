@@ -10,7 +10,8 @@ namespace WebGUI.Plotting
         Evaluation,
         Nodes,
         TimeUsage,
-        NPS
+        NPS,
+        EPS
     }
 
     public class GamePgnChart
@@ -258,6 +259,37 @@ namespace WebGUI.Plotting
             await SetEvalChartData();
         }
 
+        // New async method: Assign EPS from PGN (same logic as NPS but uses eps field)
+        public async Task AssignEPSFromPGNAsync(CustomChartType chartType = CustomChartType.EPS)
+        {
+            var currIdx = currentMoveIndex;
+            ClearData(PlayerWhite, PlayerBlack);
+            currentMoveIndex = currIdx;
+            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
+            var last = moveStats.LastOrDefault();
+            if (last != null && last.eps == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
+            {
+                if (moveStats.Length > 0)
+                {
+                    moveStats = moveStats[..^1];
+                }
+            }
+
+            PlayerWhiteData =
+              moveStats
+              .Where(e => e.Player == PlayerWhite)
+              .Select(e => (double)e.eps).ToArray();
+
+            PlayerBlackData =
+              moveStats
+              .Where(e => e.Player == PlayerBlack)
+              .Select(e => (double)e.eps).ToArray();
+
+            Title = "EPS";
+            // Reuse NPS rendering which supports same single/double axis logic
+            await SetChartNPSData();
+        }
+
         // Method to update chart based on chart type
         public async Task UpdateChartAsync(CustomChartType chartType)
         {
@@ -274,6 +306,9 @@ namespace WebGUI.Plotting
                     break;
                 case CustomChartType.NPS:
                     await AssignNPSFromPGNAsync(CustomChartType.NPS);
+                    break;
+                case CustomChartType.EPS:
+                    await AssignEPSFromPGNAsync(CustomChartType.EPS);
                     break;
             }
             await UpdateMoveIndicatorAsync(currentMoveIndex ?? 0);

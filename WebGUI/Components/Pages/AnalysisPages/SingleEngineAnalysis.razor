@@ -58,6 +58,7 @@
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.Nodes">Nodes</MudSelectItem>
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.TimeUsage">Time Usage</MudSelectItem>
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.NPS">NPS</MudSelectItem>
+                    <MudSelectItem T="CustomChartType" Value="@CustomChartType.EPS">EPS</MudSelectItem>
                 </MudSelect>
             </MudItem>
 
@@ -534,6 +535,9 @@
             case CustomChartType.NPS:
                 await chart.AssignNPSFromPGNAsync();
                 break;
+            case CustomChartType.EPS:
+                await chart.AssignEPSFromPGNAsync();
+				break;
             default:
                 await chart.AssignEvalsFromPGNAsync();
                 break;
