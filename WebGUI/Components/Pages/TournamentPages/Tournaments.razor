@@ -1304,7 +1304,7 @@
                         }
                         var testTime = TimeSpan.FromMilliseconds(results.Sum(r => r.GameTime));
                         var durMsg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and {testTime.Minutes} minutes";
-                        var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(deviations);
+                        var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(deviations,0);
                         var avgSpeed =
                                 res.Where(e => e.Median)
                                 .OrderByDescending(e => e.AvgNPS).ToList();
@@ -1377,7 +1377,7 @@
         if (tournament.VerboseLogging)
             logger.LogDebug("Speed update delay ended: " + DateTime.Now.ToString());
         var games = runner.GetPGNGames();
-        var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games);
+        var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games,0);
         var avgSpeed =
                 res.Where(e => e.Median)
                 .OrderByDescending(e => e.AvgNPS).ToList();

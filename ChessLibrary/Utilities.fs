@@ -1793,7 +1793,7 @@ module PGNCalculator =
     let cross = generateCrosstableEntries allResults
     let playerRes = getFullStatFromResults allResults |> Seq.toList
     let avgSpeed =
-      PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(results)
+      PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(results,0)
       |> Array.filter _.Median
       |> Array.sortByDescending _.AvgNPS
     

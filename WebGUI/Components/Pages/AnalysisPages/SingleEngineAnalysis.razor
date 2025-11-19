@@ -52,14 +52,18 @@
             <MudText Class="ml-2" Typo="Typo.body1">@currentGame</MudText>
 
             <!-- Chart selection UI -->
-            <MudItem Class="d-flex align-items-end mt-2 mb-1" Style="width:150px;">
-                <MudSelect T="CustomChartType" Dense="true" Class="mr-3" Value="@selectedChart" ValueChanged="@OnChartTypeChanged">
+            <MudItem Class="d-flex align-items-start mt-2 mb-1" Style="min-width:280px;max-width:250px;">
+                <MudSelect T="CustomChartType" Dense="false" Class="mr-3" Value="@selectedChart" ValueChanged="@OnChartTypeChanged">
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.Evaluation">Evaluation</MudSelectItem>
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.Nodes">Nodes</MudSelectItem>
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.TimeUsage">Time Usage</MudSelectItem>
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.NPS">NPS</MudSelectItem>
                     <MudSelectItem T="CustomChartType" Value="@CustomChartType.EPS">EPS</MudSelectItem>
                 </MudSelect>
+                <MudItem Class="ml-3 mt-1 mb-4" > 
+                    <MudNumericField Style="width:130px;" HelperText="min move time (sec)" T="Int32" @bind-Value="minMoveTimeInSecs" Placeholder="filter">
+                    </MudNumericField>
+                </MudItem>
             </MudItem>
 
             <MudItem xl="12">
@@ -158,6 +162,7 @@
 
 @code {
 
+	private int minMoveTimeInSecs = 0;
     private string currentGame = "Game";
     private int gameIndex = 0;
     private string gamesPath = "C:/dev/chess/mygames.pgn";
@@ -199,7 +204,7 @@
         selectedChart = newChartType;
         if (chart != null)
         {
-            await chart.SwitchChartTypeAsync(newChartType);
+            await chart.SwitchChartTypeAsync(newChartType, minMoveTimeInSecs);
         }
         StateHasChanged();
     }
@@ -533,10 +538,10 @@
                 await chart.AssignTimeUsageFromPGNAsync();
                 break;
             case CustomChartType.NPS:
-                await chart.AssignNPSFromPGNAsync();
+                await chart.AssignNPSFromPGNAsync(minMoveTimeInSecs);
                 break;
             case CustomChartType.EPS:
-                await chart.AssignEPSFromPGNAsync();
+                await chart.AssignEPSFromPGNAsync(minMoveTimeInSecs);
 				break;
             default:
                 await chart.AssignEvalsFromPGNAsync();

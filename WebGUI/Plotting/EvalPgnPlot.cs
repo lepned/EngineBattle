@@ -203,8 +203,9 @@ namespace WebGUI.Plotting
             await SetChartNodeData();
         }
 
-        public async Task AssignNPSFromPGNAsync(CustomChartType chartType = CustomChartType.Nodes)
+        public async Task AssignNPSFromPGNAsync(int secs = 0, CustomChartType chartType = CustomChartType.Nodes)
         {
+            var minMoveTimeInMs = secs * 1000;
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
@@ -219,12 +220,12 @@ namespace WebGUI.Plotting
             }
             PlayerWhiteData =
               moveStats
-              .Where(e => e.Player == PlayerWhite)
+              .Where(e => e.Player == PlayerWhite && e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.s).ToArray();
 
             PlayerBlackData =
               moveStats
-              .Where(e => e.Player == PlayerBlack)
+              .Where(e => e.Player == PlayerBlack && e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.s).ToArray();
 
             Title = "NPS";
@@ -260,8 +261,9 @@ namespace WebGUI.Plotting
         }
 
         // New async method: Assign EPS from PGN (same logic as NPS but uses eps field)
-        public async Task AssignEPSFromPGNAsync(CustomChartType chartType = CustomChartType.EPS)
+        public async Task AssignEPSFromPGNAsync(int secs = 0, CustomChartType chartType = CustomChartType.EPS)
         {
+            var minMoveTimeInMs = secs * 1000;
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
@@ -277,12 +279,12 @@ namespace WebGUI.Plotting
 
             PlayerWhiteData =
               moveStats
-              .Where(e => e.Player == PlayerWhite)
+              .Where(e => e.Player == PlayerWhite && e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.eps).ToArray();
 
             PlayerBlackData =
               moveStats
-              .Where(e => e.Player == PlayerBlack)
+              .Where(e => e.Player == PlayerBlack && e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.eps).ToArray();
 
             Title = "EPS";
@@ -291,7 +293,7 @@ namespace WebGUI.Plotting
         }
 
         // Method to update chart based on chart type
-        public async Task UpdateChartAsync(CustomChartType chartType)
+        public async Task UpdateChartAsync(CustomChartType chartType, int minMoveTimeInSecs = 0)
         {
             switch (chartType)
             {
@@ -305,20 +307,20 @@ namespace WebGUI.Plotting
                     await AssignTimeUsageFromPGNAsync(CustomChartType.TimeUsage);                    
                     break;
                 case CustomChartType.NPS:
-                    await AssignNPSFromPGNAsync(CustomChartType.NPS);
+                    await AssignNPSFromPGNAsync(minMoveTimeInSecs);
                     break;
                 case CustomChartType.EPS:
-                    await AssignEPSFromPGNAsync(CustomChartType.EPS);
+                    await AssignEPSFromPGNAsync(minMoveTimeInSecs);
                     break;
             }
             await UpdateMoveIndicatorAsync(currentMoveIndex ?? 0);
         }
 
         // Method to switch chart types dynamically
-        public async Task SwitchChartTypeAsync(CustomChartType newChartType)
+        public async Task SwitchChartTypeAsync(CustomChartType newChartType, int minMoveTimeinSecs = 0)
         {
             liveUpdateStarted = false; // Force full re-render
-            await UpdateChartAsync(newChartType);
+            await UpdateChartAsync(newChartType, minMoveTimeinSecs);
         }
 
         // Check if chart has data

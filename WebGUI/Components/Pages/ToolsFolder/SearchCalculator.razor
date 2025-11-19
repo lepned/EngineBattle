@@ -197,7 +197,7 @@
     }
    
     var games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
-    var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games);
+    var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
 
     //foreach (var stat in medianSpeedTable)
     //{

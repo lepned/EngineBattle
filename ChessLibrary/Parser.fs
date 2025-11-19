@@ -805,10 +805,11 @@ module PGNStatistics =
   /// Calculates the median and average speed summary in a PGN file.
   /// <param name="games">The sequence of PGN games.</param>
   /// <returns>An array of engine statistics summary.</returns> 
-  let calculateMedianAndAvgSpeedSummaryInPgnFile (games:PgnGame seq) =
+  let calculateMedianAndAvgSpeedSummaryInPgnFile (games:PgnGame seq, timeInSecs:int) =
     let players = getPlayersFromPGN games
     let allGames = PGNExtractor.extractAllEngineStatsInPGN games
-    let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN 
+    let minMoveTimeInMs = int64 (timeInSecs * 1000)
+    let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN |> Array.filter (fun e -> e.mt >= minMoveTimeInMs) 
     players
     |> Array.Parallel.map (fun p -> 
         let moves = getAllEngineMovesForPlayer p allMoves
