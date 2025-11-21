@@ -1,26 +1,49 @@
-﻿@page "/removeEngineFromPgn"
+﻿@page "/pgnUtilities"
 @inject ILogger<RemoveEngineFromPGN> logger
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+<InputFile id="pgnReady" OnChange="@MakePGNExportReady" hidden />
+<InputFile id="pgnMinimal" OnChange="@MinimalPGN" hidden />
 
 <PageTitle>RemoveEngineFromPGN</PageTitle>
-<div style="margin:20px; width:700px">
-
-    <MudText Typo="Typo.h4">Remove games from a PGN file</MudText>
-	<MudText Class="mt-3" Typo="Typo.body2">
-		Remove games associated with a specific engine name from a PGN file. Specify the folder for saving the output and the engine name below.
-	</MudText>
-	<MudTextField Class="mt-3" Placeholder="Specify the folder to save the output" T="string" Typo="Typo.h6" Text="@path" @bind-value="path"></MudTextField>
-	<MudTextField Class="mt-3" T="string" Typo="Typo.h6"
-				  HelperText="Enter the engine name you want to remove" Text="@engineName" @bind-value="engineName"></MudTextField>
-</div>
-
-
+<MudCard>
+	<div style="margin:20px; width:900px">
+		<MudText Typo="Typo.h4">Remove games from a PGN file</MudText>
+		<MudText Class="mt-3" Typo="Typo.body2">
+			Remove games associated with a specific engine name from a PGN file. Specify the folder for saving the output and the engine name below.
+		</MudText>
+		<MudTextField Class="mt-3" Placeholder="Specify the folder to save the output" T="string" Typo="Typo.h6" Text="@path" @bind-value="path"
+					  HelperText="Specify the folder to save the output"></MudTextField>
+		<MudTextField Class="mt-3" T="string" Typo="Typo.h6"
+					  HelperText="Enter the engine name you want to remove" Text="@engineName" @bind-value="engineName"></MudTextField>
+	</div>
+</MudCard>
 <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.Download" for="fileInput" />
+
+<MudCard>
+	<div style="margin:20px; width:900px">
+		<MudText Typo="Typo.h4">Make PGN ready for export </MudText>
+		<MudText Class="mt-3" Typo="Typo.body2">
+			Ensure there are blank lines between games in the PGN file.
+		</MudText>
+		<MudTextField Class="mt-3" Placeholder="Specify the folder to save the output" T="string" Typo="Typo.h6" Text="@path" @bind-value="path"
+					  HelperText="Specify the folder to save the output"></MudTextField>
+	</div>
+</MudCard>
+<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.Download" for="pgnReady" />
+
+<MudCard>
+	<div style="margin:20px; width:900px">
+		<MudText Class="mt-3" Typo="Typo.h4">Create minimal PGN-file with annotation removed</MudText>
+		<MudTextField Class="mt-3" HelperText="Write complete path to file" Placeholder="Write complete path to file" T="string" Typo="Typo.h6" Text="@minimalPGNpath" @bind-value="minimalPGNpath"></MudTextField>
+	</div>
+</MudCard>
+<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="pgnMinimal" />
 
 @code {
 
 	private string path = "C:/Dev/Chess/PGNs/";
+	private string minimalPGNpath = "C:/Dev/Chess/PGNs/minimalPGN1.pgn";
 	private string engineName = string.Empty;
 	IBrowserFile browserFile;
 
@@ -33,7 +56,54 @@
 		return outputFile;
 	}
 
-	
+	private string GetExportFileName(string pgn)
+	{
+		string fileName = Path.GetFileNameWithoutExtension(pgn);
+		string fileDir = Path.GetDirectoryName(path);
+		string fileExt = Path.GetExtension(pgn);
+		string outputFile = Path.Combine(fileDir, $"{fileName}_ExportReady{fileExt}");
+		return outputFile;
+	}
+
+	private async Task MinimalPGN(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+
+		var games = PGNParser.parsePgnFile(fullPath);
+		PGNWriter.writeMinimalPgnFile(games, minimalPGNpath);
+		logger.LogInformation($"Done with writing minimal PGN file to {minimalPGNpath}");
+		File.Delete(fullPath);
+		await Task.CompletedTask;
+	}
+
+	private async Task MakePGNExportReady(InputFileChangeEventArgs e)
+	{
+		var pgnName = e.File.Name;
+		logger.LogInformation("PGN file opened {File} for export", pgnName);
+		var env = Environment.CurrentDirectory;
+		var fullPath = Path.Combine(env, pgnName);
+		await using (FileStream fs = new(fullPath, FileMode.Create))
+		{
+			browserFile = e.File;
+			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+		}
+
+		var games = PGNParser.parsePgnFile(fullPath);
+		var exportPath = GetExportFileName(pgnName);
+		PGNWriter.ensureBlankLinesBetweenGames(exportPath, games);
+		File.Delete(fullPath);
+		logger.LogInformation($"PGN-file was made ready for export and written to path {exportPath}");
+	}
+
+
 	private async Task OpenPGNFile(InputFileChangeEventArgs e)
 	{
 		if (engineName == string.Empty)
@@ -51,9 +121,9 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.PGNParser.parsePgnFile(fullPath);
+		var games = PGNParser.parsePgnFile(fullPath);
 		var fileNamePath = GetFileName(pgnName, engineName);
-		Parser.PGNWriter.removePlayerFromPGN(engineName, games, fileNamePath);
+		PGNWriter.removePlayerFromPGN(engineName, games, fileNamePath);
 		File.Delete(fullPath);
 		logger.LogInformation($"Engine {engineName} was removed from PGN-file and written to path {fileNamePath}");
 	}

@@ -981,7 +981,7 @@ module PGNWriter =
       else
         // If no result is specified, write an asterisk
         writer.Write("*")
-      writer.WriteLine(Environment.NewLine)    
+      writer.WriteLine()    
   
     writer.Close()
   
@@ -1053,7 +1053,6 @@ module PGNWriter =
                     openingMoves.Add(move.BlackSan)
         
         openingMoves |> List.ofSeq
-
 
 
   let writeNewOpeningBookBasedOnOlder (pgnGames: PgnGame seq) (filename: string) =
@@ -1332,9 +1331,15 @@ module PGNWriter =
     use writer = createPGNWriter filePath
     writePGNHeaderSection writer header
     writer.Write moveSection    
-    writeEndOfGameSection writer result   
-  
+    writeEndOfGameSection writer result
 
+  let ensureBlankLinesBetweenGames (filePath: string) (games: PgnGame seq) =
+      PGNHelper.ensureDirectoryExists filePath      
+      use writer = new StreamWriter(filePath, append=false)
+      for g in games do
+        // write the raw game and ensure exactly one blank line after each game
+        writer.WriteLine(g.Raw.TrimStart().TrimEnd())
+        writer.WriteLine() // single blank line
 
   let writeRawPgnGamesAdjustedToFile (filePath: string) (games: PgnGame seq) =
     PGNHelper.ensureDirectoryExists filePath
@@ -1342,7 +1347,7 @@ module PGNWriter =
     let mutable idx = 0
     let mutable round = 0
         
-    let sortByRound (round:string) =        
+    let sortByRound (round:string) = 
            match round.Split '.' with
            | [|rNr|] -> int rNr * 1000
            | [|rNr; rest|] -> int rNr * 1000 + (rest |> int)
@@ -1353,6 +1358,7 @@ module PGNWriter =
             |> Seq.sortBy(fun g -> sortByRound g.GameMetaData.Round)
             |> Seq.groupBy (fun g -> g.GameMetaData.Round.Split '.' |> Seq.tryHead)
             |> Seq.toList
+    
     for rNr,games in groupGames  do
         for game in games do
             let newRaw =
