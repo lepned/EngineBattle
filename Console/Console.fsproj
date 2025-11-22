@@ -12,7 +12,9 @@
 		<Content Include="Json\PuzzleConfig.json" />
 		<Content Include="Json\Tournament.json" />
 		<Content Include="Properties\launchSettings.json" />
+		<Content Include="benchmark-options.json" />
 		<Compile Include="CliParser.fs" />
+		<Compile Include="BenchmarkRunner.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

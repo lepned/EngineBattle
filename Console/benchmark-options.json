@@ -1,0 +1,22 @@
+{
+  "engineConfigPath": "C:/Dev/Chess/Engines/EngineDefs/Lc0_BT4_sufi.json",
+  "durationSeconds": 10,
+  "optionSets": [
+    
+    {
+      "optionKey": "Threads",
+      "summaryOutputPath": "Console/benchmark-summary.txt",
+      "values": [2, 4]
+    }
+  ],
+  "positions": [
+    {
+      "name": "Standard start",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    },
+    {
+      "name": "Kiwipete",
+      "fen": "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
+    }
+  ]
+}
