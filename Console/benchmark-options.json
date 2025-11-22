@@ -1,12 +1,15 @@
 {
-  "engineConfigPath": "C:/Dev/Chess/Engines/EngineDefs/Lc0_BT4_sufi.json",
-  "durationSeconds": 10,
+  "engineConfigPath": "C:/Dev/Chess/Engines/EngineDefs/SF17Def.json",
+  "durationSeconds": 4,
   "optionSets": [
-    
+    {
+      "optionKey": "Skill Level",
+      "values": [ 0, 10, 20 ]
+    },
+
     {
       "optionKey": "Threads",
-      "summaryOutputPath": "Console/benchmark-summary.txt",
-      "values": [2, 4]
+      "values": [ 2, 4 ]
     }
   ],
   "positions": [

@@ -16,8 +16,7 @@ module BenchmarkRunner =
   [<CLIMutable>]
   type BenchmarkPosition =
     { mutable Name: string
-      mutable Fen: string
-      mutable Color: string }
+      mutable Fen: string }
 
   [<CLIMutable>]
   type BenchmarkOptionSet =
@@ -74,7 +73,7 @@ module BenchmarkRunner =
 
   let private safePositions (positions: BenchmarkPosition[]) =
     if isNull positions || positions.Length = 0 then
-      [| { Name = "start"; Fen = startPosition; Color = "white" } |]
+      [| { Name = "start"; Fen = startPosition} |]
     else
       positions
 
@@ -201,27 +200,6 @@ module BenchmarkRunner =
       sb.AppendLine("No valid search results recorded.") |> ignore
     sb.ToString()
 
-  let private parseColor (color: string) =
-    match color with
-    | null -> None
-    | text when String.IsNullOrWhiteSpace text -> None
-    | text ->
-        match text.Trim().ToLowerInvariant() with
-        | "white" | "w" -> Some true
-        | "black" | "b" -> Some false
-        | _ -> None
-
-  let private activeColorFromFen (fen: string) =
-    let parts = fen.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
-    if parts.Length > 1 then
-      parts.[1].ToLowerInvariant()
-    else
-      "w"
-
-  let private colorIsWhite positionFen positionColor =
-    parseColor positionColor
-    |> Option.defaultWith (fun () -> (activeColorFromFen positionFen) = "w")
-
   let private readSearchStats (engine: ChessEngine) (isWhite: bool) =
     let rec loop last =
       let line = engine.ReadLine()
@@ -277,8 +255,10 @@ module BenchmarkRunner =
 
   let private runPosition (engine: ChessEngine) (position: BenchmarkPosition) durationSeconds comboDesc index totalPositions =
     let fen = if String.IsNullOrWhiteSpace position.Fen then startPosition else position.Fen.Trim()
+    let board = ChessLibrary.Chess.Board()
+    board.LoadFen fen
     let positionName = if String.IsNullOrWhiteSpace position.Name then sprintf "position %d" (index + 1) else position.Name.Trim()
-    let isWhite = colorIsWhite fen position.Color
+    let isWhite = board.Position.STM = 0uy
     printfn "  [%d/%d] %s (fen: %s)" (index + 1) totalPositions positionName fen
     engine.UciNewGame()
     if fen.Equals("startpos", StringComparison.OrdinalIgnoreCase) then
@@ -327,7 +307,11 @@ module BenchmarkRunner =
       finally
         if not (engine.HasExited()) then
           engine.StopProcess())
-    let summaries = accumulatedResults |> summarizeResults |> Seq.toList
+    let summaries = 
+        accumulatedResults 
+        |> summarizeResults 
+        |> Seq.sortByDescending (fun s -> s.AvgNps)
+        |> Seq.toList
     let best = pickBestCombination summaries
     let summaryText = formatSummaryText summaries best
     let summaryPath = resolveSummaryPath config
