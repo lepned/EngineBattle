@@ -269,6 +269,9 @@ The `EretConfig.json` file specifies the engines to be tested, the puzzle file p
 
 This mode is ideal for developers and researchers who want to quickly assess engine performance on a diverse set of positions, providing valuable insights into engine strengths, weaknesses, and overall capabilities.
 
+### Console Benchmarking (speed tune)
+
+The Console Benchmarking mode runs a set of UCI option combinations against an engine configuration and a batch of positions to measure engine throughput and per-search performance. This mode uses the `benchmark-options.json` file to configure the engine definition, the option sets to try, search time and the positions to search.
 
 ## Licensing
 

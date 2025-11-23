@@ -5,6 +5,7 @@ open System.IO
 open System.Text
 open System.Text.Json
 open System.Collections.Generic
+open System.Linq
 open ChessLibrary.Engine
 open ChessLibrary.Utilities.Formatting
 open ChessLibrary.Utilities.Regex
@@ -307,11 +308,14 @@ module BenchmarkRunner =
       finally
         if not (engine.HasExited()) then
           engine.StopProcess())
-    let summaries = 
-        accumulatedResults 
-        |> summarizeResults 
-        |> Seq.sortByDescending (fun s -> s.AvgNps)
-        |> Seq.toList
+    let summaries =
+        query {
+            for s in (accumulatedResults |> summarizeResults) do
+            sortByDescending s.AvgEps
+            thenByDescending s.AvgNps
+            select s
+        } |> Seq.toList
+
     let best = pickBestCombination summaries
     let summaryText = formatSummaryText summaries best
     let summaryPath = resolveSummaryPath config
