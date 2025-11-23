@@ -14,6 +14,7 @@ open Tournament.Match
 open Utilities
 open LowLevelUtilities
 open CliParser
+open BenchmarkRunner
 
 module BlazorInterop =
     let mutable blazorProcess: Process option = None
@@ -772,12 +773,15 @@ module Program =
                         host.StopAsync().Wait()                    
                     | None -> 
                         printfn "Tournamentjson config file not found..."                        
+                | Verb (Benchmark path) ->
+                    BenchmarkRunner.runBenchmark path
                 | Help ->
                     printfn "Help: Available commands are:"
                     printfn "  - Perft <depth> <sampleSize>"                   
                     printfn "  - PuzzleJson <path>"
                     printfn "  - Eret <path>"
                     printfn "  - Tournament <configFile>"
+                    printfn "  - Benchmark <optionsJson>"
                 | _ ->
                     printfn "Unhandled argument: %A" arg
         0
