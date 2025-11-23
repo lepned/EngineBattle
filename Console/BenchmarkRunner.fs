@@ -295,7 +295,7 @@ module BenchmarkRunner =
       applyCombination engineConfig.Options combo
       let engine = ChessLibrary.EngineHelper.createEngine(engineConfig, None)
       try
-        if not (engine.WaitForReadyOk()) then
+        if not (engine.WaitForReadyOk(6000000)) then
           failwith "Engine did not respond to readyok before benchmark"
         try
           positions
