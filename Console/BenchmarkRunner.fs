@@ -48,13 +48,15 @@ module BenchmarkRunner =
     { ComboDesc: string
       PositionName: string
       Fen: string
+      Time: TimeSpan
       Stats: SearchStats }
 
   type CombinationSummary =
     { ComboDesc: string
       PositionCount: int
       AvgEps: double
-      AvgNps: double }
+      AvgNps: double
+      Time : TimeSpan }
 
   let private defaultDuration = 20
 
@@ -174,7 +176,8 @@ module BenchmarkRunner =
     |> Seq.map (fun (combo, entries) ->
       let avgEps = entries |> Seq.averageBy (fun e -> float e.Stats.Eps)
       let avgNps = entries |> Seq.averageBy (fun e -> float e.Stats.Nps)
-      { ComboDesc = combo; PositionCount = Seq.length entries; AvgEps = avgEps; AvgNps = avgNps })
+      let time  = entries |> Seq.averageBy (fun e -> e.Time.TotalSeconds)
+      { ComboDesc = combo; PositionCount = Seq.length entries; AvgEps = avgEps; AvgNps = avgNps; Time = TimeSpan.FromSeconds time })
 
   let private pickBestCombination (summaries: seq<CombinationSummary>) =
     summaries
@@ -189,8 +192,8 @@ module BenchmarkRunner =
     sb.AppendLine("Benchmark summary") |> ignore
     sb.AppendLine("-----------------") |> ignore
     for summary in summaries do
-      sb.AppendLine(sprintf "%s | Positions: %d | Avg EPS: %.1f | Avg NPS: %.1f"
-        summary.ComboDesc summary.PositionCount summary.AvgEps summary.AvgNps) |> ignore
+      sb.AppendLine(sprintf "%s | Positions: %d | Avg EPS: %.1f | Avg NPS: %.1f | Duration(s): %.1f"
+        summary.ComboDesc summary.PositionCount summary.AvgEps summary.AvgNps summary.Time.TotalSeconds) |> ignore
     match best with
     | Some best ->
       sb.AppendLine() |> ignore
@@ -228,53 +231,66 @@ module BenchmarkRunner =
           loop last
     loop None
 
-  let private logStats comboDesc positionName fen stats durationSeconds =
+  let private logStats stats durationSeconds (dur: TimeSpan) =
     match stats with
     | None ->
-      printfn "%s | %s | %s | No info available after %ds search" comboDesc positionName fen durationSeconds
+      printfn "    [!] No info available after %ds search" durationSeconds
     | Some data ->
       let formattedNps = formatNPS (float data.Nps)
       let formattedEps = formatEPS (float data.Eps)
+      let durMsg =
+        if dur.TotalMinutes >= 1.0 then
+          sprintf "%dm %ds" dur.Minutes dur.Seconds
+        else
+          sprintf "%.1fs" dur.TotalSeconds
       let formattedWdl =
         match data.WDL with
-        | Some wdl -> sprintf "W=%.0f D=%.0f L=%.0f" wdl.Win wdl.Draw wdl.Loss
-        | None -> "WDL: N/A"
-      printfn "%s | %s | %s | Depth: %d (sel %d) Eval: %s Nodes: %d %s %s PV: %s TBHits: %d %s MPV: %d"
-        comboDesc
-        positionName
-        fen
-        data.Depth
-        data.SDepth
-        (data.Eval.ToString())
-        data.Nodes
-        (sprintf "NPS=%s" formattedNps)
-        (sprintf "EPS=%s" formattedEps)
-        (if String.IsNullOrWhiteSpace data.PV then "-" else data.PV)
-        data.TBHits
-        formattedWdl
-        data.MPV
+        | Some wdl -> sprintf "WDL=%d-%d-%d" (int wdl.Win) (int wdl.Draw) (int wdl.Loss)
+        | None -> "WDL=N/A"
+      
+      printfn "    Time: %s | Depth: %d (SD: %d) | Eval: %s | TBHits: %d | %s" durMsg data.Depth data.SDepth (data.Eval.ToString()) data.TBHits formattedWdl
+      printfn "    Nodes: %-10d | NPS: %-9s | EPS: %-9s" data.Nodes formattedNps formattedEps
+      
+      if not (String.IsNullOrWhiteSpace data.PV) && data.PV.Length > 0 then
+        let pv = if data.PV.Length > 70 then data.PV.Substring(0, 67) + "..." else data.PV
+        printfn "    PV: %s" pv
 
   let private runPosition (engine: ChessEngine) (position: BenchmarkPosition) durationSeconds comboDesc index totalPositions =
     let fen = if String.IsNullOrWhiteSpace position.Fen then startPosition else position.Fen.Trim()
     let board = ChessLibrary.Chess.Board()
     board.LoadFen fen
-    let positionName = if String.IsNullOrWhiteSpace position.Name then sprintf "position %d" (index + 1) else position.Name.Trim()
+    let positionName = if String.IsNullOrWhiteSpace position.Name then sprintf "Position %d" (index + 1) else position.Name.Trim()
     let isWhite = board.Position.STM = 0uy
-    printfn "  [%d/%d] %s (fen: %s)" (index + 1) totalPositions positionName fen
+    
+    printfn ""
+    printfn "  [%d/%d] %s" (index + 1) totalPositions positionName
+    printfn "    FEN: %s" fen
+    
     engine.UciNewGame()
+    let ok = engine.WaitForReadyOk(6000000)
+    if not ok then
+       failwith "Engine did not respond to readyok during benchmark"
     if fen.Equals("startpos", StringComparison.OrdinalIgnoreCase) then
       engine.Position("position startpos")
     else
       engine.PositionGoFen fen
-    engine.Go(durationSeconds * 1000)
+    let sw = System.Diagnostics.Stopwatch.StartNew()
+    sw.Start()
+    let ms = durationSeconds * 1000    
+    engine.Go ms
     let stats = readSearchStats engine isWhite
-    logStats comboDesc positionName fen stats durationSeconds
+    sw.Stop()
+    logStats stats durationSeconds sw.Elapsed
     match stats with
     | Some stats ->
-      Some { ComboDesc = comboDesc; PositionName = positionName; Fen = fen; Stats = stats }
-    | None -> None
+      printfn "    Result: OK"
+      Some { ComboDesc = comboDesc; PositionName = positionName; Fen = fen; Time = sw.Elapsed; Stats = stats }
+    | None -> 
+        printfn "    Result: FAILED - No valid search stats obtained"
+        None
 
   let runBenchmark (configPath: string) =
+    Console.OutputEncoding <- Encoding.UTF8
     let config = loadConfig configPath
     let durationSeconds = if config.DurationSeconds <= 0 then defaultDuration else config.DurationSeconds
     let positions = safePositions config.Positions
@@ -282,32 +298,56 @@ module BenchmarkRunner =
     let combos = buildCombinations optionSets
     let totalCombos = combos.Length
     let engineConfigPath = resolvePath config.EngineConfigPath "Engine config"
-    let baselineConfig = ChessLibrary.Utilities.JSON.readSingleEngineConfig engineConfigPath
-
-    printfn "Benchmark: %d combinations x %d positions (each %ds)" totalCombos positions.Length durationSeconds
-
+    let baselineConfig = ChessLibrary.Utilities.JSON.readSingleEngineConfig engineConfigPath    
+    let engine = ChessLibrary.EngineHelper.createEngine(baselineConfig, None)
+    engine.TryToUpdateOption "smartpruningfactor" "0"
+    engine.TryToUpdateOption "moveoverhead" "0"
+    
+    printfn ""
+    printfn "================================================================"
+    printfn "                 BENCHMARK CONFIGURATION                        "
+    printfn "================================================================"
+    printfn "  Combinations: %d | Positions: %d | Duration: %ds per position" totalCombos positions.Length durationSeconds
+    printfn "================================================================"
+    
     let accumulatedResults = ResizeArray<ComboResult>()
     combos
     |> List.iteri (fun idx combo ->
-      let comboDesc = sprintf "[%d/%d] %s" (idx + 1) totalCombos (describeCombination combo)
-      printfn "\nRunning combination %s" comboDesc
+      let comboDesc = describeCombination combo
+      let headerText = sprintf "[%d/%d] Configuration: %s" (idx + 1) totalCombos comboDesc
+      let separatorLength = max 64 (headerText.Length)
+      let separator = String('-', separatorLength)
+      
+      printfn ""
+      printfn "%s" separator
+      printfn "%s" headerText
+      printfn "%s" separator
+      
       let engineConfig = cloneEngineConfig baselineConfig
-      applyCombination engineConfig.Options combo
-      let engine = ChessLibrary.EngineHelper.createEngine(engineConfig, None)
+      applyCombination engineConfig.Options combo      
+      let options = engineConfig.Options |> Seq.map (fun kvp -> (kvp.Key, kvp.Value))      
+      for (k, v) in options do
+        let value = v.ToString()
+        if not (k.ToLower().Contains "smartpruningfactor") && not (k.ToLower().Contains "moveoverhead") then
+            let opt = EngineOption.Create k value
+            engine.AddSetOption(opt)
+     
       try
+        engine.UciNewGame()
         if not (engine.WaitForReadyOk(6000000)) then
-          failwith "Engine did not respond to readyok before benchmark"
-        try
-          positions
-          |> Array.iteri (fun posIdx position ->
-              match runPosition engine position durationSeconds comboDesc posIdx positions.Length with
-              | Some result -> accumulatedResults.Add result
-              | None -> ())
-        with ex ->
-          printfn "Error while running combo %s: %s" comboDesc ex.Message
+          failwith "Engine did not respond to readyok before benchmark"        
+        positions
+        |> Array.iteri (fun posIdx position ->
+            match runPosition engine position durationSeconds comboDesc posIdx positions.Length with
+            | Some result -> accumulatedResults.Add result
+            | None -> ()
+        )
+        
       finally
-        if not (engine.HasExited()) then
-          engine.StopProcess())
+        printfn ""
+        printfn "  Configuration complete."
+        printfn "" )
+
     let summaries =
         query {
             for s in (accumulatedResults |> summarizeResults) do
@@ -316,9 +356,12 @@ module BenchmarkRunner =
             select s
         } |> Seq.toList
 
+    engine.StopProcess()
     let best = pickBestCombination summaries
     let summaryText = formatSummaryText summaries best
     let summaryPath = resolveSummaryPath config
-    File.WriteAllText(summaryPath, summaryText)
-    printfn "\n%s" summaryText
-    printfn "Summary written to %s" summaryPath
+    File.WriteAllText(summaryPath, summaryText, Encoding.UTF8)
+    printfn ""
+    printfn "%s" summaryText
+    printfn "Summary written to: %s" summaryPath
+    printfn ""

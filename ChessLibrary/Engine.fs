@@ -646,7 +646,7 @@ module Engine =
       let configCmds = initCommands
       let mutable proc = defaultof<Process>
       let mutable commands = ResizeArray<string>()
-      let nonDefaultValues = System.Collections.Generic.Dictionary<string, (string * string)>()
+      let nonDefaultValues = System.Collections.Generic.Dictionary<string, (string * string)>()      
 
       let addCommand (list : string ResizeArray) (cmd: string) =
         if not (list.Contains cmd) then
@@ -892,6 +892,17 @@ module Engine =
 
       member val IsReference = isReference with get, set
       member this.GetDefaultOptions() = getAllDefaultOptions()
+      
+      member this.TryToUpdateOption (name:string) (value:string) =        
+        let mutable option = String.Empty
+        for opt in optionsMap do
+            if opt.Key.ToLower().Contains (name.ToLower()) then
+              option <- opt.Key
+        match optionsMap.TryGetValue option with
+        | true, opt -> 
+            this.AddSetOption (EngineOption.Create opt.Name value)
+        | false, _ -> ()
+
       member this.AddSetOptions (config:EngineOption array) =
         this.Stop()
         for option in config do
