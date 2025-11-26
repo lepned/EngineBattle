@@ -299,6 +299,15 @@ module BenchmarkRunner =
     let totalCombos = combos.Length
     let engineConfigPath = resolvePath config.EngineConfigPath "Engine config"
     let baselineConfig = ChessLibrary.Utilities.JSON.readSingleEngineConfig engineConfigPath    
+    let syzygyKey = 
+        baselineConfig.Options.Keys 
+        |> Seq.tryFind (fun key -> key.Equals("syzygypath", StringComparison.OrdinalIgnoreCase))
+    match syzygyKey with
+    | Some key -> 
+        //printfn "%s: Removing syzygypath option for benchmark run." key
+        baselineConfig.Options.Remove(key) |> ignore
+    | None -> ()
+
     let engine = ChessLibrary.EngineHelper.createEngine(baselineConfig, None)
     engine.TryToUpdateOption "smartpruningfactor" "0"
     engine.TryToUpdateOption "moveoverhead" "0"
