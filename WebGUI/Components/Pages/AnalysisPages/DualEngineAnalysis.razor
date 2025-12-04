@@ -245,8 +245,9 @@
         var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
         board.ResetBoardState();
         board.StartPosition = fenP;
-        board.LoadFen(fenP);
-        
+        board.LoadFen(fenP);        
+        var ply = 0;
+        var check = "variation starts here";
         foreach (var row in game.Moves)
         {
             if (row.WhiteSan != "")
@@ -258,6 +259,11 @@
             {
                 board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
             }
+
+            if (row.WhiteComment == check || row.BlackComment == check)
+            {
+                ply = board.PlyCount - 1;
+            }
         }
         var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
         MoveAndFen moveAndFen;
@@ -265,9 +271,8 @@
         {
             var moveStr = lastMove.Value.Split(' ');
             var move = moveStr.Length > 1 ? moveStr[1] : moveStr[0];
-            move = ExtractMove(move);
-            var idx = board.MovesAndFenPlayed.TakeWhile(e => e.ShortSan != move).Count();
-            idx = Math.Min(idx, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
+            move = ExtractMove(move);            
+            var idx = Math.Min(ply, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
             fen = board.MovesAndFenPlayed[idx].FenAfterMove;
             moveAndFen = board.MovesAndFenPlayed[idx];
         }
@@ -276,9 +281,7 @@
             moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
             fen = board.FEN();
         }
-        await Notifier.UpdateFen(fen);
-        await Notifier.UpdateFenAndMove(moveAndFen);
-       
+        await Notifier.UpdateFenAndMove(moveAndFen);       
         await UpdateChartMoveIndicatorAsync();
         moveHistory = board.GetMoveHistory();
         StateHasChanged();

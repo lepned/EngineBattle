@@ -1,7 +1,6 @@
 ﻿@using Toolbelt.Blazor.HotKeys2;
 @using WebGUI.Services
 @using WebGUI
-
 @using static ChessLibrary.Chess
 
 @implements IAsyncDisposable
@@ -100,7 +99,6 @@
         </MudItem>
     }
 
-
     @if (ShowMoveList && MakeMoveListClickable == false)
     {
         <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
@@ -132,7 +130,7 @@
         <MudItem sm=12 md="12" lg="12">
 
             <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
-                          FullWidth="false" T=string Value=fenWithMoves ValueChanged="OnValueChanged" Style="font-size:12px"
+                          FullWidth="false" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
                           Immediate="true"
                           Variant="Variant.Filled" />
         </MudItem>
@@ -151,553 +149,554 @@
 
 
 @code {
-    [Parameter] public bool ShowChessNavButtons { get; set; } = true;
-    [Parameter] public bool ShowMoveList { get; set; } = true;
-    [Parameter] public bool ShowFenField { get; set; } = true;
-    [Parameter] public bool ShowPlayerInfo { get; set; } = false;
-    [Parameter] public bool EnablePGNreader { get; set; } = false;
-    [Parameter] public bool MakeMoveListClickable { get; set; } = false;
-    [Parameter] public EventCallback OpenPGNFile { get; set; }
-    [Parameter] public RenderFragment BlackPlayerInfo { get; set; }
-    [Parameter] public RenderFragment WhitePlayerInfo { get; set; }
-    [Parameter] public string FENposition { get; set; }
-    [Parameter] public string OpeningName { get; set; }
-    [Parameter] public string OpeningMoves { get; set; }
-    [Parameter] public EventCallback<string> OnMoveMadeOnBoard { get; set; }
-    [Parameter] public EventCallback<string> OnNewFENOnBoard { get; set; }
-    [Parameter] public Board ChessBoard { get; set; } = new();
-    [Parameter] public int MoveListFontSize { get; set; }
-    [Parameter] public int MoveListHeight { get; set; }
-    [Parameter] public string MoveHistory { get; set; }
+	[Parameter] public bool ShowChessNavButtons { get; set; } = true;
+	[Parameter] public bool ShowMoveList { get; set; } = true;
+	[Parameter] public bool ShowFenField { get; set; } = true;
+	[Parameter] public bool ShowPlayerInfo { get; set; } = false;
+	[Parameter] public bool EnablePGNreader { get; set; } = false;
+	[Parameter] public bool MakeMoveListClickable { get; set; } = false;
+	[Parameter] public EventCallback OpenPGNFile { get; set; }
+	[Parameter] public RenderFragment BlackPlayerInfo { get; set; }
+	[Parameter] public RenderFragment WhitePlayerInfo { get; set; }
+	[Parameter] public string FENposition { get; set; }
+	[Parameter] public string OpeningName { get; set; }
+	[Parameter] public string OpeningMoves { get; set; }
+	[Parameter] public EventCallback<string> OnMoveMadeOnBoard { get; set; }
+	[Parameter] public EventCallback<string> OnNewFENOnBoard { get; set; }
+	[Parameter] public Board ChessBoard { get; set; } = new();
+	[Parameter] public int MoveListFontSize { get; set; }
+	[Parameter] public int MoveListHeight { get; set; }
+	[Parameter] public string MoveHistory { get; set; }
 
-    private string Comment { get; set; }
-    private Board moveBoard = new Board();
-    private string pendingPromotionMove;
-    private int promotionButtonSize = 50; // Set to your preferred size
-    private double promotionButtonSizePx => promotionButtonSize * 0.85; // Adjust size for the images
-    private TaskCompletionSource<string> promotionTcs;
+	private string Comment { get; set; }
+	private Board moveBoard = new Board();
+	private string pendingPromotionMove;
+	private int promotionButtonSize = 50; // Set to your preferred size
+	private double promotionButtonSizePx => promotionButtonSize * 0.85; // Adjust size for the images
+	private TaskCompletionSource<string> promotionTcs;
+	private int moveListFontSize = 8;
+	private int moveListHeight = 80;
+	private string openingStyle = $"font-size:15px";
+	private string moveListStyle = "font-size:18px; line-height: 25px; height: 150px;";
+	private string fenWithMoves;  //= "r6k/pp2r2p/4Rp1Q/3p4/8/1N1P2R1/PqP2bPP/7K b - - 0 24 moves f2g3 e6e7 b2b1 b3c1 b1c1 h6c1";
+	private string fen = string.Empty;
+	private bool stopAutoPlay = true;
+	private string moveStr;
+	private string moveHeader;
+	private DotNetObjectReference<Chessboard> objRef;
+	private ElementReference board;
+	private MudTextField<string> moveListTextField = new();
+	private IJSObjectReference chessJSmodule; //my own chessinterop.js
+	private IJSObjectReference chessGUI; //chessboardjs
+	private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+	private string moveList = string.Empty;
+	private List<string> replayMoves = new();
+	private HotKeysContext keyContext;
+	private List<NNValues> firstNNMoves = new();
+	private List<NNValues> secondNNMoves = new();
+	private string currentId = string.Empty;
+	private double MinPolicyThreshold { get; set; } // Minimum probability threshold for displaying moves
+	private List<MoveAndFen> MoveList { get; set; }
+	private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
 
-    private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
-    private async Task SelectPromotion(string promotionPiece)
-    {
-        // Hide the promotion dialog
-        await chessJSmodule.InvokeVoidAsync("hidePromotionDialog");
+	private async Task SelectPromotion(string promotionPiece)
+	{
+		// Hide the promotion dialog
+		await chessJSmodule.InvokeVoidAsync("hidePromotionDialog");
 
-        if (promotionTcs != null)
-        {
-            // Complete the pending task with the selected promotion piece
-            promotionTcs.TrySetResult(promotionPiece);
-        }
-    }
+		if (promotionTcs != null)
+		{
+			// Complete the pending task with the selected promotion piece
+			promotionTcs.TrySetResult(promotionPiece);
+		}
+	}
 
-    private async Task ScrollToCurrentMove()
-    {
-        if (chessJSmodule is not null && ChessBoard.Position.Ply >= 0)
-        {
-            var scrollIndex = Math.Max(0, (int)ChessBoard.Position.Ply); // Adjust for zero-based index
-            var moveId = $"move-{scrollIndex}";
-            await chessJSmodule.InvokeVoidAsync("scrollToElement", "moveListDiv", moveId);
-        }
-    }
+	private async Task ScrollToCurrentMove()
+	{
+		if (chessJSmodule is not null && ChessBoard.Position.Ply >= 0)
+		{
+			var scrollIndex = Math.Max(0, (int)ChessBoard.Position.Ply); // Adjust for zero-based index
+			var moveId = $"move-{scrollIndex}";
+			await chessJSmodule.InvokeVoidAsync("scrollToElement", "moveListDiv", moveId);
+		}
+	}
 
-    [JSInvokable]
-    public async Task<string> ShowPromotionDialog(string move, double x, double y, bool isWhite)
-    {
-        // Create a new TaskCompletionSource to wait for user selection
-        promotionTcs = new TaskCompletionSource<string>();
-        pendingPromotionMove = move;
+	[JSInvokable]
+	public async Task<string> ShowPromotionDialog(string move, double x, double y, bool isWhite)
+	{
+		// Create a new TaskCompletionSource to wait for user selection
+		promotionTcs = new TaskCompletionSource<string>();
+		pendingPromotionMove = move;
 
-        // Show the promotion dialog at the coordinates passed from JavaScript
-        await chessJSmodule.InvokeVoidAsync("showPromotionDialog", x, y, isWhite);
+		// Show the promotion dialog at the coordinates passed from JavaScript
+		await chessJSmodule.InvokeVoidAsync("showPromotionDialog", x, y, isWhite);
 
-        // Wait for the user to select a promotion piece
-        string promotionPiece = await promotionTcs.Task;
+		// Wait for the user to select a promotion piece
+		string promotionPiece = await promotionTcs.Task;
 
-        // Return the full move with the promotion piece
-        return move + promotionPiece;
-    }
+		// Return the full move with the promotion piece
+		return move + promotionPiece;
+	}	
 
-    public double MinPolicyThreshold { get; set; } // Minimum probability threshold for displaying moves
-    public List<MoveAndFen> MoveList { get; set; }
-    private int moveListFontSize = 8;
-    private int moveListHeight = 80;
-    private string openingStyle = $"font-size:15px";
-    private string moveListStyle = "font-size:18px; line-height: 25px; height: 150px;";
-    private string fenWithMoves;  //= "r6k/pp2r2p/4Rp1Q/3p4/8/1N1P2R1/PqP2bPP/7K b - - 0 24 moves f2g3 e6e7 b2b1 b3c1 b1c1 h6c1";
-    private bool stopAutoPlay = true;
-    private string moveStr;
-    private string moveHeader;
-    private DotNetObjectReference<Chessboard> objRef;
-    private ElementReference board;
-    private MudTextField<string> moveListTextField = new();
-    private IJSObjectReference chessJSmodule; //my own chessinterop.js
-    private IJSObjectReference chessGUI; //chessboardjs
-    private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    private string moveList = string.Empty;
-    List<string> replayMoves = new();
-    HotKeysContext keyContext;
-    private List<NNValues> firstNNMoves = new();
-    private List<NNValues> secondNNMoves = new();
-    private string currentId = string.Empty;
+	private List<NNValues> GetNNValues(string id)
+	{
+		if (id == "nnInput1")
+		{
+			return firstNNMoves;
+		}
+		else if (id == "nnInput2")
+		{
+			return secondNNMoves;
+		}
+		return new List<NNValues>();
+	}
 
-    private List<NNValues> GetNNValues(string id)
-    {
-        if (id == "nnInput1")
-        {
-            return firstNNMoves;
-        }
-        else if (id == "nnInput2")
-        {
-            return secondNNMoves;
-        }
-        return new List<NNValues>();
-    }
+	private async Task OnValueChanged(string value)
+	{
+		fenWithMoves = value;
+		fen = value;
+		await UpdateFenWithMovesInput();
+		StateHasChanged();
+	}
 
-    private async Task OnValueChanged(string value)
-    {
-        fenWithMoves = value;
-        await UpdateFenWithMovesInput();
-        StateHasChanged();
-    }
+	private async void OnItemClick(int index)
+	{
+		stopAutoPlay = true;
+		if (index != -1)
+		{
+			var move = MoveList[index];
+			fen = move.FenAfterMove;			
+			ChessBoard.LoadFen(fen);
+			Comment = CreateComments(move);
+			await SetPosition(fen);
+			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			await ScrollToCurrentMove();
+			StateHasChanged();
+		}
+	}
 
-    private async void OnItemClick(int index)
-    {
-        stopAutoPlay = true;
-        if (index != -1)
-        {
-            var move = MoveList[index];
-            var fen = move.FenAfterMove;
-            fenWithMoves = fen;
-            ChessBoard.LoadFen(fen);
-            Comment = CreateComments(move);
-            await SetPosition(fen);
-            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
-            await ScrollToCurrentMove();
-            StateHasChanged();
-        }
-    }
+	private void ScrollToEnd()
+	{
+		chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
+	}
 
-    private void ScrollToEnd()
-    {
-        chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
-    }
+	[JSInvokable]
+	public bool isLegalMove(string moveStr)
+	{
+		var allMoves = ChessBoard.GetAllLegalMoves();
+		var exists = allMoves.Any(e => e.Item1.Contains(moveStr));
+		return exists;
+	}
 
-    [JSInvokable]
-    public bool isLegalMove(string moveStr)
-    {
-        var allMoves = ChessBoard.GetAllLegalMoves();
-        var exists = allMoves.Any(e => e.Item1.Contains(moveStr));
-        return exists;
-    }
+	[JSInvokable]
+	public string sideToMove()
+	{
+		return ChessBoard.Position.STM == 0 ? "w" : "b";
+	}
 
-    [JSInvokable]
-    public string sideToMove()
-    {
-        return ChessBoard.Position.STM == 0 ? "w" : "b";
-    }
+	[JSInvokable]
+	public string GetPositionFen()
+	{
+		return ChessBoard.FEN();
+	}
 
-    [JSInvokable]
-    public string GetPositionFen()
-    {
-        return ChessBoard.FEN();
-    }
+	[JSInvokable]
+	public bool isLegalPieceMove(string startSq)
+	{
+		var allMoves = ChessBoard.GetAllLegalMoves();
+		var legal = allMoves.Any(e => e.Item1.Contains(startSq));
+		return legal;
+	}
 
-    [JSInvokable]
-    public bool isLegalPieceMove(string startSq)
-    {
-        var allMoves = ChessBoard.GetAllLegalMoves();
-        var legal = allMoves.Any(e => e.Item1.Contains(startSq));
-        return legal;
-    }
+	[JSInvokable]
+	public string GetMoveStr(string move)
+	{
+		var allMoves = ChessBoard.GetAllLegalMoves();
+		var res = allMoves.Where(e => e.Item1.Contains(move));
+		var candidate = "";
+		if (res.Count() > 1)
+		{
+			//promotion here
+			return "promotion:" + move;
+		}
+		else
+		{
+			var m = res.FirstOrDefault(e => e.Item1.Contains(move));
+			candidate = m?.Item1;
+		}
 
-    [JSInvokable]
-    public string GetMoveStr(string move)
-    {
-        var allMoves = ChessBoard.GetAllLegalMoves();
-        var res = allMoves.Where(e => e.Item1.Contains(move));
-        var candidate = "";
-        if (res.Count() > 1)
-        {
-            //promotion here
-            return "promotion:" + move;
-        }
-        else
-        {
-            var m = res.FirstOrDefault(e => e.Item1.Contains(move));
-            candidate = m?.Item1;
-        }
+		return candidate;
+	}
 
-        return candidate;
-    }
+	[JSInvokable]
+	public async Task UpdateNewMove(string move, bool invokeMove = true)
+	{
+		if (invokeMove)
+		{
+			var moveIsProvided = !string.IsNullOrEmpty(move);
+			if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
+			{
+				//new mainline initiated here
+				var command = ChessBoard.PositionWithMovesIndexed();
+				ChessBoard.ResetBoardState();
+				ChessBoard.PlayCommands(command);
+			}
 
-    [JSInvokable]
-    public async Task UpdateNewMove(string move, bool invokeMove = true)
-    {
-        if (invokeMove)
-        {
-            var moveIsProvided = !string.IsNullOrEmpty(move);
-            if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
-            {
-                //new mainline initiated here
-                var command = ChessBoard.PositionWithMovesIndexed();
-                ChessBoard.ResetBoardState();
-                ChessBoard.PlayCommands(command);
-            }
+			if (moveIsProvided)
+			{
+				ChessBoard.PlayLongSanMove(move);
+				await OnMoveMadeOnBoard.InvokeAsync(move);
+			}
 
-            if (moveIsProvided)
-            {
-                ChessBoard.PlayLongSanMove(move);
-                await OnMoveMadeOnBoard.InvokeAsync(move);
-            }
+			fenWithMoves = ChessBoard.PositionWithMoves();
+			fen = ChessBoard.FEN();
+			var lastNNMoves = GetNNValues(currentId);
+			var lastFenMove = ChessBoard.MovesAndFenPlayed.Last();
+			Comment = CreateComments(lastFenMove);
+			await DisplayMoveAnnotation(lastNNMoves, currentId);
+			StateHasChanged();
+		}
+	}
 
-            fenWithMoves = ChessBoard.PositionWithMoves();
-            var lastNNMoves = GetNNValues(currentId);
-            var lastFenMove = ChessBoard.MovesAndFenPlayed.Last();
-            Comment = CreateComments(lastFenMove);
-            await DisplayMoveAnnotation(lastNNMoves, currentId);
-            StateHasChanged();
-        }
-    }
+	public async Task ResetEngine()
+	{
+		await Notifier.NotifyEngineToReset(true);
+	}
 
-    public async Task ResetEngine()
-    {
-        await Notifier.NotifyEngineToReset(true);
-    }
+	public async Task RotateBoard()
+	{
+		if (chessJSmodule is not null && chessGUI is not null)
+		{
+			await chessJSmodule.InvokeVoidAsync("rotateBoard", board);
+			var lastNNMoves = GetNNValues(currentId);
+			await DisplayMoveAnnotation(lastNNMoves, currentId);
+		}
+		await Task.CompletedTask;
+	}
 
-    public async Task RotateBoard()
-    {
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            await chessJSmodule.InvokeVoidAsync("rotateBoard", board);
-            var lastNNMoves = GetNNValues(currentId);
-            await DisplayMoveAnnotation(lastNNMoves, currentId);
-        }
-        await Task.CompletedTask;
-    }
+	public async Task WriteTextAsync()
+	{
+		moveBoard.ResetBoardState();
+		moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
+		var fen = moveBoard.FEN();
+		await JS.InvokeVoidAsync("navigator.clipboard.writeText", fen);
+	}
 
-    public async Task WriteTextAsync()
-    {
-        moveBoard.ResetBoardState();
-        moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
-        var fen = moveBoard.FEN();
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", fen);
-    }
+	private async Task FenWithMovesReleased(FocusEventArgs args)
+	{
+		await UpdateFenWithMovesInput();
+	}
 
-    async Task FenWithMovesReleased(FocusEventArgs args)
-    {
-        await UpdateFenWithMovesInput();
-    }
+	private async Task UpdateFenWithMovesInput()
+	{
+		try
+		{
+			stopAutoPlay = true;
+			if (!string.IsNullOrEmpty(fenWithMoves))
+			{
+				ChessBoard.ResetBoardState();
+				fenWithMoves = fenWithMoves.TrimStart().TrimEnd();
+				ChessBoard.PlayFenWithMoves(fenWithMoves);
+				fen = ChessBoard.FEN();
+				await SetPosition(fen, false);
+				await OnNewFENOnBoard.InvokeAsync(fen);
+				await ScrollToCurrentMove();
+			}
+			StateHasChanged();
+		}
+		catch (Exception) //ignore parsing errors for now
+		{
+			logger.LogError("Error parsing FEN with moves: " + fenWithMoves);
+		}
+	}
 
-    async Task UpdateFenWithMovesInput()
-    {
-        try
-        {
-            stopAutoPlay = true;
-            if (!string.IsNullOrEmpty(fenWithMoves))
-            {
-                ChessBoard.ResetBoardState();
-                fenWithMoves = fenWithMoves.TrimStart().TrimEnd();
-                ChessBoard.PlayFenWithMoves(fenWithMoves);
-                fenWithMoves = ChessBoard.FEN();
-                await SetPosition(fenWithMoves, false);
-                await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
-                await ScrollToCurrentMove();
-            }
-            StateHasChanged();
-        }
-        catch (Exception) //ignore parsing errors for now
-        {
-            logger.LogError("Error parsing FEN with moves: " + fenWithMoves);
-        }
-    }
+	private async Task PrepareChessboard()
+	{
+		//chessboard functionality here
+		objRef = DotNetObjectReference.Create(this);
+		chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+		if (String.IsNullOrEmpty(FENposition))
+		{
+			FENposition = startPos;
+		}
+		chessGUI = await chessJSmodule.InvokeAsync<IJSObjectReference>("addChessboardToElement", objRef, FENposition, board);
+		StateHasChanged();
+	}
 
-    private async Task PrepareChessboard()
-    {
-        //chessboard functionality here
-        objRef = DotNetObjectReference.Create(this);
-        chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-        if (String.IsNullOrEmpty(FENposition))
-        {
-            FENposition = startPos;
-        }
-        chessGUI = await chessJSmodule.InvokeAsync<IJSObjectReference>("addChessboardToElement", objRef, FENposition, board);
-        StateHasChanged();
-    }
+	public async Task ResetGameState()
+	{
+		stopAutoPlay = true;
+		moveStr = string.Empty;
+		moveHeader = string.Empty;
+		if (chessJSmodule is not null && chessGUI is not null)
+		{
+			moveList = string.Empty;
+			fen = startPos;
+			ChessBoard.ResetBoardState();
+			ChessBoard.LoadFen(fen);
+			await chessJSmodule.InvokeVoidAsync("setSimplePosition", board, startPos);
+		}
 
-    public async Task ResetGameState()
-    {
-        stopAutoPlay = true;
-        moveStr = string.Empty;
-        moveHeader = string.Empty;
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            moveList = string.Empty;
-            fenWithMoves = startPos;
-            ChessBoard.ResetBoardState();
-            ChessBoard.LoadFen(fenWithMoves);
-            await chessJSmodule.InvokeVoidAsync("setSimplePosition", board, startPos);
-        }
+		StateHasChanged();
+		await Task.CompletedTask;
+	}
 
-        StateHasChanged();
-        await Task.CompletedTask;
-    }
+	private async Task SetPosition(string fen, bool withCallback = false)
+	{
+		if (chessJSmodule is not null && chessGUI is not null)
+		{
+			await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, withCallback);
+			moveList = string.Empty;
+		}
+		await Task.CompletedTask;
+	}
 
-    private async Task SetPosition(string fen, bool withCallback = false)
-    {
-        fenWithMoves = fen; //ChessBoard.FEN();
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fenWithMoves, withCallback);
-            moveList = string.Empty;
-        }
-        await Task.CompletedTask;
-    }
+	private string FormatNodes(double nodes)
+	{
+		if (nodes > 1_000_000_000)
+		{
+			var mill = nodes / 1_000_000_000;
+			return mill.ToString("F1") + "B"; //G nodes
+		}
+		else if (nodes > 1_000_000)
+		{
+			var mill = nodes / 1_000_000;
+			return mill.ToString("F1") + "M";
+		}
 
-    private string FormatNodes(double nodes)
-    {
-        if (nodes > 1_000_000_000)
-        {
-            var mill = nodes / 1_000_000_000;
-            return mill.ToString("F1") + "B"; //G nodes
-        }
-        else if (nodes > 1_000_000)
-        {
-            var mill = nodes / 1_000_000;
-            return mill.ToString("F1") + "M";
-        }
+		else if (nodes > 1_000)
+		{
+			var thousand = nodes / 1_000;
+			return thousand.ToString("F1") + "K";
+		}
 
-        else if (nodes > 1_000)
-        {
-            var thousand = nodes / 1_000;
-            return thousand.ToString("F1") + "K";
-        }
+		else
+		{
+			return nodes.ToString("F0");
+		}
+	}
 
-        else
-        {
-            return nodes.ToString("F0");
-        }
-    }
+	private List<object> GetDisplayData(List<NNValues> nnMoves, OverlaySettings overlay)
+	{
+		MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
+		var currentOverlaySetting = overlay;
+		if (!OverlaySetting.IsOverlaySettingsEnabled || nnMoves.Count == 0)
+		{
+			return new List<object>();
+		}
+		var firstMove = nnMoves.FirstOrDefault();
+		if (firstMove.Nodes == 1)
+		{
+			currentOverlaySetting = OverlaySettings.Policy;
+		}
+		var moves = nnMoves.Skip(1).ToList();
 
-    private List<object> GetDisplayData(List<NNValues> nnMoves, OverlaySettings overlay)
-    {
-        MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
-        var currentOverlaySetting = overlay;
-        if (!OverlaySetting.IsOverlaySettingsEnabled || nnMoves.Count == 0)
-        {
-            return new List<object>();
-        }
-        var firstMove = nnMoves.FirstOrDefault();
-        if (firstMove.Nodes == 1)
-        {
-            currentOverlaySetting = OverlaySettings.Policy;
-        }
-        var moves = nnMoves.Skip(1).ToList();
+		if (currentOverlaySetting == OverlaySettings.Policy)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
+		}
+		if (currentOverlaySetting == OverlaySettings.SearchPolicy)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1") }).ToList();
+		}
+		else if (currentOverlaySetting == OverlaySettings.Q)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
+		}
 
-        if (currentOverlaySetting == OverlaySettings.Policy)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
-        }
-        if (currentOverlaySetting == OverlaySettings.SearchPolicy)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1") }).ToList();
-        }
-        else if (currentOverlaySetting == OverlaySettings.Q)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
-        }
+		else if (currentOverlaySetting == OverlaySettings.V)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
+		}
 
-        else if (currentOverlaySetting == OverlaySettings.V)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
-        }
+		else if (currentOverlaySetting == OverlaySettings.QVDiff)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
+		}
 
-        else if (currentOverlaySetting == OverlaySettings.QVDiff)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
-        }
+		else if (currentOverlaySetting == OverlaySettings.E)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
+		}
 
-        else if (currentOverlaySetting == OverlaySettings.E)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
-        }
+		else if (currentOverlaySetting == OverlaySettings.Nodes)
+		{
+			return
+				moves
+				.Where(e => e.P > MinPolicyThreshold)
+				.Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
+		}
 
-        else if (currentOverlaySetting == OverlaySettings.Nodes)
-        {
-            return
-                moves
-                .Where(e => e.P > MinPolicyThreshold)
-                .Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
-        }
+		return new List<object>();
+	}
 
-        return new List<object>();
-    }
+	//set circles on the board from a collection of moves
+	private async Task DisplayMoveAnnotation(List<NNValues> moves, string id)
+	{
+		if (chessJSmodule is not null && chessGUI is not null)
+		{
+			var overlay = OverlaySetting.GetOverlaySetting(id);
+			var data = GetDisplayData(moves, overlay);
+			try
+			{
+				if (data.Count > 0)
+				{
+					await chessJSmodule.InvokeVoidAsync("addPolicyCircles", board, data);
+				}
+				else
+				{
+					await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+				}
+			}
+			catch (JSException jsEx)
+			{
+				logger.LogError(jsEx, "JavaScript error in addPolicyCircles.");
+			}
+			catch (Exception ex)
+			{
+				logger.LogError(ex, "Unexpected error in DisplayMoveAnnotation.");
+			}
+		}
+	}
 
-    //set circles on the board from a collection of moves
-    private async Task DisplayMoveAnnotation(List<NNValues> moves, string id)
-    {
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            var overlay = OverlaySetting.GetOverlaySetting(id);
-            var data = GetDisplayData(moves, overlay);
-            try
-            {
-                if (data.Count > 0)
-                {
-                    await chessJSmodule.InvokeVoidAsync("addPolicyCircles", board, data);
-                }
-                else
-                {
-                    await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
-                }
-            }
-            catch (JSException jsEx)
-            {
-                logger.LogError(jsEx, "JavaScript error in addPolicyCircles.");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Unexpected error in DisplayMoveAnnotation.");
-            }
-        }
-    }
+	private async Task SetPositionAndMove(MoveAndFen input, bool withCallback = false, bool withAnnotation = false, bool invokeMove = true)
+	{
+		if (chessJSmodule is not null && chessGUI is not null)
+		{
+			await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
+		}
+	}
 
-    private async Task SetPositionAndMove(MoveAndFen input, bool withCallback = false, bool withAnnotation = false, bool invokeMove = true)
-    {
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
-        }
-    }
+	private async Task StartOfGame()
+	{
+		var fenAndMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
+		stopAutoPlay = true;
+		fen = ChessBoard.StartPosition;
+		ChessBoard.LoadFen(fen);
+		await SetPosition(fen, false);
+		await OnNewFENOnBoard.InvokeAsync(fen);
+		await ScrollToCurrentMove();
+		if (fen != null)
+		{
+			Comment = CreateComments(fenAndMove);
+		}
+		StateHasChanged();
+	}
 
-    private async Task StartOfGame()
-    {
-        var fenAndMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
-        stopAutoPlay = true;
-        fenWithMoves = ChessBoard.StartPosition;
-        ChessBoard.LoadFen(fenWithMoves);
-        await SetPosition(fenWithMoves, false);
-        await OnNewFENOnBoard.InvokeAsync(fenWithMoves);
-        await ScrollToCurrentMove();
-        if (fenAndMove != null)
-        {
-            Comment = CreateComments(fenAndMove);
-        }
-        StateHasChanged();
-    }
+	private async Task EndOfGame()
+	{
+		stopAutoPlay = true;
+		var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
+		if (fenAndMove != null)
+		{
+			fen = fenAndMove.FenAfterMove;
+			await SetPositionAndMove(fenAndMove, false);
+			ChessBoard.LoadFen(fen);
+			Comment = CreateComments(fenAndMove);
+			await OnNewFENOnBoard.InvokeAsync(fen);
+			await ScrollToCurrentMove();
+		}
+		StateHasChanged();
+	}
 
-    private async Task EndOfGame()
-    {
-        stopAutoPlay = true;
-        var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
-        if (fenAndMove != null)
-        {
-            fenWithMoves = fenAndMove.FenAfterMove;
-            await SetPositionAndMove(fenAndMove, false);
-            ChessBoard.LoadFen(fenWithMoves);
-            Comment = CreateComments(fenAndMove);
-            await OnNewFENOnBoard.InvokeAsync(fenAndMove.FenAfterMove);
-            await ScrollToCurrentMove();
-        }
-        StateHasChanged();
-    }
+	private async Task NextMove()
+	{
+		stopAutoPlay = true;
+		var next = ChessBoard.TryGetNextMoveAndFen(fen);
+		var curFen = ChessBoard.CurrentFEN;
+		Console.WriteLine(curFen);
+		if (next != null)
+		{
+			var move = next.Value;
+			fen = move.FenAfterMove;
+			ChessBoard.LoadFen(fen);
+			Comment = CreateComments(move);
+			await SetPositionAndMove(move, invokeMove: false);
+			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			await ScrollToCurrentMove();
+		}
+		StateHasChanged();
+	}
 
-    private async Task NextMove()
-    {
-        stopAutoPlay = true;
-        var next = ChessBoard.TryGetNextMoveAndFen(fenWithMoves);
-        if (next != null)
-        {
-            var move = next.Value;
-            fenWithMoves = move.FenAfterMove;
-            ChessBoard.LoadFen(fenWithMoves);
-            Comment = CreateComments(move);
-            await SetPositionAndMove(move, invokeMove: false);
-            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
-            await ScrollToCurrentMove();
-        }
-        StateHasChanged();
-    }
+	private async Task PreviousMove()
+	{
+		stopAutoPlay = true;		
+		var prev = ChessBoard.TryGetPreviousMoveAndFen(fen);
+		if (prev != null)
+		{
+			var move = prev.Value;
+			fen = move.FenAfterMove;
+			ChessBoard.LoadFen(fen);
+			Comment = CreateComments(move);
+			await SetPositionAndMove(move, invokeMove: false);
+			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			await ScrollToCurrentMove();
+		}
+		StateHasChanged();
+	}
 
-    private async Task PreviousMove()
-    {
-        stopAutoPlay = true;
-        moveBoard.ResetBoardState();
-        moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
-        fenWithMoves = moveBoard.FEN();
-        var prev = ChessBoard.TryGetPreviousMoveAndFen(fenWithMoves);
-        if (prev != null)
-        {
-            var move = prev.Value;
-            fenWithMoves = move.FenAfterMove;
-            ChessBoard.LoadFen(fenWithMoves);
-            Comment = CreateComments(move);
-            await SetPositionAndMove(move, invokeMove: false);
-            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
-            await ScrollToCurrentMove();
-        }
-        StateHasChanged();
-    }
+	private async Task PlayMoves()
+	{
+		stopAutoPlay = false;
+		var moves = ChessBoard.MovesAndFenPlayed.Count;
+		while (stopAutoPlay == false && ChessBoard.Position.Ply < moves)
+		{
+			var fenAndMove = ChessBoard.Position.Ply == 0 ?
+					ChessBoard.MovesAndFenPlayed[0] :
+					ChessBoard.MovesAndFenPlayed[ChessBoard.Position.Ply];
+			fen = fenAndMove.FenAfterMove;
+			ChessBoard.LoadFen(fen);
+			Comment = CreateComments(fenAndMove);
+			await SetPositionAndMove(fenAndMove);
+			await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
+			await Task.Delay(300);
+			await ScrollToCurrentMove();
+		}
 
-    private async Task PlayMoves()
-    {
-        stopAutoPlay = false;
-        var moves = ChessBoard.MovesAndFenPlayed.Count;
-        while (stopAutoPlay == false && ChessBoard.Position.Ply < moves)
-        {
-            var fenAndMove = ChessBoard.Position.Ply == 0 ?
-              ChessBoard.MovesAndFenPlayed[0] :
-              ChessBoard.MovesAndFenPlayed[ChessBoard.Position.Ply];
-            fenWithMoves = fenAndMove.FenAfterMove;
-            ChessBoard.LoadFen(fenWithMoves);
-            Comment = CreateComments(fenAndMove);
-            await SetPositionAndMove(fenAndMove);
-            await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
-            await Task.Delay(300);
-            await ScrollToCurrentMove();
-        }
+		stopAutoPlay = true;
+	}
 
-        stopAutoPlay = true;
-    }
+	public async Task OnReceivedFen(string newPos)
+	{
+		var fen = ChessBoard.FEN();
+		if (fen != newPos)
+		{
+			fen = newPos;
+			await SetPosition(newPos, false);
+		}
+		StateHasChanged();
+	}
 
-    public async Task OnReceivedFen(string newPos)
-    {
-        if (fenWithMoves != newPos)
-        {
-            fenWithMoves = newPos;
-            await SetPosition(newPos, false);
-        }
-        StateHasChanged();
-    }
-
-    public async Task OnNotifyMoveAndFen(MoveAndFen input)
-    {
-        if (input == null)
-        {
-            return;
-        }
-        if (fenWithMoves != input.FenAfterMove)
-        {
-            fenWithMoves = input.FenAfterMove;
-            await SetPositionAndMove(input, false);
-        }
+	public async Task OnNotifyMoveAndFen(MoveAndFen input)
+	{
+		if (input == null)
+		{
+			return;
+		}
+		if (fen != input.FenAfterMove)
+		{
+			fen = input.FenAfterMove;
+			ChessBoard.LoadFen(fen);
+			await SetPositionAndMove(input, false);
+		}
         Comment = CreateComments(input);
         var lastNNMoves = GetNNValues(currentId);
         await DisplayMoveAnnotation(lastNNMoves, currentId);
@@ -736,7 +735,7 @@
     {
         if (firstRender)
         {
-            fenWithMoves = FENposition;
+            fen = FENposition;
             await PrepareChessboard();
         }
         if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
@@ -777,6 +776,7 @@
         Notifier.NotifyMovesWithId += OnNotifyMoves;
         Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
         fenWithMoves = startPos;
+		fen = startPos;
         base.OnInitialized();
     }
 

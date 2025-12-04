@@ -162,7 +162,7 @@
 
 @code {
 
-	private int minMoveTimeInSecs = 0;
+    private int minMoveTimeInSecs = 0;
     private string currentGame = "Game";
     private int gameIndex = 0;
     private string gamesPath = "C:/dev/chess/mygames.pgn";
@@ -222,7 +222,7 @@
 
     private bool FilterFunc(PGNTypes.PgnGame game)
     {
-		
+
         if (string.IsNullOrWhiteSpace(searchString))
             return true;
 
@@ -542,7 +542,7 @@
                 break;
             case CustomChartType.EPS:
                 await chart.AssignEPSFromPGNAsync(minMoveTimeInSecs);
-				break;
+                break;
             default:
                 await chart.AssignEvalsFromPGNAsync();
                 break;
@@ -553,6 +553,8 @@
         board.ResetBoardState();
         board.StartPosition = fenP;
         board.LoadFen(fenP);
+        var ply = 0;
+        var check = "variation starts here";
         foreach (var row in game.Moves)
         {
             if (row.WhiteSan != "")
@@ -564,6 +566,11 @@
             {
                 board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
             }
+            
+            if (row.WhiteComment == check || row.BlackComment == check)
+            {
+				ply = board.PlyCount - 1;
+            }
         }
         var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
         MoveAndFen moveAndFen;
@@ -572,8 +579,7 @@
             var moveStr = lastMove.Value.Split(' ');
             var move = moveStr.Length > 1 ? moveStr[1] : moveStr[0];
             move = ExtractMove(move);
-            var idx = board.MovesAndFenPlayed.TakeWhile(e => e.ShortSan != move).Count();
-            idx = Math.Min(idx, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
+            var idx = Math.Min(ply, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
             fen = board.MovesAndFenPlayed[idx].FenAfterMove;
             moveAndFen = board.MovesAndFenPlayed[idx];
         }
@@ -582,7 +588,6 @@
             moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
             fen = board.FEN();
         }
-        await Notifier.UpdateFen(fen);
         await Notifier.UpdateFenAndMove(moveAndFen);
         await UpdateChartMoveIndicatorAsync();
         moveHistory = board.GetMoveHistory();
