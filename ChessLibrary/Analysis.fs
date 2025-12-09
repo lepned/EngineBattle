@@ -431,27 +431,25 @@ module Manager =
       member _.BackendInfo() = engine.GetBackEnd()
       
       member x.GoInfinite() = 
-        engine.SendUCICommand Stop        
-        let moves = board.GetMoveHistory()
+        engine.SendUCICommand Stop
+        let fen = board.FEN()
+        let moves = board.GetMoveHistoryToCurrentFen fen
         board.PrintPosition moves
         if board.AnyLegalMove() |> not then
           let fen = board.FEN()
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
         else          
-          let command = board.PositionWithMovesIndexed()
+          let command = board.PositionWithMovesFromGraph()
           printfn "Search command: %s" command
           engine.SendUCICommand (PositionWithMoves command)
           engine.SendUCICommand (GoInfinite)
 
       member x.SearchNodes (nodes, keepNodes : bool) = 
         engine.SendUCICommand Stop
-        let commands = board.PositionWithMovesIndexed()
-        moveBoard.ResetBoardState()
-        moveBoard.PlayCommands commands        
-        let moves = moveBoard.GetMoveHistory()
-        moveBoard.PrintPosition moves        
-        if moveBoard.AnyLegalMove() |> not then          
-          let fen = moveBoard.FEN()
+        let fen = board.FEN()
+        let moves = board.GetMoveHistoryToCurrentFen fen
+        board.PrintPosition moves        
+        if board.AnyLegalMove() |> not then
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
         else
           engine.SendUCICommand UciNewGame
@@ -459,15 +457,15 @@ module Manager =
             SearchDict.Clear()
           //let nodeLimit = nodes + getPrevNodes fen
           //SearchDict[fen] <- (nodeLimit)
-          printfn "Search command: %s" commands
-          engine.SendUCICommand (PositionWithMoves commands)
+          let graphCmds = board.PositionWithMovesFromGraph()
+          printfn "Search command: %s" graphCmds
+          engine.SendUCICommand (PositionWithMoves graphCmds)
           engine.SendUCICommand (GoNodes nodes)
     
       member x.SearchNodesWithCommand (nodes, commands:string, keepNodes : bool) =       
         engine.SendUCICommand Stop
-        moveBoard.ResetBoardState()
-        moveBoard.PlayCommands commands
-        let moves = moveBoard.GetMoveHistory()
+        let fen = board.FEN()
+        let moves = board.GetMoveHistoryToCurrentFen fen
         moveBoard.PrintPosition moves        
         if moveBoard.AnyLegalMove() |> not then
           logger.LogInformation ("In searchNodesWithCommands - no legal moves with command: " + commands)
@@ -475,6 +473,7 @@ module Manager =
           engine.SendUCICommand UciNewGame
           if not keepNodes then
             SearchDict.Clear()
+          //let graphCmds = board.PositionWithMovesFromGraph()
           printfn "Search command: %s" commands
           engine.SendUCICommand (PositionWithMoves commands)
           engine.SendUCICommand (GoNodes nodes)
@@ -487,9 +486,9 @@ module Manager =
           let fen = board.FEN()
           logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
         else
-          let cmdIndexed = board.PositionWithMovesIndexed()
-          printfn "Search indexed command: %s" cmdIndexed
-          engine.SendUCICommand (PositionWithMoves cmdIndexed)          
+          let graphCmds = board.PositionWithMovesFromGraph()          
+          printfn "Search indexed command: %s" graphCmds
+          engine.SendUCICommand (PositionWithMoves graphCmds)          
           engine.SendUCICommand (RawCommand goCommand)
 
 module PuzzleDataUtils =

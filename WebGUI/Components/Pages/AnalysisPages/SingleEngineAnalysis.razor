@@ -73,7 +73,7 @@
         <MudItem Class="mt-1 pl-2" md="4" xl="4">
 
             <div @ref="chessBoard">
-                <Chessboard ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
+                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
                             MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
             </div>
 
@@ -174,6 +174,7 @@
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private ElementReference chessBoard;
     private AnalyzeWithEngine analysisWithEngine;
+    private Chessboard chessBoardRazor;
 
     private ElementReference pgnChart;
     private IJSObjectReference chessModule;
@@ -310,7 +311,7 @@
         try
         {
             var pastedText = await ClipboardService.ReadTextAsync();
-            await LoadPGNGame(pastedText);
+            await LoadPGNGame(pastedText);  
         }
         catch (Exception ex)
         {
@@ -322,73 +323,50 @@
     private async Task LoadPGNGame(string pastedText)
     {
         var parsedPgnGame = Parser.PGNParser.parseFullPgnGame(pastedText);
-        if (parsedPgnGame.Moves.Count > 0)
-        {
-            var parsedMoves = Parser.PGNParser.getMovesFromPGN(parsedPgnGame);
-            logger.LogInformation("Game loaded from clipboard {game}\n", parsedPgnGame.Raw);
-            board.ResetBoardState();
-            if (string.IsNullOrEmpty(parsedPgnGame.Fen) == false)
-            {
-                board.LoadFen(parsedPgnGame.Fen);
-                board.StartPosition = parsedPgnGame.Fen;
-            }
-            else
-            {
-                board.LoadFen(Chess.startPos);
-                board.StartPosition = board.FEN();
-            }
-            foreach (var move in parsedMoves)
-            {
-                board.PlaySimpleShortSan(move);
-            }
+        await LoadPgnGameWithVariations(parsedPgnGame);
+    }
 
-            fen = board.FEN();
-            await Notifier.UpdateFenToBoard(fen);
-        }
-        else
-        {
-            var moveSection = Parser.PGNParser.parseMoveSectionOfPgnGame(pastedText);
-            logger.LogInformation("Move section loaded from clipboard {game}\n", pastedText);
-            if (moveSection.Moves.Count > 0)
-            {
-                var parsedMoves = Parser.PGNParser.getMovesFromPGN(moveSection);
-                board.ResetBoardState();
-                if (!string.IsNullOrEmpty(parsedPgnGame.Fen))
-                {
-                    board.LoadFen(parsedPgnGame.Fen);
-                    board.StartPosition = parsedPgnGame.Fen;
-                }
-                else
-                {
-                    board.LoadFen(Chess.startPos);
-                    board.StartPosition = board.FEN();
-                }
-                foreach (var move in parsedMoves)
-                {
-                    board.PlaySimpleShortSan(move);
-                }
-                var history = board.GetMoveHistory();
-                fen = board.FEN();
-                await Notifier.UpdateFenToBoard(fen);
-            }
+    private static string ExtractMoveSection(string raw)
+    {
+        var lines = raw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        var movesOnly = lines.Where(l => !l.TrimStart().StartsWith("["));
+        return string.Join(" ", movesOnly);
+    }
 
+    private static string BuildMainlineOnly(PGNTypes.PgnGame game)
+    {
+        var sb = new StringBuilder();
+        int ply = 0;
+        foreach (var node in game.Mainline)
+        {
+            var moveNr = ply / 2 + 1;
+            if (node.Color == "w")
+                sb.Append($" {moveNr}. {node.San}");
             else
-            {
-                board.ResetBoardState();
-                if (string.IsNullOrEmpty(parsedPgnGame.Fen) == false)
-                {
-                    board.LoadFen(parsedPgnGame.Fen);
-                    board.StartPosition = parsedPgnGame.Fen;
-                }
-                else
-                {
-                    board.LoadFen(Chess.startPos);
-                    board.StartPosition = board.FEN();
-                }
-                fen = board.FEN();
-                await Notifier.UpdateFenToBoard(fen);
-            }
+                sb.Append($" {node.San}");
+            ply++;
         }
+        return sb.ToString().Trim();
+    }
+
+    private async Task LoadPgnGameWithVariations(PGNTypes.PgnGame game)
+    {
+        board.ResetBoardState();
+        var startFen = string.IsNullOrWhiteSpace(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
+        board.LoadFen(startFen);
+        board.StartPosition = startFen;
+
+        var moveText =
+            !string.IsNullOrWhiteSpace(game.Raw) ? ExtractMoveSection(game.Raw)
+            : BuildMainlineOnly(game);
+
+        board.LoadMoveHistoryWithVariations(moveText);
+        fen = board.FEN();
+        moveHistory = board.GetMoveHistoryWithVariations();        
+		//need last move and fen here
+		var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
+        StateHasChanged();
     }
 
     private async Task SaveGameToPGN(MouseEventArgs args)
@@ -401,7 +379,7 @@
         sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
         sb.AppendLine($"[FEN \"{board.StartPosition}\"]");
         sb.AppendLine();
-        var moveHistory = board.GetMoveHistory();
+        var moveHistory = board.GetMoveHistoryWithVariations();
         sb.AppendLine(moveHistory);
         File.AppendAllText(gamesPath, sb.ToString());
         await Task.CompletedTask;
@@ -549,54 +527,56 @@
         }        
 
         // load board and moves
-        var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
-        board.ResetBoardState();
-        board.StartPosition = fenP;
-        board.LoadFen(fenP);
-        var ply = 0;
-        var check = "variation starts here";
-        foreach (var row in game.Moves)
-        {
-            if (row.WhiteSan != "")
-            {
-                board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
-            }
+        await LoadPgnGameWithVariations(game);
+        // var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
+        // board.ResetBoardState();
+        // board.StartPosition = fenP;
+        // board.LoadFen(fenP);
+        // var ply = 0;
+        // var check = "variation starts here";
+        // foreach (var row in game.Moves)
+        // {
+        //     if (row.WhiteSan != "")
+        //     {
+        //         board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
+        //     }
 
-            if (row.BlackSan != "")
-            {
-                board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
-            }
-            
-            if (row.WhiteComment == check || row.BlackComment == check)
-            {
-				ply = board.PlyCount - 1;
-            }
-        }
-        var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
-        MoveAndFen moveAndFen;
-        if (lastMove != null)
-        {
-            var moveStr = lastMove.Value.Split(' ');
-            var move = moveStr.Length > 1 ? moveStr[1] : moveStr[0];
-            move = ExtractMove(move);
-            var idx = Math.Min(ply, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
-            fen = board.MovesAndFenPlayed[idx].FenAfterMove;
-            moveAndFen = board.MovesAndFenPlayed[idx];
-        }
-        else
-        {
-            moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
-            fen = board.FEN();
-        }
-        await Notifier.UpdateFenAndMove(moveAndFen);
-        await UpdateChartMoveIndicatorAsync();
-        moveHistory = board.GetMoveHistory();
-        StateHasChanged();
+        //     if (row.BlackSan != "")
+        //     {
+        //         board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
+        //     }
+
+        //     if (row.WhiteComment == check || row.BlackComment == check)
+        //     {
+        //         ply = board.PlyCount - 1;
+        //     }
+        // }
+        // var lastMove = game.GameMetaData.OtherTags.FirstOrDefault(x => x.Key == "Move");
+        // MoveAndFen moveAndFen;
+        // if (lastMove != null)
+        // {
+        //     var moveStr = lastMove.Value.Split(' ');
+        //     var move = moveStr.Length > 1 ? moveStr[1] : moveStr[0];
+        //     move = ExtractMove(move);
+        //     var idx = Math.Min(ply, board.MovesAndFenPlayed.Count - 1); // Ensure we don't go out of bounds
+        //     fen = board.MovesAndFenPlayed[idx].FenAfterMove;
+        //     moveAndFen = board.MovesAndFenPlayed[idx];
+        // }
+        // else
+        // {
+        //     moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        //     fen = board.FEN();
+        // }
+        // var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        // await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
+        // await UpdateChartMoveIndicatorAsync();
+        // moveHistory = board.GetMoveHistory();
+        // StateHasChanged();
     }
-    
+
     private async Task OpenPGNGame(TableRowClickEventArgs<PGNTypes.PgnGame> tableRowClickEventArgs)
     {
-        var game = tableRowClickEventArgs.Item;
+        var game = tableRowClickEventArgs.Item;        
         await LoadAndOpenPGNGame(game);
     }
 
@@ -748,11 +728,12 @@
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         await Notifier.UpdateFen(fen);
-        await UpdateChartMoveIndicatorAsync();
+        await UpdateChartMoveIndicatorAsync(); 
     }
 
     public async void OnEngineMoveMade(string move)
     {
+		chessBoardRazor.UpdateVariationsDisplay();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         await Notifier.UpdateFen(fen);

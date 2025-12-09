@@ -375,3 +375,4 @@ FodyWeavers.xsd
 /WebGUI/wwwroot/tournament.json
 /Console/log.txt
 /copilot-instructions.md
+/WebGUI/wwwroot/AnalyzeConfig.json

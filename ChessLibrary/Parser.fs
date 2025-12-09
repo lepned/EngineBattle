@@ -2,6 +2,7 @@
 
 open System
 open System.IO
+open System.Collections.Generic
 open System.Text
 open System.Text.RegularExpressions
 open TypesDef
@@ -1654,6 +1655,14 @@ module MoveParser =
   let moves = ResizeArray<Move>()
   let headers = ResizeArray<Header>()
   let resultPattern = "1-0/2"
+  // Variation-aware tracking
+  let mutable currentPly = 0
+  let mainlinePly = ResizeArray<PlyMove>()
+  let rootVariations = ResizeArray<PlyLine>()
+  let mutable currentLine : PlyLine = mainlinePly
+  let lineStack = Stack<PlyLine>()
+  let plyStack = Stack<int>()
+  let mutable lastParsedSan : string option = None
 
   let resetStates () =
     pos <- Position.PositionOps.createEmptyTBoard()
@@ -1666,6 +1675,13 @@ module MoveParser =
     move <- Move.Empty 
     moves.Clear()
     headers.Clear()
+    currentPly <- 0
+    mainlinePly.Clear()
+    rootVariations.Clear()
+    currentLine <- mainlinePly
+    lineStack.Clear()
+    plyStack.Clear()
+    lastParsedSan <- None
 
   module PgnStates =
     let isRank c = Char.IsDigit(c) && c >= '1' && c <= '8'
@@ -1825,23 +1841,7 @@ module MoveParser =
           position <- position + 1
       ret
 
-    let rec parseRecursiveVariation() =
-      expect('(') |> ignore
-      skipWhiteSpace()
-      while position < input.Length && Peek() <> ')' do
-          //parseElement()
-          position <- position + 1
-          skipWhiteSpace()      
-      if Peek() = '(' then
-        parseRecursiveVariation()
-      elif Peek() = '{' then
-        parsedCommentEndTag <- false
-      else
-        parsedCommentEndTag <- true
-      if position < input.Length && Peek() = ')' then
-          expect(')') |> ignore
-      else
-          failwith "Expected a closing parenthesis"
+    
 
     let toGameMetadata () =
       gameMetadata <-
@@ -1891,8 +1891,9 @@ module MoveParser =
           failwith $"Expected a rank but found '{Peek()}'"
     
     let parseSymbol() =
-      let mutable symbol = ""     
-      while position < input.Length && Char.IsPunctuation(Peek()) do
+      let mutable symbol = ""
+      let allowed = "!?#=+"
+      while position < input.Length && allowed.Contains(Peek()) do
           let c = Peek()
           position <- position + 1
           symbol <- symbol + c.ToString()
@@ -1955,6 +1956,38 @@ module MoveParser =
     
       square
 
+    let appendPlyMove (san:string) (color:string) =
+      let ply = currentPly
+      let moveNr = (ply / 2) + 1
+      let node =
+        { Ply = ply
+          MoveNumber = moveNr
+          Color = color
+          San = san
+          Comment = ""
+          Nags = []
+          Variations = ResizeArray() }
+      currentLine.Add node
+      currentPly <- currentPly + 1
+      lastParsedSan <- Some san
+
+    let tryUpdateLastNodeComment (cmt:string) =
+      if not (String.IsNullOrWhiteSpace cmt) then
+        match currentLine |> Seq.tryLast with
+        | Some node ->
+            node.Comment <- cmt
+        | None ->
+            match rootVariations |> Seq.tryLast with
+            | Some line when line.Count > 0 ->
+                let lastNode = line[line.Count - 1]
+                lastNode.Comment <- cmt
+            | _ -> ()
+
+    let lastCommentValue () =
+      if String.IsNullOrWhiteSpace move.BlackComment |> not then move.BlackComment
+      elif String.IsNullOrWhiteSpace move.WhiteComment |> not then move.WhiteComment
+      else ""
+
     let parseSanMove() =
       let mutable san = String.Empty
       if Peek() = 'O' || (Peek() = '0' && PeekAt (position + 2) = '0') then
@@ -1976,14 +2009,18 @@ module MoveParser =
       if String.IsNullOrEmpty(move.WhiteSan) then
           if moves.Count > 0 || String.IsNullOrEmpty gameMetadata.Fen  then              
             move.WhiteSan <- san
+            appendPlyMove san "w"
           else
             let _ = load gameMetadata.Fen
             if pos.STM = 0uy then
               move.WhiteSan <- san
+              appendPlyMove san "w"
             else
               move.BlackSan <- san
+              appendPlyMove san "b"
       else
           move.BlackSan <- san
+          appendPlyMove san "b"
     
 
     // Span-based parser function
@@ -2017,8 +2054,51 @@ module MoveParser =
           let msg = $"No match found in PGN-header - {input}"
           printfn "%s" msg
     
-
-    let parseElement () = 
+    let parseMove () = 
+      if Char.IsDigit(Peek()) && (Peek() <> '0' && not (PeekAt (position + 1) = '-' )) then          
+          parseMoveNumberIndication()
+      elif isSanMove() then
+          parseSanMove()
+      elif Peek() = '$' then
+          parseNumericAnnotationGlyph()
+      //elif Peek() = '(' then
+      //    parseRecursiveVariation()
+      elif Peek() = '{' then
+          parseComment()
+          tryUpdateLastNodeComment (lastCommentValue())
+      elif Peek() = 'x' then
+          parseCapture() |> ignore 
+    
+    let rec parseRecursiveVariation() =
+      expect('(') |> ignore
+      skipWhiteSpace()
+      // Create a new variation line and attach to the last move of the current line (or root if none).
+      let variationLine = ResizeArray<PlyMove>()
+      match currentLine |> Seq.tryLast with
+      | Some parent -> parent.Variations.Add variationLine
+      | None -> rootVariations.Add variationLine
+      lineStack.Push currentLine
+      plyStack.Push currentPly
+      let parentPly =
+        match currentLine |> Seq.tryLast with
+        | Some p -> p.Ply
+        | None -> currentPly - 1
+      currentPly <- parentPly + 1
+      currentLine <- variationLine
+      while position < input.Length && Peek() <> ')' && Peek() <> '*' do
+          skipWhiteSpace()
+          if position < input.Length && Peek() <> ')' && Peek() <> '*' then
+            parseElement()
+            skipWhiteSpace()
+      parsedCommentEndTag <- true
+      if position < input.Length && Peek() = ')' then
+          expect(')') |> ignore
+      // restore previous line
+      if lineStack.Count > 0 then
+        currentLine <- lineStack.Pop()
+      if plyStack.Count > 0 then
+        currentPly <- plyStack.Pop()
+    and parseElement () = 
       if Char.IsDigit(Peek()) && (Peek() <> '0' && not (PeekAt (position + 1) = '-' )) then          
           parseMoveNumberIndication()
       elif isSanMove() then
@@ -2029,6 +2109,7 @@ module MoveParser =
           parseRecursiveVariation()
       elif Peek() = '{' then
           parseComment()
+          tryUpdateLastNodeComment (lastCommentValue())
       elif Peek() = 'x' then
           parseCapture() |> ignore
       else          
@@ -2038,6 +2119,9 @@ module MoveParser =
             result <- res
           if String.IsNullOrEmpty(gameMetadata.Result) && hasRes then              
             gameMetadata <- { gameMetadata with Result = res }
+          // Ensure forward progress even on unexpected tokens to avoid infinite loops.
+          if not hasRes && position < input.Length then
+            position <- position + 1
     
     let parseMoveTextSection() =
       removeNonStandardWhitespaces()
@@ -2216,6 +2300,8 @@ module EPDExtractor =
       GameNumber = n
       GameMetaData = gameData
       Moves = ResizeArray<Move>()
+      Mainline = ResizeArray()
+      RootVariations = ResizeArray()
       Comments = ""
       Fen = epd.FEN
       Raw = epd.RawInput
@@ -2279,6 +2365,8 @@ module PGNParser =
           GameNumber = counter
           GameMetaData = gameMetadata
           Moves = ResizeArray(moves)
+          Mainline = ResizeArray(mainlinePly)
+          RootVariations = ResizeArray(rootVariations)
           Comments = "" 
           Fen = gameMetadata.Fen
           Raw = content
@@ -2334,6 +2422,8 @@ module PGNParser =
                           GameNumber = counter
                           GameMetaData = gameMetadata
                           Moves = ResizeArray(moves)
+                          Mainline = ResizeArray(mainlinePly)
+                          RootVariations = ResizeArray(rootVariations)
                           Comments = "" 
                           Fen = gameMetadata.Fen
                           Raw = rawGame.ToString()
@@ -2347,6 +2437,8 @@ module PGNParser =
                   GameNumber = counter
                   GameMetaData = gameMetadata
                   Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
                   Comments = "" 
                   Fen = gameMetadata.Fen
                   Raw = rawGame.ToString()
@@ -2396,6 +2488,8 @@ module PGNParser =
                           GameNumber = counter
                           GameMetaData = gameMetadata
                           Moves = ResizeArray(moves)
+                          Mainline = ResizeArray(mainlinePly)
+                          RootVariations = ResizeArray(rootVariations)
                           Comments = "" 
                           Fen = gameMetadata.Fen
                           Raw = rawGame.ToString()
@@ -2416,6 +2510,8 @@ module PGNParser =
                   GameNumber = counter
                   GameMetaData = gameMetadata
                   Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
                   Comments = "" 
                   Fen = gameMetadata.Fen
                   Raw = rawGame.ToString()
@@ -2464,6 +2560,8 @@ module PGNParser =
                           GameNumber = counter
                           GameMetaData = gameMetadata
                           Moves = ResizeArray(moves)
+                          Mainline = ResizeArray(mainlinePly)
+                          RootVariations = ResizeArray(rootVariations)
                           Comments = "" 
                           Fen = gameMetadata.Fen
                           Raw = rawGame.ToString()
@@ -2484,6 +2582,8 @@ module PGNParser =
                   GameNumber = counter
                   GameMetaData = gameMetadata
                   Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
                   Comments = "" 
                   Fen = gameMetadata.Fen
                   Raw = rawGame.ToString()
@@ -2528,6 +2628,8 @@ module PGNParser =
                             GameNumber = counter
                             GameMetaData = gameMetadata
                             Moves = ResizeArray(moves)
+                            Mainline = ResizeArray(mainlinePly)
+                            RootVariations = ResizeArray(rootVariations)
                             Comments = "" 
                             Fen = gameMetadata.Fen
                             Raw = rawGame.ToString()
@@ -2544,6 +2646,8 @@ module PGNParser =
                   GameNumber = counter
                   GameMetaData = gameMetadata
                   Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
                   Comments = "" 
                   Fen = gameMetadata.Fen
                   Raw = rawGame.ToString()

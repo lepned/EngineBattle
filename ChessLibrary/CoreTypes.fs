@@ -123,6 +123,17 @@ module TypesDef =
 
     type Header = { Key: string; Value: string }
 
+    // Variation-aware move tree (per half-move).
+    type PlyMove =
+      { Ply: int
+        MoveNumber: int
+        Color: string
+        San: string
+        mutable Comment: string
+        Nags: int list
+        Variations: ResizeArray<PlyLine> }
+    and PlyLine = ResizeArray<PlyMove>
+
     type GameMetadata = 
       { Event: string
         Site: string
@@ -158,6 +169,8 @@ module TypesDef =
         GameNumber: int
         GameMetaData: GameMetadata
         Moves: ResizeArray<Move>
+        Mainline: PlyLine
+        RootVariations: ResizeArray<PlyLine>
         Comments: string
         Fen: string
         Raw: string }
@@ -167,6 +180,8 @@ module TypesDef =
             GameNumber = i
             GameMetaData = GameMetadata.Empty
             Moves = ResizeArray()
+            Mainline = ResizeArray()
+            RootVariations = ResizeArray()
             Comments = ""
             Fen = ""
             Raw = "" }
@@ -1546,11 +1561,13 @@ module TypesDef =
         let result = new StringBuilder(6)
         let from = AbsSq(int move.From, int sideToMove)
         let to_ = AbsSq(int move.To, int sideToMove)
+        let promoIdx = int move.Promotion
+        let promoChar = if promoIdx >= 0 && promoIdx < promo.Length then promo.[promoIdx] else ' '
         result.Append(char(int('a') + from % 8)) |> ignore
         result.Append(char(int('1') + from / 8)) |> ignore
         result.Append(char(int('a') + to_ % 8)) |> ignore
         result.Append(char(int('1') + to_ / 8)) |> ignore
-        result.Append(promo.[int move.Promotion]) |> ignore
+        result.Append(promoChar) |> ignore
         result.ToString().TrimEnd()
 
       let dictNameToNumber (stm: inref<byte>) = if stm = 0uy then QBBOperations.squareNameToNumberDictWhite else QBBOperations.squareNameToNumberDictBlack
@@ -1558,100 +1575,127 @@ module TypesDef =
 
       //get TMove from SAN string
       let getTMoveFromShortSan (sanShort: string) (moves : TMove array) stm checkIsLegal =     
+        if String.IsNullOrWhiteSpace sanShort then None else
+        let sanShort = sanShort.Trim()
+        if sanShort.Length = 0 then None else
         let piece = pieceTypeFromSymbol sanShort.[0]
         let isCapture = sanShort.Contains("x")
         let isCastling = sanShort.Contains("0-0") || sanShort.Contains("O-O") || sanShort.Contains("0-0-0") || sanShort.Contains("O-O-O")
         let adjustedSan = removeSpecialEndSymbols sanShort
-        let lastChar = adjustedSan.[adjustedSan.Length - 1]
-        let isPromotion = charSet.Contains lastChar          
+        if not isCastling && adjustedSan.Length < 2 then
+          None
+        else
+          let lastChar = if adjustedSan.Length > 0 then adjustedSan.[adjustedSan.Length - 1] else ' '
+          let isPromotion = charSet.Contains lastChar          
+          let inline trySlice start len =
+            if start >= 0 && adjustedSan.Length >= start + len then
+              Some (adjustedSan.Substring(start, len))
+            else None
     
-        if isCastling then
-          if adjustedSan = "0-0" || adjustedSan = "O-O" then        
-            let castlingShort = moves |> Array.tryFind(fun m -> isCastlingMove m && m.To > m.From)
-            castlingShort
-          elif adjustedSan = "0-0-0" || adjustedSan = "O-O-O" then        
-            //let filter = moves |> Array.filter(fun m -> isCastlingMove m && m.To < m.From)
-            let castlingShort = moves |> Array.tryFind(fun m -> isCastlingMove m && m.To < m.From)
-            castlingShort   
-          else
-            failwith $"Invalid castling move: {sanShort}"
-    
-        else      
-          let nameToSqNumber = dictNameToNumber &stm
-          let moveType, promo, dest = 
-            if isPromotion && isCapture then
-              let dest = nameToSqNumber.Item (adjustedSan.[2 .. 3]) |> byte
-              TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE , pieceTypeFromSymbol adjustedSan.[adjustedSan.Length - 1], dest       
-            elif isPromotion then
-              let dest = nameToSqNumber.Item (adjustedSan.[0 .. 1]) |> byte        
-              TPieceType.PAWN ||| TPieceType.PROMO, pieceTypeFromSymbol adjustedSan.[adjustedSan.Length - 1], dest  
-            elif isCapture then
-              let dest = nameToSqNumber.Item (adjustedSan.[adjustedSan.Length - 2 .. adjustedSan.Length - 1]) |> byte        
-              piece ||| TPieceType.CAPTURE, TPieceType.EMPTY, dest 
+          if isCastling then
+            if adjustedSan = "0-0" || adjustedSan = "O-O" then        
+              let castlingShort = moves |> Array.tryFind(fun m -> isCastlingMove m && m.To > m.From)
+              castlingShort
+            elif adjustedSan = "0-0-0" || adjustedSan = "O-O-O" then        
+              //let filter = moves |> Array.filter(fun m -> isCastlingMove m && m.To < m.From)
+              let castlingShort = moves |> Array.tryFind(fun m -> isCastlingMove m && m.To < m.From)
+              castlingShort   
             else
-              let dest = nameToSqNumber.Item (adjustedSan.[adjustedSan.Length - 2 .. adjustedSan.Length - 1]) |> byte        
-              piece, TPieceType.EMPTY, dest    
+              None
     
-          let start = moves |> Array.filter(fun m -> m.To = dest && getPiece m = piece)    
+          else      
+            let nameToSqNumber = dictNameToNumber &stm
+            let tryGetDest (sq: string) =
+              let key = sq.ToLowerInvariant()
+              match nameToSqNumber.TryGetValue key with
+              | true, v -> Some (byte v)
+              | _ -> None
+
+            let moveType, promo, dest =
+              if isPromotion && isCapture then
+                match trySlice 2 2 |> Option.bind tryGetDest with
+                | Some d -> TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE, pieceTypeFromSymbol adjustedSan.[adjustedSan.Length - 1], d
+                | None -> TPieceType.EMPTY, TPieceType.EMPTY, 0uy
+              elif isPromotion then
+                match trySlice 0 2 |> Option.bind tryGetDest with
+                | Some d -> TPieceType.PAWN ||| TPieceType.PROMO, pieceTypeFromSymbol adjustedSan.[adjustedSan.Length - 1], d
+                | None -> TPieceType.EMPTY, TPieceType.EMPTY, 0uy
+              elif isCapture then
+                match trySlice (adjustedSan.Length - 2) 2 |> Option.bind tryGetDest with
+                | Some d -> piece ||| TPieceType.CAPTURE, TPieceType.EMPTY, d
+                | None -> TPieceType.EMPTY, TPieceType.EMPTY, 0uy
+              else
+                match trySlice (adjustedSan.Length - 2) 2 |> Option.bind tryGetDest with
+                | Some d -> piece, TPieceType.EMPTY, d
+                | None -> TPieceType.EMPTY, TPieceType.EMPTY, 0uy
+
+            if moveType = TPieceType.EMPTY then
+              None
+            else
+              let start = moves |> Array.filter(fun m -> m.To = dest && getPiece m = piece)    
       
-          if start.Length = 1 then
-            Some start.[0]
-          else
+              if start.Length = 1 then
+                Some start.[0]
+              else
           
-            let start1 = start |> Array.filter (fun m -> m.MoveType = moveType && m.Promotion = promo && checkIsLegal m)
-            if start1.Length = 1 then
-              Some start1[0]
-            else 
-              //disambiguate by file or rank
-              let getDisambig (san:string) = 
-                match piece with
-                | TPieceType.PAWN -> san.[0]
-                | _ -> san.[1]
-            
-              let isUniqueFile move san = (moveToStr &move stm).[0] = getDisambig san            
-              let start2 = start1 |> Array.filter(fun m -> isUniqueFile m adjustedSan && checkIsLegal m )
-              if start2.Length = 1 then
-                start2.[0] |> Some
-              else //check rank               
-                let isUniqueRank move san = (moveToStr &move stm).[1] = getDisambig san
-                let start3 = start1 |> Array.filter(fun m -> isUniqueRank m adjustedSan && checkIsLegal m )
-                let trank = start |> Array.filter(fun m -> isUniqueRank m adjustedSan && checkIsLegal m )
-                let tfile = start |> Array.filter(fun m -> isUniqueFile m adjustedSan && checkIsLegal m )
-                if start3.Length = 1 then
-                  start3.[0] |> Some
-                elif tfile.Length = 1 then
-                  tfile.[0] |> Some
-                elif trank.Length = 1 then
-                  trank.[0] |> Some
+                let start1 = start |> Array.filter (fun m -> m.MoveType = moveType && m.Promotion = promo && checkIsLegal m)
+                if start1.Length = 1 then
+                  Some start1[0]
                 else 
-                  let f sq = (dictNumberToName &stm).Item (int sq)
-                  let fromSq = start |> Array.tryFind (fun m -> adjustedSan.Contains(f m.From) && checkIsLegal m)
-                  let toSq = start |> Array.tryFind (fun m -> adjustedSan.Contains(f m.To) && checkIsLegal m)                
-                  let maybe =
-                    match fromSq, toSq with
-                    | Some f, Some t ->
-                      if f.To = t.To then
-                        //printfn "Ambiguous move: %s" adjustedSan
-                        Some f
-                      else
-                        None
+                  //disambiguate by file or rank
+                  let getDisambig (san:string) = 
+                    match piece with
+                    | TPieceType.PAWN when san.Length >= 1 -> Some san.[0]
+                    | _ when san.Length >= 2 -> Some san.[1]
+                    | _ -> None
+            
+                  let isUniqueFile move san =
+                    match getDisambig san with
+                    | Some c -> (moveToStr &move stm).[0] = c
+                    | None -> false
+                  let start2 = start1 |> Array.filter(fun m -> isUniqueFile m adjustedSan && checkIsLegal m )
+                  if start2.Length = 1 then
+                    start2.[0] |> Some
+                  else //check rank               
+                    let isUniqueRank move san =
+                      match getDisambig san with
+                      | Some c -> (moveToStr &move stm).[1] = c
+                      | None -> false
+                    let start3 = start1 |> Array.filter(fun m -> isUniqueRank m adjustedSan && checkIsLegal m )
+                    let trank = start |> Array.filter(fun m -> isUniqueRank m adjustedSan && checkIsLegal m )
+                    let tfile = start |> Array.filter(fun m -> isUniqueFile m adjustedSan && checkIsLegal m )
+                    if start3.Length = 1 then
+                      start3.[0] |> Some
+                    elif tfile.Length = 1 then
+                      tfile.[0] |> Some
+                    elif trank.Length = 1 then
+                      trank.[0] |> Some
+                    else 
+                      let f sq = (dictNumberToName &stm).Item (int sq)
+                      let fromSq = start |> Array.tryFind (fun m -> adjustedSan.Contains(f m.From) && checkIsLegal m)
+                      let toSq = start |> Array.tryFind (fun m -> adjustedSan.Contains(f m.To) && checkIsLegal m)                
+                      let maybe =
+                        match fromSq, toSq with
+                        | Some f, Some t ->
+                          if f.To = t.To then
+                            //printfn "Ambiguous move: %s" adjustedSan
+                            Some f
+                          else
+                            None
                     
-                    //| Some f, None -> 
-                    //  //found only from
-                    //  Some f
-                    //| None, Some t -> 
-                    //  //found only to
-                    //  Some t
-                    |_ -> None
-                  if maybe.IsSome then
-                    maybe                
+                        //| Some f, None -> 
+                        //  //found only from
+                        //  Some f
+                        //| None, Some t -> 
+                        //  //found only to
+                        //  Some t
+                        |_ -> None
+                      if maybe.IsSome then
+                        maybe                
                 
-                  else
-                    let sizeTrank = trank.Length
-                    let sizeTfile = tfile.Length
-                    let sizeStart = start.Length
-                    printfn "SanMove: %s -> start: %d, trank: %d, tfile: %d" sanShort sizeStart sizeTrank sizeTfile                  
-                    start |> Array.tryFind(fun m -> checkIsLegal m )
+                      else
+                        // In ambiguous cases, bail out without emitting debug prints (tests may run under a closed TextWriter).
+                        start |> Array.tryFind(fun m -> checkIsLegal m )
     
         ///The order of standard SAN string is:
         ///1. piece symbol (if not pawn) - if pawn then use the file

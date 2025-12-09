@@ -14,136 +14,156 @@
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
-    <MudPaper Elevation="3" Class="pa-1">
-        <MudStack Row="true" Spacing="0">
-            <MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
-                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                <img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
-                     style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-            </MudIconButton>
-            <MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
-                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                <img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-            </MudIconButton>
-            <MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
-                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                <img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-            </MudIconButton>
-            <MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
-                           Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                <img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+	<MudPaper Elevation="3" Class="pa-1">
+		<MudStack Row="true" Spacing="0">
+			<MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
+						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+				<img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
+					 style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+			</MudIconButton>
+			<MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
+						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+				<img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+			</MudIconButton>
+			<MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
+						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+				<img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+			</MudIconButton>
+			<MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
+						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+				<img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
 
-            </MudIconButton>
-        </MudStack>
-    </MudPaper>
+			</MudIconButton>
+		</MudStack>
+	</MudPaper>
 </div>
 
 <MudGrid Justify="Justify.Center">
-    @if (ShowPlayerInfo)
-    {
-        <MudItem sm=12 md="12" lg="12">
-            @BlackPlayerInfo
-        </MudItem>
-    }
+	@if (ShowPlayerInfo)
+	{
+		<MudItem sm=12 md="12" lg="12">
+			@BlackPlayerInfo
+		</MudItem>
+	}
 
-    <MudItem sm=12 md="12" lg="12" Style="min-height: 60px; max-height: 60px;">
-        @if (!String.IsNullOrEmpty(Comment))
-        {
-            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="overflow-y: auto; max-height: 60px; word-wrap: break-word;">
-                @((MarkupString)Comment)
-            </MudText>
-        }
-    </MudItem>
+	<MudItem sm=12 md="12" lg="12" Style="min-height: 60px; max-height: 60px;">
+		@if (!String.IsNullOrEmpty(Comment))
+		{
+			<MudText Typo="Typo.body2" Class="mud-text-secondary" Style="overflow-y: auto; max-height: 60px; word-wrap: break-word;">
+				@((MarkupString)Comment)
+			</MudText>
+		}
+	</MudItem>
 
-    <MudItem sm=12 md="12" lg="12">
-        <div style="height:100%" @ref="board"></div>
-    </MudItem>
+	<MudItem sm=12 md="12" lg="12">
+		<div style="height:100%" @ref="board"></div>
+	</MudItem>
 
-    @if (!String.IsNullOrEmpty(OpeningMoves))
-    {
-        <span style=@openingStyle class="mud-text">@OpeningName</span>
-    }
+	@if (!String.IsNullOrEmpty(OpeningMoves))
+	{
+		<span style=@openingStyle class="mud-text">@OpeningName</span>
+	}
 
-    @if (ShowPlayerInfo)
-    {
-        <MudItem Class="m-0" sm=12 md="12" lg="12">
-            @WhitePlayerInfo
-        </MudItem>
-    }
+	@if (ShowPlayerInfo)
+	{
+		<MudItem Class="m-0" sm=12 md="12" lg="12">
+			@WhitePlayerInfo
+		</MudItem>
+	}
 
-    @if (ShowChessNavButtons)
-    {
-        <MudItem lg=12 Class="justify-content-center d-flex">
+	@if (ShowChessNavButtons)
+	{
+		<MudItem lg=12 Class="justify-content-center d-flex">
 
-            <MudFab Class="ml-4 " OnClick=StartOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
-            <MudFab Class="ml-2 " OnClick=PreviousMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
-            <MudFab Class="ml-2 " OnClick=PlayMoves HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
-            <MudFab Class="ml-2 " OnClick=NextMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
-            <MudFab Class="ml-2 " OnClick=EndOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
+			<MudFab Class="ml-4 " OnClick=StartOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
+			<MudFab Class="ml-2 " OnClick=PreviousMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
+			<MudFab Class="ml-2 " OnClick=PlayMoves HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
+			<MudFab Class="ml-2 " OnClick=NextMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+			<MudFab Class="ml-2 " OnClick=EndOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
 
-            <MudTooltip Text="Flip board">
-                <MudFab Class="ml-2" OnClick=RotateBoard HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
-            </MudTooltip>
+			<MudTooltip Text="Flip board">
+				<MudFab Class="ml-2" OnClick=RotateBoard HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
+			</MudTooltip>
 
-            <MudTooltip Text="Copy fen">
-                <MudFab Class="ml-2" OnClick=WriteTextAsync HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
-            </MudTooltip>
+			<MudTooltip Text="Copy fen">
+				<MudFab Class="ml-2" OnClick=WriteTextAsync HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
+			</MudTooltip>
 
-            <MudTooltip Text="Load fen">
-                <MudFab Class="ml-2" OnClick=UpdateFenWithMovesInput HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
-            </MudTooltip>
+			<MudTooltip Text="Load fen">
+				<MudFab Class="ml-2" OnClick=UpdateFenWithMovesInput HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
+			</MudTooltip>
 
-            <MudTooltip Text="Reset board state">
-                <MudFab Class="ml-2 mr-2" OnClick=ResetGameState HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
-            </MudTooltip>
-        </MudItem>
-    }
+			<MudTooltip Text="Reset board state">
+				<MudFab Class="ml-2 mr-2" OnClick=ResetGameState HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
+			</MudTooltip>
+		</MudItem>
+	}
 
-    @if (ShowMoveList && MakeMoveListClickable == false)
-    {
-        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
-            <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
-                <span style="color:skyblue ">@OpeningMoves</span>
-                <span> @MoveHistory </span>
-            </div>
-        </MudItem>
-    }
+	@if (ShowMoveList && MakeMoveListClickable == false)
+	{
+		<MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
+			<div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
+				<span style="color:skyblue ">@OpeningMoves</span>
+				<span>
+					@foreach (var tok in InlineTokens)
+					{
+						if (tok.IsBracket)
+						{
+							<span>@(tok.DisplayText + " ")</span>
+						}
+						else
+						{
+							<span style="cursor:pointer" @onclick="@(() => OnInlineMoveClick(tok))">@($"{tok.DisplayText} ")</span>
+						}
+					}
+				</span>
+			</div>
+		</MudItem>
+	}
 
-    @if (ShowMoveList && MakeMoveListClickable)
-    {
-        MoveList = ChessBoard.MovesAndFenPlayed;
-        var list = ChessBoard.GetNumberedMoveList();
-        <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
-            <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
-                @foreach (var (move, idx) in list.Select((move, idx) => (move, idx)))
-                {
-                    <span @onclick="@(() => OnItemClick(idx))"
-                          id="@($"move-{idx}")"
-                          style="@(idx == ChessBoard.Position.Ply - 1 ? "font-weight: bold;color:skyblue" : "")">@move&nbsp</span>
-                }
-            </div>
-        </MudItem>
-    }
+	@if (ShowMoveList && MakeMoveListClickable)
+	{
+		<MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
+			<div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
+				<span>
+					@foreach (var tok in InlineTokens.Select((tok, idx) => (tok, idx)))
+					{
+						if (tok.tok.IsBracket)
+						{
+							<span>@(tok.tok.DisplayText + " ")</span>
+						}
+						else
+						{
+							var isCurrent = ChessBoard.CurrentNodeHash == tok.tok.Hash;
+							<span @onclick="@(() => OnInlineMoveClick(tok.tok))"
+								  id="@($"move-{tok.idx}")"
+								  style="@(isCurrent ? "font-weight: bold;color:skyblue" : "")">@($"{tok.tok.DisplayText} ")</span>
+						}
+					}
+				</span>
+			</div>
+		</MudItem>
+	}
 
-    @if (ShowFenField)
-    {
-        <MudItem sm=12 md="12" lg="12">
+	@if (ShowFenField)
+	{
+		<MudItem sm=12 md="12" lg="12">
 
-            <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
-                          FullWidth="false" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
-                          Immediate="true"
-                          Variant="Variant.Filled" />
-        </MudItem>
-    }
+			<MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
+						  FullWidth="false" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
+						  Immediate="true"
+						  Variant="Variant.Filled" />
+		</MudItem>
+	}
 
-    <div>
-        @if (EnablePGNreader)
-        {
-            <MudItem lg="12">
-                <MudFab HtmlTag="label" Color="Color.Default" Label="Load pgn file" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-            </MudItem>
-        }
-    </div>
+	<div>
+		@if (EnablePGNreader)
+		{
+			<MudItem lg="12">
+				<MudFab HtmlTag="label" Color="Color.Default" Label="Load pgn file" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+			</MudItem>
+		}
+	</div>
 
 </MudGrid>
 
@@ -177,7 +197,7 @@
 	private int moveListFontSize = 8;
 	private int moveListHeight = 80;
 	private string openingStyle = $"font-size:15px";
-	private string moveListStyle = "font-size:18px; line-height: 25px; height: 150px;";
+	private string moveListStyle = "font-size:18px; line-height: 25px; height: 150px; overflow-y: auto; overflow-x: hidden; white-space: normal; word-wrap: break-word;";
 	private string fenWithMoves;  //= "r6k/pp2r2p/4Rp1Q/3p4/8/1N1P2R1/PqP2bPP/7K b - - 0 24 moves f2g3 e6e7 b2b1 b3c1 b1c1 h6c1";
 	private string fen = string.Empty;
 	private bool stopAutoPlay = true;
@@ -197,6 +217,11 @@
 	private string currentId = string.Empty;
 	private double MinPolicyThreshold { get; set; } // Minimum probability threshold for displaying moves
 	private List<MoveAndFen> MoveList { get; set; }
+	private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
+	private List<VariationDisplay> VariationLines { get; set; } = new();
+	private record InlineToken(string Text, string DisplayText, string Fen, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation);
+	private List<InlineToken> InlineTokens { get; set; } = new();
+	private string InlineMoveHistory { get; set; } = string.Empty;
 	private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
 
 	private async Task SelectPromotion(string promotionPiece)
@@ -236,7 +261,7 @@
 
 		// Return the full move with the promotion piece
 		return move + promotionPiece;
-	}	
+	}
 
 	private List<NNValues> GetNNValues(string id)
 	{
@@ -256,6 +281,7 @@
 		fenWithMoves = value;
 		fen = value;
 		await UpdateFenWithMovesInput();
+		UpdateVariationsDisplay();
 		StateHasChanged();
 	}
 
@@ -265,11 +291,12 @@
 		if (index != -1)
 		{
 			var move = MoveList[index];
-			fen = move.FenAfterMove;			
+			fen = move.FenAfterMove;
 			ChessBoard.LoadFen(fen);
 			Comment = CreateComments(move);
 			await SetPosition(fen);
 			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			UpdateVariationsDisplay();
 			await ScrollToCurrentMove();
 			StateHasChanged();
 		}
@@ -334,14 +361,6 @@
 		if (invokeMove)
 		{
 			var moveIsProvided = !string.IsNullOrEmpty(move);
-			if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
-			{
-				//new mainline initiated here
-				var command = ChessBoard.PositionWithMovesIndexed();
-				ChessBoard.ResetBoardState();
-				ChessBoard.PlayCommands(command);
-			}
-
 			if (moveIsProvided)
 			{
 				ChessBoard.PlayLongSanMove(move);
@@ -354,6 +373,7 @@
 			var lastFenMove = ChessBoard.MovesAndFenPlayed.Last();
 			Comment = CreateComments(lastFenMove);
 			await DisplayMoveAnnotation(lastNNMoves, currentId);
+			UpdateVariationsDisplay();
 			StateHasChanged();
 		}
 	}
@@ -376,9 +396,9 @@
 
 	public async Task WriteTextAsync()
 	{
-		moveBoard.ResetBoardState();
-		moveBoard.PlayCommands(ChessBoard.PositionWithMovesIndexed());
-		var fen = moveBoard.FEN();
+		//moveBoard.ResetBoardState();
+		//moveBoard.PlayCommands(ChessBoard.PositionWithMovesFromGraph());
+		var fen = ChessBoard.FEN();
 		await JS.InvokeVoidAsync("navigator.clipboard.writeText", fen);
 	}
 
@@ -400,6 +420,7 @@
 				fen = ChessBoard.FEN();
 				await SetPosition(fen, false);
 				await OnNewFENOnBoard.InvokeAsync(fen);
+				UpdateVariationsDisplay();
 				await ScrollToCurrentMove();
 			}
 			StateHasChanged();
@@ -425,6 +446,7 @@
 
 	public async Task ResetGameState()
 	{
+		if (stopAutoPlay) { }
 		stopAutoPlay = true;
 		moveStr = string.Empty;
 		moveHeader = string.Empty;
@@ -436,9 +458,8 @@
 			ChessBoard.LoadFen(fen);
 			await chessJSmodule.InvokeVoidAsync("setSimplePosition", board, startPos);
 		}
-
+		UpdateVariationsDisplay();
 		StateHasChanged();
-		await Task.CompletedTask;
 	}
 
 	private async Task SetPosition(string fen, bool withCallback = false)
@@ -448,6 +469,7 @@
 			await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, withCallback);
 			moveList = string.Empty;
 		}
+		UpdateVariationsDisplay();
 		await Task.CompletedTask;
 	}
 
@@ -581,37 +603,34 @@
 	{
 		if (chessJSmodule is not null && chessGUI is not null)
 		{
-			await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
+			//await chessJSmodule.InvokeVoidAsync("makeSimpleMove2", board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove);
+			await chessJSmodule.InvokeVoidAsync("makeSimpleMoveWithCallBack", objRef, board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove, invokeMove);
 		}
 	}
 
 	private async Task StartOfGame()
 	{
-		var fenAndMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
 		stopAutoPlay = true;
-		fen = ChessBoard.StartPosition;
-		ChessBoard.LoadFen(fen);
-		await SetPosition(fen, false);
-		await OnNewFENOnBoard.InvokeAsync(fen);
-		await ScrollToCurrentMove();
-		if (fen != null)
+		var first = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
+		if (first != null)
 		{
-			Comment = CreateComments(fenAndMove);
-		}
+			await OnNotifyMoveAndFen(first);
+			Comment = CreateComments(first);
+		}		
+		await ScrollToCurrentMove();
 		StateHasChanged();
 	}
 
 	private async Task EndOfGame()
 	{
 		stopAutoPlay = true;
+		ChessBoard.EndCurrentVariation();
 		var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
 		if (fenAndMove != null)
 		{
-			fen = fenAndMove.FenAfterMove;
-			await SetPositionAndMove(fenAndMove, false);
-			ChessBoard.LoadFen(fen);
-			Comment = CreateComments(fenAndMove);
-			await OnNewFENOnBoard.InvokeAsync(fen);
+			await OnNotifyMoveAndFen(fenAndMove);
+			Comment = CreateComments(fenAndMove);		
+			UpdateVariationsDisplay();
 			await ScrollToCurrentMove();
 		}
 		StateHasChanged();
@@ -621,8 +640,6 @@
 	{
 		stopAutoPlay = true;
 		var next = ChessBoard.TryGetNextMoveAndFen(fen);
-		var curFen = ChessBoard.CurrentFEN;
-		Console.WriteLine(curFen);
 		if (next != null)
 		{
 			var move = next.Value;
@@ -631,6 +648,7 @@
 			Comment = CreateComments(move);
 			await SetPositionAndMove(move, invokeMove: false);
 			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			UpdateVariationsDisplay();
 			await ScrollToCurrentMove();
 		}
 		StateHasChanged();
@@ -638,7 +656,7 @@
 
 	private async Task PreviousMove()
 	{
-		stopAutoPlay = true;		
+		stopAutoPlay = true;
 		var prev = ChessBoard.TryGetPreviousMoveAndFen(fen);
 		if (prev != null)
 		{
@@ -648,6 +666,7 @@
 			Comment = CreateComments(move);
 			await SetPositionAndMove(move, invokeMove: false);
 			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			UpdateVariationsDisplay();
 			await ScrollToCurrentMove();
 		}
 		StateHasChanged();
@@ -656,19 +675,11 @@
 	private async Task PlayMoves()
 	{
 		stopAutoPlay = false;
-		var moves = ChessBoard.MovesAndFenPlayed.Count;
-		while (stopAutoPlay == false && ChessBoard.Position.Ply < moves)
+		fen = ChessBoard.FEN();
+		while (ChessBoard.TryGetNextMoveAndFen(fen) != null)
 		{
-			var fenAndMove = ChessBoard.Position.Ply == 0 ?
-					ChessBoard.MovesAndFenPlayed[0] :
-					ChessBoard.MovesAndFenPlayed[ChessBoard.Position.Ply];
-			fen = fenAndMove.FenAfterMove;
-			ChessBoard.LoadFen(fen);
-			Comment = CreateComments(fenAndMove);
-			await SetPositionAndMove(fenAndMove);
-			await OnMoveMadeOnBoard.InvokeAsync(fenAndMove.Move.FromSq + fenAndMove.Move.ToSq);
-			await Task.Delay(300);
-			await ScrollToCurrentMove();
+			await NextMove();
+			await Task.Delay(400);
 		}
 
 		stopAutoPlay = true;
@@ -682,6 +693,7 @@
 			fen = newPos;
 			await SetPosition(newPos, false);
 		}
+		UpdateVariationsDisplay();
 		StateHasChanged();
 	}
 
@@ -691,119 +703,159 @@
 		{
 			return;
 		}
+
 		if (fen != input.FenAfterMove)
 		{
+			await SetPositionAndMove(input, invokeMove: true);
 			fen = input.FenAfterMove;
 			ChessBoard.LoadFen(fen);
-			await SetPositionAndMove(input, false);
+		}		
+		UpdateVariationsDisplay();
+		await InvokeAsync(StateHasChanged);		
+	}
+
+	public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
+	{
+		if (overlay == OverlaySettings.None)
+		{
+			await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
 		}
-        Comment = CreateComments(input);
-        var lastNNMoves = GetNNValues(currentId);
-        await DisplayMoveAnnotation(lastNNMoves, currentId);
-        await InvokeAsync(StateHasChanged);
-        await ScrollToCurrentMove();
-    }
+		else
+		{
+			currentId = id;
+			var lastNNMoves = GetNNValues(id);
+			await DisplayMoveAnnotation(lastNNMoves, id);
+		}
+		await Task.CompletedTask;
+	}
 
-    public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
-    {
-        if (overlay == OverlaySettings.None)
-        {
-            await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
-        }
-        else
-        {
-            currentId = id;
-            var lastNNMoves = GetNNValues(id);
-            await DisplayMoveAnnotation(lastNNMoves, id);
-        }
-        await Task.CompletedTask;
-    }
+	public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
+	{
+		var list = moves.ToList();
+		var lastNNMoves = GetNNValues(id);
+		lastNNMoves.Clear();
+		lastNNMoves.AddRange(moves);
+		if (id == currentId)
+		{
+			await DisplayMoveAnnotation(lastNNMoves, id);
+		}
+	}
 
-    public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
-    {
-        var list = moves.ToList();
-        var lastNNMoves = GetNNValues(id);
-        lastNNMoves.Clear();
-        lastNNMoves.AddRange(moves);
-        if (id == currentId)
-        {
-            await DisplayMoveAnnotation(lastNNMoves, id);
-        }
-    }
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			fen = FENposition;
+			await PrepareChessboard();
+		}
+		if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
+		{
+			moveListFontSize = MoveListFontSize;
+			moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
+			openingStyle = $"font-size:{moveListFontSize}px";
+			StateHasChanged();
+		}
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            fen = FENposition;
-            await PrepareChessboard();
-        }
-        if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
-        {
-            moveListFontSize = MoveListFontSize;
-            moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
-            openingStyle = $"font-size:{moveListFontSize}px";
-            StateHasChanged();
-        }
+		if (MoveListHeight > 0 && MoveListHeight != moveListHeight)
+		{
+			moveListHeight = MoveListHeight;
+			moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
+			StateHasChanged();
+		}
+		await Task.CompletedTask;
+	}
 
-        if (MoveListHeight > 0 && MoveListHeight != moveListHeight)
-        {
-            moveListHeight = MoveListHeight;
-            moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
-            StateHasChanged();
-        }
-        await Task.CompletedTask;
-    }
+	protected override async Task OnInitializedAsync()
+	{
+		this.keyContext = this.HotKeys.CreateContext()
+		.Add(Key.ArrowRight, (Func<Task>)(async () => await NextMove()), "Next move")
+		.Add(Key.ArrowLeft, (Func<Task>)(async () => await PreviousMove()), "Prev move")
+		.Add(Key.P, (Func<Task>)(async () => await PlayMoves()), "Play moves")
+		.Add(Key.R, (Func<Task>)(async () => await RotateBoard()), "Rotate board")
+		//.Add(Key.Escape, (async () => await ResetEngine()), "Reset engines")
+		.Add(Key.Home, (Func<Task>)(async () => await StartOfGame()), "Start of game")
+		.Add(Key.End, (Func<Task>)(async () => await EndOfGame()), "End of game");
+		await base.OnInitializedAsync();
+	}
 
-    protected override async Task OnInitializedAsync()
-    {
-        this.keyContext = this.HotKeys.CreateContext()
-        .Add(Key.ArrowRight, (Func<Task>)(async () => await NextMove()), "Next move")
-        .Add(Key.ArrowLeft, (Func<Task>)(async () => await PreviousMove()), "Prev move")
-        .Add(Key.P, (Func<Task>)(async () => await PlayMoves()), "Play moves")
-        .Add(Key.R, (Func<Task>)(async () => await RotateBoard()), "Rotate board")
-        //.Add(Key.Escape, (async () => await ResetEngine()), "Reset engines")
-        .Add(Key.Home, (Func<Task>)(async () => await StartOfGame()), "Start of game")
-        .Add(Key.End, (Func<Task>)(async () => await EndOfGame()), "End of game");
-        await base.OnInitializedAsync();
-    }
-
-    protected override void OnInitialized()
-    {
-        Notifier.NotifyFenToBoard += OnReceivedFen;
-        Notifier.NotifyFen += OnReceivedFen;
-        Notifier.NotifyFenAndMove += OnNotifyMoveAndFen;
-        Notifier.NotifyMovesWithId += OnNotifyMoves;
-        Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
-        fenWithMoves = startPos;
+	protected override void OnInitialized()
+	{
+		Notifier.NotifyFenToBoard += OnReceivedFen;
+		Notifier.NotifyFen += OnReceivedFen;
+		Notifier.NotifyFenAndMove += OnNotifyMoveAndFen;
+		Notifier.NotifyMovesWithId += OnNotifyMoves;
+		Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
+		fenWithMoves = startPos;
 		fen = startPos;
-        base.OnInitialized();
-    }
+		UpdateVariationsDisplay();
+		base.OnInitialized();
+	}
 
-    async ValueTask IAsyncDisposable.DisposeAsync()
-    {
-        try
-        {
-            if (chessGUI is not null)
-            {
-                await chessGUI.DisposeAsync();
-            }
-            Dispose();
-        }
-        catch (Exception)
-        {
-            logger.LogError("Error disposing chessboard component.");
-        }
-    }
+	async ValueTask IAsyncDisposable.DisposeAsync()
+	{
+		try
+		{
+			if (chessGUI is not null)
+			{
+				await chessGUI.DisposeAsync();
+			}
+			Dispose();
+		}
+		catch (Exception)
+		{
+			logger.LogError("Error disposing chessboard component.");
+		}
+	}
 
-    public void Dispose()
-    {
-        this.keyContext?.DisposeAsync();
-        Notifier.NotifyFenToBoard -= OnReceivedFen;
-        Notifier.NotifyFen -= OnReceivedFen;
-        Notifier.NotifyFenAndMove -= OnNotifyMoveAndFen;
-        Notifier.NotifyMovesWithId -= OnNotifyMoves;
-        Notifier.NotifyDisplaySettings -= OnNotifyOverlaySettings;
-        objRef?.Dispose();
-    }
+	public void Dispose()
+	{
+		this.keyContext?.DisposeAsync();
+		Notifier.NotifyFenToBoard -= OnReceivedFen;
+		Notifier.NotifyFen -= OnReceivedFen;
+		Notifier.NotifyFenAndMove -= OnNotifyMoveAndFen;
+		Notifier.NotifyMovesWithId -= OnNotifyMoves;
+		Notifier.NotifyDisplaySettings -= OnNotifyOverlaySettings;
+		objRef?.Dispose();
+	}
+
+	public void UpdateVariationsDisplay()
+	{
+		VariationLines.Clear();
+		InlineMoveHistory = string.Empty;
+		InlineTokens.Clear();
+		var tokens = ChessBoard.InlineTokensFromGraph();
+		InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation)));
+		InlineMoveHistory = string.Join(" ", tokens.Where(t => !t.IsBracket).Select(t => t.DisplayText));
+	}
+
+	private async Task OnInlineMoveClick(InlineToken token)
+	{
+		if (token == null || string.IsNullOrWhiteSpace(token.Fen))
+		{
+			return;
+		}
+
+		stopAutoPlay = true;
+		ChessBoard.LoadFen(token.Fen);
+		var history = ChessBoard.GetMoveHistoryToCurrentFen(token.Fen);
+		// var currentNodeId = ChessBoard.CurrentGraphNodeId;
+		// var curNode = ChessBoard.MoveGraphNode(currentNodeId);
+		// var edge = ChessBoard.MoveGraphEdge(currentNodeId);
+		var foundMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault(m => m.FenAfterMove == token.Fen);
+				
+		if (foundMove != null)
+		{
+			Comment = CreateComments(foundMove);
+		}
+		fen = token.Fen;
+		UpdateVariationsDisplay();
+		await SetPosition(fen);
+		if (!string.IsNullOrWhiteSpace(token.MoveCoord))
+		{
+			await OnMoveMadeOnBoard.InvokeAsync(token.MoveCoord);
+		}
+		await ScrollToCurrentMove();
+		StateHasChanged();
+	}
+
 }

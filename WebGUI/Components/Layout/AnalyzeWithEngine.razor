@@ -329,14 +329,14 @@
             numberOfTimeMs = Math.Max(1, value);
     }
 
-    private void StartSearchWithMode(string positionWithMovesCommand)
+    private void StartSearchWithMode()
     {
         if (analyzer == null)
             return;
 
         if (searchMode == SearchMode.Nodes)
         {
-            analyzer.SearchNodesWithCommand((int)numberOfNodes, positionWithMovesCommand, keepNodesWhileSearching);
+            analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
             return;
         }
 
@@ -528,19 +528,12 @@
     private async Task PlayMoveFromTable(TableRowClickEventArgs<NNValues> moveInfo)
     {
         InfoLineList.Clear();
-        if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
-        {
-            //new mainline initiated here
-            var command = ChessBoard.PositionWithMovesIndexed();
-            ChessBoard.ResetBoardState();
-            ChessBoard.PlayCommands(command);
-        }
         if (autoSearchSwitch)
         {
             searchInProgress = true;
             await searchInfoPlot.ResetPlot(false);
-            var move = moveInfo.Item.SANMove;
-            ChessBoard.PlaySimpleShortSan(move);
+            var move = moveInfo.Item.LANMove;
+            ChessBoard.PlayLongSanMove(move);
             fen = ChessBoard.FEN();
             await OnEngineMoveMade.InvokeAsync(move);
             await Notifier.UpdateFenToBoard(fen);
@@ -550,26 +543,18 @@
 
     private async Task PlayMoveFromTable(TableRowClickEventArgs<KeyValuePair<int, EngineStatus>> status)
     {
-        InfoLineList.Clear();        
-        if (ChessBoard.LongSANMovesPlayed.Count > ChessBoard.Position.Ply)
-        {
-            //new mainline initiated here
-            var command = ChessBoard.PositionWithMovesIndexed();
-            ChessBoard.ResetBoardState();
-            ChessBoard.PlayCommands(command);
-        }
+        InfoLineList.Clear();                
         if (autoSearchSwitch)
         {
             searchInProgress = true;
-            var getMove = firstMoveInPV.Match(status.Item.Value.PV);
-            if (getMove.Success)
+            var longSan = status.Item.Value.PVLongSAN.Split(' ').FirstOrDefault();
+            if (longSan != null)
             {
-                await searchInfoPlot.ResetPlot(false);
-                var move = getMove.Groups[1].Value;
-                ChessBoard.PlaySimpleShortSan(move);
+                await searchInfoPlot.ResetPlot(false);                
+                ChessBoard.PlayLongSanMove(longSan);
                 var moveFen = ChessBoard.MovesAndFenPlayed.Last();
                 fen = ChessBoard.FEN();
-                await OnEngineMoveMade.InvokeAsync(move);
+                await OnEngineMoveMade.InvokeAsync(longSan);
                 await Notifier.UpdateFenMoveToBoard(moveFen);
             }
             StateHasChanged();
@@ -774,8 +759,7 @@
             searchInfoPlot.NN = neuralNet;
             try
             {
-                var command = ChessBoard.PositionWithMovesIndexed();
-                StartSearchWithMode(command);
+                StartSearchWithMode();
             }
             catch (Exception ex)
             {
@@ -786,8 +770,7 @@
 
         else
         {
-            var command = ChessBoard.PositionWithMovesIndexed();
-            StartSearchWithMode(command);
+            StartSearchWithMode();
         }
 
         await InvokeAsync(StateHasChanged);
@@ -1338,8 +1321,7 @@
                 if (analyzer != null)
                 {
                     //await Task.Delay(200);
-                    var command = ChessBoard.PositionWithMovesIndexed();
-                    StartSearchWithMode(command);
+                    StartSearchWithMode();
                     searchInProgress = true;
                 }
                 else
@@ -1355,8 +1337,7 @@
                 }
                 if (analyzer != null)
                 {
-                    var command = ChessBoard.PositionWithMovesIndexed();
-                    StartSearchWithMode(command);
+                    StartSearchWithMode();
                     searchInProgress = true;
                 }
             }

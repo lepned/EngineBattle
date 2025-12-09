@@ -717,6 +717,17 @@ export function makeSimpleMove2(element, color, fromSq, toSq, fen) {
   highlightSquare2(element, toSq, color, false);
 }
 
+export function makeSimpleMoveWithCallBack(dotnetHelper, element, color, fromSq, toSq, fen, invokeMove) {
+    let board = element.board;
+    board.position(fen, true);
+    clearHighlightSquaresForElement(element);
+    highlightSquare2(element, fromSq, color, false);
+    highlightSquare2(element, toSq, color, false);
+    if (invokeMove) {
+        dotnetHelper.invokeMethodAsync('UpdateNewMove', (fromSq + toSq), true);
+    }
+}
+
 
 export function setSimplePosition(element, fen) {
   element.board.position(fen, false);

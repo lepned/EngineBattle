@@ -1,0 +1,25 @@
+[Event "casual classical game"]
+[Site "https://lichess.org/HDDL9KiW"]
+[Date "2025.12.05"]
+[White "LeelaPieceOddsFRC"]
+[Black "Former_Player"]
+[Result "1-0"]
+[GameId "HDDL9KiW"]
+[UTCDate "2025.12.05"]
+[UTCTime "23:23:14"]
+[WhiteElo "2000"]
+[BlackElo "1500"]
+[WhiteTitle "BOT"]
+[BlackTitle "GM"]
+[Variant "From Position"]
+[TimeControl "1800+5"]
+[ECO "?"]
+[Opening "?"]
+[Termination "Normal"]
+[FEN "rnqnkbbr/pppppppp/8/8/8/8/PPPPPPPP/R1QNKBBR w KQkq - 0 1"]
+[SetUp "1"]
+[Annotator "lichess.org"]
+
+1. d4 { [%eval -3.41] [%clk 0:30:00] } 1... e5 { [%eval -3.5] [%clk 0:30:00] } 2. Qe3 { [%eval -3.69] [%clk 0:29:57] } 2... d6 { [%eval -3.38] [%clk 0:29:58] } 3. Nc3 { [%eval -3.6] [%clk 0:29:56] } 3... Qe6 { [%eval -3.14] [%clk 0:28:34] } 4. d5 { [%eval -2.96] [%clk 0:29:55] } 4... Qe7 { [%eval -2.94] [%clk 0:28:03] } 5. Qd3 { [%eval -3.07] [%clk 0:29:56] } 5... a6 { [%eval -3.02] [%clk 0:27:58] } 6. O-O-O { [%eval -3.12] [%clk 0:29:57] } 6... h5 { [%eval -3.07] [%clk 0:27:31] } 7. e4 { [%eval -3.07] [%clk 0:29:58] } 7... h4 { [%eval -2.63] [%clk 0:25:30] } 8. g3 { [%eval -2.61] [%clk 0:29:58] } 8... g6 { [%eval -2.62] [%clk 0:25:05] } 9. Kb1 { [%eval -2.6] [%clk 0:29:58] } 9... Nd7 { [%eval -2.68] [%clk 0:24:39] } 10. Bh3 { [%eval -2.58] [%clk 0:29:57] } 10... Bh6 { [%eval -2.56] [%clk 0:24:10] } 11. f4 { [%eval -2.59] [%clk 0:29:54] } 11... exf4? { (-2.59 → -1.20) Mistake. f6 was best. } { [%eval -1.2] [%clk 0:21:18] } (11... f6 12. Bf2 Bf7 13. f5 g5 14. gxh4 Bh5 15. Rdg1 Nf7 16. Bg4 Bxg4 17. Rxg4) 12. Bxd7+ { [%eval -1.18] [%clk 0:29:51] } 12... Kxd7 { [%eval -1.0] [%clk 0:20:54] } 13. e5 { [%eval -0.95] [%clk 0:29:51] } 13... f5 { [%eval -1.01] [%clk 0:18:02] } 14. exf6 { [%eval -1.22] [%clk 0:29:46] } 14... Qe5 { [%eval -1.31] [%clk 0:17:54] } 15. g4 { [%eval -1.08] [%clk 0:29:43] } 15... Nf7? { (-1.08 → 0.40) Mistake. Qg5 was best. } { [%eval 0.4] [%clk 0:15:35] } (15... Qg5 16. Re1) 16. Bd4 { [%eval 0.68] [%clk 0:29:39] } 16... Qg5?! { (0.68 → 1.33) Inaccuracy. Qe8 was best. } { [%eval 1.33] [%clk 0:15:39] } (16... Qe8) 17. Rhe1 { [%eval 1.42] [%clk 0:29:40] } 17... Bf8?! { (1.42 → 2.18) Inaccuracy. Re8 was best. } { [%eval 2.18] [%clk 0:14:48] } (17... Re8) 18. h3 { [%eval 2.06] [%clk 0:29:39] } 18... Bh7?? { (2.06 → 4.42) Blunder. Rh7 was best. } { [%eval 4.42] [%clk 0:13:05] } (18... Rh7 19. Qc4 Nd8 20. a4 Bf7 21. a5 f3 22. Rd3 c6 23. Na4 Bxd5 24. Nb6+) 19. Qc4 { [%eval 4.39] [%clk 0:29:37] } 19... Rd8 { [%eval 4.42] [%clk 0:12:23] } 20. Ne4 { [%eval 4.71] [%clk 0:29:39] } 20... Qh6 { [%eval 4.28] [%clk 0:12:24] } 21. Rd3 { [%eval 4.18] [%clk 0:29:44] } 21... g5 { [%eval #6] [%clk 0:12:02] } 22. Bb6 { [%eval #5] [%clk 0:29:47] } 22... cxb6 { [%eval #4] [%clk 0:11:17] } 23. Rc3 { [%eval #3] [%clk 0:29:51] } 23... Bxe4 { [%eval #3] [%clk 0:11:08] } 24. Qc7+ { [%eval #2] [%clk 0:29:55] } 24... Ke8 { [%eval #2] [%clk 0:11:12] } 25. Rxe4+ { [%eval #1] [%clk 0:30:00] } 25... Ne5 { [%eval #1] [%clk 0:11:17] } 26. f7# { [%clk 0:30:00] } { White wins by checkmate. } 1-0
+
+

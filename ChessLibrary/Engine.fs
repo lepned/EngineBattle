@@ -461,7 +461,7 @@ module Engine =
       member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit
       member this.HasExited = engineProcess.HasExited
       
-      member this.CurrentPositionCommand() = moveBoard.PositionWithMovesIndexed()
+      member this.CurrentPositionCommand() = moveBoard.PositionWithMovesFromGraph()
 
       member this.SetAllOptions (allOptions: Dictionary<string,obj>) =
         for opt in allOptions do
