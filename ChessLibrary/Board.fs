@@ -117,6 +117,91 @@ type Board() =
     let updateGraphNode (node: PositionNode) =
       moveGraph.NodesById[node.Id] <- node
 
+    let removeNodeFromHashMap (node: PositionNode) =
+      match moveGraph.NodesByHash.TryGetValue node.Hash with
+      | true, ids ->
+          ids.Remove node.Id |> ignore
+          if ids.Count = 0 then
+            moveGraph.NodesByHash.Remove node.Hash |> ignore
+      | _ -> ()
+
+    let unlinkEdge edgeId fromId toId =
+      match moveGraph.NodesById.TryGetValue fromId with
+      | true, parent ->
+          let updated = { parent with Children = parent.Children |> List.filter (fun id -> id <> edgeId) }
+          updateGraphNode updated
+      | _ -> ()
+      match moveGraph.NodesById.TryGetValue toId with
+      | true, child ->
+          let updated = { child with Parents = child.Parents |> List.filter (fun id -> id <> edgeId) }
+          updateGraphNode updated
+      | _ -> ()
+
+    let reindexChildOrders parentId =
+      match moveGraph.NodesById.TryGetValue parentId with
+      | true, parent ->
+          parent.Children
+          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+          |> List.sortBy (fun e -> e.Order)
+          |> List.mapi (fun idx e -> e.Id, idx)
+          |> List.iter (fun (eid, order) ->
+              match moveGraph.EdgesById.TryGetValue eid with
+              | true, edge when edge.Order <> order -> moveGraph.EdgesById[eid] <- { edge with Order = order }
+              | _ -> ())
+      | _ -> ()
+
+    let setMainChild parentId mainEdgeId =
+      match moveGraph.NodesById.TryGetValue parentId with
+      | true, parent ->
+          let edges =
+            parent.Children
+            |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+
+          let reordered =
+            edges
+            |> List.sortBy (fun e -> e.Order)
+            |> List.sortBy (fun e -> if e.Id = mainEdgeId then 0 else 1)
+
+          reordered
+          |> List.mapi (fun idx e ->
+              let isMain = e.Id = mainEdgeId
+              let edge' = if e.IsMainline <> isMain || e.Order <> idx then { e with IsMainline = isMain; Order = idx } else e
+              moveGraph.EdgesById[e.Id] <- edge')
+          |> ignore
+          ()
+      | _ -> ()
+
+    let rec removeEdgeSubtree edgeId =
+      match moveGraph.EdgesById.TryGetValue edgeId with
+      | true, edge ->
+          let childId = edge.To
+          let childNodeOpt =
+            match moveGraph.NodesById.TryGetValue childId with
+            | true, n -> Some n
+            | _ -> None
+
+          match childNodeOpt with
+          | Some childNode ->
+              // Remove descendants first
+              childNode.Children |> List.iter removeEdgeSubtree
+
+              // Detach this edge
+              unlinkEdge edgeId edge.From childId
+              moveGraph.EdgesById.Remove edgeId |> ignore
+
+              // If the child becomes orphaned and isn't the root, prune it.
+              match moveGraph.NodesById.TryGetValue childId with
+              | true, updatedChild when List.isEmpty updatedChild.Parents && childId <> moveGraph.Root ->
+                  updatedChild.Children |> List.iter removeEdgeSubtree
+                  removeNodeFromHashMap updatedChild
+                  moveGraph.NodesById.Remove childId |> ignore
+              | _ -> ()
+
+              // Reindex the remaining siblings of the parent.
+              reindexChildOrders edge.From
+          | None -> moveGraph.EdgesById.Remove edgeId |> ignore
+      | _ -> ()
+
     let getGraphNodeByHash (hash:uint64) =
       match moveGraph.NodesByHash.TryGetValue hash with
       | true, ids when ids.Count > 0 ->
@@ -235,6 +320,7 @@ type Board() =
 
     let updatePathFromCurrent () =
       moveAndFens.Clear()
+      longSanMoves.Clear()
       let visited = HashSet<NodeId>()
       let rec ascend nodeId acc =
         if visited.Contains nodeId then acc
@@ -253,6 +339,7 @@ type Board() =
       for e in pathEdges do
         let toNode = moveGraph.NodesById[e.To]
         moveAndFens.Add (moveAndFenFromEdge e toNode)
+        longSanMoves.Add e.Lan
 
     let endCurrentVariation () =
       moveAndFens.Clear()
@@ -432,9 +519,106 @@ type Board() =
       if (move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY then
         eps <- eps + 1L
 
+    member this.WriteGraphLinesToPgn (path:string) (opening:string) (variation:string) =      
+      let formatMoveLine (moves: string list) =
+        let sb = sbPool.Get()
+        for idx, lan in moves |> List.indexed do
+          if idx % 2 = 0 then
+            let moveNr = (idx / 2) + 1
+            if sb.Length > 0 then sb.Append(" ") |> ignore
+            sb.Append($"{moveNr}. {lan}") |> ignore
+          else
+            sb.Append($" {lan}") |> ignore
+        sb.Append(" *") |> ignore
+        sbPool.Return(sb)
+        sb.ToString()
+
+      let ensureDirectory () =
+        match System.IO.Path.GetDirectoryName path with
+        | null | "" -> ()
+        | dir when System.IO.Directory.Exists(dir) |> not -> System.IO.Directory.CreateDirectory(dir) |> ignore
+        | _ -> ()
+
+      let lines : string list list = this.MoveLinesFromGraph false
+      if lines.Length = 0 then ()
+      else
+        ensureDirectory()
+        use writer = new System.IO.StreamWriter(path, false, System.Text.Encoding.UTF8)
+        for idx, moves in lines |> List.indexed do
+          let eventTag =
+            if idx = 0 then "Mainline"
+            else sprintf "Variation %d" idx
+          writer.WriteLine $"[Event \"{eventTag}\"]"
+          if not (String.IsNullOrWhiteSpace opening) then
+            writer.WriteLine $"[Opening \"{opening}\"]"
+          if not (String.IsNullOrWhiteSpace variation) then
+            writer.WriteLine $"[Variation \"{variation}\"]"
+          writer.WriteLine $"[FEN \"{startPos}\"]"
+          writer.WriteLine()
+          writer.WriteLine (formatMoveLine moves)
+          writer.WriteLine()
+    
+    member this.MoveLinesFromGraph (asLAN:bool) =
+      let childEdges nodeId =
+        moveGraph.NodesById[nodeId].Children
+        |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+        |> List.sortBy (fun e -> e.Order)
+
+      let rec depthFrom nodeId =
+        match childEdges nodeId with
+        | [] -> 0
+        | children -> children |> List.map (fun e -> 1 + depthFrom e.To) |> List.max
+
+      let appendMove path move =
+        if String.IsNullOrWhiteSpace move then path else path @ [move]
+
+      let rec traverse nodeId path =
+        match childEdges nodeId with
+        | [] -> [path]
+        | children ->
+          let main =
+            match children |> List.tryFind (fun e -> e.IsMainline) with
+            | Some mc -> mc
+            | None -> children |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+          let mainPaths = 
+            if asLAN then 
+                traverse main.To (appendMove path main.Lan)
+            else 
+                traverse main.To (appendMove path main.San)
+          let variationPaths =
+            if asLAN then
+              children
+              |> List.filter (fun e -> e.Id <> main.Id)
+              |> List.collect (fun v -> traverse v.To (appendMove path v.Lan))
+            else
+              children
+              |> List.filter (fun e -> e.Id <> main.Id)
+              |> List.collect (fun v -> traverse v.To (appendMove path v.San))
+          mainPaths @ variationPaths
+
+      match childEdges moveGraph.Root with
+      | [] -> []
+      | rootChildren ->
+        let main =
+          match rootChildren |> List.tryFind (fun e -> e.IsMainline) with
+          | Some mc -> mc
+          | None -> rootChildren |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+        let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
+        let mainPaths = 
+            if asLAN then 
+                traverse main.To (appendMove [] main.Lan)
+            else 
+                traverse main.To (appendMove [] main.San)
+        let variationPaths =
+          if asLAN then
+            rootVariations |> List.collect (fun v -> traverse v.To (appendMove [] v.Lan))
+          else
+            rootVariations |> List.collect (fun v -> traverse v.To (appendMove [] v.San))
+        mainPaths @ variationPaths
+    
     member this.GetMoveHistoryWithVariations () =
       let tokens = this.InlineTokensFromGraph() |> Seq.toList
-      let sb = System.Text.StringBuilder()
+      let sb = sbPool.Get()
       let mutable depth = 0
       let mutable lastNumber : int option = None
 
@@ -465,6 +649,7 @@ type Board() =
             sb.Append(prefix).Append(tok.Text) |> ignore
 
       tokens |> List.iter appendToken
+      sbPool.Return(sb)
       sb.ToString().Trim()
 
     member this.IsFRC
@@ -552,6 +737,168 @@ type Board() =
           updatePathFromCurrent()
           true
       | _ -> false
+
+    // Remove a variation edge that leads to the provided FEN (matching SAN if supplied).
+    // When removeEntireVariation = true the whole branch is pruned from the variation head.
+    member this.RemoveVariationNode (san:string) (fen:string) (removeEntireVariation: bool) =
+      if String.IsNullOrWhiteSpace fen then false
+      else
+        let pos = BoardHelper.getPosFromFen(Some fen)
+        let hash = Utilities.Hash.hashBoard pos
+
+        let matchingNodes =
+          match moveGraph.NodesByHash.TryGetValue hash with
+          | true, ids when ids.Count > 0 -> ids |> Seq.filter (fun id -> moveGraph.NodesById[id].Fen = fen) |> Seq.toList
+          | _ -> []
+
+        let tryFindEdge nodeId =
+          moveGraph.NodesById[nodeId].Parents
+          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+          |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
+          |> Option.map (fun e -> e, nodeId)
+
+        let target =
+          matchingNodes
+          |> List.tryPick tryFindEdge
+          |> Option.orElseWith (fun () ->
+              match matchingNodes with
+              | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
+                  let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
+                  match moveGraph.EdgesById.TryGetValue parentEdgeId with
+                  | true, e -> Some (e, nodeId)
+                  | _ -> None
+              | _ -> None)
+
+        match target with
+        | None -> false
+        | Some (edge, _) ->
+            // Allow deleting a "mainline" edge only if it belongs to a variation branch.
+            let rec hasVariationAncestor (e: MoveEdge) =
+              if not e.IsMainline then true
+              else
+                moveGraph.NodesById[e.From].Parents
+                |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None)
+                |> List.exists hasVariationAncestor
+            if edge.IsMainline && not (hasVariationAncestor edge) then false
+            else
+            let rec findVariationHead (e: MoveEdge) =
+              let parents =
+                moveGraph.NodesById[e.From].Parents
+                |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None)
+                |> List.filter (fun pe -> pe.IsMainline |> not)
+              match parents with
+              | parent :: _ -> findVariationHead parent
+              | [] -> e
+
+            let edgeIdToRemove =
+              if removeEntireVariation then
+                findVariationHead edge |> fun e -> e.Id
+              else edge.Id
+
+            let parentId =
+              match moveGraph.EdgesById.TryGetValue edgeIdToRemove with
+              | true, e -> e.From
+              | _ -> moveGraph.Root
+
+            removeEdgeSubtree edgeIdToRemove
+            if moveGraph.NodesById.ContainsKey currentGraphNodeId |> not then
+              currentGraphNodeId <- moveGraph.Root
+            else
+              reindexChildOrders parentId
+            updatePathFromCurrent()
+            true
+
+    member this.RemoveVariationTail (san:string) (fen:string) =
+      if String.IsNullOrWhiteSpace fen then false
+      else
+        let pos = BoardHelper.getPosFromFen(Some fen)
+        let hash = Utilities.Hash.hashBoard pos
+
+        let matchingNodes =
+          match moveGraph.NodesByHash.TryGetValue hash with
+          | true, ids when ids.Count > 0 -> ids |> Seq.filter (fun id -> moveGraph.NodesById[id].Fen = fen) |> Seq.toList
+          | _ -> []
+
+        let tryFindEdge nodeId =
+          moveGraph.NodesById[nodeId].Parents
+          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+          |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
+          |> Option.map (fun e -> e, nodeId)
+
+        let target =
+          matchingNodes
+          |> List.tryPick tryFindEdge
+          |> Option.orElseWith (fun () ->
+              match matchingNodes with
+              | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
+                  let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
+                  match moveGraph.EdgesById.TryGetValue parentEdgeId with
+                  | true, e -> Some (e, nodeId)
+                  | _ -> None
+              | _ -> None)
+
+        match target with
+        | None -> false
+        | Some (edge, _) ->
+            let rec hasVariationAncestor (e: MoveEdge) =
+              if not e.IsMainline then true
+              else
+                moveGraph.NodesById[e.From].Parents
+                |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None)
+                |> List.exists hasVariationAncestor
+            if edge.IsMainline && not (hasVariationAncestor edge) then false
+            else
+              let parentId = edge.From
+              removeEdgeSubtree edge.Id
+              if moveGraph.NodesById.ContainsKey currentGraphNodeId |> not then
+                currentGraphNodeId <- moveGraph.Root
+              else
+                reindexChildOrders parentId
+              updatePathFromCurrent()
+              true
+
+    member this.PromoteVariationToMainline (san:string) (fen:string) =
+      if String.IsNullOrWhiteSpace fen then false
+      else
+        let pos = BoardHelper.getPosFromFen(Some fen)
+        let hash = Utilities.Hash.hashBoard pos
+        let matchingNodes =
+          match moveGraph.NodesByHash.TryGetValue hash with
+          | true, ids when ids.Count > 0 -> ids |> Seq.filter (fun id -> moveGraph.NodesById[id].Fen = fen) |> Seq.toList
+          | _ -> []
+
+        let tryFindEdge nodeId =
+          moveGraph.NodesById[nodeId].Parents
+          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+          |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
+          |> Option.map (fun e -> e, nodeId)
+
+        let target =
+          matchingNodes
+          |> List.tryPick tryFindEdge
+          |> Option.orElseWith (fun () ->
+              match matchingNodes with
+              | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
+                  let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
+                  match moveGraph.EdgesById.TryGetValue parentEdgeId with
+                  | true, e -> Some (e, nodeId)
+                  | _ -> None
+              | _ -> None)
+
+        match target with
+        | None -> false
+        | Some (edge, _) ->
+            let rec variationHead (e: MoveEdge) (lastNonMain: MoveEdge option) =
+              let nextLast = if e.IsMainline then lastNonMain else Some e
+              match moveGraph.NodesById[e.From].Parents |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None) |> List.tryHead with
+              | Some parentEdge -> variationHead parentEdge nextLast
+              | None -> defaultArg nextLast e
+
+            let headEdge = variationHead edge None
+            let parentId = headEdge.From
+            setMainChild parentId headEdge.Id
+            updatePathFromCurrent()
+            true
 
     member this.LoadMoveHistoryWithVariations (history:string) =
       // Reset board and graph, then parse the provided PGN-style move string (with variations).
@@ -745,6 +1092,50 @@ type Board() =
       match lastMoveNodeId with
       | Some id -> currentGraphNodeId <- id; createNodeIsVariation <- false; updatePathFromCurrent()
       | None -> ()
+
+    member this.LoadPGNGameWithVariations (pgn:PGNTypes.PgnGame) =
+      // Reset to the PGN's starting position (or keep the current start if none is provided).
+      let startFen = if String.IsNullOrWhiteSpace pgn.Fen then this.StartPosition else pgn.Fen
+      this.ResetBoardStateFromFen(startFen)
+      createNodeIsVariation <- false
+
+      let setBoardToNode (nodeId: NodeId) =
+        let fen = moveGraph.NodesById[nodeId].Fen
+        this.LoadFen(fen)
+        currentGraphNodeId <- nodeId
+
+      let rec playLine (startNode: NodeId) (line: PGNTypes.PlyLine) (isMainline: bool) =
+        let prevFlag = createNodeIsVariation
+        setBoardToNode startNode
+        createNodeIsVariation <- not isMainline
+        let mutable currentNode = startNode
+        for ply in line do
+          let nodeBeforeMove = currentNode
+          // Play the move
+          let comment = if String.IsNullOrWhiteSpace ply.Comment then "" else ply.Comment
+          this.PlaySimpleShortSanWithComments ply.San comment
+          currentNode <- currentGraphNodeId
+
+          // Recurse into any variations that branch from this node
+          let afterMoveNode = currentNode
+          for variation in ply.Variations do
+            let _ = playLine nodeBeforeMove variation false
+            setBoardToNode afterMoveNode
+            createNodeIsVariation <- not isMainline
+        createNodeIsVariation <- prevFlag
+        currentNode
+
+      let lastMainNode =
+        if pgn.Mainline.Count = 0 then moveGraph.Root
+        else playLine moveGraph.Root pgn.Mainline true
+
+      for variation in pgn.RootVariations do
+        playLine moveGraph.Root variation false |> ignore
+
+      currentGraphNodeId <- lastMainNode
+      createNodeIsVariation <- false
+      updatePathFromCurrent()
+      lastHistoryTokens <- None
     
     member this.GetMoveHistory() =      
       let fen = this.FEN()
@@ -778,6 +1169,7 @@ type Board() =
             sb.Append $" {moveStr.ShortSan}" |> ignore
             moveNr <- moveNr + 1
             nr <- nr + 1
+      sbPool.Return(sb)
       sb.ToString().TrimStart()
 
     member this.GetShortSanMoveHistory() =      
@@ -802,6 +1194,7 @@ type Board() =
           sb.Append $" {moveStr}" |> ignore
           moveNr <- moveNr + 1
         nr <- nr + 1
+      sbPool.Return(sb)
       sb.ToString().TrimStart()
 
     member this.GetOpeningMoves() =
@@ -815,6 +1208,7 @@ type Board() =
           sb.Append $" {moveStr}" |> ignore
           moveNr <- moveNr + 1
         nr <- nr + 1
+      sbPool.Return(sb)
       sb.ToString().TrimStart()        
 
     member this.InlineTokensFromGraph () =
@@ -866,10 +1260,14 @@ type Board() =
               | None -> children |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
             let variations = children |> List.filter (fun e -> e.Id <> mainChild.Id)
 
+            let firstMoveWasWhiteAtVariationStart = isLineStart && inVariation && (ply % 2 = 0)
+            let mainChildIsLineStart =
+              if firstMoveWasWhiteAtVariationStart then false else (isLineStart && inVariation)
+
             if String.IsNullOrWhiteSpace mainChild.San |> not then
               tokens.Add
                 { Text = mainChild.San
-                  DisplayText = formatTokenText (ply + 1) mainChild.San (isLineStart && inVariation) inVariation
+                  DisplayText = formatTokenText (ply + 1) mainChild.San mainChildIsLineStart inVariation
                   Fen = moveGraph.NodesById[mainChild.To].Fen
                   MoveCoord = if mainChild.Lan.Length >= 4 then mainChild.Lan.Substring(0,4) else String.Empty
                   IsBracket = false

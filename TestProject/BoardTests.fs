@@ -234,6 +234,163 @@ let ``Navigation advances past repeated positions without looping`` () =
     Assert.Equal<string>(["Be4"; "Rg1"; "Kd3"; "Rf1"; "Ke3"; "Rg1"], window)
 
 [<Fact>]
+let ``RemoveVariationNode removes only the targeted variation move`` () =
+    let board = Board()
+    board.PlaySimpleShortSan "e4"
+    let fenAfterE4 = board.FEN()
+    board.PlaySimpleShortSan "e5"
+
+    // Create a single-move side variation: 1... c5
+    board.LoadFen(fenAfterE4)
+    board.PlaySimpleShortSan "c5"
+    let fenAfterC5 = board.FEN()
+
+    // Variation should exist alongside the mainline reply.
+    let rootChildren = board.MoveGraphChildren(board.MoveGraphRootId)
+    let mainAfterRoot = rootChildren |> List.find (fun e -> e.IsMainline)
+    let childrenAfterE4 = board.MoveGraphChildren(mainAfterRoot.To)
+    Assert.True(childrenAfterE4 |> List.exists (fun e -> not e.IsMainline && e.San = "c5"))
+
+    let removed = board.RemoveVariationNode "c5" fenAfterC5 false
+    Assert.True(removed)
+
+    let childrenAfterRemoval = board.MoveGraphChildren(mainAfterRoot.To)
+    Assert.False(childrenAfterRemoval |> List.exists (fun e -> e.San = "c5"))
+    Assert.True(childrenAfterRemoval |> List.exists (fun e -> e.IsMainline && e.San = "e5"))
+
+[<Fact>]
+let ``RemoveVariationNode with full branch pruning removes entire variation`` () =
+    let board = Board()
+    board.PlaySimpleShortSan "e4"
+    let fenAfterE4 = board.FEN()
+    board.PlaySimpleShortSan "e5"
+
+    // Build a two-ply variation: 1... c5 2. Nf3
+    board.LoadFen(fenAfterE4)
+    board.PlaySimpleShortSan "c5"
+    board.PlaySimpleShortSan "Nf3"
+    let fenAfterC5Nf3 = board.FEN()
+
+    let rootChildren = board.MoveGraphChildren(board.MoveGraphRootId)
+    let mainAfterRoot = rootChildren |> List.find (fun e -> e.IsMainline)
+    let childrenAfterE4 = board.MoveGraphChildren(mainAfterRoot.To)
+    Assert.True(childrenAfterE4 |> List.exists (fun e -> not e.IsMainline && e.San = "c5"))
+
+    let removed = board.RemoveVariationNode "Nf3" fenAfterC5Nf3 true
+    Assert.True(removed)
+
+    let childrenAfterRemoval = board.MoveGraphChildren(mainAfterRoot.To)
+    // The whole c5 ... branch should be gone.
+    Assert.False(childrenAfterRemoval |> List.exists (fun e -> e.San = "c5"))
+    Assert.True(childrenAfterRemoval.Length = 1 && childrenAfterRemoval.Head.IsMainline)
+
+[<Fact>]
+let ``PromoteVariationToMainline promotes side line to main`` () =
+    let board = Board()
+    board.PlaySimpleShortSan "e4"
+    let fenAfterE4 = board.FEN()
+    board.PlaySimpleShortSan "e5"
+
+    // Variation after 1. e4: 1... c5
+    board.LoadFen(fenAfterE4)
+    board.PlaySimpleShortSan "c5"
+    let fenAfterC5 = board.FEN()
+
+    let rootChildren = board.MoveGraphChildren(board.MoveGraphRootId)
+    let mainAfterRoot = rootChildren |> List.find (fun e -> e.IsMainline) // 1. e4
+    let childrenAfterE4 = board.MoveGraphChildren(mainAfterRoot.To)
+    let mainBefore = childrenAfterE4 |> List.find (fun e -> e.IsMainline)
+    let variationBefore = childrenAfterE4 |> List.find (fun e -> not e.IsMainline)
+    Assert.Equal("e5", mainBefore.San)
+    Assert.Equal("c5", variationBefore.San)
+
+    let promoted = board.PromoteVariationToMainline "c5" fenAfterC5
+    Assert.True(promoted)
+
+    let childrenAfterPromotion = board.MoveGraphChildren(mainAfterRoot.To)
+    let newMain = childrenAfterPromotion |> List.find (fun e -> e.IsMainline)
+    let oldMain = childrenAfterPromotion |> List.find (fun e -> e.San = "e5")
+    Assert.Equal("c5", newMain.San)
+    Assert.False(oldMain.IsMainline)
+    Assert.True(newMain.Order = 0)
+
+    let moveHistory = board.GetMoveHistoryWithVariations()
+    Assert.Equal("1. e4 c5 (1... e5)", moveHistory)
+
+[<Fact>]
+let ``PromoteVariationToMainline from variation leaf promotes the branch`` () =
+    let board = Board()
+    // Main line up to 6...c6
+    for san in [ "d4"; "d5"; "Nf3"; "Nf6"; "g3"; "e6"; "Bg2"; "Be7"; "O-O"; "O-O"; "c4"; "c6" ] do
+        board.PlaySimpleShortSan san
+    let fenAfter6c6 = board.FEN() // White to move on move 7
+
+    // Main continues with 7. Qc2
+    board.PlaySimpleShortSan "Qc2"
+    let fenAfterQc2 = board.FEN()
+
+    // Create variation: 7. b3 Nbd7
+    board.LoadFen(fenAfter6c6)
+    board.PlaySimpleShortSan "b3"
+    board.PlaySimpleShortSan "Nbd7"
+    let fenAfterNbd7 = board.FEN()
+    board.PlaySimpleShortSan "Bb2"
+    board.PlaySimpleShortSan "a5"
+    let fenAftera5 = board.FEN()
+    let oldMoveHistory = board.GetMoveHistoryWithVariations()
+    // Promote by selecting the leaf move ("a5" in the variation)
+    let promoted = board.PromoteVariationToMainline "a5" fenAftera5
+    Assert.True(promoted)
+
+    // Mainline should now follow ...c6 b3 Nbd7 Bb2 a5, and the old main (Qc2) should be a variation.
+    let lines = board.MoveLinesFromGraph false
+    let mainLine = lines.Head
+    let lastFour = mainLine |> List.skip (mainLine.Length - 4)
+    Assert.Equal<string list>(["b3"; "Nbd7"; "Bb2"; "a5"], lastFour)
+    // Ensure the former main move Qc2 exists as a variation line from the same parent.
+    Assert.True(lines |> List.exists (fun l -> l |> List.rev |> List.tryHead = Some "Qc2"))
+    let newMoveHistory = board.GetMoveHistoryWithVariations()
+    Assert.NotSame(oldMoveHistory, newMoveHistory)
+    let promoted = board.PromoteVariationToMainline "Qc2" fenAfterQc2
+    Assert.True(promoted)
+    let restoredMoveHistory = board.GetMoveHistoryWithVariations()
+    Assert.Equal(oldMoveHistory, restoredMoveHistory)
+    let promoted = board.PromoteVariationToMainline "Nbd7" fenAfterNbd7
+    Assert.True(promoted)
+    let finalMoveHistory = board.GetMoveHistoryWithVariations()
+    Assert.NotSame(restoredMoveHistory, finalMoveHistory)
+
+
+ 
+[<Fact>]
+let ``RemoveVariationTail trims only tail of variation`` () =
+    let board = Board()
+    // Main line: 1. e4 e5 2. Nf3 Nc6
+    ["e4"; "e5"; "Nf3"] |> List.iter board.PlaySimpleShortSan
+    let fenAfterNf3 = board.FEN()
+    board.PlaySimpleShortSan "Nc6"
+
+    // Variation: 2... Nf6 3. d4 d6 4. Nc3
+    board.LoadFen(fenAfterNf3)
+    board.PlaySimpleShortSan "Nf6"
+    board.PlaySimpleShortSan "d4"
+    let fenAfterD4 = board.FEN()
+    board.PlaySimpleShortSan "d6"
+    board.PlaySimpleShortSan "Nc3"
+
+    // Delete from d4 onward in the variation
+    let removed = board.RemoveVariationTail "d4" fenAfterD4
+    Assert.True(removed)
+
+    let lines = board.MoveLinesFromGraph false
+    let mainLine = lines.Head
+    Assert.Equal<string list>(["e4"; "e5"; "Nf3"; "Nc6"], mainLine) // mainline intact
+
+    let variationLines = lines |> List.filter (fun l -> l <> mainLine)
+    Assert.True(variationLines |> List.exists (fun l -> l = ["e4"; "e5"; "Nf3"; "Nf6"]))
+    Assert.False(variationLines |> List.exists (fun l -> l |> List.exists (fun san -> san = "d4" || san = "d6" || san = "Nc3")))
+
+[<Fact>]
 let ``InlineTokensFromGraph preserves lichess odds variations`` () =
     let path = Path.Combine(AppContext.BaseDirectory, "TestData", "lichess_pgn_LeelaPieceOddsFRC.pgn")
     let raw = File.ReadAllText(path)
@@ -243,13 +400,7 @@ let ``InlineTokensFromGraph preserves lichess odds variations`` () =
     board.LoadFen(fen)
     board.StartPosition <- fen
 
-    let movesOnly =
-        raw.Split([|'\r'; '\n'|], StringSplitOptions.RemoveEmptyEntries)
-        |> Array.filter (fun line -> not (line.TrimStart().StartsWith("[")))
-        |> String.concat " "
-
-    board.LoadMoveHistoryWithVariations movesOnly
-
+    board.LoadPGNGameWithVariations game
     let tokens = board.InlineTokensFromGraph() |> Seq.toList
     let texts = tokens |> List.filter (fun t -> not t.IsBracket) |> List.map (fun t -> t.Text)
 

@@ -2,6 +2,7 @@
 @using WebGUI.Services
 @using WebGUI
 @using static ChessLibrary.Chess
+@using Microsoft.AspNetCore.Components.Web
 
 @implements IAsyncDisposable
 @implements IDisposable
@@ -113,7 +114,10 @@
 						}
 						else
 						{
-							<span style="cursor:pointer" @onclick="@(() => OnInlineMoveClick(tok))">@($"{tok.DisplayText} ")</span>
+							<span style="cursor:pointer"
+								  @onclick="@(() => OnInlineMoveClick(tok))"
+								  @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
+								  @oncontextmenu:preventDefault>@($"{tok.DisplayText} ")</span>
 						}
 					}
 				</span>
@@ -136,6 +140,8 @@
 						{
 							var isCurrent = ChessBoard.CurrentNodeHash == tok.tok.Hash;
 							<span @onclick="@(() => OnInlineMoveClick(tok.tok))"
+								  @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok.tok, e))"
+								  @oncontextmenu:preventDefault
 								  id="@($"move-{tok.idx}")"
 								  style="@(isCurrent ? "font-weight: bold;color:skyblue" : "")">@($"{tok.tok.DisplayText} ")</span>
 						}
@@ -143,6 +149,24 @@
 				</span>
 			</div>
 		</MudItem>
+	}
+
+	@if (showMoveActionDialog)
+	{
+		<div class="move-actions-backdrop" style="position:fixed; inset:0; z-index:1198;" @onclick="CloseMoveActionMenu"></div>
+		<MudPaper Elevation="6"
+				  Class="pa-2"
+				  Style="@($"position:fixed; z-index:1199; left:{actionDialogX}px; top:{actionDialogY}px; min-width:200px;")">
+			<MudText Typo="Typo.subtitle2">@($"{(string.IsNullOrWhiteSpace(selectedActionLabel) ? selectedActionSan : selectedActionLabel)} options")</MudText>
+			<MudDivider Class="my-2" />
+			<MudStack Spacing="1">
+				<MudButton Disabled="@string.IsNullOrWhiteSpace(selectedActionFen)" Variant="Variant.Text" Color="Color.Primary" OnClick="PromoteSelectedVariation">Promote to mainline</MudButton>
+				<MudButton Disabled="@string.IsNullOrWhiteSpace(selectedActionFen)" Variant="Variant.Text" Color="Color.Error" OnClick="DeleteEntireVariation">Remove variation</MudButton>
+				<MudButton Disabled="@string.IsNullOrWhiteSpace(selectedActionFen)" Variant="Variant.Text" Color="Color.Error" OnClick="DeleteSelectedVariationTail">Delete from here</MudButton>
+				
+				<MudButton Variant="Variant.Text" Color="Color.Default" OnClick="CloseMoveActionMenu">Cancel</MudButton>
+			</MudStack>
+		</MudPaper>
 	}
 
 	@if (ShowFenField)
@@ -219,8 +243,14 @@
 	private List<MoveAndFen> MoveList { get; set; }
 	private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
 	private List<VariationDisplay> VariationLines { get; set; } = new();
-	private record InlineToken(string Text, string DisplayText, string Fen, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation);
+	private record InlineToken(string Text, string DisplayText, string Fen, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply);
 	private List<InlineToken> InlineTokens { get; set; } = new();
+	private bool showMoveActionDialog = false;
+	private string selectedActionSan = string.Empty;
+	private string selectedActionFen = string.Empty;
+	private string selectedActionLabel = string.Empty;
+	private double actionDialogX;
+	private double actionDialogY;
 	private string InlineMoveHistory { get; set; } = string.Empty;
 	private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
 
@@ -824,10 +854,87 @@
 		InlineMoveHistory = string.Empty;
 		InlineTokens.Clear();
 		var tokens = ChessBoard.InlineTokensFromGraph();
-		InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation)));
+		InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation, t.Ply)));
 		InlineMoveHistory = string.Join(" ", tokens.Where(t => !t.IsBracket).Select(t => t.DisplayText));
 	}
 
+	private void ShowMoveActionMenu(InlineToken token, MouseEventArgs e)
+	{
+		if (token == null || token.IsBracket || string.IsNullOrWhiteSpace(token.Fen))
+		{
+			return;
+		}
+
+		selectedActionSan = token.Text;
+		selectedActionLabel = FormatMoveLabel(token);
+		selectedActionFen = token.Fen;
+		actionDialogX = e.ClientX;
+		actionDialogY = e.ClientY;
+		showMoveActionDialog = true;
+		StateHasChanged();
+	}
+
+	private void CloseMoveActionMenu()
+	{
+		showMoveActionDialog = false;
+		selectedActionLabel = string.Empty;
+	}
+
+	private async Task RefreshAfterGraphChange(bool updated, bool jumpToSelectedFen = false)
+	{
+		if (updated)
+		{
+			if (jumpToSelectedFen && !string.IsNullOrWhiteSpace(selectedActionFen))
+			{
+				ChessBoard.LoadFen(selectedActionFen);
+				fen = selectedActionFen;
+			}
+			else
+			{
+				fen = ChessBoard.FEN();
+			}
+
+			await SetPosition(fen);			
+			await ScrollToCurrentMove();
+		}
+		CloseMoveActionMenu();		
+	}
+
+	private string FormatMoveLabel(InlineToken token)
+	{
+		if (token == null || string.IsNullOrWhiteSpace(token.Text)) return string.Empty;
+		var moveNr = (token.Ply / 2) + 1;
+		return token.Ply % 2 == 0 ? $"{moveNr}. {token.Text}" : $"{moveNr}... {token.Text}";
+	}
+
+	private Task PromoteSelectedVariation()
+	{
+		// Use the FEN as the primary key to locate the edge; SAN may differ (e.g., aliases).
+		var updated = ChessBoard.PromoteVariationToMainline(string.Empty, selectedActionFen);
+		return RefreshAfterGraphChange(updated, true);
+	}
+
+	private Task DeleteEntireVariation()
+	{
+		var updated = ChessBoard.RemoveVariationNode(selectedActionSan, selectedActionFen, true);
+		ChessBoard.EndCurrentVariation();
+		var moveFen = ChessBoard.MovesAndFenPlayed.LastOrDefault();
+		if (moveFen != null)
+		{
+			fen = moveFen.FenAfterMove;
+			selectedActionFen = moveFen.FenAfterMove;
+			ChessBoard.LoadFen(selectedActionFen);
+		}
+		return RefreshAfterGraphChange(updated, false);
+	}
+
+	private Task DeleteSelectedVariationTail()
+	{
+		// Removing the branch starting at the selected move within the variation.
+		var updated = ChessBoard.RemoveVariationTail(selectedActionSan, selectedActionFen);
+		return RefreshAfterGraphChange(updated, false);
+	}
+	
 	private async Task OnInlineMoveClick(InlineToken token)
 	{
 		if (token == null || string.IsNullOrWhiteSpace(token.Fen))
@@ -838,9 +945,6 @@
 		stopAutoPlay = true;
 		ChessBoard.LoadFen(token.Fen);
 		var history = ChessBoard.GetMoveHistoryToCurrentFen(token.Fen);
-		// var currentNodeId = ChessBoard.CurrentGraphNodeId;
-		// var curNode = ChessBoard.MoveGraphNode(currentNodeId);
-		// var edge = ChessBoard.MoveGraphEdge(currentNodeId);
 		var foundMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault(m => m.FenAfterMove == token.Fen);
 				
 		if (foundMove != null)
