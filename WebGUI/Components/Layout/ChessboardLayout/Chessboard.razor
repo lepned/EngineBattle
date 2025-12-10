@@ -931,8 +931,15 @@
 	private Task DeleteSelectedVariationTail()
 	{
 		// Removing the branch starting at the selected move within the variation.
+		var previous = ChessBoard.TryGetPreviousMoveAndFen(selectedActionFen);
 		var updated = ChessBoard.RemoveVariationTail(selectedActionSan, selectedActionFen);
-		return RefreshAfterGraphChange(updated, false);
+		if (updated && previous != null)
+		{
+			selectedActionFen = previous.Value.FenAfterMove;
+			fen = selectedActionFen;
+			ChessBoard.LoadFen(selectedActionFen);
+		}
+		return RefreshAfterGraphChange(updated, updated && previous != null);
 	}
 	
 	private async Task OnInlineMoveClick(InlineToken token)

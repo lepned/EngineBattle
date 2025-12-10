@@ -8,6 +8,7 @@ open ChessLibrary.Parser
 open ChessLibrary.TypesDef.PGNTypes
 open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.CoreTypes
+open ChessLibrary.Parser.MoveParser
 
 [<Fact>]
 let ``getOpeningInfo returns correct string for opening/variation/eco`` () =
@@ -64,6 +65,79 @@ let ``parsePgnFile parses a simple PGN file`` () =
 
     // Cleanup
     File.Delete(tempFile)
+
+[<Fact>]
+let ``parsePgnFile aborts when exceeding configured timeout`` () =
+    let tempFile = Path.GetTempFileName()
+    let pgnContent = """
+[Event "Timeout Test"]
+[Site "Nowhere"]
+[Date "2024.01.01"]
+[Round "1"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 *
+"""
+    File.WriteAllText(tempFile, pgnContent)
+
+    // Set a zero-millisecond timeout to trigger the guard immediately.
+    MoveParser.setGameParseTimeoutMs 0L
+    try
+        Assert.ThrowsAny<Exception>(fun () -> PGNParser.parsePgnFile(tempFile) |> Seq.toList |> ignore) |> ignore
+    finally
+        MoveParser.resetGameParseTimeoutMs()
+        File.Delete(tempFile)
+
+[<Fact>]
+let ``parseFullPgnGame does not loop on movetext-only PGN`` () : Task = task {
+    let pgn = "1. e4 e5 2. Nf3 Nc6 *"
+    let parseTask = Task.Run(fun () -> PGNParser.parseFullPgnGame pgn)
+    let! completed = Task.WhenAny(parseTask, Task.Delay(3000))
+    Assert.True(obj.ReferenceEquals(parseTask, completed), "Parsing hung on movetext-only PGN")
+    let game = parseTask.Result
+    Assert.True(game.Moves.Count >= 0, "Parsing returned no game object")
+    return ()
+    }
+
+[<Fact>]
+let ``parseFullPgnGame skips semicolon and percent comment lines without hanging`` () : Task = task {
+    let prev = MoveParser.maxLinesPerGame
+    MoveParser.setMaxLinesPerGame 1000
+    let pgn = """
+[Event "Comment Test"]
+; this is a full-line comment
+% engine stuff
+
+1. e4 e5 2. Nf3 Nc6 *
+"""
+    try
+        let parseTask = Task.Run(fun () -> PGNParser.parseFullPgnGame pgn)
+        let! completed = Task.WhenAny(parseTask, Task.Delay(3000))
+        Assert.True(obj.ReferenceEquals(parseTask, completed), "Parsing hung on semicolon/% comment lines")
+        let game = parseTask.Result
+        Assert.Equal(2, game.Moves.Count)
+        Assert.Equal("e4", game.Moves.[0].WhiteSan)
+        Assert.Equal("e5", game.Moves.[0].BlackSan)
+    finally
+        MoveParser.setMaxLinesPerGame prev
+    }
+
+[<Fact>]
+let ``parseFullPgnGame does not hang on unterminated brace comment`` () : Task = task {
+    let pgn = """
+[Event "Unterminated Comment"]
+
+1. e4 {oops
+1... c5 *
+"""
+    let parseTask = Task.Run(fun () -> PGNParser.parseFullPgnGame pgn)
+    let! completed = Task.WhenAny(parseTask, Task.Delay(3000))
+    Assert.True(obj.ReferenceEquals(parseTask, completed), "Parsing hung on unterminated comment")
+    let _ = parseTask.Result
+    return ()
+    }
 
 [<Fact>]
 let ``calculateMedianNodes returns 0.0 for empty array`` () =

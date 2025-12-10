@@ -391,6 +391,24 @@ let ``RemoveVariationTail trims only tail of variation`` () =
     Assert.False(variationLines |> List.exists (fun l -> l |> List.exists (fun san -> san = "d4" || san = "d6" || san = "Nc3")))
 
 [<Fact>]
+let ``RemoveVariationTail trims mainline when no variations`` () =
+    let board = Board()
+    board.PlaySimpleShortSan "e4"
+    board.PlaySimpleShortSan "e5"
+    board.PlaySimpleShortSan "Nf3"
+    let fenAfterNf3 = board.FEN()
+    board.PlaySimpleShortSan "Nc6"
+    board.PlaySimpleShortSan "Bb5"
+
+    let removed = board.RemoveVariationTail "Nf3" fenAfterNf3
+    Assert.True(removed)
+
+    let lines = board.MoveLinesFromGraph false
+    let mainLine = lines.Head
+    Assert.Equal<string list>(["e4"; "e5"], mainLine)
+    Assert.Equal(1, lines.Length)
+
+[<Fact>]
 let ``InlineTokensFromGraph preserves lichess odds variations`` () =
     let path = Path.Combine(AppContext.BaseDirectory, "TestData", "lichess_pgn_LeelaPieceOddsFRC.pgn")
     let raw = File.ReadAllText(path)

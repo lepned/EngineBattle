@@ -572,6 +572,7 @@
         var openingName = text.Length > 0 ? text[0].Trim() : "Opening";
         var variationName = text.Length > 1 ? text[1].Trim() : "";
         board.WriteGraphLinesToPgn(path, openingName, variationName);
+		await Task.CompletedTask;
     }
 
     private async Task OpenEPDGame(TableRowClickEventArgs<EPD.EPDEntry> tableRowClickEventArgs)
@@ -730,7 +731,7 @@
             await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
         }
 
-        games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+        games = Parser.PGNParser.parsePgnFile(fullPath).Take(4000).ToList();
         gameIndex = 0;
         File.Delete(fullPath);
         await OpenPGNDialog();

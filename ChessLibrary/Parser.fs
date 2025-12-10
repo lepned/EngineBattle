@@ -3,6 +3,7 @@
 open System
 open System.IO
 open System.Collections.Generic
+open System.Diagnostics
 open System.Text
 open System.Text.RegularExpressions
 open TypesDef
@@ -1629,6 +1630,15 @@ module ConvertTo =
 
 
 module MoveParser =
+  // Configurable per-game timeout; negative disables the guard.
+  let mutable defaultGameParseTimeoutMs = 1000L
+  let mutable gameParseTimeoutMs = defaultGameParseTimeoutMs
+  let setGameParseTimeoutMs ms = gameParseTimeoutMs <- ms
+  let resetGameParseTimeoutMs () = gameParseTimeoutMs <- defaultGameParseTimeoutMs
+  // Safety guard: max number of lines allowed per PGN game before aborting (to avoid infinite loops on malformed files).
+  let mutable maxLinesPerGame = 20000
+  let setMaxLinesPerGame lines = maxLinesPerGame <- lines
+  let resetMaxLinesPerGame () = maxLinesPerGame <- 20000
 
   type State =
     |Start
@@ -1652,6 +1662,8 @@ module MoveParser =
   let mutable gameMetadata = { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
   let mutable move = { MoveNr = ""; WhiteSan = ""; WhiteComment = ""; BlackSan = ""; BlackComment = "" }
   let mutable parsedCommentEndTag = true  
+  let mutable unfinishedCommentLines = 0
+  let unfinishedCommentLineLimit = 1000
   let moves = ResizeArray<Move>()
   let headers = ResizeArray<Header>()
   let resultPattern = "1-0/2"
@@ -1675,6 +1687,7 @@ module MoveParser =
     move <- Move.Empty 
     moves.Clear()
     headers.Clear()
+    unfinishedCommentLines <- 0
     currentPly <- 0
     mainlinePly.Clear()
     rootVariations.Clear()
@@ -1684,6 +1697,11 @@ module MoveParser =
     lastParsedSan <- None
 
   module PgnStates =
+    let addPendingMoveIfAny () =
+      if not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
+        moves.Add move
+        move <- Move.Empty
+
     let isRank c = Char.IsDigit(c) && c >= '1' && c <= '8'
 
     let isFile c = Char.IsLower(c) && c >= 'a' && c <= 'h'
@@ -1785,6 +1803,9 @@ module MoveParser =
       let comment = parseAComment()
       skipWhiteSpace()
       if Peek() <> '}' then
+        unfinishedCommentLines <- unfinishedCommentLines + 1
+        if unfinishedCommentLines > unfinishedCommentLineLimit then
+          failwithf "Unterminated comment exceeded %d lines; aborting parse." unfinishedCommentLineLimit
         parsedCommentEndTag <- false
       else
         expect '}' |> ignore
@@ -2124,31 +2145,53 @@ module MoveParser =
             position <- position + 1
     
     let parseMoveTextSection() =
-      removeNonStandardWhitespaces()
-      if not parsedCommentEndTag then
-          parseUnFinishedComment()
-      skipWhiteSpace()      
-      while Peek() <> '[' && position < input.Length && Peek() <> '*' do          
-          skipWhiteSpace()
-          if Peek() = '(' then
-            parseRecursiveVariation()
-          else
-            parseElement()
-          skipWhiteSpace()
-      if parsedCommentEndTag && String.IsNullOrEmpty(move.BlackSan) |> not then
-          moves.Add move
-          move <- Move.Empty
-      if input.Length = position then            
-          if String.IsNullOrWhiteSpace input then
-            state <- State.InTagSection
-          
-      elif position < input.Length && Peek() = '*' then
-          expect '*' |> ignore
-      elif position < input.Length && Peek() = '[' then
-          position <- input.Length
-          state <- InTagSection
-      else
-          raise <| Exception("Expected a game termination")
+      // Guard against infinite loops on malformed input lines.
+      let mutable lastPosition = -1
+      let mutable stallCount = 0
+      let stallLimit = input.Length + 8
+      let mutable iterCount = 0
+      let iterLimit = (input.Length + 1) * 8 + 256
+      // Treat leading ';' or '%' as full-line comments per PGN common practice.
+      if input.StartsWith(";") || input.StartsWith("%") then
+        position <- input.Length
+        parsedCommentEndTag <- true
+       else
+        removeNonStandardWhitespaces()
+        if not parsedCommentEndTag then
+            parseUnFinishedComment()
+        skipWhiteSpace()      
+        while Peek() <> '[' && position < input.Length && Peek() <> '*' do          
+            skipWhiteSpace()
+            if Peek() = '(' then
+              parseRecursiveVariation()
+            else
+              parseElement()
+            // Ensure we continue to advance; otherwise bail out to avoid spinning forever.
+            iterCount <- iterCount + 1
+            if iterCount > iterLimit then
+              failwithf "PGN parser exceeded iteration limit on line: %s" input
+            if position = lastPosition then
+              stallCount <- stallCount + 1
+              if stallCount > stallLimit then
+                failwithf "PGN parser stalled at position %d while processing line: %s" position input
+            else
+              stallCount <- 0
+              lastPosition <- position
+            skipWhiteSpace()
+        if parsedCommentEndTag && String.IsNullOrEmpty(move.BlackSan) |> not then
+            moves.Add move
+            move <- Move.Empty
+        if input.Length = position then            
+            if String.IsNullOrWhiteSpace input then
+              state <- State.InTagSection
+            
+        elif position < input.Length && Peek() = '*' then
+            expect '*' |> ignore
+        elif position < input.Length && Peek() = '[' then
+            position <- input.Length
+            state <- InTagSection
+        else
+            raise <| Exception("Expected a game termination")
     
 
     let parseTagSection() =      
@@ -2156,18 +2199,18 @@ module MoveParser =
       if input.StartsWith "##" then
         position <- input.Length
         state <- State.Start
+      let mutable sawHeader = false
       while position < input.Length && Peek() = '[' do
+          sawHeader <- true
           parseTagPair()
           //skipWhiteSpace()
       if position = 0 && input.Length > 0 then
-        if String.IsNullOrWhiteSpace error then
-          let msg = "\nPGN-file had errors - most likely damaged header format or duplicated moveSection: \n" + input + Environment.NewLine
-          LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red msg
-          error <- msg        
-        //position <- input.Length
+        // Non-header line; transition to movetext without logging to avoid noisy output / hangs.
         state <- State.InMoveTextSection
-      if position = input.Length || Peek() <> '[' then
-          if state = State.Start && input.StartsWith "##" = false then
+      elif (position = input.Length || Peek() <> '[') then
+          if sawHeader then
+              state <- State.InTagSection
+          elif state = State.Start && input.StartsWith "##" = false then
               state <- State.InMoveTextSection
       else
         raise <| Exception("Expected a tag pair")    
@@ -2376,7 +2419,9 @@ module PGNParser =
 
   let parseFullPgnGame (pastedText: string): PgnGame =
       resetStates()
+      let parseStopwatch = Stopwatch.StartNew()
       let mutable counter = 0
+      let mutable lineCount = 0
       let rawGame = new StringBuilder()
         
       //get the bytes from the pasted text
@@ -2389,13 +2434,17 @@ module PGNParser =
             use reader = new StreamReader(memoryStream)
             while not reader.EndOfStream do
                 input <- reader.ReadLine().Trim()
+                lineCount <- lineCount + 1
+                if lineCount > maxLinesPerGame then
+                  failwithf "Parsing PGN game exceeded max line limit (%d) near line %d" maxLinesPerGame lineCount
+                if gameParseTimeoutMs >= 0L && parseStopwatch.ElapsedMilliseconds >= gameParseTimeoutMs then
+                  failwithf "Parsing PGN game exceeded %d ms near line %d: %s" gameParseTimeoutMs (counter + 1) input
                 rawGame.Append(input).Append(Environment.NewLine) |> ignore
                 position <- 0
                 while position < input.Length do
                     match state with
                     | Start -> 
                       PgnStates.parseTagSection()
-                      state <- InTagSection
 
                     | InMoveTextSection ->
                         PgnStates.parseMoveTextSection()
@@ -2443,19 +2492,43 @@ module PGNParser =
                   Fen = gameMetadata.Fen
                   Raw = rawGame.ToString()
                     }
+            elif not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
+              // Single-move games without a trailing add.
+              moves.Add move
+              counter <- counter + 1
+              yield 
+                {
+                  GameNumber = counter
+                  GameMetaData = gameMetadata
+                  Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
+                  Comments = "" 
+                  Fen = gameMetadata.Fen
+                  Raw = rawGame.ToString()
+                    }
       } |> Seq.tryHead |> Option.defaultValue (PgnGame.Empty 0)
 
 
   let parsePgnFile (pgnFilePath: string): seq<PgnGame> =
       resetStates()
       let mutable counter = 0
+      let parseStopwatch = Stopwatch.StartNew()
+      let mutable lineNumber = 0
+      let mutable gameLineCount = 0
       let rawGame = new StringBuilder()
       seq {
             state <- Start
             let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)          
             use reader = new StreamReader(pgnFilePath, options)
             while not reader.EndOfStream do
-                input <- reader.ReadLine().TrimStart()              
+                input <- reader.ReadLine().TrimStart()
+                lineNumber <- lineNumber + 1
+                gameLineCount <- gameLineCount + 1
+                if gameLineCount > maxLinesPerGame then
+                  failwithf "Parsing PGN game %d exceeded max line limit (%d) at file line %d" (counter + 1) maxLinesPerGame lineNumber
+                if gameParseTimeoutMs >= 0L && parseStopwatch.ElapsedMilliseconds >= gameParseTimeoutMs then
+                  failwithf "Parsing PGN game %d exceeded %d ms at line %d: %s" (counter + 1) gameParseTimeoutMs lineNumber input
                 rawGame.Append(input).Append(Environment.NewLine) |> ignore              
                 position <- 0
                 while position < input.Length do
@@ -2494,6 +2567,8 @@ module PGNParser =
                           Fen = gameMetadata.Fen
                           Raw = rawGame.ToString()
                         }
+                      parseStopwatch.Restart()
+                      gameLineCount <- 0
                       move <- Move.Empty
                       result <- String.Empty
                       rawGame.Clear() |> ignore
@@ -2516,23 +2591,45 @@ module PGNParser =
                   Fen = gameMetadata.Fen
                   Raw = rawGame.ToString()
                 }
+            elif not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
+              moves.Add move
+              counter <- counter + 1
+              yield 
+                {
+                  GameNumber = counter
+                  GameMetaData = gameMetadata
+                  Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
+                  Comments = "" 
+                  Fen = gameMetadata.Fen
+                  Raw = rawGame.ToString()
+                }
       }
     
   let parsePgnStream (reader: StreamReader): seq<PgnGame> =
       resetStates()
       let mutable counter = 0
+      let parseStopwatch = Stopwatch.StartNew()
+      let mutable lineNumber = 0
+      let mutable gameLineCount = 0
       let rawGame = new StringBuilder()
       seq {
             state <- Start          
             while not reader.EndOfStream do
-                input <- reader.ReadLine().TrimStart()              
+                input <- reader.ReadLine().TrimStart()
+                lineNumber <- lineNumber + 1
+                gameLineCount <- gameLineCount + 1
+                if gameLineCount > maxLinesPerGame then
+                  failwithf "Parsing PGN game %d exceeded max line limit (%d) at line %d" (counter + 1) maxLinesPerGame lineNumber
+                if gameParseTimeoutMs >= 0L && parseStopwatch.ElapsedMilliseconds >= gameParseTimeoutMs then
+                  failwithf "Parsing PGN game %d exceeded %d ms at line %d: %s" (counter + 1) gameParseTimeoutMs lineNumber input
                 rawGame.Append(input).Append(Environment.NewLine) |> ignore              
                 position <- 0
                 while position < input.Length do
                     match state with
                     | Start -> 
                       PgnStates.parseTagSection()                                          
-                      state <- InTagSection
 
                     | InMoveTextSection ->
                         PgnStates.parseMoveTextSection()
@@ -2566,6 +2663,8 @@ module PGNParser =
                           Fen = gameMetadata.Fen
                           Raw = rawGame.ToString()
                         }
+                      parseStopwatch.Restart()
+                      gameLineCount <- 0
                       move <- Move.Empty
                       rawGame.Clear() |> ignore
                       state <- Start
@@ -2576,6 +2675,20 @@ module PGNParser =
             if moves.Count > 0 then
               if move.WhiteSan <> "" then
                 moves.Add move
+              counter <- counter + 1
+              yield 
+                {
+                  GameNumber = counter
+                  GameMetaData = gameMetadata
+                  Moves = ResizeArray(moves)
+                  Mainline = ResizeArray(mainlinePly)
+                  RootVariations = ResizeArray(rootVariations)
+                  Comments = "" 
+                  Fen = gameMetadata.Fen
+                  Raw = rawGame.ToString()
+                }
+            elif not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
+              moves.Add move
               counter <- counter + 1
               yield 
                 {

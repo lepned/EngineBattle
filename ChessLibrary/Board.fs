@@ -840,22 +840,14 @@ type Board() =
         match target with
         | None -> false
         | Some (edge, _) ->
-            let rec hasVariationAncestor (e: MoveEdge) =
-              if not e.IsMainline then true
-              else
-                moveGraph.NodesById[e.From].Parents
-                |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None)
-                |> List.exists hasVariationAncestor
-            if edge.IsMainline && not (hasVariationAncestor edge) then false
+            let parentId = edge.From
+            removeEdgeSubtree edge.Id
+            if moveGraph.NodesById.ContainsKey currentGraphNodeId |> not then
+              currentGraphNodeId <- moveGraph.Root
             else
-              let parentId = edge.From
-              removeEdgeSubtree edge.Id
-              if moveGraph.NodesById.ContainsKey currentGraphNodeId |> not then
-                currentGraphNodeId <- moveGraph.Root
-              else
-                reindexChildOrders parentId
-              updatePathFromCurrent()
-              true
+              reindexChildOrders parentId
+            updatePathFromCurrent()
+            true
 
     member this.PromoteVariationToMainline (san:string) (fen:string) =
       if String.IsNullOrWhiteSpace fen then false
