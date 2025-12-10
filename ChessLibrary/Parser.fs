@@ -2576,6 +2576,14 @@ module PGNParser =
                       gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
                       moves.Clear()
                       headers.Clear()
+                      currentPly <- 0
+                      mainlinePly.Clear()
+                      rootVariations.Clear()
+                      currentLine <- mainlinePly
+                      lineStack.Clear()
+                      plyStack.Clear()
+                      lastParsedSan <- None
+                      unfinishedCommentLines <- 0
             if moves.Count > 0 then
               if move.WhiteSan <> "" then
                 moves.Add move
@@ -2672,6 +2680,14 @@ module PGNParser =
                       gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
                       moves.Clear()
                       headers.Clear()
+                      currentPly <- 0
+                      mainlinePly.Clear()
+                      rootVariations.Clear()
+                      currentLine <- mainlinePly
+                      lineStack.Clear()
+                      plyStack.Clear()
+                      lastParsedSan <- None
+                      unfinishedCommentLines <- 0
             if moves.Count > 0 then
               if move.WhiteSan <> "" then
                 moves.Add move
@@ -2736,6 +2752,7 @@ module PGNParser =
                   else 
                     state <- Start
                     if gameMetadata <> GameMetadata.Empty then 
+                        counter <- counter + 1
                         yield 
                           {
                             GameNumber = counter
@@ -2748,12 +2765,21 @@ module PGNParser =
                             Raw = rawGame.ToString()
                           }
                         move <- Move.Empty
-                        rawGame.Clear() |> ignore                      
+                        rawGame.Clear() |> ignore
+                        currentPly <- 0
+                        mainlinePly.Clear()
+                        rootVariations.Clear()
+                        currentLine <- mainlinePly
+                        lineStack.Clear()
+                        plyStack.Clear()
+                        lastParsedSan <- None
+                        unfinishedCommentLines <- 0
                         gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
                         moves.Clear()
                         headers.Clear()
               
             if gameMetadata <> GameMetadata.Empty then            
+              counter <- counter + 1
               yield 
                 {
                   GameNumber = counter
