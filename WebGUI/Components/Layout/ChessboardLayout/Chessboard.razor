@@ -47,15 +47,6 @@
 		</MudItem>
 	}
 
-	<MudItem sm=12 md="12" lg="12" Style="min-height: 60px; max-height: 60px;">
-		@if (!String.IsNullOrEmpty(Comment))
-		{
-			<MudText Typo="Typo.body2" Class="mud-text-secondary" Style="overflow-y: auto; max-height: 60px; word-wrap: break-word;">
-				@((MarkupString)Comment)
-			</MudText>
-		}
-	</MudItem>
-
 	<MudItem sm=12 md="12" lg="12">
 		<div style="height:100%" @ref="board"></div>
 	</MudItem>
@@ -114,10 +105,22 @@
 						}
 						else
 						{
-							<span style="cursor:pointer"
+							// More reliable than CurrentNodeHash if LoadFen doesn't move the graph pointer
+							var isCurrent = string.Equals(tok.Fen, fen, StringComparison.Ordinal);
+							var isWhiteToMove = tok.Ply % 2 == 0;
+							<span id="@($"move-{tok.Hash}")"
 								  @onclick="@(() => OnInlineMoveClick(tok))"
 								  @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
-								  @oncontextmenu:preventDefault>@($"{tok.DisplayText} ")</span>
+								  @oncontextmenu:preventDefault
+								  style="@(isCurrent? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">								
+								@($" {tok.DisplayText} ")
+								
+								@if (!String.IsNullOrEmpty(tok.Comment))
+								{
+									@WrapInlineComment(tok.Comment)
+									@(" ")
+								}
+							</span>
 						}
 					}
 				</span>
@@ -138,12 +141,22 @@
 						}
 						else
 						{
-							var isCurrent = ChessBoard.CurrentNodeHash == tok.tok.Hash;
+							// More reliable than CurrentNodeHash if LoadFen doesn't move the graph pointer
+							var isCurrent = string.Equals(tok.tok.Fen, fen, StringComparison.Ordinal);
+							var isWhiteToMove = tok.tok.Ply % 2 == 0;
 							<span @onclick="@(() => OnInlineMoveClick(tok.tok))"
 								  @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok.tok, e))"
 								  @oncontextmenu:preventDefault
-								  id="@($"move-{tok.idx}")"
-								  style="@(isCurrent ? "font-weight: bold;color:skyblue" : "")">@($"{tok.tok.DisplayText} ")</span>
+								  id="@($"move-{tok.tok.Hash}")"
+								  style="@(isCurrent ? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">
+								@($" {tok.tok.DisplayText} ")
+								
+								@if (!String.IsNullOrEmpty(tok.tok.Comment))
+								{
+									@WrapInlineComment(tok.tok.Comment)
+									@(" ")
+								}
+							</span>
 						}
 					}
 				</span>
@@ -210,9 +223,7 @@
 	[Parameter] public Board ChessBoard { get; set; } = new();
 	[Parameter] public int MoveListFontSize { get; set; }
 	[Parameter] public int MoveListHeight { get; set; }
-	[Parameter] public string MoveHistory { get; set; }
 
-	private string Comment { get; set; }
 	private Board moveBoard = new Board();
 	private string pendingPromotionMove;
 	private int promotionButtonSize = 50; // Set to your preferred size
@@ -227,6 +238,7 @@
 	private bool stopAutoPlay = true;
 	private string moveStr;
 	private string moveHeader;
+	private bool _pendingScrollToCurrentMove;
 	private DotNetObjectReference<Chessboard> objRef;
 	private ElementReference board;
 	private MudTextField<string> moveListTextField = new();
@@ -243,7 +255,7 @@
 	private List<MoveAndFen> MoveList { get; set; }
 	private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
 	private List<VariationDisplay> VariationLines { get; set; } = new();
-	private record InlineToken(string Text, string DisplayText, string Fen, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply);
+	private record InlineToken(string Text, string DisplayText, string Fen, string Comment, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply);
 	private List<InlineToken> InlineTokens { get; set; } = new();
 	private bool showMoveActionDialog = false;
 	private string selectedActionSan = string.Empty;
@@ -253,6 +265,31 @@
 	private double actionDialogY;
 	private string InlineMoveHistory { get; set; } = string.Empty;
 	private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
+
+	private string currentMoveColor =>
+		"font-weight:800; color:#8FD9FF; ";
+
+	private string whiteMoveColor =>
+		"font-weight:600; color:#EEF3FF;";
+
+	private string blackMoveColor =>
+		"font-weight:400; color:#A7B1C2; opacity:0.92;";
+
+	private static string commentStyle =>
+		"color:#7FCFA7; font-size:0.82em; opacity:0.90;"; // greenish, readable on #32333d
+
+	private static MarkupString WrapInlineComment(string comment)
+	{
+		if (string.IsNullOrWhiteSpace(comment))
+			return default;
+
+		// Encode to avoid injecting raw HTML into the page
+		var trimmed = comment.Trim().Trim('{', '}').Trim();
+		var encoded = System.Net.WebUtility.HtmlEncode(trimmed);
+
+		var html = $"{{<span class=\"inline-move-comment\" style=\"{commentStyle}\">{encoded}</span>}}";
+		return new MarkupString(html);
+	}
 
 	private async Task SelectPromotion(string promotionPiece)
 	{
@@ -266,14 +303,11 @@
 		}
 	}
 
-	private async Task ScrollToCurrentMove()
+	private Task ScrollToCurrentMove()
 	{
-		if (chessJSmodule is not null && ChessBoard.Position.Ply >= 0)
-		{
-			var scrollIndex = Math.Max(0, (int)ChessBoard.Position.Ply); // Adjust for zero-based index
-			var moveId = $"move-{scrollIndex}";
-			await chessJSmodule.InvokeVoidAsync("scrollToElement", "moveListDiv", moveId);
-		}
+		// Defer until after render so the element exists.
+		_pendingScrollToCurrentMove = true;
+		return InvokeAsync(StateHasChanged);
 	}
 
 	[JSInvokable]
@@ -323,7 +357,6 @@
 			var move = MoveList[index];
 			fen = move.FenAfterMove;
 			ChessBoard.LoadFen(fen);
-			Comment = CreateComments(move);
 			await SetPosition(fen);
 			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
 			UpdateVariationsDisplay();
@@ -401,7 +434,7 @@
 			fen = ChessBoard.FEN();
 			var lastNNMoves = GetNNValues(currentId);
 			var lastFenMove = ChessBoard.MovesAndFenPlayed.Last();
-			Comment = CreateComments(lastFenMove);
+			//Comment = CreateComments(lastFenMove);
 			await DisplayMoveAnnotation(lastNNMoves, currentId);
 			UpdateVariationsDisplay();
 			StateHasChanged();
@@ -645,10 +678,10 @@
 		if (first != null)
 		{
 			await OnNotifyMoveAndFen(first);
-			Comment = CreateComments(first);
+			// Ensure parent pages (e.g. SingleEngineAnalysis) update chart indicator on Home
+			await OnNewFENOnBoard.InvokeAsync(fen);
 		}		
 		await ScrollToCurrentMove();
-		StateHasChanged();
 	}
 
 	private async Task EndOfGame()
@@ -659,8 +692,9 @@
 		if (fenAndMove != null)
 		{
 			await OnNotifyMoveAndFen(fenAndMove);
-			Comment = CreateComments(fenAndMove);		
 			UpdateVariationsDisplay();
+			// Ensure parent pages (e.g. SingleEngineAnalysis) update chart indicator on End
+			await OnNewFENOnBoard.InvokeAsync(fen);
 			await ScrollToCurrentMove();
 		}
 		StateHasChanged();
@@ -675,7 +709,6 @@
 			var move = next.Value;
 			fen = move.FenAfterMove;
 			ChessBoard.LoadFen(fen);
-			Comment = CreateComments(move);
 			await SetPositionAndMove(move, invokeMove: false);
 			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
 			UpdateVariationsDisplay();
@@ -693,7 +726,6 @@
 			var move = prev.Value;
 			fen = move.FenAfterMove;
 			ChessBoard.LoadFen(fen);
-			Comment = CreateComments(move);
 			await SetPositionAndMove(move, invokeMove: false);
 			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
 			UpdateVariationsDisplay();
@@ -741,6 +773,7 @@
 			ChessBoard.LoadFen(fen);
 		}		
 		UpdateVariationsDisplay();
+	    await ScrollToCurrentMove();
 		await InvokeAsync(StateHasChanged);		
 	}
 
@@ -772,12 +805,33 @@
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
-	{
+	{		
 		if (firstRender)
 		{
 			fen = FENposition;
 			await PrepareChessboard();
 		}
+
+		if (_pendingScrollToCurrentMove && chessJSmodule is not null)
+		{
+			_pendingScrollToCurrentMove = false;
+
+			// Prefer the token matching the current fen (works even if CurrentNodeHash isn't updated)
+			var tok = InlineTokens.FirstOrDefault(t => !t.IsBracket && string.Equals(t.Fen, fen, StringComparison.Ordinal));
+			var targetHash = tok is null ? ChessBoard.CurrentNodeHash : tok.Hash;
+
+			if (targetHash != 0UL)
+			{
+				var moveId = $"move-{targetHash}";
+				await chessJSmodule.InvokeVoidAsync("scrollToMoveListElement", "moveListDiv", moveId);
+			}
+			else
+			{
+				// fallback
+				await chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
+			}
+		}
+
 		if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
 		{
 			moveListFontSize = MoveListFontSize;
@@ -854,7 +908,7 @@
 		InlineMoveHistory = string.Empty;
 		InlineTokens.Clear();
 		var tokens = ChessBoard.InlineTokensFromGraph();
-		InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation, t.Ply)));
+		InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.Evaluation, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation, t.Ply)));
 		InlineMoveHistory = string.Join(" ", tokens.Where(t => !t.IsBracket).Select(t => t.DisplayText));
 	}
 
@@ -951,13 +1005,7 @@
 
 		stopAutoPlay = true;
 		ChessBoard.LoadFen(token.Fen);
-		var history = ChessBoard.GetMoveHistoryToCurrentFen(token.Fen);
-		var foundMove = ChessBoard.MovesAndFenPlayed.FirstOrDefault(m => m.FenAfterMove == token.Fen);
-				
-		if (foundMove != null)
-		{
-			Comment = CreateComments(foundMove);
-		}
+		var history = ChessBoard.GetMoveHistoryToCurrentFen(token.Fen);		
 		fen = token.Fen;
 		UpdateVariationsDisplay();
 		await SetPosition(fen);

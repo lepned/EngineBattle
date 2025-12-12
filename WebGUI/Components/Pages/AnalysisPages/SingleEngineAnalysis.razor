@@ -39,9 +39,6 @@
 			<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="EPD" Size="Size.Small"
 					StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" />
 		</MudItem>
-		<MudItem lg="5" Class="ml-10 mt-5">
-			<MudText>@pgnName</MudText>
-		</MudItem>
 	</MudItem>
 	<MudItem Class="d-flex">
 		<MudItem Class="mr-2" md="5" xl="4">
@@ -73,7 +70,7 @@
 		<MudItem Class="mt-1 pl-2" md="4" xl="4">
 
 			<div @ref="chessBoard">
-				<Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
+				<Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true 
 							MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
 			</div>
 
@@ -106,6 +103,9 @@
 			@if (pgnFileLoaded)
 			{
 				<div>
+					<MudItem Class="ml-10 mb-2">
+						<MudText>@pgnName</MudText>
+					</MudItem>
 					<MudTextField @bind-Value="searchString" Placeholder="Search for player..."
 								  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
 								  IconSize="Size.Medium" Class="mt-0 mb-3" Immediate="true" />
@@ -191,6 +191,8 @@
 
 	private ElementReference pgnChart;
 	private IJSObjectReference chessModule;
+	private DotNetObjectReference<SingleEngineAnalysis> _pgnPasteDotNetRef;
+	private bool _pgnPasteRegistered = false;
 	private HashSet<PGNTypes.PgnGame> selectedItems = new();
 	public bool QChartSelected { get; set; } = false;
 	public CultureInfo currentCulture = CultureInfo.CurrentCulture;
@@ -212,6 +214,15 @@
 
 	// Chart selection - using CustomChartType from WebGUI.Plotting
 	private CustomChartType selectedChart = CustomChartType.Evaluation;
+	private readonly object _pgnPasteLock = new();
+	private readonly Dictionary<string, PgnPasteBuffer> _pgnPasteBuffers = new();
+
+	private sealed class PgnPasteBuffer
+	{
+		public StringBuilder Sb { get; } = new StringBuilder();
+		public int ExpectedChunks { get; init; }
+		public int ReceivedChunks { get; set; }
+	}
 
 	private async Task OnChartTypeChanged(CustomChartType newChartType)
 	{
@@ -284,9 +295,9 @@
 			var folder = config.EngineFolder;
 
 			var engineConfigs =
-			  config.Engines
-			  .SelectMany(e => Utilities.JSONParser.mapToEngConfig(folder, e))
-			  .ToList();
+					config.Engines
+					.SelectMany(e => Utilities.JSONParser.mapToEngConfig(folder, e))
+					.ToList();
 
 			if (engineConfigs.Count > 0)
 			{
@@ -319,18 +330,88 @@
 		}
 	}
 
-	private async Task PasteFromClipboard()
+	[JSInvokable]
+	public Task OnPgnPasted(string pastedText)
 	{
-		try
+		// Called from JS paste event handler (keeps browser user-activation context on the JS side).
+		if (string.IsNullOrWhiteSpace(pastedText))
 		{
-			var pastedText = await ClipboardService.ReadTextAsync();
+			return Task.CompletedTask;
+		}
+
+		return InvokeAsync(async () =>
+		{
 			await LoadPGNGame(pastedText);
-		}
-		catch (Exception ex)
+			StateHasChanged();
+		});
+	}
+
+	[JSInvokable]
+	public Task OnPgnPasteBegin(string id, int totalChunks)
+	{
+		if (string.IsNullOrWhiteSpace(id) || totalChunks <= 0)
 		{
-			// var msg = $"Could not load a chess board based on the provided pgn-game text provided: {pastedText}";
-			logger.LogError(ex.Message);
+			return Task.CompletedTask;
 		}
+
+		lock (_pgnPasteLock)
+		{
+			_pgnPasteBuffers[id] = new PgnPasteBuffer { ExpectedChunks = totalChunks, ReceivedChunks = 0 };
+		}
+
+		return Task.CompletedTask;
+	}
+
+	[JSInvokable]
+	public Task OnPgnPasteChunk(string id, int index, string chunk)
+	{
+		if (string.IsNullOrWhiteSpace(id) || chunk is null)
+		{
+			return Task.CompletedTask;
+		}
+
+		lock (_pgnPasteLock)
+		{
+			if (_pgnPasteBuffers.TryGetValue(id, out var buf))
+			{
+				buf.Sb.Append(chunk);
+				buf.ReceivedChunks++;
+			}
+		}
+
+		return Task.CompletedTask;
+	}
+
+	[JSInvokable]
+	public Task OnPgnPasteEnd(string id)
+	{
+		if (string.IsNullOrWhiteSpace(id))
+		{
+			return Task.CompletedTask;
+		}
+
+		string pastedText = null;
+		PgnPasteBuffer buf = null;
+
+		lock (_pgnPasteLock)
+		{
+			if (_pgnPasteBuffers.TryGetValue(id, out buf))
+			{
+				_pgnPasteBuffers.Remove(id);
+				pastedText = buf.Sb.ToString();
+			}
+		}
+
+		if (string.IsNullOrWhiteSpace(pastedText))
+		{
+			return Task.CompletedTask;
+		}
+
+		return InvokeAsync(async () =>
+		{
+			await LoadPGNGame(pastedText);
+			StateHasChanged();
+		});
 	}
 
 	private async Task LoadPGNGame(string pastedText)
@@ -402,13 +483,13 @@
 		}
 		else
 		{
-			var moveHistory = board.GetMoveHistoryToCurrentFen(fen);
+			var fen = board.FEN();
 			sbVariations.AppendLine($"\n\n## {engineName} (nodes:{formatNodes}) - Analysis from FEN: {fen}");
-
 			foreach (var line in variations)
 			{
+				board.LoadFen(fen);
 				EngineStatus cLine = line.Value;
-				string pv = cLine.PV;
+				string pv = cLine.PV;				
 				var firstMove = string.Empty;
 				if (!string.IsNullOrWhiteSpace(pv) && pv.Contains("..."))
 				{
@@ -418,39 +499,22 @@
 				{
 					firstMove = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
 				}
-
-				firstMove = NormalizeMoveDots(firstMove);
-
-				if (pv == null || pv.Length == 0)
+				var move = ExtractMove(firstMove);
+				//firstMove = NormalizeMoveDots(firstMove);				
+				board.PlaySimpleShortSan(move);
+				var comment = $"{{{cLine.Eval}/{cLine.SD}}}";
+				var oldComment = board.GetCurrentEdgeComment();
+				if (string.IsNullOrWhiteSpace(oldComment))
 				{
-					continue; // skip empty PVs
+					//comment = oldComment + " | " + comment;
+				    board.SetCommentOnCurrentEdge(comment);
 				}
-				else
-				{
-					if (pv.Contains("..."))
-					{
-						// If the first move in PV is a black move, we need to skipp the move number with dots, i.e. 1... e4
-						var parts = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-						pv = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : string.Empty;
-					}
-				}
-				string analysisLine = string.Empty;
-				var eval = $"Eval={cLine.Eval.ValueStr}, Depth={cLine.Depth}, SD={cLine.SD}";
-				var pgnHeader = $"\n[Event \"Single Engine Analysis\"]\n[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]\n[Engine \"{engineName}\"]\n[FEN \"{board.StartPosition}\"]\n[Eval \"{engineName}: {eval}\"]\n[Move \"{firstMove}\"]\n";
-				if (moveHistory.Length > 0)
-				{
-					analysisLine = $"\n{moveHistory} {{variation starts here}} {pv}";
-					//analysisLine = $"\n\t{{Move={firstMove}, Eval={cLine.Eval.ValueStr}, Depth={cLine.Depth}, SD={cLine.SD}, tbHits:{cLine.TBhits}}}\n\t{moveHistory} {{variation starts here}} {pv}";
-				}
-				else
-				{
-					analysisLine = $"\n{pv}";
-					//analysisLine = $"\n\t{{Move={firstMove}, Eval={cLine.Eval.ValueStr}, Depth={cLine.Depth}, SD={cLine.SD}, tbHits:{cLine.TBhits}}}\n\t{pv}";
-				}
-				//add header and analysisLine together
-				analysisLine = pgnHeader + analysisLine;
-				sbVariations.AppendLine(analysisLine);
 			}
+			board.LoadFen(fen);
+		    var pgnHeader = $"\n[Event \"Single Engine Analysis\"]\n[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]\n[Engine \"{engineName}\"]\n[FEN \"{board.StartPosition}\"]\n";
+			sbVariations.AppendLine(pgnHeader);
+			var history = board.GetMoveHistoryWithVariations();
+			sbVariations.AppendLine(history);
 			logger.LogInformation("File saved to {path}", path);
 		}
 		File.AppendAllText(path, sbVariations.ToString());
@@ -479,6 +543,7 @@
 		var openingName = text.Length > 0 ? text[0].Trim() : "Opening";
 		var variationName = text.Length > 1 ? text[1].Trim() : "";
 		board.WriteGraphLinesToPgn(path, openingName, variationName);
+		logger.LogInformation("Opening book file saved to {path}", path);
 		await Task.CompletedTask;
 	}
 
@@ -758,9 +823,17 @@
 			chessModule = await JsInteropService.ImportModuleAsync(JS);
 			this.keyContext =
 				this.HotKeys.CreateContext()
-				.Add(ModKey.Ctrl, Key.v, (Func<Task>)(async () => await PasteFromClipboard()), "paste pgn-game")
 				.Add(ModKey.Ctrl, Key.ArrowRight, (() => NextPGNGame()), "Next game")
 				.Add(ModKey.Ctrl, Key.ArrowLeft, (() => PreviousPGNGame()), "Previous game");
+
+			// Register a global PGN paste handler that reads from the browser paste event.
+			// This avoids NotAllowedError from navigator.clipboard.readText() losing user activation.
+			if (!_pgnPasteRegistered)
+			{
+				_pgnPasteDotNetRef = DotNetObjectReference.Create(this);
+				_pgnPasteRegistered = true;
+			}
+			await chessModule.InvokeVoidAsync("registerGlobalPgnPaste", _pgnPasteDotNetRef);
 
 			board.LoadFen(fen);
 			board.StartPosition = fen;
@@ -809,6 +882,21 @@
 	async ValueTask IAsyncDisposable.DisposeAsync()
 	{
 		logger.LogInformation("Disposing {page}", "singleEngineAnalysis page");
+		try
+		{
+			if (chessModule is not null)
+			{
+				await chessModule.InvokeVoidAsync("unregisterGlobalPgnPaste");
+			}
+		}
+		catch { }
+
+		if (_pgnPasteRegistered)
+		{
+			_pgnPasteDotNetRef.Dispose();
+			_pgnPasteRegistered = false;
+		}
+
 		keyContext?.DisposeAsync();
 		await ValueTask.CompletedTask;
 	}

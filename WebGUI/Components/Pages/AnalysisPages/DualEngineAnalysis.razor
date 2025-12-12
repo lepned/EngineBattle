@@ -71,7 +71,7 @@
             }
 
             <div @ref="chessBoard">
-                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true MoveHistory="@moveHistory"
+                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true 
                             MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
             </div>
             <MudItem>
@@ -189,6 +189,17 @@
     private string searchString = "";
     private GamePgnChart chart;
     private Chessboard chessBoardRazor;
+    private readonly object _pgnPasteLock = new();
+    private readonly Dictionary<string, PgnPasteBuffer> _pgnPasteBuffers = new();
+    private DotNetObjectReference<DualEngineAnalysis> _pgnPasteDotNetRef;
+    private bool _pgnPasteRegistered = false;
+
+    private sealed class PgnPasteBuffer
+    {
+        public StringBuilder Sb { get; } = new StringBuilder();
+        public int ExpectedChunks { get; init; }
+        public int ReceivedChunks { get; set; }
+    }
 
     // Chart selection - using CustomChartType from WebGUI.Plotting
     private CustomChartType selectedChart = CustomChartType.Evaluation;
@@ -411,19 +422,103 @@
         }
     }
 
-    private async Task PasteFromClipboard()
-    {
-        try
-        {
-            var pastedText = await ClipboardService.ReadTextAsync();
-            await LoadPGNGame(pastedText);
-        }
-        catch (Exception ex)
-        {
-            // var msg = $"Could not load a chess board based on the provided pgn-game text provided: {pastedText}";
-            logger.LogError(ex.Message);
-        }
-    }
+    	[JSInvokable]
+	public Task OnPgnPasted(string pastedText)
+	{
+		// Called from JS paste event handler (keeps browser user-activation context on the JS side).
+		if (string.IsNullOrWhiteSpace(pastedText))
+		{
+			return Task.CompletedTask;
+		}
+
+		return InvokeAsync(async () =>
+		{
+			await LoadPGNGame(pastedText);
+			StateHasChanged();
+		});
+	}
+
+	[JSInvokable]
+	public Task OnPgnPasteBegin(string id, int totalChunks)
+	{
+		if (string.IsNullOrWhiteSpace(id) || totalChunks <= 0)
+		{
+			return Task.CompletedTask;
+		}
+
+		lock (_pgnPasteLock)
+		{
+			_pgnPasteBuffers[id] = new PgnPasteBuffer { ExpectedChunks = totalChunks, ReceivedChunks = 0 };
+		}
+
+		return Task.CompletedTask;
+	}
+
+	[JSInvokable]
+	public Task OnPgnPasteChunk(string id, int index, string chunk)
+	{
+		if (string.IsNullOrWhiteSpace(id) || chunk is null)
+		{
+			return Task.CompletedTask;
+		}
+
+		lock (_pgnPasteLock)
+		{
+			if (_pgnPasteBuffers.TryGetValue(id, out var buf))
+			{
+				buf.Sb.Append(chunk);
+				buf.ReceivedChunks++;
+			}
+		}
+
+		return Task.CompletedTask;
+	}
+
+	[JSInvokable]
+	public Task OnPgnPasteEnd(string id)
+	{
+		if (string.IsNullOrWhiteSpace(id))
+		{
+			return Task.CompletedTask;
+		}
+
+		string pastedText = null;
+		PgnPasteBuffer buf = null;
+
+		lock (_pgnPasteLock)
+		{
+			if (_pgnPasteBuffers.TryGetValue(id, out buf))
+			{
+				_pgnPasteBuffers.Remove(id);
+				pastedText = buf.Sb.ToString();
+			}
+		}
+
+		if (string.IsNullOrWhiteSpace(pastedText))
+		{
+			return Task.CompletedTask;
+		}
+
+		return InvokeAsync(async () =>
+		{
+			await LoadPGNGame(pastedText);
+			StateHasChanged();
+		});
+	}
+    
+    // private async Task PasteFromClipboard()
+    // {
+    //     try
+    //     {
+    //         var pastedText = await ClipboardService.ReadTextAsync();
+    //         await LoadPGNGame(pastedText);
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         // var msg = $"Could not load a chess board based on the provided pgn-game text provided: {pastedText}";
+    //         logger.LogError(ex.Message);
+    //     }
+    // }
 
     private async Task LoadPGNGame(string pastedText)
     {
@@ -792,9 +887,18 @@
             chessModule = await JsInteropService.ImportModuleAsync(JS);
             this.keyContext =
                 this.HotKeys.CreateContext()
-                .Add(ModKey.Ctrl, Key.v, (Func<Task>)(async () => await PasteFromClipboard()), "paste pgn-game")
                 .Add(ModKey.Ctrl, Key.ArrowRight, (() => NextPGNGame()), "Next game")
                 .Add(ModKey.Ctrl, Key.ArrowLeft, (() => PreviousPGNGame()), "Previous game");
+
+            // Register a global PGN paste handler that reads from the browser paste event.
+            // This avoids NotAllowedError from navigator.clipboard.readText() losing user activation.
+            if (!_pgnPasteRegistered)
+            {
+                _pgnPasteDotNetRef = DotNetObjectReference.Create(this);
+                _pgnPasteRegistered = true;
+            }
+            await chessModule.InvokeVoidAsync("registerGlobalPgnPaste", _pgnPasteDotNetRef);
+
 
             board.LoadFen(fen);
             board.StartPosition = fen;
@@ -876,6 +980,20 @@
     async ValueTask IAsyncDisposable.DisposeAsync()
     {
         logger.LogInformation("Disposing {page}", "DualEngineAnalysis page");
+        try
+        {
+            if (chessModule is not null)
+            {
+                await chessModule.InvokeVoidAsync("unregisterGlobalPgnPaste");
+            }
+        }
+        catch { }
+
+        if (_pgnPasteRegistered)
+        {
+            _pgnPasteDotNetRef.Dispose();
+            _pgnPasteRegistered = false;
+        }
         keyContext?.DisposeAsync();
         await ValueTask.CompletedTask;
     }

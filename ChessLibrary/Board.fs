@@ -52,6 +52,7 @@ type InlineMoveToken =
     Hash:uint64
     FromVariation:bool
     Ply:int
+    Evaluation:string
     IsLineStart:bool }
 
 type Board() =        
@@ -483,6 +484,36 @@ type Board() =
         let start = sprintf $"position fen {startPos} moves"
         longSanMoves |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
 
+    member this.GetCurrentEdgeComment () =      
+        // update the incoming edge to the current node
+        match moveGraph.NodesById.TryGetValue currentGraphNodeId with
+        | true, node ->
+            node.Parents
+            |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+            |> List.sortBy (fun e -> e.Order)
+            |> List.tryHead
+            |> Option.map (fun edge -> edge.Comments)
+            |> Option.defaultValue String.Empty
+        | _ -> String.Empty
+    
+    member this.SetCommentOnCurrentEdge (comment:string) =
+      if String.IsNullOrWhiteSpace comment |> not then
+        // keep MovesAndFenPlayed in sync
+        if moveAndFens.Count > 0 then
+          let lastIdx = moveAndFens.Count - 1
+          let last = moveAndFens[lastIdx]
+          moveAndFens[lastIdx] <- { last with Move = { last.Move with Comments = comment } }
+
+        // update the incoming edge to the current node
+        match moveGraph.NodesById.TryGetValue currentGraphNodeId with
+        | true, node ->
+            node.Parents
+            |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+            |> List.sortBy (fun e -> e.Order)
+            |> List.tryHead
+            |> Option.iter (fun edge -> moveGraph.EdgesById[edge.Id] <- { edge with Comments = comment })
+        | _ -> ()
+    
     // Graph-aware callers expect a path command
     member this.PositionWithMovesFromGraph() = 
         updatePathFromCurrent()
@@ -540,8 +571,7 @@ type Board() =
         | _ -> ()
 
       let lines : string list list = this.MoveLinesFromGraph false
-      if lines.Length = 0 then ()
-      else
+      if lines.Length > 0 then      
         ensureDirectory()
         use writer = new System.IO.StreamWriter(path, false, System.Text.Encoding.UTF8)
         for idx, moves in lines |> List.indexed do
@@ -569,8 +599,18 @@ type Board() =
         | [] -> 0
         | children -> children |> List.map (fun e -> 1 + depthFrom e.To) |> List.max
 
-      let appendMove path move =
-        if String.IsNullOrWhiteSpace move then path else path @ [move]
+      let appendMove path (move : MoveEdge) =        
+          let moveText =
+              let baseText = if asLAN then move.Lan else move.San
+              if String.IsNullOrWhiteSpace baseText then None
+              //elif not withComments then Some baseText
+              elif String.IsNullOrWhiteSpace move.Comments then Some baseText
+              else 
+                let comment = baseText + " {" + move.Comments + "}"
+                Some comment
+          match moveText with
+          | Some t -> path @ [t]
+          | None -> path
 
       let rec traverse nodeId path =
         match childEdges nodeId with
@@ -580,20 +620,11 @@ type Board() =
             match children |> List.tryFind (fun e -> e.IsMainline) with
             | Some mc -> mc
             | None -> children |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
-          let mainPaths = 
-            if asLAN then 
-                traverse main.To (appendMove path main.Lan)
-            else 
-                traverse main.To (appendMove path main.San)
+          let mainPaths = traverse main.To (appendMove path main)
           let variationPaths =
-            if asLAN then
               children
               |> List.filter (fun e -> e.Id <> main.Id)
-              |> List.collect (fun v -> traverse v.To (appendMove path v.Lan))
-            else
-              children
-              |> List.filter (fun e -> e.Id <> main.Id)
-              |> List.collect (fun v -> traverse v.To (appendMove path v.San))
+              |> List.collect (fun v -> traverse v.To (appendMove path v))            
           mainPaths @ variationPaths
 
       match childEdges moveGraph.Root with
@@ -604,19 +635,11 @@ type Board() =
           | Some mc -> mc
           | None -> rootChildren |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
         let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
-        let mainPaths = 
-            if asLAN then 
-                traverse main.To (appendMove [] main.Lan)
-            else 
-                traverse main.To (appendMove [] main.San)
-        let variationPaths =
-          if asLAN then
-            rootVariations |> List.collect (fun v -> traverse v.To (appendMove [] v.Lan))
-          else
-            rootVariations |> List.collect (fun v -> traverse v.To (appendMove [] v.San))
+        let mainPaths = traverse main.To (appendMove [] main)            
+        let variationPaths = rootVariations |> List.collect (fun v -> traverse v.To (appendMove [] v))          
         mainPaths @ variationPaths
     
-    member this.GetMoveHistoryWithVariations () =
+    member this.GetMoveHistoryWithVariations () =      
       let tokens = this.InlineTokensFromGraph() |> Seq.toList
       let sb = sbPool.Get()
       let mutable depth = 0
@@ -646,7 +669,14 @@ type Board() =
                 sprintf "%d... " moveNr
               else ""
             if sb.Length > 0 && sb[sb.Length - 1] <> '(' && sb[sb.Length - 1] <> ' ' then sb.Append(" ") |> ignore
-            sb.Append(prefix).Append(tok.Text) |> ignore
+            let withComment =
+              if String.IsNullOrWhiteSpace tok.Evaluation then
+                tok.Text
+              elif tok.Evaluation.StartsWith("{") then
+                sprintf "%s %s" tok.Text tok.Evaluation
+              else
+                sprintf "%s {%s}" tok.Text tok.Evaluation
+            sb.Append(prefix).Append(withComment) |> ignore
 
       tokens |> List.iter appendToken
       sbPool.Return(sb)
@@ -1240,6 +1270,7 @@ type Board() =
             Hash = moveGraph.NodesById[edge.To].Hash
             FromVariation = inVariation
             Ply = ply
+            Evaluation = edge.Comments
             IsLineStart = isLineStart }
 
         let children = childEdges edge.To
@@ -1266,12 +1297,13 @@ type Board() =
                   Hash = moveGraph.NodesById[mainChild.To].Hash
                   FromVariation = inVariation
                   Ply = ply + 1
+                  Evaluation = mainChild.Comments
                   IsLineStart = false }
 
             for variation in variations do
-              tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; IsLineStart = false }
+              tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
               emitBranch variation (ply + 1) true true
-              tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; IsLineStart = false }
+              tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
 
             emitMainLine mainChild (ply + 1) inVariation (variations.Length > 0)
 
@@ -1296,12 +1328,13 @@ type Board() =
                   Hash = moveGraph.NodesById[mainChild.To].Hash
                   FromVariation = inVariation
                   Ply = ply + 1
+                  Evaluation = mainChild.Comments
                   IsLineStart = isLineStart }
 
             for variation in variations do
-              tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; IsLineStart = false }
+              tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
               emitBranch variation (ply + 1) true true
-              tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; IsLineStart = false }
+              tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
 
             emitMainLine mainChild (ply + 1) inVariation (variations.Length > 0)
 
@@ -1316,9 +1349,9 @@ type Board() =
           let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
           emitBranch main 0 true false
           for variation in rootVariations do
-            tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = 0; IsLineStart = false }
+            tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = 0; IsLineStart = false; Evaluation = variation.Comments }
             emitBranch variation 0 true true
-            tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = 0; IsLineStart = false }
+            tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = 0; IsLineStart = false; Evaluation = variation.Comments }
           tokens |> Seq.toList
    
     member this.GenerateMoves () = this.GenerateMovesFast()

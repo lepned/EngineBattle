@@ -46,12 +46,42 @@ namespace WebGUI.Plotting
         private int? currentMoveIndex;
         private const double MoveIndicatorMaxY = 10d;
         private int startMoveIndex = 1;
+        private bool startIsWhiteToMove = true;
+        private const string DefaultStartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         private Chess.Board board = new Chess.Board();
+
+        private int WhiteXStart => startMoveIndex + (startIsWhiteToMove ? 0 : 1);
+        private int BlackXStart => startMoveIndex;
+
+        private static int[] BuildX(int start, int len)
+            => len <= 0 ? Array.Empty<int>() : Enumerable.Range(start, len).ToArray();
+
+        private int LastXOnChart
+        {
+            get
+            {
+                var lastW = PlayerWhiteData.Length > 0 ? (WhiteXStart + PlayerWhiteData.Length - 1) : int.MinValue;
+                var lastB = PlayerBlackData.Length > 0 ? (BlackXStart + PlayerBlackData.Length - 1) : int.MinValue;
+                var last = Math.Max(lastW, lastB);
+                return last == int.MinValue ? startMoveIndex : last;
+            }
+        }
+
+        private int ClampMoveIndex(int moveIndex)
+        {
+            var min = startMoveIndex;
+            var max = LastXOnChart;
+            if (moveIndex < min) return min;
+            if (moveIndex > max) return max;
+            return moveIndex;
+        }
 
         public GamePgnChart(IJSObjectReference chessMod, ElementReference chart, PgnGame game, string title, string yTitle)
         {            
-            board.LoadFen(game.Fen);
+            var startFen = string.IsNullOrWhiteSpace(game?.Fen) ? DefaultStartFen : game.Fen;
+            board.LoadFen(startFen);
             startMoveIndex = board.MoveNumber();
+            startIsWhiteToMove = board.Position.STM == 0;
             chessModule = chessMod;
             chartElement = chart;
             Game = game;
@@ -134,6 +164,7 @@ namespace WebGUI.Plotting
 
         public async Task UpdateMoveIndicatorAsync(int moveIndex)
         {
+            moveIndex = ClampMoveIndex(moveIndex);
             currentMoveIndex = moveIndex;
             if (chessModule is not null && chartElement.Context is not null)
             {
@@ -153,23 +184,14 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
-            var last = moveStats.LastOrDefault();
-            if (last != null && last.mt == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
-            {
-                if (moveStats.Length > 0)
-                {
-                    moveStats = moveStats[..^1];
-                }
-            }
+            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            
             PlayerWhiteData =
-              moveStats
-              .Where(e => e.Player == PlayerWhite)
+              whiteMoves
               .Select(e => (double)e.mt/1000).ToArray();
 
             PlayerBlackData =
-              moveStats
-              .Where(e => e.Player == PlayerBlack)
+              blackMoves
               .Select(e => (double)e.mt/1000).ToArray();
             Title = "Time Usage (sec)";
             await SetChartTimeUsageData();
@@ -180,23 +202,14 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
-            var last = moveStats.LastOrDefault();
-            if (last != null && last.n == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
-            {
-                if (moveStats.Length > 0)
-                {
-                    moveStats = moveStats[..^1];
-                }
-            }
+            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            
             PlayerWhiteData =
-              moveStats
-              .Where(e => e.Player == PlayerWhite)
+              whiteMoves
               .Select(e => (double)e.n).ToArray();
 
             PlayerBlackData =
-              moveStats
-              .Where(e => e.Player == PlayerBlack)
+              blackMoves
               .Select(e => (double)e.n).ToArray();
 
             Title = "Nodes";
@@ -209,23 +222,16 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
-            var last = moveStats.LastOrDefault();
-            if (last != null && last.s == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
-            {
-                if (moveStats.Length > 0)
-                {
-                    moveStats = moveStats[..^1];
-                }
-            }
+            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            
             PlayerWhiteData =
-              moveStats
-              .Where(e => e.Player == PlayerWhite && e.mt >= minMoveTimeInMs)
+              whiteMoves
+              .Where(e => e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.s).ToArray();
 
             PlayerBlackData =
-              moveStats
-              .Where(e => e.Player == PlayerBlack && e.mt >= minMoveTimeInMs)
+              blackMoves
+              .Where(e => e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.s).ToArray();
 
             Title = "NPS";
@@ -237,24 +243,14 @@ namespace WebGUI.Plotting
         {
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
-            currentMoveIndex = currIdx;
-            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
-            var last = moveStats.LastOrDefault();
-            if (last != null && last.wv == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
-            {
-                if (moveStats.Length > 0)
-                {
-                    moveStats = moveStats[..^1];
-                }
-            }
+            currentMoveIndex = currIdx;            
+            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);            
             PlayerWhiteData =
-              moveStats
-              .Where(e => e.Player == PlayerWhite)
+              whiteMoves
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
 
             PlayerBlackData =
-              moveStats
-              .Where(e => e.Player == PlayerBlack)
+              blackMoves
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
             Title = "Evaluation";
             await SetEvalChartData();
@@ -267,24 +263,15 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var moveStats = Parser.PGNExtractor.extractEngineStats(Game).Moves.ToArray();
-            var last = moveStats.LastOrDefault();
-            if (last != null && last.eps == 0 && (last.d == 0 || last.mt == 0 || last.tl == 0))
-            {
-                if (moveStats.Length > 0)
-                {
-                    moveStats = moveStats[..^1];
-                }
-            }
-
+            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
             PlayerWhiteData =
-              moveStats
-              .Where(e => e.Player == PlayerWhite && e.mt >= minMoveTimeInMs)
+              whiteMoves
+              .Where(e => e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.eps).ToArray();
 
             PlayerBlackData =
-              moveStats
-              .Where(e => e.Player == PlayerBlack && e.mt >= minMoveTimeInMs)
+              blackMoves
+              .Where(e => e.mt >= minMoveTimeInMs)
               .Select(e => (double)e.eps).ToArray();
 
             Title = "EPS";
@@ -313,7 +300,7 @@ namespace WebGUI.Plotting
                     await AssignEPSFromPGNAsync(minMoveTimeInSecs);
                     break;
             }
-            await UpdateMoveIndicatorAsync(currentMoveIndex ?? 0);
+            await UpdateMoveIndicatorAsync(currentMoveIndex ?? startMoveIndex);
         }
 
         // Method to switch chart types dynamically
@@ -331,8 +318,7 @@ namespace WebGUI.Plotting
             try
             {
                 PlayerWhiteData = Array.Empty<double>();
-                PlayerBlackData = Array.Empty<double>();
-                //MoveElements.Clear();                
+                PlayerBlackData = Array.Empty<double>();                
                 PlayerWhite = white;
                 PlayerBlack = black;
                 liveUpdateStarted = false; // Reset flag to force full re-render
@@ -476,7 +462,7 @@ namespace WebGUI.Plotting
 
             var trace1 = new
             {
-                x = MoveElements.Skip(startMoveIndex-1).ToArray(),
+                x = BuildX(WhiteXStart, PlayerWhiteData.Length),
                 y = PlayerWhiteData,
                 type = "scatter",
                 name = PlayerWhite,
@@ -487,7 +473,7 @@ namespace WebGUI.Plotting
 
             var trace2 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(BlackXStart, PlayerBlackData.Length),
                 y = PlayerBlackData,
                 type = "scatter",
                 name = PlayerBlack,
@@ -585,7 +571,7 @@ namespace WebGUI.Plotting
 
             var trace1 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(WhiteXStart, PlayerWhiteData.Length),
                 y = PlayerWhiteData,
                 type = "scatter",
                 name = PlayerWhite,
@@ -596,7 +582,7 @@ namespace WebGUI.Plotting
 
             var trace2 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(BlackXStart, PlayerBlackData.Length),
                 y = PlayerBlackData,
                 type = "scatter",
                 name = PlayerBlack,
@@ -706,7 +692,7 @@ namespace WebGUI.Plotting
 
             var trace1 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(WhiteXStart, PlayerWhiteData.Length),
                 y = PlayerWhiteData,
                 type = "scatter",
                 name = PlayerWhite,
@@ -718,7 +704,7 @@ namespace WebGUI.Plotting
 
             var trace2 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(BlackXStart, PlayerBlackData.Length),
                 y = PlayerBlackData,
                 type = "scatter",
                 name = PlayerBlack,
@@ -812,7 +798,7 @@ namespace WebGUI.Plotting
 
             var trace1 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(WhiteXStart, PlayerWhiteData.Length),
                 y = PlayerWhiteData,
                 type = "scatter",
                 name = PlayerWhite,
@@ -823,7 +809,7 @@ namespace WebGUI.Plotting
 
             var trace2 = new
             {
-                x = MoveElements.Skip(startMoveIndex - 1).ToArray(),
+                x = BuildX(BlackXStart, PlayerBlackData.Length),
                 y = PlayerBlackData,
                 type = "scatter",
                 name = PlayerBlack,

@@ -184,6 +184,15 @@ module PGNExtractor =
          yield Annotation.getEngineStatData game.GameMetaData.Black true moves.BlackComment |]
     {White = game.GameMetaData.White; Black = game.GameMetaData.Black; Moves = moves}
 
+  let extractWhiteAndBlackEngineStats (game:PgnGame) =
+    let whiteMoves =
+      [|for moves in game.Moves ->
+            Annotation.getEngineStatData game.GameMetaData.White false moves.WhiteComment |]
+    let blackMoves =
+      [|for moves in game.Moves ->
+            Annotation.getEngineStatData game.GameMetaData.Black true moves.BlackComment |]
+    whiteMoves, blackMoves
+
   /// Extracts all engine statistics from a sequence of PGN games.
   /// <param name="games">The sequence of PGN games.</param>
   /// <returns>An array of engine statistics.</returns>

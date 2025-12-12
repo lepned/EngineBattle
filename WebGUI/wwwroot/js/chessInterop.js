@@ -883,6 +883,25 @@ export function openBrowserWindow(content) {
   doc.write(" </pre>");
 }
 
+export function scrollToMoveListElement(containerId, elementId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const el = document.getElementById(elementId);
+    if (!el) {
+        // If we can't find the move element (e.g. at root position), fall back to top.
+        container.scrollTop = 0;
+        return;
+    }
+
+    // Scroll within the container using rect deltas (works with inline spans + wrapping/comments).
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+
+    const delta = (eRect.top - cRect.top) - (container.clientHeight / 2) + (eRect.height / 2);
+    container.scrollTop += delta;
+}
+
 export function scrollToEnd(textarea) {
   textarea.scrollTop = textarea.scrollHeight;
 }
@@ -945,4 +964,121 @@ export function scrollToElement(containerId, elementId) {
         });
     }
 }
+
+  // --- PGN paste bridge (keeps browser "user activation" by reading from the paste event) ---
+  let _pgnPasteDotnet = null;
+  let _pgnKeydownHandler = null;
+  let _pgnPasteHandler = null;
+  let _pgnPasteTarget = null;
+
+  function _isEditableElement(el) {
+    if (!el) return false;
+    const tag = (el.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      return !(el.readOnly || el.disabled);
+    }
+    return !!el.isContentEditable;
+  }
+
+  function _ensurePgnPasteTarget() {
+    if (_pgnPasteTarget) return _pgnPasteTarget;
+    const ta = document.createElement('textarea');
+    ta.id = 'pgnPasteTarget';
+    ta.setAttribute('aria-hidden', 'true');
+    ta.tabIndex = -1;
+    ta.style.position = 'fixed';
+    ta.style.left = '-10000px';
+    ta.style.top = '0';
+    ta.style.width = '1px';
+    ta.style.height = '1px';
+    ta.style.opacity = '0';
+    // Keep focusable via JS, but don't interfere with mouse.
+    ta.style.pointerEvents = 'none';
+    document.body.appendChild(ta);
+    _pgnPasteTarget = ta;
+    return ta;
+  }
+
+  async function _sendPgnToDotNet(text) {
+    if (!_pgnPasteDotnet) return;
+
+    const trimmed = (text || '').trim();
+    if (!trimmed) return;
+
+    // Keep chunks comfortably below typical Blazor Server / SignalR message limits.
+    const CHUNK_SIZE = 12000;
+
+    try {
+      if (trimmed.length <= CHUNK_SIZE) {
+        await _pgnPasteDotnet.invokeMethodAsync('OnPgnPasted', trimmed);
+        return;
+      }
+
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const totalChunks = Math.ceil(trimmed.length / CHUNK_SIZE);
+      await _pgnPasteDotnet.invokeMethodAsync('OnPgnPasteBegin', id, totalChunks);
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = trimmed.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+        await _pgnPasteDotnet.invokeMethodAsync('OnPgnPasteChunk', id, i, chunk);
+      }
+      await _pgnPasteDotnet.invokeMethodAsync('OnPgnPasteEnd', id);
+    } catch (err) {
+      console.error('PGN paste -> .NET failed', err);
+    }
+  }
+
+  export function registerGlobalPgnPaste(dotnetHelper) {
+    // Always keep the latest helper (page refresh/reconnect).
+    _pgnPasteDotnet = dotnetHelper;
+
+    const ta = _ensurePgnPasteTarget();
+
+    if (!_pgnPasteHandler) {
+      _pgnPasteHandler = async (ev) => {
+        try {
+          const text = ev.clipboardData ? ev.clipboardData.getData('text/plain') : '';
+          if (text && text.trim().length > 0) {
+            // Consume the paste so it doesn't end up in some random control.
+            ev.preventDefault();
+            await _sendPgnToDotNet(text);
+          }
+        } finally {
+          // Always clear the hidden textarea.
+          ta.value = '';
+        }
+      };
+      ta.addEventListener('paste', _pgnPasteHandler);
+    }
+
+    if (!_pgnKeydownHandler) {
+      _pgnKeydownHandler = (ev) => {
+        const isV = ev.key === 'v' || ev.key === 'V';
+        if (!isV) return;
+
+        const hasModifier = ev.ctrlKey || ev.metaKey;
+        if (!hasModifier || ev.altKey) return;
+
+        // If the user is editing text, do not steal their paste.
+        if (_isEditableElement(document.activeElement)) return;
+
+        // Focus our hidden target so the browser dispatches a paste event we can read from.
+        _ensurePgnPasteTarget().focus({ preventScroll: true });
+        // Do NOT preventDefault here; we want the paste event to proceed.
+      };
+      // Capture so we run before other key handlers that might stop propagation.
+      document.addEventListener('keydown', _pgnKeydownHandler, true);
+    }
+  }
+
+  export function unregisterGlobalPgnPaste() {
+    if (_pgnKeydownHandler) {
+      document.removeEventListener('keydown', _pgnKeydownHandler, true);
+      _pgnKeydownHandler = null;
+    }
+    if (_pgnPasteTarget && _pgnPasteHandler) {
+      _pgnPasteTarget.removeEventListener('paste', _pgnPasteHandler);
+      _pgnPasteHandler = null;
+    }
+    _pgnPasteDotnet = null;
+  }
 

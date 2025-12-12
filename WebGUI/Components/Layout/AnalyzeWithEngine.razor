@@ -813,6 +813,8 @@
                 whitePV = b.Item.PV;
                 searchInProgress = false;
                 waitingForEngine = false;
+                var evalComment = $"{{{b.Item.Eval}/{b.Item.Nodes.ToString("N0")}}}";
+                ChessBoard.SetCommentOnCurrentEdge(evalComment);
                 //await InvokeAsync(() => searchInProgress = false);
                 StopSearchTimer();
                 await InvokeAsync(() => StateHasChanged());
