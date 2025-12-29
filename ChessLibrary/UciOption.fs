@@ -96,13 +96,14 @@ let addOptionToMap (optionsMap:Dictionary<string, UciOption>) (line: string) =
                 optionsMap.[name] <- optionId
             | _ -> ()
 
-let tryFindOption (optionsMap: Dictionary<string, UciOption>) (name: string) =
-    optionsMap
-    |> Seq.tryFind (fun kvp -> kvp.Key.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
-    |> Option.map _.Value
-
 // helper for case-insensitive equality
 let equalsCI (a:string) (b:string) = String.Equals(a, b, StringComparison.OrdinalIgnoreCase)
+
+let tryFindOption (optionsMap: Dictionary<string, UciOption>) (name: string) =
+    optionsMap
+    |> Seq.tryFind (fun kvp -> equalsCI kvp.Key name)
+    |> Option.map _.Value
+
 
 // Function to validate an option (case-insensitive value checks; preserve provided value text)
 let validateOption (optionsMap:Dictionary<string, UciOption>) (name: string, value: string) =

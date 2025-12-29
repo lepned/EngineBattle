@@ -146,15 +146,18 @@ module Initialization =
       append opMoves
   
   let checkAndPrepareContempt (engine1: ChessEngine) (engine2: ChessEngine) =   
+    let hasKeyCI (options: IDictionary<string, 'a>) (key: string) =
+      options.Keys |> Seq.exists (fun k -> String.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+    
     if engine1.Config.ContemptEnabled then      
       let ratingDiff = engine1.Config.Rating - engine2.Config.Rating
       if ratingDiff > 0 || engine1.Config.NegativeContemptAllowed then
         let options = engine1.GetDefaultOptions()
-        if options.ContainsKey "Contempt" then
+        if hasKeyCI options "Contempt" then
           let engineOption : EngineOption = { Name = "Contempt"; Value = sprintf "%d" ratingDiff }
           engine1.AddSetOption engineOption
           printfn "Contempt set for %s: %d vs %s" engine1.Name ratingDiff engine2.Name
-        elif options.ContainsKey "DynamicContempt" then
+        elif hasKeyCI options "DynamicContempt" then
           let engineOption : EngineOption = { Name = "DynamicContempt"; Value = sprintf "%d" ratingDiff }
           engine1.AddSetOption engineOption
           printfn "DynamicContempt set for %s: %d vs %s" engine1.Name ratingDiff engine2.Name
@@ -165,11 +168,11 @@ module Initialization =
       let ratingDiff = engine2.Config.Rating - engine1.Config.Rating
       if ratingDiff > 0 || engine2.Config.NegativeContemptAllowed then
         let options = engine2.GetDefaultOptions()
-        if options.ContainsKey "Contempt" then
+        if hasKeyCI options "Contempt" then
           let engineOption : EngineOption = { Name = "Contempt"; Value = sprintf "%d" ratingDiff }
           engine2.AddSetOption engineOption
           printfn "Contempt set for %s: %d vs %s" engine2.Name ratingDiff engine1.Name
-        elif options.ContainsKey "DynamicContempt" then
+        elif hasKeyCI options "DynamicContempt" then
           let engineOption : EngineOption = { Name = "DynamicContempt"; Value = sprintf "%d" ratingDiff }
           engine2.AddSetOption engineOption
           printfn "DynamicContempt set for %s: %d vs %s" engine2.Name ratingDiff engine1.Name
@@ -1839,7 +1842,16 @@ module Match =
                               else false, "", ""
                       | _ -> false, "", ""
                     
-                    if deviated then
+                    if deviated && playing.Config.ContemptEnabled then
+                        // if contempt enabled, allow deviation but log it
+                        ConsoleUtils.printInColor 
+                            ConsoleColor.Green
+                            $"Deviation detected at plycount {board.PlyCount} and was allowed because of contempt enabled\n  Prev move: {oldMove} by {engName}  Current move: {move} by {playing.Name}"
+                        board.LongSANMovesPlayed.Add(move)
+                        gameMoveList.Add(shortSan)
+                        board.MakeMove &tmove
+                    
+                    elif deviated then
                       match tryGetTMoveFromCoordinateNotation &board oldMove with
                       |Some orgMove ->
                         shortSan <- getSanNotationFromTMove &board orgMove

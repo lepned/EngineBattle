@@ -906,14 +906,7 @@ module Engine =
       member this.AddSetOptions (config:EngineOption array) =
         this.Stop()
         for option in config do
-          match UciOption.tryFindOption optionsMap option.Name with
-          | Some opt ->
-              let cmd = sprintf "setoption name %s value %s" opt.Name option.Value      
-              write cmd
-              assignNetworkName cmd
-              addCommand initialCommands cmd
-              addCommand commands cmd
-          | _ -> logDebug (sprintf "Option not found for engine %s: %s" name option.Name)
+          this.AddSetOption option
 
       member this.AddSetOption (option:EngineOption) =
         match UciOption.tryFindOption optionsMap option.Name with
@@ -921,28 +914,32 @@ module Engine =
             this.Stop()
             let cmd = sprintf "setoption name %s value %s" opt.Name option.Value      
             write cmd
-            this.Config.Options[option.Name] <- option.Value // todo - not sure this is a good idea
+            this.Config.Options[option.Name] <- option.Value // todo - maybe use opt.Value here?
             assignNetworkName cmd
             addCommand initialCommands cmd
             addCommand commands cmd            
-        | _ -> ()
+        | _ -> logDebug (sprintf "Option not found for engine %s: %s" name option.Name)
 
       member _.SetMoveOverhead (optionName:string, milliSeconds: int) =
-        match UciOption.tryFindOption optionsMap optionName with
-        | Some option ->
-            match option.OptionType with        
-            | UciOption.Spin (min, max, _) -> 
-                let intValue = int64 milliSeconds
-                if intValue >= min && intValue <= max then
-                  match config.Options |> Seq.tryFind (fun e -> e.Key = optionName) with
-                  | Some _ -> ()
-                  | None ->
-                      //create a setoption based on the option and the intValue
-                      let cmd = sprintf "setoption name %s value %d" option.Name intValue                
-                      write cmd
-                      addCommand initialCommands cmd
-                      addCommand commands cmd                  
-            | _ -> ()
+        let option = optionsMap.Keys |> Seq.tryFind (fun e -> e.ToLower().Contains(optionName.ToLower()))
+        match option with
+        | Some optName ->
+            match UciOption.tryFindOption optionsMap optName with
+            | Some option ->
+                match option.OptionType with        
+                | UciOption.Spin (min, max, _) -> 
+                    let intValue = int64 milliSeconds
+                    if intValue >= min && intValue <= max then
+                      match config.Options |> Seq.tryFind (fun e -> e.Key = optName) with
+                      | Some _ -> ()
+                      | None ->
+                          //create a setoption based on the option and the intValue
+                          let cmd = sprintf "setoption name %s value %d" option.Name intValue                
+                          write cmd
+                          addCommand initialCommands cmd
+                          addCommand commands cmd                  
+                | _ -> ()
+            | None -> logInformation (sprintf "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds)
         | None -> logInformation (sprintf "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds)
       
       member this.StartProcess() = startProcess()

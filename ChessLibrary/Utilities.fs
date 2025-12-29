@@ -824,6 +824,29 @@ module Validation =
         validateWeightsFile config
 
       ] |> accumulateErrors
+  
+  let validateContempt (engines: EngineConfig seq) =
+      let anyEngineWithContempt =
+        engines |> Seq.exists(fun e -> e.ContemptEnabled)
+      if anyEngineWithContempt then
+          let enginesWithoutRating = engines |> Seq.exists(fun e -> e.Rating = 0)
+          //validate that all engines have ratings set if any engine has contempt enabled
+          if enginesWithoutRating then
+            Errors ["At least one engine has ContemptEnabled set to true, but one or more engines do not have a rating set in their EngineConfig. Please ensure that all engines have a valid rating when using contempt settings."]
+          else 
+            // Special validation for LC0 when contempt is enabled
+            match engines |> Seq.tryFind(fun e -> e.ContemptEnabled && e.Name.ToLower().Contains("lc0")) with
+            | None -> Ok
+            | Some leelaContempt ->
+                let normalizeKey (key: string) =
+                    key.Replace(" ", "").ToLower()
+                let wdlCalibOpt = leelaContempt.Options |> Seq.tryFind (fun kvp -> normalizeKey kvp.Key = "wdlcalibrationelo")
+                let wdlEvalObjOpt = leelaContempt.Options |> Seq.tryFind (fun kvp -> normalizeKey kvp.Key = "wdlevalobjectivity")
+                let wdlDrawRateOpt = leelaContempt.Options |> Seq.tryFind (fun kvp -> normalizeKey kvp.Key = "wdldrawratereference")
+                match wdlCalibOpt, wdlEvalObjOpt, wdlDrawRateOpt with
+                | Some _, Some _, Some _ -> Ok
+                | _ -> Errors [sprintf "Engine %s has ContemptEnabled set to true, but is missing one or more required options for LC0: WDLCalibrationElo, WDLEvalObjectivity, WDLDrawRateReference. Please add these options to the engine configuration." leelaContempt.Name]
+       else Ok
 
   let validateUniqueNames (engines: EngineConfig seq) =
       let names = engines |> Seq.map (fun e -> e.Name)
@@ -857,6 +880,7 @@ module Validation =
   let validateAllEnginesAndSomeSettings (engines: EngineConfig seq) =
       let engines = engines |> Seq.toList
       let engineValidations = engines |>  List.map validateChessEngineCmds
+      //let validateContempt = validateContempt engines
       let results = 
         validateUniqueNames engines :: validateEngineNames engines :: engineValidations
         |> accumulateErrors
@@ -925,6 +949,7 @@ module Validation =
           validateEngineTimeControls tourny tourny.EngineSetup.Engines
           validateDelayBetweenGames tourny tourny.EngineSetup.Engines
           validateUniqueNames tourny.EngineSetup.Engines
+          validateContempt tourny.EngineSetup.Engines
           validateEngineNames tourny.EngineSetup.Engines
           for config in tourny.EngineSetup.Engines do
               validatePonderingAllowed config tourny
