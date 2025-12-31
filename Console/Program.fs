@@ -619,7 +619,7 @@ module Program =
         Console.WriteLine msg
         logger.LogInformation(msg)
         if File.Exists tourny.PgnOutPath then            
-            let consoleRes, _, _ = PGNCalculator.getEngineDataResults (runner.GetPGNGames())            
+            let consoleRes, _, _, allResults = PGNCalculator.getEngineDataResults (runner.GetPGNGames())            
             Console.WriteLine consoleRes
             logger.LogInformation(consoleRes)
         else

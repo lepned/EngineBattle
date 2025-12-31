@@ -343,7 +343,7 @@ module OrdoHelper =
   let runCommandAsync (cmd:Command) (engineData : EngineLineData seq) =
       task {
           try
-              let cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(1.0))
+              let cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10.0))
               let sb = new StringBuilder()
               let! result = cmd.ExecuteBufferedAsync(cts.Token)
               //let msg = removeTopThreeLines (result.StandardOutput.Trim())
@@ -357,7 +357,7 @@ module OrdoHelper =
               return sb.ToString()
           with
           | :? OperationCanceledException -> 
-              return "Ordo command execution timed out after 1 second"
+              return "Ordo command execution timed out after 10 second"
           | ex -> return sprintf "An error occurred: %s" (ex.Message)
       }
 
@@ -460,7 +460,7 @@ module OrdoHelper =
       let error = formatError p.Error p.Challenger
       let speed = Formatting.formatNPS p.MedSpeed
       sprintf "%-*s : %7s %6s %7.1f %7d %4d %10s %5d %5d %5d %5d %7.1f %7.1f %8s"
-          n p.Player elo error p.Points p.Played p.Percent speed p.Win p.Draw p.Loss p.D wscore bscore pairs
+              n p.Player elo error p.Points p.Played p.Percent speed p.Win p.Draw p.Loss p.D wscore bscore pairs
             
   let printStatsMatrix (table: CrossTableEntry seq) =
     let endOfLine = "\n```\n"
@@ -516,21 +516,14 @@ module OrdoHelper =
         printfn ""
   
   let getResultsAndPairsInConsoleFormat (engines: PlayerResult seq) (table: CrossTableEntry seq) =
-    let sb = System.Text.StringBuilder()
+    let sb = new StringBuilder()
     let appendLine (txt: string) = sb.AppendLine txt |> ignore
 
     appendLine "\n```\n"
 
     // Find longest player name for formatting
     let longest = engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
-    writeResultHeader longest |> appendLine
-
-    // Prepare a lookup for challenger status
-    let challengerSet =
-        table
-        |> Seq.filter (fun t -> t.Challenger)
-        |> Seq.map (fun t -> t.Player)
-        |> Set.ofSeq
+    writeResultHeader longest |> appendLine    
     
     // In a two player table, the first player is always the challenger
     let players =
@@ -1831,7 +1824,7 @@ module PGNCalculator =
     let consoleContent = OrdoHelper.getResultsAndPairsInConsoleFormat playerRes cross
     let engineStats = OrdoHelper.getEngineLineData playerRes cross
 
-    consoleContent, engineStats, cross
+    consoleContent, engineStats, cross, allResults
 
   let calculateStatistics (engines:string list) results =        
       engines |> List.map (fun player -> calculateStatisticsForPlayer player results)

@@ -2256,14 +2256,14 @@ module Deviation =
   
   let analyzeDeviations (pgnGames: PGNTypes.PgnGame seq) =
     let pgnGames = pgnGames |> Seq.toList
-    let consoleResString, engineStats, crossTable = PGNCalculator.getEngineDataResults pgnGames
+    let consoleResString, engineStats, crossTable, allResults = PGNCalculator.getEngineDataResults pgnGames
     let moveDevs = findAllDeviationsForAllPlayers pgnGames
     let devSummary = createDeviationSummary moveDevs pgnGames
     let numberOfGames = pgnGames.Length
     let numberOfDevs = moveDevs |> Seq.length
     let fraction = float numberOfDevs / float numberOfGames
     let sortedSummary = devSummary |> Seq.sortByDescending(fun e -> e.AdjustedScore)            
-    consoleResString, sortedSummary, engineStats, crossTable, fraction
+    allResults, consoleResString, sortedSummary, engineStats, crossTable, fraction
 
   let writeSummaryHeader (n:int) : string =    
       sprintf "%-*s : %8s %7s %8s %8s %14s" n "# PLAYER" "Points" "Devs" "OwnDevs" "OppDevs" "ScoreAdjusted"

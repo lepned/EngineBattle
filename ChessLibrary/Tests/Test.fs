@@ -23,7 +23,7 @@ module Deviations =
     let games = PGNParser.parsePgnFile filePath |> Seq.truncate 100000 |> Seq.toList
     if games |> Seq.forall (fun e -> e.GameMetaData.Round <> "") then      
       printfn "Start of deviation test - number of games %d\n" games.Length
-      let consoleRes, devSummary, data, cross, fraction = Deviation.analyzeDeviations games
+      let _, consoleRes, devSummary, data, cross, fraction = Deviation.analyzeDeviations games
       let consoleSummary = Deviation.printDeviationsToConsole devSummary
       PGNCalculator.idealizedEloPrint cross
       //printfn "Gauntlet player: %s" gauntletPlayer

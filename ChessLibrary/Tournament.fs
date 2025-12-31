@@ -3451,7 +3451,7 @@ module Manager =
           try 
               let pgnGames = x.GetPGNGames()
               if pgnGames.Count > 0 then
-                  let consoleResString, data, _ = PGNCalculator.getEngineDataResults pgnGames
+                  let consoleResString, data, _, _= PGNCalculator.getEngineDataResults pgnGames
                   let ordoPath = executablePath()
                   if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then                
                       let cmd = Utilities.OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath ""
