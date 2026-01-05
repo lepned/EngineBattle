@@ -61,6 +61,7 @@ module TypesDef =
         | Illegal
         | Disconnected of string
         | NotStarted
+        | AdjudicatedByUser
 
         override this.ToString() =
             match this with
@@ -76,6 +77,7 @@ module TypesDef =
             | Illegal -> "IM"
             | Disconnected p -> "DC"
             | NotStarted -> "NS"
+            | AdjudicatedByUser -> "AU"
 
         member this.Explanation =
             match this with
@@ -91,6 +93,7 @@ module TypesDef =
             | Illegal -> "Illegal move"
             | Disconnected p -> sprintf "%s Disconnected" p
             | NotStarted -> "Not started"
+            | AdjudicatedByUser -> "Adjudicated by user"
 
     let stringToResultReason (str: string): ResultReason =
         match str with
@@ -106,6 +109,7 @@ module TypesDef =
         | "IM" -> Illegal
         | "DC" -> Disconnected ""
         | "NS" -> NotStarted
+        | "AU" -> AdjudicatedByUser
         | _ -> failwith "Invalid ResultReason string"
 
   // -----------------------------------------------------------------------------
@@ -689,6 +693,7 @@ module TypesDef =
         WhiteToMove : bool
         OpeningName : string
         CurrentGameNr : int
+        OpeningHash : string
       }
       override this.ToString() =
         sprintf "Start of game number %d: %s vs %s" this.CurrentGameNr this.WhitePlayer.Name this.BlackPlayer.Name

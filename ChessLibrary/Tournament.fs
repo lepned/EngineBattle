@@ -829,6 +829,12 @@ module Match =
     | RoundNr of Round: string
     | PeriodicResults of results: ResizeArray<Result>
     | GameSummary of summary: string
+
+  type UserAdjudication =
+    { GameNr: int
+      Result: string }
+
+  let private adjudicationReason = ResultReason.AdjudicatedByUser
   
 
   // cancel-aware read now uses pump (already in TournamentUtils)
@@ -1115,6 +1121,7 @@ module Match =
     (player1 : ChessEngine) 
     (player2 : ChessEngine)
     (pairing: Pairing)
+    (tryGetUserAdjudication: unit -> UserAdjudication option)
     callback  = 
 
     let player1Channel = Channel.CreateBounded<string>(BoundedChannelOptions(capacity = 4096, SingleWriter = true, SingleReader = true, FullMode = BoundedChannelFullMode.Wait))    
@@ -1179,6 +1186,7 @@ module Match =
         WhiteToMove = board.Position.STM = 0uy
         OpeningName = tourny.OpeningName
         CurrentGameNr = pairing.GameNr
+        OpeningHash = pairing.OpeningHash
       }
     board.MovesAndFenPlayed.Clear()
     let mutable moveInfoData = ChessMoveInfo.Empty
@@ -1499,9 +1507,23 @@ module Match =
             let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
             logger.LogInformation($"Cancel requested")
             result <- res
-        
+
+        let adjudicate (adj: UserAdjudication) =
+            try player1.Stop() with _ -> ()
+            try player2.Stop() with _ -> ()
+            let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+            let firstTwo = firstTwoEvals fullEvalList
+            let res = createResultWithEval player1.Name player2.Name gameMoveList adj.Result adjudicationReason dur firstTwo
+            logger.LogInformation($"Game adjudicated by user: {adj.Result}")
+            result <- res
+            continueGame <- false
+         
         try
             while continueGame && not cts.IsCancellationRequested do
+                match tryGetUserAdjudication() with
+                | Some adj when adj.GameNr = pairing.GameNr -> adjudicate adj
+                | _ -> ()
+
                 let sideToMove = board.Position.STM
                 let currentPlaying = whoseTurn sideToMove
                 let currentOpponent = opponent sideToMove
@@ -1545,16 +1567,19 @@ module Match =
                 //reading from the per-game channel for the engine
                 let engineReader = getEngineReaderFor currentPlaying
                 try
-                    let! line = engineReader.ReadAsync(cts.Token).AsTask() |> Async.AwaitTask
+                    use pollCts = new CancellationTokenSource(250)
+                    use linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, pollCts.Token)
+                    let! line = engineReader.ReadAsync(linkedCts.Token).AsTask() |> Async.AwaitTask
                     if line.StartsWith "bestmove" then
                         do! processBestMove currentPlaying currentOpponent isWhite line                
                     else                
                         do! processInfoLine engineReader currentPlaying line        
                 with
                 | :? OperationCanceledException ->                    
-                    logger.LogInformation("playWithPondering: ReadAsync cancelled, cancelling game loop")
-                    cancel()
-                    continueGame <- false
+                    if cts.IsCancellationRequested then
+                        logger.LogInformation("playWithPondering: ReadAsync cancelled, cancelling game loop")
+                        cancel()
+                        continueGame <- false
                 | :? System.Threading.Channels.ChannelClosedException ->
                     // channel closed (writer finished) -> treat as cancellation/stop
                     logger.LogInformation("playWithPondering: engine channel closed")
@@ -1594,6 +1619,7 @@ module Match =
     (player1 : ChessEngine) 
     (player2 : ChessEngine)
     (pairing: Pairing)
+    (tryGetUserAdjudication: unit -> UserAdjudication option)
     callback  =    
     
     let moveList = Array.init 256 (fun _ -> defaultof<TMove> )
@@ -1640,6 +1666,7 @@ module Match =
         WhiteToMove = stm = 0uy
         OpeningName = tourny.OpeningName
         CurrentGameNr = pairing.GameNr //tourny.CurrentGameNr
+        OpeningHash = pairing.OpeningHash
       }
     board.MovesAndFenPlayed.Clear()
     let mutable moveInfoData = ChessMoveInfo.Empty
@@ -1682,8 +1709,56 @@ module Match =
     let fen = board.FEN()
     logger.LogDebug $"After opening moves, FEN={fen}"
 
+    let adjudicatedResult (adj: UserAdjudication) =
+      let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+      let firstTwo = firstTwoEvals fullEvalList
+      createResultWithEval player1.Name player2.Name gameMoveList adj.Result adjudicationReason dur firstTwo
+
+    let mutable userAdjudicationResult : Result option = None
+
+    let applyUserAdjudication (adj: UserAdjudication) =
+      match userAdjudicationResult with
+      | Some res -> res
+      | None ->
+          try player1.Stop() with _ -> ()
+          try player2.Stop() with _ -> ()
+          let res = adjudicatedResult adj
+          userAdjudicationResult <- Some res
+          callback(EndOfGame res)
+          logger.LogInformation($"Game adjudicated by user: {adj.Result}")
+          res
+
+    let tryConsumeUserAdjudication () =
+      match userAdjudicationResult with
+      | Some res -> Some res
+      | None ->
+          match tryGetUserAdjudication() with
+          | Some adj when adj.GameNr = pairing.GameNr -> Some (applyUserAdjudication adj)
+          | _ -> None
+
+    let rec readLineOrAdjudication (playing: ChessEngine) (ct: CancellationToken) = async {
+      match tryConsumeUserAdjudication() with
+      | Some res -> return Choice2Of2 res
+      | None ->
+          use pollCts = new CancellationTokenSource(250)
+          use linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, pollCts.Token)
+          try
+            let! line = playing.ReadLineAsyncWithTimeout(linkedCts.Token) |> Async.AwaitTask
+            return Choice1Of2 line
+          with
+          | :? OperationCanceledException as oce ->
+              if ct.IsCancellationRequested then
+                return raise oce
+              else
+                return! readLineOrAdjudication playing ct
+      }
+
     let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
       
+      match tryConsumeUserAdjudication() with
+      | Some res -> return res
+      | None ->
+       
       if cts.IsCancellationRequested then
         let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
         let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
@@ -1716,10 +1791,13 @@ module Match =
               playing.GoNodes timeConfig.Nodes            
           else            
             playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
-        
-        
-        let! line = playing.ReadLineAsyncWithTimeout(ct) |> Async.AwaitTask
-        
+         
+         
+        let! lineOrAdj = readLineOrAdjudication playing ct
+        match lineOrAdj with
+        | Choice2Of2 res -> return res
+        | Choice1Of2 line ->
+         
         if String.IsNullOrWhiteSpace line then
           logger.LogDebug $"Empty line or null from {playing.Name}"
           if playing.HasExited() then
@@ -2123,8 +2201,9 @@ module Match =
     (player1 : ChessEngine) 
     (player2 : ChessEngine)
     (pairing: Pairing)
+    (tryGetUserAdjudication: unit -> UserAdjudication option)
     callback  =
-    playGeneric None None sb cts logger tourny board player1 player2 pairing callback
+    playGeneric None None sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
 
   let playDoNotDeviate
     (replayWhite: ReferenceGameReplay)
@@ -2137,11 +2216,12 @@ module Match =
     (player1 : ChessEngine) 
     (player2 : ChessEngine)
     (pairing : Pairing)
+    (tryGetUserAdjudication: unit -> UserAdjudication option)
     callback  =
-    playGeneric (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing callback
+    playGeneric (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
 
   
-  let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) = async {    
+  let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {    
     let mutable gameNr = 0
     let sbDev = new StringBuilder()
     //Utilities.Validation.validateAllEnginesAndSomeSettings tourny.EngineSetup.Engines
@@ -2390,14 +2470,14 @@ module Match =
           let result =
               let gametimer = Stopwatch.GetTimestamp()
               try
-                if tourny.PreventMoveDeviation then              
-                  let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name                  
-                  playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
-                else
-                  if tourny.AllowPondering then
-                    playWithPondering sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
-                  else
-                    play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                 if tourny.PreventMoveDeviation then              
+                   let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name                  
+                   playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                 else
+                   if tourny.AllowPondering then
+                     playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                   else
+                     play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
               with
               | :? EngineStartupException as ex ->
                     logException ex
@@ -2463,7 +2543,7 @@ module Match =
       return results
   }
 
-  let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) = async {        
+  let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {        
     
     //Utilities.Validation.validateAllEnginesAndSomeSettings tourny.EngineSetup.Engines    
     let mutable gameNr = 0
@@ -2619,15 +2699,15 @@ module Match =
           let result =
               let gametimer = Stopwatch.GetTimestamp()
               try
-                if tourny.PreventMoveDeviation then              
-                  let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name
-                  playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
-                else
-                  //play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
-                  if tourny.AllowPondering then
-                    playWithPondering sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                  if tourny.PreventMoveDeviation then              
+                    let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name                  
+                    playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
                   else
-                    play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously              
+                    //play sb cts logger tourny board engine1 engine2 pair callback |> Async.RunSynchronously
+                    if tourny.AllowPondering then
+                      playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                    else
+                      play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously              
               with
               | :? EngineStartupException as ex ->
                     logException ex
@@ -2955,9 +3035,9 @@ module Match =
                                             searchReplayList pair
                                             let whiteReplayDict = replayDicts.[pair.White.Name]
                                             let blackReplayDict = replayDicts.[pair.Black.Name]                                    
-                                            return! playDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard engine1 engine2 pair callback
+                                            return! playDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
                                         else
-                                            return! play sb cts logger tourny currentBoard engine1 engine2 pair callback    
+                                            return! play sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback    
                                     
                                       with
                                       | ex -> return handleGameException logger ex cts gametimer board engine1 engine2 pair  }
@@ -3242,9 +3322,9 @@ module Match =
                                             searchReplayList pair
                                             let whiteReplayDict = replayDicts.[pair.White.Name]
                                             let blackReplayDict = replayDicts.[pair.Black.Name]                                    
-                                            return! playDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard wEng bEng pair callback
+                                            return! playDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
                                         else
-                                            return! play sb cts logger tourny currentBoard wEng bEng pair callback
+                                            return! play sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
                                     
                                     with
                                     | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
@@ -3378,7 +3458,13 @@ module Manager =
       ConsoleUtils.printInColor ConsoleColor.Red $"Error loading tournament.json: {exn.Message} - please check your engine.json files"
       Tournament.Empty        
   
-  let startTournament (cts:CancellationTokenSource) (tournament : Tournament) (logger:ILogger) sendResponse consoleMode =
+  let startTournament
+    (cts:CancellationTokenSource)
+    (tournament : Tournament)
+    (logger:ILogger)
+    sendResponse
+    consoleMode
+    (tryGetUserAdjudication: unit -> Match.UserAdjudication option) =
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()
@@ -3387,9 +3473,9 @@ module Manager =
         if consoleMode then
           Match.parallelTournamentRun logger tournament sendResponse cts       
         elif tournament.Gauntlet then
-          Match.gauntlet logger tournament sendResponse cts          
+          Match.gauntlet logger tournament sendResponse cts tryGetUserAdjudication          
         else 
-          Match.roundRobin logger tournament sendResponse cts            
+          Match.roundRobin logger tournament sendResponse cts tryGetUserAdjudication            
       
       let mutable validationPassed = true
       //check for value head tests
@@ -3425,13 +3511,22 @@ module Manager =
         logger.LogInformation("Tournament validation failed, please make sure that all engines in the tournament supports value head tests.")
         []
   
-  type Runner (logger, callback: Action<Match.Update>, reloadTournament:bool, consoleOnly : bool) =    
+  type Runner (logger: ILogger, callback: Action<Match.Update>, reloadTournament:bool, consoleOnly : bool) =    
     let cts = new CancellationTokenSource()
+    let userAdjudicationChannel = Channel.CreateUnbounded<Match.UserAdjudication>()
     let mutable tournament = if reloadTournament then loadTournament() else Tournament.Empty
     let mutable resultsFromPGN = ResizeArray<Result>()
     let mutable pgnReader = None
     let mutable consoleMode = consoleOnly
     let executablePath() = tournament.OrdoExePath
+
+    let tryDequeueUserAdjudication () =
+      let reader = userAdjudicationChannel.Reader
+      let mutable last = None
+      let mutable item = Unchecked.defaultof<Match.UserAdjudication>
+      while reader.TryRead(&item) do
+        last <- Some item
+      last
     
     member val TotalGames = 0 with get, set
     member x.PgnReader
@@ -3474,6 +3569,18 @@ module Manager =
       |_ -> callback.Invoke update
         
     member _.AddTournament tourny = tournament <- tourny 
+
+    member _.AdjudicateGame(gameNr: int, result: string) =
+      let isValid =
+        match result with
+        | "1-0" | "0-1" | "1/2-1/2" -> true
+        | _ -> false
+
+      if isValid then
+        userAdjudicationChannel.Writer.TryWrite({ GameNr = gameNr; Result = result }) |> ignore
+      else
+        logger.LogWarning("Invalid user adjudication result string: {Result}", result)
+
     member x.Run() = 
       try 
         // Ensure external shutdowns are translated to our CTS cancellation
@@ -3485,7 +3592,7 @@ module Manager =
             try cts.Cancel() with _ -> ()
         )
         resultsFromPGN <- x.GetResults() //x.GetFinalResults()
-        startTournament cts tournament logger x.SendResponse consoleMode
+        startTournament cts tournament logger x.SendResponse consoleMode tryDequeueUserAdjudication
       with e -> 
         printfn "Error: %A" e
         logger.LogCritical ("failed to run tournament" + tournament.MinSummary())

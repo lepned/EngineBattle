@@ -798,6 +798,14 @@ export function setTimeUsageChartData(chart, layout, config) {
   }
 }
 
+export function resizePlot(chart) {
+  try {
+    Plotly.Plots.resize(chart);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 export function setQdataPlot(chart, layout, arr) {
   var data = arr
   Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });

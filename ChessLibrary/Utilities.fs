@@ -1239,6 +1239,323 @@ module Hash =
       game.GameMetaData.OpeningHash <- computeOpeningHash openingText      
       
 
+module Pentanomial =
+  type Bucket =
+    | L2   // 0.0-2.0
+    | L15  // 0.5-1.5
+    | D    // 1.0-1.0
+    | W15  // 1.5-0.5
+    | W2   // 2.0-0.0
+
+  type Counts =
+    { L2: int
+      L15: int
+      D: int
+      W15: int
+      W2: int
+      CompletedPairs: int
+      IncompletePairs: int }
+    static member Empty =
+      { L2 = 0; L15 = 0; D = 0; W15 = 0; W2 = 0; CompletedPairs = 0; IncompletePairs = 0 }
+
+  type EngineCounts =
+    { Engine: string
+      L2: int
+      L15: int
+      D: int
+      W15: int
+      W2: int
+      CompletedPairs: int
+      IncompletePairs: int }
+    static member Empty engine =
+      { Engine = engine
+        L2 = 0; L15 = 0; D = 0; W15 = 0; W2 = 0; CompletedPairs = 0; IncompletePairs = 0 }
+
+  let private isFinalResult (result: string) =
+    match result with
+    | "1-0" | "0-1" | "1/2-1/2" -> true
+    | _ -> false
+
+  let private scoreFor (engine: string) (game: PGNTypes.PgnGame) : float option =
+    if isFinalResult game.GameMetaData.Result |> not then None
+    else
+      let white = game.GameMetaData.White.Trim()
+      let black = game.GameMetaData.Black.Trim()
+      let engine = engine.Trim()
+      if engine <> white && engine <> black then None
+      else
+        match game.GameMetaData.Result with
+        | "1/2-1/2" -> Some 0.5
+        | "1-0" -> if engine = white then Some 1.0 else Some 0.0
+        | "0-1" -> if engine = black then Some 1.0 else Some 0.0
+        | _ -> None
+
+  let private bucketFromSum (sum: float) =
+    let eps = 1e-9
+    if abs (sum - 0.0) < eps then L2
+    elif abs (sum - 0.5) < eps then L15
+    elif abs (sum - 1.0) < eps then D
+    elif abs (sum - 1.5) < eps then W15
+    elif abs (sum - 2.0) < eps then W2
+    else failwith $"Invalid pentanomial sum (expected 0/0.5/1/1.5/2): {sum}"
+
+  let private stableOpeningHash (game: PGNTypes.PgnGame) =
+    let h = game.GameMetaData.OpeningHash
+    if String.IsNullOrWhiteSpace h |> not then h
+    else
+      if String.IsNullOrWhiteSpace game.Raw then
+        Hash.computeOpeningHash (game.GameNumber.ToString())
+      else
+        Hash.computeOpeningHash game.Raw
+
+  let private incBucket (bucket: Bucket) (counts: Counts) =
+    match bucket with
+    | L2 -> { counts with L2 = counts.L2 + 1 }
+    | L15 -> { counts with L15 = counts.L15 + 1 }
+    | D -> { counts with D = counts.D + 1 }
+    | W15 -> { counts with W15 = counts.W15 + 1 }
+    | W2 -> { counts with W2 = counts.W2 + 1 }
+
+  let private incBucketEngine (bucket: Bucket) (counts: EngineCounts) =
+    match bucket with
+    | L2 -> { counts with L2 = counts.L2 + 1 }
+    | L15 -> { counts with L15 = counts.L15 + 1 }
+    | D -> { counts with D = counts.D + 1 }
+    | W15 -> { counts with W15 = counts.W15 + 1 }
+    | W2 -> { counts with W2 = counts.W2 + 1 }
+
+  let calculateAllMatchups (games: seq<PGNTypes.PgnGame>) : ((string * string) * Counts) list =
+    let finishedGames =
+      games
+      |> Seq.filter (fun g -> isFinalResult g.GameMetaData.Result)
+      |> Seq.toList
+
+    let gamePairsByOpeningAndEngines =
+      finishedGames
+      |> Seq.groupBy (fun g ->
+          let a = g.GameMetaData.White.Trim()
+          let b = g.GameMetaData.Black.Trim()
+          let e1, e2 = if a <= b then (a, b) else (b, a)
+          stableOpeningHash g, e1, e2)
+      |> Seq.toList
+
+    let perMatchupCompletedPairs =
+      gamePairsByOpeningAndEngines
+      |> Seq.choose (fun ((_, e1, e2), group) ->
+          let group = group |> Seq.toList
+          let w1b2 =
+            group
+            |> List.rev
+            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e1 && g.GameMetaData.Black.Trim() = e2)
+          let w2b1 =
+            group
+            |> List.rev
+            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e2 && g.GameMetaData.Black.Trim() = e1)
+
+          match w1b2, w2b1 with
+          | Some g1, Some g2 ->
+              let s1 = scoreFor e1 g1 |> Option.defaultValue 0.0
+              let s2 = scoreFor e1 g2 |> Option.defaultValue 0.0
+              Some ((e1, e2), s1 + s2)
+          | _ -> None)
+      |> Seq.toList
+
+    let incompletePairsByMatchup =
+      gamePairsByOpeningAndEngines
+      |> Seq.choose (fun ((_, e1, e2), group) ->
+          let group = group |> Seq.toList
+          let hasW1b2 = group |> List.exists (fun g -> g.GameMetaData.White.Trim() = e1 && g.GameMetaData.Black.Trim() = e2)
+          let hasW2b1 = group |> List.exists (fun g -> g.GameMetaData.White.Trim() = e2 && g.GameMetaData.Black.Trim() = e1)
+          if hasW1b2 && hasW2b1 then None else Some (e1, e2))
+      |> Seq.countBy id
+      |> Map.ofSeq
+
+    let completedPairsByMatchup =
+      perMatchupCompletedPairs
+      |> Seq.groupBy fst
+      |> Seq.map (fun (matchup, items) -> matchup, (items |> Seq.map snd |> Seq.toList))
+      |> Map.ofSeq
+
+    let allMatchups =
+      Seq.append (completedPairsByMatchup |> Map.keys) (incompletePairsByMatchup |> Map.keys)
+      |> Seq.distinct
+      |> Seq.sort
+
+    allMatchups
+    |> Seq.map (fun matchup ->
+        let baseCounts = Counts.Empty
+        let sums = completedPairsByMatchup |> Map.tryFind matchup |> Option.defaultValue []
+        let completed = sums.Length
+        let bucketCounts =
+          sums
+          |> Seq.map bucketFromSum
+          |> Seq.countBy id
+          |> Map.ofSeq
+
+        let getCount bucket = bucketCounts |> Map.tryFind bucket |> Option.defaultValue 0
+        let incomplete = incompletePairsByMatchup |> Map.tryFind matchup |> Option.defaultValue 0
+
+        matchup,
+        { baseCounts with
+            L2 = getCount L2
+            L15 = getCount L15
+            D = getCount D
+            W15 = getCount W15
+            W2 = getCount W2
+            CompletedPairs = completed
+            IncompletePairs = incomplete })
+    |> Seq.toList
+
+  let calculatePerEngine (games: seq<PGNTypes.PgnGame>) : EngineCounts list =
+    let finishedGames =
+      games
+      |> Seq.filter (fun g -> isFinalResult g.GameMetaData.Result)
+      |> Seq.toList
+
+    let allEngines =
+      finishedGames
+      |> Seq.collect (fun g -> [ g.GameMetaData.White.Trim(); g.GameMetaData.Black.Trim() ])
+      |> Seq.distinct
+      |> Seq.sort
+      |> Seq.toList
+
+    let init =
+      allEngines
+      |> Seq.map (fun e -> e, EngineCounts.Empty e)
+      |> Map.ofSeq
+
+    let updateEngine engine updater (m: Map<string, EngineCounts>) =
+      match m |> Map.tryFind engine with
+      | None -> m |> Map.add engine (updater (EngineCounts.Empty engine))
+      | Some current -> m |> Map.add engine (updater current)
+
+    let groups =
+      finishedGames
+      |> Seq.groupBy (fun g ->
+          let a = g.GameMetaData.White.Trim()
+          let b = g.GameMetaData.Black.Trim()
+          let e1, e2 = if a <= b then (a, b) else (b, a)
+          stableOpeningHash g, e1, e2)
+
+    let acc =
+      groups
+      |> Seq.fold (fun m ((_, e1, e2), group) ->
+          let group = group |> Seq.toList
+          let w1b2 =
+            group
+            |> List.rev
+            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e1 && g.GameMetaData.Black.Trim() = e2)
+          let w2b1 =
+            group
+            |> List.rev
+            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e2 && g.GameMetaData.Black.Trim() = e1)
+
+          match w1b2, w2b1 with
+          | Some g1, Some g2 ->
+              let sum1 =
+                (scoreFor e1 g1 |> Option.defaultValue 0.0) +
+                (scoreFor e1 g2 |> Option.defaultValue 0.0)
+              let sum2 = 2.0 - sum1
+              let b1 = bucketFromSum sum1
+              let b2 = bucketFromSum sum2
+              m
+              |> updateEngine e1 (fun c -> c |> incBucketEngine b1 |> fun c2 -> { c2 with CompletedPairs = c2.CompletedPairs + 1 })
+              |> updateEngine e2 (fun c -> c |> incBucketEngine b2 |> fun c2 -> { c2 with CompletedPairs = c2.CompletedPairs + 1 })
+          | _ ->
+              m
+              |> updateEngine e1 (fun c -> { c with IncompletePairs = c.IncompletePairs + 1 })
+              |> updateEngine e2 (fun c -> { c with IncompletePairs = c.IncompletePairs + 1 })
+        ) init
+
+    acc
+    |> Map.values
+    |> Seq.sortByDescending (fun c -> c.CompletedPairs, c.Engine)
+    |> Seq.toList
+
+  let formatAllMatchups (games: seq<PGNTypes.PgnGame>) (maxLines: int) =
+    let data = calculateAllMatchups games
+    if data.IsEmpty then ""
+    else
+      let shorten (maxLen: int) (s: string) =
+        if s.Length <= maxLen then s
+        elif maxLen <= 2 then s.Substring(0, maxLen)
+        else s.Substring(0, maxLen - 2) + ".."
+
+      let sb = StringBuilder()
+      sb.AppendLine "\n```\n" |> ignore
+      sb.AppendLine "Pentanomial (pairs per opening; left engine perspective)" |> ignore
+
+      let lines = data |> List.truncate (max 0 maxLines)
+      let matchupStrings =
+        lines
+        |> List.map (fun ((a, b), _) -> $"{a} vs {b}")
+        |> List.map (shorten 60)
+
+      let matchupWidth =
+        let minW = "Matchup".Length
+        if matchupStrings.IsEmpty then minW else max minW (matchupStrings |> List.maxBy String.length |> String.length)
+
+      // Match the compact list-style format used by formatPerEngineDefault.
+      let header =
+        sprintf "%-*s  %s  %4s  %3s"
+          matchupWidth "Matchup" "[0-2,0.5-1.5,1-1,1.5-0.5,2-0]" "Done" "Inc"
+      sb.AppendLine header |> ignore
+      sb.AppendLine (String.replicate header.Length "-") |> ignore
+
+      for i in 0 .. lines.Length - 1 do
+        let ((_, _), c) = lines.[i]
+        let matchup = matchupStrings.[i].PadRight(matchupWidth)
+        let buckets = sprintf "[%d, %d, %d, %d, %d]" c.L2 c.L15 c.D c.W15 c.W2
+        sb.AppendLine(sprintf "%s  %-29s  %4d  %3d" matchup buckets c.CompletedPairs c.IncompletePairs) |> ignore
+
+      if data.Length > lines.Length then
+        sb.AppendLine($"... truncated ({lines.Length}/{data.Length} matchups shown)") |> ignore
+      sb.AppendLine "\n```\n" |> ignore
+      sb.ToString()
+
+  let formatAllMatchupsDefault (games: seq<PGNTypes.PgnGame>) =
+    formatAllMatchups games 200
+
+  let formatPerEngine (games: seq<PGNTypes.PgnGame>) (maxLines: int) =
+    let data = calculatePerEngine games
+    if data.IsEmpty then ""
+    else
+      let shorten (maxLen: int) (s: string) =
+        if s.Length <= maxLen then s
+        elif maxLen <= 2 then s.Substring(0, maxLen)
+        else s.Substring(0, maxLen - 2) + ".."
+
+      let sb = StringBuilder()
+      sb.AppendLine "\n```\n" |> ignore
+      sb.AppendLine "Pentanomial vs field (pairs per opening; engine perspective)" |> ignore
+
+      let lines = data |> List.truncate (max 0 maxLines)
+      let engineStrings = lines |> List.map (fun e -> shorten 40 e.Engine)
+      let engineWidth =
+        let minW = "Engine".Length
+        if engineStrings.IsEmpty then minW else max minW (engineStrings |> List.maxBy String.length |> String.length)
+
+      let header =
+        sprintf "%-*s  %s  %4s  %3s"
+          engineWidth "Engine" "[0-2,0.5-1.5,1-1,1.5-0.5,2-0]" "Done" "Inc"
+      sb.AppendLine header |> ignore
+      sb.AppendLine (String.replicate header.Length "-") |> ignore
+
+      for i in 0 .. lines.Length - 1 do
+        let e = lines.[i]
+        let name = engineStrings.[i].PadRight(engineWidth)
+        let buckets = sprintf "[%d, %d, %d, %d, %d]" e.L2 e.L15 e.D e.W15 e.W2
+        sb.AppendLine(sprintf "%s  %-29s  %4d  %3d" name buckets e.CompletedPairs e.IncompletePairs) |> ignore
+
+      if data.Length > lines.Length then
+        sb.AppendLine($"... truncated ({lines.Length}/{data.Length} engines shown)") |> ignore
+
+      sb.AppendLine "\n```\n" |> ignore
+      sb.ToString()
+
+  let formatPerEngineDefault (games: seq<PGNTypes.PgnGame>) =
+    formatPerEngine games 200
+
 module JSON =
     
   let readEngineConfig path =
@@ -2530,6 +2847,91 @@ module Glicko2 =
 
       printfn "\nFinal Engine Rating after 10 iterations:"
       printfn "%A" finalEngine
+
+module MoveHistoryDeviation =
+
+  let private isResultToken (token: string) =
+    match token with
+    | "1-0" | "0-1" | "1/2-1/2" | "*" -> true
+    | _ -> false
+
+  let private isMoveNumberToken (token: string) =
+    if String.IsNullOrWhiteSpace token then
+      false
+    else
+      let trimmed = token.Trim()
+      if not (trimmed.EndsWith(".", StringComparison.Ordinal)) then
+        false
+      else
+        let digits = trimmed.TrimEnd([| '.' |])
+        match Int32.TryParse digits with
+        | true, _ -> true
+        | _ -> false
+
+  let private extractSansFromMoveHistory (moveHistory: string) =
+    if String.IsNullOrWhiteSpace moveHistory then
+      Array.empty<string>
+    else
+      moveHistory.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries ||| StringSplitOptions.TrimEntries)
+      |> Array.filter (fun t -> not (isMoveNumberToken t) && not (isResultToken t))
+
+  let private startsWithSequence (list: string array) (prefix: string array) =
+    if prefix.Length = 0 || list.Length < prefix.Length then
+      false
+    else
+      let mutable ok = true
+      let mutable i = 0
+      while ok && i < prefix.Length do
+        if not (String.Equals(list.[i], prefix.[i], StringComparison.Ordinal)) then
+          ok <- false
+        i <- i + 1
+      ok
+
+  let private drop (n: int) (arr: string array) =
+    if n <= 0 then
+      arr
+    elif n >= arr.Length then
+      Array.empty<string>
+    else
+      arr.[n..]
+
+  /// Returns the 0-based SAN index within the provided `moveHistory` string (ignores move numbers and results).
+  /// If `openingSans` is provided and the sequences start with it, it is ignored for comparison.
+  /// The returned index points into the original SAN sequence of `moveHistory` (i.e., includes any opening SANs
+  /// if they are present in `moveHistory`).
+  [<CompiledName("FirstDeviationIndex")>]
+  let firstDeviationIndex (moveHistory: string) (openingSans: string array) (referenceSans: string array) : Nullable<int> =
+    if isNull moveHistory then
+      Nullable()
+    elif isNull referenceSans || referenceSans.Length = 0 then
+      Nullable()
+    else
+      let currentSans = extractSansFromMoveHistory moveHistory
+      let openingSans = if isNull openingSans then Array.empty<string> else openingSans
+
+      let currentHasOpening = openingSans.Length > 0 && startsWithSequence currentSans openingSans
+      let referenceHasOpening = openingSans.Length > 0 && startsWithSequence referenceSans openingSans
+
+      let currentOffset = if currentHasOpening then openingSans.Length else 0
+      let currentSansTrimmed = if currentHasOpening then drop openingSans.Length currentSans else currentSans
+      let referenceSansTrimmed = if referenceHasOpening then drop openingSans.Length referenceSans else referenceSans
+
+      let max = min currentSansTrimmed.Length referenceSansTrimmed.Length
+      let mutable i = 0
+      let mutable found: int option = None
+
+      while found.IsNone && i < max do
+        if not (String.Equals(currentSansTrimmed.[i], referenceSansTrimmed.[i], StringComparison.Ordinal)) then
+          found <- Some(i + currentOffset)
+        i <- i + 1
+
+      match found with
+      | Some idx -> Nullable(idx)
+      | None ->
+        if currentSansTrimmed.Length > referenceSansTrimmed.Length then
+          Nullable(referenceSansTrimmed.Length + currentOffset)
+        else
+          Nullable()
 
 
 module UCI =

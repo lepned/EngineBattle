@@ -26,7 +26,24 @@
         <MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
             <div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3 hideScroll moveList" style=@moveListStyle>
                 <span class="openingMoves">@OpeningMoves</span>
-                <span> @MoveHistory </span>
+                <span> </span>
+                @if (moveHistoryTokens.Count > 0)
+                {
+                    foreach (var token in moveHistoryTokens)
+                    {
+                        if (token.IsSan && firstDeviationSanIndex.HasValue && token.SanIndex == firstDeviationSanIndex.Value)
+                        {
+                            var index = token.SanIndex + OpeningSansForDeviation.Count();
+                            var prevMove = ReferenceSansForDeviation[index];
+                            <span class="pv-deviation-black">@($"{token.Text} ")</span>
+                            <span>@($"({prevMove}) ")</span>
+                        }
+                        else
+                        {
+                            <span>@($"{token.Text} ")</span>
+                        }
+                    }
+                }
             </div>
         </MudItem>
     }
@@ -42,15 +59,64 @@
     [Parameter] public int MoveListFontSize { get; set; }
     [Parameter] public int MoveListHeight { get; set; }
     [Parameter] public string MoveHistory { get; set; }
+    [Parameter] public IReadOnlyList<string> OpeningSansForDeviation { get; set; } = Array.Empty<string>();
+    [Parameter] public IReadOnlyList<string> ReferenceSansForDeviation { get; set; } = Array.Empty<string>();
 
     private int moveListFontSize = 8;
     private int moveListHeight = 80;
     private string openingStyle = $"font-size:15px";
     private string moveListStyle = "font-size:18px; height: 199px;";
     private string previousMoveHistory;
+    private IReadOnlyList<string> previousReferenceSansForDeviation = Array.Empty<string>();
+    private IReadOnlyList<string> previousOpeningSansForDeviation = Array.Empty<string>();
+    private readonly List<MoveHistoryToken> moveHistoryTokens = new();
+    private int? firstDeviationSanIndex;
+
+    private record MoveHistoryToken(string Text, bool IsSan, int SanIndex);
+
+    private static bool IsMoveNumberToken(string token)
+        => !string.IsNullOrWhiteSpace(token) &&
+           token.EndsWith('.') &&
+           int.TryParse(token.TrimEnd('.'), out _);
+
+    private static bool IsResultToken(string token)
+        => token is "1-0" or "0-1" or "1/2-1/2" or "*";
+
+    private void RebuildMoveHistoryTokensAndDeviation()
+    {
+        moveHistoryTokens.Clear();
+        firstDeviationSanIndex = null;
+
+        var moveHistory = MoveHistory ?? string.Empty;
+        var tokens = moveHistory.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var sanIndex = -1;
+        foreach (var token in tokens)
+        {
+            if (IsMoveNumberToken(token) || IsResultToken(token))
+            {
+                moveHistoryTokens.Add(new MoveHistoryToken(token, false, -1));
+                continue;
+            }
+
+            sanIndex++;
+            moveHistoryTokens.Add(new MoveHistoryToken(token, true, sanIndex));
+        }
+
+        var opening = OpeningSansForDeviation is null ? Array.Empty<string>() : OpeningSansForDeviation.ToArray();
+        var reference = ReferenceSansForDeviation is null ? Array.Empty<string>() : ReferenceSansForDeviation.ToArray();
+        var deviationIndex = ChessLibrary.Utilities.MoveHistoryDeviation.FirstDeviationIndex(moveHistory, opening, reference);
+        if (deviationIndex.HasValue)
+            firstDeviationSanIndex = deviationIndex.Value;
+    }
 
     private async Task ScrollToEnd()
     {
+        if (chessJSmodule is null)
+        {
+            return;
+        }
+
         await chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
     }
 
@@ -232,10 +298,18 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (chessJSmodule is not null && MoveHistory != previousMoveHistory)
+        var referenceChanged = !ReferenceEquals(previousReferenceSansForDeviation, ReferenceSansForDeviation);
+        var openingChanged = !ReferenceEquals(previousOpeningSansForDeviation, OpeningSansForDeviation);
+        if (MoveHistory != previousMoveHistory || referenceChanged || openingChanged)
         {
             previousMoveHistory = MoveHistory;
-            await ScrollToEnd();
+            previousReferenceSansForDeviation = ReferenceSansForDeviation;
+            previousOpeningSansForDeviation = OpeningSansForDeviation;
+            RebuildMoveHistoryTokensAndDeviation();
+            if (chessJSmodule is not null)
+            {
+                await ScrollToEnd();
+            }
         }
     }
 
