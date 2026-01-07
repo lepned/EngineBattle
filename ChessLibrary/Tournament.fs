@@ -1159,6 +1159,23 @@ module Match =
     let mutable numberOfNodes = 0L
     let mutable evalList : EvalType list = []
     let mutable fullEvalList :EvalType list = []
+
+    // Track eval per engine and per move to avoid accidentally reusing the opponent's last ply eval.
+    let lastEvalByEngine = System.Collections.Generic.Dictionary<string, EvalType>()
+    let lastEvalThisMove = System.Collections.Generic.Dictionary<string, EvalType>()
+    do
+      lastEvalByEngine[player1.Name] <- EvalType.NA
+      lastEvalByEngine[player2.Name] <- EvalType.NA
+      lastEvalThisMove[player1.Name] <- EvalType.NA
+      lastEvalThisMove[player2.Name] <- EvalType.NA
+
+    let resetThisMoveEval (engineName: string) =
+      lastEvalThisMove[engineName] <- EvalType.NA
+
+    let setEval (engineName: string) (eval: EvalType) =
+      lastEvalByEngine[engineName] <- eval
+      lastEvalThisMove[engineName] <- eval
+
     let npsList = ResizeArray<float>()
     let gameMoveList = board.ShortSANMovesPlayed
 
@@ -1292,9 +1309,16 @@ module Match =
             moves <- moves + 1
 
             let eval =
-              if evalList.Length > 0 then evalList.[0]
-              elif fullEvalList.Length > 0 then fullEvalList.[0]
-              else EvalType.CP 0.0
+              if evalList.Length > 0 then
+                evalList.[0]
+              else
+                let thisMove = lastEvalThisMove[currentPlaying.Name]
+                if thisMove <> EvalType.NA then
+                  thisMove
+                else
+                  match lastEvalByEngine.TryGetValue currentPlaying.Name with
+                  | true, e when e <> EvalType.NA -> e
+                  | _ -> EvalType.CP 0.0
 
             let pv, pvLong = if currentPlaying.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
             let nps =
@@ -1346,6 +1370,7 @@ module Match =
             depth <- 0
             selfdepth <- 0
             npsList.Clear()
+            resetThisMoveEval currentPlaying.Name
 
             match Adjudication.adjudicateByEval logger board fullEvalList tourny player1.Name player2.Name currentPlaying.Name gametimer gameMoveList moves with
             | Some res ->
@@ -1423,48 +1448,17 @@ module Match =
       let elapsed = int64 moveTimer.Elapsed.TotalMilliseconds
       let diff = elapsed - lastCheck
       let interval = 500
+      let isWhite = engine.Name = player1.Name
 
-      if not tourny.TestOptions.PolicyTest && line.StartsWith "info string" && line.Contains "N:" then
-        let nnMsg = Regex.getInfoStringData engine.Name line 
-        let list = ResizeArray<NNValues>()
-        list.Add nnMsg
-        let mutable cont = not (line.StartsWith "info string node")
-        if not cont && tourny.VerboseLogging then
-          logger.LogDebug "Only one move in log live stats"
-
-        while cont do
-          let! newline = channel.ReadAsync(cts.Token).AsTask() |> Async.AwaitTask
-          if tourny.VerboseLogging then
-            logger.LogDebug($"In info string loop: {engine.Name} {newline}")
-          if String.IsNullOrEmpty newline then
-            cont <- false
-          elif newline.StartsWith "bestmove" then
-            //if tourny.VerboseLogging then logger.LogInformation(board.FEN() + ": new bestmove: " + newline)
-            cont <- false
-          elif newline.StartsWith "info string node" then
-            cont <- false
-          else
-            let msg = Utilities.Regex.getInfoStringData engine.Name newline
-            list.Add msg
-
-        makeShortSan list &board
-        match Utilities.Engine.calcTopNn list with
-        | Some (n1,n2,q1,q2,p1,pt) ->
-            moveInfoData.n1 <- n1; moveInfoData.n2 <- n2
-            moveInfoData.q1 <- q1; moveInfoData.q2 <- q2
-            moveInfoData.p1 <- p1; moveInfoData.pt <- pt
-        | None -> logger.LogDebug "No move found in log live stats"
-        if list.Count > 0 then callback (NNSeq list)
-
-      elif line.StartsWith "info" then
-        let isWhite = engine.Name = player1.Name
-        match Regex.getEssentialDataWithEPS line isWhite with
+      let handleInfoLine (infoLine: string) =
+        match Regex.getEssentialDataWithEPS infoLine isWhite with
         | Some (d, eval, nodes, nps, eps, pvLine, tbhits, wdl, sd, mPv) ->
             numberOfNodes <- nodes
             if d > depth then depth <- d
             if sd > selfdepth then selfdepth <- sd
             npsList.Add(float nps)
             evalList <- eval :: evalList
+            setEval engine.Name eval
             moveInfoData.d <- depth
             moveInfoData.sd <- selfdepth
             moveInfoData.wv <- eval
@@ -1499,6 +1493,41 @@ module Match =
               lastCheck <- elapsed
               callback (Status status)
         | None -> ()
+
+      if not tourny.TestOptions.PolicyTest && line.StartsWith "info string" && line.Contains "N:" then
+        let nnMsg = Regex.getInfoStringData engine.Name line 
+        let list = ResizeArray<NNValues>()
+        list.Add nnMsg
+        let mutable cont = not (line.StartsWith "info string node")
+        if not cont && tourny.VerboseLogging then
+          logger.LogDebug "Only one move in log live stats"
+
+        while cont do
+          let! newline = channel.ReadAsync(cts.Token).AsTask() |> Async.AwaitTask
+          if tourny.VerboseLogging then
+            logger.LogDebug($"In info string loop: {engine.Name} {newline}")
+          if String.IsNullOrEmpty newline then
+            cont <- false
+          elif newline.StartsWith "bestmove" then
+            //if tourny.VerboseLogging then logger.LogInformation(board.FEN() + ": new bestmove: " + newline)
+            cont <- false
+          elif newline.StartsWith "info string node" then
+            cont <- false
+          else
+            let msg = Utilities.Regex.getInfoStringData engine.Name newline
+            list.Add msg
+
+        makeShortSan list &board
+        match Utilities.Engine.calcTopNn list with
+        | Some (n1,n2,q1,q2,p1,pt) ->
+            moveInfoData.n1 <- n1; moveInfoData.n2 <- n2
+            moveInfoData.q1 <- q1; moveInfoData.q2 <- q2
+            moveInfoData.p1 <- p1; moveInfoData.pt <- pt
+        | None -> logger.LogDebug "No move found in log live stats"
+        if list.Count > 0 then callback (NNSeq list)
+
+      elif line.StartsWith "info" then
+        handleInfoLine line
     }
     
     async {
@@ -1550,6 +1579,11 @@ module Match =
                 if currentPos <> board.Position then
                     currentPos <- board.Position
                     let timeConfig = findTimeSetting currentPlaying
+                    evalList <- []
+                    npsList.Clear()
+                    depth <- 0
+                    selfdepth <- 0
+                    resetThisMoveEval currentPlaying.Name
                     if ponderHit then
                         try currentPlaying.PonderHit() with ex -> logger.LogWarning(ex, "Failed to send ponderhit to {Engine}", currentPlaying.Name)                    
                         ponderHit <- false
@@ -1636,6 +1670,22 @@ module Match =
     let mutable numberOfNodes = 0L
     let mutable evalList : EvalType list = []
     let mutable fullEvalList :EvalType list = []
+
+    // Track eval per engine and per move to avoid accidentally reusing the opponent's last ply eval.
+    let lastEvalByEngine = System.Collections.Generic.Dictionary<string, EvalType>()
+    let lastEvalThisMove = System.Collections.Generic.Dictionary<string, EvalType>()
+    do
+      lastEvalByEngine[player1.Name] <- EvalType.NA
+      lastEvalByEngine[player2.Name] <- EvalType.NA
+      lastEvalThisMove[player1.Name] <- EvalType.NA
+      lastEvalThisMove[player2.Name] <- EvalType.NA
+
+    let resetThisMoveEval (engineName: string) =
+      lastEvalThisMove[engineName] <- EvalType.NA
+
+    let setEval (engineName: string) (eval: EvalType) =
+      lastEvalByEngine[engineName] <- eval
+      lastEvalThisMove[engineName] <- eval
     let npsList = ResizeArray<float>()
     let gameMoveList = board.ShortSANMovesPlayed
     let findTimeSetting (player : ChessEngine) =
@@ -1766,33 +1816,39 @@ module Match =
         callback(EndOfGame res)
         return res
       else
-        if position <> pos then          
-          let isWhite = playing.Name = player1.Name        
+        if position <> pos then
+          let isWhite = playing.Name = player1.Name
           let timeLeftTicks = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
           let timeOutInMs = (TimeSpan(timeLeftTicks).TotalMilliseconds |> int32) + 2000
           ct <- (new CancellationTokenSource(timeOutInMs)).Token
-          
+
           moveTimer <- Stopwatch.GetTimestamp()
           pos <- position
+          evalList <- []
+          npsList.Clear()
+          depth <- 0
+          selfdepth <- 0
+          resetThisMoveEval playing.Name
+
           let fenAndMoves = board.PositionWithMoves()
           if tourny.VerboseLogging then
             logger.LogDebug $"Current position: {fenAndMoves}"
           playing.Position fenAndMoves
           lastCheck <- int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
+
           let timeConfig = findTimeSetting playing
-          if tourny.TestOptions.ValueTest then  
+          if tourny.TestOptions.ValueTest then
             if playing.IsLc0 then
               playing.GoNodes 2
             else
               playing.GoValue()
           elif tourny.TestOptions.PolicyTest then
             playing.GoNodes 1
-          elif timeConfig.NodeLimit then            
-              playing.GoNodes timeConfig.Nodes            
-          else            
+          elif timeConfig.NodeLimit then
+            playing.GoNodes timeConfig.Nodes
+          else
             playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
-         
-         
+
         let! lineOrAdj = readLineOrAdjudication playing ct
         match lineOrAdj with
         | Choice2Of2 res -> return res
@@ -1970,8 +2026,15 @@ module Match =
                     moveInfoData.pd <- ponderSan
                     let eval = 
                       if evalList.Length > 0 then evalList.[0] 
-                      elif fullEvalList.Length > 0 then fullEvalList[0] 
-                      else EvalType.CP 0.0
+                      else
+                        //logger.LogInformation($"No eval received for move {move} by {playing.Name} at ply {board.PlyCount}, using last known eval")
+                        let thisMove = lastEvalThisMove[playing.Name]
+                        if thisMove <> EvalType.NA then
+                          thisMove
+                        else
+                          match lastEvalByEngine.TryGetValue playing.Name with
+                          | true, e when e <> EvalType.NA -> e
+                          | _ -> EvalType.CP 0.0
                     //maybe add engineStatus1 and engineStatus2 here
                     let pv, pvLong = if playing.Name = player1.Name then Player1PV, PVLine1 else Player2PV, PVLine2
                     let nps = if npsList.Count > 0 then npsList[npsList.Count - 1] else 0.0
@@ -2030,6 +2093,7 @@ module Match =
                     depth <- 0
                     selfdepth <- 0
                     npsList.Clear()
+                    resetThisMoveEval playing.Name
                 
                     if moveInfoData.q2 > moveInfoData.q1 then                  
                       Q1DifferentFromN1 <- Q1DifferentFromN1 + 1
@@ -2110,9 +2174,9 @@ module Match =
                   while cont do
                     let! newline = playing.ReadLineAsyncWithTimeout cts.Token |> Async.AwaitTask
                     if newline.StartsWith "bestmove" then
-                      cont <- false                 
-                    if newline.StartsWith "info string node" then
-                      cont <- false  
+                      cont <- false
+                    elif newline.StartsWith "info string node" then
+                      cont <- false                    
                     else
                       let msg = Utilities.Regex.getInfoStringData playing.Name newline
                       list.Add msg
@@ -2142,6 +2206,7 @@ module Match =
                       selfdepth <- sd
                     npsList.Add(float nps)
                     evalList <- eval :: evalList
+                    setEval playing.Name eval
                     moveInfoData.d <- depth
                     moveInfoData.sd <- selfdepth
                     moveInfoData.wv <- eval
@@ -2180,6 +2245,8 @@ module Match =
                     lastEngineStatus <- status
                     if diff > interval && eval <> EvalType.NA then                  
                       lastCheck <- elapsed
+                      if playing.Name.ToLower().Contains("lc0") && status.EPS = 0 then
+                        logger.LogInformation $"LC0 is reporting EPS = 0, by {playing.Name} at ply {board.PlyCount}"
                       callback(Status status)
                 
                   |None -> ()

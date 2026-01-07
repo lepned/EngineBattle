@@ -1172,8 +1172,8 @@
 				else
 					evalList.AddEvalData(white, false, b.Info.Eval.Value);
 				nodeList.AddData(white, b.Info.Nodes, false);
-				npsList.AddData(white, b.Info.NPS, true);
-				if (b.Status.EPS > 0)
+				npsList.AddData(white, b.Info.NPS, true);				
+				if (whiteHasEps || blackHasEps)
 					epsList.AddData(white, b.Status.EPS, true);
 				timeUsageList.AddData(white, b.Info.MoveTime.ToTimeSpan().TotalSeconds, false);
 				var pv = b.Info.PV;
@@ -1266,6 +1266,7 @@
 			case ChessLibrary.Tournament.Match.Update.StartOfGame start:
 				try
 				{
+					gameResult = string.Empty;
 					activeGameNr = start.Game.CurrentGameNr;
 					if (layoutOptions.ShowCrosstableBetweenGames)
 					{
