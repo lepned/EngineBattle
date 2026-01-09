@@ -29,13 +29,13 @@
               Filter="FilterFunc">
       <HeaderContent>
         <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Round">R#</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.Moves.Count">M#</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.Mainline.Count">Ply#</MudTableSortLabel></MudTh>
         <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.GetResultSummary(x)">Result</MudTableSortLabel></MudTh>
                 <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPlayersSummary(x)">Players</MudTableSortLabel></MudTh>
       </HeaderContent>
       <RowTemplate>        
         <MudTd DataLabel="G#">@context.GameNumber</MudTd>
-        <MudTd DataLabel="M#">@context.Moves.Count</MudTd>
+        <MudTd DataLabel="M#">@context.Mainline.Count</MudTd>
         <MudTd DataLabel="Result">@Helper.GetResultSummary(context)</MudTd>
         <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPlayersSummary(context)</MudTd>
       </RowTemplate>

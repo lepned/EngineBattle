@@ -137,7 +137,7 @@
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
 
-    var games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+    var games = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
     var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games,minMoveTimeInSecs);
     var minMoveTimeInMs = minMoveTimeInSecs * 1000;
     medianSpeedTable =

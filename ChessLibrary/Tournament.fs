@@ -457,19 +457,17 @@ module Replay =
                 replayBoard.ResetBoardState()
                 tryInitBoard()
                 let mutable idx = 0
-                for m in game.Moves do
-                    if m.WhiteSan <> "" then
-                        let hash = replayBoard.DeviationHash()
-                        replayBoard.PlaySimpleShortSan m.WhiteSan
+                for m in game.Mainline do
+                    let hash = replayBoard.DeviationHash()
+                    replayBoard.PlaySimpleShortSan m.San
+                    if m.Color = "w" then                        
                         if replayBoard.LongSANMovesPlayed.Count > idx then
                             let lastmove = replayBoard.LongSANMovesPlayed[idx]
                             let data : ReplayData = {Engine=game.GameMetaData.White; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}
                             if isWhite then
                                 replayDictWhite[hash] <- data                                
                             idx <- idx + 1
-                    if m.BlackSan <> "" then
-                        let hash = replayBoard.DeviationHash()
-                        replayBoard.PlaySimpleShortSan m.BlackSan
+                    elif m.Color = "b" then
                         if replayBoard.LongSANMovesPlayed.Count > idx then
                             let lastmove = replayBoard.LongSANMovesPlayed[idx]
                             let data : ReplayData = {Engine=game.GameMetaData.Black; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}
@@ -2304,21 +2302,21 @@ module Match =
           epdBook <- true
           EPDExtractor.parseEPDFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
         else
-          PGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
+          FullPGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
       |_ ->
         [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
     
     let gamesAlreadyPlayed = 
       let fileExists = File.Exists tourny.PgnOutPath      
       if fileExists then
-        PGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
       else
         [||]
 
     let referencGamesPlayed =
       let fileExists = File.Exists tourny.ReferencePGNPath
       if fileExists then
-        PGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
       else
         [||]    
       
@@ -2348,7 +2346,7 @@ module Match =
     else
       callback (Update.TotalNumberOfPairs pairings.Length)   
       callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
-      let pgnGameWriterAgent = Parser.PGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+      let pgnGameWriterAgent = Parser.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
       tourny.CurrentGameNr <- numberOfGamesPlayed
       let (tTime, gTime) = estimateTournamentAndGameTime (gamesLeftToPlay.Length) tourny gamesLeftToPlay
       let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
@@ -2411,25 +2409,23 @@ module Match =
             replayBoard.ResetBoardState()
             tryInitBoard()
             let mutable idx = 0
-            for m in game.Moves do
-              if m.WhiteSan <> "" then
+            for m in game.Mainline do
                 let hash = replayBoard.DeviationHash()
-                replayBoard.PlaySimpleShortSan m.WhiteSan
-                if replayBoard.LongSANMovesPlayed.Count > idx then
-                  let lastmove = replayBoard.LongSANMovesPlayed[idx]
-                  let data : ReplayData = {Engine=game.GameMetaData.White; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}                  
-                  if isWhite then
-                    replayDictWhite[hash] <- data
-                  idx <- idx + 1
-              if m.BlackSan <> "" then
-                let hash = replayBoard.DeviationHash()
-                replayBoard.PlaySimpleShortSan m.BlackSan
-                if replayBoard.LongSANMovesPlayed.Count > idx then
-                  let lastmove = replayBoard.LongSANMovesPlayed[idx]
-                  let data : ReplayData = {Engine=game.GameMetaData.Black; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}                  
-                  if isWhite |> not then
-                    replayDictBlack[hash] <- data
-                  idx <- idx + 1
+                replayBoard.PlaySimpleShortSan m.San
+                if m.Color = "w" then
+                    if replayBoard.LongSANMovesPlayed.Count > idx then
+                        let lastmove = replayBoard.LongSANMovesPlayed[idx]
+                        let data : ReplayData = {Engine=game.GameMetaData.White; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}                  
+                        if isWhite then
+                            replayDictWhite[hash] <- data
+                        idx <- idx + 1
+                elif m.Color = "b" then
+                    if replayBoard.LongSANMovesPlayed.Count > idx then
+                        let lastmove = replayBoard.LongSANMovesPlayed[idx]
+                        let data : ReplayData = {Engine=game.GameMetaData.Black; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}                  
+                        if isWhite |> not then
+                            replayDictBlack[hash] <- data
+                        idx <- idx + 1
 
           let moves = 
             match lastRelevantGame with
@@ -2484,9 +2480,17 @@ module Match =
           sbDev.Clear() |> ignore
           
         else
-          let limit = (tourny.Opening.OpeningsPly / 2) + (tourny.Opening.OpeningsPly % 2 )
-          let openingMoves = pair.Opening.Moves |> Seq.truncate(limit)
-          let completeGame = openingMoves |> Seq.fold(fun state m -> sprintf "%s %s %s" state m.WhiteSan m.BlackSan) ""
+          let limit = tourny.Opening.OpeningsPly
+          let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
+          let completeGame =             
+              openingMoves 
+              |> Seq.mapi(fun i m ->                   
+                    if m.Color = "w" then
+                      sprintf "%d. %s" m.MoveNumber m.San
+                    else
+                      sprintf "%s" m.San)
+              |> String.concat " "
+            
           logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
           board.ResetBoardState()
           if pair.Opening.Fen = "" then
@@ -2496,14 +2500,10 @@ module Match =
             board.LoadFen(pair.Opening.Fen)
             board.StartPosition <- pair.Opening.Fen
             tourny.IsChess960 <- board.IsFRC
-          let mutable moveIndex = 0
+          
           if not epdBook then
             for m in openingMoves do
-              board.PlayOpeningMove m.WhiteSan
-              moveIndex <- moveIndex + 1
-              if m.BlackSan <> "" then
-                board.PlayOpeningMove m.BlackSan
-                moveIndex <- moveIndex + 1
+              board.PlayOpeningMove m.San             
             
           let posWithMoves =
             let fen = board.StartPosition
@@ -2587,7 +2587,7 @@ module Match =
           if result.Reason <> ResultReason.Cancel 
             && not cts.IsCancellationRequested 
             && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
-            pgnGameWriterAgent.Post (Parser.PGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
+            pgnGameWriterAgent.Post (Parser.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
             //PGNHelper.writePgnGame tourny.PgnOutPath gameData moveSection result
           if tourny.VerboseLogging then
             logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
@@ -2605,7 +2605,7 @@ module Match =
       
       let res = ResizeArray<Result>(results)
       callback (Update.PeriodicResults res)
-      pgnGameWriterAgent.Post(Parser.PGNParser.Dispose)
+      pgnGameWriterAgent.Post(Parser.FullPGNParser.Dispose)
       pgnGameWriterAgent.Dispose()      
       return results
   }
@@ -2629,21 +2629,21 @@ module Match =
           epdBook <- true
           EPDExtractor.parseEPDFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
         else
-          PGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
+          FullPGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
       |_ ->
         [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
    
     let gamesAlreadyPlayed = 
       let fileExists = File.Exists tourny.PgnOutPath
       if fileExists then
-        PGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
       else
         [||]
     
     let referencGamesPlayed =
       let fileExists = File.Exists tourny.ReferencePGNPath
       if fileExists then
-        PGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
       else
         [||]
     
@@ -2669,7 +2669,7 @@ module Match =
     if gamesLeftToPlay.Length = 0 then
       return results    
     else
-      let pgnGameWriterAgent = Parser.PGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+      let pgnGameWriterAgent = Parser.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
       callback (Update.TotalNumberOfPairs pairings.Length)      
       callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))      
       tourny.CurrentGameNr <- numberOfGamesPlayed
@@ -2698,9 +2698,17 @@ module Match =
         if cts.IsCancellationRequested then
           sb.Clear() |> ignore
         else
-          let limit = (tourny.Opening.OpeningsPly / 2) + (tourny.Opening.OpeningsPly % 2 )
-          let openingMoves = pair.Opening.Moves |> Seq.truncate(limit)
-          let completeGame = openingMoves |> Seq.fold(fun state m -> sprintf "%s %s %s" state m.WhiteSan m.BlackSan) ""
+          let limit = tourny.Opening.OpeningsPly
+          let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
+          let completeGame =             
+              openingMoves 
+              |> Seq.mapi(fun i m ->                   
+                    if m.Color = "w" then
+                      sprintf "%d. %s" m.MoveNumber m.San
+                    else
+                      sprintf "%s" m.San)
+              |> String.concat " "
+          
           logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
           board.ResetBoardState()
           if pair.Opening.Fen = "" then
@@ -2713,11 +2721,8 @@ module Match =
           let mutable moveIndex = 0
           if not epdBook then
             for m in openingMoves do
-              board.PlayOpeningMove m.WhiteSan
-              moveIndex <- moveIndex + 1
-              if m.BlackSan <> "" then
-                board.PlayOpeningMove m.BlackSan
-                moveIndex <- moveIndex + 1
+              board.PlayOpeningMove m.San
+              
           else
             board.ResetBoardState()
             board.LoadFen pair.Opening.Fen
@@ -2817,7 +2822,7 @@ module Match =
           
           let moveSection = sb.ToString()
           if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
-            pgnGameWriterAgent.Post (Parser.PGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
+            pgnGameWriterAgent.Post (Parser.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
             
           if tourny.VerboseLogging then
             logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
@@ -2839,7 +2844,7 @@ module Match =
       
       let res = ResizeArray<Result>(results)
       callback (Update.PeriodicResults res)
-      pgnGameWriterAgent.Post(Parser.PGNParser.Dispose)
+      pgnGameWriterAgent.Post(Parser.FullPGNParser.Dispose)
       pgnGameWriterAgent.Dispose()      
       return results
   }
@@ -2864,7 +2869,7 @@ module Match =
           let all = EPDExtractor.parseEPDFile path |> Seq.truncate tourny.Rounds |> Seq.toArray 
           all
         else
-          let all = PGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
+          let all = FullPGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
           if tourny.VerboseLogging then
             logger.LogInformation $"Total number of openings in PGN = {all.Length}"
           all
@@ -2874,14 +2879,14 @@ module Match =
     let gamesAlreadyPlayed = 
       let fileExists = File.Exists tourny.PgnOutPath      
       if fileExists then
-        PGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
       else
         [||]    
     
     let referencGamesPlayed =
       let fileExists = File.Exists tourny.ReferencePGNPath
       if fileExists then
-        PGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
       else
         [||]
     let gamesToPlay = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
@@ -2918,16 +2923,16 @@ module Match =
       return results |> Seq.toList    
     
     else
-      let pgnGameWriterAgent = Parser.PGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+      let pgnGameWriterAgent = Parser.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
       callback (Update.TotalNumberOfPairs allPairings.Length) 
       callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
       let lastGame = gamesAlreadyPlayed |> Seq.tryLast
       let pairings = 
         match lastGame, allPairings.Length > numberOfGamesPlayed with
         |Some last, true ->               
-            if last.Moves.Count > 0 then
-              let lastMove = last.Moves |> Seq.last
-              if lastMove.BlackComment.Contains "cancelled" || lastMove.WhiteComment.Contains "cancelled" then
+            if last.Mainline.Count > 0 then
+              let lastMove = last.Mainline |> Seq.last
+              if lastMove.Comment.Contains "cancelled" || lastMove.Comment.Contains "cancelled" then
                 allPairings |> List.skip (numberOfGamesPlayed - 1)
               else
                 allPairings |> List.skip numberOfGamesPlayed
@@ -3059,9 +3064,17 @@ module Match =
                         if cts.IsCancellationRequested then
                           () //todo
                         else
-                          let limit = (tourny.Opening.OpeningsPly / 2) + (tourny.Opening.OpeningsPly % 2 )
-                          let openingMoves = pair.Opening.Moves |> Seq.truncate(limit)
-                          let completeGame = openingMoves |> Seq.fold(fun state m -> sprintf "%s %s %s" state m.WhiteSan m.BlackSan) ""
+                          let limit = tourny.Opening.OpeningsPly
+                          let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
+                          let completeGame =             
+                              openingMoves 
+                              |> Seq.mapi(fun i m ->                   
+                                    if m.Color = "w" then
+                                      sprintf "%d. %s" m.MoveNumber m.San
+                                    else
+                                      sprintf "%s" m.San)
+                              |> String.concat " "
+                          
                           if tourny.VerboseLogging then
                             logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
                 
@@ -3072,14 +3085,10 @@ module Match =
                             currentBoard.LoadFen pair.Opening.Fen
                             currentBoard.StartPosition <- pair.Opening.Fen
                             tourny.IsChess960 <- currentBoard.IsFRC
-                          let mutable moveIndex = 0
+                          
                           if not epdBook then
                             for m in openingMoves do
-                              currentBoard.PlayOpeningMove m.WhiteSan
-                              moveIndex <- moveIndex + 1
-                              if m.BlackSan <> "" then
-                                currentBoard.PlayOpeningMove m.BlackSan
-                                moveIndex <- moveIndex + 1
+                              currentBoard.PlayOpeningMove m.San                              
             
                           let posWithMoves =
                             let fen = currentBoard.StartPosition
@@ -3131,7 +3140,7 @@ module Match =
 
                               let moveSection = sb.ToString()
                               if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
-                                pgnGameWriterAgent.Post (Parser.PGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))                                
+                                pgnGameWriterAgent.Post (Parser.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))                                
                               if tourny.VerboseLogging then
                                 logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
                               return result, pair
@@ -3157,8 +3166,8 @@ module Match =
       
       let res = ResizeArray<Result>(results)
       callback (Update.PeriodicResults res)
-      let games = pgnGameWriterAgent.PostAndReply(fun reply -> Parser.PGNParser.GetPGNGames(reply))
-      pgnGameWriterAgent.Post(Parser.PGNParser.Dispose)
+      let games = pgnGameWriterAgent.PostAndReply(fun reply -> Parser.FullPGNParser.GetPGNGames(reply))
+      pgnGameWriterAgent.Post(Parser.FullPGNParser.Dispose)
       pgnGameWriterAgent.Dispose()
       if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then        
           let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
@@ -3188,7 +3197,7 @@ module Match =
                 let all = EPDExtractor.parseEPDFile path |> Seq.truncate tourny.Rounds |> Seq.toArray 
                 all
             else
-                let all = PGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
+                let all = FullPGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
                 if tourny.VerboseLogging then
                     logger.LogInformation $"Total number of openings in PGN = {all.Length}"
                 all
@@ -3198,14 +3207,14 @@ module Match =
         let gamesAlreadyPlayed = 
             let fileExists = File.Exists tourny.PgnOutPath      
             if fileExists then
-                PGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+                FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
             else
                 [||]    
     
         let referencGamesPlayed =
             let fileExists = File.Exists tourny.ReferencePGNPath
             if fileExists then
-                PGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+                FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
             else
                 [||]
         let gamesToPlay = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
@@ -3290,7 +3299,7 @@ module Match =
                 |> Map.ofArray
 
             // 3) PGN writer agent stays the same
-            let pgnAgent = Parser.PGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+            let pgnAgent = Parser.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
 
             // a thread‐safe result collector
             let results = System.Collections.Concurrent.ConcurrentBag<Result>()
@@ -3345,9 +3354,17 @@ module Match =
                             |_ -> 
                               currentBoard.LoadFen Chess.startPos
                             tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
-                            let limit = (tourny.Opening.OpeningsPly / 2) + (tourny.Opening.OpeningsPly % 2 )
-                            let openingMoves = pair.Opening.Moves |> Seq.truncate(limit)
-                            let completeGame = openingMoves |> Seq.fold(fun state m -> sprintf "%s %s %s" state m.WhiteSan m.BlackSan) ""
+                            let limit = tourny.Opening.OpeningsPly
+                            let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
+                            let completeGame =             
+                              openingMoves 
+                              |> Seq.mapi(fun i m ->                   
+                                    if m.Color = "w" then
+                                      sprintf "%d. %s" m.MoveNumber m.San
+                                    else
+                                      sprintf "%s" m.San)
+                              |> String.concat " "
+                            
                             if tourny.VerboseLogging then
                                 logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
                 
@@ -3361,11 +3378,7 @@ module Match =
                             let mutable moveIndex = 0
                             if not epdBook then
                                 for m in openingMoves do
-                                    currentBoard.PlayOpeningMove m.WhiteSan
-                                    moveIndex <- moveIndex + 1
-                                    if m.BlackSan <> "" then
-                                        currentBoard.PlayOpeningMove m.BlackSan
-                                    moveIndex <- moveIndex + 1
+                                    currentBoard.PlayOpeningMove m.San                                    
             
                             let posWithMoves =
                                 let fen = currentBoard.StartPosition
@@ -3418,7 +3431,7 @@ module Match =
 
                             let moveSection = sb.ToString()
                             if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
-                                pgnAgent.Post (Parser.PGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))                                
+                                pgnAgent.Post (Parser.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))                                
                             if tourny.VerboseLogging then
                                 logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
                             return result, pair
@@ -3464,8 +3477,8 @@ module Match =
             
             let res = ResizeArray<Result>(results)
             callback (Update.PeriodicResults res)
-            let games = pgnAgent.PostAndReply(fun reply -> Parser.PGNParser.GetPGNGames(reply))
-            pgnAgent.Post(Parser.PGNParser.Dispose)
+            let games = pgnAgent.PostAndReply(fun reply -> Parser.FullPGNParser.GetPGNGames(reply))
+            pgnAgent.Post(Parser.FullPGNParser.Dispose)
             pgnAgent.Dispose()
             if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then        
                 let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
@@ -3602,7 +3615,7 @@ module Manager =
             failwith "PgnOutPath is not set in tournament.json"
           match pgnReader with
           |None -> 
-            Parser.PGNParser.startPgnGameReaderWriter tournament.PgnOutPath
+            Parser.FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
           |Some pgnReader -> pgnReader
         and set(value) = pgnReader <- Some value     
 
@@ -3722,7 +3735,7 @@ module Manager =
     member x.GetResults() : ResizeArray<Result> = 
       let fileExists = File.Exists tournament.PgnOutPath
       if fileExists then
-        let results = x.PgnReader.PostAndReply(fun reply -> Parser.PGNParser.GetResults reply )
+        let results = x.PgnReader.PostAndReply(fun reply -> Parser.FullPGNParser.GetResults reply )
         results        
       else              
         ResizeArray<Result>()
@@ -3730,7 +3743,7 @@ module Manager =
     member x.GetPGNGames() : ResizeArray<PgnGame> = 
       let fileExists = File.Exists tournament.PgnOutPath
       if fileExists then
-        let results = x.PgnReader.PostAndReply(fun reply -> Parser.PGNParser.GetPGNGames reply )
+        let results = x.PgnReader.PostAndReply(fun reply -> Parser.FullPGNParser.GetPGNGames reply )
         results        
       else              
         ResizeArray<PgnGame>()

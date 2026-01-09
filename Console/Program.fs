@@ -644,6 +644,17 @@ module Program =
     if test then      
       try 
         let start = Stopwatch.GetTimestamp()
+        let parsedGames = Parser.FullPGNParser.parsePgnFile TestPath.frcLichess
+        for g in parsedGames do
+            if g.GameNumber % 100000 = 0 then
+                if String.IsNullOrEmpty g.Raw then
+                    let raw = Parser.FullPGNParser.toPgnString g
+                    printfn "\n%s" raw 
+                else
+                    printfn "\n%s" g.Raw                
+       
+        printfn "Total games parsed: %d" (parsedGames.Count())
+        let stop = 1
         //let games, total = Test.removeEPFensInPGNFile TestPath.pgnTest17
         //printfn "Total games processed: %d, removed: %d" total (total - games.Length)
         //let pgnFile = "C:/Dev/Chess/PGNs/Results/UHO_4060_v4_epRemoved.pgn"
@@ -691,7 +702,7 @@ module Program =
         //Test.smallPerftTestSample 5        
         let mutable time = int64 (Stopwatch.GetElapsedTime(start).TotalMilliseconds)
         let ts = TimeSpan.FromMilliseconds(float time)
-        printfn "Time: %A" ts
+        printfn "\nTime: %A" ts
 
         0
       with

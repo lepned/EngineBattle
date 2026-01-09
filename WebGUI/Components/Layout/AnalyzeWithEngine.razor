@@ -1219,17 +1219,9 @@
         board.ResetBoardState();
         board.StartPosition = fenP;
         board.LoadFen(fenP);
-        foreach (var row in game.Moves)
-        {
-            if (row.WhiteSan != "")
-            {
-                board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
-            }
-
-            if (row.BlackSan != "")
-            {
-                board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
-            }
+        foreach (var ply in game.Mainline)
+        {            
+            board.PlaySimpleShortSanWithComments(ply.San, ply.Comment);           
         }
 
         fen = board.FEN();        

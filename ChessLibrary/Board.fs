@@ -1597,20 +1597,11 @@ type Board() =
     member this.PlayPgnToPly (pgn : PGNTypes.PgnGame, lastPly : int) =
       this.ResetBoardState()
       if String.IsNullOrEmpty(pgn.Fen) |> not then         
-        this.LoadFen(pgn.Fen)
-        
-      let movesFromPgn (pgn:PGNTypes.PgnGame) =
-        [
-        for m in pgn.Moves do
-          if m.WhiteSan <> "" then
-            m.WhiteSan
-          if m.BlackSan <> "" then
-            m.BlackSan ]      
-      let mutable plyIdx = 0
-      for m in movesFromPgn pgn do
-        if plyIdx <= lastPly then
-          this.PlaySimpleShortSan m
-          plyIdx <- plyIdx + 1      
+        this.LoadFen(pgn.Fen)            
+      
+      for m in pgn.Mainline do
+        if m.Ply <= lastPly then
+          this.PlaySimpleShortSan m.San               
       let movesAndFen = this.MovesAndFenPlayed |> Seq.last
       movesAndFen
 
@@ -1620,23 +1611,13 @@ type Board() =
         if String.IsNullOrEmpty(pgn.Fen) then 
           Misc.startPosition
         else pgn.Fen
-      this.LoadFen(fen)
-      let mutable moveidx = 1
-      for m in pgn.Moves do
-        let moveNr = int m.MoveNr
-        if moveNr < lastMove then
-          this.PlaySimpleShortSan m.WhiteSan
-          if m.BlackSan <> "" then
-            this.PlaySimpleShortSan m.BlackSan
-          moveidx <- moveidx + 1
-        elif moveNr = lastMove then
-          if color = "w" then
-            this.PlaySimpleShortSan m.WhiteSan
-            moveidx <- moveidx + 1
-          elif color = "b" then
-            this.PlaySimpleShortSan m.WhiteSan
-            this.PlaySimpleShortSan m.BlackSan
-            moveidx <- moveidx + 1
+      this.LoadFen(fen)      
+      for m in pgn.Mainline do        
+        if m.Ply < lastMove then
+          this.PlaySimpleShortSan m.San          
+        elif m.Ply = lastMove then          
+            this.PlaySimpleShortSan m.San
+
       let movesAndFen = this.MovesAndFenPlayed |> Seq.last
       movesAndFen
     
@@ -1851,11 +1832,8 @@ module Deviation =
     //collect all moves in a pgn-game
   let movesFromPgn (pgn:PGNTypes.PgnGame) =
     [
-      for m in pgn.Moves do
-        if m.WhiteSan <> "" then
-          m.WhiteSan
-        if m.BlackSan <> "" then
-          m.BlackSan ]
+      for m in pgn.Mainline -> m.San 
+    ]
 
   type MoveStore = {Move: string; Fen: string; White: string; Black:string; Hash: UInt64; MoveNr: int }
     with static member Empty = {Move=""; Fen=""; White=""; Black=""; Hash=0UL; MoveNr=0}

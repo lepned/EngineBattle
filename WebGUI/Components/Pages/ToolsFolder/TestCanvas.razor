@@ -112,7 +112,7 @@
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
 
-    PGNgames = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+    PGNgames = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
     File.Delete(fullPath);    
     StateHasChanged();    
   }

@@ -1559,12 +1559,9 @@
 				return;
 
 			var sans = new List<string>();
-			foreach (var move in previousPairGame.Moves)
-			{
-				if (!string.IsNullOrWhiteSpace(move.WhiteSan))
-					sans.Add(move.WhiteSan.Trim());
-				if (!string.IsNullOrWhiteSpace(move.BlackSan))
-					sans.Add(move.BlackSan.Trim());
+			foreach (var move in previousPairGame.Mainline)
+			{				
+				sans.Add(move.San.Trim());				
 			}
 
 			referenceSansForDeviation = sans;

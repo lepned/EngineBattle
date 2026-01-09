@@ -522,7 +522,7 @@
 
     private async Task LoadPGNGame(string pastedText)
     {
-        var parsedPgnGame = Parser.PGNParser.parseFullPgnGame(pastedText);
+        var parsedPgnGame = Parser.FullPGNParser.parseFullPgnGame(pastedText);
         await LoadPgnGameWithVariations(parsedPgnGame);
     }
 
@@ -826,7 +826,7 @@
             await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
         }
 
-        games = Parser.PGNParser.parsePgnFile(fullPath).Take(4000).ToList();
+        games = Parser.FullPGNParser.parsePgnFile(fullPath).Take(4000).ToList();
         gameIndex = 0;
         File.Delete(fullPath);
         await OpenPGNDialog();

@@ -225,8 +225,6 @@ let displayChessMetrics wins draws losses  =
 
 // Example usage:
 displayChessMetrics 0 1 1
-
-
 let a = -2
 let b = -1
 let diff = abs (a - b)
@@ -424,28 +422,6 @@ match fenT1 with
 let input = "rbqknnbr/pppppppp/8/8/8/8/PPPPPPPP/QBNRBNKR w KQkq - 0 1 moves d2d4 d7d5 e2e4 g8f6"
 let input1 = "rbqknnbr/pppppppp/8/8/8/8/PPPPPPPP/QBNRBNKR w KQkq - 0 1 moves"
 
-let parseFENandMoves (fenMoves : string) =
-    let parts = fenMoves.Split ([| "moves" |], System.StringSplitOptions.RemoveEmptyEntries)
-    let fen = parts.[0].Trim()
-    let moves = if parts.Length > 1 then parts.[1].Trim().Split ' ' else [||]
-    (fen, moves)
-
-// Usage Example
-let fen, moves = parseFENandMoves input
-printfn "FEN: %s and moves: %A" fen moves
-let fen1, moves1 = parseFENandMoves input1
-printfn "FEN: %s and moves: %A" fen1 moves1
-
-
-
-let number = 1UL <<< 2
-let reversed (binary:string) = System.String(Array.rev (binary.ToCharArray()))
-
-//print binary representation
-let printBinary (number : uint64) = Convert.ToString(int64 number, 2) |> reversed |> printfn "%s"
-
-printBinary number
-
 //test perft chess960 positions
 let path = "C:/Dev/Chess/chess960.txt"
 type Chess960Record = {
@@ -539,19 +515,6 @@ let antiDiagonalMask (square: int) : uint64 =
         baseAntiDiagonal <<< ((7 - antiDiagonalSum) * 8)
     else
         baseAntiDiagonal
-let square = 1// Your square index (0 to 63)
-let mask = diagonalMask square
-let antiDiagMask = antiDiagonalMask square
-
-//create anti diagonal masks for each square on the first rank and put it in a list hardcoded
-
-//let antiDiagonalMasks = [ 0UL; 258UL; 66052UL; 16909320UL;    ]
-
-
-//let diagonalMasks = [ for i in 0 .. 7 -> diagonalMask i ]
-//let antiDiagonalMasks = [ for i in 0 .. 7 -> antiDiagonalMask i ]
-
-
 
 let extractLSBsFromFiles bitboard = 
   FileMasks
@@ -621,24 +584,18 @@ let createRookMask startSq finalSq =
 
 //pre compute a 2D array with rook masks where fromSq is one index and toSq the second index
 let RookMasks = Array2D.init 8 8 (fun fromSq toSq -> createRookMask fromSq toSq)
-
 let getRookMask fromSq toSq = RookMasks.[fromSq, toSq]
-
 
 //create a function that returns the Rook mask for a given fromSq and toSq
 let getRookMaskWithOccupancy fromSq toSq occupancy = 
   (RookMasks.[fromSq, toSq] &&& occupancy) |> extractLSBsFromFiles
 
 //test of bitboard functions
-
 let rookMask1 = getRookMaskWithOccupancy 1 2 8589934592UL
 let rookMask2 = getRookMaskWithOccupancy 1 2 562958543486976UL
 let rookMask3 = getRookMaskWithOccupancy 1 5 2858842304152576UL
 let rookMask4 = getRookMaskWithOccupancy 1 6 2858842304152576UL
 let rookMask5 = getRookMaskWithOccupancy 1 7 2858842304152576UL
-
-let bishopMask1 = getBishopMaskWithOccupancy 4 6 1165499572716544UL
-
 
 //assuming 4 games per round in a gauntlet tournament
 let transformInput (input: string) =
@@ -657,8 +614,6 @@ let transformInput (input: string) =
 
 let result = transformInput "8.1"
 result
-
-
 
 let generateAllChess960Positions () =
     let positions = 
@@ -707,7 +662,6 @@ let testPositions () =
 let allPositionsValid = testPositions ()
 printfn "All positions have the king between the rooks and bishops on different colored squares: %b" allPositionsValid
 
-
 type FinalResult = 
     | WhiteWins
     | Draw
@@ -751,35 +705,6 @@ examples |> List.iter (fun example ->
     | None -> 
         printfn "Invalid input or FEN not found"
 )
-
-
-
-
-//let extractFen (input: string) =
-//    let parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-    
-//    // Find the index of the chess position part
-//    let positionIndex = parts |> Array.findIndex (fun part -> part.Contains("/"))
-    
-//    if positionIndex >= 0 then
-//        // Extract the chess position and the rest of the FEN fields
-//        let fenParts = parts.[positionIndex..(positionIndex + 5)]
-//        Some(String.Join(" ", fenParts))
-//    else
-//        None
-
-//let examples = [
-//    "1 0  7K/P7/8/4k1P1/8/8/3p4/8 w - - 0 0"
-//    "-1 0  8/4k3/p7/7K/3P4/8/7P/8 w - - 0 0"
-//    "0 -1  8/3K4/8/2P4k/7P/8/4p3/8 w - - 0 0"
-//]
-
-//examples |> List.iter (fun example ->
-//    match extractFen example with
-//    | Some fen -> printfn "%s" fen
-//    | None -> printfn "No FEN found"
-//)
-
 
 let baseUrl = "https://tablebase.lichess.ovh/tables/standard/7/4v3_pawnful/"
 
@@ -835,18 +760,9 @@ let downloadFilesParallel (files: string list) (destinationDir: string) =
     |> Async.Parallel
     |> Async.RunSynchronously
 
-// Download all files
-//filesToDownload
-//|> List.iter (fun file ->
-//    downloadFile file destinationDir |> Async.RunSynchronously
-//    printfn "Downloaded %s" file
-//)
-
 downloadFilesParallel filesToDownload destinationDir
 
 printfn "All files downloaded successfully!"
-
-
 
 type EPDDetails = {
     RawInput: string
@@ -881,52 +797,6 @@ let extractDetails (input: string) =
     let id = if idMatch.Success then Some idMatch.Groups.[1].Value else None
 
     { RawInput = input; Fen = fen; BestMove = bestMove; AvoidMove = avoidMove; Id = id }
-
-
-//let parseEpd input = 
-//    let epdRegexPattern = @"^(?<fen>([rnbqkpRNBQKP1-8]+/){7}[rnbqkpRNBQKP1-8]+\s[bw]\s[KQkq-]+\s[a-h1-8-]+(\s\d+)?(\s\d+)?)"
-
-
-//    let isMatch = Regex.Match(input, epdRegexPattern)
-//    if isMatch.Success then 
-//        let fen = isMatch.Groups.["fen"].Value.Trim()
-//        let fenParts = fen.Split(' ')
-//        let adjustedFen = if fenParts.Length < 6 then fen + " 0 1" else fen
-//        Some { 
-//            RawInput = input
-//            Fen = fen //adjustedFen
-//            BestMove = if isMatch.Groups.["bestmove"].Success then Some isMatch.Groups.["bestmove"].Value else None
-//            Id = if isMatch.Groups.["id"].Success then Some isMatch.Groups.["id"].Value else None 
-//        }
-//    else
-//        None
-
-
-//let testString = """r1b1r1k1/1pqn1pbp/p2pp1p1/P7/1n1NPP1Q/2NBBR2/1PP3PP/R6K w - - bm f5; id "ERET 003 - Linienoeffnen";"""
-//let result = extractDetails testString
-//printfn "%A" result
-
-//let parseEpd1 input =
-//    let pattern = @"^(?<fen>[^;]+?)(?: bm (?<bestmove>\w+))?(?:;\s*id ""(?<id>.*?))?;$" //@"^(?<fen>.*?(?:\d \d)?)(?: bm (?<bestmove>\w+))?;$"  // @"^(?<fen>[^;]+?) (bm (?<bestmove>\w+);)?$"
-//    let isMatch = Regex.Match(input, pattern)
-    
-//    if isMatch.Success then
-//        {
-//            RawInput = input
-//            Fen = isMatch.Groups.["fen"].Value.Trim()
-//            BestMove = 
-//                if isMatch.Groups.["bestmove"].Success then
-//                    Some isMatch.Groups.["bestmove"].Value
-//                else
-//                    None
-//            Id = 
-//                if isMatch.Groups.["id"].Success then
-//                    Some isMatch.Groups.["id"].Value
-//                else
-//                    None
-//        }
-//    else
-//        failwith "Invalid EPD format"
 
 // Test
 //let input1 = """5qk1/pr3p2/1pn3p1/2p1P1Bp/2Qr3P/6P1/PP3PB1/4R1K1 w - - bm Qb3;"""
@@ -970,10 +840,8 @@ let inputs = [
     """3r2k1/6q1/1bb1p3/p1p1PrPp/PpP2B1R/1N1PQ3/2P1K3/5R2 b - - 3 89 am Qg6; id "Blunderbase p.1 - Middlegame";"""
 ]
 
-let results = inputs |> List.map extractDetails
-
-
-results |> List.iter (printfn "%A")
+//let results = inputs |> List.map extractDetails
+//results |> List.iter (printfn "%A")
 
 
 let appendFilesToMaster (folderPath: string) (masterFilePath: string) =
@@ -995,9 +863,7 @@ let folderPath = @"C:/Dev/Chess/Ordo/PGNs"
 let masterFilePath = @"C:/Dev/Chess/Ordo/PGNs/master.pgn"
 appendFilesToMaster folderPath masterFilePath
 
-
 //move deviations
-
 let mainGame = "1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qe3 g6 5.Bd2 Bg7 6.Na3 Nge7 *"
 let otherGames = [
     "1.e4 e5 2.d4 exd4 3.Qxd4 Nc6 4.Qe3 g6 5.Bd2 Bg7 6.Na3 Nge7 *";
@@ -1055,8 +921,6 @@ let whitePV1 = "1.d4 d5 2.c4 e6 3.Nf3 Nf6"
 let blackPV1 = "1... d5 2.c4 e6 3.Nf3"
 let testBlack = calcPVagreement whitePV1 blackPV1 "black"
 
-
-
 type Pairing = {Opening:string; White: string; Black: string }
 
 // A type to represent a player with a seed number and a name
@@ -1110,8 +974,6 @@ let players =
 
 let tournamentTree = createTournamentTree players
 printTournamentTree tournamentTree
-
-
 
 // A function that takes a list of players and returns a list of matches for the first round of the knock-out tournament
 let createBracket players =
@@ -1177,51 +1039,13 @@ let playerss = [
   { Seed = 5; Name = "Eve" };
   { Seed = 6; Name = "Frank" };
   { Seed = 7; Name = "Grace" };
-  { Seed = 8; Name = "Harry" };
-
-]
+  { Seed = 8; Name = "Harry" };]
 
 // Create the knock-out tournament tree for these players
 let tree = knockOutTree playerss
-
-
-
-let median (nums: _ list) =
-    let sortedNums = List.sort nums
-    let length = List.length sortedNums
-    match length % 2 with
-    | 0 ->
-        let idx1 = length / 2 - 1
-        let idx2 = length / 2
-        (sortedNums.Item idx1 + sortedNums.Item idx2) / 2.0
-    | _ ->
-        float (sortedNums.Item (length / 2))
-
-// Test the median function
-let numbers = [3.0; 1.0; 4.0; 1.0; 5.0; 9.0]
-let numbersInt = [3; 1; 4; 1; 5; 9]
-printfn "Median: %A" (median numbers)
-
-
-
-let calculateRRTournamentTime (numPlayers: int) =
-  let gamesPerPlayer = numPlayers - 1
-  let minutesPerGame = 60
-  let totalGames = numPlayers * gamesPerPlayer / 2 // divide by 2 because each game involves two players
-  totalGames * minutesPerGame
-
-
-//# PLAYER                  :  RATING  ERROR  POINTS  PLAYED  (%) CFS(%)    W    D    L D(%)
-//Ceres 0.97RC3-t81-swa-1096:     0.0   ----     9.5      16   59    ---    5    9    2   56
-//Dragon_8cpu               :     0.0   88.7     4.0       8   50     24    2    4    2   50
-//Berserk_8cpu              :  -137.0   65.1     2.5       8   31     24    0    5    3   62
-
-
-open MathNet.Numerics.Distributions
-
 SpecialFunctions.Erf 0.99
 
-// Your code using Math.NET Numerics goes here
+open MathNet.Numerics.Distributions
 
 // Constants and variables
 let scorePercentage = 0.9999999 // Example score percentage (88.2%)
@@ -1246,8 +1070,7 @@ let erf x n =
 
   // Convert CFS to percentage
   let cfsPercentage = cfs * 100.0
-  cfsPercentage
- 
+  cfsPercentage 
 
 let likelihoodSuperiority wins draws losses =
   //0.5f * (1 + (float)ErrorFunction.Erf((wins - losses) / MathF.Sqrt(2 * wins + 2 * losses)));
@@ -1262,79 +1085,3 @@ let cfs = erf 0.5 100
 
 printfn "Better: %A" better
 printfn "CFS: %A" cfs
-
-
-let calc = 
-  let sb = System.Text.StringBuilder()
-  let appendLine (txt:string) = sb.AppendLine txt |> ignore
-
-  let writeResultHeader =
-    sprintf "%-25s : %7s %6s %7s %7s %4s %6s %4s %4s %4s %4s" "# PLAYER" "RATING" "ERROR" "POINTS" "PLAYED" "(%)" "CFS(%)" "W" "D" "L" "D(%)"
-
-  let writeEngineLine player rating error points played percent cfs w d l dpercent =
-    sprintf "%-25s : %7.1f %6.1f %7.1f %7d %4d %6d %4d %4d %4d %4d" player rating error points played percent cfs w d l dpercent
-
-  let writeEngineLineBase player rating error points played percent cfs w d l dpercent =
-    sprintf "%-25s : %7.1f %6s %7.1f %7d %4d %6s %4d %4d %4d %4d" player rating error points played percent cfs w d l dpercent
-
-  let test =
-    sb.Clear() |> ignore
-    appendLine "results are:"
-    writeResultHeader |> appendLine
-    writeEngineLine "lc0.net.t81-swa-11061K" 11.2 20.6 154.5 300 52 86 50 209 41 70 |> appendLine
-    writeEngineLineBase "lc0.net.784968" 0.0 "----" 145.5 300 49 "---" 41 209 50 70 |> appendLine
-    sb.ToString()
-
-  printfn "%s" test
-    //printfn "%-25s : %7.1f %6s %7.1f %7d %4d %6s %4d %4d %4d %4d" "lc0.net.784968" 0.0 "----" 145.5 300 49 "---" 41 209 50 70
-
-let timeOnly10 = new TimeOnly(12, 30)
-let timeOnly11 = new TimeOnly(12, 30, 45)
-let diffn = (timeOnly10 - timeOnly11).TotalMilliseconds
-
-let timeOnly = new TimeOnly(12, 30, 45)
-let timeOnly2 = new TimeOnly(12, 30, 45,12)
-let timeOnly3 = new TimeOnly(12, 30, 46,123)
-
-let t1 = timeOnly.ToString("HH:mm:ss")
-let t2 = timeOnly2.ToString("HH:mm:ss.fff")
-
-let timeOnly4 = TimeOnly.ParseExact (t1, "HH:mm:ss")
-let t3 = timeOnly4.ToString("HH:mm:ss")
-
-//let timeOnly5 = TimeOnly.ParseExact (t2, "HH:mm:ss.ff")
-let timeOnly6 = TimeOnly.ParseExact (t2, "HH:mm:ss.fff")
-timeOnly6.ToString("HH:mm:ss.fff")
-
-let minTime = TimeOnly.MinValue.ToString("HH:mm:ss")
-let maxTime = TimeOnly.MaxValue.ToString("HH:mm:ss")
-
-
-let getMoveNumberString ply (move:string) = 
-    if ply % 2 = 1 then
-      let n = ply / 2 + ply % 2
-      sprintf "%d. %s " n move
-    else      
-      sprintf "%s " move
-
-let m = getMoveNumberString 1 "d4"
-let m1 = getMoveNumberString 3 "Nf3"
-let m2 = getMoveNumberString 2 "d5"
-let m3 = getMoveNumberString 5 "Nc3"
-
-let getMoveNumber ply = 
-    if ply % 2 = 1 then
-      let n = ply / 2 + ply % 2
-      n
-    else      
-      ply / 2 + 1
-
-let m9 = getMoveNumber 18
-let m10 = getMoveNumber 19
-let m20 = getMoveNumber 20
-let m30 = getMoveNumber 21
-
-let comb m m2 =
-  sprintf "%s%s" m m2
-
-

@@ -134,7 +134,7 @@
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
 
-    var games = Parser.PGNParser.parsePgnFile(fullPath).ToList();
+    var games = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
     logger.LogInformation("PGN file parsed {File}", pgnName);
 
     var bookExitSpeed = PGNStatistics.calculateMedianAndAvgBookExitSpeedSummaryInPgnFile(games);

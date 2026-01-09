@@ -1217,22 +1217,20 @@ module Hash =
   let writeOpeningHashToPgnGame (game: PgnGame)  =      
       let sb = new StringBuilder()
       let sanMoves = 
-        let moves = game.Moves |> Seq.takeWhile (fun m -> m.WhiteComment.Contains "book" || m.BlackComment.Contains "book") |> Seq.toList
+        let moves = game.Mainline |> Seq.takeWhile (fun m -> m.Comment.Contains "book") |> Seq.toList
         if moves.Length = 0 then
           //take while white or black comment is empty
-          game.Moves |> Seq.takeWhile (fun m -> m.WhiteComment = "" || m.BlackComment = "") |> Seq.toList
+          game.Mainline |> Seq.takeWhile (fun m -> m.Comment = "") |> Seq.toList
         else
           moves
       let fen = game.GameMetaData.Fen
       if String.IsNullOrEmpty fen |> not then
-        sb.AppendLine(sprintf "[Fen \"%s\"]" fen ) |> ignore      
-      let mutable ply = 1
+        sb.AppendLine(sprintf "[Fen \"%s\"]" fen ) |> ignore
       for m in sanMoves do
-        //if m.WhiteComment.Contains "book" then
-          sb.Append(sprintf "%d.%s " ply m.WhiteSan) |> ignore
-          ply <- ply + 1
-          if String.IsNullOrEmpty m.BlackComment |> not then
-            sb.Append(sprintf "%s " m.BlackSan) |> ignore
+          if m.Color = "w" then            
+            sb.Append(sprintf "%d.%s " m.MoveNumber m.San) |> ignore          
+          elif m.Color = "b" then
+            sb.Append(sprintf "%s " m.San) |> ignore
       //sb.Append("*") |> ignore
       sb.AppendLine() |> ignore
       let openingText = sb.ToString()
@@ -1995,7 +1993,7 @@ module PGNCalculator =
 
   let getResultsFromPGNPath (filePath: string) = 
     let games =  
-      PGNParser.parsePgnFile filePath
+      FullPGNParser.parsePgnFile filePath
       |> Seq.map PGNWriter.getResultsFromPGNGame
       |> Seq.toArray
       |> Array.rev

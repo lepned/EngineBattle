@@ -412,7 +412,7 @@ let ``RemoveVariationTail trims mainline when no variations`` () =
 let ``InlineTokensFromGraph preserves lichess odds variations`` () =
     let path = Path.Combine(AppContext.BaseDirectory, "TestData", "lichess_pgn_LeelaPieceOddsFRC.pgn")
     let raw = File.ReadAllText(path)
-    let game = PGNParser.parseFullPgnGame raw
+    let game = FullPGNParser.parseFullPgnGame raw
     let board = Board()
     let fen = if String.IsNullOrWhiteSpace(game.GameMetaData.Fen) then startPos else game.GameMetaData.Fen
     board.LoadFen(fen)

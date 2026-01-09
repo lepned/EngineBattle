@@ -112,7 +112,8 @@ module Helper =
     let gamesAlreadyPlayed = 
       let fileInfo = FileInfo tourny.PgnOutPath
       if fileInfo.Exists then
-        PGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        //PGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
       else
         [||]  
     
@@ -859,13 +860,9 @@ module PuzzleEngineAnalysis =
             board.ResetBoardState()
             if String.IsNullOrWhiteSpace pgn.Fen |> not then              
                board.LoadFen pgn.Fen
-            for move in pgn.Moves do
-              if String.IsNullOrWhiteSpace move.WhiteSan |> not then
-                // Play the white move on the board
-                board.PlaySimpleShortSan move.WhiteSan
-              if String.IsNullOrWhiteSpace move.BlackSan |> not then
-                // Play the black move on the board
-                board.PlaySimpleShortSan move.BlackSan
+            for move in pgn.Mainline do
+              //if String.IsNullOrWhiteSpace move.San |> not then                
+              board.PlaySimpleShortSan move.San
 
             let hash = board.DeviationHash()
             if hashSet.Add hash then

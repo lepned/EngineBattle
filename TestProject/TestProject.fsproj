@@ -32,6 +32,7 @@
 	<ItemGroup>
 		<None Include="TestData\SF_vs_Ceres_and_Lc0.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\lichess_pgn_LeelaPieceOddsFRC.pgn" CopyToOutputDirectory="PreserveNewest" />
+		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

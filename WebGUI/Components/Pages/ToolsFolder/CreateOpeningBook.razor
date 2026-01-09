@@ -114,7 +114,7 @@
 		}
 		if (pgnName.ToLower().EndsWith(".pgn"))
 		{
-			var games = Parser.PGNParser.parsePgnFile(fullPath).Take(nOpenings).ToList();
+			var games = Parser.FullPGNParser.parsePgnFile(fullPath).Take(nOpenings).ToList();
 			WriteEvaluatedPgnOpenings(pgnName, games);
 			File.Delete(fullPath);
 		}
@@ -323,7 +323,7 @@
 			browserFile = e.File;
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
-		var games = Parser.PGNParser.parsePgnFile(fullPath);
+		var games = Parser.FullPGNParser.parsePgnFileWithRaw(fullPath);
 		var filePath = Path.Combine(chess960Path, $"Shuffled_{pgnName}");
 		//logger.LogInformation($"Shuffle started...");
 		PGNHelper.shufflePgnGames(filePath, games);
@@ -357,7 +357,7 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.PGNParser.parsePgnFile(fullPath);
+		var games = Parser.FullPGNParser.parsePgnFile(fullPath);
         //var uniqueOpenings = Analysis.PuzzleEngineAnalysis.onlyUniqueOpenings(games);
 		//PGNWriter.writeNewOpeningBookBasedOnOlder(uniqueOpenings, pgnOpeningFullName);
 		PGNWriter.writeOpeningPgnFile(games, pgnOpeningFullName);

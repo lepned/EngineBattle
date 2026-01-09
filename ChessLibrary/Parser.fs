@@ -8,7 +8,6 @@ open System.Text
 open System.Text.RegularExpressions
 open TypesDef
 open TypesDef.PGNTypes
-open LowLevelUtilities
 open TypesDef.Engine
 open TypesDef.CoreTypes
 open TypesDef.TMove
@@ -141,9 +140,11 @@ module PGNExtractor =
   /// <returns>A tuple containing the moves and game metadata.</returns>
   let extractMoves (game:PgnGame) =
     let moves =
-      [|for move in game.Moves do
-         yield true, game.GameMetaData.White, move.MoveNr, move.WhiteSan
-         yield false, game.GameMetaData.Black, move.MoveNr, move.BlackSan |]
+      [|for move in game.Mainline do
+         if move.Color = "w" then
+            yield true, game.GameMetaData.White, move.MoveNumber, move.San
+         else
+            yield false, game.GameMetaData.Black, move.MoveNumber, move.San |]
     moves, game.GameMetaData
 
   
@@ -154,15 +155,17 @@ module PGNExtractor =
     let mutable foundWhiteMove = false
     let mutable foundBlackMove = false
     let moves =
-      [|for moves in game.Moves do
-         let white = Annotation.getEngineStatData game.GameMetaData.White false moves.WhiteComment
-         let black = Annotation.getEngineStatData game.GameMetaData.Black true moves.BlackComment
-         if (not foundWhiteMove && white.n > 0) then
-           foundWhiteMove <- true
-           yield white
-         if (not foundBlackMove && black.n > 0) then
-           foundBlackMove <- true
-           yield black
+      [|for move in game.Mainline do
+         if move.Color = "w" then
+            let white = Annotation.getEngineStatData game.GameMetaData.White false move.Comment
+            if (not foundWhiteMove && white.n > 0) then
+              foundWhiteMove <- true
+              yield white
+         else
+            let black = Annotation.getEngineStatData game.GameMetaData.Black true move.Comment
+            if (not foundBlackMove && black.n > 0) then
+              foundBlackMove <- true
+              yield black         
       |]
     {White = game.GameMetaData.White; Black = game.GameMetaData.Black; Moves = moves}
   
@@ -179,18 +182,24 @@ module PGNExtractor =
   /// <returns>The engine statistics.</returns>
   let extractEngineStats (game:PgnGame) =
     let moves =
-      [|for moves in game.Moves do
-         yield Annotation.getEngineStatData game.GameMetaData.White false moves.WhiteComment
-         yield Annotation.getEngineStatData game.GameMetaData.Black true moves.BlackComment |]
+      [|for move in game.Mainline do
+         if move.Color = "w" then
+            yield Annotation.getEngineStatData game.GameMetaData.White false move.Comment
+         else
+            yield Annotation.getEngineStatData game.GameMetaData.Black true move.Comment |]
     {White = game.GameMetaData.White; Black = game.GameMetaData.Black; Moves = moves}
 
   let extractWhiteAndBlackEngineStats (game:PgnGame) =
     let whiteMoves =
-      [|for moves in game.Moves ->
-            Annotation.getEngineStatData game.GameMetaData.White false moves.WhiteComment |]
+      [|for move in game.Mainline do
+            if move.Color = "w" then
+              Annotation.getEngineStatData game.GameMetaData.White false move.Comment
+      |]
     let blackMoves =
-      [|for moves in game.Moves ->
-            Annotation.getEngineStatData game.GameMetaData.Black true moves.BlackComment |]
+      [|for move in game.Mainline do
+            if move.Color = "b" then
+              Annotation.getEngineStatData game.GameMetaData.Black true move.Comment
+      |]
     whiteMoves, blackMoves
 
   /// Extracts all engine statistics from a sequence of PGN games.
@@ -978,14 +987,13 @@ module PGNWriter =
         writer.WriteLine(sprintf "[%s \"%s\"]" tags.Key tags.Value)        
         // Write an empty line after tags     
       writer.WriteLine()
-      let mutable ply = 1
       
       // Write SAN moves as pairs of white-black moves separated by spaces     
-      for m in g.Moves do
-        writer.Write(sprintf "%d.%s " ply m.WhiteSan)
-        ply <- ply + 1
-        if String.IsNullOrWhiteSpace m.BlackSan |> not then
-            writer.Write(sprintf "%s " m.BlackSan)            
+      for m in g.Mainline do
+        if m.Color = "w" then
+            writer.Write(sprintf "%d.%s " m.MoveNumber m.San)
+        else       
+            writer.Write(sprintf "%s " m.San)            
       
       if String.IsNullOrWhiteSpace g.GameMetaData.Result |> not then
         writer.WriteLine(g.GameMetaData.Result.Trim())
@@ -1033,14 +1041,14 @@ module PGNWriter =
     let mutable lastMoveIdxWithBookTag = -1
     let mutable lastBookTagIsWhite = false
     
-    for i = 0 to pgnGame.Moves.Count - 1 do
-        let move = pgnGame.Moves.[i]
+    for i = 0 to pgnGame.Mainline.Count - 1 do
+        let move = pgnGame.Mainline.[i]
         
-        if isBookComment move.WhiteComment then
+        if isBookComment move.Comment then
             lastMoveIdxWithBookTag <- i
             lastBookTagIsWhite <- true
         
-        if isBookComment move.BlackComment then
+        if isBookComment move.Comment then
             lastMoveIdxWithBookTag <- i
             lastBookTagIsWhite <- false
     
@@ -1051,81 +1059,18 @@ module PGNWriter =
         // Extract all SAN moves up to and including the last book tag
         let openingMoves = ResizeArray<string>()
         for i = 0 to lastMoveIdxWithBookTag do
-            let move = pgnGame.Moves.[i]
+            let move = pgnGame.Mainline.[i]
             
             // Add the white move if present
-            if not (String.IsNullOrWhiteSpace move.WhiteSan) then                    
-                openingMoves.Add(move.WhiteSan)
+            if move.Color = "w" then
+                openingMoves.Add(move.San)
             
             // Add the black move if present
-            if not (String.IsNullOrWhiteSpace move.BlackSan) then
+            elif move.Color = "b" then            
                 // Only add the black move at the last index if it has a book tag
                 if i < lastMoveIdxWithBookTag || not lastBookTagIsWhite then
-                    openingMoves.Add(move.BlackSan)
-        
+                    openingMoves.Add(move.San)
         openingMoves |> List.ofSeq
-
-
-  let writeNewOpeningBookBasedOnOlder (pgnGames: PgnGame seq) (filename: string) =
-      if File.Exists(filename) |> not then
-        //create file
-        use stream = File.Create(filename)
-        printfn "Created pgn-file at this location: %s" filename
-        
-      // Create a new text file using StreamWriter    
-      use writer = new StreamWriter(filename, append=true)      
-      let totalGames = Seq.length pgnGames
-      let mutable counter = 0
-      
-      for g in pgnGames do        
-          counter <- counter + 1
-          let roundNr = $"{counter}.1"
-          writer.WriteLine(sprintf "[Event \"%s\"]" g.GameMetaData.Event)
-          writer.WriteLine(sprintf "[Round \"%s\"]" roundNr)
-          if String.IsNullOrWhiteSpace g.GameMetaData.Fen |> not  then
-            writer.WriteLine(sprintf "[FEN \"%s\"]" g.GameMetaData.Fen)
-          let opening = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.ToLower().Contains "opening" )
-          let variation = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.ToLower().Contains "variation" )
-          let eco = g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.Contains "ECO" )
-          match opening,variation, eco with
-          |Some h,Some v, Some eco -> 
-            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
-            writer.WriteLine(sprintf "[Variation \"%s\"]" v.Value )
-            writer.WriteLine(sprintf "[ECO \"%s\"]" eco.Value )
-          |Some h,Some v, _ -> 
-            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
-            writer.WriteLine(sprintf "[Variation \"%s\"]" v.Value )
-          |Some h,_ , Some eco -> 
-            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
-            writer.WriteLine(sprintf "[ECO \"%s\"]" eco.Value )  
-          |Some h, _, _ -> 
-            writer.WriteLine(sprintf "[Opening \"%s\"]" h.Value )
-          |_, _, Some eco -> 
-            writer.WriteLine(sprintf "[ECO \"%s\"]" eco.Value )
-          |_ -> ()
-          match g.GameMetaData.OtherTags |> List.tryFind (fun e -> e.Key.Contains "MaxEval" ) with
-            |Some e -> 
-                writer.WriteLine(sprintf "[MaxEval \"%s\"]" e.Value )
-            |_ -> ()          
-           
-           // Write an empty line after tags
-          writer.WriteLine()
-          let mutable moveNumber = 1
-          for m in g.Moves do
-              let hasWhiteMove = String.IsNullOrWhiteSpace m.WhiteSan |> not
-              if hasWhiteMove then
-                writer.Write(sprintf "%d.%s " moveNumber m.WhiteSan)
-              if String.IsNullOrWhiteSpace m.BlackSan |> not then
-                  if hasWhiteMove then
-                    writer.Write(sprintf "%s " m.BlackSan)
-                  else
-                    writer.Write(sprintf "%d...%s " moveNumber m.BlackSan)
-              moveNumber <- moveNumber + 1
-            
-          writer.Write("*")
-          writer.WriteLine(Environment.NewLine)    
-        
-      writer.Close()
 
   /// Writes an opening PGN file.
   /// <param name="pgnGames">The sequence of PGN games.</param>
@@ -1431,149 +1376,7 @@ module ConversionHelper =
       | TPieceType.BISHOP -> "b"
       | TPieceType.ROOK -> "r"
       | TPieceType.QUEEN -> "q"
-      | _ -> failwith "Unknown piece type"
-
-  /// Checks if the move is a king move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a king move, otherwise false.</returns>
-  let kingMoved (move:TMove) = (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.KING
-
-  /// Checks if the move is a queen move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a queen move, otherwise false.</returns>
-  let queenMoved (move:TMove) = (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.QUEEN
-
-  /// Checks if the move is a rook move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a rook move, otherwise false.</returns>
-  let rookMoved (move:TMove) = (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.ROOK
-
-  /// Checks if the move is a bishop move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a bishop move, otherwise false.</returns>
-  let bishopMoved (move:TMove) = (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.BISHOP
-
-  /// Checks if the move is a knight move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a knight move, otherwise false.</returns>
-  let knightMoved (move:TMove) = (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.KNIGHT
-
-  /// Checks if the move is a pawn move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a pawn move, otherwise false.</returns>
-  let pawnMoved (move:TMove) = (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.PAWN
-
-  /// Checks if the move is a capture move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a capture move, otherwise false.</returns>
-  let findCapture (move:TMove) = (move.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY || (move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
-
-  /// Checks if the move is not a capture move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is not a capture move, otherwise false.</returns>
-  let findNoneCapture (move:TMove) = (move.MoveType &&& TPieceType.CAPTURE) = TPieceType.EMPTY
-
-  /// Checks if the move is a promotion move.
-  /// <param name="move">The move.</param>
-  /// <returns>True if the move is a promotion move, otherwise false.</returns>
-  let findPromotion (move:TMove) = (move.MoveType &&& TPieceType.PROMO) <> TPieceType.EMPTY
-    
-  /// Checks if the move string indicates a capture.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string indicates a capture, otherwise false.</returns>
-  let isCapture (moveStr: string) = moveStr.ToLower().Contains("x")
-
-  /// Checks if the move string indicates a checkmate.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string indicates a checkmate, otherwise false.</returns>
-  let isMate (moveStr: string) = moveStr.Contains("#")
-
-  /// Checks if the move string indicates a check.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string indicates a check, otherwise false.</returns>
-  let isCheck (moveStr: string) = moveStr.Contains("+")
-
-  /// Checks if the move string indicates a promotion.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string indicates a promotion, otherwise false.</returns>
-  let isPromotion (moveStr: string) = moveStr.Contains("=")
-
-  /// Checks if the move string is a normal move.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string is a normal move, otherwise false.</returns>
-  let isNormalMove (moveStr: string) = moveStr.Length <= 3
-
-  /// Checks if the move string is a long move.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string is a long move, otherwise false.</returns>
-  let isLongMove (moveStr: string) = moveStr.Length > 3
-
-  /// Checks if the move string indicates a piece move.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string indicates a piece move, otherwise false.</returns>
-  let pieceMoved (moveStr: string) = pieceChars |> List.exists(fun c -> c = moveStr.[0])
-
-  /// Checks if the move string indicates a castling move.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>True if the move string indicates a castling move, otherwise false.</returns>
-  let isCastlingMove (moveStr: string) = 
-    let trim = moveStr.Trim().ToUpper()
-    trim.Contains("0-0") || trim.Contains("O-O") ||
-    trim.Contains("0-0-0") || trim.Contains("O-O-O")
-
-  /// Finds the promotion piece in the move string.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>The promotion piece character.</returns>
-  let findPromoPiece (moveStr: string) = 
-    let idx = moveStr.LastIndexOf("=")
-    let piece = Char.ToUpper moveStr.[idx + 1]
-    let pieceFound = pieceChars |> List.exists (fun c -> c = piece)
-    if pieceFound then
-      piece
-    else failwith "Did not find promoted piece in move string"
-
-  /// Finds the piece moved in the move string.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>The piece character.</returns>
-  let findPieceMoved (moveStr: string) = moveStr.[0]
-
-  /// Finds the square after a capture in the move string.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>The square after the capture.</returns>
-  let findSquareAfterCapture (moveStr : string) =
-    let idx = moveStr.LastIndexOf('x')
-    moveStr.Substring(idx + 1, 2)
-
-  /// Finds the square before a promotion in the move string.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>The square before the promotion.</returns>
-  let findSquareBeforePromo (moveStr : string) =
-    let idx = moveStr.LastIndexOf('=')
-    moveStr.Substring(idx - 2, 2)
-  
-  /// Removes the end symbol from the SAN move string.
-  /// <param name="moveStr">The SAN move string.</param>
-  /// <returns>The SAN move string without the end symbol.</returns>
-  let sanMinusEndSymbol (moveStr: string) = moveStr.Substring(0, moveStr.Length - 1)
-
-  /// Removes the piece character from the move string.
-  /// <param name="moveStr">The move string.</param>
-  /// <returns>The move string without the piece character.</returns>
-  let removePiece (moveStr: string) = moveStr.Substring(1)
-
-  /// Finds the candidate moves for a given SAN move.
-  /// <param name="possibleMoves">The array of possible moves.</param>
-  /// <param name="san">The SAN move string.</param>
-  /// <returns>An array of candidate moves.</returns>
-  let findCandidates (possibleMoves: TMove array) san =
-    match Char.ToUpper(findPieceMoved san) with
-    |'K' -> possibleMoves |> Array.filter (fun m -> kingMoved m )          
-    |'Q' -> possibleMoves |> Array.filter (fun m -> queenMoved m )
-    |'R' -> possibleMoves |> Array.filter (fun m -> rookMoved m )
-    |'B' -> possibleMoves |> Array.filter (fun m -> bishopMoved m )
-    |'N' -> possibleMoves |> Array.filter (fun m -> knightMoved m )
-    |_ -> possibleMoves
-
+      | _ -> failwith "Unknown piece type"  
 
 module ConvertTo =
   open ConversionHelper
@@ -1639,595 +1442,6 @@ module ConvertTo =
 
 
 module MoveParser =
-  // Configurable per-game timeout; negative disables the guard.
-  let mutable defaultGameParseTimeoutMs = 1000L
-  let mutable gameParseTimeoutMs = defaultGameParseTimeoutMs
-  let setGameParseTimeoutMs ms = gameParseTimeoutMs <- ms
-  let resetGameParseTimeoutMs () = gameParseTimeoutMs <- defaultGameParseTimeoutMs
-  // Safety guard: max number of lines allowed per PGN game before aborting (to avoid infinite loops on malformed files).
-  let mutable maxLinesPerGame = 20000
-  let setMaxLinesPerGame lines = maxLinesPerGame <- lines
-  let resetMaxLinesPerGame () = maxLinesPerGame <- 20000
-
-  type State =
-    |Start
-    |InTagSection
-    |InMoveTextSection
-
-  let nonStandardWhitespaces =
-      Collections.Generic.HashSet<char>(['\uFEFF'; '\u2002'; '\u2003'; '\u2004'; '\u2005'; '\u2006';
-                                                    '\u2007'; '\u2008'; '\u2009'; '\u200A'; '\u200B';
-                                                    '\u202F'; '\u205F'; '\u3000'])
-  let pool = Utils.StringBuilderPool(10,100)
-  let pgnHeaderRegex = new Regex(@"\[(\w+)\s*""(.*?)""\]", RegexOptions.Compiled)
-  let mutable error = String.Empty
-  let mutable pos = Position.PositionOps.createEmptyTBoard()
-  let load fen = BoardHelper.loadFen(Some fen, &pos)
-  let mutable result = String.Empty
-  let mutable position = 0
-  let mutable input = String.Empty
-  let mutable state = Start
-  let mutable currentHeader = { Key = ""; Value = "" }
-  let mutable gameMetadata = { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
-  let mutable move = { MoveNr = ""; WhiteSan = ""; WhiteComment = ""; BlackSan = ""; BlackComment = "" }
-  let mutable parsedCommentEndTag = true  
-  let mutable unfinishedCommentLines = 0
-  let unfinishedCommentLineLimit = 1000
-  let moves = ResizeArray<Move>()
-  let headers = ResizeArray<Header>()
-  let resultPattern = "1-0/2"
-  // Variation-aware tracking
-  let mutable currentPly = 0
-  let mainlinePly = ResizeArray<PlyMove>()
-  let rootVariations = ResizeArray<PlyLine>()
-  let mutable currentLine : PlyLine = mainlinePly
-  let lineStack = Stack<PlyLine>()
-  let plyStack = Stack<int>()
-  let mutable lastParsedSan : string option = None
-
-  let resetStates () =
-    pos <- Position.PositionOps.createEmptyTBoard()
-    position <- 0
-    input <- String.Empty
-    result <- String.Empty
-    state <- Start
-    currentHeader <- { Key = ""; Value = "" }
-    gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
-    move <- Move.Empty 
-    moves.Clear()
-    headers.Clear()
-    unfinishedCommentLines <- 0
-    currentPly <- 0
-    mainlinePly.Clear()
-    rootVariations.Clear()
-    currentLine <- mainlinePly
-    lineStack.Clear()
-    plyStack.Clear()
-    lastParsedSan <- None
-
-  module PgnStates =
-    let addPendingMoveIfAny () =
-      if not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
-        moves.Add move
-        move <- Move.Empty
-
-    let isRank c = Char.IsDigit(c) && c >= '1' && c <= '8'
-
-    let isFile c = Char.IsLower(c) && c >= 'a' && c <= 'h'
-
-    let isRankOrFile c = isRank c || isFile c
-
-    let isPiece (c:char) = "KQRBN".Contains(c)
-
-    let isPromoPiece (c:char) = "KQRBN".Contains(c) || "kqrbn".Contains(c)
-
-    let isDisambiguation(c: char) = "NBRQKabcdefgh12345678".Contains(c)
-
-    let skipWhiteSpace () =
-      while position < input.Length && System.Char.IsWhiteSpace(input.[position]) do
-        position <- position + 1
-    
-    let Peek () =
-      if position < input.Length then
-        input.[position]
-      else 
-        Char.MinValue
-
-    let PeekAt i =
-      if i < input.Length then
-          input.[i]
-      else 
-        Char.MinValue
-    
-    let parseDigit() =
-      if position < input.Length && Char.IsDigit(Peek()) then
-          let c = Peek()
-          position <- position + 1
-          c
-      else
-          raise <| Exception($"Expected a digit but found '{Peek()}'")
-
-    let expect c =
-      if (position < input.Length && Peek() = c) then
-        position <- position + 1
-        c
-      else
-        failwith ($"Expected '{c}' but found '{Peek()}'"); 
-    
-    let parseCapture () = expect('x')
-
-    let hasNonStandardWhitespaces (char: char) =
-      nonStandardWhitespaces.Contains char
-
-    let removeNonStandardWhitespaces () =
-      if hasNonStandardWhitespaces(Peek()) then
-        while hasNonStandardWhitespaces(Peek()) do
-          position <- position + 1
-
-    let isSanMove() =
-      if Peek() = 'O' || (Peek() = '0' && PeekAt (position + 2) = '0') then
-          true
-      elif Peek() |> isFile && PeekAt(position + 1) |> isRank && PeekAt(position + 2) |> isPromoPiece then
-        true
-      else
-          let mutable i = position
-          if isPiece(Peek()) then
-              i <- i + 1
-          if isDisambiguation(PeekAt i) then
-              i <- i + 1
-          if PeekAt i = 'x' then
-              i <- i + 1
-          if isRankOrFile(PeekAt i) then
-              true
-          else
-              false
-
-    let parseAComment() =
-        let sb = pool.Get()
-        while position < input.Length && Peek() <> '}' do
-            sb.Append(Peek()) |> ignore
-            position <- position + 1
-        let comment = sb.ToString()
-        pool.Return(sb)
-        comment
-
-    let parseComment () =
-      expect '{' |> ignore
-      skipWhiteSpace()      
-      let comment = parseAComment()
-      skipWhiteSpace()
-      let whiteMove = move.WhiteSan <> "" && move.BlackSan = ""
-      if whiteMove then
-          move.WhiteComment <- comment
-      else if move.BlackSan <> "" then                  
-          move.BlackComment <- comment
-      if Peek() <> '}' then
-        parsedCommentEndTag <- false        
-      else
-        expect '}' |> ignore
-        parsedCommentEndTag <- true
-        
-    let parseUnFinishedComment () =
-      skipWhiteSpace()      
-      let comment = parseAComment()
-      skipWhiteSpace()
-      if Peek() <> '}' then
-        unfinishedCommentLines <- unfinishedCommentLines + 1
-        if unfinishedCommentLines > unfinishedCommentLineLimit then
-          failwithf "Unterminated comment exceeded %d lines; aborting parse." unfinishedCommentLineLimit
-        parsedCommentEndTag <- false
-      else
-        expect '}' |> ignore
-        parsedCommentEndTag <- true
-        let whiteMove = move.WhiteSan <> "" && move.BlackSan = ""
-        if whiteMove then
-            move.WhiteComment <- move.WhiteComment + comment
-        else
-          move.BlackComment <- move.BlackComment + comment
-          moves.Add move
-          move <- Move.Empty
-
-    let parseDigits() = //maybe remove sb and use string instead
-      let sb = pool.Get()
-      while position < input.Length && Char.IsDigit(Peek()) do
-          sb.Append(parseDigit()) |> ignore
-      if sb.Length = 0 then
-          raise <| Exception($"Expected a sequence of digits but found '{Peek()}'")
-      let digits = sb.ToString()
-      pool.Return(sb)
-      digits
-    
-    // numeric_annotation_glyph = "$" digit+
-    let parseNumericAnnotationGlyph() =
-      expect('$') |> ignore // Expect and consume "$"
-      let digits = parseDigits() // todo - store the digits
-      Console.WriteLine($"${digits}") // Print the numeric annotation glyph for testing purposes
-
-    let parseMoveNumberIndication () =     
-      if not (String.IsNullOrEmpty(move.BlackSan)) then
-        moves.Add(move)
-        move <- Move.Empty
-      
-      let digits = parseDigits() // Parse and store the digits
-      skipWhiteSpace() // Skip any white space after the digits 
-      if position < input.Length && Peek() = '.' then                
-        if move.WhiteSan <> "" then
-          while Peek() = '.' do
-            expect '.' |> ignore // Expect and consume "."            
-        else
-          move.MoveNr <- digits
-          expect '.' |> ignore // Expect and consume "."
-          while position < input.Length && Peek() = '.' do
-              expect '.' |> ignore
-
-    let parseResult () =
-      let mutable ret = 
-        if position > 0 then
-          input.[position - 1].ToString()
-        else ""
-      skipWhiteSpace()
-      while resultPattern.Contains(Peek()) do
-          ret <- ret + string(Peek())
-          position <- position + 1
-      ret
-
-    
-
-    let toGameMetadata () =
-      gameMetadata <-
-        match currentHeader.Key with
-        | "Event"  -> { gameMetadata with Event = currentHeader.Value }
-        | "Site"   -> { gameMetadata with Site = currentHeader.Value }
-        | "Date"   -> { gameMetadata with Date = currentHeader.Value }
-        | "Round"  -> { gameMetadata with Round = currentHeader.Value }
-        | "White"  -> { gameMetadata with White = currentHeader.Value }
-        | "Black"  -> { gameMetadata with Black = currentHeader.Value }
-        | "Result" -> { gameMetadata with Result = currentHeader.Value }
-        | "Reason" -> { gameMetadata with Reason = Misc.stringToResultReason currentHeader.Value }
-        | "OpeningHash" -> { gameMetadata with OpeningHash = currentHeader.Value }
-        | "GameTime" -> { gameMetadata with GameTime = int64 currentHeader.Value }
-        | "Ply" -> { gameMetadata with Moves = int currentHeader.Value }
-        | "Opening" -> { gameMetadata with OpeningName = currentHeader.Value; OtherTags = currentHeader :: gameMetadata.OtherTags }
-        | "Fen" 
-        | "FEN" -> { gameMetadata with Fen = currentHeader.Value }
-        | "Deviations" -> { gameMetadata with Deviations = int currentHeader.Value }
-        | _ -> { gameMetadata with OtherTags = currentHeader :: gameMetadata.OtherTags }
-
-    let expectOneOf (s : string) =
-      let peek : char = Peek()
-      if position < input.Length && s.Contains(peek) then
-          expect (Peek())
-      else
-          raise <| Exception($"Expected one of '{s}' but found '{Peek()}'")
-
-    let parsePiece() = expectOneOf "KQRBN"
-
-    let parseCheckOrCheckmate() = expectOneOf("+#")
-
-    let parseFile() =
-      if position < input.Length && isFile(Peek()) then
-          let c = Peek()
-          position <- position + 1
-          c
-      else
-          failwith $"Expected a file but found '{Peek()}'"
-
-    let parseRank() =
-      if position < input.Length && isRank(Peek()) then
-          let c = Peek()
-          position <- position + 1
-          c
-      else
-          failwith $"Expected a rank but found '{Peek()}'"
-    
-    let parseSymbol() =
-      let mutable symbol = ""
-      let allowed = "!?#=+"
-      while position < input.Length && allowed.Contains(Peek()) do
-          let c = Peek()
-          position <- position + 1
-          symbol <- symbol + c.ToString()
-      symbol
-
-
-    let parseCastling() =
-        let mutable v = Peek()
-        let mutable move = expect(v).ToString()
-        if Peek() = '-' then
-            move <- move + expect('-').ToString()
-        if Peek() = 'O' || Peek() = 'o' || Peek() = '0' then
-            v <- Peek()
-            move <- move + expect(v).ToString()
-        if Peek() = '-' then
-            move <- move + expect('-').ToString()
-        if Peek() = 'O' || Peek() = 'o'|| Peek() = '0' then
-            v <- Peek()
-            move <- move + expect(v).ToString()
-        move
-    
-    let parseDisambiguation () = 
-      let mutable disambiguation = ""
-      if isFile(Peek()) then
-          disambiguation <- disambiguation + parseFile().ToString()
-      if isRank(Peek()) then
-          disambiguation <- disambiguation + parseRank().ToString()
-      disambiguation
-    
-    let parsePromotion() =
-      if Peek() = '=' then
-        let mutable promotion = expect('=').ToString() // Expect and append "=" to the promotion
-        promotion <- promotion + parsePiece().ToString() // Parse and append a piece to the promotion
-        promotion // Return the promotion
-      else
-        let ch = Peek()
-        position <- position + 1
-        ch.ToString()
-   
-    let parseSquare() =
-      let mutable square = ""      
-      if Peek() = 'x' then
-        square <- square  + (expect 'x').ToString()
-      let c = Peek()
-      let tmp = PeekAt (position - 1)
-      if isPiece tmp && Char.IsDigit(Peek()) then
-        square <- square  + (expect (Peek())).ToString()
-      elif Char.IsLetter (Peek()) && Char.IsLetter (PeekAt (position + 1)) then
-        expect c |> ignore //two letters in a row - consume the first
-      if Peek() = 'x' then
-        square <- square  + (expect 'x').ToString()
-      let c = Peek()
-      let d = PeekAt (position + 1)
-      match isFile c, isRank d with
-      |true, true ->
-        let file  = parseFile()
-        let rank = parseRank()
-        square <- square + file.ToString() + rank.ToString()
-      |_ -> () //continue
-    
-      square
-
-    let appendPlyMove (san:string) (color:string) =
-      let ply = currentPly
-      let moveNr = (ply / 2) + 1
-      let node =
-        { Ply = ply
-          MoveNumber = moveNr
-          Color = color
-          San = san
-          Comment = ""
-          Nags = []
-          Variations = ResizeArray() }
-      currentLine.Add node
-      currentPly <- currentPly + 1
-      lastParsedSan <- Some san
-
-    let tryUpdateLastNodeComment (cmt:string) =
-      if not (String.IsNullOrWhiteSpace cmt) then
-        match currentLine |> Seq.tryLast with
-        | Some node ->
-            node.Comment <- cmt
-        | None ->
-            match rootVariations |> Seq.tryLast with
-            | Some line when line.Count > 0 ->
-                let lastNode = line[line.Count - 1]
-                lastNode.Comment <- cmt
-            | _ -> ()
-
-    let lastCommentValue () =
-      if String.IsNullOrWhiteSpace move.BlackComment |> not then move.BlackComment
-      elif String.IsNullOrWhiteSpace move.WhiteComment |> not then move.WhiteComment
-      else ""
-
-    let parseSanMove() =
-      let mutable san = String.Empty
-      if Peek() = 'O' || (Peek() = '0' && PeekAt (position + 2) = '0') then
-          san <- san + parseCastling()
-      if isPiece(Peek()) then
-          san <- san + parsePiece().ToString()
-      if isDisambiguation(Peek()) then
-          san <- san + parseDisambiguation()
-      if Peek() = 'x' then
-          san <- san + parseCapture().ToString()
-      if isRankOrFile(Peek()) then
-          san <- san + parseSquare()
-      if Peek() = '=' || Peek() |> isPromoPiece then
-          san <- san + parsePromotion()
-      if Peek() = '+' || Peek() = '#' then
-          san <- san + parseCheckOrCheckmate().ToString()
-      if Char.IsPunctuation(Peek()) then
-          san <- san + parseSymbol()     
-      if String.IsNullOrEmpty(move.WhiteSan) then
-          if moves.Count > 0 || String.IsNullOrEmpty gameMetadata.Fen  then              
-            move.WhiteSan <- san
-            appendPlyMove san "w"
-          else
-            let _ = load gameMetadata.Fen
-            if pos.STM = 0uy then
-              move.WhiteSan <- san
-              appendPlyMove san "w"
-            else
-              move.BlackSan <- san
-              appendPlyMove san "b"
-      else
-          move.BlackSan <- san
-          appendPlyMove san "b"
-    
-
-    // Span-based parser function
-    let parseTagPairSpan (input: ReadOnlySpan<char>) =
-      let openBracketIndex = input.IndexOf('[')
-      let closeBracketIndex = input.LastIndexOf(']')
-    
-      if openBracketIndex >= 0 && closeBracketIndex > openBracketIndex then
-          let headerSpan = input.Slice(openBracketIndex + 1, closeBracketIndex - openBracketIndex - 1)
-          let firstQuoteIndex = headerSpan.IndexOf('"')
-          let lastQuoteIndex = headerSpan.LastIndexOf('"')
-        
-          if firstQuoteIndex >= 0 && lastQuoteIndex > firstQuoteIndex then
-              let keySpan = headerSpan.Slice(0, firstQuoteIndex).Trim()
-              let valueSpan = headerSpan.Slice(firstQuoteIndex + 1, lastQuoteIndex - firstQuoteIndex - 1)
-              let key = keySpan.ToString()
-              let value = valueSpan.ToString()
-              (key, value)
-          else
-              ("", "")
-      else
-          ("", "")
-
-    let parseTagPair() =
-        let key,value = parseTagPairSpan (input.AsSpan())
-        position <- input.Length
-        currentHeader <- { Key = key; Value = value }
-        headers.Add(currentHeader) |> ignore
-        toGameMetadata ()
-        if String.IsNullOrEmpty(key) && String.IsNullOrEmpty(value) then
-          let msg = $"No match found in PGN-header - {input}"
-          printfn "%s" msg
-    
-    let parseMove () = 
-      if Char.IsDigit(Peek()) && (Peek() <> '0' && not (PeekAt (position + 1) = '-' )) then          
-          parseMoveNumberIndication()
-      elif isSanMove() then
-          parseSanMove()
-      elif Peek() = '$' then
-          parseNumericAnnotationGlyph()
-      //elif Peek() = '(' then
-      //    parseRecursiveVariation()
-      elif Peek() = '{' then
-          parseComment()
-          tryUpdateLastNodeComment (lastCommentValue())
-      elif Peek() = 'x' then
-          parseCapture() |> ignore 
-    
-    let rec parseRecursiveVariation() =
-      expect('(') |> ignore
-      skipWhiteSpace()
-      // Create a new variation line and attach to the last move of the current line (or root if none).
-      let variationLine = ResizeArray<PlyMove>()
-      match currentLine |> Seq.tryLast with
-      | Some parent -> parent.Variations.Add variationLine
-      | None -> rootVariations.Add variationLine
-      lineStack.Push currentLine
-      plyStack.Push currentPly
-      let parentPly =
-        match currentLine |> Seq.tryLast with
-        | Some p -> p.Ply
-        | None -> currentPly - 1
-      currentPly <- parentPly + 1
-      currentLine <- variationLine
-      while position < input.Length && Peek() <> ')' && Peek() <> '*' do
-          skipWhiteSpace()
-          if position < input.Length && Peek() <> ')' && Peek() <> '*' then
-            parseElement()
-            skipWhiteSpace()
-      parsedCommentEndTag <- true
-      if position < input.Length && Peek() = ')' then
-          expect(')') |> ignore
-      // restore previous line
-      if lineStack.Count > 0 then
-        currentLine <- lineStack.Pop()
-      if plyStack.Count > 0 then
-        currentPly <- plyStack.Pop()
-    and parseElement () = 
-      if Char.IsDigit(Peek()) && (Peek() <> '0' && not (PeekAt (position + 1) = '-' )) then          
-          parseMoveNumberIndication()
-      elif isSanMove() then
-          parseSanMove()
-      elif Peek() = '$' then
-          parseNumericAnnotationGlyph()
-      elif Peek() = '(' then
-          parseRecursiveVariation()
-      elif Peek() = '{' then
-          parseComment()
-          tryUpdateLastNodeComment (lastCommentValue())
-      elif Peek() = 'x' then
-          parseCapture() |> ignore
-      else          
-          let res = parseResult()
-          let hasRes = not (String.IsNullOrWhiteSpace(res))
-          if hasRes then
-            result <- res
-          if String.IsNullOrEmpty(gameMetadata.Result) && hasRes then              
-            gameMetadata <- { gameMetadata with Result = res }
-          // Ensure forward progress even on unexpected tokens to avoid infinite loops.
-          if not hasRes && position < input.Length then
-            position <- position + 1
-    
-    let parseMoveTextSection() =
-      // Guard against infinite loops on malformed input lines.
-      let mutable lastPosition = -1
-      let mutable stallCount = 0
-      let stallLimit = input.Length + 8
-      let mutable iterCount = 0
-      let iterLimit = (input.Length + 1) * 8 + 256
-      // Treat leading ';' or '%' as full-line comments per PGN common practice.
-      if input.StartsWith(";") || input.StartsWith("%") then
-        position <- input.Length
-        parsedCommentEndTag <- true
-       else
-        removeNonStandardWhitespaces()
-        if not parsedCommentEndTag then
-            parseUnFinishedComment()
-        skipWhiteSpace()      
-        while Peek() <> '[' && position < input.Length && Peek() <> '*' do          
-            skipWhiteSpace()
-            if Peek() = '(' then
-              parseRecursiveVariation()
-            else
-              parseElement()
-            // Ensure we continue to advance; otherwise bail out to avoid spinning forever.
-            iterCount <- iterCount + 1
-            if iterCount > iterLimit then
-              failwithf "PGN parser exceeded iteration limit on line: %s" input
-            if position = lastPosition then
-              stallCount <- stallCount + 1
-              if stallCount > stallLimit then
-                failwithf "PGN parser stalled at position %d while processing line: %s" position input
-            else
-              stallCount <- 0
-              lastPosition <- position
-            skipWhiteSpace()
-        if parsedCommentEndTag && String.IsNullOrEmpty(move.BlackSan) |> not then
-            moves.Add move
-            move <- Move.Empty
-        if input.Length = position then            
-            if String.IsNullOrWhiteSpace input then
-              state <- State.InTagSection
-            
-        elif position < input.Length && Peek() = '*' then
-            expect '*' |> ignore
-        elif position < input.Length && Peek() = '[' then
-            position <- input.Length
-            state <- InTagSection
-        else
-            raise <| Exception("Expected a game termination")
-    
-
-    let parseTagSection() =      
-      removeNonStandardWhitespaces()
-      if input.StartsWith "##" then
-        position <- input.Length
-        state <- State.Start
-      let mutable sawHeader = false
-      while position < input.Length && Peek() = '[' do
-          sawHeader <- true
-          parseTagPair()
-          //skipWhiteSpace()
-      if position = 0 && input.Length > 0 then
-        // Non-header line; transition to movetext without logging to avoid noisy output / hangs.
-        state <- State.InMoveTextSection
-      elif (position = input.Length || Peek() <> '[') then
-          if sawHeader then
-              state <- State.InTagSection
-          elif state = State.Start && input.StartsWith "##" = false then
-              state <- State.InMoveTextSection
-      else
-        raise <| Exception("Expected a tag pair")    
-
-    
-    let parseGame () =
-      parseTagSection()
-      parseMoveTextSection()
 
   //todo - move these to a module
   type FinalResult = 
@@ -2242,7 +1456,6 @@ module MoveParser =
       | "0" -> Draw
       | "-1" -> BlackWins
       | _ -> Unknown
-
 
   /// Parses a single line of input according to our simple rules.
   let parseLine (line: string) : EPDEntry option =
@@ -2351,7 +1564,6 @@ module EPDExtractor =
     {   
       GameNumber = n
       GameMetaData = gameData
-      Moves = ResizeArray<Move>()
       Mainline = ResizeArray()
       RootVariations = ResizeArray()
       Comments = ""
@@ -2380,433 +1592,701 @@ module EPDExtractor =
     openings
 
 
-module PGNParser =
+/// Full PGN parser using Span-based scanning for maximum performance.
+/// Supports variations, comments, NAGs, and produces PgnGame output.
+module FullPGNParser =  
 
-  open MoveParser
-  let getMovesFromPGN (pgnGame: PgnGame) =
-    seq { 
-          for move in pgnGame.Moves do
-            if move.WhiteSan <> "" then            
-              move.WhiteSan
-            if move.BlackSan <> "" then
-              move.BlackSan  }
-  let parseMoveSectionOfPgnGame (content: string) =
-      resetStates()
-      let mutable counter = 0
-      state <- Start    
-      input <- content    
-      position <- 0    
-      while position < input.Length do
-          match state with
-          | Start -> 
-            PgnStates.parseTagSection()
-            if state = InMoveTextSection then
-              position <- 0
-              PgnStates.parseMoveTextSection()
-          
-          | InMoveTextSection ->
-              PgnStates.parseMoveTextSection()
-          | InTagSection -> ()
+  // ============================================================================
+  // Shared state for parsing
+  // ============================================================================
+  
+  // Header state
+  let mutable private gameNumber = 0
+  let mutable private event' = ""
+  let mutable private site = ""
+  let mutable private date = ""
+  let mutable private round = ""
+  let mutable private white = ""
+  let mutable private black = ""
+  let mutable private result = ""
+  let mutable private resultFoundInMovetext = false
+  let mutable private fen = ""
+  let mutable private reason = Misc.ResultReason.NotStarted
+  let mutable private openingHash = ""
+  let mutable private gameTime = 0L
+  let mutable private plyCount = 0
+  let mutable private openingName = ""
+  let mutable private deviations = 0
+  let private otherTags = ResizeArray<Header>()
 
-          if state = InTagSection then
-            state <- InMoveTextSection
-      if move.WhiteSan <> "" && (moves |> Seq.last).WhiteSan <> move.WhiteSan then
-        moves.Add move
-      if moves.Count > 0 then              
-        {
-          GameNumber = counter
-          GameMetaData = gameMetadata
-          Moves = ResizeArray(moves)
-          Mainline = ResizeArray(mainlinePly)
-          RootVariations = ResizeArray(rootVariations)
-          Comments = "" 
-          Fen = gameMetadata.Fen
-          Raw = content
-        }
+  let mutable private currentMoveNr = 1
+  let mutable private whiteSan = ""
+  let mutable private blackSan = ""
+  let mutable private whiteComment = ""
+  let mutable private blackComment = ""
+  let mutable private pendingComment = ""
+
+  // Variation-aware tree state
+  let mutable private currentPly = 0
+  let private mainlinePly = ResizeArray<PlyMove>(128)
+  let private rootVariations = ResizeArray<PlyLine>()
+  let mutable private currentLine: PlyLine = mainlinePly
+  let private lineStack = Stack<PlyLine>()
+  let private plyStack = Stack<int>()
+  let mutable private lastParsedSan: string option = None
+
+  // NAG state
+  let mutable private pendingNags = ResizeArray<int>()
+
+  // ============================================================================
+  // Helper functions (inline for performance)
+  // ============================================================================
+
+  let inline private isDigit c = c >= '0' && c <= '9'
+  let inline private isFile c = c >= 'a' && c <= 'h'
+  let inline private isRank c = c >= '1' && c <= '8'
+  let inline private isPiece c = c = 'K' || c = 'Q' || c = 'R' || c = 'B' || c = 'N'
+  let inline private isPromoPiece c = isPiece c || c = 'k' || c = 'q' || c = 'r' || c = 'b' || c = 'n'
+
+  // ============================================================================
+  // State management
+  // ============================================================================
+
+  let private resetState () =
+    event' <- ""
+    site <- ""
+    date <- ""
+    round <- ""
+    white <- ""
+    black <- ""
+    result <- ""
+    resultFoundInMovetext <- false
+    fen <- ""
+    reason <- Misc.ResultReason.NotStarted
+    openingHash <- ""
+    gameTime <- 0L
+    plyCount <- 0
+    openingName <- ""
+    deviations <- 0
+    otherTags.Clear()
+    currentMoveNr <- 1
+    whiteSan <- ""
+    blackSan <- ""
+    whiteComment <- ""
+    blackComment <- ""
+    pendingComment <- ""
+    currentPly <- 0
+    mainlinePly.Clear()
+    rootVariations.Clear()
+    currentLine <- mainlinePly
+    lineStack.Clear()
+    plyStack.Clear()
+    lastParsedSan <- None
+    pendingNags.Clear()
+
+  let private hasGame () =
+     whiteSan <> "" || blackSan <> "" || mainlinePly.Count > 0
+
+  let private hasHeaders () =
+    white <> "" || black <> "" || event' <> "" || result <> ""
+
+  // ============================================================================
+  // PlyMove tree management
+  // ============================================================================
+
+  let private appendPlyMove (san: string) (color: string) =
+    let ply = currentPly
+    let moveNr = (ply / 2) + 1
+    let nags = if pendingNags.Count > 0 then pendingNags |> Seq.toList else []
+    let node =
+      { Ply = ply
+        MoveNumber = moveNr
+        Color = color
+        San = san
+        Comment = ""
+        Nags = nags
+        Variations = ResizeArray() }
+    currentLine.Add node
+    currentPly <- currentPly + 1
+    lastParsedSan <- Some san
+    pendingNags.Clear()
+    if color = "b" then
+        whiteSan <- ""
+        blackSan <- ""
+        whiteComment <- ""
+        blackComment <- ""
+
+  let private tryUpdateLastNodeComment (cmt: string) =
+    if not (String.IsNullOrWhiteSpace cmt) then
+      match currentLine |> Seq.tryLast with
+      | Some node -> node.Comment <- cmt
+      | None ->
+          match rootVariations |> Seq.tryLast with
+          | Some line when line.Count > 0 ->
+              let lastNode = line[line.Count - 1]
+              lastNode.Comment <- cmt
+          | _ -> ()
+
+  // ============================================================================
+  // Text-based header parsing
+  // ============================================================================  
+  
+  let private parseHeaderTexLine (line: string) =
+    let spanLine = line.AsSpan()
+    let openBracket = spanLine.IndexOf('[')
+    let closeBracket = spanLine.LastIndexOf(']')
+    if openBracket >= 0 && closeBracket > openBracket then
+      let headerSpan = spanLine.Slice(openBracket + 1, closeBracket - openBracket - 1)
+      let firstQuote = headerSpan.IndexOf('"')
+      let lastQuote = headerSpan.LastIndexOf('"')
+      if firstQuote >= 0 && lastQuote > firstQuote then
+        let key = headerSpan.Slice(0, firstQuote).Trim().ToString()
+        let value = headerSpan.Slice(firstQuote + 1, lastQuote - firstQuote - 1).ToString()
+        match key with
+        | "Event" -> event' <- value
+        | "Site" -> site <- value
+        | "Date" -> date <- value
+        | "Round" -> round <- value
+        | "White" -> white <- value
+        | "Black" -> black <- value
+        | "Result" -> result <- value
+        | "FEN" | "Fen" -> fen <- value
+        | "Reason" -> 
+            try reason <- Misc.stringToResultReason value
+            with _ -> () // Ignore invalid reason values
+        | "OpeningHash" -> openingHash <- value
+        | "GameTime" -> 
+            match Int64.TryParse(value) with
+            | true, v -> gameTime <- v
+            | _ -> ()
+        | "Ply" -> 
+            match Int32.TryParse(value) with
+            | true, v -> plyCount <- v
+            | _ -> ()
+        | "Opening" -> 
+            openingName <- value
+            otherTags.Add({ Key = key; Value = value })
+        | "Deviations" -> 
+            match Int32.TryParse(value) with
+            | true, v -> deviations <- v
+            | _ -> ()
+        | _ -> otherTags.Add({ Key = key; Value = value })
+  
+// ============================================================================
+  // Span-based movetext parsing (iterative, with variation stack)
+  // ============================================================================
+
+  /// Parse movetext from a span, handling variations iteratively with an explicit stack
+  let private parseMoveTextLine (line: string) =
+    let spanLine = line.AsSpan()
+    let len = spanLine.Length
+    let mutable p = 0
+
+    // Skip leading whitespace
+    while p < len && Char.IsWhiteSpace(spanLine[p]) do p <- p + 1
+
+    // Handle full-line comments
+    if p < len && (spanLine[p] = ';' || spanLine[p] = '%') then
+      // Line comment - extract and store as pending
+      if p + 1 < len then
+        pendingComment <- new string(spanLine.Slice(p + 1).Trim())
+      p <- len
+    else
+      while p < len do
+        let prevP = p
+
+        // Skip whitespace
+        while p < len && Char.IsWhiteSpace(spanLine[p]) do p <- p + 1
+        if p >= len then ()
+        else
+          let c0 = spanLine[p]
+
+          // New header encountered - stop parsing this line
+          if c0 = '[' then
+            p <- len
+
+          // Comment block { ... }
+          elif c0 = '{' then
+            p <- p + 1
+            let startComment = p
+            while p < len && spanLine[p] <> '}' do p <- p + 1
+            let comment = 
+              if p > startComment then new string(spanLine.Slice(startComment, p - startComment).Trim())
+              else ""
+            if p < len && spanLine[p] = '}' then p <- p + 1
+            // Attach comment to most recent move
+            if blackSan <> "" then
+              blackComment <- if blackComment = "" then comment else blackComment + " " + comment
+              tryUpdateLastNodeComment comment
+            elif whiteSan <> "" then
+              whiteComment <- if whiteComment = "" then comment else whiteComment + " " + comment
+              tryUpdateLastNodeComment comment
+            else
+              pendingComment <- if pendingComment = "" then comment else pendingComment + " " + comment
+
+          // Variation start (
+          elif c0 = '(' then
+            p <- p + 1
+            // Push current line and ply onto stack
+            let variationLine = ResizeArray<PlyMove>()
+            match currentLine |> Seq.tryLast with
+            | Some parent -> parent.Variations.Add variationLine
+            | None -> rootVariations.Add variationLine
+            lineStack.Push currentLine
+            plyStack.Push currentPly
+            // Set ply to parent's ply + 1 for the variation
+            let parentPly =
+              match currentLine |> Seq.tryLast with
+              | Some node -> node.Ply
+              | None -> currentPly - 1
+            currentPly <- parentPly + 1
+            currentLine <- variationLine
+
+          // Variation end )
+          elif c0 = ')' then
+            p <- p + 1
+            // Pop back to parent line
+            if lineStack.Count > 0 then
+              currentLine <- lineStack.Pop()
+            if plyStack.Count > 0 then
+              currentPly <- plyStack.Pop()
+
+          // NAG ($1, $14, etc.)
+          elif c0 = '$' then
+            p <- p + 1
+            let startNag = p
+            while p < len && isDigit(spanLine[p]) do p <- p + 1
+            if p > startNag then
+              let nagStr = new string(spanLine.Slice(startNag, p - startNag))
+              match Int32.TryParse(nagStr) with
+              | true, nagVal -> pendingNags.Add(nagVal)
+              | _ -> ()
+
+          // Game termination *
+          elif c0 = '*' then
+            p <- p + 1
+            if result = "" then result <- "*"
+            resultFoundInMovetext <- true
+
+          // Move number (1. or 1... or just digits followed by dots)
+          elif isDigit c0 && not (c0 = '0' && p + 1 < len && spanLine[p + 1] = '-') then
+            let mutable nr = 0
+            while p < len && isDigit(spanLine[p]) do
+              nr <- nr * 10 + (int spanLine[p] - int '0')
+              p <- p + 1
+            // Skip whitespace
+            while p < len && Char.IsWhiteSpace(spanLine[p]) do p <- p + 1
+            // Skip dots (including Unicode ellipsis …)
+            while p < len && (spanLine[p] = '.' || spanLine[p] = '…') do p <- p + 1
+            if nr > 0 then currentMoveNr <- nr
+
+          // Result tokens (1-0, 0-1, 1/2-1/2, ½-½)
+          elif c0 = '1' || (c0 = '0' && p + 1 < len && spanLine[p + 1] = '-' && (p + 2 >= len || spanLine[p + 2] <> '0')) || c0 = '½' then
+            let tail = spanLine.Slice(p)
+            if tail.StartsWith("1-0".AsSpan()) then
+              if result = "" then result <- "1-0"; resultFoundInMovetext <- true
+              p <- p + 3
+            elif tail.StartsWith("0-1".AsSpan()) then
+              if result = "" then result <- "0-1"; resultFoundInMovetext <- true
+              p <- p + 3
+            elif tail.StartsWith("1/2-1/2".AsSpan()) then
+              if result = "" then result <- "1/2-1/2"; resultFoundInMovetext <- true
+              p <- p + 7
+            elif tail.StartsWith("½-½".AsSpan()) then
+              if result = "" then result <- "1/2-1/2"; resultFoundInMovetext <- true
+              p <- p + 3
+            else
+              // Fallback: maybe it's a SAN move starting with 0 (0-0 castling)
+              let start = p
+              if c0 = 'O' || (c0 = '0' && (p + 2) < len && spanLine[p + 2] = '0') then
+                while p < len && (spanLine[p] = 'O' || spanLine[p] = '0' || spanLine[p] = 'o' || spanLine[p] = '-') do p <- p + 1
+              if p > start then
+                let san = new string(spanLine.Slice(start, p - start))
+                // Check/checkmate suffix
+                if p < len && (spanLine[p] = '+' || spanLine[p] = '#') then p <- p + 1
+                // Annotation symbols
+                while p < len && (spanLine[p] = '!' || spanLine[p] = '?') do p <- p + 1
+                if san <> "" then
+                  if whiteSan = "" then
+                    if mainlinePly.Count = 0 && fen <> "" && fen.Contains(" b ") then
+                      blackSan <- san
+                      appendPlyMove san "b"
+                      if pendingComment <> "" then
+                        blackComment <- pendingComment
+                        tryUpdateLastNodeComment pendingComment
+                        pendingComment <- ""
+                    else
+                      whiteSan <- san
+                      appendPlyMove san "w"
+                      if pendingComment <> "" then
+                        whiteComment <- pendingComment
+                        tryUpdateLastNodeComment pendingComment
+                        pendingComment <- ""
+                  else
+                    blackSan <- san
+                    appendPlyMove san "b"
+              else
+                p <- p + 1
+
+          // SAN moves (piece moves, pawn moves, castling)
+          elif isPiece c0 || isFile c0 || c0 = 'O' || c0 = 'o' || c0 = '0' then
+            let start = p
+            // Castling (handles O-O, o-o, 0-0 notations)
+            if c0 = 'O' || c0 = 'o' || (c0 = '0' && (p + 2) < len && spanLine[p + 2] = '0') then
+              while p < len && (spanLine[p] = 'O' || spanLine[p] = '0' || spanLine[p] = 'o' || spanLine[p] = '-') do p <- p + 1
+            else
+              // Optional piece letter
+              if p < len && isPiece(spanLine[p]) then p <- p + 1
+              // Optional disambiguation file/rank
+              if p < len && isFile(spanLine[p]) then p <- p + 1
+              if p < len && isRank(spanLine[p]) then p <- p + 1
+              // Optional capture
+              if p < len && spanLine[p] = 'x' then p <- p + 1
+              // Destination square
+              if p < len && isFile(spanLine[p]) then p <- p + 1
+              if p < len && isRank(spanLine[p]) then p <- p + 1
+              // Promotion
+              if p < len && spanLine[p] = '=' then
+                p <- p + 1
+                if p < len && (isPiece(spanLine[p]) || isPromoPiece(spanLine[p])) then p <- p + 1
+              elif p < len && isPromoPiece(spanLine[p]) then p <- p + 1
+              // Check/mate
+              if p < len && (spanLine[p] = '+' || spanLine[p] = '#') then p <- p + 1
+              // Annotation symbols (!?, ?!, !!, ??)
+              while p < len && (spanLine[p] = '!' || spanLine[p] = '?') do p <- p + 1
+
+            if p > start then
+              let san = new string(spanLine.Slice(start, p - start))
+              if san <> "" then
+                if whiteSan = "" then
+                  if mainlinePly.Count = 0 && fen <> "" && fen.Contains(" b ") then
+                    blackSan <- san
+                    appendPlyMove san "b"
+                    if pendingComment <> "" then
+                      blackComment <- pendingComment
+                      tryUpdateLastNodeComment pendingComment
+                      pendingComment <- ""
+                  else
+                    whiteSan <- san
+                    appendPlyMove san "w"
+                    if pendingComment <> "" then
+                      whiteComment <- pendingComment
+                      tryUpdateLastNodeComment pendingComment
+                      pendingComment <- ""
+                else
+                  blackSan <- san
+                  appendPlyMove san "b"
+            else
+              p <- p + 1
+
+          else
+            // Unknown token; advance to avoid infinite loop
+            p <- p + 1
+
+        // Safety: if no progress made this iteration, advance one char
+        if p = prevP then p <- p + 1
+  
+  // ============================================================================
+  // Build PgnGame from current state
+  // ============================================================================
+
+  let inline moveNumberCount ply =
+    if ply % 2 = 0 then ply / 2 else (ply / 2) + 1
+
+  let private buildGameFull (raw:string) : PgnGame =    
+    gameNumber <- gameNumber + 1
+    let metadata: GameMetadata =
+      { Event = event'
+        Site = site
+        Date = date
+        Round = round
+        White = white
+        Black = black
+        Result = result
+        Reason = reason
+        OpeningHash = openingHash
+        GameTime = gameTime
+        Moves = moveNumberCount mainlinePly.Count
+        OpeningName = openingName
+        Fen = fen
+        Deviations = deviations
+        StartEvals = []
+        OtherTags = otherTags |> Seq.toList }
+    {
+      GameNumber = gameNumber
+      GameMetaData = metadata
+      Mainline = ResizeArray(mainlinePly)
+      RootVariations = ResizeArray(rootVariations)
+      Comments = pendingComment
+      Fen = fen
+      Raw = raw
+    }
+
+  let private buildGame() : PgnGame =
+    buildGameFull ""
+  
+  let private buildGameWithRaw raw : PgnGame =
+    buildGameFull raw
+
+  // ============================================================================
+  // Public API
+  // ============================================================================
+  
+/// Parse a PGN string, yielding full PgnGame records
+  let parsePgnStringHelper (content: string) withRaw : seq<PgnGame> =    
+    let rawLines = ResizeArray<string>()
+    gameNumber <- 0
+    resetState()
+    let mutable inMoveText = false
+    
+    let buildGame () =
+      if withRaw then
+        let raw = String.concat "\n" rawLines
+        rawLines.Clear()
+        buildGameWithRaw raw
       else
-        PgnGame.Empty 0
+        rawLines.Clear()
+        buildGame()
+    seq {
+        use reader = new StringReader(content)
+        let mutable currentLine = reader.ReadLine()
+        while currentLine <> null do
+          let trimmed = currentLine.TrimStart()
+          if withRaw then
+            rawLines.Add(currentLine)
+          if String.IsNullOrEmpty trimmed then
+            if inMoveText && (hasGame() || result <> "") then
+              yield buildGame()
+              resetState()
+              inMoveText <- false
+          elif trimmed.Length > 0 && trimmed[0] = '[' then
+            if inMoveText && (hasGame() || result <> "") then
+              yield buildGame()
+              resetState()
+              inMoveText <- false
+            parseHeaderTexLine trimmed
+          else
+            inMoveText <- true
+            parseMoveTextLine trimmed
+            if resultFoundInMovetext && result <> "" && (result = "1-0" || result = "0-1" || result = "1/2-1/2" || result = "*") then
+              yield buildGame()
+              resetState()
+              inMoveText <- false
 
-  let parseFullPgnGame (pastedText: string): PgnGame =
-      resetStates()
-      let parseStopwatch = Stopwatch.StartNew()
-      let mutable counter = 0
-      let mutable lineCount = 0
-      let rawGame = new StringBuilder()
-        
-      //get the bytes from the pasted text
-      let bytes = Encoding.UTF8.GetBytes(pastedText)
-      //create a memory stream from the bytes
-      use memoryStream = new MemoryStream(bytes)
+          currentLine <- reader.ReadLine()
+
+        if hasGame() || result <> "" then
+          yield buildGame()
+        }
+
+  let parsePgnString (content: string) : seq<PgnGame> =
+    parsePgnStringHelper content false
+  
+  let parsePgnStringWithRaw (content: string) : seq<PgnGame> =
+    parsePgnStringHelper content true
+      /// Parse a PGN file, yielding full PgnGame records with Raw field populated
+  
+  let parsePgnFileHelper (pgnFilePath: string) withRaw : seq<PgnGame> =    
+    let rawLines = ResizeArray<string>()
+    gameNumber <- 0
+    resetState()
+    let mutable inMoveText = false
+
+    let mayAddRaw line =
+      if withRaw then
+        rawLines.Add(line)
+
+    let buildGameWithRaw () =
+      let game = buildGame()
+      let raw = String.concat "\n" rawLines
+      rawLines.Clear()
+      if withRaw then
+        { game with Raw = raw }
+      else
+        game
+
+    seq {
+        let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)
+        use reader = new StreamReader(pgnFilePath, options)
+
+        while not reader.EndOfStream do
+          let currentLine = reader.ReadLine()
+          let trimmed = currentLine.TrimStart()          
+          if String.IsNullOrEmpty trimmed then
+            if inMoveText && (hasGame() || result <> "") then
+              yield buildGameWithRaw()
+              resetState()
+              inMoveText <- false
+            elif rawLines.Count > 0 then
+              mayAddRaw currentLine
+          elif trimmed.Length > 0 && trimmed[0] = '[' then
+            if inMoveText && (hasGame() || result <> "") then
+              yield buildGameWithRaw()
+              resetState()
+              inMoveText <- false
+            mayAddRaw currentLine
+            parseHeaderTexLine trimmed
+          else
+            mayAddRaw currentLine
+            inMoveText <- true
+            parseMoveTextLine trimmed
+            if resultFoundInMovetext && result <> "" && (result = "1-0" || result = "0-1" || result = "1/2-1/2" || result = "*") then
+              yield buildGameWithRaw()
+              resetState()
+              inMoveText <- false
+
+        if hasGame() || result <> "" then
+          yield buildGameWithRaw()
+    }
     
-      seq {
-            state <- Start          
-            use reader = new StreamReader(memoryStream)
-            while not reader.EndOfStream do
-                input <- reader.ReadLine().Trim()
-                lineCount <- lineCount + 1
-                if lineCount > maxLinesPerGame then
-                  failwithf "Parsing PGN game exceeded max line limit (%d) near line %d" maxLinesPerGame lineCount
-                if gameParseTimeoutMs >= 0L && parseStopwatch.ElapsedMilliseconds >= gameParseTimeoutMs then
-                  failwithf "Parsing PGN game exceeded %d ms near line %d: %s" gameParseTimeoutMs (counter + 1) input
-                rawGame.Append(input).Append(Environment.NewLine) |> ignore
-                position <- 0
-                while position < input.Length do
-                    match state with
-                    | Start -> 
-                      PgnStates.parseTagSection()
+  let parsePgnFileWithRaw (pgnFilePath: string) : seq<PgnGame> = parsePgnFileHelper pgnFilePath true
 
-                    | InMoveTextSection ->
-                        PgnStates.parseMoveTextSection()
+  let parsePgnFile (pgnFilePath: string) : seq<PgnGame> = parsePgnFileHelper pgnFilePath false  
+  
+  /// Convert a FullSpanParser game to moves as string list (for compatibility)
+  let getMovesAsStrings (game: PgnGame) : string list = game.Mainline |> Seq.map (fun mv -> mv.San) |> Seq.toList
 
-                    | InTagSection ->
-                        PgnStates.parseTagSection()
-                      
-                let isEmpty = String.IsNullOrEmpty(input)
-                let hasMoves = moves.Count > 0 || String.IsNullOrEmpty move.WhiteSan |> not || String.IsNullOrEmpty move.BlackSan |> not
-                let isStar = input.Trim() = "*"
-                if isEmpty && state = InTagSection then
-                  state <- InMoveTextSection
-                elif
-                  isStar ||
-                  (isEmpty && state = InMoveTextSection && hasMoves ) 
-                    || 
-                  (not isEmpty && state = InTagSection && hasMoves) then
-                      if move.WhiteSan <> "" then
-                        moves.Add move
-                      counter <- counter + 1
-                      //printfn "Counter %d" counter
-                      yield 
-                        {
-                          GameNumber = counter
-                          GameMetaData = gameMetadata
-                          Moves = ResizeArray(moves)
-                          Mainline = ResizeArray(mainlinePly)
-                          RootVariations = ResizeArray(rootVariations)
-                          Comments = "" 
-                          Fen = gameMetadata.Fen
-                          Raw = rawGame.ToString()
-                        }                
-            if moves.Count > 0 then
-              if move.WhiteSan <> "" then
-                moves.Add move
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                    }
-            elif not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
-              // Single-move games without a trailing add.
-              moves.Add move
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                    }
-      } |> Seq.tryHead |> Option.defaultValue (PgnGame.Empty 0)
+  /// Generate PGN string representation of a game on demand
+  let toPgnString (game: PgnGame) : string =
+    let sb = System.Text.StringBuilder()
+    let meta = game.GameMetaData
 
+    // Headers
+    sb.AppendLine($"[Event \"{meta.Event}\"]") |> ignore
+    sb.AppendLine($"[Site \"{meta.Site}\"]") |> ignore
+    sb.AppendLine($"[Date \"{meta.Date}\"]") |> ignore
+    sb.AppendLine($"[Round \"{meta.Round}\"]") |> ignore
+    sb.AppendLine($"[White \"{meta.White}\"]") |> ignore
+    sb.AppendLine($"[Black \"{meta.Black}\"]") |> ignore
+    sb.AppendLine($"[Result \"{meta.Result}\"]") |> ignore
 
-  let parsePgnFile (pgnFilePath: string): seq<PgnGame> =
-      resetStates()
-      let mutable counter = 0
-      let parseStopwatch = Stopwatch.StartNew()
-      let mutable lineNumber = 0
-      let mutable gameLineCount = 0
-      let rawGame = new StringBuilder()
-      seq {
-            state <- Start
-            let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)          
-            use reader = new StreamReader(pgnFilePath, options)
-            while not reader.EndOfStream do
-                input <- reader.ReadLine().TrimStart()
-                lineNumber <- lineNumber + 1
-                gameLineCount <- gameLineCount + 1
-                if gameLineCount > maxLinesPerGame then
-                  failwithf "Parsing PGN game %d exceeded max line limit (%d) at file line %d" (counter + 1) maxLinesPerGame lineNumber
-                if gameParseTimeoutMs >= 0L && parseStopwatch.ElapsedMilliseconds >= gameParseTimeoutMs then
-                  failwithf "Parsing PGN game %d exceeded %d ms at line %d: %s" (counter + 1) gameParseTimeoutMs lineNumber input
-                rawGame.Append(input).Append(Environment.NewLine) |> ignore              
-                position <- 0
-                while position < input.Length do
-                    match state with
-                    | Start -> 
-                        state <- InTagSection
+    if game.Fen <> "" && game.Fen <> "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" then
+      sb.AppendLine($"[FEN \"{game.Fen}\"]") |> ignore
+      sb.AppendLine("[SetUp \"1\"]") |> ignore
 
-                    | InMoveTextSection ->
-                        PgnStates.parseMoveTextSection()
+    // Other tags
+    for header in meta.OtherTags do
+      sb.AppendLine($"[{header.Key} \"{header.Value}\"]") |> ignore
 
-                    | InTagSection ->
-                        PgnStates.parseTagSection()
-                      
-                let isEmpty = String.IsNullOrEmpty(input)
-                let hasMoves = moves.Count > 0 || String.IsNullOrEmpty move.WhiteSan |> not || String.IsNullOrEmpty move.BlackSan |> not
-                let isStar = input.Trim() = "*"              
-                if isEmpty && state = InTagSection then
-                  state <- InMoveTextSection                
-                elif                
-                  isStar ||
-                  (isEmpty && state = InMoveTextSection && hasMoves ) 
-                    || 
-                  (not isEmpty && state = InTagSection && hasMoves) 
-                  || (String.IsNullOrWhiteSpace result |> not)  then
-                      if move.WhiteSan <> "" then
-                        moves.Add move
-                      counter <- counter + 1
-                      yield 
-                        {
-                          GameNumber = counter
-                          GameMetaData = gameMetadata
-                          Moves = ResizeArray(moves)
-                          Mainline = ResizeArray(mainlinePly)
-                          RootVariations = ResizeArray(rootVariations)
-                          Comments = "" 
-                          Fen = gameMetadata.Fen
-                          Raw = rawGame.ToString()
-                        }
-                      parseStopwatch.Restart()
-                      gameLineCount <- 0
-                      move <- Move.Empty
-                      result <- String.Empty
-                      rawGame.Clear() |> ignore
-                      state <- Start
-                      gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
-                      moves.Clear()
-                      headers.Clear()
-                      currentPly <- 0
-                      mainlinePly.Clear()
-                      rootVariations.Clear()
-                      currentLine <- mainlinePly
-                      lineStack.Clear()
-                      plyStack.Clear()
-                      lastParsedSan <- None
-                      unfinishedCommentLines <- 0
-            if moves.Count > 0 then
-              if move.WhiteSan <> "" then
-                moves.Add move
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                }
-            elif not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
-              moves.Add move
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                }
-      }
-    
+    sb.AppendLine() |> ignore
+
+    for move in game.Mainline do      
+        if move.Color = "w" then
+            sb.Append($"{move.MoveNumber}. {move.San} ") |> ignore
+        else
+            sb.Append($"{move.San} ") |> ignore
+    // Result
+    if meta.Result <> "" then
+      sb.Append(meta.Result) |> ignore
+
+    sb.ToString()
+
+  let parsePgnStreamWithRaw (reader: StreamReader): seq<PgnGame> =
+    parsePgnStringWithRaw (reader.ReadToEnd())
+  
   let parsePgnStream (reader: StreamReader): seq<PgnGame> =
-      resetStates()
-      let mutable counter = 0
-      let parseStopwatch = Stopwatch.StartNew()
-      let mutable lineNumber = 0
-      let mutable gameLineCount = 0
-      let rawGame = new StringBuilder()
-      seq {
-            state <- Start          
-            while not reader.EndOfStream do
-                input <- reader.ReadLine().TrimStart()
-                lineNumber <- lineNumber + 1
-                gameLineCount <- gameLineCount + 1
-                if gameLineCount > maxLinesPerGame then
-                  failwithf "Parsing PGN game %d exceeded max line limit (%d) at line %d" (counter + 1) maxLinesPerGame lineNumber
-                if gameParseTimeoutMs >= 0L && parseStopwatch.ElapsedMilliseconds >= gameParseTimeoutMs then
-                  failwithf "Parsing PGN game %d exceeded %d ms at line %d: %s" (counter + 1) gameParseTimeoutMs lineNumber input
-                rawGame.Append(input).Append(Environment.NewLine) |> ignore              
-                position <- 0
-                while position < input.Length do
-                    match state with
-                    | Start -> 
-                      PgnStates.parseTagSection()                                          
+    parsePgnString (reader.ReadToEnd())
 
-                    | InMoveTextSection ->
-                        PgnStates.parseMoveTextSection()
+  let parseFullPgnGame (pgn:string) =
+    match parsePgnString pgn |> Seq.tryHead with
+    | Some game -> game
+    | None -> PgnGame.Empty(0)
 
-                    | InTagSection ->
-                        PgnStates.parseTagSection()
-                      
-                let isEmpty = String.IsNullOrEmpty(input)
-                let hasMoves = moves.Count > 0 || String.IsNullOrEmpty move.WhiteSan |> not || String.IsNullOrEmpty move.BlackSan |> not
-                let isStar = input.Trim() = "*"
-                if isEmpty && state = InTagSection then
-                  state <- InMoveTextSection
-                elif
-                  isStar ||
-                  (isEmpty && state = InMoveTextSection && hasMoves ) 
-                    || 
-                  (not isEmpty && state = InTagSection && hasMoves) 
-                  || (String.IsNullOrWhiteSpace result |> not)  then
-                      if move.WhiteSan <> "" then
-                        moves.Add move
-                      counter <- counter + 1
-                      //printfn "Counter %d" counter
-                      yield 
-                        {
-                          GameNumber = counter
-                          GameMetaData = gameMetadata
-                          Moves = ResizeArray(moves)
-                          Mainline = ResizeArray(mainlinePly)
-                          RootVariations = ResizeArray(rootVariations)
-                          Comments = "" 
-                          Fen = gameMetadata.Fen
-                          Raw = rawGame.ToString()
-                        }
-                      parseStopwatch.Restart()
-                      gameLineCount <- 0
-                      move <- Move.Empty
-                      rawGame.Clear() |> ignore
-                      state <- Start
-                      result <- String.Empty
-                      gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
-                      moves.Clear()
-                      headers.Clear()
-                      currentPly <- 0
-                      mainlinePly.Clear()
-                      rootVariations.Clear()
-                      currentLine <- mainlinePly
-                      lineStack.Clear()
-                      plyStack.Clear()
-                      lastParsedSan <- None
-                      unfinishedCommentLines <- 0
-            if moves.Count > 0 then
-              if move.WhiteSan <> "" then
-                moves.Add move
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                }
-            elif not (String.IsNullOrEmpty move.WhiteSan) || not (String.IsNullOrEmpty move.BlackSan) then
-              moves.Add move
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                }
-      }
+  /// Parse only headers from a PGN file (span-based, skips movetext for performance)
+  let parsePgnFileHeadersOnly (pgnFilePath: string): seq<PgnGame> =    
+    gameNumber <- 0
+    resetState()
+    let mutable inMoveText = false
+    seq {
+        let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)
+        use reader = new StreamReader(pgnFilePath, options)
 
-  let parsePgnFileHeaders (pgnFilePath: string): seq<PgnGame> =
-      resetStates()
-      let mutable counter = 0
-      let rawGame = new StringBuilder()
-      seq {
-            state <- Start
-            use reader = new StreamReader(pgnFilePath)
-            while not reader.EndOfStream do
-                input <- reader.ReadLine()              
-                rawGame.Append(input).Append(Environment.NewLine) |> ignore
-                position <- 0
-                while position < input.Length do
-                    match state with
-                    | Start -> 
-                        PgnStates.parseTagSection()                      
-                        state <- InTagSection
+        while not reader.EndOfStream do
+          let currentLine = reader.ReadLine()      
+          let trimmed = currentLine.TrimStart()
 
-                    | InMoveTextSection -> 
-                        if position < input.Length && PgnStates.Peek() = '[' then
-                          headers.Clear()
-                          PgnStates.parseTagPair()
-                          state <- InTagSection
-                        position <- input.Length                        
+          if String.IsNullOrEmpty trimmed then
+            // Empty line - transition from headers to movetext or end of game
+            if inMoveText && hasHeaders() then
+              // End of game - yield without parsing moves
+              yield buildGame()
+              resetState()
+              inMoveText <- false
+            elif hasHeaders() && not inMoveText then
+              // Empty line after headers - now in movetext section
+              inMoveText <- true
+          elif trimmed.Length > 0 && trimmed[0] = '[' then
+            // Header line
+            if inMoveText && hasHeaders() then
+              // New game starting - yield previous
+              yield buildGame()
+              resetState()
+              inMoveText <- false
+            parseHeaderTexLine trimmed
+          else
+            // Movetext line - just mark we're in movetext, don't parse
+            inMoveText <- true
+            // Only check for result tokens to properly terminate the game
+            let trimmedStr = trimmed.ToString()
+            if trimmedStr = "1-0" || trimmedStr = "0-1" || trimmedStr = "1/2-1/2" || trimmedStr = "*" ||
+               trimmedStr.EndsWith(" 1-0") || trimmedStr.EndsWith(" 0-1") || trimmedStr.EndsWith(" 1/2-1/2") || trimmedStr.EndsWith(" *") then
+              if result = "" then
+                if trimmedStr.Contains("1-0") then result <- "1-0"
+                elif trimmedStr.Contains("0-1") then result <- "0-1"
+                elif trimmedStr.Contains("1/2-1/2") then result <- "1/2-1/2"
+                elif trimmedStr.Contains("*") then result <- "*"
 
-                    | InTagSection ->
-                        PgnStates.parseTagSection()                      
-              
-                if String.IsNullOrEmpty input then
-                  if state = InTagSection then                  
-                    state <- InMoveTextSection
-                  else 
-                    state <- Start
-                    if gameMetadata <> GameMetadata.Empty then 
-                        counter <- counter + 1
-                        yield 
-                          {
-                            GameNumber = counter
-                            GameMetaData = gameMetadata
-                            Moves = ResizeArray(moves)
-                            Mainline = ResizeArray(mainlinePly)
-                            RootVariations = ResizeArray(rootVariations)
-                            Comments = "" 
-                            Fen = gameMetadata.Fen
-                            Raw = rawGame.ToString()
-                          }
-                        move <- Move.Empty
-                        rawGame.Clear() |> ignore
-                        currentPly <- 0
-                        mainlinePly.Clear()
-                        rootVariations.Clear()
-                        currentLine <- mainlinePly
-                        lineStack.Clear()
-                        plyStack.Clear()
-                        lastParsedSan <- None
-                        unfinishedCommentLines <- 0
-                        gameMetadata <- { Event = ""; Site = ""; Date = ""; Round = ""; White = ""; Black = ""; Result = ""; Reason = Misc.ResultReason.NotStarted ; OpeningHash = ""; GameTime=0L; Moves = 0; Fen = ""; OpeningName = ""; Deviations = 0; StartEvals = []; OtherTags = [] }
-                        moves.Clear()
-                        headers.Clear()
-              
-            if gameMetadata <> GameMetadata.Empty then            
-              counter <- counter + 1
-              yield 
-                {
-                  GameNumber = counter
-                  GameMetaData = gameMetadata
-                  Moves = ResizeArray(moves)
-                  Mainline = ResizeArray(mainlinePly)
-                  RootVariations = ResizeArray(rootVariations)
-                  Comments = "" 
-                  Fen = gameMetadata.Fen
-                  Raw = rawGame.ToString()
-                }
-      }
+        // Handle last game
+        if hasHeaders() then
+          yield buildGame()
+    }
+
+  /// Parse only headers from a PGN string (span-based, skips movetext for performance)
+  let parsePgnStringHeadersOnly (content: string): seq<PgnGame> =   
+    gameNumber <- 0
+    resetState()
+    let mutable inMoveText = false
+    seq {
+        use reader = new StringReader(content)
+        let mutable currentLine = reader.ReadLine()
+    
+        while currentLine <> null do      
+          let trimmed = currentLine.TrimStart()
+          if String.IsNullOrEmpty trimmed then
+            if inMoveText && hasHeaders() then
+              yield buildGame()
+              resetState()
+              inMoveText <- false
+            elif hasHeaders() && not inMoveText then
+              inMoveText <- true
+          elif trimmed.Length > 0 && trimmed[0] = '[' then
+            if inMoveText && hasHeaders() then
+              yield buildGame()
+              resetState()
+              inMoveText <- false
+            parseHeaderTexLine trimmed
+          else
+            inMoveText <- true
+            let trimmedStr = trimmed.ToString()
+            if trimmedStr = "1-0" || trimmedStr = "0-1" || trimmedStr = "1/2-1/2" || trimmedStr = "*" ||
+               trimmedStr.EndsWith(" 1-0") || trimmedStr.EndsWith(" 0-1") || trimmedStr.EndsWith(" 1/2-1/2") || trimmedStr.EndsWith(" *") then
+              if result = "" then
+                if trimmedStr.Contains("1-0") then result <- "1-0"
+                elif trimmedStr.Contains("0-1") then result <- "0-1"
+                elif trimmedStr.Contains("1/2-1/2") then result <- "1/2-1/2"
+                elif trimmedStr.Contains("*") then result <- "*"
+
+          currentLine <- reader.ReadLine()
+
+        if hasHeaders() then
+          yield buildGame()
+  }
 
   type PgnGameMessage =
-  | WriteGame of filePath:string * header:GameMetadata * moveSection:string * result:Result
-  | GetResults of reply:AsyncReplyChannel<ResizeArray<Result>>
-  | GetPGNGames of reply:AsyncReplyChannel<ResizeArray<PgnGame>>
-  | Dispose
+      | WriteGame of filePath:string * header:GameMetadata * moveSection:string * result:Result
+      | GetResults of reply:AsyncReplyChannel<ResizeArray<Result>>
+      | GetPGNGames of reply:AsyncReplyChannel<ResizeArray<PgnGame>>
+      | Dispose
 
   let startPgnGameReaderWriter (filePath: string) =
     MailboxProcessor<PgnGameMessage>.Start(fun inbox ->

@@ -20,7 +20,7 @@ module Deviations =
     
   let deviationSummaryFromPGNs (filePath: string) =    
     printfn "Parsing and analyzing file: %s\n" filePath
-    let games = PGNParser.parsePgnFile filePath |> Seq.truncate 100000 |> Seq.toList
+    let games = FullPGNParser.parsePgnFile filePath |> Seq.truncate 100000 |> Seq.toList
     if games |> Seq.forall (fun e -> e.GameMetaData.Round <> "") then      
       printfn "Start of deviation test - number of games %d\n" games.Length
       let _, consoleRes, devSummary, data, cross, fraction = Deviation.analyzeDeviations games
@@ -141,59 +141,6 @@ let moveParsingTests () =
     //let stop = 1
     results.Add res
 
-//let runKingAttackBitboardTests () =
-//  let board = Board()
-//  board.LoadFen(Perft.pos4)
-//  printfn "Perft fen: %s\n" Perft.pos4
-//  board.PrintPosition("Position 4")
-//  let position = board.Position
-//  let occupation = Position.occupation &position
-//  let opposing = position.PM ^^^ occupation
-//  let tL = row1Long occupation
-//  let tS = row1Short occupation
-//  let mutable res = 0UL
-//  for i = 0 to 7 do
-//    res <- getKingAttackLong i 
-//    printfn "Accumulated attack for i = %d -> %d" i res
-//  printfn "All attacks by opponents in one bishop bitboard: %A" (opposing &&& res)
-
-//let runKingBishopLongBitboardTests () =
-//  let board = Board()
-//  board.LoadFen(Perft.pos4)
-//  printfn "Perft fen: %s\n" Perft.pos4
-//  board.PrintPosition("Position 4")
-//  let position = board.Position
-//  let occupation = Position.occupation &position
-//  let opposing = position.PM ^^^ occupation
-//  let mutable res = 0UL
-//  for i = 0 to 7 do
-//    res <- getKingBishopAttackLong i occupation 
-//    printfn "Accumulated attack for i = %d - %d" i res
-//  printfn "All attacks by opponents in one bishop bitboard: %A" (opposing &&& res)
-
-//let runBishopBitboardTests () =
-//  let board = Board()
-//  board.LoadFen(Perft.pos4)
-//  printfn "Perft fen: %s\n" Perft.pos4
-//  board.PrintPosition("Position 4")
-//  let position = board.Position
-//  let occupation = Position.occupation &position
-//  let opposing = position.PM ^^^ occupation
-//  let afile = QBBOperations.getAFileBishopAttack occupation
-//  let bfile = QBBOperations.getBFileBishopAttack occupation
-//  let cfile = QBBOperations.getCFileBishopAttack occupation
-//  let dfile = QBBOperations.getDFileBishopAttack occupation
-//  let efile = QBBOperations.getEFileBishopAttack occupation
-//  let ffile = QBBOperations.getFFileBishopAttack occupation
-//  let gfile = QBBOperations.getGFileBishopAttack occupation
-//  let hfile = QBBOperations.getHFileBishopAttack occupation
-//  //add all attack bitboards together
-//  let allAttacks = afile ||| bfile ||| cfile ||| dfile ||| efile ||| ffile ||| gfile ||| hfile
-//  //for i = 0 to 7 do
-//  //print all bitboards on a new line in one row
-//  printfn "%A %A %A %A %A %A %A %A" afile bfile cfile dfile efile ffile gfile hfile
-//  printfn "All attacks by opponents in one bishop bitboard: %A" (opposing &&& allAttacks)
-
 let runFileBitboardTests () =
   let board = Board()
   board.LoadFen(Perft.pos4)
@@ -216,7 +163,6 @@ let runFileBitboardTests () =
   //print all bitboards on a new line in one row
   printfn "%A %A %A %A %A %A %A %A" afile bfile cfile dfile efile ffile gfile hfile
   printfn "All attacks by opponents in one king file bitboard: %A" kingAttacksByOpposingForce
-
 
 let timeAndReportPerft (records: seq<Chess960Record>) depth =
     let mutable totalNodes = 0L
@@ -306,8 +252,6 @@ let bigPerftTestSample depth =
   printfn $"\nStarting repeat perft function: {nameof repeatPerft}"
   repeatPerft curPos depth 3
 
-
-
 let fen1 = """8/p1r2b2/1p1R1P1k/7p/P1p1N1p1/4N3/1bB2P1P/6K1 w - - 1 39"""
 let fen2 = "8/p1r1Nb2/1p1R1P1k/7p/P1p1N1p1/8/1bB2P1P/6K1 w - - 5 41"
 
@@ -380,57 +324,10 @@ module ParsingTests =
   let enginBattlePath = "C:/Dev/Chess/PGNs/dfrc_UncertaintyMatch.pgn"
   let bigLichessFile = "C:/Dev/Chess/lichess_db_standard_rated_2017-10.pgn"
   let queenOddsGames = "C:/Users/Navn/Downloads/lichess_LeelaQueenOdds_2025-03-14.pgn"
-  
-  let testRemovePlayerFromPGN (playerToRemove : string ) =
-    let playerToLower = playerToRemove.ToLower()
-    let games = PGNParser.parsePgnFile gamePgn |> Seq.toList
-    let getFileName () =
-      let fileName = Path.GetFileNameWithoutExtension gamePgn
-      let fileDir = Path.GetDirectoryName navsPgn
-      let fileExt = Path.GetExtension navsPgn
-      let outputFile = Path.Combine(fileDir, sprintf "%s_%s_Removed%s" fileName playerToRemove fileExt)
-      outputFile
-    let outputFile = getFileName ()
-    let filteredGames = 
-        games 
-        |> Seq.filter (fun g -> 
-            let playerFound = 
-                g.GameMetaData.White.ToLower().Contains playerToLower || 
-                g.GameMetaData.Black.ToLower().Contains playerToLower
-            not playerFound )
-        |> Seq.toList
-    PGNWriter.writeRawPgnGamesAdjustedToFile outputFile filteredGames
-  
-  let testPGNHeaderParsing pgnFile =
-    let games = PGNParser.parsePgnFileHeaders pgnFile
-    printfn "Number of games: %d" (games |> Seq.length)
-    let mutable gameNr = 1
-    let allGames = games |> Seq.truncate 10_000
-    for g in allGames  do
-      printfn "Game %d: %s %s vs %s %s" gameNr g.GameMetaData.Event g.GameMetaData.White g.GameMetaData.Black g.GameMetaData.Result      
-      gameNr <- gameNr + 1
-
-  let testOfPVParsing () =
-    let pv = "d2d4 d7d5 c2c4 e7e6 b1c3 c7c6 e2e3 g8f6 f1d3 f8d6 g1f3 b8d7"
-  
-    let moveList = Array.init 256 (fun _ -> defaultof<TMove>) 
-    for n in 1 .. 1_000 do
-      let board = Chess.Board()
-      let shortPV = getShortSanPVFromLongSanPVFast moveList &board pv
-      if n % 100 = 0 then
-        printfn "n = %d, shortPV = %s" n shortPV
-      ()
-    let board = Chess.Board()
-    for n in 1 .. 1_000_000 do
-      let shortPV = getShortSanPVFromLongSanPVFast moveList &board pv
-      if n % 100_000 = 0 then
-        printfn "n = %d, shortPV = %s" n shortPV
-      ()
-
-  
+    
   let getAllMatesFromPGN pgnFile printToConsole =
     let board = Board()
-    let games = PGNParser.parsePgnFile pgnFile |> Seq.truncate 1_000_000
+    let games = FullPGNParser.parsePgnFile pgnFile |> Seq.truncate 1_000_000
     let mutable numberOfPlys = 0
     let mutable gameIdx = 0
     printfn "Started parsing of PGN file and looking for games with mates: %s" pgnFile
@@ -443,28 +340,19 @@ module ParsingTests =
           printfn "Start of game number: %d\n" gameIdx 
         board.ResetBoardState()
         if String.IsNullOrEmpty pgn.Fen |> not then
-          board.LoadFen(pgn.Fen)        
-      
-        let mutable moveidx = 0
-        for m in pgn.Moves do
-          if m.WhiteSan <> "" then
-            board.PlaySimpleShortSan m.WhiteSan
-            moveidx <- moveidx + 1
-            numberOfPlys <- numberOfPlys + 1
-            if printToConsole then
-              match Utilities.Regex.parseEvalRegexOption m.WhiteComment false with
-              | Some eval -> printfn "White move %s, move number: %d Eval: %f" m.WhiteSan moveidx eval
-              | None -> ()
+          board.LoadFen(pgn.Fen)  
 
-          if m.BlackSan <> "" then
-            board.PlaySimpleShortSan m.BlackSan
-            moveidx <- moveidx + 1
-            numberOfPlys <- numberOfPlys + 1
+        for m in pgn.Mainline do
+            board.PlaySimpleShortSan m.San
             if printToConsole then
-              match Utilities.Regex.parseEvalRegexOption m.BlackComment true with
+              match Utilities.Regex.parseEvalRegexOption m.Comment false with
               | Some eval -> 
-                printfn "Black move %s, move number: %d Eval: %f" m.BlackSan moveidx eval
+                    if m.Color = "w" then
+                      printfn "White move %s, move number: %d Eval: %f" m.San m.MoveNumber eval
+                    else
+                    printfn "Black move %s, move number: %d Eval: %f" m.San m.MoveNumber eval
               | None -> ()
+          
         let isMat = board.IsMate()
         if isMat then
           let ply = board.PlyCount
@@ -474,8 +362,7 @@ module ParsingTests =
 
   let parsAllPGNgames path printToConsole =
     let board = Board()
-    //let games = parsePgnFile path |> Seq.skip 5_000_000 |> Seq.truncate 5_000_000 
-    let games = PGNParser.parsePgnFile path |> Seq.truncate 1_000_000
+    let games = FullPGNParser.parsePgnFile path |> Seq.truncate 1_000_000
     let mutable numberOfPlys = 0
     let mutable gameIdx = 0
     printfn "Started parsing of PGN file: %s" path
@@ -488,25 +375,15 @@ module ParsingTests =
         printfn "Start of game number: %d\n" gameIdx 
       board.ResetBoardState()
       board.LoadFen(pgn.Fen)
-      let mutable moveidx = 0
-      for m in pgn.Moves do
-        if m.WhiteSan <> "" then
-          board.PlaySimpleShortSan m.WhiteSan
-          moveidx <- moveidx + 1
-          numberOfPlys <- numberOfPlys + 1
+      for m in pgn.Mainline do        
+          board.PlaySimpleShortSan m.San          
           if printToConsole then
-            match Utilities.Regex.parseEvalRegexOption m.WhiteComment false with
-            | Some eval -> printfn "White move %s, move number: %d Eval: %f" m.WhiteSan moveidx eval
-            | None -> ()
-
-        if m.BlackSan <> "" then
-          board.PlaySimpleShortSan m.BlackSan
-          moveidx <- moveidx + 1
-          numberOfPlys <- numberOfPlys + 1
-          if printToConsole then
-            match Utilities.Regex.parseEvalRegexOption m.BlackComment true with
+            match Utilities.Regex.parseEvalRegexOption m.Comment false with
             | Some eval -> 
-              printfn "Black move %s, move number: %d Eval: %f" m.BlackSan moveidx eval
+                if m.Color = "b" then
+                  printfn "Black move %s, move number: %d Eval: %f" m.San m.MoveNumber eval
+                else
+                printfn "White move %s, move number: %d Eval: %f" m.San m.MoveNumber eval
             | None -> ()
 
     printfn "Number of games played: %d and number of moves played: %d" gameIdx numberOfPlys
@@ -524,41 +401,34 @@ module ParsingTests =
       let mutable recentEvalsWhite = Queue<EvalDetailResult>()
       let mutable recentEvalsBlack = Queue<EvalDetailResult>()
       [
-          for m in pgn.Moves do
-            if m.WhiteSan <> "" then
-                ply <- ply + 1
-                board.PlaySimpleShortSan m.WhiteSan
-                match Utilities.Regex.parseEvalRegexOption m.WhiteComment false with
-                | Some eval ->
-                    let pd =
-                      match Utilities.Regex.parsePonderMove m.WhiteComment with
-                      | Some ponder -> ponder
-                      | None -> ""
-                    let comment = sprintf "{%s}" m.WhiteComment
-                    let evalDetail = {Player = pgn.GameMetaData.White; Move = m.WhiteSan; PonderMove = pd; Ply = ply; Eval = eval; FEN = board.PositionWithMoves(); Comment = comment }
-                    let players = pgn.GameMetaData.White + " vs " + pgn.GameMetaData.Black
-                    let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = "w"}
+          for m in pgn.Mainline do            
+            ply <- ply + 1
+            board.PlaySimpleShortSan m.San
+            match Utilities.Regex.parseEvalRegexOption m.Comment false with
+            | Some eval ->
+                let pd =
+                    match Utilities.Regex.parsePonderMove m.Comment with
+                    | Some ponder -> ponder
+                    | None -> ""
+                let comment = sprintf "{%s}" m.Comment
+                let players = pgn.GameMetaData.White + " vs " + pgn.GameMetaData.Black
+                let evalDetail =
+                    if m.Color = "w" then
+                            {Player = pgn.GameMetaData.White; Move = m.San; PonderMove = pd; Ply = ply; Eval = eval; FEN = board.PositionWithMoves(); Comment = comment }
+                    else
+                        {Player = pgn.GameMetaData.Black; Move = m.San; PonderMove = pd ; Ply = ply; Eval = eval;  FEN = board.PositionWithMoves(); Comment = comment }
+                let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = m.Color}
+                if m.Color = "w" then
                     if recentEvalsWhite.Count >= chunkSize then
                         recentEvalsWhite.Dequeue() |> ignore
                     recentEvalsWhite.Enqueue evalRes
-                | None -> ()
-            if m.BlackSan <> "" then
-                ply <- ply + 1
-                board.PlaySimpleShortSan m.BlackSan
-                match Utilities.Regex.parseEvalRegexOption m.BlackComment true with
-                | Some eval ->
-                    let pd =
-                      match Utilities.Regex.parsePonderMove m.BlackComment with
-                      | Some ponder -> ponder
-                      | None -> ""
-                    let comment = sprintf "{%s}" m.BlackComment
-                    let evalDetail = {Player = pgn.GameMetaData.Black; Move = m.BlackSan; PonderMove = pd ; Ply = ply; Eval = eval;  FEN = board.PositionWithMoves(); Comment = comment }
-                    let players = pgn.GameMetaData.White + " vs " + pgn.GameMetaData.Black
-                    let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = "b"}
+                else
+                    let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = m.Color}
                     if recentEvalsBlack.Count >= chunkSize then
                         recentEvalsBlack.Dequeue() |> ignore
-                    recentEvalsBlack.Enqueue evalRes
-                | None -> ()
+                    recentEvalsBlack.Enqueue evalRes                    
+            | None -> ()
+            
             if recentEvalsWhite.Count = chunkSize && recentEvalsBlack.Count = chunkSize then
                 let results = (recentEvalsWhite |> Seq.toList) @ (recentEvalsBlack |> Seq.toList) |> List.sortBy(fun e -> e.EvalDetail.Ply)
                 recentEvalsWhite.Clear()
@@ -573,40 +443,26 @@ module ParsingTests =
 
   let collectAllChessEvaluations (pgn: PGNTypes.PgnGame) =    
       board.ResetBoardState()
-      board.LoadFen(pgn.Fen)
-      let mutable ply = board.PlyCount     
+      board.LoadFen(pgn.Fen)    
       [
-          for m in pgn.Moves do
-            if m.WhiteSan <> "" then
-                ply <- ply + 1
-                board.PlaySimpleShortSan m.WhiteSan
-                match Utilities.Regex.parseEvalRegexOption m.WhiteComment false with
+          for m in pgn.Mainline do
+                board.PlaySimpleShortSan m.San
+                match Utilities.Regex.parseEvalRegexOption m.Comment false with
                 | Some eval ->
                     let pd =
-                      match Utilities.Regex.parsePonderMove m.WhiteComment with
+                      match Utilities.Regex.parsePonderMove m.Comment with
                       | Some ponder -> ponder
                       | None -> ""
-                    let comment = sprintf "{%s}" m.WhiteComment
-                    let evalDetail = {Player = pgn.GameMetaData.White; Move = m.WhiteSan; PonderMove = pd; Ply = ply; Eval = eval; FEN = board.PositionWithMoves(); Comment = comment }
+                    let comment = sprintf "{%s}" m.Comment
+                    let evalDetail = 
+                        if m.Color = "w" then
+                            {Player = pgn.GameMetaData.White; Move = m.San; PonderMove = pd; Ply = m.Ply; Eval = eval; FEN = board.PositionWithMoves(); Comment = comment }
+                        else 
+                            {Player = pgn.GameMetaData.Black; Move = m.San; PonderMove = pd ; Ply = m.Ply; Eval = eval;  FEN = board.PositionWithMoves(); Comment = comment }
                     let players = pgn.GameMetaData.White + " vs " + pgn.GameMetaData.Black
-                    let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = "w"}
+                    let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = m.Color}
                     yield evalRes
-                | None -> ()
-            if m.BlackSan <> "" then
-                ply <- ply + 1
-                board.PlaySimpleShortSan m.BlackSan
-                match Utilities.Regex.parseEvalRegexOption m.BlackComment true with
-                | Some eval ->
-                    let pd =
-                      match Utilities.Regex.parsePonderMove m.BlackComment with
-                      | Some ponder -> ponder
-                      | None -> ""
-                    let comment = sprintf "{%s}" m.BlackComment
-                    let evalDetail = {Player = pgn.GameMetaData.Black; Move = m.BlackSan; PonderMove = pd ; Ply = ply; Eval = eval;  FEN = board.PositionWithMoves(); Comment = comment }
-                    let players = pgn.GameMetaData.White + " vs " + pgn.GameMetaData.Black
-                    let evalRes = {Result = pgn.GameMetaData.Result; GameNr = pgn.GameNumber; Players = players; EvalDetail = evalDetail; Color = "b"}
-                    yield evalRes
-                | None -> () 
+                | None -> ()            
       ]
 
   let analyzeChessEvaluationChanges (evalChunks: EvalDetailResult list) =
@@ -707,7 +563,7 @@ module ParsingTests =
     | _ -> None
 
   let gameAnalysis path chunkSize =
-      let games = PGNParser.parsePgnFile path |> Seq.truncate 1_000_000
+      let games = FullPGNParser.parsePgnFile path |> Seq.truncate 1_000_000
       printfn "Working on file: %s" path
       //write started games to file
       //writeToFile "C:/Dev/Chess/PGNs/evals.txt" []
@@ -1048,7 +904,7 @@ module ParsingTests =
     let collectMissedWins = appendToFile "C:/Dev/Chess/PGNs/missed_wins.txt" true path
     let collectMissedDraws = appendToFile "C:/Dev/Chess/PGNs/missed_draws.txt" true path
     let collectMisEvaluated = appendToFile "C:/Dev/Chess/PGNs/mis_evaluated_positions.txt" true path
-    let allPGNGames = PGNParser.parsePgnFile path |> Seq.truncate 1_000_000 |> Seq.toList
+    let allPGNGames = FullPGNParser.parsePgnFile path |> Seq.truncate 1_000_000 |> Seq.toList
     let possibleNames = ["lc0"; "lczero"; "base"; "opt"; "ceres"]
     let nameExists (name:string) = 
       possibleNames |> List.exists (fun e -> name.Contains e)
@@ -1098,11 +954,8 @@ module ParsingTests =
     for pgn in allPGNGames do
       board.ResetBoardState()
       board.LoadFen pgn.GameMetaData.Fen
-      for m in pgn.Moves do
-        if m.WhiteSan <> "" then
-          board.PlaySimpleShortSan m.WhiteSan
-        if m.BlackSan <> "" then
-          board.PlaySimpleShortSan m.BlackSan
+      for m in pgn.Mainline do      
+          board.PlaySimpleShortSan m.San        
       let evals = collectAllChessEvaluations pgn        
       let mutable currentCollector = fun _ -> ()
       let w,b = pgn.GameMetaData.White, pgn.GameMetaData.Black
@@ -1253,7 +1106,7 @@ module ParsingTests =
     printfn "Total number of games analyzed: %d" games
 
 let removeEPFensInPGNFile (pgnPath:string) =
-  let games = PGNParser.parsePgnFile pgnPath |> Seq.toList
+  let games = FullPGNParser.parsePgnFile pgnPath |> Seq.toList
   let mutable gameNr = 0  
   let board = new Board()
   let list =
@@ -1267,7 +1120,7 @@ let removeEPFensInPGNFile (pgnPath:string) =
   list, games.Length
 
 let removeEPOpeningsInPGNFile (pgnPath:string) =
-  let games = PGNParser.parsePgnFile pgnPath |> Seq.toList
+  let games = FullPGNParser.parsePgnFile pgnPath |> Seq.toList
   let mutable gameNr = 0
   let mutable ok = true
   let board = new Board()
@@ -1276,15 +1129,11 @@ let removeEPOpeningsInPGNFile (pgnPath:string) =
       gameNr <- gameNr + 1
       board.ResetBoardState()
       board.LoadFen pgn.GameMetaData.Fen
-      for m in pgn.Moves do
-          if m.WhiteSan <> "" then
-              if board.FindEpMove m.WhiteSan then
-                  ok <- false                  
-              board.PlaySimpleShortSan m.WhiteSan
-          if m.BlackSan <> "" then
-              if board.FindEpMove m.BlackSan then
-                  ok <- false                  
-              board.PlaySimpleShortSan m.BlackSan
+      for m in pgn.Mainline do          
+        if board.FindEpMove m.San then
+            ok <- false                  
+        board.PlaySimpleShortSan m.San
+          
       if ok then
         yield pgn
   ]

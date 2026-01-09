@@ -172,7 +172,6 @@ module TypesDef =
       { 
         GameNumber: int
         GameMetaData: GameMetadata
-        Moves: ResizeArray<Move>
         Mainline: PlyLine
         RootVariations: ResizeArray<PlyLine>
         Comments: string
@@ -183,7 +182,6 @@ module TypesDef =
           { 
             GameNumber = i
             GameMetaData = GameMetadata.Empty
-            Moves = ResizeArray()
             Mainline = ResizeArray()
             RootVariations = ResizeArray()
             Comments = ""
