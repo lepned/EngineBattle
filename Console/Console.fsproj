@@ -3,7 +3,7 @@
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<AssemblyName>EngineBattle.Console</AssemblyName>
-		<TargetFramework>net9.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<PublishSingleFile>true</PublishSingleFile>
 	</PropertyGroup>
 
