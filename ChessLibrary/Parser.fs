@@ -1719,13 +1719,16 @@ module FullPGNParser =
   let private tryUpdateLastNodeComment (cmt: string) =
     if not (String.IsNullOrWhiteSpace cmt) then
       match currentLine |> Seq.tryLast with
-      | Some node -> node.Comment <- cmt
+      | Some node -> node.Comment <- cmt; true
       | None ->
           match rootVariations |> Seq.tryLast with
           | Some line when line.Count > 0 ->
               let lastNode = line[line.Count - 1]
               lastNode.Comment <- cmt
-          | _ -> ()
+              true
+          | _ -> false
+    else
+      false
 
   // ============================================================================
   // Text-based header parsing
@@ -1781,7 +1784,6 @@ module FullPGNParser =
     let spanLine = line.AsSpan()
     let len = spanLine.Length
     let mutable p = 0
-
     // Skip leading whitespace
     while p < len && Char.IsWhiteSpace(spanLine[p]) do p <- p + 1
 
@@ -1814,15 +1816,40 @@ module FullPGNParser =
               if p > startComment then new string(spanLine.Slice(startComment, p - startComment).Trim())
               else ""
             if p < len && spanLine[p] = '}' then p <- p + 1
-            // Attach comment to most recent move
-            if blackSan <> "" then
-              blackComment <- if blackComment = "" then comment else blackComment + " " + comment
-              tryUpdateLastNodeComment comment
-            elif whiteSan <> "" then
-              whiteComment <- if whiteComment = "" then comment else whiteComment + " " + comment
-              tryUpdateLastNodeComment comment
-            else
+            let mutable i = p
+            while i < len && Char.IsWhiteSpace(spanLine[i]) do i <- i + 1
+            let tailResultOnly =
+              if i >= len then
+                false
+              else
+                let tail = spanLine.Slice(i)
+                let mutable after = i
+                let mutable matched = true
+                if tail.StartsWith("1-0") then
+                  after <- i + 3
+                elif tail.StartsWith("0-1") then
+                  after <- i + 3
+                elif tail.StartsWith("1/2-1/2") then
+                  after <- i + 7
+                elif tail.StartsWith("*") then
+                  after <- i + 1
+                elif tail.StartsWith("Ť-Ť") then
+                  after <- i + 3
+                else
+                  matched <- false
+                if not matched then
+                  false
+                else
+                  while after < len && Char.IsWhiteSpace(spanLine[after]) do after <- after + 1
+                  after >= len
+
+            if tailResultOnly then
               pendingComment <- if pendingComment = "" then comment else pendingComment + " " + comment
+            else
+              // Attach to the most recent move if possible; otherwise store as pending
+              let attached = tryUpdateLastNodeComment comment
+              if not attached then
+                pendingComment <- if pendingComment = "" then comment else pendingComment + " " + comment
 
           // Variation start (
           elif c0 = '(' then
@@ -1913,14 +1940,14 @@ module FullPGNParser =
                       appendPlyMove san "b"
                       if pendingComment <> "" then
                         blackComment <- pendingComment
-                        tryUpdateLastNodeComment pendingComment
+                        tryUpdateLastNodeComment pendingComment |> ignore
                         pendingComment <- ""
                     else
                       whiteSan <- san
                       appendPlyMove san "w"
                       if pendingComment <> "" then
                         whiteComment <- pendingComment
-                        tryUpdateLastNodeComment pendingComment
+                        tryUpdateLastNodeComment pendingComment |> ignore
                         pendingComment <- ""
                   else
                     blackSan <- san
@@ -1964,14 +1991,14 @@ module FullPGNParser =
                     appendPlyMove san "b"
                     if pendingComment <> "" then
                       blackComment <- pendingComment
-                      tryUpdateLastNodeComment pendingComment
+                      tryUpdateLastNodeComment pendingComment |> ignore
                       pendingComment <- ""
                   else
                     whiteSan <- san
                     appendPlyMove san "w"
                     if pendingComment <> "" then
                       whiteComment <- pendingComment
-                      tryUpdateLastNodeComment pendingComment
+                      tryUpdateLastNodeComment pendingComment |> ignore
                       pendingComment <- ""
                 else
                   blackSan <- san
@@ -2131,9 +2158,9 @@ module FullPGNParser =
             inMoveText <- true
             parseMoveTextLine trimmed
             if resultFoundInMovetext && result <> "" && (result = "1-0" || result = "0-1" || result = "1/2-1/2" || result = "*") then
-              yield buildGameWithRaw()
-              resetState()
-              inMoveText <- false
+                yield buildGameWithRaw()
+                resetState()
+                inMoveText <- false
 
         if hasGame() || result <> "" then
           yield buildGameWithRaw()

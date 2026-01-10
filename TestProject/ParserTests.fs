@@ -412,6 +412,39 @@ module FullSpanParserTests =
         Assert.Equal("Another comment", game.Mainline.[2].Comment)
 
     [<Fact>]
+    let ``FullSpanParser parses engine comments on every move`` () =
+        let pgnContent = """
+[Event "Round Robin"]
+[Site "Cup Test"]
+[Date "10/01/2026"]
+[Round "1.1"]
+[White "Stockfish 20260106"]
+[Black "Ceres 2.095 C1-640-34"]
+[Result "1-0"]
+[Reason "AE"]
+[Opening "French - Chigorin variation, ECO: C00"]
+[OpeningHash "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"]
+
+{TournamentOptions: Round Robin; Rounds=240; Book=Shuffled_SUFI21-27_TOP 50.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=10 score=10.0 cp ; WhiteEngineOptions: TimeControl: 30' + 30''; Protocol=UCI; MoveOverheadMS=2000; NumaPolicy=auto; Threads=126; Skill Level=20; Move Overhead=200; nodestime=0; Hash=98304; SyzygyProbeDepth=1; Syzygy50MoveRule=True; SyzygyProbeLimit=6; SyzygyPath=D:/Syzygy; UCI_Chess960=false; UCI_ShowWDL=true;BlackEngineOptions: TimeControl: 30' + 30''; Protocol=UCI; MoveOverheadMS=2000; LogFile=; PathMode=position; MoveOverheadMs=2000; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; SyzygyPath=D:/Syzygy; Network=D:/Ceres 2.095 C1-640-34/C1-640-34-I8.onnx|cudagraphs=true;V1TEMP=0.55; UCI_Chess960=false; Device=GPU:0,1#TensorRT16;}
+1. e4 {book1, mb=+0+0+0+0+0,} e6 {book2, mb=+0+0+0+0+0,} 2. Qe2 {book3, mb=+0+0+0+0+0,} d5 {book4, mb=+0+0+0+0+0,} 3. exd5 {book5, mb=+0+0+0+0+0,} Qxd5 {book6, mb=+0+0+0+0+0,} 4. Nc3 {book7, mb=+0+0+0+0+0,} Qd8 {book8, mb=+0+0+0+0+0,} 5. b3 {book9, mb=+0+0+0+0+0,} Nf6 {book10, mb=+0+0+0+0+0,} 6. Bb2 {book11, mb=+0+0+0+0+0,} Be7 {book12, mb=+0+0+0+0+0,} 7. 0-0-0 {wv=1.23, mt=224941, s=40143766, eps=0, n=9029617797, d=41, pcs=30, sd=98, pd=a5, tl=1605058, tb=47666} 7 ...a5 {wv=0.82, mt=178617, s=12037, eps=9716, n=2148187, d=25, pcs=30, sd=73, pd=, tl=1651382, tb=0} {Evaluation agreement} 1-0
+"""
+        let games = parsePgnString pgnContent |> Seq.toList
+        Assert.Single(games) |> ignore
+        let game = games.Head
+        Assert.Equal(14, game.Mainline.Count)
+
+        let missingComments =
+            game.Mainline
+            |> Seq.filter (fun m -> String.IsNullOrWhiteSpace(m.Comment))
+            |> Seq.toList
+        Assert.True(missingComments.IsEmpty, $"Expected comments on every move, missing on {missingComments.Length} moves")
+
+        let lastMove = game.Mainline.[game.Mainline.Count - 1]
+        Assert.Contains("wv=0.82", lastMove.Comment)
+        Assert.DoesNotContain("Evaluation agreement", lastMove.Comment)
+        Assert.Contains("Evaluation agreement", game.Comments)
+
+    [<Fact>]
     let ``FullSpanParser parses NAGs`` () =
         let pgnContent = """
 [Event "NAG Test"]

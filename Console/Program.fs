@@ -102,6 +102,7 @@ module TestPath =
   let frcLichess = "C:/Dev/Chess/PGNs/Results/Lichess/lichess_db_chess960_rated_2024-02.pgn"
   let bigLichess = "C:/Dev/Chess/PGNs/Results/Lichess/lichess_db_standard_rated_2017-10.pgn"
   let tcecOpening = "C:/Dev/Chess/Openings/TCEC_16-25.pgn"
+  let pgnCup = "C:/Dev/Chess/PGNs/CupTest.pgn"
   let pgnTest1 = "C:/Dev/Chess/PGNs/Sf--t3-ovUncBo_T_Test.pgn"
   let pgnTest2 = "C:/Dev/Chess/PGNs/test_UHO_02.pgn"
   let pgnTest3 = "C:/Dev/Chess/PGNs/Lichess_Fast_01.pgn"
@@ -644,7 +645,10 @@ module Program =
     if test then      
       try 
         let start = Stopwatch.GetTimestamp()
-        let parsedGames = Parser.FullPGNParser.parsePgnFile TestPath.frcLichess
+        let parsedGames = Parser.FullPGNParser.parsePgnFile TestPath.pgnTest17
+        let game = parsedGames |> Seq.item 0
+        for m in game.Mainline do
+            printfn "%s (%s) %s" m.San m.Color m.Comment
         for g in parsedGames do
             if g.GameNumber % 100000 = 0 then
                 if String.IsNullOrEmpty g.Raw then
@@ -653,8 +657,7 @@ module Program =
                 else
                     printfn "\n%s" g.Raw                
        
-        printfn "Total games parsed: %d" (parsedGames.Count())
-        let stop = 1
+        printfn "Total games parsed: %d" (parsedGames.Count())        
         //let games, total = Test.removeEPFensInPGNFile TestPath.pgnTest17
         //printfn "Total games processed: %d, removed: %d" total (total - games.Length)
         //let pgnFile = "C:/Dev/Chess/PGNs/Results/UHO_4060_v4_epRemoved.pgn"
