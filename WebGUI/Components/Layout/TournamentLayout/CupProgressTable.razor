@@ -1,0 +1,425 @@
+@using System.Text.Json
+@using WebGUI.Services
+@using System.Timers
+@implements IDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject ILogger<CupProgressTable> Logger
+@inject IWebHostEnvironment Environment
+@inject NotifierService Notifier
+
+<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
+    <div class="header">
+        <span class="header-text">Cup Progress</span>
+    </div>
+    <div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "20vh"); overflow-y: auto;" id="cupProgressDiv">
+        <table class="custom-table">
+            <thead>
+                <tr class="header-row">
+                    <th class="header-cell">Seed</th>
+                    <th class="header-cell">Engine</th>
+                    <th class="header-cell center">Rating</th>
+                    <th class="header-cell">Round</th>
+                    <th class="header-cell center">Match</th>
+                    <th class="header-cell center">Game Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in progressEntries)
+                {
+                    <tr class="data-row @(IsActivePlayer(entry.Player) ? "challenger" : "")">
+                        <td class="data-cell">@entry.Seed</td>
+                        <td class="data-cell">@entry.Player</td>
+                        <td class="data-cell center">@FormatRating(entry.Rating)</td>
+                        <td class="data-cell">@entry.RoundLabel</td>
+                        <td class="data-cell center">@entry.CurrentMatchScore</td>
+                        <td class="data-cell center">@entry.GameScore.ToString("0.0")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int FontSize { get; set; }
+    [Parameter] public int Height { get; set; }
+    [Parameter] public int CycleSeconds { get; set; } = 20;
+    [Parameter] public bool ShouldCycle { get; set; }
+    [Parameter] public string BracketFileName { get; set; } = "cup_bracket.json";
+    [Parameter] public string WhitePlayer { get; set; } = "";
+    [Parameter] public string BlackPlayer { get; set; } = "";
+
+    private List<CupProgressEntry> progressEntries = new();
+    private CupMatch currentMatch;
+    private int firstRoundMatches = 0;
+    private Timer cycleTimer;
+    private int activeTableIndex = 0;
+    private int cycleSeconds = 20;
+    private bool isSubscribed;
+    private IJSObjectReference chessJSmodule;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadProgress();
+        if (ShouldCycle && CycleSeconds > 0 && CycleSeconds != cycleSeconds)
+        {
+            cycleSeconds = CycleSeconds;
+            Dispose();
+            StartCycleTimer();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+            SubscribeToUpdates();
+            if (ShouldCycle && CycleSeconds > 0)
+            {
+                StartCycleTimer();
+            }
+        }
+    }
+
+    private void SubscribeToUpdates()
+    {
+        if (isSubscribed)
+            return;
+
+        Notifier.CupUpdated += OnCupUpdated;
+        isSubscribed = true;
+    }
+
+    private async Task OnCupUpdated()
+    {
+        await LoadProgress();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void StartCycleTimer()
+    {
+        cycleTimer = new Timer(CycleSeconds * 1000);
+        cycleTimer.Elapsed += async (sender, args) =>
+        {
+            activeTableIndex = (activeTableIndex + 1) % 2;
+            await InvokeAsync(DoScroll);
+        };
+        cycleTimer.Start();
+    }
+
+    private async Task LoadProgress()
+    {
+        var bracketPath = Path.Combine(Environment.ContentRootPath, "wwwroot", BracketFileName);
+        if (!File.Exists(bracketPath))
+        {
+            progressEntries = new List<CupProgressEntry>();
+            return;
+        }
+
+        try
+        {
+            var json = NormalizeBracketJson(await ReadFileWithRetry(bracketPath));
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var bracket = JsonSerializer.Deserialize<CupBracketModel>(json, options);
+            currentMatch = GetCurrentMatch(bracket);
+            progressEntries = BuildProgress(bracket);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to read cup bracket: {ex.Message}");
+            progressEntries = new List<CupProgressEntry>();
+        }
+    }
+
+    private static async Task<string> ReadFileWithRetry(string path)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await ReadAllTextWithSharing(path);
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                await Task.Delay(75);
+            }
+        }
+
+        return await ReadAllTextWithSharing(path);
+    }
+
+    private static async Task<string> ReadAllTextWithSharing(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private static string NormalizeBracketJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return json;
+
+        var trimmed = json.TrimStart();
+        if (trimmed.StartsWith("\"", StringComparison.Ordinal) && json.TrimEnd().EndsWith("}", StringComparison.Ordinal))
+            return "{" + json;
+
+        return json;
+    }
+
+    private List<CupProgressEntry> BuildProgress(CupBracketModel bracket)
+    {
+        var entries = new Dictionary<string, CupProgressEntry>(StringComparer.OrdinalIgnoreCase);
+        if (bracket is null)
+            return new List<CupProgressEntry>();
+
+        firstRoundMatches = bracket.Rounds.FirstOrDefault()?.Matches.Count ?? 0;
+        var totalRounds = GetTotalRounds();
+
+        foreach (var round in bracket.Rounds)
+        {
+            foreach (var match in round.Matches)
+            {
+                AddPlayer(entries, match.PlayerA, match.PlayerARating);
+                AddPlayer(entries, match.PlayerB, match.PlayerBRating);
+
+                UpdateProgress(entries, match.PlayerA, round.RoundNumber, match.ScoreA, match.ScoreB, match, totalRounds);
+                UpdateProgress(entries, match.PlayerB, round.RoundNumber, match.ScoreB, match.ScoreA, match, totalRounds);
+            }
+        }
+
+        foreach (var entry in entries.Values)
+        {
+            entry.RoundLabel = GetRoundLabel(entry.RoundReached, totalRounds, entry.IsChampion);
+            entry.CurrentMatchScore = GetCurrentMatchScore(entry.Player);
+        }
+
+        var ordered = entries.Values
+            .OrderByDescending(e => e.Rating)
+            .ThenBy(e => e.Player, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            ordered[i].Seed = i + 1;
+        }
+
+        return ordered;
+    }
+
+    private void AddPlayer(Dictionary<string, CupProgressEntry> entries, string name, int rating)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Equals("TBD", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!entries.TryGetValue(name, out var entry))
+        {
+            entry = new CupProgressEntry { Player = name, Rating = rating };
+            entries[name] = entry;
+        }
+        else if (entry.Rating == 0 && rating > 0)
+        {
+            entry.Rating = rating;
+        }
+    }
+
+    private void UpdateProgress(Dictionary<string, CupProgressEntry> entries, string name, int roundNumber, double scoreFor, double scoreAgainst, CupMatch match, int totalRounds)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Equals("TBD", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!entries.TryGetValue(name, out var entry))
+            return;
+
+        entry.RoundReached = Math.Max(entry.RoundReached, roundNumber);
+        entry.GameScore += scoreFor;
+
+        var matchPlayed = match.Games.Count > 0 || scoreFor > 0 || scoreAgainst > 0 || match.IsDecided;
+        if (matchPlayed)
+        {
+            if (match.IsDecided && !string.IsNullOrWhiteSpace(match.Winner))
+            {
+                if (match.Winner.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.MatchesWon++;
+                    if (roundNumber == totalRounds)
+                        entry.IsChampion = true;
+                }
+                else
+                    entry.MatchesLost++;
+            }
+        }
+    }
+
+    private int GetTotalRounds()
+    {
+        if (firstRoundMatches <= 0)
+            return 0;
+
+        var players = firstRoundMatches * 2;
+        var rounds = 0;
+        while (players > 1)
+        {
+            players = players / 2;
+            rounds++;
+        }
+        return rounds;
+    }
+
+    private string GetRoundLabel(int roundNumber, int totalRounds, bool isChampion)
+    {
+        if (roundNumber <= 0)
+            return "--";
+
+        if (isChampion && roundNumber == totalRounds)
+            return "Champion";
+
+        if (firstRoundMatches <= 0)
+            return $"Round {roundNumber}";
+
+        var players = firstRoundMatches * 2;
+        var roundPlayers = players / (int)Math.Pow(2, roundNumber - 1);
+        return roundPlayers switch
+        {
+            2 => "Final",
+            4 => "Semi-finals",
+            8 => "Quarter-finals",
+            _ => $"Round of {roundPlayers}"
+        };
+    }
+
+    private string FormatRating(int rating) => rating > 0 ? rating.ToString() : "--";
+
+    private bool IsActivePlayer(string player) =>
+        !string.IsNullOrWhiteSpace(player) &&
+        (player.Equals(WhitePlayer, StringComparison.OrdinalIgnoreCase) ||
+         player.Equals(BlackPlayer, StringComparison.OrdinalIgnoreCase));
+
+    private string GetCurrentMatchScore(string player)
+    {
+        if (currentMatch is null || string.IsNullOrWhiteSpace(player))
+            return "--";
+
+        if (player.Equals(currentMatch.PlayerA, StringComparison.OrdinalIgnoreCase))
+            return $"{currentMatch.ScoreA:0.0}-{currentMatch.ScoreB:0.0}";
+
+        if (player.Equals(currentMatch.PlayerB, StringComparison.OrdinalIgnoreCase))
+            return $"{currentMatch.ScoreB:0.0}-{currentMatch.ScoreA:0.0}";
+
+        return "--";
+    }
+
+    private CupMatch GetCurrentMatch(CupBracketModel bracket)
+    {
+        if (bracket is null || string.IsNullOrWhiteSpace(WhitePlayer) || string.IsNullOrWhiteSpace(BlackPlayer))
+            return null;
+
+        return bracket.Rounds
+            .SelectMany(r => r.Matches)
+            .FirstOrDefault(m =>
+                (m.PlayerA.Equals(WhitePlayer, StringComparison.OrdinalIgnoreCase) &&
+                 m.PlayerB.Equals(BlackPlayer, StringComparison.OrdinalIgnoreCase)) ||
+                (m.PlayerA.Equals(BlackPlayer, StringComparison.OrdinalIgnoreCase) &&
+                 m.PlayerB.Equals(WhitePlayer, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private async Task SafeInvokeAsync(string identifier, params object[] args)
+    {
+        try
+        {
+            await chessJSmodule.InvokeVoidAsync(identifier, args);
+        }
+        catch (JSException jsEx) when (jsEx.Message.Contains("Cannot set properties of undefined"))
+        {
+            Console.WriteLine($"Suppressed known animation error in {identifier}: {jsEx.Message}");
+        }
+        catch (JSException jsEx)
+        {
+            Logger.LogError($"JS error in {identifier}: {jsEx.Message}");
+        }
+        catch (TaskCanceledException tcEx)
+        {
+            Logger.LogWarning($"JS interop task canceled in {identifier}: {tcEx.Message}");
+        }
+        catch (OperationCanceledException ocEx)
+        {
+            Logger.LogWarning($"JS interop operation canceled in {identifier}: {ocEx.Message}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Unexpected error in {identifier}: {ex.GetType().Name} - {ex.Message}");
+        }
+    }
+
+    private async Task DoScroll()
+    {
+        if (!ShouldCycle || chessJSmodule is null)
+            return;
+
+        try
+        {
+            if (activeTableIndex == 1)
+                await SafeInvokeAsync("scrollDivToEnd", "cupProgressDiv");
+            else
+                await SafeInvokeAsync("scrollDivToTop", "cupProgressDiv");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Error in DoScroll: {ex.GetType().Name} - {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        cycleTimer?.Dispose();
+        if (isSubscribed)
+            Notifier.CupUpdated -= OnCupUpdated;
+    }
+
+    private sealed class CupProgressEntry
+    {
+        public int Seed { get; set; }
+        public string Player { get; set; } = "";
+        public int Rating { get; set; }
+        public int RoundReached { get; set; }
+        public string RoundLabel { get; set; } = "--";
+        public int MatchesWon { get; set; }
+        public int MatchesLost { get; set; }
+        public double GameScore { get; set; }
+        public bool IsChampion { get; set; }
+        public string CurrentMatchScore { get; set; } = "--";
+    }
+
+    private sealed class CupBracketModel
+    {
+        public List<CupRound> Rounds { get; set; } = new();
+    }
+
+    private sealed class CupRound
+    {
+        public int RoundNumber { get; set; }
+        public List<CupMatch> Matches { get; set; } = new();
+    }
+
+    private sealed class CupMatch
+    {
+        public string PlayerA { get; set; } = "";
+        public string PlayerB { get; set; } = "";
+        public int PlayerARating { get; set; }
+        public int PlayerBRating { get; set; }
+        public double ScoreA { get; set; }
+        public double ScoreB { get; set; }
+        public string Winner { get; set; }
+        public bool IsDecided { get; set; }
+        public List<CupGame> Games { get; set; } = new();
+    }
+
+    private sealed class CupGame
+    {
+        public int GameNr { get; set; }
+        public string Result { get; set; } = "";
+    }
+}

@@ -582,7 +582,7 @@ module ConsoleHelper =
     printfn "CPU: %s" tournament.CPU
     printfn "RAM: %s" tournament.RAM
     printfn "GPU: %s" tournament.GPU
-    printfn "Gauntlet: %b" tournament.Gauntlet
+    printfn "Tournament mode: %s" tournament.TournamentMode
     printfn "DoNotDeviate: %b" tournament.PreventMoveDeviation
     printfn "Challengers: %d" tournament.Challengers
     printfn "Rounds: %d" tournament.Rounds
@@ -1603,11 +1603,11 @@ module JSON =
           let json = reader.ReadToEnd()
           let tournament = JsonSerializer.Deserialize<Tournament>(json, JsonSerializerOptions(AllowTrailingCommas = true))
           if tournament.EngineSetup.EngineDefList.Length = 0 then
-             Some {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}             
-          else              
-              Some tournament         
+             Some {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}
+          else
+              Some tournament
       with
-      | ex -> 
+      | ex ->
           ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Note: Tournament.json file %s was not found in working directory" path)
           ConsoleUtils.printInColor ConsoleColor.White "\nA new (empty) tournament.json will be created with default settings\n"
           None
@@ -2247,6 +2247,147 @@ module PairingHelper =
         // After games are played, collect winners and call recursively for next round
         // Here, you need to determine winners from results and pass them to the next round
         round // For pairing generation only; actual tournament logic needs to process results
+
+  type CupSeedingStrategy =
+    | Random
+    | ByRating
+
+  let seedOrder (size: int) =
+    let rec build n =
+      if n <= 1 then
+        [ 1 ]
+      else
+        let prev = build (n / 2)
+        prev
+        |> List.mapi (fun idx value ->
+            if idx % 2 = 0 then
+              [ value; n + 1 - value ]
+            else
+              [ n + 1 - value; value ])
+        |> List.collect id
+    build size
+
+  let seedByBands (players: EngineConfig list) (seedBands: int list list) (randomizeWithinBands: bool) =
+    let sorted = players |> List.sortByDescending (fun p -> p.Rating)
+    let total = sorted.Length
+    if total = 0 then
+      []
+    else
+      let order = seedOrder total
+      let slots : EngineConfig option array = Array.create total None
+      let used = System.Collections.Generic.HashSet<int>()
+      let tryPlace seedNumber =
+        if seedNumber >= 1 && seedNumber <= total && used.Contains seedNumber |> not then
+          let slotIndex = order |> List.findIndex (fun s -> s = seedNumber)
+          slots.[slotIndex] <- Some sorted.[seedNumber - 1]
+          used.Add seedNumber |> ignore
+      let tryPlaceBand (band: int list) =
+        let seeds =
+          band
+          |> List.filter (fun seedNumber -> seedNumber >= 1 && seedNumber <= total && used.Contains seedNumber |> not)
+        if seeds.Length = 0 then
+          ()
+        elif seeds.Length = 1 || randomizeWithinBands |> not then
+          for seedNumber in seeds do
+            tryPlace seedNumber
+        else
+          let slotIndices =
+            seeds
+            |> List.map (fun seedNumber -> order |> List.findIndex (fun s -> s = seedNumber))
+          let seedPlayers = seeds |> List.map (fun seedNumber -> sorted.[seedNumber - 1])
+          let shuffled = seedPlayers |> List.toArray
+          Random.Shuffle(shuffled)
+          for i in 0 .. slotIndices.Length - 1 do
+            slots.[slotIndices.[i]] <- Some shuffled.[i]
+          for seedNumber in seeds do
+            used.Add seedNumber |> ignore
+      for band in seedBands do
+        tryPlaceBand band
+      let remaining =
+        sorted
+        |> List.mapi (fun idx player -> (idx + 1, player))
+        |> List.filter (fun (seedNumber, _) -> used.Contains seedNumber |> not)
+        |> List.map snd
+      let mutable remainingIndex = 0
+      for i in 0 .. total - 1 do
+        if slots.[i].IsNone then
+          slots.[i] <- Some remaining.[remainingIndex]
+          remainingIndex <- remainingIndex + 1
+      slots |> Array.choose id |> Array.toList
+
+  let gamesPerMatchForRound (gamesPerMatch: int) (roundPairIncrements: int list) (roundNumber: int) =
+    let normalized =
+        if gamesPerMatch < 2 then 2
+        elif gamesPerMatch % 2 = 1 then gamesPerMatch + 1
+        else gamesPerMatch
+    match roundPairIncrements with
+    | [] -> normalized
+    | _ ->
+        let idx = Math.Max(0, roundNumber - 1)
+        let pairs =
+            if idx < roundPairIncrements.Length then roundPairIncrements.[idx]
+            else roundPairIncrements.[roundPairIncrements.Length - 1]
+        let pairs = Math.Max(1, pairs)
+        pairs * 2
+
+  let nextUnusedOpeningIndex (usedOpeningHashes: Set<string>) (openings: PGNTypes.PgnGame list) (startIndex: int) =
+    if openings.IsEmpty then
+        0
+    else
+        let total = openings.Length
+        let inline openingHash (opening: PGNTypes.PgnGame) =
+            if System.String.IsNullOrWhiteSpace opening.Raw then
+                Hash.computeOpeningHash (opening.GameNumber.ToString())
+            else
+                Hash.computeOpeningHash opening.Raw
+        let rec loop offset =
+            if offset >= total then
+                startIndex % total
+            else
+                let idx = (startIndex + offset) % total
+                let hash = openingHash openings.[idx]
+                if usedOpeningHashes.Contains hash then
+                    loop (offset + 1)
+                else
+                    idx
+        loop 0
+
+  /// Generate cup pairings for N games per match, using a new opening per two-game mini-match.
+  let cupNRound (gamesPerMatch: int) (strategy: CupSeedingStrategy) (players: EngineConfig list) (openings: PGNTypes.PgnGame list) =
+    let seeded =
+        match strategy with
+        | Random ->
+            let shuffled = players |> List.toArray
+            Random.Shuffle(shuffled)
+            shuffled |> Array.toList
+        | ByRating ->
+            players |> List.sortByDescending (fun p -> p.Rating)
+    let half = seeded.Length / 2
+    let top, bottom = seeded |> List.splitAt half
+    let pairs = List.zip top (List.rev bottom)
+
+    let normalizedGames =
+        if gamesPerMatch < 2 then 2
+        elif gamesPerMatch % 2 = 1 then gamesPerMatch + 1
+        else gamesPerMatch
+    let openingsPerMatch = normalizedGames / 2
+
+    let games =
+        [ for pairIndex, (w, b) in pairs |> List.mapi (fun idx p -> idx, p) do
+            let mutable subIndex = 0
+            for openingOffset in 0 .. openingsPerMatch - 1 do
+                let opening = openings.[(pairIndex + openingOffset) % openings.Length]
+                let openingHash =
+                    if System.String.IsNullOrWhiteSpace opening.Raw then
+                        Hash.computeOpeningHash (opening.GameNumber.ToString())
+                    else
+                        Hash.computeOpeningHash opening.Raw
+                subIndex <- subIndex + 1
+                yield { Opening = opening; White = w; Black = b; GameNr = 0; RoundNr = $"{opening.GameNumber}.{subIndex}"; OpeningHash = openingHash }
+                subIndex <- subIndex + 1
+                yield { Opening = opening; White = b; Black = w; GameNr = 0; RoundNr = $"{opening.GameNumber}.{subIndex}"; OpeningHash = openingHash } ]
+
+    games |> List.mapi (fun i g -> { g with GameNr = i + 1 })
 
   // Key generator
   let pairingKey (openingHash: string) (fen: string) (white: string) (black: string) =

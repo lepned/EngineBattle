@@ -452,7 +452,7 @@ type Board() =
 
     member this.LoadFen(?fen:string) =
       if fen.IsSome then
-        if fen.Value = "" then
+        if String.IsNullOrEmpty fen.Value then
           let newPos = BoardHelper.getPosFromFen(None)
           position <- newPos
         else

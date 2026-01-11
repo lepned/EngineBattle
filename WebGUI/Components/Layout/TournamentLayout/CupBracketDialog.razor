@@ -1,0 +1,9 @@
+<MudDialog>
+    <DialogContent>
+        <CupBracketView UseContainer="false" ShowPath="false" ShowRefresh="false" />
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+}

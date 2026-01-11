@@ -81,7 +81,7 @@ Enjoy the powerful capabilities of EngineBattle and enhance your chess engine ex
 
 ## Prerequisites
 
-To run the program, you will need to have .NET 9.0 or later installed. You can download it from the official [.NET website](https://dotnet.microsoft.com/download).
+To run the program, you will need to have .NET 10.0 or later installed. You can download it from the official [.NET website](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ## Installation
 
@@ -231,6 +231,7 @@ The `ResultReason` type defines various reasons for the outcome of a chess game.
 - **AdjudicatedEvaluation (AE)**: The game was adjudicated based on evaluation agreement.
 - **ForfeitLimits (FL)**: The game was forfeited due to time or node limits.
 - **Disconnected (DC)**: The game ended due to a disconnect.
+- **AdjudicatedByUser (AU)**: The game was adjudicated by a user.
 - **Cancel (XX)**: The game was canceled.
 - **Illegal (IM)**: The game ended due to an illegal move.
 - **NotStarted (NS)**: The game has not started.

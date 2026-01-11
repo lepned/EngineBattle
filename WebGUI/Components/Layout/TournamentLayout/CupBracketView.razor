@@ -1,0 +1,615 @@
+@using System.Text.Json
+@implements IDisposable
+@inject IWebHostEnvironment Environment
+@inject NotifierService Notifier
+
+@{
+    RenderFragment content = @<div>
+        @if (ShowHeader)
+        {
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h4">@Title</MudText>
+                @if (ShowPath)
+                {
+                    <MudText Typo="Typo.body2">@bracketPath</MudText>
+                }
+                <MudStack direction="Row" Spacing="2" Class="refresh-row">
+                    @if (ShowRefresh)
+                    {
+                        <MudButton Class="refresh-button" Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadBracket">Refresh</MudButton>
+                    }
+                    @* @if (bracket is not null)
+                    {
+                        <MudText Typo="Typo.body2">Updated: @bracket.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+                    } *@
+                </MudStack>
+                @if (!string.IsNullOrWhiteSpace(loadError))
+                {
+                    <MudAlert Severity="Severity.Warning">@loadError</MudAlert>
+                }
+            </MudStack>
+        }
+        else if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <MudAlert Severity="Severity.Warning">@loadError</MudAlert>
+        }
+
+        @if (bracket is null)
+        {
+            <MudText Class="mt-4">No bracket loaded yet.</MudText>
+        }
+        else
+        {
+            <div class="bracket-grid">
+                @for (var roundIndex = 0; roundIndex < viewRounds.Count; roundIndex++)
+                {
+                    var round = viewRounds[roundIndex];
+                    var roundNumber = round.RoundNumber;
+                    var totalRows = GetTotalRows();
+                    var rowSpan = GetRowSpan(roundNumber);
+                    var isFirst = roundIndex == 0;
+                    var isLast = roundIndex == viewRounds.Count - 1;
+                    <div class="round-col @(isFirst ? string.Empty : "has-prev-col")">
+                        <div class="round-title">@GetRoundLabel(roundNumber)</div>
+                        <div class="round-grid" style="--round-rows:@totalRows;">
+                            @for (var matchIndex = 0; matchIndex < round.Matches.Count; matchIndex++)
+                            {
+                                var match = round.Matches[matchIndex];
+                                var rowStart = (matchIndex * rowSpan) + 1;
+                                if (isLast && round.Matches.Count == 1)
+                                {
+                                    var centered = ((totalRows - rowSpan) / 2) + 1;
+                                    rowStart = Math.Max(1, centered);
+                                }
+                                var connectorClass = $"{(isFirst ? string.Empty : "has-prev")} {(isLast ? string.Empty : "has-next")} {(isLast ? "final-match" : string.Empty)}".Trim();
+                                <div class="match-card @connectorClass"
+                                     style="grid-row:@rowStart / span @rowSpan;">
+                                    <div class="match-info">
+                                        <span class="match-id">#@match.MatchId</span>
+                                        <span class="match-score">@FormatScore(match.ScoreA, match.ScoreB)</span>
+                                    </div>
+                                    <div class="player-row @(GetWinnerClass(match, match.PlayerA))">
+                                        <img class="player-logo" src="@GetLogoForPlayer(match.PlayerA)" alt="@match.PlayerA" />
+                                        <span class="player-name">@GetPlayerName(match.PlayerA)</span>
+                                        <span class="player-rating">@FormatRating(match.PlayerARating)</span>
+                                        <span class="player-score">@match.ScoreA</span>
+                                    </div>
+                                    <div class="player-row @(GetWinnerClass(match, match.PlayerB))">
+                                        <img class="player-logo" src="@GetLogoForPlayer(match.PlayerB)" alt="@match.PlayerB" />
+                                        <span class="player-name">@GetPlayerName(match.PlayerB)</span>
+                                        <span class="player-rating">@FormatRating(match.PlayerBRating)</span>
+                                        <span class="player-score">@match.ScoreB</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>;
+}
+
+@if (UseContainer)
+{
+    <MudContainer Class="pa-4">
+        <MudPaper Class="pa-4 bracket-shell">
+            @content
+        </MudPaper>
+    </MudContainer>
+}
+else
+{
+    <MudPaper Class="pa-4 bracket-shell">
+        @content
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Cup Bracket";
+    [Parameter] public bool ShowHeader { get; set; } = true;
+    [Parameter] public bool ShowPath { get; set; } = true;
+    [Parameter] public bool ShowRefresh { get; set; } = true;
+    [Parameter] public bool UseContainer { get; set; } = true;
+    [Parameter] public string BracketFileName { get; set; } = "cup_bracket.json";
+
+    private CupBracketModel bracket;
+    private string loadError;
+    private string bracketPath = "";
+    private Dictionary<string, string> logoMap = new(StringComparer.OrdinalIgnoreCase);
+    private string defaultLogo = "Img/chessLogo.jpg";
+    private int firstRoundMatches = 0;
+    private List<CupRoundView> viewRounds = new();
+    private bool isSubscribed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBracket();
+        SubscribeToUpdates();
+    }
+
+    private void SubscribeToUpdates()
+    {
+        if (isSubscribed)
+            return;
+
+        Notifier.CupUpdated += OnCupUpdated;
+        isSubscribed = true;
+    }
+
+    private async Task OnCupUpdated()
+    {
+        await LoadBracket();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadBracket()
+    {
+        loadError = null;
+        bracketPath = Path.Combine(Environment.ContentRootPath, "wwwroot", BracketFileName);
+        if (!File.Exists(bracketPath))
+        {
+            bracket = null;
+            loadError = "Bracket file not found. Start a cup tournament to generate it.";
+            return;
+        }
+
+        try
+        {
+            logoMap = await LoadLogoMap();
+            var json = NormalizeBracketJson(await ReadFileWithRetry(bracketPath));
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            bracket = JsonSerializer.Deserialize<CupBracketModel>(json, options);
+            firstRoundMatches = bracket?.Rounds.FirstOrDefault()?.Matches.Count ?? 0;
+            viewRounds = BuildViewRounds(bracket);
+        }
+        catch (Exception ex)
+        {
+            bracket = null;
+            loadError = $"Failed to read bracket: {ex.Message}";
+        }
+    }
+
+    private static async Task<string> ReadFileWithRetry(string path)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await ReadAllTextWithSharing(path);
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                await Task.Delay(75);
+            }
+        }
+
+        return await ReadAllTextWithSharing(path);
+    }
+
+    private static async Task<string> ReadAllTextWithSharing(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private static string NormalizeBracketJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return json;
+
+        var trimmed = json.TrimStart();
+        if (trimmed.StartsWith("\"", StringComparison.Ordinal) && json.TrimEnd().EndsWith("}", StringComparison.Ordinal))
+            return "{" + json;
+
+        return json;
+    }
+
+    private int GetTotalRows() => Math.Max(2, firstRoundMatches * 2);
+
+    private int GetRowSpan(int roundNumber)
+    {
+        var span = 1 << Math.Max(1, roundNumber);
+        return Math.Min(span, GetTotalRows());
+    }
+
+    private string GetRoundLabel(int roundNumber)
+    {
+        if (firstRoundMatches <= 0)
+            return $"Round {roundNumber}";
+
+        var players = firstRoundMatches * 2;
+        var roundPlayers = players / (int)Math.Pow(2, roundNumber - 1);
+        return roundPlayers switch
+        {
+            2 => "Final",
+            4 => "Semi-finals",
+            8 => "Quarter-finals",
+            _ => $"Round of {roundPlayers}"
+        };
+    }
+
+    private int GetTotalRounds()
+    {
+        if (firstRoundMatches <= 0)
+            return 0;
+
+        var players = firstRoundMatches * 2;
+        var rounds = 0;
+        while (players > 1)
+        {
+            players = players / 2;
+            rounds++;
+        }
+        return rounds;
+    }
+
+    private List<CupRoundView> BuildViewRounds(CupBracketModel source)
+    {
+        var rounds = new List<CupRoundView>();
+        if (source is null)
+            return rounds;
+
+        var totalRounds = Math.Max(1, GetTotalRounds());
+        for (var roundNumber = 1; roundNumber <= totalRounds; roundNumber++)
+        {
+            var existing = source.Rounds.FirstOrDefault(r => r.RoundNumber == roundNumber);
+            if (existing != null && existing.Matches.Count > 0)
+            {
+                rounds.Add(new CupRoundView
+                {
+                    RoundNumber = roundNumber,
+                    Matches = existing.Matches.Select(m => new CupMatchView
+                    {
+                        MatchId = m.MatchId,
+                        RoundNumber = m.RoundNumber,
+                        PlayerA = m.PlayerA,
+                        PlayerB = m.PlayerB,
+                        PlayerARating = m.PlayerARating,
+                        PlayerBRating = m.PlayerBRating,
+                        ScoreA = m.ScoreA,
+                        ScoreB = m.ScoreB,
+                        Winner = m.Winner,
+                        IsDecided = m.IsDecided
+                    }).ToList()
+                });
+            }
+            else
+            {
+                var matchCount = Math.Max(1, firstRoundMatches / (int)Math.Pow(2, roundNumber - 1));
+                var matches = new List<CupMatchView>();
+                for (var matchIndex = 0; matchIndex < matchCount; matchIndex++)
+                {
+                    matches.Add(new CupMatchView
+                    {
+                        MatchId = matchIndex + 1,
+                        RoundNumber = roundNumber,
+                        PlayerA = "TBD",
+                        PlayerB = "TBD",
+                        PlayerARating = 0,
+                        PlayerBRating = 0,
+                        ScoreA = 0,
+                        ScoreB = 0,
+                        Winner = "",
+                        IsDecided = false
+                    });
+                }
+                rounds.Add(new CupRoundView { RoundNumber = roundNumber, Matches = matches });
+            }
+        }
+
+        return rounds;
+    }
+
+    private string GetPlayerName(string name) => string.IsNullOrWhiteSpace(name) ? "TBD" : name;
+
+    private string GetLogoForPlayer(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return defaultLogo;
+
+        return logoMap.TryGetValue(name, out var logo) ? logo : defaultLogo;
+    }
+
+    private string FormatRating(int rating) => rating > 0 ? rating.ToString() : "--";
+
+    private string FormatScore(double scoreA, double scoreB) => $"{scoreA:0.0}-{scoreB:0.0}";
+
+    private string GetWinnerClass(CupMatchView match, string playerName)
+    {
+        if (!match.IsDecided || string.IsNullOrWhiteSpace(match.Winner))
+            return string.Empty;
+
+        return match.Winner.Equals(playerName, StringComparison.OrdinalIgnoreCase) ? "is-winner" : "is-loser";
+    }
+
+    private async Task<Dictionary<string, string>> LoadLogoMap()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var tournamentPath = Path.Combine(Environment.ContentRootPath, "wwwroot", "tournament.json");
+        if (!File.Exists(tournamentPath))
+            return map;
+
+        var json = await File.ReadAllTextAsync(tournamentPath);
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var config = JsonSerializer.Deserialize<TournamentConfig>(json, options);
+        if (config?.EngineSetup is null || string.IsNullOrWhiteSpace(config.EngineSetup.EngineDefFolder))
+            return map;
+
+        var engineFolder = config.EngineSetup.EngineDefFolder;
+        if (!Path.IsPathRooted(engineFolder))
+            engineFolder = Path.Combine(Environment.ContentRootPath, engineFolder);
+        foreach (var engineFile in config.EngineSetup.EngineDefList ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(engineFile))
+                continue;
+
+            var enginePath = Path.Combine(engineFolder, engineFile);
+            if (!File.Exists(enginePath))
+                continue;
+
+            try
+            {
+                var engineJson = await File.ReadAllTextAsync(enginePath);
+                var engine = JsonSerializer.Deserialize<EngineDef>(engineJson, options);
+                if (engine is null)
+                    continue;
+
+                if (!string.IsNullOrWhiteSpace(engine.LogoPath))
+                {
+                    if (!string.IsNullOrWhiteSpace(engine.Name))
+                        map[engine.Name] = engine.LogoPath;
+                    if (!string.IsNullOrWhiteSpace(engine.Alias))
+                        map[engine.Alias] = engine.LogoPath;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        return map;
+    }
+
+    private sealed class CupBracketModel
+    {
+        public string TournamentName { get; set; } = "";
+        public string Strategy { get; set; } = "";
+        public int GamesPerMatch { get; set; }
+        public bool UniqueOpeningsGlobal { get; set; }
+        public int NextOpeningIndex { get; set; }
+        public DateTime UpdatedUtc { get; set; }
+        public List<CupRound> Rounds { get; set; } = new();
+    }
+
+    private sealed class CupRound
+    {
+        public int RoundNumber { get; set; }
+        public List<CupMatch> Matches { get; set; } = new();
+    }
+
+    private sealed class CupMatch
+    {
+        public int MatchId { get; set; }
+        public int RoundNumber { get; set; }
+        public string PlayerA { get; set; } = "";
+        public string PlayerB { get; set; } = "";
+        public int PlayerARating { get; set; }
+        public int PlayerBRating { get; set; }
+        public double ScoreA { get; set; }
+        public double ScoreB { get; set; }
+        public string Winner { get; set; }
+        public bool IsDecided { get; set; }
+        public List<CupGame> Games { get; set; } = new();
+    }
+
+    private sealed class CupGame
+    {
+        public int GameNr { get; set; }
+        public string White { get; set; } = "";
+        public string Black { get; set; } = "";
+        public string OpeningId { get; set; } = "";
+        public string OpeningHash { get; set; } = "";
+        public string Result { get; set; } = "";
+    }
+
+    private sealed class CupRoundView
+    {
+        public int RoundNumber { get; set; }
+        public List<CupMatchView> Matches { get; set; } = new();
+    }
+
+    private sealed class CupMatchView
+    {
+        public int MatchId { get; set; }
+        public int RoundNumber { get; set; }
+        public string PlayerA { get; set; } = "";
+        public string PlayerB { get; set; } = "";
+        public int PlayerARating { get; set; }
+        public int PlayerBRating { get; set; }
+        public double ScoreA { get; set; }
+        public double ScoreB { get; set; }
+        public string Winner { get; set; } = "";
+        public bool IsDecided { get; set; }
+    }
+
+    private sealed class TournamentConfig
+    {
+        public EngineSetupConfig EngineSetup { get; set; }
+    }
+
+    private sealed class EngineSetupConfig
+    {
+        public string EngineDefFolder { get; set; } = "";
+        public List<string> EngineDefList { get; set; } = new();
+    }
+
+    private sealed class EngineDef
+    {
+        public string Name { get; set; } = "";
+        public string Alias { get; set; } = "";
+        public string LogoPath { get; set; } = "";
+    }
+
+    public void Dispose()
+    {
+        if (isSubscribed)
+            Notifier.CupUpdated -= OnCupUpdated;
+    }
+}
+
+<style>
+    .bracket-shell {
+        background: radial-gradient(circle at top, #1b1e2b, #12131b 60%);
+        border: 1px solid #2b2f3a;
+        color: #e8edf2;
+        min-height: 70vh;
+    }
+
+    .bracket-grid {
+        display: flex;
+        gap: 28px;
+        margin-top: 24px;
+        overflow-x: auto;
+        padding-bottom: 12px;
+    }
+
+    .round-col {
+        min-width: 310px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        position: relative;
+    }
+
+    .round-title {
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9aa4b2;
+        margin-bottom: 2px;
+    }
+
+    .round-col.has-prev-col .round-title {
+        padding-left: 6px;
+    }
+
+    .round-grid {
+        display: grid;
+        grid-template-rows: repeat(var(--round-rows), 34px);
+        row-gap: 18px;
+    }
+
+    .match-card {
+        background: #1c2030;
+        border: 1px solid #343a49;
+        border-radius: 10px;
+        padding: 6px 8px;
+        box-shadow: 0 8px 18px rgba(0,0,0,0.28);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        position: relative;
+        margin-right: 18px;
+        width: 100%;
+        align-self: center;
+    }
+
+    .match-card::after,
+    .match-card::before {
+        display: none;
+    }
+
+    .match-card.has-next::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -18px;
+        width: 18px;
+        height: 1px;
+        background: #556070;
+        display: block;
+    }
+
+    .match-card.has-prev::before {
+        content: "";
+        position: absolute;
+        left: -18px;
+        top: 0;
+        bottom: 0;
+        width: 18px;
+        background:
+            linear-gradient(#556070, #556070) right center / 1px 100% no-repeat,
+            linear-gradient(#556070, #556070) left center / 100% 1px no-repeat;
+        display: block;
+    }
+
+    .match-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.75rem;
+        color: #9aa4b2;
+        margin-bottom: 2px;
+    }
+
+    .player-row {
+        display: grid;
+        grid-template-columns: 22px 1fr auto auto;
+        gap: 6px;
+        align-items: center;
+        font-size: 0.9rem;
+        padding: 2px 0;
+    }
+
+    .player-name {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .player-rating {
+        font-size: 0.75rem;
+        color: #98a6b7;
+    }
+
+    .player-score {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        color: #e8edf2;
+    }
+
+    .player-logo {
+        width: 22px;
+        height: 22px;
+        object-fit: contain;
+        border-radius: 4px;
+        background: #0f121a;
+        border: 1px solid #2a2f3d;
+    }
+
+    .is-winner {
+        color: #e7c873;
+    }
+
+    .is-winner .player-score {
+        color: #e7c873;
+    }
+
+    .is-loser {
+        color: #97a2b2;
+    }
+
+    .refresh-button {
+        width: 120px;
+        min-width: 120px;
+    }
+
+    .refresh-row {
+        align-items: center;
+    }
+</style>

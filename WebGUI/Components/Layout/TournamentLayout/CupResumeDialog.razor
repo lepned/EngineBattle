@@ -1,0 +1,46 @@
+@using System.IO
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h5">@Title</MudText>
+            <MudText Typo="Typo.body2">@Subtitle</MudText>
+            <CupBracketView UseContainer="false" ShowPath="false" ShowRefresh="false" BracketFileName="@BracketFileName" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Disabled="@(CupInvalid || CupCompleted)" Color="Color.Primary" Variant="Variant.Filled" OnClick="Resume">@ResumeLabel</MudButton>
+        <MudButton Color="Color.Secondary" Variant="Variant.Outlined" OnClick="StartNew">Start New</MudButton>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public string BracketPath { get; set; } = "";
+    [Parameter] public bool CupCompleted { get; set; }
+    [Parameter] public bool CupInvalid { get; set; }
+
+    private string BracketFileName =>
+        string.IsNullOrWhiteSpace(BracketPath)
+            ? "cup_bracket.json"
+            : Path.GetFileName(BracketPath);
+
+    private string Title =>
+        CupInvalid ? "Cup bracket is unreadable" :
+        CupCompleted ? "Cup tournament completed" :
+        "Resume cup tournament?";
+
+    private string Subtitle =>
+        CupInvalid
+            ? "Bracket file could not be read. You can start a new cup or cancel."
+            : CupCompleted
+                ? "All matches are decided. You can start a new cup or cancel."
+                : "Existing bracket found. Choose to resume or start a new cup.";
+
+    private string ResumeLabel => CupCompleted ? "Resume (disabled)" : "Resume";
+
+    private void Resume() => MudDialog.Close(DialogResult.Ok("resume"));
+    private void StartNew() => MudDialog.Close(DialogResult.Ok("new"));
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -204,6 +204,12 @@ namespace WebGUI.Services
         await DumpInfoAdded?.Invoke(text);
     }
 
+    public async Task NotifyCupUpdated()
+    {
+      if (CupUpdated != null)
+        await CupUpdated?.Invoke();
+    }
+
     public event Func<bool, string, string, Task> NextTick;
     public event Func<string, Task> NotifyFen;
     public event Func<string, Task> NotifyFenToBoard;
@@ -223,6 +229,7 @@ namespace WebGUI.Services
     public event Func<List<EngineItem>, Task> NotifyAddedEngine;
     public event Func<ChessConfigurationService, Task> SettingAdded;
     public event Func<string, Task> DumpInfoAdded;
+    public event Func<Task> CupUpdated;
     public event Func<bool, Task> IsDarkMode;
     public event Func<bool, Task> ResetEngine;
     public event Func<bool, Task> IsFullScreenRequested;

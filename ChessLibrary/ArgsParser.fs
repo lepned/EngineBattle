@@ -60,12 +60,9 @@ type TimeControlOptions =
 [<Verb("tourny", HelpText = "Configure your tournament")>]
 type TournamentOptions =
     {
-        [<Option('r', "roundrobin", Required = false,
-            HelpText = "Round robin tournament mode")>]
-        Roundrobin: bool option
-        [<Option('g', "gauntlet", Required = false,
-            HelpText = "Gauntlet tournament mode")>]
-        Gauntlet: bool option
+        [<Option('m', "mode", Required = false,
+            HelpText = "Tournament mode: RR, Gauntlet, Cup, Swiss")>]
+        Mode: string option
         [<Option('o', "openbook", Required = false,
             HelpText = "Opening book for tournament run")>]
         Openbook: string option

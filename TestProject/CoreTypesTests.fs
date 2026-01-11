@@ -7,6 +7,7 @@ open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Misc
 open ChessLibrary.TypesDef.PGNTypes
 open ChessLibrary.TypesDef
+open ChessLibrary.TypesDef.Tournament
 
 // Test for EvalType
 [<Fact>]
@@ -106,3 +107,8 @@ let ``TimeControl ToString formats correctly`` () =
     Assert.Equal("1.5' + 10''", config2.ToString())
     let config3 = { Id = 2; Fixed = TimeOnly.FromTimeSpan(System.TimeSpan.FromMinutes(90.0)); Increment = TimeOnly.FromTimeSpan(System.TimeSpan.FromSeconds(30.0)); NodeLimit = false; Nodes = 0 }
     Assert.Equal("90' + 30''", config3.ToString())
+
+[<Fact>]
+let ``Tournament Empty cup options default to non-random openings`` () =
+    let tourny = Tournament.Empty
+    Assert.False(tourny.CupOptions.RandomOpenings)

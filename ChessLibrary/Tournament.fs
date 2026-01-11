@@ -11,6 +11,7 @@ open Microsoft.FSharp.Core.Operators.Unchecked
 open System.Diagnostics
 open Microsoft.Extensions.Logging
 open System.Collections.Concurrent
+open System.Text.Json
 open ChessLibrary
 open ChessLibrary.Engine
 open ChessLibrary.Parser
@@ -19,6 +20,7 @@ open ChessLibrary.TypesDef.PGNTypes
 open ChessLibrary.TypesDef.Engine
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.TypesDef.CoreTypes
+open ChessLibrary.TypesDef.Cup
 open ChessLibrary.TypesDef.Position
 open ChessLibrary.TypesDef.TMove
 open ChessLibrary.TypesDef.TimeControl
@@ -826,7 +828,68 @@ module Match =
     | TotalNumberOfPairs of PairingsNumber: int
     | RoundNr of Round: string
     | PeriodicResults of results: ResizeArray<Result>
+    | CupBracketUpdated
     | GameSummary of summary: string
+
+  type CupBracketMessage =
+    | WriteCupBracket of Bracket: TypesDef.Cup.CupBracket * Reply: AsyncReplyChannel<unit>
+    | ReadCupBracket of Reply: AsyncReplyChannel<TypesDef.Cup.CupBracket option>
+    | DisposeCupBracket
+
+  let private normalizeBracketJson (json: string) =
+    if String.IsNullOrWhiteSpace json then
+      json
+    else
+      let trimmed = json.TrimStart()
+      if trimmed.StartsWith("\"", StringComparison.Ordinal) && json.TrimEnd().EndsWith("}", StringComparison.Ordinal) then
+        "{" + json
+      else
+        json
+
+  let startCupBracketReaderWriter (filePath: string) =
+    MailboxProcessor<CupBracketMessage>.Start(fun inbox ->
+      async {
+        let optionsWrite = JsonSerializerOptions(WriteIndented = true)
+        let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let mutable inMemory = ""
+        while true do
+          let! message = inbox.Receive()
+          match message with
+          | DisposeCupBracket ->
+              return ()
+          | WriteCupBracket (bracket, reply) ->
+              bracket.UpdatedUtc <- DateTime.UtcNow
+              let json = JsonSerializer.Serialize(bracket, optionsWrite)
+              if String.IsNullOrWhiteSpace filePath then
+                inMemory <- json
+              else
+                use stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None)
+                use writer = new StreamWriter(stream, Encoding.UTF8)
+                writer.Write(json)
+                writer.Flush()
+                stream.Flush()
+              reply.Reply()
+          | ReadCupBracket reply ->
+              try
+                let json =
+                  if String.IsNullOrWhiteSpace filePath then
+                    inMemory
+                  else
+                    if File.Exists filePath then
+                      use stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete)
+                      use reader = new StreamReader(stream, Encoding.UTF8)
+                      reader.ReadToEnd()
+                    else
+                      ""
+                let json = normalizeBracketJson json
+                if String.IsNullOrWhiteSpace json then
+                  reply.Reply None
+                else
+                  let loaded = JsonSerializer.Deserialize<TypesDef.Cup.CupBracket>(json, optionsRead)
+                  if obj.ReferenceEquals(loaded, null) then reply.Reply None else reply.Reply (Some loaded)
+              with
+              | _ -> reply.Reply None
+      })
 
   type UserAdjudication =
     { GameNr: int
@@ -2849,6 +2912,687 @@ module Match =
       return results
   }
 
+  let cup (gamesPerMatch: int) (strategy: Utilities.PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {        
+    let isPowerOfTwo (n: int) = n > 0 && (n &&& (n - 1) = 0)
+    let resolveCupBracketPath () =
+      let configuredPath =
+        if obj.ReferenceEquals(tourny.CupOptions, null) then "" else tourny.CupOptions.BracketPath
+      let fullPath =
+        if String.IsNullOrWhiteSpace configuredPath then
+          let candidates =
+            [ Path.Combine(Environment.CurrentDirectory, "wwwroot")
+              Path.Combine(Environment.CurrentDirectory, "WebGUI", "wwwroot") ]
+          let folder =
+            candidates |> List.tryFind Directory.Exists
+            |> Option.defaultValue (Path.Combine(Environment.CurrentDirectory, "wwwroot"))
+          Path.Combine(folder, "cup_bracket.json")
+        elif Path.IsPathRooted configuredPath then
+          configuredPath
+        else
+          Path.Combine(Environment.CurrentDirectory, configuredPath)
+      let dir = Path.GetDirectoryName(fullPath)
+      if String.IsNullOrWhiteSpace dir |> not then
+        Directory.CreateDirectory(dir) |> ignore
+      fullPath
+
+    let writeCupBracket (agent: MailboxProcessor<CupBracketMessage>) (bracket: CupBracket) =
+      agent.PostAndReply(fun reply -> WriteCupBracket(bracket, reply))
+      callback Update.CupBracketUpdated
+
+    let roundPairIncrements =
+      if obj.ReferenceEquals(tourny.CupOptions, null) then [] else tourny.CupOptions.RoundPairIncrements
+    let gamesPerMatchForRound roundNumber =
+      Utilities.PairingHelper.gamesPerMatchForRound gamesPerMatch roundPairIncrements roundNumber
+
+    let mutable gameNr = 0
+    logger.LogInformation("Cup tournament about to start")
+    let numberOfPlayers = tourny.EngineSetup.Engines.Length
+    if isPowerOfTwo numberOfPlayers |> not then
+      logger.LogError("Cup tournaments require a power-of-two number of players, got {playerCount}", numberOfPlayers)
+      failwith "Cup tournaments require a power-of-two number of players."
+
+    let mutable epdBook = false
+    let board = Board()
+    board.LoadFen Chess.startPos
+    let mutable engine1 = defaultof<ChessEngine>
+    let mutable engine2 = defaultof<ChessEngine>
+    let mutable results = List.empty<Result>
+    let games =
+      match tourny.Opening.OpeningsPath with
+      | Some path ->
+        if path.ToLower().Contains ".epd" then
+          epdBook <- true
+          EPDExtractor.parseEPDFile path |> Seq.toArray
+        else
+          FullPGNParser.parsePgnFile path |> Seq.toArray
+      | _ ->
+        [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
+
+    let gamesAlreadyPlayed =
+      let fileExists = File.Exists tourny.PgnOutPath
+      if fileExists then
+        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+      else
+        [||]
+
+    let referencGamesPlayed =
+      let fileExists = File.Exists tourny.ReferencePGNPath
+      if fileExists then
+        FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+      else
+        [||]
+
+    let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
+    if openings.IsEmpty then
+      logger.LogError("No openings available for cup tournament")
+      failwith "No openings available for cup tournament."
+    let randomOpenings = if obj.ReferenceEquals(tourny.CupOptions, null) then false else tourny.CupOptions.RandomOpenings
+
+    let liveGamesByOpening = Dictionary<string,int>()
+    let pgnGameWriterAgent = Parser.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+    let replayList = ResizeArray<GameReplay>()
+    let replayDicts =
+      [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
+    let getReplayDictForPlayer (name:string) = replayDicts.[name]
+    let cupBracketPath = resolveCupBracketPath()
+    let cupBracketAgent = startCupBracketReaderWriter cupBracketPath
+    let mutable matchId = 1
+    let mutable openingIndex = 0
+    let loadBracket () =
+      cupBracketAgent.PostAndReply(fun reply -> ReadCupBracket reply)
+
+    let ensureMatchOpeningOrder (matchInfo: CupMatch) =
+      if obj.ReferenceEquals(matchInfo.OpeningOrder, null) then
+        matchInfo.OpeningOrder <- ResizeArray<int>()
+
+    let ensureGlobalOpeningOrder (bracket: CupBracket) =
+      if obj.ReferenceEquals(bracket.GlobalOpeningOrder, null) then
+        bracket.GlobalOpeningOrder <- ResizeArray<int>()
+
+    let mutable bracket =
+      match loadBracket () with
+      | Some loaded ->
+          ensureGlobalOpeningOrder loaded
+          for round in loaded.Rounds do
+            for matchInfo in round.Matches do
+              ensureMatchOpeningOrder matchInfo
+          openingIndex <- loaded.NextOpeningIndex
+          matchId <- loaded.Rounds |> Seq.collect (fun r -> r.Matches |> Seq.map (fun m -> m.MatchId)) |> Seq.append [0] |> Seq.max |> (+) 1
+          loaded
+      | None ->
+          if resumeRequested then
+            logger.LogError("Resume requested for cup tournament but no bracket data was found.")
+            failwith "Resume requested but cup bracket data is missing."
+          { TournamentName = tourny.Name
+            Strategy = strategy.ToString()
+            GamesPerMatch = gamesPerMatchForRound 1
+            UniqueOpeningsGlobal = not uniquePerMatchOnly
+            NextOpeningIndex = openingIndex
+            GlobalOpeningOrder = ResizeArray<int>()
+            Rounds = ResizeArray<CupRound>()
+            UpdatedUtc = DateTime.UtcNow }
+
+    let totalRounds =
+      let mutable players = numberOfPlayers
+      let mutable rounds = 0
+      while players > 1 do
+        players <- players / 2
+        rounds <- rounds + 1
+      rounds
+
+    let seedBands =
+      if obj.ReferenceEquals(tourny.CupOptions, null) then [] else tourny.CupOptions.SeedBands
+    let randomizeSeedBands =
+      if obj.ReferenceEquals(tourny.CupOptions, null) then false else tourny.CupOptions.RandomizeSeedBands
+
+    let seedPlayers (players: EngineConfig list) =
+      match strategy with
+      | Utilities.PairingHelper.CupSeedingStrategy.Random ->
+          let shuffled = players |> List.toArray
+          Random.Shuffle(shuffled)
+          shuffled |> Array.toList
+      | Utilities.PairingHelper.CupSeedingStrategy.ByRating ->
+          if seedBands.IsEmpty then
+            players |> List.sortByDescending (fun p -> p.Rating)
+          else
+            Utilities.PairingHelper.seedByBands players seedBands randomizeSeedBands
+
+    let seedPairs (players: EngineConfig list) =
+      let half = players.Length / 2
+      let top, bottom = players |> List.splitAt half
+      List.zip top (List.rev bottom)
+
+    let seededPlayers = seedPlayers tourny.EngineSetup.Engines
+
+    let ensureRound (roundNumber: int) =
+      if bracket.Rounds |> Seq.exists (fun r -> r.RoundNumber = roundNumber) then
+        ()
+      else
+        let matchCount = Math.Max(1, numberOfPlayers / (pown 2 roundNumber))
+        let roundMatches = ResizeArray<CupMatch>()
+        for _ in 1..matchCount do
+          let matchInfo =
+            { MatchId = matchId
+              RoundNumber = roundNumber
+              PlayerA = "TBD"
+              PlayerB = "TBD"
+              PlayerARating = 0
+              PlayerBRating = 0
+              ScoreA = 0.0
+              ScoreB = 0.0
+              Winner = None
+              IsDecided = false
+              Games = ResizeArray<CupGame>()
+              OpeningOrder = ResizeArray<int>() }
+          matchId <- matchId + 1
+          roundMatches.Add matchInfo
+        bracket.Rounds.Add { RoundNumber = roundNumber; Matches = roundMatches }
+    if bracket.Rounds.Count = 0 then
+      if resumeRequested then
+        logger.LogError("Resume requested for cup tournament but bracket rounds are empty.")
+        failwith "Resume requested but cup bracket is empty."
+      for roundNumber in 1..totalRounds do
+        let matchCount = Math.Max(1, numberOfPlayers / (pown 2 roundNumber))
+        let roundMatches = ResizeArray<CupMatch>()
+        if roundNumber = 1 then
+          let pairs = seedPairs seededPlayers
+          for (a, b) in pairs do
+            let matchInfo =
+              { MatchId = matchId
+                RoundNumber = roundNumber
+                PlayerA = a.Name
+                PlayerB = b.Name
+                PlayerARating = a.Rating
+                PlayerBRating = b.Rating
+                ScoreA = 0.0
+                ScoreB = 0.0
+                Winner = None
+                IsDecided = false
+                Games = ResizeArray<CupGame>()
+                OpeningOrder = ResizeArray<int>() }
+            matchId <- matchId + 1
+            roundMatches.Add matchInfo
+        else
+          for _ in 1..matchCount do
+            let matchInfo =
+              { MatchId = matchId
+                RoundNumber = roundNumber
+                PlayerA = "TBD"
+                PlayerB = "TBD"
+                PlayerARating = 0
+                PlayerBRating = 0
+                ScoreA = 0.0
+                ScoreB = 0.0
+                Winner = None
+                IsDecided = false
+                Games = ResizeArray<CupGame>()
+                OpeningOrder = ResizeArray<int>() }
+            matchId <- matchId + 1
+            roundMatches.Add matchInfo
+        let round = { RoundNumber = roundNumber; Matches = roundMatches }
+        bracket.Rounds.Add round
+
+      writeCupBracket cupBracketAgent bracket
+
+    let minTotalGames =
+      [ 1 .. totalRounds ]
+      |> List.sumBy (fun roundNumber ->
+          let matchCount = Math.Max(1, numberOfPlayers / (pown 2 roundNumber))
+          matchCount * gamesPerMatchForRound roundNumber)
+    tourny.TotalGames <- minTotalGames
+    callback (Update.TotalNumberOfPairs minTotalGames)
+    callback (Update.PairingList (ResizeArray<Pairing>()))
+    let (tTime, gTime) = estimateTournamentAndGameTime minTotalGames tourny []
+    let startInfo = { NumberOfGames = minTotalGames; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny }
+    callback (Update.StartOfTournament startInfo)
+
+    let ensureGlobalOpeningOrder () =
+      if randomOpenings && openings.Length > 1 && not uniquePerMatchOnly then
+        if bracket.GlobalOpeningOrder.Count = 0 then
+          let order = [0 .. openings.Length - 1]
+          let shuffled = order |> List.toArray
+          Random.Shuffle(shuffled)
+          bracket.GlobalOpeningOrder <- ResizeArray<int>(shuffled)
+          writeCupBracket cupBracketAgent bracket
+
+    let globalOpenings =
+      ensureGlobalOpeningOrder ()
+      if bracket.GlobalOpeningOrder.Count > 0 then
+        bracket.GlobalOpeningOrder
+        |> Seq.map (fun idx -> openings.[idx % openings.Length])
+        |> Seq.toList
+      else
+        openings
+
+    let getNextOpening (openingsList: PGNTypes.PgnGame list) (localIndex: int) =
+      if uniquePerMatchOnly then
+        openingsList.[localIndex % openingsList.Length]
+      else
+        if openingIndex >= openingsList.Length then
+          openingIndex <- 0
+        let opening = openingsList.[openingIndex]
+        openingIndex <- openingIndex + 1
+        bracket.NextOpeningIndex <- openingIndex
+        opening
+
+    let searchReplayList (pairing : Pairing) =
+      let nextGame = pairing
+      let lastGame = gamesAlreadyPlayed |> Seq.tryLast
+      let deviations = match lastGame with | Some g -> g.GameMetaData.Deviations | _ -> 0
+      if deviations > tourny.DeviationCounter then
+        tourny.DeviationCounter <- deviations
+      prepareGameReplay nextGame replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960
+
+    let sb = StringBuilder()
+    tourny.CurrentGameNr <- gamesAlreadyPlayed.Length
+
+    let playPairing (pair: Pairing) = async {
+      if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
+        searchReplayList pair
+      tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
+      if cts.IsCancellationRequested then
+        sb.Clear() |> ignore
+        return Result.Empty
+      else
+        let limit = tourny.Opening.OpeningsPly
+        let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
+        let completeGame =
+            openingMoves
+            |> Seq.mapi(fun i m ->
+                  if m.Color = "w" then
+                    sprintf "%d. %s" m.MoveNumber m.San
+                  else
+                    sprintf "%s" m.San)
+            |> String.concat " "
+
+        logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
+        board.ResetBoardState()
+        if pair.Opening.Fen = "" then
+          board.LoadFen Chess.startPos
+          board.StartPosition <- Chess.startPos
+        else
+          board.LoadFen(pair.Opening.Fen)
+          board.StartPosition <- pair.Opening.Fen
+
+        if not epdBook then
+          for m in openingMoves do
+            board.PlayOpeningMove m.San
+        else
+          board.ResetBoardState()
+          board.LoadFen pair.Opening.Fen
+          board.StartPosition <- pair.Opening.Fen
+          tourny.IsChess960 <- board.IsFRC
+
+        let posWithMoves =
+          let fen = board.StartPosition
+          let start = $"position fen {fen} moves"
+          board.LongSANMovesPlayed |> Seq.fold(fun state m ->
+            sprintf "%s %s" state m) start
+        logger.LogInformation("{position}", posWithMoves)
+
+        if numberOfPlayers > 2 then
+          engine1 <- EngineHelper.createEngine (pair.White, Some logger)
+          engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
+        if engine1 = defaultof<ChessEngine> || engine2 = defaultof<ChessEngine> then
+          engine1 <- EngineHelper.createEngine (pair.White, Some logger)
+          engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
+        if engine1.Name = pair.Black.Name || engine2.Name = pair.White.Name then
+          let (eng1,eng2) = engine2, engine1
+          engine1 <- eng1
+          engine2 <- eng2
+
+        let openingsAlreadyPlayed = gamesAlreadyPlayed |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pair.OpeningHash) |> Seq.length
+        let liveGamesPlayed = if liveGamesByOpening.ContainsKey pair.OpeningHash then liveGamesByOpening.[pair.OpeningHash] else 0
+        let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+        Update.RoundNr roundTxt |> callback
+        let logException ex =
+            let w = tourny.TimeControlTextForPlayer engine1.Config.TimeControlID
+            let b = tourny.TimeControlTextForPlayer engine2.Config.TimeControlID
+            let timeInfo = $"[{w}; {b}]"
+            let createContext() = {
+                EngineName   = engine1.Name
+                OpponentName = engine2.Name
+                GameNumber   = pair.GameNr
+                MoveNumber   = board.MoveNumber()
+                TimeControl  = timeInfo
+                TimeRemaining= None
+                PositionFen  = board.FEN()
+                LastCommand  = None
+                TimestampUtc = DateTime.UtcNow
+                MoveHistory = board.GetMoveHistory()}
+            EngineFailures.log logger ex (createContext())
+
+        let result =
+            let gametimer = Stopwatch.GetTimestamp()
+            try
+                if tourny.PreventMoveDeviation then
+                  let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name
+                  playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                else
+                  if tourny.AllowPondering then
+                    playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                  else
+                    play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+            with
+            | :? EngineStartupException as ex ->
+                  logException ex
+                  handleGameException logger ex cts gametimer board engine1 engine2 pair
+            | ex ->
+                  logException ex
+                  handleGameException logger ex cts gametimer board engine1 engine2 pair
+
+        let isCancelled = result.Reason = ResultReason.Cancel
+        let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
+        if not isCancelled then
+          results <- result :: results
+
+        if not isCancelled then
+          let gameData : PGNTypes.GameMetadata =
+            {
+              OpeningHash = pair.OpeningHash
+              Event = tourny.Description
+              Site = tourny.Name
+              Date = DateTime.Now.ToShortDateString()
+              Round = roundTxt
+              White = result.Player1
+              Black = result.Player2
+              Result = result.Result
+              Reason = result.Reason
+              GameTime = result.GameTime
+              Moves = result.Moves
+              Fen = pair.Opening.Fen
+              OpeningName = pair.Opening.GameMetaData.OpeningName
+              Deviations = tourny.DeviationCounter
+              StartEvals = result.OutOfOpeningEvals
+              OtherTags = pair.Opening.GameMetaData.OtherTags
+            }
+          if tourny.PreventMoveDeviation then
+            replayList.Add
+              {
+                WhitePlayer = result.Player1
+                BlackPlayer = result.Player2
+                PGNMetaData = gameData
+                LongSanMoves = board.LongSANMovesPlayed |> ResizeArray
+              }
+
+          let moveSection = sb.ToString()
+          if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
+            pgnGameWriterAgent.Post (Parser.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
+
+          if tourny.VerboseLogging then
+            logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+
+        do! Async.Sleep 200
+
+        if forceStopEngines || numberOfPlayers > 2 || cts.IsCancellationRequested then
+          if engine1.HasExited() |> not then
+              engine1.StopProcess()
+          if engine2.HasExited() |> not then
+              engine2.StopProcess()
+        board.ResetBoardState()
+        if not isCancelled then
+          gameNr <- gameNr + 1
+          if liveGamesByOpening.ContainsKey pair.OpeningHash then
+            liveGamesByOpening.[pair.OpeningHash] <- liveGamesByOpening.[pair.OpeningHash] + 1
+          else
+            liveGamesByOpening.[pair.OpeningHash] <- 1
+          if gameNr % 2 = 0 then
+            let res = ResizeArray<Result>(results)
+            callback (Update.PeriodicResults res)
+        return result
+        }
+
+    let getRoundPlayers (round: CupRound) =
+      round.Matches
+      |> Seq.collect (fun m -> [ m.PlayerA; m.PlayerB ])
+      |> Seq.filter (fun name -> not (String.IsNullOrWhiteSpace name) && not (name.Equals("TBD", StringComparison.OrdinalIgnoreCase)))
+      |> Seq.distinct
+      |> Seq.toList
+
+    let initialRound =
+      bracket.Rounds
+      |> Seq.sortBy (fun r -> r.RoundNumber)
+      |> Seq.tryFind (fun r -> r.Matches |> Seq.exists (fun m -> not m.IsDecided))
+      |> Option.defaultValue (bracket.Rounds |> Seq.sortByDescending (fun r -> r.RoundNumber) |> Seq.tryHead |> Option.defaultValue { RoundNumber = 1; Matches = ResizeArray() })
+
+    let currentRoundPlayers =
+      let players = getRoundPlayers initialRound
+      if players.IsEmpty then
+        seededPlayers |> List.map (fun e -> e.Name)
+      else
+        players
+
+    let currentPlayersFromNames names =
+      names
+      |> List.choose (fun name -> tourny.EngineSetup.Engines |> List.tryFind (fun e -> e.Name = name))
+
+    let mutable currentPlayers = currentPlayersFromNames currentRoundPlayers
+    let mutable roundNumber = initialRound.RoundNumber
+    while currentPlayers.Length > 1 && not cts.IsCancellationRequested do
+      let pairs =
+        currentPlayers
+        |> List.chunkBySize 2
+        |> List.choose (function | [a; b] -> Some (a, b) | _ -> None)
+      let round =
+        bracket.Rounds
+        |> Seq.find (fun r -> r.RoundNumber = roundNumber)
+      for matchIndex in 0..(pairs.Length - 1) do
+        let (a, b) = pairs.[matchIndex]
+        let matchInfo = round.Matches.[matchIndex]
+        let updated =
+          { matchInfo with
+              PlayerA = a.Name
+              PlayerB = b.Name
+              PlayerARating = a.Rating
+              PlayerBRating = b.Rating }
+        round.Matches.[matchIndex] <- updated
+
+      writeCupBracket cupBracketAgent bracket
+
+      let winners = ResizeArray<EngineConfig>()
+      for matchIndex in 0..(pairs.Length - 1) do
+        let pair = pairs.[matchIndex]
+        let matchInfo = round.Matches.[matchIndex]
+        let playerA, playerB = pair
+        if matchInfo.IsDecided then
+          ()
+        else
+          let playedInMatch = matchInfo.Games.Count
+          let gamesPerMatch = gamesPerMatchForRound roundNumber
+          let mutable gamesRemaining = Math.Max(0, gamesPerMatch - playedInMatch)
+          let mutable localOpeningIndex = playedInMatch / 2
+          let matchOpenings =
+            if uniquePerMatchOnly then
+              if randomOpenings && openings.Length > 1 then
+                if matchInfo.OpeningOrder.Count = 0 then
+                  let order = [0 .. openings.Length - 1]
+                  let shuffled = order |> List.toArray
+                  Random.Shuffle(shuffled)
+                  matchInfo.OpeningOrder <- ResizeArray<int>(shuffled)
+                  writeCupBracket cupBracketAgent bracket
+                matchInfo.OpeningOrder
+                |> Seq.map (fun idx -> openings.[idx % openings.Length])
+                |> Seq.toList
+              else
+                openings
+            else
+              globalOpenings
+          let tryGetOpeningByHash (hash: string) =
+            match matchOpenings |> List.tryFind (fun o ->
+              let openingHash =
+                if String.IsNullOrWhiteSpace o.Raw then
+                  Hash.computeOpeningHash (o.GameNumber.ToString())
+                else
+                  Hash.computeOpeningHash o.Raw
+              openingHash = hash) with
+            | Some opening -> opening
+            | None -> getNextOpening matchOpenings localOpeningIndex
+
+          if not matchInfo.IsDecided then
+            if matchInfo.ScoreA > matchInfo.ScoreB + float gamesRemaining then
+              matchInfo.IsDecided <- true
+              matchInfo.Winner <- Some matchInfo.PlayerA
+              writeCupBracket cupBracketAgent bracket
+            elif matchInfo.ScoreB > matchInfo.ScoreA + float gamesRemaining then
+              matchInfo.IsDecided <- true
+              matchInfo.Winner <- Some matchInfo.PlayerB
+              writeCupBracket cupBracketAgent bracket
+            elif gamesRemaining = 0 then
+              if matchInfo.ScoreA > matchInfo.ScoreB then
+                matchInfo.IsDecided <- true
+                matchInfo.Winner <- Some matchInfo.PlayerA
+                writeCupBracket cupBracketAgent bracket
+              elif matchInfo.ScoreB > matchInfo.ScoreA then
+                matchInfo.IsDecided <- true
+                matchInfo.Winner <- Some matchInfo.PlayerB
+                writeCupBracket cupBracketAgent bracket
+
+          while matchInfo.IsDecided |> not && not cts.IsCancellationRequested do
+            let tieBreakRound = gamesRemaining = 0
+            if gamesRemaining = 0 then
+              gamesRemaining <- 2
+            let hasOddGame = matchInfo.Games.Count % 2 = 1
+            let opening =
+              if hasOddGame then
+                let lastGame = matchInfo.Games.[matchInfo.Games.Count - 1]
+                tryGetOpeningByHash lastGame.OpeningHash
+              else
+                let usedHashes =
+                  matchInfo.Games
+                  |> Seq.map (fun g -> g.OpeningHash)
+                  |> Set.ofSeq
+                let openingIndexForMatch =
+                  if usedHashes.Count < matchOpenings.Length then
+                    Utilities.PairingHelper.nextUnusedOpeningIndex usedHashes matchOpenings localOpeningIndex
+                  else
+                    localOpeningIndex % matchOpenings.Length
+                localOpeningIndex <- openingIndexForMatch + 1
+                matchOpenings.[openingIndexForMatch]
+            let openingHash =
+              if String.IsNullOrWhiteSpace opening.Raw then
+                Hash.computeOpeningHash (opening.GameNumber.ToString())
+              else
+                Hash.computeOpeningHash opening.Raw
+            let playOrder =
+              if hasOddGame then
+                let lastGame = matchInfo.Games.[matchInfo.Games.Count - 1]
+                if lastGame.White = playerA.Name then
+                  [ (playerB, playerA) ]
+                else
+                  [ (playerA, playerB) ]
+              else
+                [ (playerA, playerB); (playerB, playerA) ]
+            let plannedPairings =
+              playOrder
+              |> List.mapi (fun idx (white, black) ->
+                  { Opening = opening
+                    White = white
+                    Black = black
+                    GameNr = 0
+                    RoundNr = $"{opening.GameNumber}.{matchInfo.Games.Count + idx + 1}"
+                    OpeningHash = openingHash })
+            callback (Update.PairingList (ResizeArray<Pairing>(plannedPairings)))
+            for (white, black) in playOrder do
+              if matchInfo.IsDecided || gamesRemaining = 0 || cts.IsCancellationRequested then
+                ()
+              else
+                let pairing =
+                  { Opening = opening
+                    White = white
+                    Black = black
+                    GameNr = 0
+                    RoundNr = $"{opening.GameNumber}.{matchInfo.Games.Count + 1}"
+                    OpeningHash = openingHash }
+                let! result = playPairing pairing
+                if result.Reason <> ResultReason.Cancel then
+                  let game =
+                    { GameNr = gameNr
+                      White = white.Name
+                      Black = black.Name
+                      OpeningId = opening.GameNumber.ToString()
+                      OpeningHash = openingHash
+                      Result = result.Result }
+                  matchInfo.Games.Add game
+                  let scoreWhite =
+                    match result.Result with
+                    | "1-0" -> 1.0
+                    | "0-1" -> 0.0
+                    | "1/2-1/2" -> 0.5
+                    | _ -> 0.0
+                  let scoreBlack =
+                    match result.Result with
+                    | "1-0" -> 0.0
+                    | "0-1" -> 1.0
+                    | "1/2-1/2" -> 0.5
+                    | _ -> 0.0
+                  if white.Name = matchInfo.PlayerA then
+                    matchInfo.ScoreA <- matchInfo.ScoreA + scoreWhite
+                    matchInfo.ScoreB <- matchInfo.ScoreB + scoreBlack
+                  else
+                    matchInfo.ScoreA <- matchInfo.ScoreA + scoreBlack
+                    matchInfo.ScoreB <- matchInfo.ScoreB + scoreWhite
+                  gamesRemaining <- gamesRemaining - 1
+                  if matchInfo.ScoreA > matchInfo.ScoreB + float gamesRemaining then
+                    matchInfo.IsDecided <- true
+                    matchInfo.Winner <- Some matchInfo.PlayerA
+                  elif matchInfo.ScoreB > matchInfo.ScoreA + float gamesRemaining then
+                    matchInfo.IsDecided <- true
+                    matchInfo.Winner <- Some matchInfo.PlayerB
+                  elif gamesRemaining = 0 then
+                    if matchInfo.ScoreA > matchInfo.ScoreB then
+                      matchInfo.IsDecided <- true
+                      matchInfo.Winner <- Some matchInfo.PlayerA
+                    elif matchInfo.ScoreB > matchInfo.ScoreA then
+                      matchInfo.IsDecided <- true
+                      matchInfo.Winner <- Some matchInfo.PlayerB
+                  writeCupBracket cupBracketAgent bracket
+        match matchInfo.Winner with
+        | Some name when name = playerA.Name ->
+            winners.Add playerA
+            if roundNumber < totalRounds then
+              ensureRound (roundNumber + 1)
+              let nextRound = bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1)
+              match nextRound with
+              | Some next ->
+                  let nextIndex = matchIndex / 2
+                  let nextMatch = next.Matches.[nextIndex]
+                  let updated =
+                    if matchIndex % 2 = 0 then
+                      { nextMatch with PlayerA = playerA.Name; PlayerARating = playerA.Rating }
+                    else
+                      { nextMatch with PlayerB = playerA.Name; PlayerBRating = playerA.Rating }
+                  next.Matches.[nextIndex] <- updated
+                  writeCupBracket cupBracketAgent bracket
+              | None -> ()
+        | Some name when name = playerB.Name ->
+            winners.Add playerB
+            if roundNumber < totalRounds then
+              ensureRound (roundNumber + 1)
+              let nextRound = bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1)
+              match nextRound with
+              | Some next ->
+                  let nextIndex = matchIndex / 2
+                  let nextMatch = next.Matches.[nextIndex]
+                  let updated =
+                    if matchIndex % 2 = 0 then
+                      { nextMatch with PlayerA = playerB.Name; PlayerARating = playerB.Rating }
+                    else
+                      { nextMatch with PlayerB = playerB.Name; PlayerBRating = playerB.Rating }
+                  next.Matches.[nextIndex] <- updated
+                  writeCupBracket cupBracketAgent bracket
+              | None -> ()
+        | _ -> ()
+
+      currentPlayers <- winners |> Seq.toList
+      roundNumber <- roundNumber + 1
+
+    let res = ResizeArray<Result>(results)
+    callback (Update.PeriodicResults res)
+    pgnGameWriterAgent.Post(Parser.FullPGNParser.Dispose)
+    pgnGameWriterAgent.Dispose()
+    cupBracketAgent.Post DisposeCupBracket
+    return results
+  }
   let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback (cts: CancellationTokenSource) = async {
     let mutable counter = 0
     let mutable gameNr = 0
@@ -2895,7 +3639,7 @@ module Match =
     gameNr <- gamesAlreadyPlayed.Length
     
     let allPairings = 
-      if tourny.Gauntlet then
+      if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) then
         if tourny.Opening.OpeningsTwice then
           PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation challengers rest gamesToPlay
         else
@@ -3222,7 +3966,7 @@ module Match =
         let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
     
         let allPairings = 
-            if tourny.Gauntlet then
+            if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) then
                 if tourny.Opening.OpeningsTwice then
                     PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation challengers rest gamesToPlay
                 else
@@ -3492,6 +4236,24 @@ module Match =
 
 module Manager =  
 
+  let mutable cupResumeRequested = false
+  let setCupResumeRequested value =
+    cupResumeRequested <- value
+  let consumeCupResumeRequested () =
+    let value = cupResumeRequested
+    cupResumeRequested <- false
+    value
+  let mutable cupBracketPathOverride : string option = None
+  let setCupBracketPathOverride (path: string) =
+    if String.IsNullOrWhiteSpace path then
+      cupBracketPathOverride <- None
+    else
+      cupBracketPathOverride <- Some path
+  let consumeCupBracketPathOverride () =
+    let value = cupBracketPathOverride
+    cupBracketPathOverride <- None
+    value
+
   let loadTournament () =
     try 
         let path = DirectoryInfo(Environment.CurrentDirectory).FullName //.Parent.Parent.FullName
@@ -3504,21 +4266,38 @@ module Manager =
             let tourny =           
               if tourny.EngineSetup.EngineDefList.Length > 0 then
                 let engineList = Utilities.JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList            
-                if tourny.Gauntlet && tourny.Challengers > 0 then
+                let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
+                if isGauntlet && tourny.Challengers > 0 then
                   for engine in engineList |> List.truncate tourny.Challengers do
                     engine.IsChallenger <- true
                 else
                   for engine in engineList do
                     engine.IsChallenger <- false
                 let engineSetup = {tourny.EngineSetup with Engines = engineList}
-                let updatedTourny = {tourny with EngineSetup = engineSetup }
+                let cupDefaults = { GamesPerMatch = 2; RoundPairIncrements = []; SeedBands = []; RandomizeSeedBands = false; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+                let cupOptions = if obj.ReferenceEquals(tourny.CupOptions, null) then cupDefaults else tourny.CupOptions
+                let tournamentMode =
+                  if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR" else tourny.TournamentMode
+                let cupOptions =
+                  match consumeCupBracketPathOverride () with
+                  | Some overridePath -> { cupOptions with BracketPath = overridePath }
+                  | None -> cupOptions
+                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; TournamentMode = tournamentMode }
                 Utilities.Validation.validateTournamentInput updatedTourny
                 updatedTourny
               else 
                 //let enginesTest = createEnginesFromFolder "C:/Dev/Chess/Networks/CeresLatest" |> Seq.toList
                 //(enginesTest |> List.head).IsChallenger <- true
                 //let engineSetup = {tourny.EngineSetup with Engines = enginesTest}
-                tourny            
+                let cupDefaults = { GamesPerMatch = 2; RoundPairIncrements = []; SeedBands = []; RandomizeSeedBands = false; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+                let cupOptions = if obj.ReferenceEquals(tourny.CupOptions, null) then cupDefaults else tourny.CupOptions
+                let tournamentMode =
+                  if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR" else tourny.TournamentMode
+                let cupOptions =
+                  match consumeCupBracketPathOverride () with
+                  | Some overridePath -> { cupOptions with BracketPath = overridePath }
+                  | None -> cupOptions
+                { tourny with CupOptions = cupOptions; TournamentMode = tournamentMode }
         
             let openingPath = 
               match tourny.Opening.OpeningsPath with
@@ -3551,11 +4330,28 @@ module Manager =
       let tourny = 
         //let nodeLimit = tournament.EngineSetup.Engines |> List.map(fun e -> tournament.FindTimeControl e.TimeControlID) |> List.forall(fun e -> e.NodeLimit)
         if consoleMode then
-          Match.parallelTournamentRun logger tournament sendResponse cts       
-        elif tournament.Gauntlet then
-          Match.gauntlet logger tournament sendResponse cts tryGetUserAdjudication          
-        else 
-          Match.roundRobin logger tournament sendResponse cts tryGetUserAdjudication            
+          Match.parallelTournamentRun logger tournament sendResponse cts
+        else
+          let mode =
+            if String.IsNullOrWhiteSpace tournament.TournamentMode then "RR"
+            else tournament.TournamentMode
+          let modeNormalized = mode.Trim().ToLowerInvariant()
+          let seeding =
+            match tournament.CupOptions.SeedingStrategy with
+            | null -> Utilities.PairingHelper.CupSeedingStrategy.ByRating
+            | s when s.Equals("random", StringComparison.OrdinalIgnoreCase) -> Utilities.PairingHelper.CupSeedingStrategy.Random
+            | _ -> Utilities.PairingHelper.CupSeedingStrategy.ByRating
+          match modeNormalized with
+          | "gauntlet" ->
+              Match.gauntlet logger tournament sendResponse cts tryGetUserAdjudication
+          | "cup" ->
+              let resumeRequested = consumeCupResumeRequested ()
+              Match.cup tournament.CupOptions.GamesPerMatch seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication
+          | "swiss" ->
+              logger.LogError("Swiss tournaments are not implemented yet.")
+              async { return [] }
+          | "rr" | "roundrobin" | "round-robin" | _ ->
+              Match.roundRobin logger tournament sendResponse cts tryGetUserAdjudication            
       
       let mutable validationPassed = true
       //check for value head tests
@@ -3683,7 +4479,7 @@ module Manager =
     member _.GetPlayerResults (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =
       let challengers = tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name
       let players = tournament.EngineSetup.Engines |> List.map _.Name
-      let isGauntlet = tournament.Gauntlet
+      let isGauntlet = tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
       PGNCalculator.getFullStat isGauntlet challengers players results
 
     member _.GetPlayerResultsFromPGN (results: ResizeArray<Result>) : seq<PlayerResult> =

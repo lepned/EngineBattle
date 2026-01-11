@@ -12,7 +12,7 @@ In this post, you’ll learn how to set up and run Lichess puzzle tests in Engin
 
 ## Prerequisites
 
-- **.NET 9.0 or later** installed ([Download here](https://dotnet.microsoft.com/download))
+- **.NET 10.0 or later** installed ([Download here](https://dotnet.microsoft.com/download/dotnet/10.0))
 - **EngineBattle** cloned from [GitHub](https://github.com/lepned/EngineBattle)
 - One or more UCI-compatible chess engines (e.g., Stockfish, Lc0, Ceres)
 - A Lichess puzzle file (CSV format). You can download the latest Lichess puzzle database here: [Download Lichess Puzzle CSV](https://database.lichess.org/lichess_db_puzzle.csv.zst).

@@ -16,7 +16,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **VerboseLogging**: Enable or disable verbose logging.
 - **VerboseMoveAnnotation**: Enable or disable detailed move annotations in the output (such as extra engine analysis for each move).
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
-- **Gauntlet**: Indicates if the tournament is a gauntlet.
+- **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
 - **PreventMoveDeviation**: Prevent move deviation option.
 - **Challengers**: Number of challengers in the tournament.
 - **Rounds**: Number of rounds in the tournament.
@@ -52,6 +52,15 @@ This document provides an overview of the `tournament.json` configuration file u
 - **OpeningsPath**: Path to the openings file, either a PGN-file or an EPD-file.
 - **OpeningsPly**: Number of plies for openings.
 - **OpeningsTwice**: Use openings twice.
+- **CupOptions**: Options specific to cup tournaments.
+  - **GamesPerMatch**: Number of games per cup match (even numbers recommended).
+  - **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). Overrides GamesPerMatch per round.
+  - **SeedBands**: Optional list of seed groups (seed numbers) for cup draws.
+  - **RandomizeSeedBands**: Randomize seeds within each band.
+  - **SeedingStrategy**: "ByRating" or "Random".
+  - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
+  - **BracketPath**: Path for the generated cup bracket JSON file.
+  - **RandomOpenings**: True to randomize openings instead of using the list order.
 
 ### Output Paths
 
@@ -120,7 +129,7 @@ This document provides an overview of the `tournament.json` configuration file u
   "VerboseLogging": false,
   "VerboseMoveAnnotation": false,
   "MinMoveTimeInMS": 400,
-  "Gauntlet": true,
+  "TournamentMode": "RR",
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
@@ -159,6 +168,17 @@ This document provides an overview of the `tournament.json` configuration file u
     "OpeningsPath": "C:/Dev/Chess/Openings/sufi25.pgn",
     "OpeningsPly": 100,
     "OpeningsTwice": true
+  },
+
+  "CupOptions": {
+    "GamesPerMatch": 2,
+    "RoundPairIncrements": [],
+    "SeedBands": [],
+    "RandomizeSeedBands": false,
+    "SeedingStrategy": "ByRating",
+    "UniquePerMatchOnly": false,
+    "BracketPath": "wwwroot/cup_bracket.json",
+    "RandomOpenings": false
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

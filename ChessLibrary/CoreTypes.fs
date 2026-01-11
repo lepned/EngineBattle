@@ -944,6 +944,15 @@ module TypesDef =
     type TableBaseAdjudication = {TablebaseDirectory:string; UseTBAdjudication: bool; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
     type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int }
+    type CupOptions =
+      { GamesPerMatch: int
+        RoundPairIncrements: int list
+        SeedBands: int list list
+        RandomizeSeedBands: bool
+        SeedingStrategy: string
+        UniquePerMatchOnly: bool
+        BracketPath: string
+        RandomOpenings: bool }
     type EngineSetup =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
@@ -962,7 +971,7 @@ module TypesDef =
         VerboseLogging: bool
         VerboseMoveAnnotation : bool
         MinMoveTimeInMS: int
-        Gauntlet: bool
+        TournamentMode: string
         PreventMoveDeviation: bool
         AllowPondering: bool
         EngineStartupTimeoutInSec: int
@@ -977,6 +986,7 @@ module TypesDef =
         Adjudication: Adjudication
         TestOptions: TestOptions
         Opening: Opening
+        CupOptions: CupOptions
         PgnOutPath: string
         ReferencePGNPath: string
         EngineSetup: EngineSetup
@@ -987,6 +997,8 @@ module TypesDef =
         [<JsonIgnore>] mutable CurrentGameNr: int  }
       with
         member x.Hardware() = sprintf "%s : %s : %s" x.CPU x.RAM x.GPU
+        member x.IsGauntlet =
+          x.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
         member x.Players() =
           match x.EngineSetup.Engines with
           | [] -> "No players"
@@ -1097,7 +1109,7 @@ module TypesDef =
                 tc1.ToString()
     
         member x.GauntletText() = 
-          if x.Gauntlet && x.EngineSetup.Engines.Length > 0 then 
+          if x.IsGauntlet && x.EngineSetup.Engines.Length > 0 then 
             let players = x.EngineSetup.Engines |> Seq.truncate(x.Challengers)
             let opponents = x.EngineSetup.Engines |> Seq.skip(x.Challengers)
             let oppMsg = opponents |> Seq.fold (fun st e -> sprintf "%s %s, " st e.Name ) ""
@@ -1157,6 +1169,7 @@ module TypesDef =
           //sb.AppendLine (sprintf "Comment: %s" x.Description) |> ignore
           sb.ToString()
 
+
         member x.MinSummary() =
           let sb = new StringBuilder()
           //sb.AppendLine "Description:" |> ignore      
@@ -1194,7 +1207,7 @@ module TypesDef =
             printfn "Book: No book"
           printfn "%s" (x.TablebaseText())
           printfn "%s" (x.AdjudicationText())
-          if x.Gauntlet then     
+          if x.IsGauntlet then     
             let challengers = x.EngineSetup.Engines |> Seq.truncate(x.Challengers) |> Seq.length
             let gamesPerRound = x.TotalGames / (x.Rounds * 2) - challengers
             if challengers > 0 then
@@ -1217,9 +1230,9 @@ module TypesDef =
           VerboseLogging = false
           VerboseMoveAnnotation = false
           MinMoveTimeInMS  = 0
+          TournamentMode = "RR"
           PgnOutPath = ""
           ReferencePGNPath = ""
-          Gauntlet = false
           IsChess960 = false
           PreventMoveDeviation = false
           AllowPondering = false
@@ -1232,6 +1245,7 @@ module TypesDef =
           TimeControl = Unchecked.defaultof<TimeControl.TimeControl>
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
           Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0 }
+          CupOptions = { GamesPerMatch = 2; RoundPairIncrements = []; SeedBands = []; RandomizeSeedBands = false; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
           TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1 }
           Adjudication =
             {
@@ -2488,3 +2502,40 @@ module TypesDef =
                 match pool.TryDequeue() with
                 | true, oldSb -> oldSb.Clear() |> ignore; pool.Enqueue(sb)
                 | _ -> ()
+
+  module Cup =
+    type CupGame =
+      { GameNr: int
+        White: string
+        Black: string
+        OpeningId: string
+        OpeningHash: string
+        Result: string }
+
+    type CupMatch =
+      { MatchId: int
+        RoundNumber: int
+        PlayerA: string
+        PlayerB: string
+        PlayerARating: int
+        PlayerBRating: int
+        mutable ScoreA: float
+        mutable ScoreB: float
+        mutable Winner: string option
+        mutable IsDecided: bool
+        Games: ResizeArray<CupGame>
+        mutable OpeningOrder: ResizeArray<int> }
+
+    type CupRound =
+      { RoundNumber: int
+        Matches: ResizeArray<CupMatch> }
+
+    type CupBracket =
+      { TournamentName: string
+        Strategy: string
+        GamesPerMatch: int
+        UniqueOpeningsGlobal: bool
+        mutable NextOpeningIndex: int
+        mutable GlobalOpeningOrder: ResizeArray<int>
+        Rounds: ResizeArray<CupRound>
+        mutable UpdatedUtc: DateTime }

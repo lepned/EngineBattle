@@ -9,7 +9,7 @@
   "VerboseLogging": false,
   "VerboseMoveAnnotation": false,
   "MinMoveTimeInMS": 400,
-  "Gauntlet": true,
+  "TournamentMode": "Gauntlet",
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
@@ -48,6 +48,16 @@
     "OpeningsPath": "",
     "OpeningsPly": 100,
     "OpeningsTwice": true    
+  },
+  "CupOptions": {
+    "GamesPerMatch": 2,
+    "RoundPairIncrements": [],
+    "SeedBands": [],
+    "RandomizeSeedBands": false,
+    "SeedingStrategy": "ByRating",
+    "UniquePerMatchOnly": false,
+    "BracketPath": "wwwroot/cup_bracket.json",
+    "RandomOpenings": false
   },
 
   "PgnOutPath": "",

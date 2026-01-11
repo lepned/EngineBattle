@@ -165,7 +165,7 @@ module TestPath =
         let tourny = 
           if tourny.EngineSetup.EngineDefList.Length > 0 then
             let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList
-            if tourny.Gauntlet && tourny.Challengers > 0 then
+            if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) && tourny.Challengers > 0 then
               for engine in engineList |> List.truncate tourny.Challengers do
                 engine.IsChallenger <- true
             else
@@ -571,6 +571,9 @@ module Program =
                     | RoundNr roundNr -> 
                         if verbose then
                             printfn "Round number: %s" roundNr
+                    | _ ->
+                        if verbose then
+                            printfn "Received update: %A" update
 
                     // Continue processing messages
                     return! loop ()
@@ -763,7 +766,7 @@ module Program =
                     match tournamentConfig with
                     | Some tourny ->
                         let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList
-                        if tourny.Gauntlet && tourny.Challengers > 0 then
+                        if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) && tourny.Challengers > 0 then
                           for engine in engineList |> List.truncate tourny.Challengers do
                             engine.IsChallenger <- true
                         else

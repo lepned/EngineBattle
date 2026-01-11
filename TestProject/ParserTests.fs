@@ -18,6 +18,39 @@ let ``getOpeningInfo returns correct string for opening/variation/eco`` () =
     Assert.Equal("Opening: Ruy Lopez - Closed, ECO: C84", result)
 
 [<Fact>]
+let ``parseLine parses EPD fields`` () =
+    let epdLine = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 bm e4; am d4; id \"StartPos\"; other \"note\";"
+    let parsed = MoveParser.parseLine epdLine
+    Assert.True(parsed.IsSome)
+    let epd = parsed.Value
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", epd.FEN)
+    Assert.Equal(Some "e4", epd.BestMove)
+    Assert.Equal(Some "d4", epd.AvoidMove)
+    Assert.Equal(Some "StartPos", epd.Id)
+    Assert.Equal(Some "note", epd.Other)
+    Assert.Equal(epdLine, epd.RawInput)
+
+[<Fact>]
+let ``parseEPDFile converts EPD to PGN`` () =
+    let tempFile = Path.GetTempFileName()
+    try
+        let epdLine = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 2 3 bm Bxf7+; id \"Italian\";"
+        File.WriteAllText(tempFile, epdLine)
+
+        let games = EPDExtractor.parseEPDFile tempFile |> Seq.toList
+        Assert.Single(games) |> ignore
+
+        let game = games.Head
+        Assert.Equal("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 2 3", game.Fen)
+        Assert.Equal(0, game.Mainline.Count)
+
+        let openingTag = game.GameMetaData.OtherTags |> List.tryFind (fun h -> h.Key = "Opening")
+        Assert.True(openingTag.IsSome)
+        Assert.Equal("Italian", openingTag.Value.Value)
+    finally
+        File.Delete(tempFile)
+
+[<Fact>]
 let ``parsePgnFile parses a simple PGN file`` () =
     // Arrange: create a temporary PGN file
     let tempFile = Path.GetTempFileName()

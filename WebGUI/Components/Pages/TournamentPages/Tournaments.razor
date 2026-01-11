@@ -10,6 +10,7 @@
 @using WebGUI.Components.Layout.TournamentLayout
 @using WebGUI.Components.Layout.CrosstableLayout
 @using WebGUI.Components.Layout.ChessboardLayout
+@using System.Text.Json
 
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -19,6 +20,7 @@
 @inject ILogger<Tournaments> logger
 @inject HotKeys HotKeys
 @inject ShutdownTokenProvider shutdownTokenProvider
+@inject IWebHostEnvironment Environment
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -86,36 +88,65 @@
 					}
 				</div>
 
-				@if (layoutOptions.ShowCrosstableBelowStandings)
+		@if (layoutOptions.ShowCrosstableBelowStandings)
+		{
+			<div class="standingTable">
+				@if (IsCupMode)
+				{
+					<CupProgressTable FontSize=@layoutOptions.Fonts.StandingsFont Height="height"
+									  CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle
+									  WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer" />
+				}
+				else
+				{
+					<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
+							   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
+				}
+			</div>
+			@if (!layoutOptions.OnlyShowStandings && !IsCupMode)
+			{
+				<CrossTableSummary FontSize=@layoutOptions.Fonts.CrossTableFont CrossTable="table" Players="@tournament.EngineSetup.Engines.Count()" />
+			}
+		}
+
+
+		@if (!layoutOptions.ShowCrosstableBelowStandings)
+		{
+			@if (!layoutOptions.OnlyShowStandings)
+			{
+				@if (IsCupMode)
 				{
 					<div class="standingTable">
-						<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
-								   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
+						<CupProgressTable FontSize=@layoutOptions.Fonts.StandingsFont Height="height"
+										  CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle
+										  WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer" />
 					</div>
-					@if (!layoutOptions.OnlyShowStandings)
-					{
-						<CrossTableSummary FontSize=@layoutOptions.Fonts.CrossTableFont CrossTable="table" Players="@tournament.EngineSetup.Engines.Count()" />
-					}
+				}
+				else
+				{
+					<div class="standingTable">
+						<CyclingStandingTables CrossTable="table" Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec FontSizeStandings=@layoutOptions.Fonts.StandingsFont ShowNPM=@layoutOptions.UseNPM Players=@tournament.EngineSetup.Engines.Count() ScoreTable="scoreTable" FontSizeCross=@layoutOptions.Fonts.CrossTableFont />
+					</div>
 				}
 
-
-				@if (!layoutOptions.ShowCrosstableBelowStandings)
-				{
-					@if (!layoutOptions.OnlyShowStandings)
+			}
+			else
+			{
+				<div class="standingTable">
+					@if (IsCupMode)
 					{
-						<div class="standingTable">
-							<CyclingStandingTables CrossTable="table" Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec FontSizeStandings=@layoutOptions.Fonts.StandingsFont ShowNPM=@layoutOptions.UseNPM Players=@tournament.EngineSetup.Engines.Count() ScoreTable="scoreTable" FontSizeCross=@layoutOptions.Fonts.CrossTableFont />
-						</div>
-
+						<CupProgressTable FontSize=@layoutOptions.Fonts.StandingsFont Height="height"
+										  CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle
+										  WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer" />
 					}
 					else
 					{
-						<div class="standingTable">
-							<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
-									   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
-						</div>
+						<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
+								   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
 					}
-				}
+				</div>
+			}
+		}
 
 
 				<MudSpacer></MudSpacer>
@@ -209,10 +240,12 @@
 	private bool BestMoveWithPolicy = false;
 	private bool blackLogLive = false;
 	private bool whiteLogLive = false;
-	private StreamingChessboard streamingBoard;
+	private StreamingChessboard streamingBoard;	
 	private bool showCompletePV = false;
 	private string standingsTableHeight { get; set; }
 	private IDialogReference dialogReference;
+	private IDialogReference bracketDialogReference;
+	private bool pendingCupDialog;
 	private IDialogReference resultDialogReference;
 	private List<CrossTableEntry> table = new();
 	private bool swapTables = true;
@@ -504,8 +537,8 @@
 
 		var players = tournament.EngineSetup.Engines.Count();
 		var fontSize = layoutOptions.Fonts.CrossTableFont + 1;
-		var crossTable = (tournament.Gauntlet || players == 2) ? runner.GetGauntletCrosstable(results) : table;
-		var size = (tournament.Gauntlet || players == 2) ? table.Count - crossTable.Count : table.Count;
+		var crossTable = (IsGauntletMode || players == 2) ? runner.GetGauntletCrosstable(results) : table;
+		var size = (IsGauntletMode || players == 2) ? table.Count - crossTable.Count : table.Count;
 		var res = whitePlayer + " vs " + blackPlayer + ": " + gameResult;
 		var options = size switch
 		{
@@ -519,12 +552,32 @@
 		{"FontSize",  fontSize },
 		{"Players",  players },
 		{"GameResult", res},
-		{"Gauntlet",  (tournament.Gauntlet || players == 2) }
+		{"Gauntlet",  (IsGauntletMode || players == 2) }
 	  };
 		dialogReference = await DialogService.ShowAsync<Components.Layout.CrosstableLayout.CrosstableDialog>("", parameters, options);
 	}
 
+	async Task OpenCupBracketDialog()
+	{
+		await Task.Delay(800);
+		var options = new DialogOptions()
+		{
+			MaxWidth = MaxWidth.ExtraLarge,
+			FullWidth = true,
+			CloseButton = false,
+			Position = DialogPosition.TopCenter
+		};
+
+		bracketDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupBracketDialog>("", options);
+	}
+
 	void CloseDialog() => dialogReference?.Close();
+
+	void CloseBetweenGamesDialogs()
+	{
+		dialogReference?.Close();
+		bracketDialogReference?.Close();
+	}
 
 	private async Task UpdatePVBoards(string longPV, int depthToMove, int depthOpp, bool white, string newFen)
 	{
@@ -648,19 +701,44 @@
 	}
 
 
-	string Gauntlet => tournament == null ? "" : tournament.Gauntlet ?
+string Gauntlet => tournament == null ? "" : IsCupMode ?
+			GetCupSummary() :
+			IsGauntletMode ?
 			$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
 			$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
+
+bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);
+bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", StringComparison.OrdinalIgnoreCase);
 
 	string GetOpening()
 	{
 		if (tournament != null)
 		{
+			if (IsCupMode)
+			{
+				var uniqueText = tournament.CupOptions.UniquePerMatchOnly ? "unique per match" : "global unique";
+				var orderText = tournament.CupOptions.RandomOpenings ? "random" : "sequential";
+				return
+					$"Openings, {tournament.Opening.OpeningsPly}ply, {orderText}, {uniqueText}, {tournament.GetOpeningFileName()}";
+			}
 			return
 				$"Openings, {tournament.Opening.OpeningsPly}ply, sequential, {(tournament.Opening.OpeningsTwice ? "twice" : "single")}, {tournament.GetOpeningFileName()}";
 		}
 		else
 			return "";
+	}
+
+	string GetCupSummary()
+	{
+		if (tournament == null)
+			return "";
+
+		var players = tournament.EngineSetup.Engines.Count();
+		var pairs = tournament.CupOptions.RoundPairIncrements;
+		var pairsText = pairs != null && pairs.Any()
+			? $"{string.Join(" / ", pairs.Select(p => p.ToString()))} pairs/round"
+			: $"{Math.Max(1, tournament.CupOptions.GamesPerMatch / 2)} pairs/round";
+		return $"{players}-player Cup, {pairsText}, {totalNumberOfPairs} total games";
 	}
 
 	string CalcTournamentDuration()
@@ -1116,6 +1194,10 @@
 						infoBannerInfo.HeadToHead = $"{wdl.Wins}-{wdl.Draws}-{wdl.Losses}";
 					}
 				}
+				if (layoutOptions.ShowCrosstableBetweenGames)
+				{
+					await InvokeAsync(CloseBetweenGamesDialogs);
+				}
 				await InvokeAsync(StateHasChanged);
 				break;
 
@@ -1155,7 +1237,14 @@
 
 				if (layoutOptions.ShowCrosstableBetweenGames)
 				{
-					await InvokeAsync(OpenDialog);
+					if (IsCupMode)
+					{
+						pendingCupDialog = true;
+					}
+					else
+					{
+						await InvokeAsync(OpenDialog);
+					}
 				}
 				break;
 
@@ -1268,10 +1357,7 @@
 				{
 					gameResult = string.Empty;
 					activeGameNr = start.Game.CurrentGameNr;
-					if (layoutOptions.ShowCrosstableBetweenGames)
-					{
-						await InvokeAsync(CloseDialog);
-					}
+					
 					TimeSpan duration = TimeSpan.Zero;
 					var roundNumber = !string.IsNullOrEmpty(roundNr) && roundNr.Contains('.')
 															? int.Parse(roundNr.Split('.')[0])
@@ -1293,7 +1379,7 @@
 						var allPairings = runner.GetAllPairings();
 						if (allPairings.Count == 0)
 						{
-							double avgTimePerGame = results.Average(e => e.GameTime);
+							double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
 							duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeft);
 						}
 						else
@@ -1316,7 +1402,7 @@
 						CancelTournament();
 					}
 					else
-					{
+					{		
 						if (start.Game.OpeningMovesAndFen.Count == 0)
 						{
 							await streamingBoard.OnNewFen(start.Game.StartPos);
@@ -1331,12 +1417,7 @@
 				catch (Exception e)
 				{
 					logger.LogError(e.Message);
-				}
-
-				finally
-				{
-					await InvokeAsync(CloseDialog);
-				}
+				}				
 
 				break;
 
@@ -1427,7 +1508,10 @@
 				{
 					if (!layoutOptions.ShowCrosstableBetweenGames)
 					{
-						await InvokeAsync(OpenDialog);
+						if (IsCupMode)
+							await InvokeAsync(OpenCupBracketDialog);
+						else
+							await InvokeAsync(OpenDialog);
 					}
 				}
 				break;
@@ -1450,6 +1534,17 @@
 				break;
 			case ChessLibrary.Tournament.Match.Update.RoundNr data:
 				roundNr = data.Round;
+				break;
+			case var cupUpdate when cupUpdate.IsCupBracketUpdated:
+				if (IsCupMode)
+				{
+					await Notifier.NotifyCupUpdated();
+					if (pendingCupDialog && layoutOptions.ShowCrosstableBetweenGames)
+					{
+						pendingCupDialog = false;
+						await InvokeAsync(OpenCupBracketDialog);
+					}
+				}
 				break;
 			case ChessLibrary.Tournament.Match.Update.PonderStatus ponderStatus:
 				await PonderStatusReceived(ponderStatus.Engine);
@@ -1753,6 +1848,151 @@
 		StateHasChanged();
 	}
 
+	private async Task StartTournamentFlow()
+	{
+		await PrepareRun();
+		if (!await ConfirmCupResumeOrNew())
+			return;
+		RunTournament();
+	}
+
+	private async Task<bool> ConfirmCupResumeOrNew()
+	{
+		ChessLibrary.Tournament.Manager.setCupResumeRequested(false);
+		ChessLibrary.Tournament.Manager.setCupBracketPathOverride(null);
+		if (!IsCupMode)
+			return true;
+
+		var bracketPath = GetCupBracketPath();
+		ChessLibrary.Tournament.Manager.setCupBracketPathOverride(bracketPath);
+		if (string.IsNullOrWhiteSpace(bracketPath) || !File.Exists(bracketPath))
+			return true;
+
+		var bracketState = GetCupBracketSummary(bracketPath);
+		if (bracketState == CupBracketSummary.Missing)
+			return true;
+
+		var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = false, Position = DialogPosition.TopCenter };
+		var parameters = new DialogParameters
+		{
+			{ "BracketPath", bracketPath },
+			{ "CupCompleted", bracketState == CupBracketSummary.Completed },
+			{ "CupInvalid", bracketState == CupBracketSummary.Invalid }
+		};
+		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupResumeDialog>("", parameters, options);
+		var result = await dialog.Result;
+		if (result.Canceled)
+			return false;
+
+		var action = result.Data as string ?? "";
+		if (action.Equals("new", StringComparison.OrdinalIgnoreCase))
+		{
+			ChessLibrary.Tournament.Manager.setCupResumeRequested(false);
+			BackupCupBracketFile(bracketPath);
+			DeleteCupBracketFiles(bracketPath);
+		}
+		else if (action.Equals("resume", StringComparison.OrdinalIgnoreCase))
+		{
+			ChessLibrary.Tournament.Manager.setCupResumeRequested(true);
+		}
+		else
+		{
+			ChessLibrary.Tournament.Manager.setCupResumeRequested(false);
+		}
+
+		return true;
+	}
+
+	private string GetCupBracketPath()
+	{
+		var configured = tournament?.CupOptions?.BracketPath ?? "wwwroot/cup_bracket.json";
+		if (Path.IsPathRooted(configured))
+			return configured;
+		return Path.Combine(Environment.ContentRootPath, configured);
+	}
+
+	private static void DeleteCupBracketFiles(string bracketPath)
+	{
+		try
+		{
+			var dir = Path.GetDirectoryName(bracketPath);
+			if (File.Exists(bracketPath))
+				File.Delete(bracketPath);
+			if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+			{
+				var pattern = Path.GetFileName(bracketPath) + ".tmp*";
+				foreach (var file in Directory.GetFiles(dir, pattern))
+				{
+					try
+					{
+						File.Delete(file);
+					}
+					catch (IOException)
+					{
+					}
+				}
+			}
+		}
+		catch (IOException)
+		{
+		}
+	}
+
+	private static void BackupCupBracketFile(string bracketPath)
+	{
+		try
+		{
+			if (!File.Exists(bracketPath))
+				return;
+
+			var backupPath = bracketPath + ".bak";
+			File.Copy(bracketPath, backupPath, true);
+		}
+		catch (IOException)
+		{
+		}
+	}
+
+	private static CupBracketSummary GetCupBracketSummary(string bracketPath)
+	{
+		try
+		{
+			using var stream = new FileStream(bracketPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+			using var reader = new StreamReader(stream);
+			var json = NormalizeBracketJson(reader.ReadToEnd());
+			if (string.IsNullOrWhiteSpace(json))
+				return CupBracketSummary.Invalid;
+
+			var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+			var bracket = JsonSerializer.Deserialize<CupBracketState>(json, options);
+			if (bracket?.Rounds is null)
+				return CupBracketSummary.Invalid;
+
+			var hasOpen = bracket.Rounds.Any(r => r.Matches?.Any(m => !m.IsDecided) == true);
+			return hasOpen ? CupBracketSummary.InProgress : CupBracketSummary.Completed;
+		}
+		catch (IOException)
+		{
+			return CupBracketSummary.Invalid;
+		}
+		catch (JsonException)
+		{
+			return CupBracketSummary.Invalid;
+		}
+	}
+
+	private static string NormalizeBracketJson(string json)
+	{
+		if (string.IsNullOrWhiteSpace(json))
+			return json;
+
+		var trimmed = json.TrimStart();
+		if (trimmed.StartsWith("\"", StringComparison.Ordinal) && json.TrimEnd().EndsWith("}", StringComparison.Ordinal))
+			return "{" + json;
+
+		return json;
+	}
+
 	private void ResetSpeedChartCycle()
 	{
 		speedChartCycleEnabled = false;
@@ -1829,7 +2069,7 @@
 			Notifier.IsFullScreenRequested += OnFullScreenRequested;
 
 			keyContext = HotKeys.CreateContext()
-			.Add(ModKey.Ctrl, Key.r, (Func<Task>)(async () => { await PrepareRun(); RunTournament(); }), "Run tournament")
+			.Add(ModKey.Ctrl, Key.r, (Func<Task>)(async () => { await StartTournamentFlow(); }), "Run tournament")
 			.Add(ModKey.Ctrl, Key.c, (() => CancelTournament()), "Cancel tournament")
 			.Add(ModKey.Ctrl, Key.v, (() => ValidateTournamentInput()), "Validate tournament input")
 			.Add(ModKey.Ctrl, Key.u, (Func<Task>)(async () => await UpdateState()), "Update state")
@@ -1957,15 +2197,38 @@
 		await OnBrowserResize();
 	}
 
-	public async ValueTask DisposeAsync()
-	{
-		Notifier.SettingAdded -= OnSettingAdded;
-		Notifier.IsFullScreenRequested -= OnFullScreenRequested;
-		keyContext?.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        Notifier.SettingAdded -= OnSettingAdded;
+        Notifier.IsFullScreenRequested -= OnFullScreenRequested;
+        keyContext?.DisposeAsync();
 		if (timer != null)
 			timer.Dispose();
-		if (oneSecondTimer != null)
-			oneSecondTimer.Dispose();
-		await ValueTask.CompletedTask;
-	}
+        if (oneSecondTimer != null)
+            oneSecondTimer.Dispose();
+        await ValueTask.CompletedTask;
+    }
+
+    private sealed class CupBracketState
+    {
+        public List<CupRoundState> Rounds { get; set; } = new();
+    }
+
+    private sealed class CupRoundState
+    {
+        public List<CupMatchState> Matches { get; set; } = new();
+    }
+
+    private sealed class CupMatchState
+    {
+        public bool IsDecided { get; set; }
+    }
+
+    private enum CupBracketSummary
+    {
+        Missing,
+        InProgress,
+        Completed,
+        Invalid
+    }
 }

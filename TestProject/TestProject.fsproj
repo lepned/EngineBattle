@@ -12,6 +12,8 @@
 		<Compile Include="CoreTypesTests.fs" />
 		<Compile Include="PentanomialTests.fs" />
 		<Compile Include="ParserTests.fs" />
+		<Compile Include="PairingTests.fs" />
+		<Compile Include="CupBracketTests.fs" />
 		<Compile Include="MoveHistoryDeviationTests.fs" />
 		<Compile Include="QBBOpsTests.fs" />
 		<Compile Include="LowLevelUtilTests.fs" />
