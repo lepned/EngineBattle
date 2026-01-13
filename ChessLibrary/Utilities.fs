@@ -933,9 +933,31 @@ module Validation =
           Errors ["Delay between games very low - consider to increase it to at least 5 seconds in tournament.json"]
       else Ok
 
+  let validateTournamentModeOptions (tourny: Tournament) =
+      let mode =
+          if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR"
+          else tourny.TournamentMode
+      let normalized = mode.Trim().ToLowerInvariant()
+      let isKnown =
+          normalized = "rr"
+          || normalized = "roundrobin"
+          || normalized = "round-robin"
+          || normalized = "gauntlet"
+          || normalized = "cup"
+          || normalized = "swiss"
+      if not isKnown then
+          Errors ["TournamentMode must be one of: RR, Gauntlet, Cup, Swiss."]
+      elif normalized = "cup" && obj.ReferenceEquals(tourny.CupOptions, null) then
+          Errors ["CupOptions must be set when TournamentMode is Cup."]
+      elif normalized = "swiss" && obj.ReferenceEquals(tourny.SwissOptions, null) then
+          Errors ["SwissOptions must be set when TournamentMode is Swiss."]
+      else
+          Ok
+
   let validateTournament (tourny: Tournament) =
       [
           validateEnginesPresent tourny.EngineSetup.Engines tourny.Challengers
+          validateTournamentModeOptions tourny
           validateOpeningPath tourny
           validatePgnOutPath tourny
           validateEngineConfigs tourny.EngineSetup.Engines
@@ -2414,15 +2436,32 @@ module PairingHelper =
     (players: EngineConfig list)
     (seedOrder: EngineConfig list)
     (scores: Map<string, float>)
-    (priorPairs: Set<string>) =
+    (priorPairs: Set<string>)
+    (byeSet: Set<string>) =
       let seedMap =
         seedOrder
         |> List.mapi (fun idx p -> p.Name, idx + 1)
         |> Map.ofList
       let scoreFor name =
         scores |> Map.tryFind name |> Option.defaultValue 0.0
+      let byeCandidate =
+        if players.Length % 2 = 0 then
+          None
+        else
+          let ordered =
+            players
+            |> List.sortBy (fun p ->
+                let seed = seedMap.[p.Name]
+                scoreFor p.Name, -seed)
+          let preferred =
+            ordered |> List.tryFind (fun p -> byeSet.Contains p.Name |> not)
+          preferred |> Option.orElse (ordered |> List.tryHead)
+      let (pairingPlayers, byePlayer) =
+        match byeCandidate with
+        | None -> players, None
+        | Some bye -> players |> List.filter (fun p -> p.Name <> bye.Name), Some bye
       let groups =
-        players
+        pairingPlayers
         |> List.groupBy (fun p -> scoreFor p.Name)
         |> List.sortByDescending fst
       let mutable carry = List.empty<EngineConfig>
@@ -2458,8 +2497,19 @@ module PairingHelper =
         if remaining.Length >= 2 then
           for i in 0 .. 2 .. (remaining.Length - 2) do
             roundPairs.Add((remaining.[i], remaining.[i + 1], scoreFor remaining.[i].Name))
+      match byePlayer with
+      | Some bye ->
+          let byeEngine = { EngineConfig.Empty with Name = "BYE" }
+          roundPairs.Add((bye, byeEngine, scoreFor bye.Name))
+      | None -> ()
+      let seedFor name =
+        seedMap |> Map.tryFind name |> Option.defaultValue Int32.MaxValue
       roundPairs
-      |> Seq.sortBy (fun (_, _, score) -> score)
+      |> Seq.sortBy (fun (a, b, score) ->
+          let seedA = seedFor a.Name
+          let seedB = seedFor b.Name
+          let minSeed = if seedA < seedB then seedA else seedB
+          score, -minSeed)
       |> Seq.map (fun (a, b, _) -> (a, b))
       |> Seq.toList
 
@@ -2641,9 +2691,15 @@ module PairingHelper =
     let first, second = players |> List.splitAt half
     let zipped = List.zip first (List.rev second)
     [
-        for (w, b) in zipped do
+        for idx, (w, b) in zipped |> List.indexed do
             if w.Name <> EngineConfig.Empty.Name && b.Name <> EngineConfig.Empty.Name then
-                let (white, black) = if evenRound then (b, w) else (w, b)
+                let (white, black) =
+                    if idx = 0 then
+                        if evenRound then (b, w) else (w, b)
+                    else if idx % 2 = 1 then
+                        (w, b)
+                    else
+                        (b, w)
                 let openingHash =
                     if String.IsNullOrWhiteSpace opening.Raw then
                         Hash.computeOpeningHash (opening.GameNumber.ToString())

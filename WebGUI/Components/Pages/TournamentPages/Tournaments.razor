@@ -493,6 +493,7 @@
 
 	async Task OpenResultDialog()
 	{
+		CloseAllDialogs();
 		var option = new DialogOptions() { MaxWidth = MaxWidth.Small, FullWidth = false, CloseButton = false, Position = DialogPosition.TopCenter };
 		var title = $"Game Ended";
 		var res = $"{infoBannerInfo.ResultTxt} ({reason})";
@@ -540,6 +541,8 @@
 		if (results.Count > 3000)
 			return;
 
+		CloseAllDialogs();
+
 		var players = tournament.EngineSetup.Engines.Count();
 		var fontSize = layoutOptions.Fonts.CrossTableFont + 1;
 		var crossTable = (IsGauntletMode || players == 2) ? runner.GetGauntletCrosstable(results) : table;
@@ -564,6 +567,7 @@
 
 	async Task OpenSwissDialog(bool showActions = false)
 	{
+		CloseAllDialogs();
 		await Task.Delay(1000);
 		var options = new DialogOptions()
 		{
@@ -585,6 +589,7 @@
 
 	async Task OpenCupBracketDialog()
 	{
+		CloseAllDialogs();
 		await Task.Delay(800);
 		var options = new DialogOptions()
 		{
@@ -601,9 +606,19 @@
 
 	void CloseBetweenGamesDialogs()
 	{
+		CloseAllDialogs();
+	}
+
+	void CloseAllDialogs()
+	{
 		dialogReference?.Close();
+		dialogReference = null;
 		bracketDialogReference?.Close();
+		bracketDialogReference = null;
 		swissDialogReference?.Close();
+		swissDialogReference = null;
+		resultDialogReference?.Close();
+		resultDialogReference = null;
 	}
 
 	private async Task UpdatePVBoards(string longPV, int depthToMove, int depthOpp, bool white, string newFen)

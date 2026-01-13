@@ -17,6 +17,9 @@ let private mkOpening gameNr =
 let private mkRatedPlayer name rating =
     { mkEngine name with Rating = rating }
 
+let private seedOrderNames players groupCount =
+    tcecSeedOrder players groupCount |> List.map (fun p -> p.Name)
+
 [<Fact>]
 let ``gauntletSingleRound pairs challengers with all opponents`` () =
     let challengers = [ mkEngine "A" ]
@@ -102,6 +105,273 @@ let ``round robin double round creates both colors for each pair`` () =
     Assert.Equal(1, orderedPairs.[("D", "B")])
     Assert.Equal(1, orderedPairs.[("C", "D")])
     Assert.Equal(1, orderedPairs.[("D", "C")])
+
+[<Fact>]
+let ``round robin keeps colors balanced across first four rounds for 8 players`` () =
+    let players =
+        [ mkEngine "A"; mkEngine "B"; mkEngine "C"; mkEngine "D"
+          mkEngine "E"; mkEngine "F"; mkEngine "G"; mkEngine "H" ]
+    let opening = mkOpening 1
+    let games = getPairingsPerOpening players opening
+
+    let gamesPerRound = players.Length / 2
+    let firstFourRounds = games |> List.take (gamesPerRound * 4)
+
+    let addCount name delta counts =
+        let current = counts |> Map.tryFind name |> Option.defaultValue 0
+        counts |> Map.add name (current + delta)
+
+    let colorCounts =
+        firstFourRounds
+        |> List.fold (fun acc g ->
+            acc
+            |> addCount g.White.Name 1
+            |> addCount g.Black.Name -1) Map.empty
+
+    for player in players do
+        let diff = colorCounts.[player.Name]
+        Assert.Equal(0, diff)
+
+[<Fact>]
+let ``round robin keeps colors within one for 9 players`` () =
+    let players =
+        [ mkEngine "A"; mkEngine "B"; mkEngine "C"; mkEngine "D"; mkEngine "E"
+          mkEngine "F"; mkEngine "G"; mkEngine "H"; mkEngine "I" ]
+    let opening = mkOpening 1
+    let games = getPairingsPerOpening players opening
+
+    let addCount name delta counts =
+        let current = counts |> Map.tryFind name |> Option.defaultValue 0
+        counts |> Map.add name (current + delta)
+
+    let colorCounts =
+        games
+        |> List.fold (fun acc g ->
+            acc
+            |> addCount g.White.Name 1
+            |> addCount g.Black.Name -1) Map.empty
+
+    for player in players do
+        let diff = colorCounts.[player.Name]
+        Assert.True(abs diff <= 1, $"Color imbalance too large for {player.Name}: {diff}")
+
+[<Fact>]
+let ``swiss first round schedules weaker seeded pairs earlier`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 4
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let seedMap =
+        seedOrder
+        |> List.mapi (fun idx p -> p.Name, idx + 1)
+        |> Map.ofList
+    let minSeed (a: EngineConfig, b: EngineConfig) =
+        let sa = seedMap.[a.Name]
+        let sb = seedMap.[b.Name]
+        if sa < sb then sa else sb
+
+    let mins = pairs |> List.map minSeed
+    Assert.Equal<int list>(mins |> List.sortDescending, mins)
+
+[<Fact>]
+let ``swiss seed order matches expected for group counts`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+
+    let orderGroup1 = seedOrderNames players 1
+    let orderGroup2 = seedOrderNames players 2
+    let orderGroup4 = seedOrderNames players 4
+
+    Assert.Equal<string list>([ "A"; "B"; "C"; "D"; "E"; "F"; "G"; "H" ], orderGroup1)
+    Assert.Equal<string list>([ "A"; "E"; "B"; "F"; "C"; "G"; "D"; "H" ], orderGroup2)
+    Assert.Equal<string list>([ "A"; "C"; "E"; "G"; "B"; "D"; "F"; "H" ], orderGroup4)
+
+[<Fact>]
+let ``swiss first round pair ordering is deterministic for group count 4`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 4
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let names = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "G-H"; "E-F"; "C-D"; "A-B" ], names)
+
+[<Fact>]
+let ``swiss first round pair ordering is deterministic for group count 1`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 1
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let names = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "D-H"; "C-G"; "B-F"; "A-E" ], names)
+
+[<Fact>]
+let ``swiss first round pair ordering is deterministic for group count 2`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 2
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let names = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "F-H"; "B-D"; "E-G"; "A-C" ], names)
+
+[<Fact>]
+let ``swiss second round ordering uses score then seed for group count 4`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+    let scores =
+        [ "A", 1.0; "B", 1.0; "C", 1.0; "D", 1.0
+          "E", 0.0; "F", 0.0; "G", 0.0; "H", 0.0 ]
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 4
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let names = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "G-H"; "E-F"; "C-D"; "A-B" ], names)
+
+[<Fact>]
+let ``swiss seeding uses rating descending for seed one`` () =
+    let players =
+        [ mkRatedPlayer "Top" 3200
+          mkRatedPlayer "Mid" 2900
+          mkRatedPlayer "Low" 2500 ]
+    let seedOrder = tcecSeedOrder players 2
+    Assert.Equal("Top", seedOrder.Head.Name)
+
+[<Fact>]
+let ``swiss seeding distributes players across seed groups`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800
+          mkRatedPlayer "F" 2700
+          mkRatedPlayer "G" 2600
+          mkRatedPlayer "H" 2500 ]
+    let seedOrder = tcecSeedOrder players 2 |> List.map (fun p -> p.Name)
+    Assert.Equal<string list>([ "A"; "E"; "B"; "F"; "C"; "G"; "D"; "H" ], seedOrder)
+
+[<Fact>]
+let ``swiss seeding is deterministic when ratings are equal`` () =
+    let players =
+        [ mkRatedPlayer "Zeta" 3000
+          mkRatedPlayer "Alpha" 3000
+          mkRatedPlayer "Echo" 3000
+          mkRatedPlayer "Beta" 3000 ]
+    let seedOrder = tcecSeedOrder players 2 |> List.map (fun p -> p.Name)
+    Assert.Equal<string list>([ "Zeta"; "Echo"; "Alpha"; "Beta" ], seedOrder)
+
+[<Fact>]
+let ``swiss assigns bye to lowest seeded player when odd`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800 ]
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 1
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let byePair = pairs |> List.tryFind (fun (a, b) -> b.Name = "BYE")
+    Assert.True(byePair.IsSome)
+    Assert.Equal("E", byePair.Value |> fst |> fun p -> p.Name)
+
+[<Fact>]
+let ``swiss bye pair is ordered first for odd group`` () =
+    let players =
+        [ mkRatedPlayer "A" 3200
+          mkRatedPlayer "B" 3100
+          mkRatedPlayer "C" 3000
+          mkRatedPlayer "D" 2900
+          mkRatedPlayer "E" 2800 ]
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 1
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    let firstPair = pairs |> List.head
+    Assert.Equal("BYE", (snd firstPair).Name)
 
 [<Fact>]
 let ``cup draw by rating pairs highest with lowest`` () =

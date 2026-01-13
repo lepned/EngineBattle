@@ -3667,7 +3667,29 @@ module Match =
       fullPath
 
     let writeSwissState (agent: MailboxProcessor<SwissStateMessage>) (state: TypesDef.Swiss.SwissState) =
-      agent.PostAndReply(fun reply -> WriteSwissState(state, reply))
+      let maxPersistedOpenings = 50
+      let trimOrder (order: ResizeArray<int>) =
+        if obj.ReferenceEquals(order, null) then
+          order
+        elif order.Count > maxPersistedOpenings then
+          ResizeArray<int>(order |> Seq.take maxPersistedOpenings)
+        else
+          order
+      let trimmedRounds =
+        state.Rounds
+        |> Seq.map (fun r ->
+            let trimmedPairings =
+              r.Pairings
+              |> Seq.map (fun p ->
+                  { p with OpeningOrder = trimOrder p.OpeningOrder })
+              |> ResizeArray
+            { r with Pairings = trimmedPairings })
+        |> ResizeArray
+      let trimmedState =
+        { state with
+            GlobalOpeningOrder = trimOrder state.GlobalOpeningOrder
+            Rounds = trimmedRounds }
+      agent.PostAndReply(fun reply -> WriteSwissState(trimmedState, reply))
       callback SwissStateUpdated
 
     let gamesPerMatchForRound _ =
@@ -3680,8 +3702,7 @@ module Match =
     logger.LogInformation("Swiss tournament about to start")
     let numberOfPlayers = tourny.EngineSetup.Engines.Length
     if numberOfPlayers % 2 = 1 then
-      logger.LogError("Swiss tournaments require an even number of players when byes are not allowed.")
-      failwith "Swiss tournaments require an even number of players when byes are not allowed."
+      logger.LogInformation("Swiss tournament has an odd number of players; a bye will be assigned each round.")
 
     let mutable epdBook = false
     let board = Board()
@@ -3795,9 +3816,18 @@ module Match =
       let pairs = ResizeArray<string>()
       for round in state.Rounds do
         for pairing in round.Pairings do
-          if String.IsNullOrWhiteSpace pairing.PlayerA |> not && String.IsNullOrWhiteSpace pairing.PlayerB |> not then
+          if String.IsNullOrWhiteSpace pairing.PlayerA |> not
+             && String.IsNullOrWhiteSpace pairing.PlayerB |> not
+             && pairing.PlayerB <> "BYE" then
             pairs.Add(Utilities.PairingHelper.swissPairKey pairing.PlayerA pairing.PlayerB)
       pairs |> Set.ofSeq
+
+    let buildByeSet () =
+      state.Rounds
+      |> Seq.collect (fun r -> r.Pairings)
+      |> Seq.filter (fun p -> p.PlayerB = "BYE")
+      |> Seq.map (fun p -> p.PlayerA)
+      |> Set.ofSeq
 
     let ensureGlobalOrder () =
       if tourny.SwissOptions.RandomOpenings && openings.Length > 1 && not tourny.SwissOptions.UniquePerMatchOnly then
@@ -4013,9 +4043,9 @@ module Match =
                   PlayerB = b.Name
                   PlayerARating = a.Rating
                   PlayerBRating = b.Rating
-                  ScoreA = 0.0
+                  ScoreA = if b.Name = "BYE" then 1.0 else 0.0
                   ScoreB = 0.0
-                  IsDecided = false
+                  IsDecided = b.Name = "BYE"
                   Games = ResizeArray<TypesDef.Swiss.SwissGame>()
                   OpeningOrder = ResizeArray<int>() }
               pairId <- pairId + 1
@@ -4031,6 +4061,9 @@ module Match =
       let plannedPairings = ResizeArray<Pairing>()
       let mutable previewIndex = openingIndex
       for pairing in round.Pairings do
+        if pairing.PlayerB = "BYE" then
+          ()
+        else
         ensurePairingOpeningOrder pairing
         let matchOpenings =
           if tourny.SwissOptions.UniquePerMatchOnly then
@@ -4066,6 +4099,13 @@ module Match =
 
       for pairIndex in 0 .. round.Pairings.Count - 1 do
         let pairing = round.Pairings.[pairIndex]
+        if pairing.PlayerB = "BYE" then
+          if pairing.IsDecided |> not then
+            pairing.ScoreA <- 1.0
+            pairing.ScoreB <- 0.0
+            pairing.IsDecided <- true
+            writeSwissState swissAgent state
+        else
         let pairingPlayers =
           tourny.EngineSetup.Engines
           |> List.filter (fun e -> e.Name = pairing.PlayerA || e.Name = pairing.PlayerB)
@@ -4194,8 +4234,9 @@ module Match =
         logger.LogInformation("Swiss tournament completed: all unique pairs have been played.")
         continueRounds <- false
       else
+        let byeSet = buildByeSet ()
         let roundPairs : (EngineConfig * EngineConfig) list =
-          Utilities.PairingHelper.swissRoundPairings tourny.EngineSetup.Engines seedOrder scores priorPairs
+          Utilities.PairingHelper.swissRoundPairings tourny.EngineSetup.Engines seedOrder scores priorPairs byeSet
         do! runRound roundNumber roundPairs
         roundNumber <- roundNumber + 1
 
@@ -4221,8 +4262,9 @@ module Match =
               tourny.EngineSetup.Engines
               |> List.filter (fun p -> tied |> List.contains p.Name)
             logger.LogInformation("Swiss tiebreak: {Count} players tied at {Score}, playing extra pairs.", tiedPlayers.Length, maxScore)
+            let byeSet = buildByeSet ()
             let roundPairs : (EngineConfig * EngineConfig) list =
-              Utilities.PairingHelper.swissRoundPairings tiedPlayers seedOrder scores Set.empty
+              Utilities.PairingHelper.swissRoundPairings tiedPlayers seedOrder scores Set.empty byeSet
             do! runRound tieRoundNumber roundPairs
             return! resolveTieBreak (tieRoundNumber + 1)
       }

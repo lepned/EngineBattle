@@ -43,7 +43,7 @@ let ``swissRoundPairings orders weakest score pairs first`` () =
           "C", 1.0
           "D", 1.0 ]
         |> Map.ofList
-    let pairs = swissRoundPairings players seedOrder scores Set.empty
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
     let firstPairNames =
         pairs
         |> List.head
@@ -71,7 +71,7 @@ let ``swissRoundPairings avoids repeat when alternative exists`` () =
           "D", 0.0 ]
         |> Map.ofList
     let priorPairs = Set.ofList [ swissPairKey "A" "B" ]
-    let pairs = swissRoundPairings players seedOrder scores priorPairs
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
     let pairNames =
         pairs
         |> List.map (fun (a, b) -> Set.ofList [ a.Name; b.Name ])
@@ -101,7 +101,7 @@ let ``swiss planned pairings include full round`` () =
           "C", 0.0
           "D", 0.0 ]
         |> Map.ofList
-    let roundPairs = swissRoundPairings players seedOrder scores Set.empty
+    let roundPairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
     let openings = [ mkOpening 1; mkOpening 2 ]
     let planned = ResizeArray<Pairing>()
     let mutable previewIndex = 0

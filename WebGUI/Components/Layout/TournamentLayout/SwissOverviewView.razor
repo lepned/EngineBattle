@@ -245,7 +245,7 @@ else
 
     private static void AddRow(Dictionary<string, StandingRow> rows, string name, int rating, double score, int games)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(name) || name.Equals("BYE", StringComparison.OrdinalIgnoreCase))
             return;
 
         if (!rows.TryGetValue(name, out var row))

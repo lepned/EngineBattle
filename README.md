@@ -30,6 +30,19 @@
 - **Node-Limited Matches:** Conduct node-limited games (e.g., policy tests with single-node searches).
 - **Principal Variation (PV) Boards:** Display real-time PV boards per engine, highlighting evaluation disagreements visually with colored arrows.
 
+### Tournament Modes
+
+EngineBattle supports four tournament formats configured via `TournamentMode` in `tournament.json`:
+
+- **Round Robin (RR):** Every engine plays every other engine once (or twice in double round-robin).
+- **Gauntlet:** One or more challengers play against a pool of opponents for fast benchmarking.
+- **Cup:** Single-elimination knockout with configurable games per match and optional seeding.
+- **Swiss:** Pairings are based on score each round, scaling well for larger fields.
+- **Swiss (odd players):** If the player count is odd, one engine receives a bye each round (worth 1 point) and byes are not repeated when possible.
+
+See [Tournament.json.md](Tournament.json.md) for configuration details, plus [SwissMode.md](SwissMode.md) and [CupMode.md](CupMode.md) for mode-specific notes.
+
+
 ### 🔍 Analysis Mode
 
 - **Intuitive Analysis Interface:** User-friendly interface for convenient position analysis, featuring search charts similar to those used in tournament mode. Includes overlay options to display additional informaiton for MCTS engines like Lc0 and Ceres

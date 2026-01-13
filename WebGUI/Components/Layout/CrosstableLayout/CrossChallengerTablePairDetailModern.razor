@@ -1,63 +1,68 @@
-@using MudBlazor
-
 <div class="cross-modern-shell">
   <div class="cross-modern-header">
     <div class="cross-modern-title">Crosstable</div>
     <div class="cross-modern-subtitle">Last game: @gameResultHeader</div>
     <div></div>
   </div>
-  <MudTable Class="cross-modern-table" Items="CrossTable" Dense=true>
-    <HeaderContent>
-      <MudTh Class="cross-modern-head">Player (Pairs)</MudTh>
-      @foreach (var challenger in CrossTable)
-      {
-        if (challenger.Rank == 1)
+  <table class="cross-modern-table">
+    <thead>
+      <tr>
+        <th class="cross-modern-head cross-modern-head-player">Player (Pairs)</th>
+        @foreach (var challenger in CrossTable)
         {
-          foreach (var item in challenger.ResultsAgainst)
+          if (challenger.Rank == 1)
           {
-            <MudTh Class="cross-modern-head">@item.Item1</MudTh>
+            foreach (var item in challenger.ResultsAgainst)
+            {
+              <th class="cross-modern-head">@item.Item1</th>
+            }
           }
         }
-      }
-    </HeaderContent>
-    <RowTemplate>
-      <MudTd Class="cross-modern-player">
-        <div class="cross-modern-rank">#@context.Rank</div>
-        <div class="cross-modern-player-name">@context.Player</div>
-        <div class="cross-modern-total">
-          Total: @context.TotalScore.ToString("0.0")
-          @RenderWdlTotals(context)
-        </div>
-      </MudTd>
-      @if (context.Rank == 1)
+      </tr>
+    </thead>
+    <tbody>
+      @foreach (var entry in CrossTable)
       {
-        orderList = context.ResultsAgainst.ToArray();
-      }
+        <tr>
+          <td class="cross-modern-player">
+            <div class="cross-modern-rank">#@entry.Rank</div>
+            <div class="cross-modern-player-name">@entry.Player</div>
+            <div class="cross-modern-total">
+              Total: @entry.TotalScore.ToString("0.0")
+              @RenderWdlTotals(entry)
+            </div>
+          </td>
+          @if (entry.Rank == 1)
+          {
+            orderList = entry.ResultsAgainst.ToArray();
+          }
 
-      @foreach (var opponent in context.ResultsAgainst)
-      {
-        Tuple<string, string[]>[] resultAgainstArray = context.ResultsAgainst;
-        if (context.Rank != 1)
-        {
-          resultAgainstArray =
-          resultAgainstArray
-          .OrderBy(s => Array.IndexOf(orderList, s))
-          .ToArray();
-        }
+          @foreach (var opponent in entry.ResultsAgainst)
+          {
+            Tuple<string, string[]>[] resultAgainstArray = entry.ResultsAgainst;
+            if (entry.Rank != 1)
+            {
+              resultAgainstArray =
+              resultAgainstArray
+              .OrderBy(s => Array.IndexOf(orderList, s))
+              .ToArray();
+            }
 
-        var res = CalculatePairs(context.Player, opponent.Item1, opponent.Item2);
-        <MudTd Class="cross-modern-cell">
-          <span class="cross-modern-pair">
-            <span class="cross-win">+@res.W</span>
-            <span class="cross-sep">=</span>
-            <span class="cross-draw">@res.D</span>
-            <span class="cross-sep">-</span>
-            <span class="cross-loss">@res.L</span>
-          </span>
-        </MudTd>
+            var res = CalculatePairs(entry.Player, opponent.Item1, opponent.Item2);
+            <td class="cross-modern-cell">
+              <span class="cross-modern-pair">
+                <span class="cross-win">+@res.W</span>
+                <span class="cross-sep">=</span>
+                <span class="cross-draw">@res.D</span>
+                <span class="cross-sep">-</span>
+                <span class="cross-loss">@res.L</span>
+              </span>
+            </td>
+          }
+        </tr>
       }
-    </RowTemplate>
-  </MudTable>
+    </tbody>
+  </table>
 </div>
 
 @code {
@@ -217,6 +222,14 @@
     border-radius: 14px;
     border: 1px solid var(--border);
     overflow: hidden;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .cross-modern-table th,
+  .cross-modern-table td {
+    padding: 8px 10px;
   }
 
   .cross-modern-head {
@@ -224,10 +237,16 @@
     text-transform: uppercase;
     letter-spacing: 0.4px;
     color: var(--muted);
+    text-align: center;
+  }
+
+  .cross-modern-head-player {
+    text-align: left;
   }
 
   .cross-modern-player {
-    min-width: 200px;
+    min-width: 160px;
+    text-align: left;
   }
 
   .cross-modern-rank {
@@ -259,7 +278,7 @@
     gap: 4px;
     font-family: "Consolas", "Courier New", monospace;
     font-size: calc(var(--font-size, 16px) - 1px);
-    margin: 2px 8px 2px 0;
+    margin: 2px 0;
     padding: 2px 6px;
     border-radius: 999px;
     background: rgba(15, 20, 32, 0.75);

@@ -1,6 +1,6 @@
 # Swiss Mode
 
-Swiss mode runs a fixed number of rounds with no byes. Each pairing is played as a two-game pair (colors swapped).
+Swiss mode runs a fixed number of rounds and supports byes for odd player counts. Each pairing is played as a two-game pair (colors swapped).
 
 ## Configuration (tournament.json)
 
@@ -19,6 +19,7 @@ Swiss mode runs a fixed number of rounds with no byes. Each pairing is played as
 Notes:
 
 - `Rounds` is required. Repeat pairings are not allowed, so rounds must be less than the number of players.
+- If there is an odd number of players, one player receives a bye each round (worth 1 point); byes are not repeated when possible.
 - `GamesPerMatch` should be even; each pair is two games (white/black).
 - `SeedGroupCount` controls TCEC-style seeding groups (A/B/C/...).
 
@@ -92,7 +93,7 @@ Same opening strategy as cup mode:
 - Winner is decided by points only. If needed, play extra pairs.
 - Controlled by `SwissOptions.AllowExtraPairsOnTie`.
 - If two engines are tied, play additional pairs until a decisive pair occurs.
-- If three or more are tied, play a DRR tiebreak; after each DRR, resolve top/bottom on points if possible, then repeat until resolved.
+- If three or more are tied, tiebreaks are used to resolve the winner.
 - For non-winner placements, use tie-break order:
   1) Sonneborn-Berger
   2) Number of wins
