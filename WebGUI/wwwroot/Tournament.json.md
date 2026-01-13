@@ -54,14 +54,22 @@ This document provides an overview of the `tournament.json` configuration file u
 
 ### Cup Options
 
-- **GamesPerMatch**: Number of games per cup match (even numbers recommended).
-- **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). Overrides GamesPerMatch per round.
-- **SeedBands**: Optional list of seed groups (seed numbers) for cup draws.
-- **RandomizeSeedBands**: Randomize seeds within each band.
+- **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). If empty, defaults to one pair (2 games).
+- **Seed bands**: Generated automatically from player count (1, 2, 3-4, 5-8, 9-16, ...). Seeds are randomized within each band.
 - **SeedingStrategy**: "ByRating" or "Random".
 - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
 - **BracketPath**: Path for the generated cup bracket JSON file.
 - **RandomOpenings**: True to randomize openings instead of using the list order.
+
+### Swiss Options
+
+- **GamesPerMatch**: Number of games per match (even numbers recommended).
+- **Rounds**: Number of rounds for swiss (defaults to global Rounds if 0).
+- **SeedGroupCount**: Number of seed groups for TCEC-style seeding.
+- **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
+- **RandomOpenings**: True to randomize openings instead of using the list order.
+- **AllowExtraPairsOnTie**: True to play extra pairs if the top score is tied after scheduled rounds.
+- **StatePath**: Path for the generated swiss state JSON file.
 
 ### Output Paths
 
@@ -170,14 +178,20 @@ This document provides an overview of the `tournament.json` configuration file u
     "OpeningsTwice": true
   },
   "CupOptions": {
-    "GamesPerMatch": 2,
     "RoundPairIncrements": [],
-    "SeedBands": [],
-    "RandomizeSeedBands": false,
     "SeedingStrategy": "ByRating",
     "UniquePerMatchOnly": false,
     "BracketPath": "wwwroot/cup_bracket.json",
     "RandomOpenings": false
+  },
+  "SwissOptions": {
+    "GamesPerMatch": 2,
+    "Rounds": 0,
+    "SeedGroupCount": 4,
+    "UniquePerMatchOnly": false,
+    "RandomOpenings": false,
+    "AllowExtraPairsOnTie": false,
+    "StatePath": "wwwroot/swiss_state.json"
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

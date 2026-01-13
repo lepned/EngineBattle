@@ -2147,7 +2147,10 @@ module PGNCalculator =
   let processStat (challengers: string list) (playerResults : _ list) =
     let challengerSet = Set(challengers)
     let notInChallengerSet (p:PlayerResult) = not (challengerSet.Contains p.Player)    
-    let sortByPointsPlayed = List.sortBy (fun e -> -(e.Points / float e.Played))        
+    let sortByPointsPlayed =
+      List.sortByDescending (fun e ->
+        let eff = if e.Played > 0 then e.Points / float e.Played else -1.0
+        (eff, e.Points, e.Played))
     let normalizeElo (elo: float) firstPlayerElo = elo - firstPlayerElo
 
     match challengerSet with
@@ -2252,20 +2255,69 @@ module PairingHelper =
     | Random
     | ByRating
 
+  let tcecSeedOrder (players: EngineConfig list) (groupCount: int) =
+    let sorted = players |> List.sortByDescending (fun p -> p.Rating)
+    let total = sorted.Length
+    if total = 0 then
+      []
+    else
+      let groups = Dictionary<int, ResizeArray<EngineConfig>>()
+      let numGroups = Math.Max(1, groupCount)
+      for i in 0 .. numGroups - 1 do
+        groups.[i] <- ResizeArray<EngineConfig>()
+      let mutable engineIndex = 0
+      for group in 0 .. numGroups - 1 do
+        let groupSize = int (Math.Ceiling(float (total - engineIndex) / float (numGroups - group)))
+        for _ in 0 .. groupSize - 1 do
+          if engineIndex < total then
+            groups.[group].Add(sorted.[engineIndex])
+            engineIndex <- engineIndex + 1
+      let ordered = ResizeArray<EngineConfig>()
+      let mutable rank = 0
+      let mutable seed = 1
+      while seed <= total do
+        for group in 0 .. numGroups - 1 do
+          if rank < groups.[group].Count then
+            ordered.Add(groups.[group].[rank])
+            seed <- seed + 1
+            if seed > total then
+              ()
+        rank <- rank + 1
+      ordered |> Seq.toList
+
   let seedOrder (size: int) =
-    let rec build n =
-      if n <= 1 then
-        [ 1 ]
+    let rec build order n =
+      if n >= size then
+        order
       else
-        let prev = build (n / 2)
-        prev
-        |> List.mapi (fun idx value ->
-            if idx % 2 = 0 then
-              [ value; n + 1 - value ]
-            else
-              [ n + 1 - value; value ])
-        |> List.collect id
-    build size
+        let nextSize = n * 2
+        let expanded =
+          order
+          |> List.collect (fun seed -> [ seed; (nextSize + 1 - seed) ])
+        build expanded nextSize
+    if size <= 1 then
+      [ 1 ]
+    else
+      build [ 1; 2 ] 2
+
+  let autoSeedBands (total: int) =
+    if total <= 0 then
+      []
+    else
+      let bands = ResizeArray<int list>()
+      let mutable seed = 1
+      bands.Add([ seed ])
+      seed <- seed + 1
+      if seed <= total then
+        bands.Add([ seed ])
+        seed <- seed + 1
+      let mutable bandSize = 2
+      while seed <= total do
+        let size = Math.Min(bandSize, total - seed + 1)
+        bands.Add([ seed .. seed + size - 1 ])
+        seed <- seed + size
+        bandSize <- bandSize * 2
+      bands |> Seq.toList
 
   let seedByBands (players: EngineConfig list) (seedBands: int list list) (randomizeWithinBands: bool) =
     let sorted = players |> List.sortByDescending (fun p -> p.Rating)
@@ -2351,6 +2403,101 @@ module PairingHelper =
                 else
                     idx
         loop 0
+
+  let swissPairKey (a: string) (b: string) =
+    if String.CompareOrdinal(a, b) <= 0 then
+      $"{a}|{b}"
+    else
+      $"{b}|{a}"
+
+  let swissRoundPairings
+    (players: EngineConfig list)
+    (seedOrder: EngineConfig list)
+    (scores: Map<string, float>)
+    (priorPairs: Set<string>) =
+      let seedMap =
+        seedOrder
+        |> List.mapi (fun idx p -> p.Name, idx + 1)
+        |> Map.ofList
+      let scoreFor name =
+        scores |> Map.tryFind name |> Option.defaultValue 0.0
+      let groups =
+        players
+        |> List.groupBy (fun p -> scoreFor p.Name)
+        |> List.sortByDescending fst
+      let mutable carry = List.empty<EngineConfig>
+      let roundPairs = ResizeArray<(EngineConfig * EngineConfig * float)>()
+      for (score, groupPlayers) in groups do
+        let group =
+          (carry @ groupPlayers)
+          |> List.sortBy (fun p -> seedMap.[p.Name])
+        carry <- []
+        let mutable groupList = group
+        if groupList.Length % 2 = 1 then
+          carry <- [ groupList.[groupList.Length - 1] ]
+          groupList <- groupList |> List.take (groupList.Length - 1)
+        let half = groupList.Length / 2
+        let top = groupList |> List.take half
+        let bottom = ResizeArray(groupList |> List.skip half)
+        for t in top do
+          let mutable pickIndex = -1
+          let mutable idx = 0
+          while idx < bottom.Count && pickIndex < 0 do
+            let opp = bottom.[idx]
+            let key = swissPairKey t.Name opp.Name
+            if priorPairs.Contains key |> not then
+              pickIndex <- idx
+            idx <- idx + 1
+          if pickIndex < 0 then
+            pickIndex <- 0
+          let opponent = bottom.[pickIndex]
+          bottom.RemoveAt(pickIndex)
+          roundPairs.Add((t, opponent, score))
+      if carry.Length > 0 then
+        let remaining = carry
+        if remaining.Length >= 2 then
+          for i in 0 .. 2 .. (remaining.Length - 2) do
+            roundPairs.Add((remaining.[i], remaining.[i + 1], scoreFor remaining.[i].Name))
+      roundPairs
+      |> Seq.sortBy (fun (_, _, score) -> score)
+      |> Seq.map (fun (a, b, _) -> (a, b))
+      |> Seq.toList
+
+  let addPlannedPairings
+    (planned: ResizeArray<Pairing>)
+    (whiteFirst: EngineConfig)
+    (blackFirst: EngineConfig)
+    (openings: PGNTypes.PgnGame list)
+    (gamesPerMatch: int)
+    (startIndex: int) =
+      if openings.IsEmpty then
+        startIndex
+      else
+        let gamesPerPair = Math.Max(1, gamesPerMatch / 2)
+        let mutable index = startIndex
+        for _ in 0 .. gamesPerPair - 1 do
+          let opening = openings.[index % openings.Length]
+          let openingHash =
+            if System.String.IsNullOrWhiteSpace opening.Raw then
+              Hash.computeOpeningHash (opening.GameNumber.ToString())
+            else
+              Hash.computeOpeningHash opening.Raw
+          planned.Add(
+            { Opening = opening
+              White = whiteFirst
+              Black = blackFirst
+              GameNr = 0
+              RoundNr = $"{opening.GameNumber}.{planned.Count + 1}"
+              OpeningHash = openingHash })
+          planned.Add(
+            { Opening = opening
+              White = blackFirst
+              Black = whiteFirst
+              GameNr = 0
+              RoundNr = $"{opening.GameNumber}.{planned.Count + 1}"
+              OpeningHash = openingHash })
+          index <- index + 1
+        index
 
   /// Generate cup pairings for N games per match, using a new opening per two-game mini-match.
   let cupNRound (gamesPerMatch: int) (strategy: CupSeedingStrategy) (players: EngineConfig list) (openings: PGNTypes.PgnGame list) =

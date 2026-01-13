@@ -1,0 +1,461 @@
+@using System.Text.Json
+@inject IWebHostEnvironment Environment
+
+@{
+    RenderFragment content = @<div>
+        @if (ShowHeader)
+        {
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h4">@Title</MudText>
+                @if (ShowPath)
+                {
+                    <MudText Typo="Typo.body2">@statePath</MudText>
+                }
+                <MudStack direction="Row" Spacing="2" Class="refresh-row">
+                    @if (ShowRefresh)
+                    {
+                        <MudButton Class="refresh-button" Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadState">Refresh</MudButton>
+                    }
+                    @if (state is not null)
+                    {
+                        <MudText Typo="Typo.body2">Updated: @state.UpdatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+                    }
+                </MudStack>
+                @if (!string.IsNullOrWhiteSpace(loadError))
+                {
+                    <MudAlert Severity="Severity.Warning">@loadError</MudAlert>
+                }
+            </MudStack>
+        }
+        else if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <MudAlert Severity="Severity.Warning">@loadError</MudAlert>
+        }
+
+        @if (state is null)
+        {
+            <MudText Class="mt-4">No swiss state loaded yet.</MudText>
+        }
+        else
+        {
+            <MudGrid Class="mt-4" Spacing="3">
+                <MudItem xs="12" md="5">
+                    <MudPaper Class="pa-3 swiss-panel">
+                        <MudText Typo="Typo.h6">Standings</MudText>
+                        <MudTable Items="standings" Dense="true" Hover="true" Class="mt-2">
+                            <HeaderContent>
+                                <MudTh>#</MudTh>
+                                <MudTh>Engine</MudTh>
+                                <MudTh>Score</MudTh>
+                                <MudTh>SB</MudTh>
+                                <MudTh>Wins</MudTh>
+                                <MudTh>H2H</MudTh>
+                                <MudTh>Games</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Rank</MudTd>
+                                <MudTd>@context.Name</MudTd>
+                                <MudTd>@context.Score.ToString("0.0")</MudTd>
+                                <MudTd>@context.SonnebornBerger.ToString("0.0")</MudTd>
+                                <MudTd>@context.Wins</MudTd>
+                                <MudTd>@context.HeadToHead.ToString("0.0")</MudTd>
+                                <MudTd>@context.Games</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="7">
+                    <MudPaper Class="pa-3 swiss-panel">
+                        <MudText Typo="Typo.h6">@currentRoundLabel</MudText>
+                        @if (currentRound is null)
+                        {
+                            <MudText Class="mt-2">No round data available.</MudText>
+                        }
+                        else
+                        {
+                            <div class="pairing-list">
+                                @foreach (var pairing in currentRound.Pairings)
+                                {
+                                    <MudPaper Class="pairing-card">
+                                        <div class="pairing-header">
+                                            <span class="pairing-id">#@pairing.PairId</span>
+                                            <span class="pairing-score">@FormatScore(pairing.ScoreA, pairing.ScoreB)</span>
+                                        </div>
+                                        <div class="pairing-row">
+                                            <span class="pairing-name">@pairing.PlayerA</span>
+                                            <span class="pairing-rating">@FormatRating(pairing.PlayerARating)</span>
+                                            <span class="pairing-score">@pairing.ScoreA.ToString("0.0")</span>
+                                        </div>
+                                        <div class="pairing-row">
+                                            <span class="pairing-name">@pairing.PlayerB</span>
+                                            <span class="pairing-rating">@FormatRating(pairing.PlayerBRating)</span>
+                                            <span class="pairing-score">@pairing.ScoreB.ToString("0.0")</span>
+                                        </div>
+                                    </MudPaper>
+                                }
+                            </div>
+                        }
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        }
+    </div>;
+}
+
+@if (UseContainer)
+{
+    <MudContainer Class="pa-4">
+        <MudPaper Class="pa-4 swiss-shell">
+            @content
+        </MudPaper>
+    </MudContainer>
+}
+else
+{
+    <MudPaper Class="pa-4 swiss-shell">
+        @content
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Swiss Overview";
+    [Parameter] public bool ShowHeader { get; set; } = true;
+    [Parameter] public bool ShowPath { get; set; } = true;
+    [Parameter] public bool ShowRefresh { get; set; } = true;
+    [Parameter] public bool UseContainer { get; set; } = true;
+    [Parameter] public string StateFileName { get; set; } = "swiss_state.json";
+
+    private SwissStateModel state;
+    private string loadError;
+    private string statePath = "";
+    private List<StandingRow> standings = new();
+    private SwissRound currentRound;
+    private string currentRoundLabel = "Current round";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadState();
+    }
+
+    private async Task LoadState()
+    {
+        loadError = null;
+        statePath = Path.Combine(Environment.ContentRootPath, "wwwroot", StateFileName);
+        if (!File.Exists(statePath))
+        {
+            state = null;
+            loadError = "Swiss state file not found. Start a swiss tournament to generate it.";
+            return;
+        }
+
+        try
+        {
+            var json = NormalizeStateJson(await ReadFileWithRetry(statePath));
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            state = JsonSerializer.Deserialize<SwissStateModel>(json, options);
+            BuildViewState();
+        }
+        catch (Exception ex)
+        {
+            state = null;
+            loadError = $"Failed to read swiss state: {ex.Message}";
+        }
+    }
+
+    private void BuildViewState()
+    {
+        standings = BuildStandings(state);
+        currentRound = state?.Rounds
+            .OrderBy(r => r.RoundNumber)
+            .FirstOrDefault(r => r.Pairings.Any(p => !p.IsDecided))
+            ?? state?.Rounds.OrderByDescending(r => r.RoundNumber).FirstOrDefault();
+        currentRoundLabel = currentRound is null ? "Current round" : $"Round {currentRound.RoundNumber}";
+    }
+
+    private static List<StandingRow> BuildStandings(SwissStateModel model)
+    {
+        var rows = new Dictionary<string, StandingRow>(StringComparer.OrdinalIgnoreCase);
+        if (model?.Rounds is null)
+            return new List<StandingRow>();
+
+        var gameResults = new List<GameResult>();
+        foreach (var round in model.Rounds)
+        {
+            foreach (var pairing in round.Pairings)
+            {
+                AddRow(rows, pairing.PlayerA, pairing.PlayerARating, pairing.ScoreA, pairing.Games.Count);
+                AddRow(rows, pairing.PlayerB, pairing.PlayerBRating, pairing.ScoreB, pairing.Games.Count);
+                foreach (var game in pairing.Games)
+                {
+                    var (scoreA, scoreB, winA, winB) = ScoreFromResult(game.Result);
+                    gameResults.Add(new GameResult(pairing.PlayerA, pairing.PlayerB, scoreA, scoreB, winA, winB));
+                }
+            }
+        }
+
+        if (gameResults.Count > 0)
+        {
+            foreach (var game in gameResults)
+            {
+                if (rows.TryGetValue(game.PlayerA, out var rowA))
+                    rowA.Wins += game.WinsA;
+                if (rows.TryGetValue(game.PlayerB, out var rowB))
+                    rowB.Wins += game.WinsB;
+            }
+
+            foreach (var game in gameResults)
+            {
+                if (rows.TryGetValue(game.PlayerA, out var rowA) && rows.TryGetValue(game.PlayerB, out var rowB))
+                {
+                    rowA.SonnebornBerger += game.ScoreA * rowB.Score;
+                    rowB.SonnebornBerger += game.ScoreB * rowA.Score;
+                }
+            }
+
+            var scoreGroups = rows.Values
+                .GroupBy(r => r.Score)
+                .ToDictionary(g => g.Key, g => g.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+            foreach (var game in gameResults)
+            {
+                if (rows.TryGetValue(game.PlayerA, out var rowA) && rows.TryGetValue(game.PlayerB, out var rowB))
+                {
+                    if (scoreGroups.TryGetValue(rowA.Score, out var groupA) && groupA.Contains(game.PlayerB))
+                        rowA.HeadToHead += game.ScoreA;
+                    if (scoreGroups.TryGetValue(rowB.Score, out var groupB) && groupB.Contains(game.PlayerA))
+                        rowB.HeadToHead += game.ScoreB;
+                }
+            }
+        }
+
+        var ordered = rows.Values
+            .OrderByDescending(r => r.Score)
+            .ThenByDescending(r => r.SonnebornBerger)
+            .ThenByDescending(r => r.Wins)
+            .ThenByDescending(r => r.HeadToHead)
+            .ThenByDescending(r => r.Rating)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        for (var i = 0; i < ordered.Count; i++)
+            ordered[i].Rank = i + 1;
+
+        return ordered;
+    }
+
+    private static void AddRow(Dictionary<string, StandingRow> rows, string name, int rating, double score, int games)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
+        if (!rows.TryGetValue(name, out var row))
+        {
+            row = new StandingRow { Name = name, Rating = rating };
+            rows[name] = row;
+        }
+
+        row.Score += score;
+        row.Games += games;
+        if (row.Rating == 0 && rating > 0)
+            row.Rating = rating;
+    }
+
+    private static string FormatRating(int rating) => rating > 0 ? rating.ToString() : "--";
+
+    private static string FormatScore(double scoreA, double scoreB) => $"{scoreA:0.0}-{scoreB:0.0}";
+
+    private static async Task<string> ReadFileWithRetry(string path)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await ReadAllTextWithSharing(path);
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                await Task.Delay(75);
+            }
+        }
+
+        return await ReadAllTextWithSharing(path);
+    }
+
+    private static async Task<string> ReadAllTextWithSharing(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private static string NormalizeStateJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return json;
+
+        var trimmed = json.TrimStart();
+        if (trimmed.StartsWith("\"", StringComparison.Ordinal) && json.TrimEnd().EndsWith("}", StringComparison.Ordinal))
+            return "{" + json;
+
+        return json;
+    }
+
+    private sealed class SwissStateModel
+    {
+        public string TournamentName { get; set; } = "";
+        public int SeedGroupCount { get; set; }
+        public int GamesPerMatch { get; set; }
+        public bool UniqueOpeningsGlobal { get; set; }
+        public int NextOpeningIndex { get; set; }
+        public DateTime UpdatedUtc { get; set; }
+        public List<SwissRound> Rounds { get; set; } = new();
+    }
+
+    private sealed class SwissRound
+    {
+        public int RoundNumber { get; set; }
+        public List<SwissPairing> Pairings { get; set; } = new();
+    }
+
+    private sealed class SwissPairing
+    {
+        public int PairId { get; set; }
+        public int RoundNumber { get; set; }
+        public string PlayerA { get; set; } = "";
+        public string PlayerB { get; set; } = "";
+        public int PlayerARating { get; set; }
+        public int PlayerBRating { get; set; }
+        public double ScoreA { get; set; }
+        public double ScoreB { get; set; }
+        public bool IsDecided { get; set; }
+        public List<SwissGame> Games { get; set; } = new();
+    }
+
+    private sealed class SwissGame
+    {
+        public int GameNr { get; set; }
+        public string White { get; set; } = "";
+        public string Black { get; set; } = "";
+        public string OpeningId { get; set; } = "";
+        public string OpeningHash { get; set; } = "";
+        public string Result { get; set; } = "";
+    }
+
+    private static (double ScoreA, double ScoreB, int WinsA, int WinsB) ScoreFromResult(string result)
+    {
+        return result switch
+        {
+            "1-0" => (1.0, 0.0, 1, 0),
+            "0-1" => (0.0, 1.0, 0, 1),
+            "1/2-1/2" => (0.5, 0.5, 0, 0),
+            _ => (0.0, 0.0, 0, 0)
+        };
+    }
+
+    private sealed class GameResult
+    {
+        public GameResult(string playerA, string playerB, double scoreA, double scoreB, int winsA, int winsB)
+        {
+            PlayerA = playerA;
+            PlayerB = playerB;
+            ScoreA = scoreA;
+            ScoreB = scoreB;
+            WinsA = winsA;
+            WinsB = winsB;
+        }
+
+        public string PlayerA { get; }
+        public string PlayerB { get; }
+        public double ScoreA { get; }
+        public double ScoreB { get; }
+        public int WinsA { get; }
+        public int WinsB { get; }
+    }
+
+    private sealed class StandingRow
+    {
+        public int Rank { get; set; }
+        public string Name { get; set; } = "";
+        public int Rating { get; set; }
+        public double Score { get; set; }
+        public int Games { get; set; }
+        public double SonnebornBerger { get; set; }
+        public int Wins { get; set; }
+        public double HeadToHead { get; set; }
+    }
+}
+
+<style>
+    .swiss-shell {
+        background: radial-gradient(circle at top, #1b2032, #11141d 60%);
+        border: 1px solid #2a3142;
+        color: #e8edf2;
+        min-height: 60vh;
+    }
+
+    .swiss-panel {
+        background: #1a1f30;
+        border: 1px solid #343a49;
+        border-radius: 12px;
+        color: #e8edf2;
+    }
+
+    .pairing-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+    }
+
+    .pairing-card {
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #1c2335;
+        border: 1px solid #343a49;
+        box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+    }
+
+    .pairing-header {
+        display: flex;
+        justify-content: space-between;
+        color: #9aa4b2;
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+    }
+
+    .pairing-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 6px;
+        align-items: center;
+        font-size: 0.95rem;
+        padding: 2px 0;
+    }
+
+    .pairing-name {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pairing-rating {
+        font-size: 0.75rem;
+        color: #9aa4b2;
+    }
+
+    .pairing-score {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+    }
+
+    .refresh-button {
+        width: 120px;
+        min-width: 120px;
+    }
+
+    .refresh-row {
+        align-items: center;
+    }
+</style>

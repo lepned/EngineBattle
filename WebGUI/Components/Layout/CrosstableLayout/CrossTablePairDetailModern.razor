@@ -1,0 +1,275 @@
+@using MudBlazor
+
+<div class="cross-modern-shell">
+  <div class="cross-modern-header">
+    <div class="cross-modern-title">Crosstable</div>
+    <div class="cross-modern-subtitle">Last game: @gameResultHeader</div>
+    <div></div>
+  </div>
+  <MudTable Class="cross-modern-table" Items="CrossTable" Dense="true">
+    <HeaderContent>
+      <MudTh Class="cross-modern-head">Player (Pairs)</MudTh>
+      @foreach (var entry in CrossTable)
+      {
+        <MudTh Class="cross-modern-head cross-modern-name">@entry.Player</MudTh>
+      }
+    </HeaderContent>
+    <RowTemplate>
+      <MudTd Class="cross-modern-player">
+        <div class="cross-modern-rank">#@context.Rank</div>
+        <div class="cross-modern-player-name">@context.Player</div>
+        <div class="cross-modern-total">Total: @context.TotalScore.ToString("0.0") @RenderWdlTotals(context)</div>
+      </MudTd>
+      @foreach (var opponent in CrossTable)
+      {
+        if (context.Player == opponent.Player)
+        {
+          <MudTd Class="cross-modern-cell cross-modern-diag">--</MudTd>
+        }
+        else
+        {
+          var results = context.ResultsAgainst.FirstOrDefault(r => r.Item1 == opponent.Player)?.Item2;
+          if (results != null && results.Any())
+          {
+            var res = CalculatePairs(context.Player, opponent.Player, results);
+            <MudTd Class="cross-modern-cell">
+              <span class="cross-modern-pair">
+                <span class="cross-win">+@res.W</span>
+                <span class="cross-sep">=</span>
+                <span class="cross-draw">@res.D</span>
+                <span class="cross-sep">-</span>
+                <span class="cross-loss">@res.L</span>
+              </span>
+            </MudTd>
+          }
+          else
+          {
+            <MudTd Class="cross-modern-cell cross-modern-empty">n/a</MudTd>
+          }
+        }
+      }
+    </RowTemplate>
+  </MudTable>
+</div>
+
+@code {
+
+  [Parameter] public List<CrossTableEntry> CrossTable { get; set; } = new();
+  [Parameter] public int FontSize { get; set; }
+  [Parameter] public string GameResult { get; set; }
+
+  private int fontSize = 8;
+  private string gameResultHeader = "No games played";
+
+  private (int Wins, int Draws, int Losses) GetWdlTotals(CrossTableEntry entry)
+  {
+    var wins = 0;
+    var losses = 0;
+    var draws = 0;
+
+    foreach (var st in entry.ResultsAgainst)
+    {
+      foreach (var res in st.Item2)
+      {
+        switch (res)
+        {
+          case "1":
+            wins++;
+            break;
+          case "0":
+            losses++;
+            break;
+          case "1/2":
+            draws++;
+            break;
+        }
+      }
+    }
+
+    return (wins, draws, losses);
+  }
+
+  private RenderFragment RenderWdlTotals(CrossTableEntry entry) => builder =>
+  {
+    var (wins, draws, losses) = GetWdlTotals(entry);
+    var seq = 0;
+    builder.OpenElement(seq++, "span");
+    builder.AddAttribute(seq++, "class", "cross-total-wdl");
+    builder.AddContent(seq++, "(");
+    builder.OpenElement(seq++, "span");
+    builder.AddAttribute(seq++, "class", "cross-win");
+    builder.AddContent(seq++, wins);
+    builder.CloseElement();
+    builder.AddContent(seq++, "-");
+    builder.OpenElement(seq++, "span");
+    builder.AddAttribute(seq++, "class", "cross-draw");
+    builder.AddContent(seq++, draws);
+    builder.CloseElement();
+    builder.AddContent(seq++, "-");
+    builder.OpenElement(seq++, "span");
+    builder.AddAttribute(seq++, "class", "cross-loss");
+    builder.AddContent(seq++, losses);
+    builder.CloseElement();
+    builder.AddContent(seq++, ")");
+    builder.CloseElement();
+  };
+
+  private List<string> LossCombinations = new List<string> { "00", "01/2", "1/20", };
+  private List<string> WinCombinations = new List<string> { "11", "11/2", "1/21" };
+  private List<string> DrawCombinations = new List<string> { "1/21/2", "10", "01" };
+
+  private (int W, int D, int L) CalculatePairs(string player, string opponent, string[] results)
+  {
+    int wins = 0;
+    int losses = 0;
+    int draws = 0;
+    List<Tuple<string, string>> result = new List<Tuple<string, string>>();
+    int countToProcess = results.Length % 2 == 0 ? results.Length : results.Length - 1;
+
+    for (int i = 0; i < countToProcess; i += 2)
+    {
+      result.Add(new Tuple<string, string>(results[i], results[i + 1]));
+    }
+    foreach (var pair in result)
+    {
+      var addThem = pair.Item1 + pair.Item2;
+      if (WinCombinations.Contains(addThem) && LossCombinations.Contains(addThem))
+      {
+        continue;
+      }
+      else if (WinCombinations.Contains(addThem))
+      {
+        wins++;
+      }
+      else if (DrawCombinations.Contains(addThem))
+      {
+        draws++;
+      }
+      else if (LossCombinations.Contains(addThem))
+      {
+        losses++;
+      }
+    }
+
+    return (wins, draws, losses);
+  }
+
+  protected override void OnAfterRender(bool firstRender)
+  {
+    if (FontSize > 0 && FontSize != fontSize)
+    {
+      fontSize = FontSize;
+      gameResultHeader = GameResult;
+      StateHasChanged();
+    }
+
+    base.OnAfterRender(firstRender);
+  }
+}
+
+<style>
+  .cross-modern-shell {
+    --bg: linear-gradient(135deg, rgba(12, 18, 30, 0.96), rgba(25, 33, 52, 0.9));
+    --panel: rgba(18, 24, 38, 0.88);
+    --border: rgba(78, 93, 120, 0.35);
+    --text: #e8eef7;
+    --muted: #a7b0c4;
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 16px 18px;
+    color: var(--text);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  }
+
+  .cross-modern-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: baseline;
+    margin-bottom: 12px;
+  }
+
+  .cross-modern-title {
+    font-size: calc(var(--font-size, 18px) + 6px);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+
+  .cross-modern-subtitle {
+    font-size: calc(var(--font-size, 18px) - 1px);
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .cross-modern-table {
+    background: var(--panel);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .cross-modern-head {
+    font-size: calc(var(--font-size, 16px) - 1px);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--muted);
+  }
+
+  .cross-modern-name {
+    max-width: 160px;
+  }
+
+  .cross-modern-player {
+    min-width: 200px;
+  }
+
+  .cross-modern-rank {
+    color: #8fa3ff;
+    font-weight: 600;
+  }
+
+  .cross-modern-player-name {
+    font-weight: 600;
+  }
+
+  .cross-modern-total {
+    color: var(--muted);
+    font-size: calc(var(--font-size, 16px) - 2px);
+  }
+
+  .cross-total-wdl {
+    margin-left: 6px;
+  }
+
+  .cross-modern-cell {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cross-modern-diag {
+    color: var(--muted);
+  }
+
+  .cross-modern-empty {
+    color: var(--muted);
+  }
+
+  .cross-modern-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: calc(var(--font-size, 16px) - 1px);
+    margin: 2px 8px 2px 0;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(15, 20, 32, 0.75);
+    border: 1px solid rgba(90, 102, 130, 0.35);
+  }
+
+  .cross-win { color: #7fe7a9; }
+  .cross-draw { color: #f2d58c; }
+  .cross-loss { color: #ff7b88; }
+  .cross-sep { color: var(--muted); }
+</style>

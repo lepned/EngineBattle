@@ -584,27 +584,7 @@ module Program =
     let tourny = tournament
     //ConsoleHelper.displayTournament tourny      
     let updateProcessor = createUpdateProcessor tourny.VerboseLogging
-
-    let printUpdate update =
-        match update with
-        | GameStarted white -> () //updateProcessor.Post(GameStarted white)
-        | EndOfGame result -> updateProcessor.Post(EndOfGame result)
-        | BestMove (bm,status) -> updateProcessor.Post(BestMove (bm,status))
-        | Info (player, info) -> updateProcessor.Post(Info (player,info))
-        | Eval (player, evalType) -> updateProcessor.Post(Eval (player,evalType))
-        | Status engineStatus -> updateProcessor.Post(Status engineStatus)
-        | PonderStatus status -> updateProcessor.Post(PonderStatus status)
-        | Time (player, time) -> updateProcessor.Post(Time (player,time))
-        | NNSeq nnSeq -> updateProcessor.Post(NNSeq nnSeq)
-        | StartOfGame startGameInfo -> updateProcessor.Post(StartOfGame startGameInfo)
-        | EndOfTournament info -> updateProcessor.Post(EndOfTournament info)
-        | StartOfTournament info -> updateProcessor.Post(StartOfTournament info)
-        | MessagesFromEngine (player, message) -> updateProcessor.Post(MessagesFromEngine (player,message))
-        | PairingList pairings -> updateProcessor.Post(PairingList pairings)
-        | PeriodicResults results -> updateProcessor.Post(PeriodicResults results)
-        | GameSummary summary -> updateProcessor.Post(GameSummary summary)
-        | TotalNumberOfPairs totalPairs -> updateProcessor.Post(TotalNumberOfPairs totalPairs)
-        | RoundNr roundNr -> updateProcessor.Post(RoundNr roundNr)
+    let printUpdate update = updateProcessor.Post(update)
 
     let runner = Manager.Runner(logger, printUpdate, false, true)
     runner.AddTournament tourny

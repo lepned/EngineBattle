@@ -20,10 +20,7 @@ Each match is played as a set of pairs: a pair is two games, one with each color
 
 ```
 "CupOptions": {
-  "GamesPerMatch": 2,
   "RoundPairIncrements": [1, 2, 3],
-  "SeedBands": [[1], [2], [3, 4], [5, 6, 7, 8]],
-  "RandomizeSeedBands": true,
   "SeedingStrategy": "ByRating",
   "UniquePerMatchOnly": true,
   "BracketPath": "wwwroot/cup_bracket.json",
@@ -33,10 +30,8 @@ Each match is played as a set of pairs: a pair is two games, one with each color
 
 Field summary:
 
-- `GamesPerMatch`: Base games per match (even number). Used when `RoundPairIncrements` is empty.
-- `RoundPairIncrements`: Pairs per round. Each pair is two games. Example: `[1,2,3]` means 2,4,6 games.
-- `SeedBands`: Seed groups (seed numbers) for tennis-style draws.
-- `RandomizeSeedBands`: Shuffle seeds within each band while keeping band protection.
+- `RoundPairIncrements`: Pairs per round. Each pair is two games. Example: `[1,2,3]` means 2,4,6 games. If empty, defaults to one pair (2 games).
+- `Seed bands`: Generated automatically from player count to protect top seeds (1, 2, 3-4, 5-8, 9-16, ...). Seeds are randomized within each band.
 - `SeedingStrategy`: `ByRating` or `Random`. Seed bands are used only with `ByRating`.
 - `UniquePerMatchOnly`: `true` means openings can repeat across matches, but not within a match.
 - `BracketPath`: Where the bracket JSON is written/read.
@@ -55,4 +50,3 @@ The bracket state is the source of truth for resume.
 ## Files written during cup mode
 
 - `cup_bracket.json`: Current bracket state and scores.
-

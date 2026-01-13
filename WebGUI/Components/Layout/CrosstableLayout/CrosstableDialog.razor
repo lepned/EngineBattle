@@ -3,11 +3,25 @@
   <DialogContent>
     @if (Gauntlet)
     {
-      <CrossChallengerTableDetail CrossTable="CrossTable" FontSize="Fontsize + 4" Players="Players" GameResult="@GameResult"></CrossChallengerTableDetail>
+      if (showPairs)
+      {
+        <CrossChallengerTablePairDetailModern CrossTable="CrossTable" FontSize="Fontsize + 4" Players="Players" GameResult="@GameResult"></CrossChallengerTablePairDetailModern>
+      }
+      else
+      {
+        <CrossChallengerTableDetailModern CrossTable="CrossTable" FontSize="Fontsize + 4" Players="Players" GameResult="@GameResult"></CrossChallengerTableDetailModern>
+      }
     }
     else
     {
-      <CrossTableDetail CrossTable="CrossTable" FontSize="Fontsize + 4" GameResult="@GameResult"></CrossTableDetail>
+      if (showPairs)
+      {
+        <CrossTablePairDetailModern CrossTable="CrossTable" FontSize="Fontsize + 4" GameResult="@GameResult"></CrossTablePairDetailModern>
+      }
+      else
+      {
+        <CrossTableDetailModern CrossTable="CrossTable" FontSize="Fontsize + 4" GameResult="@GameResult"></CrossTableDetailModern>
+      }
     }
   </DialogContent>
 </MudDialog>
@@ -20,6 +34,24 @@
   [Parameter] public int Players { get; set; }
   [Parameter] public string GameResult { get; set; }
 
-  void Close() => MudDialog.Close(DialogResult.Ok(true));
+  private bool showPairs;
+  private System.Timers.Timer cycleTimer;
 
+  protected override void OnInitialized()
+  {
+    cycleTimer = new System.Timers.Timer(15000);
+    cycleTimer.Elapsed += (sender, args) =>
+    {
+      showPairs = !showPairs;
+      InvokeAsync(StateHasChanged);
+    };
+    cycleTimer.Start();
+  }
+
+  public void Dispose()
+  {
+    cycleTimer?.Dispose();
+  }
+
+  void Close() => MudDialog.Close(DialogResult.Ok(true));
 }

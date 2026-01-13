@@ -945,14 +945,19 @@ module TypesDef =
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
     type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int }
     type CupOptions =
-      { GamesPerMatch: int
-        RoundPairIncrements: int list
-        SeedBands: int list list
-        RandomizeSeedBands: bool
+      { RoundPairIncrements: int list
         SeedingStrategy: string
         UniquePerMatchOnly: bool
         BracketPath: string
         RandomOpenings: bool }
+    type SwissOptions =
+      { GamesPerMatch: int
+        Rounds: int
+        SeedGroupCount: int
+        UniquePerMatchOnly: bool
+        RandomOpenings: bool
+        AllowExtraPairsOnTie: bool
+        StatePath: string }
     type EngineSetup =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
@@ -987,6 +992,7 @@ module TypesDef =
         TestOptions: TestOptions
         Opening: Opening
         CupOptions: CupOptions
+        SwissOptions: SwissOptions
         PgnOutPath: string
         ReferencePGNPath: string
         EngineSetup: EngineSetup
@@ -1245,7 +1251,8 @@ module TypesDef =
           TimeControl = Unchecked.defaultof<TimeControl.TimeControl>
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
           Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0 }
-          CupOptions = { GamesPerMatch = 2; RoundPairIncrements = []; SeedBands = []; RandomizeSeedBands = false; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+          CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+          SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
           TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1 }
           Adjudication =
             {
@@ -2538,4 +2545,40 @@ module TypesDef =
         mutable NextOpeningIndex: int
         mutable GlobalOpeningOrder: ResizeArray<int>
         Rounds: ResizeArray<CupRound>
+        mutable UpdatedUtc: DateTime }
+
+  module Swiss =
+    type SwissGame =
+      { GameNr: int
+        White: string
+        Black: string
+        OpeningId: string
+        OpeningHash: string
+        Result: string }
+
+    type SwissPairing =
+      { PairId: int
+        RoundNumber: int
+        PlayerA: string
+        PlayerB: string
+        PlayerARating: int
+        PlayerBRating: int
+        mutable ScoreA: float
+        mutable ScoreB: float
+        mutable IsDecided: bool
+        Games: ResizeArray<SwissGame>
+        mutable OpeningOrder: ResizeArray<int> }
+
+    type SwissRound =
+      { RoundNumber: int
+        Pairings: ResizeArray<SwissPairing> }
+
+    type SwissState =
+      { TournamentName: string
+        SeedGroupCount: int
+        GamesPerMatch: int
+        UniqueOpeningsGlobal: bool
+        mutable NextOpeningIndex: int
+        mutable GlobalOpeningOrder: ResizeArray<int>
+        Rounds: ResizeArray<SwissRound>
         mutable UpdatedUtc: DateTime }

@@ -1,12 +1,11 @@
 ﻿@using MudBlazor
 
-<div class="ml-4 mb-2" >
-  <span style="@FontHeaderTxt"> Last game: </span>
-  <span style="@FontNormal"> @gameResultHeader</span>  
-</div>
-
-<MudTextField Style=@FontHeaderTxt Class="ml-4 mr-2" Text="@crossTableHeader" T=string />
-<MudTable Items="CrossTable" Dense=true>
+<div class="cross-detail-shell">
+  <div class="cross-detail-header">
+    <div class="cross-detail-title" style="@FontHeaderTxt">@crossTableHeader</div>
+    <div class="cross-detail-subtitle" style="@FontNormal">Last game: @gameResultHeader</div>
+  </div>
+  <MudTable Class="cross-detail-table" Items="CrossTable" Dense=true>
   <HeaderContent>
     <MudTh Style=@NameHeaderTxt>Player (Pairs)</MudTh>
     @foreach (var challenger in CrossTable)
@@ -94,6 +93,7 @@
     }
   </RowTemplate>
 </MudTable>
+</div>
 
 @code {
 
@@ -283,3 +283,55 @@
   }
 
 }
+
+<style>
+  .cross-detail-shell {
+    --bg: linear-gradient(135deg, rgba(18, 23, 37, 0.98), rgba(26, 34, 52, 0.92));
+    --panel: rgba(21, 27, 41, 0.9);
+    --border: rgba(78, 93, 120, 0.35);
+    --text: #e7edf6;
+    --muted: #a4afc2;
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px 18px;
+    color: var(--text);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  }
+
+  .cross-detail-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .cross-detail-title {
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .cross-detail-subtitle {
+    color: var(--muted);
+  }
+
+  .cross-detail-table {
+    background: var(--panel);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .cross-detail-table .mud-table-head {
+    background: rgba(33, 41, 62, 0.95);
+  }
+
+  .cross-detail-table .mud-table-row:nth-child(even) {
+    background: rgba(16, 20, 30, 0.35);
+  }
+
+  .cross-detail-table .mud-table-cell {
+    border-bottom: 1px solid rgba(64, 77, 100, 0.35);
+  }
+</style>

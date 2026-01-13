@@ -160,7 +160,8 @@
 								   Pairings="@pairings"
 								   FontSize=@layoutOptions.Fonts.PairingsFont
 								   TableHeight=@pairingTableHeight
-								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec />
+								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec
+								   HeaderSuffix="@swissRoundLabel" />
 				</div>
 			}
 
@@ -220,7 +221,8 @@
 								   FontSizePairing=@layoutOptions.Fonts.PairingsFont
 								   FontSizeLatestGames=@layoutOptions.Fonts.LatestGamesFont
 								   TableHeight=@pairingTableHeight
-								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec />
+								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec
+								   HeaderSuffix="@swissRoundLabel" />
 				</div>
 			}
 
@@ -246,6 +248,8 @@
 	private IDialogReference dialogReference;
 	private IDialogReference bracketDialogReference;
 	private bool pendingCupDialog;
+	private bool pendingSwissDialog;
+	private IDialogReference swissDialogReference;
 	private IDialogReference resultDialogReference;
 	private List<CrossTableEntry> table = new();
 	private bool swapTables = true;
@@ -255,6 +259,7 @@
 	private string descriptionStyle = "margin-left:10px; font-size:14px;";
 	private string pvStyleWhite = "font-size:16px;";
 	private string pvStyleBlack = "font-size:16px;";
+	private string swissRoundLabel = "";
 	private string liveChartStyle = "height:200px;";
 	private string moveChartStyle = "height:200px;";
 	private List<string> MessagesFromCeres = new();
@@ -557,6 +562,27 @@
 		dialogReference = await DialogService.ShowAsync<Components.Layout.CrosstableLayout.CrosstableDialog>("", parameters, options);
 	}
 
+	async Task OpenSwissDialog(bool showActions = false)
+	{
+		await Task.Delay(1000);
+		var options = new DialogOptions()
+		{
+			MaxWidth = MaxWidth.ExtraLarge,
+			FullWidth = true,
+			CloseButton = false,
+			Position = DialogPosition.TopCenter
+		};
+
+		var parameters = new DialogParameters
+		{
+			{ "StatePath", GetSwissStatePath() },
+			{ "ShowActions", showActions },
+			{ "SwissCompleted", false },
+			{ "SwissInvalid", false }
+		};
+		swissDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.SwissOverviewDialog>("", parameters, options);
+	}
+
 	async Task OpenCupBracketDialog()
 	{
 		await Task.Delay(800);
@@ -577,6 +603,7 @@
 	{
 		dialogReference?.Close();
 		bracketDialogReference?.Close();
+		swissDialogReference?.Close();
 	}
 
 	private async Task UpdatePVBoards(string longPV, int depthToMove, int depthOpp, bool white, string newFen)
@@ -703,12 +730,15 @@
 
 string Gauntlet => tournament == null ? "" : IsCupMode ?
 			GetCupSummary() :
+			IsSwissMode ?
+			GetSwissSummary() :
 			IsGauntletMode ?
 			$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
 			$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
 
 bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);
 bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", StringComparison.OrdinalIgnoreCase);
+bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swiss", StringComparison.OrdinalIgnoreCase);
 
 	string GetOpening()
 	{
@@ -737,8 +767,67 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 		var pairs = tournament.CupOptions.RoundPairIncrements;
 		var pairsText = pairs != null && pairs.Any()
 			? $"{string.Join(" / ", pairs.Select(p => p.ToString()))} pairs/round"
-			: $"{Math.Max(1, tournament.CupOptions.GamesPerMatch / 2)} pairs/round";
+			: "1 pair/round";
 		return $"{players}-player Cup, {pairsText}, {totalNumberOfPairs} total games";
+	}
+
+	string GetSwissSummary()
+	{
+		if (tournament == null)
+			return "";
+
+		var players = tournament.EngineSetup.Engines.Count();
+		var rounds = tournament.SwissOptions.Rounds > 0 ? tournament.SwissOptions.Rounds : tournament.Rounds;
+		var pairsText = $"{Math.Max(1, tournament.SwissOptions.GamesPerMatch / 2)} pairs/round";
+		return $"{players}-player Swiss, {rounds} rounds, {pairsText}, {totalNumberOfPairs} total games";
+	}
+
+	void UpdateSwissRoundLabel()
+	{
+		if (!IsSwissMode || tournament == null)
+		{
+			swissRoundLabel = "";
+			return;
+		}
+
+		var totalRounds = Math.Max(1, tournament.SwissOptions.Rounds > 0 ? tournament.SwissOptions.Rounds : tournament.Rounds);
+		var statePath = GetSwissStatePath();
+		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
+		{
+			swissRoundLabel = $" (Round 1/{totalRounds})";
+			return;
+		}
+
+		try
+		{
+			var json = File.ReadAllText(statePath);
+			if (string.IsNullOrWhiteSpace(json))
+			{
+				swissRoundLabel = $" (Round 1/{totalRounds})";
+				return;
+			}
+
+			var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+			var state = JsonSerializer.Deserialize<SwissStateSnapshot>(json, options);
+			if (state?.Rounds == null || state.Rounds.Count == 0)
+			{
+				swissRoundLabel = $" (Round 1/{totalRounds})";
+				return;
+			}
+
+			var ordered = state.Rounds.OrderBy(r => r.RoundNumber).ToList();
+			var openRound = ordered.FirstOrDefault(r => (r.Pairings ?? []).Any(p => p != null && !p.IsDecided));
+			var currentRound = openRound?.RoundNumber ?? ordered.Last().RoundNumber;
+			swissRoundLabel = $" (Round {currentRound}/{totalRounds})";
+		}
+		catch (JsonException)
+		{
+			swissRoundLabel = "";
+		}
+		catch (IOException)
+		{
+			swissRoundLabel = "";
+		}
 	}
 
 	string CalcTournamentDuration()
@@ -751,6 +840,20 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 		}
 
 		return $"Tournament time: {Tsec}, game time: {Gsec}";
+	}
+
+	string GetDisplayedGameText()
+	{
+		if (tournament == null)
+			return "";
+
+		var totalGames = totalNumberOfPairs > 0 ? totalNumberOfPairs : tournament.TotalGames;
+		if (totalGames <= 0)
+			return "";
+
+		var completedGames = results?.Count ?? 0;
+		var currentGame = Math.Min(completedGames + 1, totalGames);
+		return $"{currentGame}/{totalGames}";
 	}
 
 	string GetWin()
@@ -1241,6 +1344,10 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 					{
 						pendingCupDialog = true;
 					}
+					else if (IsSwissMode)
+					{
+						pendingSwissDialog = true;
+					}
 					else
 					{
 						await InvokeAsync(OpenDialog);
@@ -1392,6 +1499,7 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 					infoBannerInfo = new InfoBannerInfo(tournament);
 					infoBannerInfo.TournamentEndsTxt = InfoBannerInfo.GetTournamentEnd(duration);
 					infoBannerInfo.TimeLeftTxt = InfoBannerInfo.Duration(duration);
+					infoBannerInfo.Game = GetDisplayedGameText();
 					infoBannerInfo.Round = roundNr;
 					var playerTcId = start.Game.WhiteToMove ? start.Game.WhitePlayer.TimeControlID : start.Game.BlackPlayer.TimeControlID;
 					infoBannerInfo.TCText = tournament.TimeControlTextForPlayer(playerTcId);
@@ -1427,6 +1535,7 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 					startTournyInfo = tournyStart.Info;
 					var games = tournyStart.Info.NumberOfGames;
 					tournament = tournyStart.Info.Tournament.Value;
+					UpdateSwissRoundLabel();
 					if (pairingTableHeight > 0)
 					{
 						showPVBoard = layoutOptions.ShowPVBoard;
@@ -1510,6 +1619,8 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 					{
 						if (IsCupMode)
 							await InvokeAsync(OpenCupBracketDialog);
+						else if (IsSwissMode)
+							await InvokeAsync(() => OpenSwissDialog(false));
 						else
 							await InvokeAsync(OpenDialog);
 					}
@@ -1530,7 +1641,6 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 				break;
 			case ChessLibrary.Tournament.Match.Update.TotalNumberOfPairs games:
 				totalNumberOfPairs = games.PairingsNumber;
-				tournament.Rounds = totalNumberOfPairs;
 				break;
 			case ChessLibrary.Tournament.Match.Update.RoundNr data:
 				roundNr = data.Round;
@@ -1543,6 +1653,20 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 					{
 						pendingCupDialog = false;
 						await InvokeAsync(OpenCupBracketDialog);
+					}
+				}
+				break;
+			case var swissUpdate when swissUpdate.IsSwissStateUpdated:
+				if (IsSwissMode)
+				{
+					UpdateSwissRoundLabel();
+				}
+				if (IsSwissMode && layoutOptions.ShowCrosstableBetweenGames)
+				{
+					if (pendingSwissDialog)
+					{
+						pendingSwissDialog = false;
+						await InvokeAsync(() => OpenSwissDialog(false));
 					}
 				}
 				break;
@@ -1573,6 +1697,22 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 				player.MedSpeed = speed.AvgNPS;
 				player.AvgNPM = speed.AvgNodes;
 			}
+		}
+	}
+
+	private async Task OpenQuickDialog()
+	{
+		if (IsCupMode)
+		{
+			await OpenCupBracketDialog();
+		}
+		else if (IsSwissMode)
+		{
+			await OpenSwissDialog(true);
+		}
+		else
+		{
+			await OpenDialog();
 		}
 	}
 
@@ -1853,7 +1993,152 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 		await PrepareRun();
 		if (!await ConfirmCupResumeOrNew())
 			return;
+		if (!await ConfirmSwissResumeOrNew())
+			return;
 		RunTournament();
+	}
+
+	private async Task<bool> ConfirmSwissResumeOrNew()
+	{
+		if (!IsSwissMode)
+			return true;
+
+		var statePath = GetSwissStatePath();
+		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
+			return true;
+
+		var stateSummary = GetSwissStateSummary(statePath);
+		if (stateSummary == SwissStateSummary.Missing)
+			return true;
+
+		var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = false, Position = DialogPosition.TopCenter };
+		var parameters = new DialogParameters
+		{
+			{ "StatePath", statePath },
+			{ "SwissCompleted", stateSummary == SwissStateSummary.Completed },
+			{ "SwissInvalid", stateSummary == SwissStateSummary.Invalid },
+			{ "ShowActions", true }
+		};
+		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.SwissOverviewDialog>("", parameters, options);
+		var result = await dialog.Result;
+		if (result.Canceled)
+			return false;
+
+		var action = result.Data as string ?? "";
+		if (action.Equals("new", StringComparison.OrdinalIgnoreCase))
+		{
+			BackupSwissStateFile(statePath);
+			DeleteSwissStateFiles(statePath);
+		}
+
+		return true;
+	}
+
+	private string GetSwissStatePath()
+	{
+		var configured = tournament?.SwissOptions?.StatePath ?? "wwwroot/swiss_state.json";
+		if (Path.IsPathRooted(configured))
+			return configured;
+		return Path.Combine(Environment.ContentRootPath, configured);
+	}
+
+	private static void DeleteSwissStateFiles(string statePath)
+	{
+		try
+		{
+			var dir = Path.GetDirectoryName(statePath);
+			if (File.Exists(statePath))
+				File.Delete(statePath);
+			if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+			{
+				var pattern = Path.GetFileName(statePath) + ".tmp*";
+				foreach (var file in Directory.GetFiles(dir, pattern))
+				{
+					try
+					{
+						File.Delete(file);
+					}
+					catch (IOException)
+					{
+					}
+				}
+			}
+		}
+		catch (IOException)
+		{
+		}
+	}
+
+	private static void BackupSwissStateFile(string statePath)
+	{
+		try
+		{
+			if (!File.Exists(statePath))
+				return;
+
+			var dir = Path.GetDirectoryName(statePath);
+			if (string.IsNullOrWhiteSpace(dir))
+				return;
+
+			var backupPath = Path.Combine(dir, $"{Path.GetFileName(statePath)}.bak");
+			File.Copy(statePath, backupPath, true);
+		}
+		catch (IOException)
+		{
+		}
+	}
+
+	private static SwissStateSummary GetSwissStateSummary(string statePath)
+	{
+		try
+		{
+			if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
+				return SwissStateSummary.Missing;
+
+			var json = File.ReadAllText(statePath);
+			if (string.IsNullOrWhiteSpace(json))
+				return SwissStateSummary.Missing;
+
+			var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+			var state = JsonSerializer.Deserialize<SwissStateSnapshot>(json, options);
+			if (state == null || state.Rounds == null || state.Rounds.Count == 0)
+				return SwissStateSummary.Invalid;
+
+			var hasOpen = state.Rounds.SelectMany(r => r.Pairings ?? []).Any(p => p != null && !p.IsDecided);
+			return hasOpen ? SwissStateSummary.InProgress : SwissStateSummary.Completed;
+		}
+		catch (JsonException)
+		{
+			return SwissStateSummary.Invalid;
+		}
+		catch (IOException)
+		{
+			return SwissStateSummary.Invalid;
+		}
+	}
+
+	private enum SwissStateSummary
+	{
+		Missing,
+		InProgress,
+		Completed,
+		Invalid
+	}
+
+	private sealed class SwissStateSnapshot
+	{
+		public List<SwissRoundSnapshot> Rounds { get; set; } = new();
+	}
+
+	private sealed class SwissRoundSnapshot
+	{
+		public int RoundNumber { get; set; }
+		public List<SwissPairingSnapshot> Pairings { get; set; } = new();
+	}
+
+	private sealed class SwissPairingSnapshot
+	{
+		public bool IsDecided { get; set; }
 	}
 
 	private async Task<bool> ConfirmCupResumeOrNew()
@@ -2073,7 +2358,7 @@ bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", 
 			.Add(ModKey.Ctrl, Key.c, (() => CancelTournament()), "Cancel tournament")
 			.Add(ModKey.Ctrl, Key.v, (() => ValidateTournamentInput()), "Validate tournament input")
 			.Add(ModKey.Ctrl, Key.u, (Func<Task>)(async () => await UpdateState()), "Update state")
-			.Add(ModKey.Ctrl, Key.p, (() => OpenDialog()), "Create crosstable")
+			.Add(ModKey.Ctrl, Key.p, (() => OpenQuickDialog()), "Open tournament view")
 			.Add(ModCode.Ctrl | ModCode.Alt, Code.W, (() => WhiteWins()), "White wins")
 			.Add(ModCode.Ctrl | ModCode.Alt, Code.B, (() => BlackWins()), "Black wins")
 			.Add(ModCode.Ctrl | ModCode.Alt, Code.D, (() => DrawGame()), "Draw");

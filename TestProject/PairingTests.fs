@@ -1,5 +1,6 @@
 module PairingTests
 
+open System.Collections.Generic
 open Xunit
 open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.CoreTypes
@@ -123,6 +124,16 @@ let ``cup draw by rating pairs highest with lowest`` () =
     Assert.Equal<Set<string * string>>(expectedPairs, orderedPairs)
 
 [<Fact>]
+let ``cup auto seed bands for 8 players`` () =
+    let bands = autoSeedBands 8
+    Assert.Equal<int list list>([ [1]; [2]; [3; 4]; [5; 6; 7; 8] ], bands)
+
+[<Fact>]
+let ``cup auto seed bands for 16 players`` () =
+    let bands = autoSeedBands 16
+    Assert.Equal<int list list>([ [1]; [2]; [3; 4]; [5; 6; 7; 8]; [9; 10; 11; 12; 13; 14; 15; 16] ], bands)
+
+[<Fact>]
 let ``cup N round uses same opening for both colors`` () =
     let players =
         [ { mkEngine "A" with Rating = 3200 }
@@ -192,7 +203,7 @@ let ``cup tiebreak picks unused opening when available`` () =
     Assert.Equal(2, idx)
 
 [<Fact>]
-let ``cup seed bands place top seeds in standard order`` () =
+let ``cup auto seed bands randomize within bands`` () =
     let players =
         [ mkRatedPlayer "P1" 8000
           mkRatedPlayer "P2" 7900
@@ -202,7 +213,103 @@ let ``cup seed bands place top seeds in standard order`` () =
           mkRatedPlayer "P6" 7500
           mkRatedPlayer "P7" 7400
           mkRatedPlayer "P8" 7300 ]
-    let bands = [ [1]; [2]; [3; 4]; [5; 6; 7; 8] ]
-    let seeded = seedByBands players bands false
+    let bands = autoSeedBands players.Length
+    let seeded = seedByBands players bands true
     let orderedNames = seeded |> List.map (fun p -> p.Name)
-    Assert.Equal<string list>([ "P1"; "P8"; "P5"; "P4"; "P3"; "P6"; "P7"; "P2" ], orderedNames)
+    let order = seedOrder players.Length
+    let getSlotIndex seedNumber = order |> List.findIndex (fun s -> s = seedNumber)
+    let bandSet seeds =
+        seeds
+        |> List.map (fun seed -> players.[seed - 1].Name)
+        |> Set.ofList
+    let assertBand seeds =
+        let bandNames = bandSet seeds
+        let positions = seeds |> List.map getSlotIndex
+        let actual =
+            positions
+            |> List.map (fun idx -> orderedNames.[idx])
+            |> Set.ofList
+        Assert.Equal<Set<string>>(bandNames, actual)
+    assertBand [1]
+    assertBand [2]
+    assertBand [3; 4]
+    assertBand [5; 6; 7; 8]
+
+[<Fact>]
+let ``cup auto seed bands randomize 5-8 when enabled`` () =
+    let players =
+        [ mkRatedPlayer "P1" 8000
+          mkRatedPlayer "P2" 7900
+          mkRatedPlayer "P3" 7800
+          mkRatedPlayer "P4" 7700
+          mkRatedPlayer "P5" 7600
+          mkRatedPlayer "P6" 7500
+          mkRatedPlayer "P7" 7400
+          mkRatedPlayer "P8" 7300 ]
+    let bands = autoSeedBands players.Length
+    let seedBandNames =
+        [ "P5"; "P6"; "P7"; "P8" ] |> Set.ofList
+    let order = seedOrder players.Length
+    let positions = [5; 6; 7; 8] |> List.map (fun seed -> order |> List.findIndex (fun s -> s = seed))
+    let results = HashSet<string>()
+    for _ in 1 .. 25 do
+        let seeded = seedByBands players bands true
+        let orderedNames = seeded |> List.map (fun p -> p.Name)
+        let bandOrder =
+            positions
+            |> List.map (fun idx -> orderedNames.[idx])
+        if Set.ofList bandOrder = seedBandNames then
+            results.Add(System.String.Join("|", bandOrder)) |> ignore
+    Assert.True(results.Count > 1, "Band [5..8] should randomize within its slots.")
+
+[<Fact>]
+let ``cup auto seed bands randomize 3-4 positions when enabled`` () =
+    let players =
+        [ mkRatedPlayer "P1" 8000
+          mkRatedPlayer "P2" 7900
+          mkRatedPlayer "P3" 7800
+          mkRatedPlayer "P4" 7700
+          mkRatedPlayer "P5" 7600
+          mkRatedPlayer "P6" 7500
+          mkRatedPlayer "P7" 7400
+          mkRatedPlayer "P8" 7300 ]
+    let bands = autoSeedBands players.Length
+    let order = seedOrder players.Length
+    let positions = [3; 4] |> List.map (fun seed -> order |> List.findIndex (fun s -> s = seed))
+    let seenPositions = HashSet<int>()
+    for _ in 1 .. 25 do
+        let seeded = seedByBands players bands true
+        let orderedNames = seeded |> List.map (fun p -> p.Name)
+        let idx =
+            positions
+            |> List.find (fun i -> orderedNames.[i] = "P3")
+        seenPositions.Add(idx) |> ignore
+    Assert.Equal(2, seenPositions.Count)
+
+[<Fact>]
+let ``cup auto seed bands avoid 1 vs 2 and 3 vs 4 in round one`` () =
+    let players =
+        [ mkRatedPlayer "P1" 8000
+          mkRatedPlayer "P2" 7900
+          mkRatedPlayer "P3" 7800
+          mkRatedPlayer "P4" 7700
+          mkRatedPlayer "P5" 7600
+          mkRatedPlayer "P6" 7500
+          mkRatedPlayer "P7" 7400
+          mkRatedPlayer "P8" 7300 ]
+    let bands = autoSeedBands players.Length
+    let seeded = seedByBands players bands true
+    let half = seeded.Length / 2
+    let top, bottom = seeded |> List.splitAt half
+    let pairs = List.zip top (List.rev bottom)
+    let allPlayers =
+        pairs
+        |> List.collect (fun (a, b) -> [ a.Name; b.Name ])
+        |> Set.ofList
+    Assert.Equal(8, allPlayers.Count)
+    let pairNames =
+        pairs
+        |> List.map (fun (a, b) -> Set.ofList [ a.Name; b.Name ])
+        |> Set.ofList
+    Assert.DoesNotContain(Set.ofList [ "P1"; "P2" ], pairNames)
+    Assert.DoesNotContain(Set.ofList [ "P3"; "P4" ], pairNames)

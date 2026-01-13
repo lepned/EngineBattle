@@ -829,12 +829,18 @@ module Match =
     | RoundNr of Round: string
     | PeriodicResults of results: ResizeArray<Result>
     | CupBracketUpdated
+    | SwissStateUpdated
     | GameSummary of summary: string
 
   type CupBracketMessage =
     | WriteCupBracket of Bracket: TypesDef.Cup.CupBracket * Reply: AsyncReplyChannel<unit>
     | ReadCupBracket of Reply: AsyncReplyChannel<TypesDef.Cup.CupBracket option>
     | DisposeCupBracket
+
+  type SwissStateMessage =
+    | WriteSwissState of State: TypesDef.Swiss.SwissState * Reply: AsyncReplyChannel<unit>
+    | ReadSwissState of Reply: AsyncReplyChannel<TypesDef.Swiss.SwissState option>
+    | DisposeSwissState
 
   let private normalizeBracketJson (json: string) =
     if String.IsNullOrWhiteSpace json then
@@ -886,6 +892,51 @@ module Match =
                   reply.Reply None
                 else
                   let loaded = JsonSerializer.Deserialize<TypesDef.Cup.CupBracket>(json, optionsRead)
+                  if obj.ReferenceEquals(loaded, null) then reply.Reply None else reply.Reply (Some loaded)
+              with
+              | _ -> reply.Reply None
+      })
+
+  let startSwissStateReaderWriter (filePath: string) =
+    MailboxProcessor<SwissStateMessage>.Start(fun inbox ->
+      async {
+        let optionsWrite = JsonSerializerOptions(WriteIndented = true)
+        let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let mutable inMemory = ""
+        while true do
+          let! message = inbox.Receive()
+          match message with
+          | DisposeSwissState ->
+              return ()
+          | WriteSwissState (state, reply) ->
+              state.UpdatedUtc <- DateTime.UtcNow
+              let json = JsonSerializer.Serialize(state, optionsWrite)
+              if String.IsNullOrWhiteSpace filePath then
+                inMemory <- json
+              else
+                use stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None)
+                use writer = new StreamWriter(stream, Encoding.UTF8)
+                writer.Write(json)
+                writer.Flush()
+                stream.Flush()
+              reply.Reply()
+          | ReadSwissState reply ->
+              try
+                let json =
+                  if String.IsNullOrWhiteSpace filePath then
+                    inMemory
+                  else
+                    if File.Exists filePath then
+                      use stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete)
+                      use reader = new StreamReader(stream, Encoding.UTF8)
+                      reader.ReadToEnd()
+                    else
+                      ""
+                let json = normalizeBracketJson json
+                if String.IsNullOrWhiteSpace json then
+                  reply.Reply None
+                else
+                  let loaded = JsonSerializer.Deserialize<TypesDef.Swiss.SwissState>(json, optionsRead)
                   if obj.ReferenceEquals(loaded, null) then reply.Reply None else reply.Reply (Some loaded)
               with
               | _ -> reply.Reply None
@@ -2912,7 +2963,7 @@ module Match =
       return results
   }
 
-  let cup (gamesPerMatch: int) (strategy: Utilities.PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {        
+  let cup (strategy: Utilities.PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {        
     let isPowerOfTwo (n: int) = n > 0 && (n &&& (n - 1) = 0)
     let resolveCupBracketPath () =
       let configuredPath =
@@ -2941,6 +2992,7 @@ module Match =
 
     let roundPairIncrements =
       if obj.ReferenceEquals(tourny.CupOptions, null) then [] else tourny.CupOptions.RoundPairIncrements
+    let gamesPerMatch = 2
     let gamesPerMatchForRound roundNumber =
       Utilities.PairingHelper.gamesPerMatchForRound gamesPerMatch roundPairIncrements roundNumber
 
@@ -3040,10 +3092,7 @@ module Match =
         rounds <- rounds + 1
       rounds
 
-    let seedBands =
-      if obj.ReferenceEquals(tourny.CupOptions, null) then [] else tourny.CupOptions.SeedBands
-    let randomizeSeedBands =
-      if obj.ReferenceEquals(tourny.CupOptions, null) then false else tourny.CupOptions.RandomizeSeedBands
+    let seedBands = Utilities.PairingHelper.autoSeedBands numberOfPlayers
 
     let seedPlayers (players: EngineConfig list) =
       match strategy with
@@ -3051,11 +3100,8 @@ module Match =
           let shuffled = players |> List.toArray
           Random.Shuffle(shuffled)
           shuffled |> Array.toList
-      | Utilities.PairingHelper.CupSeedingStrategy.ByRating ->
-          if seedBands.IsEmpty then
-            players |> List.sortByDescending (fun p -> p.Rating)
-          else
-            Utilities.PairingHelper.seedByBands players seedBands randomizeSeedBands
+        | Utilities.PairingHelper.CupSeedingStrategy.ByRating ->
+            Utilities.PairingHelper.seedByBands players seedBands true
 
     let seedPairs (players: EngineConfig list) =
       let half = players.Length / 2
@@ -3243,7 +3289,11 @@ module Match =
 
         let openingsAlreadyPlayed = gamesAlreadyPlayed |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pair.OpeningHash) |> Seq.length
         let liveGamesPlayed = if liveGamesByOpening.ContainsKey pair.OpeningHash then liveGamesByOpening.[pair.OpeningHash] else 0
-        let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+        let roundTxt =
+          if String.IsNullOrWhiteSpace pair.RoundNr |> not then
+            pair.RoundNr
+          else
+            $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
         Update.RoundNr roundTxt |> callback
         let logException ex =
             let w = tourny.TimeControlTextForPlayer engine1.Config.TimeControlID
@@ -3483,14 +3533,14 @@ module Match =
               else
                 [ (playerA, playerB); (playerB, playerA) ]
             let plannedPairings =
-              playOrder
-              |> List.mapi (fun idx (white, black) ->
-                  { Opening = opening
-                    White = white
-                    Black = black
-                    GameNr = 0
-                    RoundNr = $"{opening.GameNumber}.{matchInfo.Games.Count + idx + 1}"
-                    OpeningHash = openingHash })
+                playOrder
+                |> List.mapi (fun idx (white, black) ->
+                    { Opening = opening
+                      White = white
+                      Black = black
+                      GameNr = 0
+                      RoundNr = $"{matchInfo.RoundNumber}.{matchInfo.Games.Count + idx + 1}"
+                      OpeningHash = openingHash })
             callback (Update.PairingList (ResizeArray<Pairing>(plannedPairings)))
             for (white, black) in playOrder do
               if matchInfo.IsDecided || gamesRemaining = 0 || cts.IsCancellationRequested then
@@ -3501,7 +3551,7 @@ module Match =
                     White = white
                     Black = black
                     GameNr = 0
-                    RoundNr = $"{opening.GameNumber}.{matchInfo.Games.Count + 1}"
+                    RoundNr = $"{matchInfo.RoundNumber}.{matchInfo.Games.Count + 1}"
                     OpeningHash = openingHash }
                 let! result = playPairing pairing
                 if result.Reason <> ResultReason.Cancel then
@@ -3591,6 +3641,598 @@ module Match =
     pgnGameWriterAgent.Post(Parser.FullPGNParser.Dispose)
     pgnGameWriterAgent.Dispose()
     cupBracketAgent.Post DisposeCupBracket
+    return results
+  }
+
+  let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {
+    let resolveSwissPath () =
+      let configuredPath =
+        if obj.ReferenceEquals(tourny.SwissOptions, null) then "" else tourny.SwissOptions.StatePath
+      let fullPath =
+        if String.IsNullOrWhiteSpace configuredPath then
+          let candidates =
+            [ Path.Combine(Environment.CurrentDirectory, "wwwroot")
+              Path.Combine(Environment.CurrentDirectory, "WebGUI", "wwwroot") ]
+          let folder =
+            candidates |> List.tryFind Directory.Exists
+            |> Option.defaultValue (Path.Combine(Environment.CurrentDirectory, "wwwroot"))
+          Path.Combine(folder, "swiss_state.json")
+        elif Path.IsPathRooted configuredPath then
+          configuredPath
+        else
+          Path.Combine(Environment.CurrentDirectory, configuredPath)
+      let dir = Path.GetDirectoryName(fullPath)
+      if String.IsNullOrWhiteSpace dir |> not then
+        Directory.CreateDirectory(dir) |> ignore
+      fullPath
+
+    let writeSwissState (agent: MailboxProcessor<SwissStateMessage>) (state: TypesDef.Swiss.SwissState) =
+      agent.PostAndReply(fun reply -> WriteSwissState(state, reply))
+      callback SwissStateUpdated
+
+    let gamesPerMatchForRound _ =
+      let gamesPerMatch = tourny.SwissOptions.GamesPerMatch
+      if gamesPerMatch < 2 then 2
+      elif gamesPerMatch % 2 = 1 then gamesPerMatch + 1
+      else gamesPerMatch
+
+    let mutable gameNr = 0
+    logger.LogInformation("Swiss tournament about to start")
+    let numberOfPlayers = tourny.EngineSetup.Engines.Length
+    if numberOfPlayers % 2 = 1 then
+      logger.LogError("Swiss tournaments require an even number of players when byes are not allowed.")
+      failwith "Swiss tournaments require an even number of players when byes are not allowed."
+
+    let mutable epdBook = false
+    let board = Board()
+    board.LoadFen Chess.startPos
+    let mutable results = List.empty<Result>
+    let games =
+      match tourny.Opening.OpeningsPath with
+      | Some path ->
+          if path.ToLower().Contains ".epd" then
+            epdBook <- true
+            EPDExtractor.parseEPDFile path |> Seq.toArray
+          else
+            FullPGNParser.parsePgnFile path |> Seq.toArray
+      | _ ->
+          [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
+
+    let openings = games |> Seq.toList
+    if openings.IsEmpty then
+      logger.LogError("No openings available for Swiss tournament")
+      failwith "No openings available for Swiss tournament."
+
+    let gamesAlreadyPlayed =
+      let fileExists = File.Exists tourny.PgnOutPath
+      if fileExists then
+        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+      else
+        [||]
+
+    let referencGamesPlayed =
+      let fileExists = File.Exists tourny.ReferencePGNPath
+      if fileExists then
+        FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+      else
+        [||]
+
+    let pgnGameWriterAgent = Parser.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+    let replayList = ResizeArray<GameReplay>()
+    let replayDicts =
+      [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
+    let getReplayDictForPlayer (name:string) = replayDicts.[name]
+
+    let swissPath = resolveSwissPath ()
+    let swissAgent = startSwissStateReaderWriter swissPath
+    let mutable openingIndex = 0
+    let mutable pairId = 1
+
+    let ensurePairingOpeningOrder (pairing: TypesDef.Swiss.SwissPairing) =
+      if obj.ReferenceEquals(pairing.OpeningOrder, null) then
+        pairing.OpeningOrder <- ResizeArray<int>()
+
+    let ensureGlobalOpeningOrder (state: TypesDef.Swiss.SwissState) =
+      if obj.ReferenceEquals(state.GlobalOpeningOrder, null) then
+        state.GlobalOpeningOrder <- ResizeArray<int>()
+
+    let mutable state : TypesDef.Swiss.SwissState =
+      match swissAgent.PostAndReply(fun reply -> ReadSwissState reply) with
+      | Some loaded ->
+          ensureGlobalOpeningOrder loaded
+          for round in loaded.Rounds do
+            for pairing in round.Pairings do
+              ensurePairingOpeningOrder pairing
+          openingIndex <- loaded.NextOpeningIndex
+          pairId <- loaded.Rounds |> Seq.collect (fun r -> r.Pairings |> Seq.map (fun p -> p.PairId)) |> Seq.append [0] |> Seq.max |> (+) 1
+          loaded
+      | None ->
+          { TournamentName = tourny.Name
+            SeedGroupCount = tourny.SwissOptions.SeedGroupCount
+            GamesPerMatch = tourny.SwissOptions.GamesPerMatch
+            UniqueOpeningsGlobal = not tourny.SwissOptions.UniquePerMatchOnly
+            NextOpeningIndex = openingIndex
+            GlobalOpeningOrder = ResizeArray<int>()
+            Rounds = ResizeArray<TypesDef.Swiss.SwissRound>()
+            UpdatedUtc = DateTime.UtcNow }
+
+    let maxRounds = Math.Max(1, numberOfPlayers - 1)
+    let configuredRounds = if tourny.SwissOptions.Rounds > 0 then tourny.SwissOptions.Rounds else tourny.Rounds
+    let totalRounds = min configuredRounds maxRounds
+    let maxPairs = (numberOfPlayers * (numberOfPlayers - 1)) / 2
+    if configuredRounds > maxRounds then
+      logger.LogInformation("Swiss rounds capped to {MaxRounds} based on {Players} players.", maxRounds, numberOfPlayers)
+    let totalGames =
+      [ 1 .. totalRounds ]
+      |> List.sumBy (fun roundNumber ->
+          let matchCount = numberOfPlayers / 2
+          matchCount * gamesPerMatchForRound roundNumber)
+    tourny.TotalGames <- totalGames
+    callback (Update.TotalNumberOfPairs totalGames)
+    let (tTime, gTime) = estimateTournamentAndGameTime totalGames tourny []
+    let startInfo = { NumberOfGames = totalGames; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny }
+    callback (Update.StartOfTournament startInfo)
+
+    let seedOrder = Utilities.PairingHelper.tcecSeedOrder tourny.EngineSetup.Engines tourny.SwissOptions.SeedGroupCount
+    let seedMap =
+      seedOrder
+      |> List.mapi (fun idx p -> p.Name, idx + 1)
+      |> Map.ofList
+
+    let buildScores () =
+      let scores = Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
+      for p in tourny.EngineSetup.Engines do
+        scores.[p.Name] <- 0.0
+      for round in state.Rounds do
+        for pairing in round.Pairings do
+          if scores.ContainsKey pairing.PlayerA then
+            scores.[pairing.PlayerA] <- scores.[pairing.PlayerA] + pairing.ScoreA
+          if scores.ContainsKey pairing.PlayerB then
+            scores.[pairing.PlayerB] <- scores.[pairing.PlayerB] + pairing.ScoreB
+      scores |> Seq.map (fun kvp -> kvp.Key, kvp.Value) |> Map.ofSeq
+
+    let buildPriorPairs () =
+      let pairs = ResizeArray<string>()
+      for round in state.Rounds do
+        for pairing in round.Pairings do
+          if String.IsNullOrWhiteSpace pairing.PlayerA |> not && String.IsNullOrWhiteSpace pairing.PlayerB |> not then
+            pairs.Add(Utilities.PairingHelper.swissPairKey pairing.PlayerA pairing.PlayerB)
+      pairs |> Set.ofSeq
+
+    let ensureGlobalOrder () =
+      if tourny.SwissOptions.RandomOpenings && openings.Length > 1 && not tourny.SwissOptions.UniquePerMatchOnly then
+        if state.GlobalOpeningOrder.Count = 0 then
+          let order = [0 .. openings.Length - 1]
+          let shuffled = order |> List.toArray
+          Random.Shuffle(shuffled)
+          state.GlobalOpeningOrder <- ResizeArray<int>(shuffled)
+          writeSwissState swissAgent state
+
+    let globalOpenings =
+      ensureGlobalOrder ()
+      if state.GlobalOpeningOrder.Count > 0 then
+        state.GlobalOpeningOrder
+        |> Seq.map (fun idx -> openings.[idx % openings.Length])
+        |> Seq.toList
+      else
+        openings
+
+    let getNextOpening (openingsList: PGNTypes.PgnGame list) (localIndex: int) =
+      if tourny.SwissOptions.UniquePerMatchOnly then
+        openingsList.[localIndex % openingsList.Length]
+      else
+        if openingIndex >= openingsList.Length then
+          openingIndex <- 0
+        let opening = openingsList.[openingIndex]
+        openingIndex <- openingIndex + 1
+        state.NextOpeningIndex <- openingIndex
+        opening
+
+    let getOpeningHash (opening: PGNTypes.PgnGame) =
+      if String.IsNullOrWhiteSpace opening.Raw then
+        Hash.computeOpeningHash (opening.GameNumber.ToString())
+      else
+        Hash.computeOpeningHash opening.Raw
+
+    let searchReplayList (pairing : Pairing) =
+      let nextGame = pairing
+      let lastGame = gamesAlreadyPlayed |> Seq.tryLast
+      let deviations = match lastGame with | Some g -> g.GameMetaData.Deviations | _ -> 0
+      if deviations > tourny.DeviationCounter then
+        tourny.DeviationCounter <- deviations
+      prepareGameReplay nextGame replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960
+
+    let sb = StringBuilder()
+    let stateGamesPlayed =
+      state.Rounds
+      |> Seq.collect (fun r -> r.Pairings |> Seq.collect (fun p -> p.Games))
+      |> Seq.length
+    let gamesPlayedCount = if stateGamesPlayed > 0 then stateGamesPlayed else gamesAlreadyPlayed.Length
+    tourny.CurrentGameNr <- gamesPlayedCount
+
+    let playPairing (pair: Pairing) = async {
+      if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
+        searchReplayList pair
+      tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
+      if cts.IsCancellationRequested then
+        sb.Clear() |> ignore
+        return Result.Empty
+      else
+        let limit = tourny.Opening.OpeningsPly
+        let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
+        let completeGame =
+            openingMoves
+            |> Seq.mapi(fun i m ->
+                  if m.Color = "w" then
+                    sprintf "%d. %s" m.MoveNumber m.San
+                  else
+                    sprintf "%s" m.San)
+            |> String.concat " "
+
+        logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
+        board.ResetBoardState()
+        if pair.Opening.Fen = "" then
+          board.LoadFen Chess.startPos
+          board.StartPosition <- Chess.startPos
+        else
+          board.LoadFen(pair.Opening.Fen)
+          board.StartPosition <- pair.Opening.Fen
+
+        if not epdBook then
+          for m in openingMoves do
+            board.PlayOpeningMove m.San
+        else
+          board.ResetBoardState()
+          board.LoadFen pair.Opening.Fen
+          board.StartPosition <- pair.Opening.Fen
+          tourny.IsChess960 <- board.IsFRC
+
+        let posWithMoves =
+          let fen = board.StartPosition
+          let start = $"position fen {fen} moves"
+          board.LongSANMovesPlayed |> Seq.fold(fun state m ->
+            sprintf "%s %s" state m) start
+        logger.LogInformation("{position}", posWithMoves)
+
+        let engine1 = EngineHelper.createEngine (pair.White, Some logger)
+        let engine2 = EngineHelper.createEngine (pair.Black, Some logger)
+        let openingsAlreadyPlayed = gamesAlreadyPlayed |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pair.OpeningHash) |> Seq.length
+        let roundTxt =
+          if String.IsNullOrWhiteSpace pair.RoundNr then
+            $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + 1}"
+          else
+            pair.RoundNr
+        Update.RoundNr roundTxt |> callback
+        let logException ex =
+            let w = tourny.TimeControlTextForPlayer engine1.Config.TimeControlID
+            let b = tourny.TimeControlTextForPlayer engine2.Config.TimeControlID
+            let timeInfo = $"[{w}; {b}]"
+            let createContext() = {
+                EngineName   = engine1.Name
+                OpponentName = engine2.Name
+                GameNumber   = pair.GameNr
+                MoveNumber   = board.MoveNumber()
+                TimeControl  = timeInfo
+                TimeRemaining= None
+                PositionFen  = board.FEN()
+                LastCommand  = None
+                TimestampUtc = DateTime.UtcNow
+                MoveHistory = board.GetMoveHistory()}
+            EngineFailures.log logger ex (createContext())
+
+        let result =
+            let gametimer = Stopwatch.GetTimestamp()
+            try
+                if tourny.PreventMoveDeviation then
+                  let replayDictWhite, replayDictBlack = getReplayDictForPlayer pair.White.Name, getReplayDictForPlayer pair.Black.Name
+                  playDoNotDeviate replayDictWhite replayDictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                else
+                  if tourny.AllowPondering then
+                    playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+                  else
+                    play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback |> Async.RunSynchronously
+            with
+            | :? EngineStartupException as ex ->
+                  logException ex
+                  handleGameException logger ex cts gametimer board engine1 engine2 pair
+            | ex ->
+                  logException ex
+                  handleGameException logger ex cts gametimer board engine1 engine2 pair
+
+        results <- result :: results
+
+        let gameData : PGNTypes.GameMetadata =
+          {
+            OpeningHash = pair.OpeningHash
+            Event = tourny.Description
+            Site = tourny.Name
+            Date = DateTime.Now.ToShortDateString()
+            Round = roundTxt
+            White = result.Player1
+            Black = result.Player2
+            Result = result.Result
+            Reason = result.Reason
+            GameTime = result.GameTime
+            Moves = result.Moves
+            Fen = pair.Opening.Fen
+            OpeningName = pair.Opening.GameMetaData.OpeningName
+            Deviations = tourny.DeviationCounter
+            StartEvals = result.OutOfOpeningEvals
+            OtherTags = pair.Opening.GameMetaData.OtherTags
+          }
+
+        if tourny.PreventMoveDeviation then
+          replayList.Add
+            {
+              WhitePlayer = result.Player1
+              BlackPlayer = result.Player2
+              PGNMetaData = gameData
+              LongSanMoves = board.LongSANMovesPlayed |> ResizeArray
+            }
+
+        let moveSection = sb.ToString()
+        if result.Reason <> ResultReason.Cancel
+          && not cts.IsCancellationRequested
+          && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
+          pgnGameWriterAgent.Post (Parser.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
+
+        if tourny.VerboseLogging then
+          logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+
+        if engine1.HasExited() |> not then
+          engine1.StopProcess()
+        if engine2.HasExited() |> not then
+          engine2.StopProcess()
+
+        board.ResetBoardState()
+        gameNr <- gameNr + 1
+        if gameNr % 2 = 0 then
+          let res = ResizeArray<Result>(results)
+          callback (Update.PeriodicResults res)
+        return result
+    }
+
+    let roundToStart =
+      state.Rounds
+      |> Seq.sortBy (fun r -> r.RoundNumber)
+      |> Seq.tryFind (fun r -> r.Pairings |> Seq.exists (fun p -> not p.IsDecided))
+      |> Option.map (fun r -> r.RoundNumber)
+      |> Option.defaultValue (state.Rounds.Count + 1)
+
+    let runRound (roundNumber: int) (roundPairs: (EngineConfig * EngineConfig) list) = async {
+      let round : TypesDef.Swiss.SwissRound =
+        match state.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber) with
+        | Some existing -> existing
+        | None ->
+            let roundPairings = ResizeArray<TypesDef.Swiss.SwissPairing>()
+            for (a, b) in roundPairs do
+              let pairing : TypesDef.Swiss.SwissPairing =
+                { PairId = pairId
+                  RoundNumber = roundNumber
+                  PlayerA = a.Name
+                  PlayerB = b.Name
+                  PlayerARating = a.Rating
+                  PlayerBRating = b.Rating
+                  ScoreA = 0.0
+                  ScoreB = 0.0
+                  IsDecided = false
+                  Games = ResizeArray<TypesDef.Swiss.SwissGame>()
+                  OpeningOrder = ResizeArray<int>() }
+              pairId <- pairId + 1
+              roundPairings.Add pairing
+            let newRound : TypesDef.Swiss.SwissRound =
+              { RoundNumber = roundNumber
+                Pairings = roundPairings }
+            state.Rounds.Add newRound
+            writeSwissState swissAgent state
+            newRound
+
+      let gamesPerMatch = gamesPerMatchForRound roundNumber
+      let plannedPairings = ResizeArray<Pairing>()
+      let mutable previewIndex = openingIndex
+      for pairing in round.Pairings do
+        ensurePairingOpeningOrder pairing
+        let matchOpenings =
+          if tourny.SwissOptions.UniquePerMatchOnly then
+            if tourny.SwissOptions.RandomOpenings && openings.Length > 1 then
+              if pairing.OpeningOrder.Count = 0 then
+                let order = [0 .. openings.Length - 1]
+                let shuffled = order |> List.toArray
+                Random.Shuffle(shuffled)
+                pairing.OpeningOrder <- ResizeArray<int>(shuffled)
+                writeSwissState swissAgent state
+              pairing.OpeningOrder
+              |> Seq.map (fun idx -> openings.[idx % openings.Length])
+              |> Seq.toList
+            else
+              openings
+          else
+            globalOpenings
+        let seedA = seedMap.[pairing.PlayerA]
+        let seedB = seedMap.[pairing.PlayerB]
+        let firstWhite, firstBlack =
+          if seedA <= seedB then
+            pairing.PlayerA, pairing.PlayerB
+          else
+            pairing.PlayerB, pairing.PlayerA
+        let whiteFirst = tourny.EngineSetup.Engines |> List.find (fun e -> e.Name = firstWhite)
+        let blackFirst = tourny.EngineSetup.Engines |> List.find (fun e -> e.Name = firstBlack)
+        if tourny.SwissOptions.UniquePerMatchOnly then
+          Utilities.PairingHelper.addPlannedPairings plannedPairings whiteFirst blackFirst matchOpenings gamesPerMatch 0
+          |> ignore
+        else
+          previewIndex <- Utilities.PairingHelper.addPlannedPairings plannedPairings whiteFirst blackFirst matchOpenings gamesPerMatch previewIndex
+      callback (Update.PairingList plannedPairings)
+
+      for pairIndex in 0 .. round.Pairings.Count - 1 do
+        let pairing = round.Pairings.[pairIndex]
+        let pairingPlayers =
+          tourny.EngineSetup.Engines
+          |> List.filter (fun e -> e.Name = pairing.PlayerA || e.Name = pairing.PlayerB)
+        if pairingPlayers.Length = 2 then
+          let playerA = pairingPlayers |> List.find (fun e -> e.Name = pairing.PlayerA)
+          let playerB = pairingPlayers |> List.find (fun e -> e.Name = pairing.PlayerB)
+          let matchOpenings =
+            if tourny.SwissOptions.UniquePerMatchOnly then
+              if tourny.SwissOptions.RandomOpenings && openings.Length > 1 then
+                if pairing.OpeningOrder.Count = 0 then
+                  let order = [0 .. openings.Length - 1]
+                  let shuffled = order |> List.toArray
+                  Random.Shuffle(shuffled)
+                  pairing.OpeningOrder <- ResizeArray<int>(shuffled)
+                  writeSwissState swissAgent state
+                pairing.OpeningOrder
+                |> Seq.map (fun idx -> openings.[idx % openings.Length])
+                |> Seq.toList
+              else
+                openings
+            else
+              globalOpenings
+          let seedA = seedMap.[pairing.PlayerA]
+          let seedB = seedMap.[pairing.PlayerB]
+          let firstWhite, firstBlack =
+            if seedA <= seedB then
+              playerA, playerB
+            else
+              playerB, playerA
+          let tryGetOpeningByHash (hash: string) =
+            match matchOpenings |> List.tryFind (fun o -> getOpeningHash o = hash) with
+            | Some opening -> opening
+            | None ->
+                if tourny.SwissOptions.UniquePerMatchOnly then
+                  matchOpenings.[(pairing.Games.Count / 2) % matchOpenings.Length]
+                else
+                  matchOpenings.[openingIndex % matchOpenings.Length]
+          let nextOpening (localIndex: int ref) =
+            if tourny.SwissOptions.UniquePerMatchOnly then
+              let opening = matchOpenings.[(!localIndex) % matchOpenings.Length]
+              localIndex := !localIndex + 1
+              opening
+            else
+              if openingIndex >= matchOpenings.Length then
+                openingIndex <- 0
+              let opening = matchOpenings.[openingIndex]
+              openingIndex <- openingIndex + 1
+              state.NextOpeningIndex <- openingIndex
+              opening
+          let mutable gamesRemaining = Math.Max(0, gamesPerMatch - pairing.Games.Count)
+          let localOpeningIndex = ref (pairing.Games.Count / 2)
+          while gamesRemaining > 0 && not cts.IsCancellationRequested do
+            let hasOddGame = pairing.Games.Count % 2 = 1
+            let opening =
+              if hasOddGame then
+                let lastGame = pairing.Games.[pairing.Games.Count - 1]
+                tryGetOpeningByHash lastGame.OpeningHash
+              else
+                nextOpening localOpeningIndex
+            let openingHash = getOpeningHash opening
+            let playOrder =
+              if hasOddGame then
+                let lastGame = pairing.Games.[pairing.Games.Count - 1]
+                if lastGame.White = playerA.Name then
+                  [ (playerB, playerA) ]
+                else
+                  [ (playerA, playerB) ]
+              else
+                [ (firstWhite, firstBlack); (firstBlack, firstWhite) ]
+            for (white, black) in playOrder do
+              if gamesRemaining = 0 || cts.IsCancellationRequested then
+                ()
+              else
+                let roundGameNumber = (pairIndex * gamesPerMatch) + pairing.Games.Count + 1
+                let pairingGame =
+                  { Opening = opening
+                    White = white
+                    Black = black
+                    GameNr = 0
+                    RoundNr = $"{pairing.RoundNumber}.{roundGameNumber}"
+                    OpeningHash = openingHash }
+                let! result = playPairing pairingGame
+                if result.Reason <> ResultReason.Cancel then
+                  let game : TypesDef.Swiss.SwissGame =
+                    { GameNr = gameNr
+                      White = white.Name
+                      Black = black.Name
+                      OpeningId = opening.GameNumber.ToString()
+                      OpeningHash = openingHash
+                      Result = result.Result }
+                  pairing.Games.Add game
+                  let scoreWhite =
+                    match result.Result with
+                    | "1-0" -> 1.0
+                    | "0-1" -> 0.0
+                    | "1/2-1/2" -> 0.5
+                    | _ -> 0.0
+                  let scoreBlack =
+                    match result.Result with
+                    | "1-0" -> 0.0
+                    | "0-1" -> 1.0
+                    | "1/2-1/2" -> 0.5
+                    | _ -> 0.0
+                  if white.Name = pairing.PlayerA then
+                    pairing.ScoreA <- pairing.ScoreA + scoreWhite
+                    pairing.ScoreB <- pairing.ScoreB + scoreBlack
+                  else
+                    pairing.ScoreA <- pairing.ScoreA + scoreBlack
+                    pairing.ScoreB <- pairing.ScoreB + scoreWhite
+                  gamesRemaining <- gamesRemaining - 1
+                  if pairing.Games.Count >= gamesPerMatch then
+                    pairing.IsDecided <- true
+                  writeSwissState swissAgent state
+            if hasOddGame && tourny.SwissOptions.UniquePerMatchOnly then
+              localOpeningIndex := !localOpeningIndex + 1
+            if gamesRemaining > 0 && not cts.IsCancellationRequested then
+              do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+    }
+
+    let mutable roundNumber = roundToStart
+    let mutable continueRounds = true
+    while continueRounds && roundNumber <= totalRounds && not cts.IsCancellationRequested do
+      let scores = buildScores ()
+      let priorPairs = buildPriorPairs ()
+      if priorPairs.Count >= maxPairs then
+        logger.LogInformation("Swiss tournament completed: all unique pairs have been played.")
+        continueRounds <- false
+      else
+        let roundPairs : (EngineConfig * EngineConfig) list =
+          Utilities.PairingHelper.swissRoundPairings tourny.EngineSetup.Engines seedOrder scores priorPairs
+        do! runRound roundNumber roundPairs
+        roundNumber <- roundNumber + 1
+
+    if tourny.SwissOptions.AllowExtraPairsOnTie && not cts.IsCancellationRequested then
+      let rec resolveTieBreak tieRoundNumber = async {
+        let scores = buildScores ()
+        if scores.IsEmpty then
+          return ()
+        else
+          let maxScore = scores |> Seq.maxBy (fun kvp -> kvp.Value) |> fun kvp -> kvp.Value
+          let tied =
+            scores
+            |> Seq.filter (fun kvp -> kvp.Value = maxScore)
+            |> Seq.map (fun kvp -> kvp.Key)
+            |> Seq.toList
+          if tied.Length <= 1 then
+            return ()
+          elif tied.Length % 2 = 1 then
+            logger.LogWarning("Swiss tiebreak requires an even number of tied players. Skipping extra pairs.")
+            return ()
+          else
+            let tiedPlayers =
+              tourny.EngineSetup.Engines
+              |> List.filter (fun p -> tied |> List.contains p.Name)
+            logger.LogInformation("Swiss tiebreak: {Count} players tied at {Score}, playing extra pairs.", tiedPlayers.Length, maxScore)
+            let roundPairs : (EngineConfig * EngineConfig) list =
+              Utilities.PairingHelper.swissRoundPairings tiedPlayers seedOrder scores Set.empty
+            do! runRound tieRoundNumber roundPairs
+            return! resolveTieBreak (tieRoundNumber + 1)
+      }
+      do! resolveTieBreak roundNumber
+
+    let res = ResizeArray<Result>(results)
+    callback (Update.PeriodicResults res)
+    pgnGameWriterAgent.Post(Parser.FullPGNParser.Dispose)
+    pgnGameWriterAgent.Dispose()
+    swissAgent.Post DisposeSwissState
     return results
   }
   let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback (cts: CancellationTokenSource) = async {
@@ -4274,7 +4916,7 @@ module Manager =
                   for engine in engineList do
                     engine.IsChallenger <- false
                 let engineSetup = {tourny.EngineSetup with Engines = engineList}
-                let cupDefaults = { GamesPerMatch = 2; RoundPairIncrements = []; SeedBands = []; RandomizeSeedBands = false; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+                let cupDefaults = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
                 let cupOptions = if obj.ReferenceEquals(tourny.CupOptions, null) then cupDefaults else tourny.CupOptions
                 let tournamentMode =
                   if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR" else tourny.TournamentMode
@@ -4282,14 +4924,19 @@ module Manager =
                   match consumeCupBracketPathOverride () with
                   | Some overridePath -> { cupOptions with BracketPath = overridePath }
                   | None -> cupOptions
-                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; TournamentMode = tournamentMode }
+                let swissDefaults = { GamesPerMatch = 2; Rounds = tourny.Rounds; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
+                let swissOptions =
+                  let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
+                  let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
+                  { baseOptions with Rounds = rounds }
+                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode }
                 Utilities.Validation.validateTournamentInput updatedTourny
                 updatedTourny
               else 
                 //let enginesTest = createEnginesFromFolder "C:/Dev/Chess/Networks/CeresLatest" |> Seq.toList
                 //(enginesTest |> List.head).IsChallenger <- true
                 //let engineSetup = {tourny.EngineSetup with Engines = enginesTest}
-                let cupDefaults = { GamesPerMatch = 2; RoundPairIncrements = []; SeedBands = []; RandomizeSeedBands = false; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
+                let cupDefaults = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
                 let cupOptions = if obj.ReferenceEquals(tourny.CupOptions, null) then cupDefaults else tourny.CupOptions
                 let tournamentMode =
                   if String.IsNullOrWhiteSpace tourny.TournamentMode then "RR" else tourny.TournamentMode
@@ -4297,7 +4944,12 @@ module Manager =
                   match consumeCupBracketPathOverride () with
                   | Some overridePath -> { cupOptions with BracketPath = overridePath }
                   | None -> cupOptions
-                { tourny with CupOptions = cupOptions; TournamentMode = tournamentMode }
+                let swissDefaults = { GamesPerMatch = 2; Rounds = tourny.Rounds; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
+                let swissOptions =
+                  let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
+                  let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
+                  { baseOptions with Rounds = rounds }
+                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode }
         
             let openingPath = 
               match tourny.Opening.OpeningsPath with
@@ -4346,10 +4998,9 @@ module Manager =
               Match.gauntlet logger tournament sendResponse cts tryGetUserAdjudication
           | "cup" ->
               let resumeRequested = consumeCupResumeRequested ()
-              Match.cup tournament.CupOptions.GamesPerMatch seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication
+              Match.cup seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication
           | "swiss" ->
-              logger.LogError("Swiss tournaments are not implemented yet.")
-              async { return [] }
+              Match.swiss logger tournament sendResponse cts tryGetUserAdjudication
           | "rr" | "roundrobin" | "round-robin" | _ ->
               Match.roundRobin logger tournament sendResponse cts tryGetUserAdjudication            
       

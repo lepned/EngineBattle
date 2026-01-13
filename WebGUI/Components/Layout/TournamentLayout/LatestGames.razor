@@ -5,7 +5,7 @@
 style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
             --max-height: @(tableHeight > 0 ? $"{tableHeight}px" : "auto");">
   <div class="header">
-    <span class="header-text">Latest games</span>
+    <span class="header-text">Latest games@(HeaderSuffix)</span>
   </div>
   <div class="table-wrapper">
     <table class="custom-table">
@@ -55,6 +55,9 @@ style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
 
   [Parameter]
   public int TableHeight { get; set; }
+
+  [Parameter]
+  public string HeaderSuffix { get; set; } = "";
 
   private int fontSize = 12;
   private int tableHeight = 0;

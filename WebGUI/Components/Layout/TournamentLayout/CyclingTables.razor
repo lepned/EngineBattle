@@ -6,13 +6,13 @@
   @if (activeTableIndex == 0)
   {
     <div class="table-wrapper active">
-      <LatestGames FontSize=@fontSizeLatestGames Results="@Results" TableHeight="@tableHeight" />
+      <LatestGames FontSize=@fontSizeLatestGames Results="@Results" TableHeight="@tableHeight" HeaderSuffix="@HeaderSuffix" />
     </div>
   }
   else
   {
     <div class="table-wrapper">
-      <Pairings FontSize=@fontSizePairing PairingList="@Pairings" TableHeight="@tableHeight" />
+      <Pairings FontSize=@fontSizePairing PairingList="@Pairings" TableHeight="@tableHeight" HeaderSuffix="@HeaderSuffix" />
     </div>
   }
 </div>
@@ -38,6 +38,9 @@
 
   [Parameter]
   public int TableHeight { get; set; }
+
+  [Parameter]
+  public string HeaderSuffix { get; set; } = "";
 
   private int tableHeight = 0;
   private int fontSizePairing = 12;

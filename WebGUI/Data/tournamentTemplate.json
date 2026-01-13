@@ -50,14 +50,20 @@
     "OpeningsTwice": true
   },
   "CupOptions": {
-    "GamesPerMatch": 2,
     "RoundPairIncrements": [],
-    "SeedBands": [],
-    "RandomizeSeedBands": false,
     "SeedingStrategy": "ByRating",
     "UniquePerMatchOnly": false,
     "BracketPath": "wwwroot/cup_bracket.json",
     "RandomOpenings": false
+  },
+  "SwissOptions": {
+    "GamesPerMatch": 2,
+    "Rounds": 0,
+    "SeedGroupCount": 4,
+    "UniquePerMatchOnly": false,
+    "RandomOpenings": false,
+    "AllowExtraPairsOnTie": false,
+    "StatePath": "wwwroot/swiss_state.json"
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

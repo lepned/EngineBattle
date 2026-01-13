@@ -1,0 +1,57 @@
+@using System.IO
+
+<MudDialog>
+    <DialogContent>
+        @if (ShowActions)
+        {
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h5">@Title</MudText>
+                <MudText Typo="Typo.body2">@Subtitle</MudText>
+                <SwissOverviewView UseContainer="false" ShowPath="false" ShowRefresh="false" StateFileName="@StateFileName" />
+            </MudStack>
+        }
+        else
+        {
+            <SwissOverviewView UseContainer="false" ShowPath="false" ShowRefresh="false" StateFileName="@StateFileName" />
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (ShowActions)
+        {
+            <MudButton Disabled="@(SwissInvalid || SwissCompleted)" Color="Color.Primary" Variant="Variant.Filled" OnClick="Resume">@ResumeLabel</MudButton>
+            <MudButton Color="Color.Secondary" Variant="Variant.Outlined" OnClick="StartNew">Start New</MudButton>
+            <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public string StatePath { get; set; } = "";
+    [Parameter] public bool SwissCompleted { get; set; }
+    [Parameter] public bool SwissInvalid { get; set; }
+    [Parameter] public bool ShowActions { get; set; }
+
+    private string StateFileName =>
+        string.IsNullOrWhiteSpace(StatePath)
+            ? "swiss_state.json"
+            : Path.GetFileName(StatePath);
+
+    private string Title =>
+        SwissInvalid ? "Swiss state is unreadable" :
+        SwissCompleted ? "Swiss tournament completed" :
+        "Resume swiss tournament?";
+
+    private string Subtitle =>
+        SwissInvalid
+            ? "State file could not be read. You can start a new swiss or cancel."
+            : SwissCompleted
+                ? "All rounds are decided. You can start a new swiss or cancel."
+                : "Existing swiss state found. Choose to resume or start a new swiss.";
+
+    private string ResumeLabel => SwissCompleted ? "Resume (disabled)" : "Resume";
+
+    private void Resume() => MudDialog.Close(DialogResult.Ok("resume"));
+    private void StartNew() => MudDialog.Close(DialogResult.Ok("new"));
+    private void Cancel() => MudDialog.Cancel();
+}
