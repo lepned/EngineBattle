@@ -81,12 +81,12 @@
                                             <span class="pairing-id">#@pairing.PairId</span>
                                             <span class="pairing-score">@FormatScore(pairing.ScoreA, pairing.ScoreB)</span>
                                         </div>
-                                        <div class="pairing-row">
+                                        <div class="pairing-row @(GetWinnerClass(pairing, true))">
                                             <span class="pairing-name">@pairing.PlayerA</span>
                                             <span class="pairing-rating">@FormatRating(pairing.PlayerARating)</span>
                                             <span class="pairing-score">@pairing.ScoreA.ToString("0.0")</span>
                                         </div>
-                                        <div class="pairing-row">
+                                        <div class="pairing-row @(GetWinnerClass(pairing, false))">
                                             <span class="pairing-name">@pairing.PlayerB</span>
                                             <span class="pairing-rating">@FormatRating(pairing.PlayerBRating)</span>
                                             <span class="pairing-score">@pairing.ScoreB.ToString("0.0")</span>
@@ -263,6 +263,29 @@ else
     private static string FormatRating(int rating) => rating > 0 ? rating.ToString() : "--";
 
     private static string FormatScore(double scoreA, double scoreB) => $"{scoreA:0.0}-{scoreB:0.0}";
+
+    private static string GetWinnerClass(SwissPairing pairing, bool isPlayerA)
+    {
+        if (pairing is null || !pairing.IsDecided)
+            return string.Empty;
+
+        if (string.IsNullOrWhiteSpace(pairing.PlayerA) || string.IsNullOrWhiteSpace(pairing.PlayerB))
+            return string.Empty;
+
+        if (pairing.PlayerA.Equals("BYE", StringComparison.OrdinalIgnoreCase)
+            || pairing.PlayerB.Equals("BYE", StringComparison.OrdinalIgnoreCase))
+        {
+            if (pairing.PlayerA.Equals("BYE", StringComparison.OrdinalIgnoreCase))
+                return isPlayerA ? "is-loser" : "is-winner";
+            return isPlayerA ? "is-winner" : "is-loser";
+        }
+
+        if (Math.Abs(pairing.ScoreA - pairing.ScoreB) < 0.0001)
+            return string.Empty;
+
+        var winnerIsA = pairing.ScoreA > pairing.ScoreB;
+        return winnerIsA == isPlayerA ? "is-winner" : "is-loser";
+    }
 
     private static async Task<string> ReadFileWithRetry(string path)
     {
@@ -448,6 +471,18 @@ else
     .pairing-score {
         font-variant-numeric: tabular-nums;
         font-weight: 600;
+    }
+
+    .pairing-row.is-winner {
+        color: #e7c873;
+    }
+
+    .pairing-row.is-winner .pairing-score {
+        color: #e7c873;
+    }
+
+    .pairing-row.is-loser {
+        color: #97a2b2;
     }
 
     .refresh-button {

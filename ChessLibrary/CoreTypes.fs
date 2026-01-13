@@ -1011,6 +1011,66 @@ module TypesDef =
           | first::rest ->
               let start = sprintf "Players: %s" first.Name
               rest |> List.fold (fun acc e -> sprintf "%s, %s" acc e.Name) start
+
+        member x.PlayerCount =
+          if obj.ReferenceEquals(x.EngineSetup, null) || obj.ReferenceEquals(x.EngineSetup.Engines, null) then 0
+          else x.EngineSetup.Engines.Length
+
+        member x.ModeLabel() =
+          if String.IsNullOrWhiteSpace x.TournamentMode then "RR" else x.TournamentMode
+
+        member x.EffectiveSwissRounds() =
+          if obj.ReferenceEquals(x.SwissOptions, null) then x.Rounds
+          elif x.SwissOptions.Rounds > 0 then x.SwissOptions.Rounds
+          else x.Rounds
+
+        member x.EffectiveCupRounds(playerCount: int) =
+          let mutable rounds = 0
+          let mutable remaining = playerCount
+          while remaining > 1 do
+            remaining <- remaining / 2
+            rounds <- rounds + 1
+          rounds
+
+        member x.EffectiveRounds() =
+          let mode = x.ModeLabel()
+          if mode.Equals("Swiss", StringComparison.OrdinalIgnoreCase) then x.EffectiveSwissRounds()
+          elif mode.Equals("Cup", StringComparison.OrdinalIgnoreCase) then x.EffectiveCupRounds(x.PlayerCount)
+          else x.Rounds
+
+        member x.ScheduleSummary() =
+          let mode = x.ModeLabel()
+          let players = x.PlayerCount
+          if mode.Equals("Swiss", StringComparison.OrdinalIgnoreCase) then
+            let rounds = x.EffectiveSwissRounds()
+            let gamesPerMatch = if obj.ReferenceEquals(x.SwissOptions, null) then 2 else x.SwissOptions.GamesPerMatch
+            let allowExtra = if obj.ReferenceEquals(x.SwissOptions, null) then false else x.SwissOptions.AllowExtraPairsOnTie
+            let byes = if players % 2 = 1 then " + 1 bye/round" else ""
+            let plannedGames = rounds * (players / 2) * gamesPerMatch
+            let extraPairs = if allowExtra then " + extra pairs on tie" else ""
+            sprintf "Schedule: players=%d, rounds=%d, games/match=%d, planned games=%d%s%s" players rounds gamesPerMatch plannedGames byes extraPairs
+          elif mode.Equals("Cup", StringComparison.OrdinalIgnoreCase) then
+            let rounds = x.EffectiveCupRounds(players)
+            let roundPairs =
+              if obj.ReferenceEquals(x.CupOptions, null) then [] else x.CupOptions.RoundPairIncrements
+            let pairsForRound roundNumber =
+              if roundPairs.IsEmpty then 1
+              else
+                let idx = Math.Max(0, roundNumber - 1)
+                if idx < roundPairs.Length then roundPairs.[idx] else roundPairs.[roundPairs.Length - 1]
+            let plannedGames =
+              [1 .. rounds]
+              |> List.sumBy (fun roundNumber ->
+                let matches = players / (1 <<< roundNumber)
+                let pairs = Math.Max(1, pairsForRound roundNumber)
+                matches * pairs * 2)
+            let pairsText =
+              if roundPairs.IsEmpty then "pairs/round=1"
+              else sprintf "pairs/round=%s" (roundPairs |> Seq.map string |> String.concat "-")
+            sprintf "Schedule: players=%d, rounds=%d, %s, planned games=%d (+ tiebreaks)" players rounds pairsText plannedGames
+          else
+            let rounds = x.Rounds
+            sprintf "Schedule: players=%d, rounds=%d" players rounds
         
         member x.FindTimeControl id = x.TimeControl.GetTimeConfig id
 
@@ -1143,19 +1203,48 @@ module TypesDef =
 
         member x.Summary() =
           let sb = new StringBuilder()
-          sb.AppendLine "Description:" |> ignore
-          sb.AppendLine (x.Hardware()) |> ignore
-          sb.AppendLine (sprintf "Rounds: %d" x.Rounds)  |> ignore
-          sb.AppendLine (x.Players()) |> ignore
-          sb.AppendLine (x.GauntletText()) |> ignore
-          sb.AppendLine (x.TimeControlText()) |> ignore
-          if x.Opening.OpeningsPath.IsSome then
-            sb.AppendLine (sprintf "Book: %s" (Path.GetFileName(x.Opening.OpeningsPath.Value))) |> ignore
-          else
-            sb.AppendLine "Book: No book" |> ignore
-          sb.AppendLine (x.TablebaseText()) |> ignore
+          let mode = x.ModeLabel()
+          let formatTimeOnly (time: TimeOnly) = time.ToString("HH:mm:ss.fff")
+          let openings =
+            let book =
+              if x.Opening.OpeningsPath.IsSome then Path.GetFileName(x.Opening.OpeningsPath.Value)
+              else "No book"
+            let parts = ResizeArray<string>()
+            parts.Add(sprintf "Book: %s" book)
+            parts.Add(sprintf "ply=%d" x.Opening.OpeningsPly)
+            parts.Add(sprintf "twice=%b" x.Opening.OpeningsTwice)
+            if mode.Equals("Swiss", StringComparison.OrdinalIgnoreCase) && not (obj.ReferenceEquals(x.SwissOptions, null)) then
+              parts.Add(sprintf "random=%b" x.SwissOptions.RandomOpenings)
+              parts.Add(sprintf "unique=%s" (if x.SwissOptions.UniquePerMatchOnly then "per match" else "global"))
+            elif mode.Equals("Cup", StringComparison.OrdinalIgnoreCase) && not (obj.ReferenceEquals(x.CupOptions, null)) then
+              parts.Add(sprintf "random=%b" x.CupOptions.RandomOpenings)
+              parts.Add(sprintf "unique=%s" (if x.CupOptions.UniquePerMatchOnly then "per match" else "global"))
+            String.Join(" | ", parts)
+          let tablebases =
+            if x.Adjudication.TBAdj.UseTBAdjudication then
+              sprintf "Tablebases: %d-man" x.Adjudication.TBAdj.TBMen
+            else
+              "Tablebases: off"
+
+          sb.AppendLine (sprintf "Run: %s" x.Name) |> ignore
+          sb.AppendLine (sprintf "Hardware: %s" (x.Hardware())) |> ignore
+          sb.AppendLine (sprintf "Mode: %s" mode) |> ignore
+          sb.AppendLine (x.ScheduleSummary()) |> ignore
+          let gauntlet = x.GauntletText()
+          if String.IsNullOrWhiteSpace(gauntlet) |> not then
+            sb.AppendLine gauntlet |> ignore
+          sb.AppendLine (sprintf "Time: %s | overhead=%s | min move=%dms | pondering=%b"
+                            (x.TimeControlText()) (formatTimeOnly x.MoveOverhead) x.MinMoveTimeInMS x.AllowPondering) |> ignore
+          sb.AppendLine openings |> ignore
+          sb.AppendLine tablebases |> ignore
           sb.AppendLine (x.AdjudicationText()) |> ignore
           sb.AppendLine (sprintf "Deviations: %d" x.DeviationCounter) |> ignore
+          if String.IsNullOrWhiteSpace x.PgnOutPath |> not then
+            if String.IsNullOrWhiteSpace x.ReferencePGNPath then
+              sb.AppendLine (sprintf "Output: %s" x.PgnOutPath) |> ignore
+            else
+              sb.AppendLine (sprintf "Output: %s | reference: %s" x.PgnOutPath x.ReferencePGNPath) |> ignore
+          sb.AppendLine (x.Players()) |> ignore
           sb.AppendLine (sprintf "Comment: %s" x.Description) |> ignore
           sb.ToString()
 
@@ -1178,19 +1267,21 @@ module TypesDef =
 
         member x.MinSummary() =
           let sb = new StringBuilder()
-          //sb.AppendLine "Description:" |> ignore      
-          sb.AppendLine (sprintf "Rounds: %d" x.Rounds)  |> ignore
-          sb.AppendLine (x.Players()) |> ignore
-          sb.AppendLine (x.GauntletText()) |> ignore
-          sb.AppendLine (x.TimeControlText()) |> ignore
-          if x.Opening.OpeningsPath.IsSome then
-            sb.AppendLine (sprintf "Book: %s" (Path.GetFileName(x.Opening.OpeningsPath.Value))) |> ignore
-          else
-            sb.AppendLine "Book: No book" |> ignore
+          let mode = x.ModeLabel()
+          sb.AppendLine (sprintf "Mode: %s" mode) |> ignore
+          sb.AppendLine (x.ScheduleSummary()) |> ignore
+          let gauntlet = x.GauntletText()
+          if String.IsNullOrWhiteSpace(gauntlet) |> not then
+            sb.AppendLine gauntlet |> ignore
+          sb.AppendLine (sprintf "Time: %s" (x.TimeControlText())) |> ignore
+          let book =
+            if x.Opening.OpeningsPath.IsSome then Path.GetFileName(x.Opening.OpeningsPath.Value)
+            else "No book"
+          sb.AppendLine (sprintf "Book: %s" book) |> ignore
           sb.AppendLine (x.TablebaseText()) |> ignore
           sb.AppendLine (x.AdjudicationText()) |> ignore
-          sb.AppendLine (sprintf "Deviations: %d" x.DeviationCounter) |> ignore
-          //sb.AppendLine (sprintf "Comment: %s" x.Description) |> ignore
+          sb.AppendLine (x.Players()) |> ignore
+          sb.AppendLine (sprintf "Comment: %s" x.Description) |> ignore
           sb.ToString()
   
         member x.PrintTournamentSummary() =
