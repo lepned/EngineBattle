@@ -316,6 +316,7 @@
   .cross-modern-rank {
     color: #8fa3ff;
     font-weight: 600;
+    font-size: calc(var(--font-size, 16px) - 1px);
   }
 
   .cross-modern-player-name {
@@ -326,10 +327,16 @@
   .cross-modern-total {
     color: var(--muted);
     font-size: calc(var(--font-size, 16px) - 2px);
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
   }
 
   .cross-total-wdl {
     margin-left: 6px;
+    white-space: nowrap;
   }
 
   .cross-modern-pairs {
