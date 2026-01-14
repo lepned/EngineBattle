@@ -571,7 +571,7 @@
 		await Task.Delay(1000);
 		var options = new DialogOptions()
 		{
-			MaxWidth = MaxWidth.ExtraLarge,
+			MaxWidth = MaxWidth.ExtraExtraLarge,
 			FullWidth = true,
 			CloseButton = false,
 			Position = DialogPosition.TopCenter
@@ -582,7 +582,8 @@
 			{ "StatePath", GetSwissStatePath() },
 			{ "ShowActions", showActions },
 			{ "SwissCompleted", false },
-			{ "SwissInvalid", false }
+			{ "SwissInvalid", false },
+			{ "FontSize", layoutOptions.Fonts.SwissOverviewFont }
 		};
 		swissDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.SwissOverviewDialog>("", parameters, options);
 	}
@@ -590,7 +591,7 @@
 	async Task OpenCupBracketDialog()
 	{
 		CloseAllDialogs();
-		await Task.Delay(800);
+		await Task.Delay(1000);
 		var options = new DialogOptions()
 		{
 			MaxWidth = MaxWidth.ExtraLarge,
@@ -599,7 +600,11 @@
 			Position = DialogPosition.TopCenter
 		};
 
-		bracketDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupBracketDialog>("", options);
+		var parameters = new DialogParameters
+		{
+			{ "FontSize", layoutOptions.Fonts.CupBracketFont }
+		};
+		bracketDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupBracketDialog>("", parameters, options);
 	}
 
 	void CloseDialog() => dialogReference?.Close();

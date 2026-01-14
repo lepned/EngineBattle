@@ -86,6 +86,8 @@
       "PVLabelFont": 21,
       "StandingsFont": 20,
       "CrossTableFont": 22,
+      "CupBracketFont": 20,
+      "SwissOverviewFont": 20,
       "PairingsFont": 16,
       "LatestGamesFont": 16
     },

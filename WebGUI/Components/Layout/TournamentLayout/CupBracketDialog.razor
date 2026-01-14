@@ -1,9 +1,10 @@
 <MudDialog>
     <DialogContent>
-        <CupBracketView UseContainer="false" ShowPath="false" ShowRefresh="false" />
+        <CupBracketView UseContainer="false" ShowPath="false" ShowRefresh="false" FontSize="@FontSize" />
     </DialogContent>
 </MudDialog>
 
 @code {
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public int FontSize { get; set; }
 }

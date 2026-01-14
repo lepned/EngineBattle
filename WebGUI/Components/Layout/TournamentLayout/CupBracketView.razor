@@ -93,14 +93,14 @@
 @if (UseContainer)
 {
     <MudContainer Class="pa-4">
-        <MudPaper Class="pa-4 bracket-shell">
+        <MudPaper Class="pa-4 bracket-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
             @content
         </MudPaper>
     </MudContainer>
 }
 else
 {
-    <MudPaper Class="pa-4 bracket-shell">
+    <MudPaper Class="pa-4 bracket-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
         @content
     </MudPaper>
 }
@@ -112,6 +112,7 @@ else
     [Parameter] public bool ShowRefresh { get; set; } = true;
     [Parameter] public bool UseContainer { get; set; } = true;
     [Parameter] public string BracketFileName { get; set; } = "cup_bracket.json";
+    [Parameter] public int FontSize { get; set; }
 
     private CupBracketModel bracket;
     private string loadError;
@@ -466,6 +467,8 @@ else
         border: 1px solid #2b2f3a;
         color: #e8edf2;
         min-height: 70vh;
+        --row-height: calc(var(--font-size, 16px) * 2.6);
+        --row-gap: calc(var(--font-size, 16px) * 0.9);
     }
 
     .bracket-grid {
@@ -498,8 +501,8 @@ else
 
     .round-grid {
         display: grid;
-        grid-template-rows: repeat(var(--round-rows), 34px);
-        row-gap: 18px;
+        grid-template-rows: repeat(var(--round-rows), var(--row-height));
+        row-gap: var(--row-gap);
     }
 
     .match-card {
@@ -551,7 +554,7 @@ else
         display: flex;
         justify-content: space-between;
         align-items: center;
-        font-size: 0.75rem;
+        font-size: calc(var(--font-size, 16px) - 4px);
         color: #9aa4b2;
         margin-bottom: 2px;
     }
@@ -561,7 +564,7 @@ else
         grid-template-columns: 22px 1fr auto auto;
         gap: 6px;
         align-items: center;
-        font-size: 0.9rem;
+        font-size: calc(var(--font-size, 16px) - 2px);
         padding: 2px 0;
     }
 
@@ -573,7 +576,7 @@ else
     }
 
     .player-rating {
-        font-size: 0.75rem;
+        font-size: calc(var(--font-size, 16px) - 4px);
         color: #98a6b7;
     }
 

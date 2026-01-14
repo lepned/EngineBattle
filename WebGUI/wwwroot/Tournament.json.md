@@ -91,6 +91,8 @@ This document provides an overview of the `tournament.json` configuration file u
   - **PVLabelFont**: Font size for the PV label below the chessboard.
   - **StandingsFont**: Font size for the standings table.
   - **CrossTableFont**: Font size for the cross table.
+  - **CupBracketFont**: Font size for the cup bracket overview.
+  - **SwissOverviewFont**: Font size for the swiss overview.
   - **PairingsFont**: Font size for the pairings table.
   - **LatestGamesFont**: Font size for the latest games.
 - **Sizes**:
@@ -214,6 +216,8 @@ This document provides an overview of the `tournament.json` configuration file u
       "PVLabelFont": 21,
       "StandingsFont": 20,
       "CrossTableFont": 22,
+      "CupBracketFont": 20,
+      "SwissOverviewFont": 20,
       "PairingsFont": 16,
       "LatestGamesFont": 16
     },

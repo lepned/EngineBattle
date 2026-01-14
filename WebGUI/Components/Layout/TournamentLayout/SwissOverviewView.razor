@@ -39,7 +39,7 @@
         else
         {
             <MudGrid Class="mt-4" Spacing="3">
-                <MudItem xs="12" md="5">
+                <MudItem xs="12" md="6">
                     <MudPaper Class="pa-3 swiss-panel">
                         <MudText Typo="Typo.h6">Standings</MudText>
                         <MudTable Items="standings" Dense="true" Hover="true" Class="mt-2">
@@ -64,7 +64,7 @@
                         </MudTable>
                     </MudPaper>
                 </MudItem>
-                <MudItem xs="12" md="7">
+                <MudItem xs="12" md="6">
                     <MudPaper Class="pa-3 swiss-panel">
                         <MudText Typo="Typo.h6">@currentRoundLabel</MudText>
                         @if (currentRound is null)
@@ -105,14 +105,14 @@
 @if (UseContainer)
 {
     <MudContainer Class="pa-4">
-        <MudPaper Class="pa-4 swiss-shell">
+        <MudPaper Class="pa-4 swiss-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
             @content
         </MudPaper>
     </MudContainer>
 }
 else
 {
-    <MudPaper Class="pa-4 swiss-shell">
+    <MudPaper Class="pa-4 swiss-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
         @content
     </MudPaper>
 }
@@ -124,6 +124,7 @@ else
     [Parameter] public bool ShowRefresh { get; set; } = true;
     [Parameter] public bool UseContainer { get; set; } = true;
     [Parameter] public string StateFileName { get; set; } = "swiss_state.json";
+    [Parameter] public int FontSize { get; set; }
 
     private SwissStateModel state;
     private string loadError;
@@ -415,6 +416,8 @@ else
         border: 1px solid #2a3142;
         color: #e8edf2;
         min-height: 60vh;
+        --pairing-gap: calc(var(--font-size, 16px) * 0.7);
+        --pairing-padding: calc(var(--font-size, 16px) * 0.7);
     }
 
     .swiss-panel {
@@ -426,13 +429,13 @@ else
 
     .pairing-list {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(calc(220px + var(--font-size, 16px) * 4), 1fr));
+        gap: var(--pairing-gap);
         margin-top: 12px;
     }
 
     .pairing-card {
-        padding: 10px 12px;
+        padding: var(--pairing-padding);
         border-radius: 10px;
         background: #1c2335;
         border: 1px solid #343a49;
@@ -443,16 +446,16 @@ else
         display: flex;
         justify-content: space-between;
         color: #9aa4b2;
-        font-size: 0.75rem;
+        font-size: calc(var(--font-size, 16px) - 4px);
         margin-bottom: 4px;
     }
 
     .pairing-row {
         display: grid;
         grid-template-columns: 1fr auto auto;
-        gap: 6px;
+        gap: calc(var(--font-size, 16px) * 0.35);
         align-items: center;
-        font-size: 0.95rem;
+        font-size: calc(var(--font-size, 16px) - 1px);
         padding: 2px 0;
     }
 
@@ -464,7 +467,7 @@ else
     }
 
     .pairing-rating {
-        font-size: 0.75rem;
+        font-size: calc(var(--font-size, 16px) - 4px);
         color: #9aa4b2;
     }
 
@@ -492,5 +495,12 @@ else
 
     .refresh-row {
         align-items: center;
+    }
+
+    .swiss-shell .mud-table,
+    .swiss-shell .mud-table-cell,
+    .swiss-shell .mud-table-head,
+    .swiss-shell .mud-table-body {
+        font-size: var(--font-size, 16px);
     }
 </style>

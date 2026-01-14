@@ -1,4 +1,4 @@
-<div class="cross-modern-shell">
+<div class="cross-modern-shell" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
   <div class="cross-modern-header">
     <div class="cross-modern-title">Crosstable</div>
     <div class="cross-modern-subtitle">Last game: @gameResultHeader</div>
@@ -254,6 +254,7 @@
 
   .cross-modern-player-name {
     font-weight: 600;
+    font-size: calc(var(--font-size, 16px));
   }
 
   .cross-modern-total {

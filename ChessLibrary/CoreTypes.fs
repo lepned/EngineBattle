@@ -874,6 +874,8 @@ module TypesDef =
         PairingsFont: int
         LatestGamesFont: int
         CrossTableFont: int
+        CupBracketFont: int
+        SwissOverviewFont: int
         MoveListFont: int
         InfoBannerFont: int
         TournamentDescFont: int
@@ -916,6 +918,8 @@ module TypesDef =
                 PairingsFont = 12
                 LatestGamesFont = 12
                 CrossTableFont = 13
+                CupBracketFont = 16
+                SwissOverviewFont = 16
                 MoveListFont = 15
                 InfoBannerFont = 14
                 TournamentDescFont = 12
