@@ -1211,6 +1211,34 @@ module Hash =
     let hashBytes = sha256.ComputeHash(bytes)
     BitConverter.ToString(hashBytes).Replace("-", "").ToLower()
 
+  let private openingHashText (game: PgnGame) =
+      let sb = new StringBuilder()
+      let fen =
+        if String.IsNullOrWhiteSpace game.GameMetaData.Fen then game.Fen else game.GameMetaData.Fen
+      if String.IsNullOrEmpty fen |> not then
+        sb.AppendLine(sprintf "[Fen \"%s\"]" fen ) |> ignore
+      let sanMoves =
+        let moves = game.Mainline |> Seq.takeWhile (fun m -> m.Comment.Contains "book") |> Seq.toList
+        if moves.Length = 0 then
+          // take while comment is empty
+          game.Mainline |> Seq.takeWhile (fun m -> m.Comment = "") |> Seq.toList
+        else
+          moves
+      for m in sanMoves do
+          if m.Color = "w" then
+            sb.Append(sprintf "%d.%s " m.MoveNumber m.San) |> ignore
+          elif m.Color = "b" then
+            sb.Append(sprintf "%s " m.San) |> ignore
+      sb.AppendLine() |> ignore
+      sb.ToString()
+
+  let computeOpeningHashFromGame (game: PgnGame) =
+      let openingText = openingHashText game
+      if String.IsNullOrWhiteSpace openingText then
+        computeOpeningHash (game.GameNumber.ToString())
+      else
+        computeOpeningHash openingText
+
   let hashBoard board =       
       let zobrist = ZobrishHash.computeZobrist board      
       zobrist      
@@ -1236,28 +1264,9 @@ module Hash =
       else
         sprintf "Nr %i: %s" game.GameNumber game.Fen
 
-  let writeOpeningHashToPgnGame (game: PgnGame)  =      
-      let sb = new StringBuilder()
-      let sanMoves = 
-        let moves = game.Mainline |> Seq.takeWhile (fun m -> m.Comment.Contains "book") |> Seq.toList
-        if moves.Length = 0 then
-          //take while white or black comment is empty
-          game.Mainline |> Seq.takeWhile (fun m -> m.Comment = "") |> Seq.toList
-        else
-          moves
-      let fen = game.GameMetaData.Fen
-      if String.IsNullOrEmpty fen |> not then
-        sb.AppendLine(sprintf "[Fen \"%s\"]" fen ) |> ignore
-      for m in sanMoves do
-          if m.Color = "w" then            
-            sb.Append(sprintf "%d.%s " m.MoveNumber m.San) |> ignore          
-          elif m.Color = "b" then
-            sb.Append(sprintf "%s " m.San) |> ignore
-      //sb.Append("*") |> ignore
-      sb.AppendLine() |> ignore
-      let openingText = sb.ToString()
-      game.GameMetaData.OpeningHash <- computeOpeningHash openingText      
-      
+  let writeOpeningHashToPgnGame (game: PgnGame) =
+      game.GameMetaData.OpeningHash <- computeOpeningHashFromGame game
+     
 
 module Pentanomial =
   type Bucket =
@@ -1320,13 +1329,10 @@ module Pentanomial =
     else failwith $"Invalid pentanomial sum (expected 0/0.5/1/1.5/2): {sum}"
 
   let private stableOpeningHash (game: PGNTypes.PgnGame) =
-    let h = game.GameMetaData.OpeningHash
-    if String.IsNullOrWhiteSpace h |> not then h
+    if String.IsNullOrWhiteSpace game.GameMetaData.OpeningHash |> not then 
+        game.GameMetaData.OpeningHash
     else
-      if String.IsNullOrWhiteSpace game.Raw then
-        Hash.computeOpeningHash (game.GameNumber.ToString())
-      else
-        Hash.computeOpeningHash game.Raw
+      Hash.computeOpeningHashFromGame game
 
   let private incBucket (bucket: Bucket) (counts: Counts) =
     match bucket with
@@ -2218,61 +2224,8 @@ module PGNCalculator =
         calculateStatistics players tournamentResults |> processStat []
 
 
-module PairingHelper =
-
-  let seededKnockoutPairings (players: EngineConfig list) (opening: PGNTypes.PgnGame) =
-    let sorted = players |> List.sortByDescending (fun e -> e.Rating)
-    let rec pair (acc: _ list) lst =
-        match lst with
-        | [] -> acc
-        | [single] -> acc // Odd player: bye (handle separately if needed)
-        | hi::tl ->
-            match List.rev tl with
-            | [] -> acc // Should not happen, but safe
-            | lo::midRev ->
-                let mid = List.rev midRev
-                let openingHash =
-                    if System.String.IsNullOrWhiteSpace opening.Raw then
-                        Hash.computeOpeningHash (opening.GameNumber.ToString())
-                    else
-                        Hash.computeOpeningHash opening.Raw
-                let pairing = { Opening = opening; White = hi; Black = lo; GameNr = acc.Length + 1; RoundNr = $"1.{acc.Length+1}"; OpeningHash = openingHash }
-                pair (pairing :: acc) mid
-    pair [] sorted |> List.rev
-        
-    /// Generate knockout pairings for a single round
-  let knockoutRound (players: EngineConfig list) (opening: PGNTypes.PgnGame) =
-    let shuffled = players |> List.toArray
-    Random.Shuffle(shuffled) // Optional: randomize seeding
-    let pairs =
-        shuffled
-        |> Array.chunkBySize 2
-        |> Array.choose (function
-            | [|w; b|] -> Some (w, b)
-            | [|w|] -> None // Odd player: bye (advance automatically)
-            | _ -> None)
-    pairs
-    |> Array.mapi (fun idx (w, b) ->
-        let openingHash =
-            if System.String.IsNullOrWhiteSpace opening.Raw then
-                Hash.computeOpeningHash (opening.GameNumber.ToString())
-            else
-                Hash.computeOpeningHash opening.Raw
-        { Opening = opening; White = w; Black = b; GameNr = idx + 1; RoundNr = $"1.{idx+1}"; OpeningHash = openingHash }
-    )
-    |> Array.toList
-
-    /// Recursively generate all rounds for a knockout tournament
-  let rec knockoutTournament (players: EngineConfig list) (openings: PGNTypes.PgnGame list) =
-    match players with
-    | [] | [_] -> [] // No games if 0 or 1 player
-    | _ ->
-        let opening = List.head openings // Use the same opening or rotate as needed
-        let round = knockoutRound players opening
-        // After games are played, collect winners and call recursively for next round
-        // Here, you need to determine winners from results and pass them to the next round
-        round // For pairing generation only; actual tournament logic needs to process results
-
+module PairingHelper =  
+    
   type CupSeedingStrategy =
     | Random
     | ByRating
@@ -2409,11 +2362,7 @@ module PairingHelper =
         0
     else
         let total = openings.Length
-        let inline openingHash (opening: PGNTypes.PgnGame) =
-            if System.String.IsNullOrWhiteSpace opening.Raw then
-                Hash.computeOpeningHash (opening.GameNumber.ToString())
-            else
-                Hash.computeOpeningHash opening.Raw
+        let inline openingHash (opening: PGNTypes.PgnGame) = Hash.computeOpeningHashFromGame opening
         let rec loop offset =
             if offset >= total then
                 startIndex % total
@@ -2527,11 +2476,7 @@ module PairingHelper =
         let mutable index = startIndex
         for _ in 0 .. gamesPerPair - 1 do
           let opening = openings.[index % openings.Length]
-          let openingHash =
-            if System.String.IsNullOrWhiteSpace opening.Raw then
-              Hash.computeOpeningHash (opening.GameNumber.ToString())
-            else
-              Hash.computeOpeningHash opening.Raw
+          let openingHash = Hash.computeOpeningHashFromGame opening
           planned.Add(
             { Opening = opening
               White = whiteFirst
@@ -2574,11 +2519,7 @@ module PairingHelper =
             let mutable subIndex = 0
             for openingOffset in 0 .. openingsPerMatch - 1 do
                 let opening = openings.[(pairIndex + openingOffset) % openings.Length]
-                let openingHash =
-                    if System.String.IsNullOrWhiteSpace opening.Raw then
-                        Hash.computeOpeningHash (opening.GameNumber.ToString())
-                    else
-                        Hash.computeOpeningHash opening.Raw
+                let openingHash = Hash.computeOpeningHashFromGame opening
                 subIndex <- subIndex + 1
                 yield { Opening = opening; White = w; Black = b; GameNr = 0; RoundNr = $"{opening.GameNumber}.{subIndex}"; OpeningHash = openingHash }
                 subIndex <- subIndex + 1
@@ -2632,11 +2573,7 @@ module PairingHelper =
       [ let mutable subIndex = 0
         for o in opponents do
           for p in challengers do
-            let openingHash = 
-                if String.IsNullOrWhiteSpace opening.Raw then
-                    Hash.computeOpeningHash (opening.GameNumber.ToString())
-                else
-                    Hash.computeOpeningHash opening.Raw
+            let openingHash = Hash.computeOpeningHashFromGame opening
             subIndex <- subIndex + 1                
             let roundString = $"{opening.GameNumber}.{subIndex}"
             let roundMatches : Pairing list= [{Opening = opening; White=p; Black=o; GameNr = 0; RoundNr= roundString; OpeningHash = openingHash }] // Main player has white pieces
@@ -2700,11 +2637,7 @@ module PairingHelper =
                         (w, b)
                     else
                         (b, w)
-                let openingHash =
-                    if String.IsNullOrWhiteSpace opening.Raw then
-                        Hash.computeOpeningHash (opening.GameNumber.ToString())
-                    else
-                        Hash.computeOpeningHash opening.Raw
+                let openingHash = Hash.computeOpeningHashFromGame opening
                 let roundString = $"{opening.GameNumber}.{1}"
                 yield {
                     Opening = opening

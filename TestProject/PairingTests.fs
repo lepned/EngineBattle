@@ -14,6 +14,20 @@ let private mkEngine name =
 let private mkOpening gameNr =
     { PgnGame.Empty gameNr with Raw = $"opening-{gameNr}" }
 
+let private mkPlyMove ply moveNumber color san comment =
+    { Ply = ply
+      MoveNumber = moveNumber
+      Color = color
+      San = san
+      Comment = comment
+      Nags = []
+      Variations = ResizeArray() }
+
+let private mkGameWithMoves gameNr fen (moves: PlyMove list) =
+    { PgnGame.Empty gameNr with
+        GameMetaData = { GameMetadata.Empty with Fen = fen }
+        Mainline = ResizeArray<PlyMove>(moves) }
+
 let private mkRatedPlayer name rating =
     { mkEngine name with Rating = rating }
 
@@ -53,6 +67,51 @@ let ``gauntletDoubleRound includes color-reversed rematches`` () =
     Assert.Equal(1, orderedPairs.[("A", "C")])
     Assert.Equal(1, orderedPairs.[("B", "A")])
     Assert.Equal(1, orderedPairs.[("C", "A")])
+
+[<Fact>]
+let ``opening hash is deterministic for identical content`` () =
+    let moves =
+        [ mkPlyMove 0 1 "w" "e4" ""
+          mkPlyMove 1 1 "b" "e5" "" ]
+    let game = mkGameWithMoves 1 "startpos" moves
+    let hash1 = Utilities.Hash.computeOpeningHashFromGame game
+    let hash2 = Utilities.Hash.computeOpeningHashFromGame game
+    Assert.Equal(hash1, hash2)
+
+[<Fact>]
+let ``opening hash changes when fen or moves change`` () =
+    let moves =
+        [ mkPlyMove 0 1 "w" "e4" ""
+          mkPlyMove 1 1 "b" "e5" "" ]
+    let game = mkGameWithMoves 1 "startpos" moves
+    let baseHash = Utilities.Hash.computeOpeningHashFromGame game
+
+    let gameDiffFen = { game with GameMetaData = { game.GameMetaData with Fen = "different" } }
+    let diffFenHash = Utilities.Hash.computeOpeningHashFromGame gameDiffFen
+    Assert.NotEqual<string>(baseHash, diffFenHash)
+
+    let movesDiff =
+        [ mkPlyMove 0 1 "w" "d4" ""
+          mkPlyMove 1 1 "b" "d5" "" ]
+    let gameDiffMoves = mkGameWithMoves 1 "startpos" movesDiff
+    let diffMovesHash = Utilities.Hash.computeOpeningHashFromGame gameDiffMoves
+    Assert.NotEqual<string>(baseHash, diffMovesHash)
+
+[<Fact>]
+let ``opening hash falls back to game number when empty`` () =
+    let hash1 = Utilities.Hash.computeOpeningHashFromGame (PgnGame.Empty 1)
+    let hash2 = Utilities.Hash.computeOpeningHashFromGame (PgnGame.Empty 2)
+    Assert.NotEqual<string>(hash1, hash2)
+
+[<Fact>]
+let ``opening hash uses fen when present (epd style)`` () =
+    let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    let game = mkGameWithMoves 1 fen []
+    let hash = Utilities.Hash.computeOpeningHashFromGame game
+    let expected =
+        let nl = System.Environment.NewLine
+        Utilities.Hash.computeOpeningHash (sprintf "[Fen \"%s\"]%s%s" fen nl nl)
+    Assert.Equal(expected, hash)
 
 [<Fact>]
 let ``round robin single round creates one game per unordered pair`` () =
@@ -464,10 +523,7 @@ let ``cup tiebreak picks unused opening when available`` () =
     let used =
         [ openings.[0]; openings.[1] ]
         |> Seq.map (fun o ->
-            if System.String.IsNullOrWhiteSpace o.Raw then
-                ChessLibrary.Utilities.Hash.computeOpeningHash (o.GameNumber.ToString())
-            else
-                ChessLibrary.Utilities.Hash.computeOpeningHash o.Raw)
+            Utilities.Hash.computeOpeningHashFromGame o)
         |> Set.ofSeq
     let idx = nextUnusedOpeningIndex used openings 0
     Assert.Equal(2, idx)
@@ -533,6 +589,179 @@ let ``cup auto seed bands randomize 5-8 when enabled`` () =
     Assert.True(results.Count > 1, "Band [5..8] should randomize within its slots.")
 
 [<Fact>]
+let ``swiss tournament with 8 players round 1 pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3100
+          mkRatedPlayer "Player3" 3000
+          mkRatedPlayer "Player4" 2900
+          mkRatedPlayer "Player5" 2800
+          mkRatedPlayer "Player6" 2700
+          mkRatedPlayer "Player7" 2600
+          mkRatedPlayer "Player8" 2500 ]
+    
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 1
+    
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+    
+    Assert.Equal(4, pairs.Length)
+    
+    let pairNames = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "Player4-Player8"; "Player3-Player7"; "Player2-Player6"; "Player1-Player5" ], pairNames)
+
+[<Fact>]
+let ``swiss tournament with 8 players round 2 pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3100
+          mkRatedPlayer "Player3" 3000
+          mkRatedPlayer "Player4" 2900
+          mkRatedPlayer "Player5" 2800
+          mkRatedPlayer "Player6" 2700
+          mkRatedPlayer "Player7" 2600
+          mkRatedPlayer "Player8" 2500 ]
+    
+    let scores =
+        [ "Player1", 1.0; "Player2", 1.0; "Player3", 1.0; "Player4", 1.0
+          "Player5", 0.0; "Player6", 0.0; "Player7", 0.0; "Player8", 0.0 ]
+        |> Map.ofList
+    
+    let priorPairs = 
+        Set.ofList [ 
+            swissPairKey "Player1" "Player5"
+            swissPairKey "Player2" "Player6"
+            swissPairKey "Player3" "Player7"
+            swissPairKey "Player4" "Player8"
+        ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+    
+    Assert.Equal(4, pairs.Length)
+    
+    let pairNames = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "Player6-Player8"; "Player5-Player7"; "Player2-Player4"; "Player1-Player3" ], pairNames)
+
+[<Fact>]
+let ``swiss tournament with 8 players round 3 pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3100
+          mkRatedPlayer "Player3" 3000
+          mkRatedPlayer "Player4" 2900
+          mkRatedPlayer "Player5" 2800
+          mkRatedPlayer "Player6" 2700
+          mkRatedPlayer "Player7" 2600
+          mkRatedPlayer "Player8" 2500 ]
+    
+    let scores =
+        [ "Player1", 2.0; "Player2", 2.0
+          "Player3", 1.0; "Player4", 1.0; "Player5", 1.0; "Player6", 1.0
+          "Player7", 0.0; "Player8", 0.0 ]
+        |> Map.ofList
+    
+    let priorPairs = 
+        Set.ofList [ 
+            swissPairKey "Player1" "Player5"
+            swissPairKey "Player2" "Player6"
+            swissPairKey "Player3" "Player7"
+            swissPairKey "Player4" "Player8"
+            swissPairKey "Player1" "Player3"
+            swissPairKey "Player2" "Player4"
+            swissPairKey "Player5" "Player7"
+            swissPairKey "Player6" "Player8"
+        ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+    
+    Assert.Equal(4, pairs.Length)
+    
+    let pairNames = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>([ "Player7-Player8"; "Player4-Player6"; "Player3-Player5"; "Player1-Player2" ], pairNames)
+
+[<Fact>]
+let ``swiss tournament 8 players round 1-3 no repeated pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3100
+          mkRatedPlayer "Player3" 3000
+          mkRatedPlayer "Player4" 2900
+          mkRatedPlayer "Player5" 2800
+          mkRatedPlayer "Player6" 2700
+          mkRatedPlayer "Player7" 2600
+          mkRatedPlayer "Player8" 2500 ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    
+    let round1Scores =
+        players |> List.map (fun p -> p.Name, 0.0) |> Map.ofList
+    let round1Pairs = swissRoundPairings players seedOrder round1Scores Set.empty Set.empty
+    
+    let round1PriorPairs =
+        round1Pairs
+        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> Set.ofList
+    
+    let round2Scores =
+        [ "Player1", 1.0; "Player2", 1.0; "Player3", 1.0; "Player4", 1.0
+          "Player5", 0.0; "Player6", 0.0; "Player7", 0.0; "Player8", 0.0 ]
+        |> Map.ofList
+    let round2Pairs = swissRoundPairings players seedOrder round2Scores round1PriorPairs Set.empty
+    
+    let round2PriorPairs =
+        round1PriorPairs
+        |> Set.union (round2Pairs |> List.map (fun (a, b) -> swissPairKey a.Name b.Name) |> Set.ofList)
+    
+    let round3Scores =
+        [ "Player1", 2.0; "Player2", 2.0
+          "Player3", 1.0; "Player4", 1.0; "Player5", 1.0; "Player6", 1.0
+          "Player7", 0.0; "Player8", 0.0 ]
+        |> Map.ofList
+    let round3Pairs = swissRoundPairings players seedOrder round3Scores round2PriorPairs Set.empty
+    
+    let allPairs =
+        round1Pairs @ round2Pairs @ round3Pairs
+        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+    
+    let uniquePairs = allPairs |> Set.ofList
+    
+    Assert.Equal(allPairs.Length, uniquePairs.Count)
+    Assert.Equal(12, uniquePairs.Count)
+
+[<Fact>]
+let ``swiss tournament 8 players round 1 correct pairing order with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3100
+          mkRatedPlayer "Player3" 3000
+          mkRatedPlayer "Player4" 2900
+          mkRatedPlayer "Player5" 2800
+          mkRatedPlayer "Player6" 2700
+          mkRatedPlayer "Player7" 2600
+          mkRatedPlayer "Player8" 2500 ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    let seedOrderNames = seedOrder |> List.map (fun p -> p.Name)
+    
+    Assert.Equal<string list>(
+        [ "Player1"; "Player2"; "Player3"; "Player4"; "Player5"; "Player6"; "Player7"; "Player8" ],
+        seedOrderNames)
+    
+    let scores = players |> List.map (fun p -> p.Name, 0.0) |> Map.ofList
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+    
+    Assert.Equal(4, pairs.Length)
+
+[<Fact>]
 let ``cup auto seed bands randomize 3-4 positions when enabled`` () =
     let players =
         [ mkRatedPlayer "P1" 8000
@@ -583,3 +812,244 @@ let ``cup auto seed bands avoid 1 vs 2 and 3 vs 4 in round one`` () =
         |> Set.ofList
     Assert.DoesNotContain(Set.ofList [ "P1"; "P2" ], pairNames)
     Assert.DoesNotContain(Set.ofList [ "P3"; "P4" ], pairNames)
+
+[<Fact>]
+let ``swiss tournament with 16 players round 1 pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3150
+          mkRatedPlayer "Player3" 3100
+          mkRatedPlayer "Player4" 3050
+          mkRatedPlayer "Player5" 3000
+          mkRatedPlayer "Player6" 2950
+          mkRatedPlayer "Player7" 2900
+          mkRatedPlayer "Player8" 2850
+          mkRatedPlayer "Player9" 2800
+          mkRatedPlayer "Player10" 2750
+          mkRatedPlayer "Player11" 2700
+          mkRatedPlayer "Player12" 2650
+          mkRatedPlayer "Player13" 2600
+          mkRatedPlayer "Player14" 2550
+          mkRatedPlayer "Player15" 2500
+          mkRatedPlayer "Player16" 2450 ]
+    
+    let scores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+    
+    let priorPairs = Set.empty
+    let seedOrder = tcecSeedOrder players 1
+    
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+    
+    Assert.Equal(8, pairs.Length)
+    
+    let pairNames = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>(
+        [ "Player8-Player16"; "Player7-Player15"; "Player6-Player14"; "Player5-Player13"
+          "Player4-Player12"; "Player3-Player11"; "Player2-Player10"; "Player1-Player9" ], 
+        pairNames)
+
+[<Fact>]
+let ``swiss tournament with 16 players round 2 pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3150
+          mkRatedPlayer "Player3" 3100
+          mkRatedPlayer "Player4" 3050
+          mkRatedPlayer "Player5" 3000
+          mkRatedPlayer "Player6" 2950
+          mkRatedPlayer "Player7" 2900
+          mkRatedPlayer "Player8" 2850
+          mkRatedPlayer "Player9" 2800
+          mkRatedPlayer "Player10" 2750
+          mkRatedPlayer "Player11" 2700
+          mkRatedPlayer "Player12" 2650
+          mkRatedPlayer "Player13" 2600
+          mkRatedPlayer "Player14" 2550
+          mkRatedPlayer "Player15" 2500
+          mkRatedPlayer "Player16" 2450 ]
+    
+    let scores =
+        [ "Player1", 1.0; "Player2", 1.0; "Player3", 1.0; "Player4", 1.0
+          "Player5", 1.0; "Player6", 1.0; "Player7", 1.0; "Player8", 1.0
+          "Player9", 0.0; "Player10", 0.0; "Player11", 0.0; "Player12", 0.0
+          "Player13", 0.0; "Player14", 0.0; "Player15", 0.0; "Player16", 0.0 ]
+        |> Map.ofList
+    
+    let priorPairs = 
+        Set.ofList [ 
+            swissPairKey "Player1" "Player9"
+            swissPairKey "Player2" "Player10"
+            swissPairKey "Player3" "Player11"
+            swissPairKey "Player4" "Player12"
+            swissPairKey "Player5" "Player13"
+            swissPairKey "Player6" "Player14"
+            swissPairKey "Player7" "Player15"
+            swissPairKey "Player8" "Player16"
+        ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+    
+    Assert.Equal(8, pairs.Length)
+    
+    let pairNames = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>(
+        [ "Player12-Player16"; "Player11-Player15"; "Player10-Player14"; "Player9-Player13"
+          "Player4-Player8"; "Player3-Player7"; "Player2-Player6"; "Player1-Player5" ], 
+        pairNames)
+
+[<Fact>]
+let ``swiss tournament with 16 players round 3 pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3150
+          mkRatedPlayer "Player3" 3100
+          mkRatedPlayer "Player4" 3050
+          mkRatedPlayer "Player5" 3000
+          mkRatedPlayer "Player6" 2950
+          mkRatedPlayer "Player7" 2900
+          mkRatedPlayer "Player8" 2850
+          mkRatedPlayer "Player9" 2800
+          mkRatedPlayer "Player10" 2750
+          mkRatedPlayer "Player11" 2700
+          mkRatedPlayer "Player12" 2650
+          mkRatedPlayer "Player13" 2600
+          mkRatedPlayer "Player14" 2550
+          mkRatedPlayer "Player15" 2500
+          mkRatedPlayer "Player16" 2450 ]
+    
+    let scores =
+        [ "Player1", 2.0; "Player2", 2.0; "Player3", 2.0; "Player4", 2.0
+          "Player5", 1.0; "Player6", 1.0; "Player7", 1.0; "Player8", 1.0
+          "Player9", 1.0; "Player10", 1.0; "Player11", 1.0; "Player12", 1.0
+          "Player13", 0.0; "Player14", 0.0; "Player15", 0.0; "Player16", 0.0 ]
+        |> Map.ofList
+    
+    let priorPairs = 
+        Set.ofList [ 
+            swissPairKey "Player1" "Player9"
+            swissPairKey "Player2" "Player10"
+            swissPairKey "Player3" "Player11"
+            swissPairKey "Player4" "Player12"
+            swissPairKey "Player5" "Player13"
+            swissPairKey "Player6" "Player14"
+            swissPairKey "Player7" "Player15"
+            swissPairKey "Player8" "Player16"
+            swissPairKey "Player1" "Player5"
+            swissPairKey "Player2" "Player6"
+            swissPairKey "Player3" "Player7"
+            swissPairKey "Player4" "Player8"
+            swissPairKey "Player9" "Player13"
+            swissPairKey "Player10" "Player14"
+            swissPairKey "Player11" "Player15"
+            swissPairKey "Player12" "Player16"
+        ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+    
+    Assert.Equal(8, pairs.Length)
+    
+    let pairNames = pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
+    Assert.Equal<string list>(
+        [ "Player14-Player16"; "Player13-Player15"; "Player8-Player12"; "Player7-Player11"
+          "Player6-Player10"; "Player5-Player9"; "Player2-Player4"; "Player1-Player3" ], 
+        pairNames)
+
+[<Fact>]
+let ``swiss tournament 16 players round 1-3 no repeated pairings with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3150
+          mkRatedPlayer "Player3" 3100
+          mkRatedPlayer "Player4" 3050
+          mkRatedPlayer "Player5" 3000
+          mkRatedPlayer "Player6" 2950
+          mkRatedPlayer "Player7" 2900
+          mkRatedPlayer "Player8" 2850
+          mkRatedPlayer "Player9" 2800
+          mkRatedPlayer "Player10" 2750
+          mkRatedPlayer "Player11" 2700
+          mkRatedPlayer "Player12" 2650
+          mkRatedPlayer "Player13" 2600
+          mkRatedPlayer "Player14" 2550
+          mkRatedPlayer "Player15" 2500
+          mkRatedPlayer "Player16" 2450 ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    
+    let round1Scores =
+        players |> List.map (fun p -> p.Name, 0.0) |> Map.ofList
+    let round1Pairs = swissRoundPairings players seedOrder round1Scores Set.empty Set.empty
+    
+    let round1PriorPairs =
+        round1Pairs
+        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+        |> Set.ofList
+    
+    let round2Scores =
+        [ "Player1", 1.0; "Player2", 1.0; "Player3", 1.0; "Player4", 1.0
+          "Player5", 1.0; "Player6", 1.0; "Player7", 1.0; "Player8", 1.0
+          "Player9", 0.0; "Player10", 0.0; "Player11", 0.0; "Player12", 0.0
+          "Player13", 0.0; "Player14", 0.0; "Player15", 0.0; "Player16", 0.0 ]
+        |> Map.ofList
+    let round2Pairs = swissRoundPairings players seedOrder round2Scores round1PriorPairs Set.empty
+    
+    let round2PriorPairs =
+        round1PriorPairs
+        |> Set.union (round2Pairs |> List.map (fun (a, b) -> swissPairKey a.Name b.Name) |> Set.ofList)
+    
+    let round3Scores =
+        [ "Player1", 2.0; "Player2", 2.0; "Player3", 2.0; "Player4", 2.0
+          "Player5", 1.0; "Player6", 1.0; "Player7", 1.0; "Player8", 1.0
+          "Player9", 1.0; "Player10", 1.0; "Player11", 1.0; "Player12", 1.0
+          "Player13", 0.0; "Player14", 0.0; "Player15", 0.0; "Player16", 0.0 ]
+        |> Map.ofList
+    let round3Pairs = swissRoundPairings players seedOrder round3Scores round2PriorPairs Set.empty
+    
+    let allPairs =
+        round1Pairs @ round2Pairs @ round3Pairs
+        |> List.map (fun (a, b) -> swissPairKey a.Name b.Name)
+    
+    let uniquePairs = allPairs |> Set.ofList
+    
+    Assert.Equal(allPairs.Length, uniquePairs.Count)
+    Assert.Equal(24, uniquePairs.Count)
+
+[<Fact>]
+let ``swiss tournament 16 players round 1 correct pairing order with seed group 1`` () =
+    let players =
+        [ mkRatedPlayer "Player1" 3200
+          mkRatedPlayer "Player2" 3150
+          mkRatedPlayer "Player3" 3100
+          mkRatedPlayer "Player4" 3050
+          mkRatedPlayer "Player5" 3000
+          mkRatedPlayer "Player6" 2950
+          mkRatedPlayer "Player7" 2900
+          mkRatedPlayer "Player8" 2850
+          mkRatedPlayer "Player9" 2800
+          mkRatedPlayer "Player10" 2750
+          mkRatedPlayer "Player11" 2700
+          mkRatedPlayer "Player12" 2650
+          mkRatedPlayer "Player13" 2600
+          mkRatedPlayer "Player14" 2550
+          mkRatedPlayer "Player15" 2500
+          mkRatedPlayer "Player16" 2450 ]
+    
+    let seedOrder = tcecSeedOrder players 1
+    let seedOrderNames = seedOrder |> List.map (fun p -> p.Name)
+    
+    Assert.Equal<string list>(
+        [ "Player1"; "Player2"; "Player3"; "Player4"; "Player5"; "Player6"; "Player7"; "Player8"
+          "Player9"; "Player10"; "Player11"; "Player12"; "Player13"; "Player14"; "Player15"; "Player16" ],
+        seedOrderNames)
+    
+    let scores = players |> List.map (fun p -> p.Name, 0.0) |> Map.ofList
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+    
+    Assert.Equal(8, pairs.Length)

@@ -101,6 +101,100 @@ let ``parseFullPgnGame does not hang on unterminated brace comment`` () : Task =
     }
 
 [<Fact>]
+let ``legacy PGN opening hash recompute matches book`` () =
+    let bookPath = @"C:\Dev\Chess\Temp\Book_VB.pgn"
+    let gamesPath = @"C:\Dev\Chess\Temp\GamesPlayed_VB.pgn"
+    if File.Exists(bookPath) && File.Exists(gamesPath) then
+        let bookGames = FullPGNParser.parsePgnFile bookPath |> Seq.toList
+        let bookHashes =
+            bookGames
+            |> Seq.map ChessLibrary.Utilities.Hash.computeOpeningHashFromGame
+            |> Set.ofSeq
+        let games = FullPGNParser.parsePgnFile gamesPath |> Seq.toList
+        Assert.True(games.Length >= 25, $"Expected at least 25 games, found {games.Length}")
+        for g in games do
+            let computed = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame g
+            Assert.True(
+                bookHashes.Contains computed,
+                $"Missing opening hash for game {g.GameMetaData.White} vs {g.GameMetaData.Black}")
+    else
+        ()
+
+[<Fact>]
+let ``legacy PGN next unused opening index matches first unused book entry`` () =
+    let bookPath = @"C:\Dev\Chess\Temp\Book_VB.pgn"
+    let gamesPath = @"C:\Dev\Chess\Temp\GamesPlayed_VB.pgn"
+    if File.Exists(bookPath) && File.Exists(gamesPath) then
+        let bookGames = FullPGNParser.parsePgnFile bookPath |> Seq.toList
+        let usedOpeningHashes =
+            FullPGNParser.parsePgnFile gamesPath
+            |> Seq.map ChessLibrary.Utilities.Hash.computeOpeningHashFromGame
+            |> Set.ofSeq
+        let startIndex = 0
+        let expectedIndex =
+            if bookGames.IsEmpty then
+                0
+            else
+                let total = bookGames.Length
+                let rec loop offset =
+                    if offset >= total then
+                        startIndex % total
+                    else
+                        let idx = (startIndex + offset) % total
+                        let hash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame bookGames.[idx]
+                        if usedOpeningHashes.Contains hash then
+                            loop (offset + 1)
+                        else
+                            idx
+                loop 0
+        let actualIndex =
+            ChessLibrary.Utilities.PairingHelper.nextUnusedOpeningIndex usedOpeningHashes bookGames startIndex
+        Assert.Equal(expectedIndex, actualIndex)
+        if bookGames.IsEmpty |> not then
+            let nextHash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame bookGames.[actualIndex]
+            Assert.True(usedOpeningHashes.Contains nextHash |> not)
+    else
+        ()
+
+[<Fact>]
+let ``legacy PGN round-robin resume ends on opening 25`` () =
+    let bookPath = @"C:\Dev\Chess\Temp\Book_VB.pgn"
+    let gamesPath = @"C:\Dev\Chess\Temp\GamesPlayed_VB.pgn"
+    if File.Exists(bookPath) && File.Exists(gamesPath) then
+        let bookGames = FullPGNParser.parsePgnFile bookPath |> Seq.toList
+        let games = FullPGNParser.parsePgnFile gamesPath |> Seq.toList
+        games
+            |> List.iter (fun g ->
+                let hash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame g
+                g.GameMetaData.OpeningHash <- hash )
+        let engines =
+            games
+            |> Seq.collect (fun g -> [ g.GameMetaData.White; g.GameMetaData.Black ])
+            |> Seq.distinct
+            |> Seq.map (fun name -> { EngineConfig.Empty with Name = name })
+            |> Seq.toList
+        let pairings = ChessLibrary.Utilities.PairingHelper.generateAllRoundRobinDoubleRounds engines bookGames
+        let playedSet = ChessLibrary.Utilities.PairingHelper.playedSet (games |> Seq.toArray)
+        let usedOpeningNumbers =
+            pairings
+            |> Seq.filter (fun p -> ChessLibrary.Utilities.PairingHelper.hasPlayedBefore p playedSet)
+            |> Seq.map (fun p -> p.Opening.GameNumber)
+            |> Seq.distinct
+            |> Seq.toList
+        let maxUsed = if usedOpeningNumbers.IsEmpty then -1 else usedOpeningNumbers |> List.max
+        Assert.Equal(25, maxUsed)
+        let opening = bookGames |> List.find (fun g -> g.GameNumber = maxUsed)
+        Assert.Equal("King's pawn opening", opening.GameMetaData.OpeningName)
+        let eco =
+            opening.GameMetaData.OtherTags
+            |> List.tryFind (fun t -> t.Key = "ECO")
+            |> Option.map (fun t -> t.Value)
+            |> Option.defaultValue ""
+        Assert.Equal("B00", eco)
+    else
+        ()
+
+[<Fact>]
 let ``calculateMedianNodes returns 0.0 for empty array`` () =
     let moves : ChessLibrary.TypesDef.Engine.EngineMoveStat array = [||]
     let result = ChessLibrary.Parser.PGNStatistics.calculateMedianNodes moves

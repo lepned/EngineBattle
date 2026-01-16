@@ -1573,7 +1573,7 @@ module EPDExtractor =
 
   let mapChessRecordToEPD (record: Tests.ChessRecord) n : EPDEntry =
     let fen = record.FEN  
-    let other = { RawInput = ""; FEN = fen; BestMove = None; AvoidMove = None; Id = Some (n.ToString()); Other = record.ToString() |> Some }
+    let other = { RawInput = record.ToString(); FEN = fen; BestMove = None; AvoidMove = None; Id = Some (n.ToString()); Other = record.ToString() |> Some }
     other
 
   let readEPDs (path:string) =

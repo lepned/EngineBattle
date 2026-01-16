@@ -2421,11 +2421,13 @@ module Match =
         [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
     
     let gamesAlreadyPlayed = 
-      let fileExists = File.Exists tourny.PgnOutPath      
-      if fileExists then
-        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
-      else
-        [||]
+        let fileExists = File.Exists tourny.PgnOutPath      
+        if fileExists then
+          let parsed = FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+          parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+          parsed
+        else
+          [||]
 
     let referencGamesPlayed =
       let fileExists = File.Exists tourny.ReferencePGNPath
@@ -2750,7 +2752,9 @@ module Match =
     let gamesAlreadyPlayed = 
       let fileExists = File.Exists tourny.PgnOutPath
       if fileExists then
-        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+          let parsed = FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+          parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+          parsed
       else
         [||]
     
@@ -3023,7 +3027,9 @@ module Match =
     let gamesAlreadyPlayed =
       let fileExists = File.Exists tourny.PgnOutPath
       if fileExists then
-        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        let parsed = FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+        parsed
       else
         [||]
 
@@ -3518,11 +3524,7 @@ module Match =
                     localOpeningIndex % matchOpenings.Length
                 localOpeningIndex <- openingIndexForMatch + 1
                 matchOpenings.[openingIndexForMatch]
-            let openingHash =
-              if String.IsNullOrWhiteSpace opening.Raw then
-                Hash.computeOpeningHash (opening.GameNumber.ToString())
-              else
-                Hash.computeOpeningHash opening.Raw
+            let openingHash = Hash.computeOpeningHashFromGame opening
             let playOrder =
               if hasOddGame then
                 let lastGame = matchInfo.Games.[matchInfo.Games.Count - 1]
@@ -3727,7 +3729,9 @@ module Match =
     let gamesAlreadyPlayed =
       let fileExists = File.Exists tourny.PgnOutPath
       if fileExists then
-        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        let parsed = FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+        parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+        parsed
       else
         [||]
 
@@ -3858,11 +3862,7 @@ module Match =
         state.NextOpeningIndex <- openingIndex
         opening
 
-    let getOpeningHash (opening: PGNTypes.PgnGame) =
-      if String.IsNullOrWhiteSpace opening.Raw then
-        Hash.computeOpeningHash (opening.GameNumber.ToString())
-      else
-        Hash.computeOpeningHash opening.Raw
+    let getOpeningHash (opening: PGNTypes.PgnGame) = Hash.computeOpeningHashFromGame opening
 
     let searchReplayList (pairing : Pairing) =
       let nextGame = pairing
@@ -4277,6 +4277,7 @@ module Match =
     swissAgent.Post DisposeSwissState
     return results
   }
+  
   let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback (cts: CancellationTokenSource) = async {
     let mutable counter = 0
     let mutable gameNr = 0
@@ -4307,7 +4308,9 @@ module Match =
     let gamesAlreadyPlayed = 
       let fileExists = File.Exists tourny.PgnOutPath      
       if fileExists then
-        FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+          let parsed = FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+          parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+          parsed
       else
         [||]    
     
@@ -4635,7 +4638,9 @@ module Match =
         let gamesAlreadyPlayed = 
             let fileExists = File.Exists tourny.PgnOutPath      
             if fileExists then
-                FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+                let parsed = FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
+                parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+                parsed
             else
                 [||]    
     
@@ -5233,7 +5238,9 @@ module Manager =
       let fileExists = File.Exists tournament.PgnOutPath
       if fileExists then
         let results = x.PgnReader.PostAndReply(fun reply -> Parser.FullPGNParser.GetPGNGames reply )
-        results        
+        // Always recompute opening hashes to keep resume logic compatible across versions.
+        results |> Seq.iter Hash.writeOpeningHashToPgnGame
+        results
       else              
         ResizeArray<PgnGame>()
  
