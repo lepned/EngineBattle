@@ -621,9 +621,11 @@ module TypesDef =
         static member Empty =
           { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = Misc.ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = [] }
     let createResult p1 p2 (moves: ResizeArray<string>) result reason gameTime =
-      { Player1 = p1; Player2 = p2; Moves = moves.Count; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []}
+      let moveCount = if moves.Count % 2 = 0 then moves.Count / 2 else (moves.Count / 2) + 1
+      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []}
     let createResultWithEval p1 p2 (moves: ResizeArray<string>) result reason gameTime evals =
-      { Player1 = p1; Player2 = p2; Moves = moves.Count; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals}
+      let moveCount = if moves.Count % 2 = 0 then moves.Count / 2 else (moves.Count / 2) + 1
+      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals}
 
 
     type PlayerResult = 
