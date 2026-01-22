@@ -17,12 +17,14 @@
 		<Compile Include="Utilities.fs" />
 		<Compile Include="Board.fs" />
 		<Compile Include="ArgsParser.fs" />
+		<Compile Include="WinboardProtocol.fs" />
+		<Compile Include="WinboardIntegration.fs" />
 		<Compile Include="Engine.fs" />
-		<Compile Include="Analysis.fs" />
+		<Compile Include="Analysis.fs" />		
 		<None Include="Tests\cccDownloader.fsx" />
 		<Compile Include="Tests\Chess960TestPositions.fs" />
 		<None Include="Tests\Script1.fsx" />
-		<None Include="Tests\testOfCliWrap.fsx" />
+		<None Include="Tests\testOfCliWrap.fsx" />		
 		<Compile Include="Tests\Perft.fs" />
 		<Compile Include="Tests\Test.fs" />
 		<Compile Include="Tournament.fs" />

@@ -31,7 +31,7 @@
         "ScoreType": "WDL_mu",
         "StrictTiming": true,
         "TimeManager": "legacy(book-ply-bonus=0.4)",
-        "SyzygyPath": "C:/Dev/Chess/TableBases/sygyzy",
+        "SyzygyPath": "C:/Dev/Chess/TableBases/syzygy",
         "VerboseMoveStats": true,        
         "LogLiveStats": true,
         "UCI_ShowWDL": true,        
@@ -40,4 +40,6 @@
     }
 
 ```
+
+
 

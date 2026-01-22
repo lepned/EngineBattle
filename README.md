@@ -17,7 +17,7 @@
 - **Lichess Puzzles:** Direct integration with Lichess puzzles, supporting policy head tests, value head tests, and combined evaluations.
 - **Visualization of Puzzles:** Automatically visualize puzzles that engines fail, clearly showing correct versus incorrect moves on an chessboard.
 
-### 🎯 Tournament Mode
+### 🎯 Tournament Features
 
 - **Prevent Move Deviation option:** Ensures consistent move ordering across game formats, beneficial in gauntlet and round-robin tournaments, even when transpositions occur.
 - **Fischer Random Chess (Chess960):** Supports Chess960, facilitating tests and tournaments with randomized starting positions.

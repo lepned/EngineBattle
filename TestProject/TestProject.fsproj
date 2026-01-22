@@ -18,6 +18,7 @@
 		<Compile Include="MoveHistoryDeviationTests.fs" />
 		<Compile Include="QBBOpsTests.fs" />
 		<Compile Include="LowLevelUtilTests.fs" />
+		<Compile Include="WinboardProbeTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

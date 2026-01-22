@@ -1,4 +1,4 @@
-﻿# Tournament Configuration
+# Tournament Configuration
 
 This document provides an overview of the `tournament.json` configuration file used in the EngineBattle application. This file defines the settings and parameters for running a chess engine tournament.
 
@@ -17,13 +17,14 @@ This document provides an overview of the `tournament.json` configuration file u
 - **VerboseMoveAnnotation**: Enable or disable detailed move annotations in the output (such as extra engine analysis for each move).
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
 - **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
+- **AllowPondering**: Allow engines to ponder during the opponent’s time.
+- **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
 - **Challengers**: Number of challengers in the tournament.
 - **Rounds**: Number of rounds in the tournament.
 - **PauseAfterRound**: Pause duration after each round in seconds.
 - **DelayBetweenGames**: Delay between games in HH:MM:SS:MMM format.
 - **MoveOverhead**: Move overhead time in HH:MM:SS:MMM format.
-- **OrdoExePath**: Path to Ordo.exe.
 
 ### Adjudication Options
 
@@ -52,21 +53,24 @@ This document provides an overview of the `tournament.json` configuration file u
 - **OpeningsPath**: Path to the openings file, either a PGN-file or an EPD-file.
 - **OpeningsPly**: Number of plies for openings.
 - **OpeningsTwice**: Use openings twice.
-- **CupOptions**: Options specific to cup tournaments.
-  - **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). If empty, defaults to one pair (2 games).
-  - **Seed bands**: Generated automatically from player count (1, 2, 3-4, 5-8, 9-16, ...). Seeds are randomized within each band.
-  - **SeedingStrategy**: "ByRating" or "Random".
-  - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
-  - **BracketPath**: Path for the generated cup bracket JSON file.
-  - **RandomOpenings**: True to randomize openings instead of using the list order.
-- **SwissOptions**: Options specific to swiss tournaments.
-  - **GamesPerMatch**: Number of games per match (even numbers recommended).
-  - **Rounds**: Number of rounds for swiss (defaults to global Rounds if 0).
-  - **SeedGroupCount**: Number of seed groups for TCEC-style seeding.
-  - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
-  - **RandomOpenings**: True to randomize openings instead of using the list order.
-  - **AllowExtraPairsOnTie**: True to play extra pairs if the top score is tied after scheduled rounds.
-  - **StatePath**: Path for the generated swiss state JSON file.
+
+### Cup Options
+
+- **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). If empty, defaults to one pair (2 games).
+- **SeedingStrategy**: "ByRating" or "Random".
+- **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
+- **BracketPath**: Path for the generated cup bracket JSON file.
+- **RandomOpenings**: True to randomize openings instead of using the list order.
+
+### Swiss Options
+
+- **GamesPerMatch**: Number of games per match (even numbers recommended).
+- **Rounds**: Number of rounds for swiss (defaults to global Rounds if 0).
+- **SeedGroupCount**: Number of seed groups for TCEC-style seeding.
+- **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
+- **RandomOpenings**: True to randomize openings instead of using the list order.
+- **AllowExtraPairsOnTie**: True to play extra pairs if the top score is tied after scheduled rounds.
+- **StatePath**: Path for the generated swiss state JSON file.
 
 ### Output Paths
 
@@ -88,6 +92,8 @@ This document provides an overview of the `tournament.json` configuration file u
   - **PVLabelFont**: Font size for the PV label below the chessboard.
   - **StandingsFont**: Font size for the standings table.
   - **CrossTableFont**: Font size for the cross table.
+  - **CupBracketFont**: Font size for the cup bracket overview.
+  - **SwissOverviewFont**: Font size for the swiss overview.
   - **PairingsFont**: Font size for the pairings table.
   - **LatestGamesFont**: Font size for the latest games.
 - **Sizes**:
@@ -136,13 +142,14 @@ This document provides an overview of the `tournament.json` configuration file u
   "VerboseMoveAnnotation": false,
   "MinMoveTimeInMS": 400,
   "TournamentMode": "RR",
+  "AllowPondering": false,
+  "EngineStartupTimeoutInSec": 900,
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
   "PauseAfterRound": 0,
   "DelayBetweenGames": "00:00:20.000",
   "MoveOverhead": "00:00:00.100",
-  "OrdoExePath": "",
   "Adjudication": {
     "DrawOption": {
       "DrawMoveLength": 5,
@@ -175,21 +182,20 @@ This document provides an overview of the `tournament.json` configuration file u
     "OpeningsPly": 100,
     "OpeningsTwice": true
   },
-
   "CupOptions": {
-    "RoundPairIncrements": [],
+    "RoundPairIncrements": [1,2,3],
     "SeedingStrategy": "ByRating",
-    "UniquePerMatchOnly": false,
+    "UniquePerMatchOnly": true,
     "BracketPath": "wwwroot/cup_bracket.json",
-    "RandomOpenings": false
+    "RandomOpenings": true
   },
   "SwissOptions": {
     "GamesPerMatch": 2,
     "Rounds": 0,
-    "SeedGroupCount": 4,
-    "UniquePerMatchOnly": false,
-    "RandomOpenings": false,
-    "AllowExtraPairsOnTie": false,
+    "SeedGroupCount": 1,
+    "UniquePerMatchOnly": true,
+    "RandomOpenings": true,
+    "AllowExtraPairsOnTie": true,
     "StatePath": "wwwroot/swiss_state.json"
   },
 
@@ -213,6 +219,8 @@ This document provides an overview of the `tournament.json` configuration file u
       "PVLabelFont": 21,
       "StandingsFont": 20,
       "CrossTableFont": 22,
+      "CupBracketFont": 20,
+      "SwissOverviewFont": 20,
       "PairingsFont": 16,
       "LatestGamesFont": 16
     },

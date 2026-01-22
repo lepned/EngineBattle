@@ -17,6 +17,8 @@ This document provides an overview of the `tournament.json` configuration file u
 - **VerboseMoveAnnotation**: Enable or disable detailed move annotations in the output (such as extra engine analysis for each move).
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
 - **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
+- **AllowPondering**: Allow engines to ponder during the opponent’s time.
+- **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
 - **Challengers**: Number of challengers in the tournament.
 - **Rounds**: Number of rounds in the tournament.
@@ -55,7 +57,6 @@ This document provides an overview of the `tournament.json` configuration file u
 ### Cup Options
 
 - **RoundPairIncrements**: Optional list of pairs per round (each pair is two games). If empty, defaults to one pair (2 games).
-- **Seed bands**: Generated automatically from player count (1, 2, 3-4, 5-8, 9-16, ...). Seeds are randomized within each band.
 - **SeedingStrategy**: "ByRating" or "Random".
 - **UniquePerMatchOnly**: True to reuse openings across matches, false to enforce global uniqueness.
 - **BracketPath**: Path for the generated cup bracket JSON file.
@@ -141,6 +142,8 @@ This document provides an overview of the `tournament.json` configuration file u
   "VerboseMoveAnnotation": false,
   "MinMoveTimeInMS": 400,
   "TournamentMode": "RR",
+  "AllowPondering": false,
+  "EngineStartupTimeoutInSec": 900,
   "PreventMoveDeviation": false,
   "Challengers": 1,
   "Rounds": 50,
@@ -180,19 +183,19 @@ This document provides an overview of the `tournament.json` configuration file u
     "OpeningsTwice": true
   },
   "CupOptions": {
-    "RoundPairIncrements": [],
+    "RoundPairIncrements": [1,2,3],
     "SeedingStrategy": "ByRating",
-    "UniquePerMatchOnly": false,
+    "UniquePerMatchOnly": true,
     "BracketPath": "wwwroot/cup_bracket.json",
-    "RandomOpenings": false
+    "RandomOpenings": true
   },
   "SwissOptions": {
     "GamesPerMatch": 2,
     "Rounds": 0,
-    "SeedGroupCount": 4,
-    "UniquePerMatchOnly": false,
-    "RandomOpenings": false,
-    "AllowExtraPairsOnTie": false,
+    "SeedGroupCount": 1,
+    "UniquePerMatchOnly": true,
+    "RandomOpenings": true,
+    "AllowExtraPairsOnTie": true,
     "StatePath": "wwwroot/swiss_state.json"
   },
 

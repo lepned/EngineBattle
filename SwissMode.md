@@ -7,18 +7,18 @@ Swiss mode runs a fixed number of rounds and supports byes for odd player counts
 ```
 "SwissOptions": {
   "GamesPerMatch": 2,
-  "Rounds": 9,
-  "SeedGroupCount": 4,
+  "Rounds": 0,
+  "SeedGroupCount": 1,
   "UniquePerMatchOnly": true,
   "RandomOpenings": true,
-  "AllowExtraPairsOnTie": false,
+  "AllowExtraPairsOnTie": true,
   "StatePath": "wwwroot/swiss_state.json"
 }
 ```
 
 Notes:
 
-- `Rounds` is required. Repeat pairings are not allowed, so rounds must be less than the number of players.
+- `Rounds` uses the global tournament `Rounds` value when set to `0`. Repeat pairings are not allowed, so rounds must be less than the number of players.
 - If there is an odd number of players, one player receives a bye each round (worth 1 point); byes are not repeated when possible.
 - `GamesPerMatch` should be even; each pair is two games (white/black).
 - `SeedGroupCount` controls TCEC-style seeding groups (A/B/C/...).
@@ -37,25 +37,21 @@ SwissOptions field summary:
 
 These examples assume engines are sorted by rating and then split into groups.
 
-- 8 players:
-  - `SeedGroupCount = 2` -> groups of 4 (A1..A4, B1..B4), seeding order: A1, B1, A2, B2, A3, B3, A4, B4.
-  - `SeedGroupCount = 4` -> groups of 2 (A1..A2, B1..B2, C1..C2, D1..D2), seeding order: A1, B1, C1, D1, A2, B2, C2, D2.
-- 12 players:
-  - `SeedGroupCount = 3` -> groups of 4, seeding order: A1, B1, C1, A2, B2, C2, A3, B3, C3, A4, B4, C4.
-  - `SeedGroupCount = 4` -> groups of 3, seeding order: A1, B1, C1, D1, A2, B2, C2, D2, A3, B3, C3, D3.
-- 16 players:
-  - `SeedGroupCount = 4` -> groups of 4, seeding order: A1, B1, C1, D1, A2, B2, C2, D2, A3, B3, C3, D3, A4, B4, C4, D4.
-  - `SeedGroupCount = 8` -> groups of 2, seeding order: A1, B1, C1, D1, E1, F1, G1, H1, A2, B2, C2, D2, E2, F2, G2, H2.
+- 8 players (recommend `SeedGroupCount = 1`):
+  - Order: A1, A2, A3, A4, A5, A6, A7, A8.
+  - Round 1 pairings (top-half vs bottom-half): A1–A5, A2–A6, A3–A7, A4–A8.
+- 12 players (recommend `SeedGroupCount = 2`):
+  - Groups of 6 (A1..A6, B1..B6), seeding order: A1, B1, A2, B2, A3, B3, A4, B4, A5, B5, A6, B6.
+- 24 players (recommend `SeedGroupCount = 4`):
+  - Groups of 6 (A1..A6, B1..B6, C1..C6, D1..D6), seeding order: A1, B1, C1, D1, A2, B2, C2, D2, A3, B3, C3, D3, A4, B4, C4, D4, A5, B5, C5, D5, A6, B6, C6, D6.
 
 ### Recommended SeedGroupCount
 
 Use fewer groups for more conservative seeding, more groups to spread top seeds further.
 
-- 8 players: recommend `SeedGroupCount = 4` (groups of 2).
-- 12 players: recommend `SeedGroupCount = 4` (groups of 3).
-- 16 players: recommend `SeedGroupCount = 4` (groups of 4).
-- 24 players: recommend `SeedGroupCount = 6` (groups of 4).
-- 32 players: recommend `SeedGroupCount = 8` (groups of 4).
+- Fewer than 12 players: recommend `SeedGroupCount = 1`.
+- Fewer than 24 players: recommend `SeedGroupCount = 2`.
+- 24 players or more: recommend `SeedGroupCount = 4`.
 
 ## Seeding
 

@@ -829,7 +829,7 @@
 
             case EngineUpdate.Status s:
                 var status = s.Item;
-                Update(status);
+                await Update(status);
                 break;
 
             case EngineUpdate.PolicyDistributionOutCome ds:
@@ -1277,7 +1277,7 @@
         return $"W: {win:P0} D: {draw:P0} L: {loss:P0}";
     }
 
-    private async void Update(CoreTypes.EngineStatus status)
+    private async Task Update(CoreTypes.EngineStatus status)
     {
         var nodes = FormatNodes(status.Nodes);
         var nps = FormatNPS(status.NPS);
@@ -1296,7 +1296,8 @@
         }
         dataList = ordered;
         whitePV = ordered[0].Value.PV;
-        await InvokeAsync(() => StateHasChanged());
+        await InvokeAsync(StateHasChanged);
+        await Task.CompletedTask;
     }
 
     public async Task OnNotifyFen(string newPos)

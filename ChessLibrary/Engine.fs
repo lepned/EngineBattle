@@ -18,16 +18,19 @@ open TypesDef.Position
 open TypesDef.TimeControl
 open Chess.BoardUtils
 open Microsoft.Extensions.Logging
+open ChessLibrary.WinboardIntegration
 
 module Engine =
 
   // Define a class to manage the chess engine process and communicate with it 
   type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool)  =
       let logDebug (text: string) = logger.LogDebug text
+      let logInformation (text: string) = logger.LogInformation text
 
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
-      let moveBoard = Chess.Board()      
+      let moveBoard = Chess.Board()
+      let winboardHandler = createHandlerIfNeeded config (Some logger)
       let mutable commands = ResizeArray<string>()
       let isChess960Set () = 
           commands |> Seq.tryFindBack (fun e -> e.Contains "UCI_Chess960")         
@@ -278,8 +281,17 @@ module Engine =
         if engineProcess.HasExited then
           logger.LogCritical  (sprintf "Engine %s has exited - please reset engine." name)        
         else
-            engineProcess.StandardInput.WriteLine(s)        
-            logDebug (sprintf "Writing to %s: %s" name s)
+            match winboardHandler with
+            | Some handler ->
+                // Translate UCI to Winboard
+                let winboardCmds = handler.UciToWinboard(s)
+                for cmd in winboardCmds do
+                    logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" s cmd name)
+                    engineProcess.StandardInput.WriteLine(cmd)
+            | None ->
+                // Normal UCI
+                engineProcess.StandardInput.WriteLine(s)        
+                logDebug (sprintf "Writing to %s: %s" name s)
     
       let assignbackend (option:string) =
         if option.ToLower().Contains("backendoptions") then
@@ -343,8 +355,15 @@ module Engine =
           engineProcess.StartInfo.RedirectStandardInput <- true
           engineProcess.StartInfo.RedirectStandardOutput <- true
           engineProcess.StartInfo.RedirectStandardError <- true
+          // Set working directory to engine's directory to prevent cluttering application folder
+          let engineDir = System.IO.Path.GetDirectoryName(config.Path)
+          if not (String.IsNullOrWhiteSpace(engineDir)) && System.IO.Directory.Exists(engineDir) then
+              engineProcess.StartInfo.WorkingDirectory <- engineDir
+              logDebug $"[{name}] Working directory set to: {engineDir}"
+          else
+              logDebug $"[{name}] WARNING: Could not set working directory. Path: {config.Path}, Dir: {engineDir}"
           if String.IsNullOrEmpty config.Args |> not then
-            printfn "Args passed: %s" config.Args
+            logDebug $"Args passed: {config.Args}"
             engineProcess.StartInfo.Arguments <- config.Args
           elif isLc0 then
             engineProcess.StartInfo.Arguments <- "--show-hidden"
@@ -353,7 +372,7 @@ module Engine =
                 try
                     if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
                         stderrBuffer.Add args.Data
-                        printfn "[STDERR %s]: %s" name args.Data
+                        logDebug $"[STDERR {name}]: {args.Data}"
                 with _ -> ()
             )
             
@@ -362,23 +381,46 @@ module Engine =
                 try
                     lastExitCode <- Some engineProcess.ExitCode
                     if engineProcess.ExitCode <> 0 then
-                        printfn "⚠️ Engine %s exited with code %d" name engineProcess.ExitCode
+                        logInformation $"⚠️ Engine {name} exited with code {engineProcess.ExitCode}"
                 with _ -> ()
             )
           engineProcess.EnableRaisingEvents <- true
           
+          
           engineProcess.OutputDataReceived.Add(fun args -> 
               if not (String.IsNullOrEmpty args.Data) then
-                if inUciResponsMode then  
-                  if args.Data = "uciok" then              
-                    inUciResponsMode <- false
-                  else
-                    UciOption.addOptionToMap optionsMap args.Data
-                elif inIsreadyMode then
-                  if args.Data = "readyok" then
-                    inIsreadyMode <- false           
-                else 
-                  processLine callbackFunc name args.Data)
+                match winboardHandler with
+                | Some handler ->
+                    // Translate Winboard output to UCI
+                    let translated = handler.ProcessOutput(args.Data)
+                    match translated with
+                    | Some uciLine ->
+                        // Handle UCI-translated output
+                        if inUciResponsMode then  
+                          if uciLine = "uciok" then              
+                            inUciResponsMode <- false
+                          else
+                            UciOption.addOptionToMap optionsMap uciLine
+                        elif inIsreadyMode then
+                          if uciLine = "readyok" then
+                            inIsreadyMode <- false           
+                        else 
+                          processLine callbackFunc name uciLine
+                    | None ->
+                        // Not translated - this is normal for some Winboard output
+                        ()
+                | None ->
+                    // Normal UCI processing
+                    if inUciResponsMode then  
+                      if args.Data = "uciok" then              
+                        inUciResponsMode <- false
+                      else
+                        UciOption.addOptionToMap optionsMap args.Data
+                    elif inIsreadyMode then
+                      if args.Data = "readyok" then
+                        inIsreadyMode <- false           
+                    else 
+                      processLine callbackFunc name args.Data)
           if engineProcess.Start() then
               // Ensure LF newline and immediate flush so WriteLine uses LF on all platforms
               engineProcess.StandardInput.NewLine <- "\n"
@@ -387,13 +429,26 @@ module Engine =
               engineProcess.BeginErrorReadLine()  // Start stderr capture
           else
               failwith (sprintf "Engine %s could not be started" name)
-          write "uci"
-          let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
-          let ok = waitForInitialization ((new CancellationTokenSource(timeout)).Token) "uci" //wait for maximum 2 hours
-          if not ok then
-            failwith "Engine did not respond to UCI command."
-          //else 
-          //  printfn "Engine %s responded 'uciok' to uci command." name
+          
+          let mutable isWinboard = false
+          // Initialize based on protocol
+          match winboardHandler with
+          | Some handler ->
+              // Winboard initialization
+              isWinboard <- true
+              let initSuccess = initializeWinboard engineProcess handler (Some logger) name 30000 |> Async.RunSynchronously
+              if not initSuccess then
+                  failwith "Winboard engine did not initialize properly."
+              // Winboard engines don't send "uciok", so manually exit UCI response mode
+              inUciResponsMode <- false
+          | None ->
+              // UCI initialization
+              write "uci"
+              let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
+              let ok = waitForInitialization ((new CancellationTokenSource(timeout)).Token) "uci"
+              if not ok then
+                failwith "Engine did not respond to UCI command."
+          
           for cmd in configCmds do
             match UciOption.parseSetOptionCommand cmd with
             | Some (name, value) ->
@@ -419,18 +474,21 @@ module Engine =
             network <- ceresNetworkName
           printNonDefaultValues()
           write "ucinewgame"
-          inIsreadyMode <- true
-          write "isready"
-          let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
-          let ok = waitForInitialization((new CancellationTokenSource(timeout)).Token) "readyok" //wait for maximum 10 seconds
-          if not ok then
-            failwith "Engine did not respond to isready command."
-          //else
-          //  printfn "Engine %s responded 'readyok' to isready command." name
+          
+          // Only set isready mode for UCI engines
+          // Winboard engines don't need this handshake after initialization
+          if not isWinboard then
+              inIsreadyMode <- true
+              write "isready"
+              
+              let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
+              let ok = waitForInitialization((new CancellationTokenSource(timeout)).Token) "readyok"
+              if not ok then
+                  failwith "Engine did not respond to isready command."
           
           if stderrBuffer.Count > 0 then
              for err in stderrBuffer do
-               printfn "[STDERR %s]: %s" name err
+               logDebug $"[STDERR {name}]: {err}"
           let withLiveLog = configCmds |> Seq.exists (fun e -> e.Contains("LogLiveStats"))
           getAllDefaultOptions()
           callback(EngineUpdate.Ready (name, withLiveLog))
@@ -549,11 +607,11 @@ module Engine =
               let cmd = (sprintf "position fen %s" fen)
               write cmd
               commands.Add cmd
-          | GoNodes nodes ->             
+          | GoNodes nodes ->
               let cmd = (sprintf "go nodes %d" nodes)
               write cmd
-
-          | GoInfinite ->             
+              commands.Add cmd
+          | GoInfinite ->
               let cmd = (sprintf "go infinite")
               write cmd
               commands.Add cmd
@@ -600,6 +658,7 @@ module Engine =
                         //create a setoption based on the option and the intValue
                         let cmd = sprintf "setoption name %s value %d" option.Name intValue
                         write cmd
+                        commands.Add cmd
                   | _ -> ()
               | None -> printfn "Option not found: %s value: %d" optionName ms
   
@@ -625,7 +684,7 @@ module Engine =
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
       let mutable network = String.Empty
-      
+      let winboardHandler = createHandlerIfNeeded config logger
       let assignNetworkName (option:string) =        
         let argsExists = String.IsNullOrEmpty config.Args |> not
         if isCeres && argsExists then
@@ -723,7 +782,12 @@ module Engine =
             engine.StartInfo.RedirectStandardInput <- true
             engine.StartInfo.RedirectStandardOutput <- true
             engine.StartInfo.RedirectStandardError <- true
-            
+            let engineDir = System.IO.Path.GetDirectoryName(config.Path)
+            if not (String.IsNullOrWhiteSpace(engineDir)) && System.IO.Directory.Exists(engineDir) then
+                  engine.StartInfo.WorkingDirectory <- engineDir
+                  printfn $"[{name}] Working directory set to: {engineDir}"
+            else
+                  printfn $"[{name}] WARNING: Could not set working directory. Path: {config.Path}, Dir: {engineDir}"
             if not (String.IsNullOrEmpty config.Args) then                
                 let args = 
                     if isLc0 && not (config.Args.Contains("--show-hidden")) then
@@ -758,6 +822,9 @@ module Engine =
                 engine.StandardInput.NewLine <- "\n"
                 engine.StandardInput.AutoFlush <- true                
                 engine.BeginErrorReadLine()  // Start stderr capture
+                // Note: For ChessEngine (play mode), we don't use async output reading
+                // Output is read synchronously via ReadLine/ReadLineAsync methods
+                // OutputDataReceived handlers are only used in ChessEngineWithUCIProcessing                   
             else
                 printfn "\n❌ %s could not be started" name
         )
@@ -770,50 +837,91 @@ module Engine =
       let write (s:string) = 
         try
             if proc <> null && not proc.HasExited then
-                logDebug (sprintf "Writing to %s: %s" name s)
-                proc.StandardInput.WriteLine(s)
+                      match winboardHandler with
+                      | Some handler ->
+                          // Translate UCI to Winboard
+                          let winboardCmds = handler.UciToWinboard(s)
+                          
+                          // Create a shorter log message for position commands
+                          let logMsg = 
+                              if s.StartsWith("position") && s.Length > 100 then
+                                  let movesIdx = s.IndexOf("moves")
+                                  if movesIdx > 0 then
+                                      let movesPart = s.Substring(movesIdx + 6)
+                                      let moves = movesPart.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
+                                      sprintf "position with %d moves" moves.Length
+                                  else
+                                      "position startpos"
+                              else
+                                  s
+                          
+                          for cmd in winboardCmds do                              
+                              logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
+                              proc.StandardInput.WriteLine(cmd)
+                      | None ->
+                          // Normal UCI
+                          logDebug (sprintf "Writing to %s: %s" name s)
+                          proc.StandardInput.WriteLine(s)
             else
-                printfn "Warning: Attempted to write to disposed engine %s" name
+                printfn "Warning: Attempted to write to disposed engine %s" name  
         with                    
         | ex ->
             printfn "Error writing to engine %s: %s" name ex.Message
           
       let read () = proc.StandardOutput.ReadLine()
       let readAsync () = proc.StandardOutput.ReadLineAsync()
-      let readAsyncWithTimeout (token: CancellationToken) = proc.StandardOutput.ReadLineAsync(token).AsTask()
+      let readAsyncWithTimeout (token: CancellationToken) = 
+          task {
+            let! line = proc.StandardOutput.ReadLineAsync(token)
+            match winboardHandler with
+            | Some handler when not (String.IsNullOrWhiteSpace line) ->
+                match handler.ProcessOutput(line) with
+                | Some translatedLine -> return translatedLine
+                | None -> return line
+            | _ -> return line
+          }
+
+      //let readAsyncWithTimeout (token: CancellationToken) = proc.StandardOutput.ReadLineAsync(token).AsTask()
       let getDiagnostics() = 
         sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
             name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
 
       let readUciOptions() =
-        try
-          use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
-          write("uci")          
-          let rec readUci() = async {          
-              let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
-              printfn "%s" line
-              let mutable ret = line
-              while ret <> "uciok" && not proc.HasExited  do
-                  UciOption.addOptionToMap optionsMap ret
-                  let! resp = readAsyncWithTimeout cts.Token |> Async.AwaitTask
-                  ret <- resp
-              let isOk = ret = "uciok"
-              if not isOk then
-                logCritical (sprintf "Engine %s did not respond with uciok" name)
-              else
-                logInformation (sprintf "Engine %s responded with uciok" name)
-              return isOk }
-          readUci() |> Async.RunSynchronously
-        with
-          | :? OperationCanceledException -> 
-              logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
-              false
-          | :? System.IO.IOException as ex ->
-              logCritical (sprintf "Error reading UCI options: %s" ex.Message)
-              false
-          |ex -> 
-              logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
-              false
+          try
+            match winboardHandler with
+            | Some handler ->
+                // Winboard initialization - use the helper function with v1 detection
+                initializeWinboard proc handler logger name 30000 |> Async.RunSynchronously
+    
+            | None ->
+                // Original UCI initialization
+                use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
+                write("uci")          
+                let rec readUci() = async {          
+                    let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
+                    printfn "%s" line
+                    let mutable ret = line
+                    while ret <> "uciok" && not proc.HasExited  do
+                        UciOption.addOptionToMap optionsMap ret
+                        let! resp = readAsyncWithTimeout cts.Token |> Async.AwaitTask
+                        ret <- resp
+                    let isOk = ret = "uciok"
+                    if not isOk then
+                      logCritical (sprintf "Engine %s did not respond with uciok" name)
+                    else
+                      logInformation (sprintf "Engine %s responded with uciok" name)
+                    return isOk }
+                readUci() |> Async.RunSynchronously
+          with
+            | :? OperationCanceledException -> 
+                logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
+                false
+            | :? System.IO.IOException as ex ->
+                logCritical (sprintf "Error reading UCI options: %s" ex.Message)
+                false
+            |ex -> 
+                logCritical (sprintf "An unexpected error occurred while reading UCI options for %s: \n%s" name ex.Message)
+                false
       
       let startProcess() =
         try
@@ -850,8 +958,13 @@ module Engine =
               commands.Add cmd      
             let nOk, uciNameOpt = optionsMap.TryGetValue "name" 
             let aOk, uciAuthorOpt = optionsMap.TryGetValue "author"      
-            match (nOk, uciNameOpt.OptionType), (aOk, uciAuthorOpt.OptionType) with
-            | (true, UciOption.IdAndAuthor(_,_,n)), (true, UciOption.IdAndAuthor(_,_,a)) -> logInformation (sprintf "Engine name: %s and author: %s" n a)
+            // Only access OptionType if TryGetValue succeeded (for UCI engines)
+            // Winboard engines won't have these options in optionsMap
+            match nOk, aOk with
+            | true, true ->
+                match uciNameOpt.OptionType, uciAuthorOpt.OptionType with
+                | UciOption.IdAndAuthor(_,_,n), UciOption.IdAndAuthor(_,_,a) -> logInformation (sprintf "Engine name: %s and author: %s" n a)
+                | _ -> ()
             | _ -> ()
       
             //write "ucinewgame"
@@ -1047,35 +1160,73 @@ module Engine =
         let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
         let timeoutInMs = if timeoutInMs < 60000 then defaultTimeoutMs else timeoutInMs
         let cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutInMs))
-        write "isready"
-        let rec readUntilReady() = async {
-          try
-            if this.HasExited() then
-              logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
-              return false
-            elif cts.Token.IsCancellationRequested then
-              logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
-              return false
-            else
-              let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-              
-              if line = "readyok" then 
-                logInformation (sprintf "Engine %s responded with readyok" name)
-                return true
-              else 
-                return! readUntilReady()
-          with
-          | :? OperationCanceledException -> 
-              logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
-              return false
-          | ex ->
-              logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
-              return false
-        }
         
-        let res = readUntilReady() |> Async.RunSynchronously
-        cts.Dispose()
-        res
+        match winboardHandler with
+        | Some handler when not handler.Features.Ping ->
+            // Winboard v1 engine without ping support - assume ready after initialization
+            logInformation (sprintf "Engine %s is using Winboard protocol without ping support, assuming ready" name)
+            true
+        | Some handler ->
+            // Winboard v2 with ping support - wait for pong/readyok
+            write "isready"
+            let rec readUntilReady() = async {
+              try
+                if this.HasExited() then
+                  logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
+                  return false
+                elif cts.Token.IsCancellationRequested then
+                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+                  return false
+                else
+                  let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
+              
+                  if line = "readyok" then 
+                    logInformation (sprintf "Engine %s responded with readyok" name)
+                    return true
+                  else 
+                    return! readUntilReady()
+              with
+              | :? OperationCanceledException -> 
+                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+                  return false
+              | ex ->
+                  logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
+                  return false
+            }
+            let res = readUntilReady() |> Async.RunSynchronously
+            cts.Dispose()
+            res
+        | None ->
+            // Normal UCI engine
+            write "isready"
+            let rec readUntilReady() = async {
+              try
+                if this.HasExited() then
+                  logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
+                  return false
+                elif cts.Token.IsCancellationRequested then
+                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+                  return false
+                else
+                  let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
+              
+                  if line = "readyok" then 
+                    logInformation (sprintf "Engine %s responded with readyok" name)
+                    return true
+                  else 
+                    return! readUntilReady()
+              with
+              | :? OperationCanceledException -> 
+                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+                  return false
+              | ex ->
+                  logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
+                  return false
+            }
+        
+            let res = readUntilReady() |> Async.RunSynchronously
+            cts.Dispose()
+            res
       
       member this.IsRunning
         with get () = isRunning 

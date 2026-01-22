@@ -2375,6 +2375,62 @@ module PairingHelper =
                     idx
         loop 0
 
+  let buildRemainingCupPairings
+    (matchInfo: TypesDef.Cup.CupMatch)
+    (playerA: EngineConfig)
+    (playerB: EngineConfig)
+    (matchOpenings: PGNTypes.PgnGame list)
+    (currentOpening: PGNTypes.PgnGame)
+    (currentPlayOrder: (EngineConfig * EngineConfig) list)
+    (gamesRemaining: int)
+    (localOpeningIndex: int) =
+      let baseIndex = matchInfo.Games.Count
+      let mutable remaining = gamesRemaining
+      let mutable nextIndex = localOpeningIndex
+      let planned = ResizeArray<Pairing>()
+      let addPairing idx white black opening =
+        let openingHash = Hash.computeOpeningHashFromGame opening
+        planned.Add
+          { Opening = opening
+            White = white
+            Black = black
+            GameNr = 0
+            RoundNr = $"{matchInfo.RoundNumber}.{baseIndex + idx + 1}"
+            OpeningHash = openingHash }
+      let mutable usedHashes =
+        matchInfo.Games
+        |> Seq.map (fun g -> g.OpeningHash)
+        |> Set.ofSeq
+      let currentHash = Hash.computeOpeningHashFromGame currentOpening
+      usedHashes <- usedHashes.Add currentHash
+      let mutable idxOffset = 0
+      for (white, black) in currentPlayOrder do
+        if remaining > 0 then
+          addPairing idxOffset white black currentOpening
+          idxOffset <- idxOffset + 1
+          remaining <- remaining - 1
+      let chooseNextOpening () =
+        if List.isEmpty matchOpenings then
+          currentOpening
+        elif usedHashes.Count < matchOpenings.Length then
+          let idx = nextUnusedOpeningIndex usedHashes matchOpenings nextIndex
+          nextIndex <- idx + 1
+          matchOpenings.[idx]
+        else
+          let idx = nextIndex % matchOpenings.Length
+          nextIndex <- idx + 1
+          matchOpenings.[idx]
+      while remaining > 0 do
+        let opening = chooseNextOpening ()
+        let openingHash = Hash.computeOpeningHashFromGame opening
+        usedHashes <- usedHashes.Add openingHash
+        for (white, black) in [ (playerA, playerB); (playerB, playerA) ] do
+          if remaining > 0 then
+            addPairing idxOffset white black opening
+            idxOffset <- idxOffset + 1
+            remaining <- remaining - 1
+      planned
+
   let swissPairKey (a: string) (b: string) =
     if String.CompareOrdinal(a, b) <= 0 then
       $"{a}|{b}"

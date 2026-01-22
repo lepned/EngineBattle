@@ -1620,7 +1620,7 @@ type Board() =
 
       let movesAndFen = this.MovesAndFenPlayed |> Seq.last
       movesAndFen
-    
+        
     member this.PlaySimpleShortSan (fromSan: string) = 
       let islegal move = this.IllegalMove &move |> not
       let moveList = this.GenerateMoves ()
@@ -2301,6 +2301,44 @@ module BoardUtils =
       moveList
       |> Array.tryFind(fun m -> TMoveOps.getSanLong m stm = moveLong)
 
+  
+  let getLongSanPVFromShortSanPV  moveList (board:Board inref) (shortSanMoves : string seq) =
+        let isFRC = board.IsFRC
+        let mutable position = board.Position
+        let ret = ResizeArray<string>(shortSanMoves |> Seq.length)
+        for m in shortSanMoves do
+          let mutable index = 0
+          generateCaptures &(moveList) &index &position      
+          generateQuiets &(moveList) &index &position isFRC
+          let moves = moveList[0..index-1]
+          let islegal move = BoardHelper.Illegal &move &position |> not
+          
+          // Try SAN format first
+          let moveResult = 
+            match TMoveOps.getTMoveFromShortSan m moves position.STM islegal with
+            | Some tmove -> Some tmove
+            | None ->
+                // Try coordinate notation (some Winboard engines use this)
+                if m.Length >= 4 && m.Length <= 5 then
+                  // Create temporary board to test coordinate notation
+                  let tempBoard = Board()
+                  tempBoard.LoadFen(BoardHelper.posToFen position)
+                  tempBoard.IsFRC <- isFRC
+                  tryGetTMoveFromCoordinateNotation &tempBoard m
+                else
+                  None
+          
+          match moveResult with
+          | Some tmove -> 
+            let moveStr = TMoveOps.getSanLong tmove position.STM            
+            ret.Add(moveStr)
+            makeMove &tmove &position
+          | None -> 
+            // Stop processing PV on first error to avoid corrupted position
+            ()
+        //return the long san moves as a string
+        String.concat " " (ret |> Seq.toArray)
+  
   let getShortSanPVFromLongSanPVFast moveList (board:Board inref) (pv:string) =    
     let isFRC = board.IsFRC
     let mutable position = board.Position

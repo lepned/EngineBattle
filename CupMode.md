@@ -24,15 +24,14 @@ Each match is played as a set of pairs: a pair is two games, one with each color
   "SeedingStrategy": "ByRating",
   "UniquePerMatchOnly": true,
   "BracketPath": "wwwroot/cup_bracket.json",
-  "RandomOpenings": false
+  "RandomOpenings": true
 }
 ```
 
 Field summary:
 
 - `RoundPairIncrements`: Pairs per round. Each pair is two games. Example: `[1,2,3]` means 2,4,6 games. If empty, defaults to one pair (2 games).
-- `Seed bands`: Generated automatically from player count to protect top seeds (1, 2, 3-4, 5-8, 9-16, ...). Seeds are randomized within each band.
-- `SeedingStrategy`: `ByRating` or `Random`. Seed bands are used only with `ByRating`.
+- `SeedingStrategy`: `ByRating` or `Random`.
 - `UniquePerMatchOnly`: `true` means openings can repeat across matches, but not within a match.
 - `BracketPath`: Where the bracket JSON is written/read.
 - `RandomOpenings`: Randomize opening order and persist the order for resume.

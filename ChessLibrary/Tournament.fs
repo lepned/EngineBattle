@@ -3535,15 +3535,16 @@ module Match =
               else
                 [ (playerA, playerB); (playerB, playerA) ]
             let plannedPairings =
+              Utilities.PairingHelper.buildRemainingCupPairings
+                matchInfo
+                playerA
+                playerB
+                matchOpenings
+                opening
                 playOrder
-                |> List.mapi (fun idx (white, black) ->
-                    { Opening = opening
-                      White = white
-                      Black = black
-                      GameNr = 0
-                      RoundNr = $"{matchInfo.RoundNumber}.{matchInfo.Games.Count + idx + 1}"
-                      OpeningHash = openingHash })
-            callback (Update.PairingList (ResizeArray<Pairing>(plannedPairings)))
+                gamesRemaining
+                localOpeningIndex
+            callback (Update.PairingList plannedPairings)
             for (white, black) in playOrder do
               if matchInfo.IsDecided || gamesRemaining = 0 || cts.IsCancellationRequested then
                 ()

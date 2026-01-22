@@ -23,7 +23,7 @@ This document provides an overview of the `EngineDef.json` configuration file us
 ### Paths and Execution
 
 - **Path**: The file system path to the engine's executable.
-- **NetworkPath**: The directory where the engine�s neural network files reside.
+- **NetworkPath**: The directory where the engine neural network files reside.
 - **Args**: Additional command-line arguments for the engine (optional).
 
 ### Options
@@ -55,11 +55,13 @@ This document provides an overview of the `EngineDef.json` configuration file us
   "Options": {
     "Threads": 2,
     "Hash": 2048,
-    "SyzygyPath": "C:/Dev/Chess/TableBases/sygyzy",
+    "SyzygyPath": "C:/Dev/Chess/TableBases/syzygy",
     "Ponder": false,
     "UCI_ShowWDL": true
   }
 }
 
 ```
+
+
 

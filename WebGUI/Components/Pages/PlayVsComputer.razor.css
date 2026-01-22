@@ -1,0 +1,288 @@
+/* Define CSS variables on the wrapper */
+.play-vs-computer {
+    --pvc-bg: radial-gradient(circle at 15% 20%, #2f313b 0%, #2b2e38 45%, #262933 100%);
+    --pvc-card: rgba(30, 33, 44, 0.92);
+    --pvc-card-strong: rgba(22, 24, 33, 0.98);
+    --pvc-accent: #5ee4c3;
+    --pvc-accent-2: #7fb1ff;
+    --pvc-text: #e9eef7;
+    --pvc-muted: #a7b0c3;
+    --pvc-border: rgba(125, 132, 156, 0.18);
+    --pvc-shadow: 0 20px 40px rgba(8, 10, 18, 0.35);
+    font-family: "Space Grotesk", "Karla", "Segoe UI", sans-serif;
+    color: var(--pvc-text);
+}
+
+/* All child selectors */
+.play-vs-computer .pvc-shell {
+    background: var(--pvc-bg);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: var(--pvc-shadow);
+}
+
+.play-vs-computer .pvc-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    gap: 16px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(37, 40, 53, 0.92), rgba(22, 24, 34, 0.96));
+    border: 1px solid var(--pvc-border);
+    margin-bottom: 18px;
+}
+
+.play-vs-computer .pvc-controls,
+.play-vs-computer .pvc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+}
+
+.play-vs-computer .pvc-field {
+    display: grid;
+    gap: 6px;
+    min-width: 140px;
+}
+
+.play-vs-computer .pvc-toggle {
+    min-width: 120px;
+    align-items: center;
+}
+
+.play-vs-computer .pvc-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--pvc-accent);
+}
+
+.play-vs-computer label {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--pvc-muted);
+}
+
+.play-vs-computer select,
+.play-vs-computer input[type="number"],
+.play-vs-computer input[type="text"] {
+    background: rgba(19, 22, 31, 0.75);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 12px;
+    color: var(--pvc-text);
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.play-vs-computer select:focus,
+.play-vs-computer input:focus {
+    border-color: var(--pvc-accent);
+    box-shadow: 0 0 0 3px rgba(94, 228, 195, 0.2);
+}
+
+.play-vs-computer .pvc-btn {
+    background: linear-gradient(135deg, #5d7bff, #8ad5ff);
+    color: #0c1122;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.play-vs-computer .pvc-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    filter: grayscale(0.2);
+}
+
+.play-vs-computer .pvc-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 20px rgba(85, 113, 255, 0.25);
+}
+
+.play-vs-computer .pvc-btn.secondary {
+    background: transparent;
+    color: var(--pvc-text);
+    border: 1px solid rgba(125, 132, 156, 0.35);
+}
+
+.play-vs-computer .pvc-btn.danger {
+    background: linear-gradient(135deg, #ff6b6b, #ff9b7b);
+    color: #2b0b0b;
+}
+
+.play-vs-computer .pvc-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px dashed rgba(125, 132, 156, 0.45);
+    color: var(--pvc-muted);
+    cursor: pointer;
+}
+
+.play-vs-computer .pvc-upload.warn {
+    border-color: rgba(255, 180, 94, 0.75);
+    color: #ffd7a1;
+    background: rgba(255, 180, 94, 0.08);
+    box-shadow: 0 0 0 2px rgba(255, 180, 94, 0.12);
+}
+
+.play-vs-computer .pvc-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr);
+    gap: 20px;
+}
+
+.play-vs-computer .pvc-board-card,
+.play-vs-computer .pvc-panel {
+    background: var(--pvc-card);
+    border: 1px solid var(--pvc-border);
+    border-radius: 20px;
+    padding: 18px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.play-vs-computer .pvc-board-card {
+    display: grid;
+    gap: 14px;
+}
+
+.play-vs-computer .pvc-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--pvc-muted);
+}
+
+.play-vs-computer .pvc-status span {
+    font-weight: 600;
+    color: var(--pvc-text);
+}
+
+.play-vs-computer .pvc-panel h3 {
+    margin: 0 0 10px;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.play-vs-computer .pvc-clocks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.play-vs-computer .pvc-clock {
+    background: rgba(14, 17, 26, 0.7);
+    border: 1px solid rgba(125, 132, 156, 0.2);
+    border-radius: 14px;
+    padding: 12px;
+}
+
+.play-vs-computer .pvc-clock p {
+    margin: 0;
+    color: var(--pvc-muted);
+    font-size: 0.8rem;
+}
+
+.play-vs-computer .pvc-clock strong {
+    display: block;
+    font-size: 1.4rem;
+    margin-top: 6px;
+}
+
+.play-vs-computer .pvc-results {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.play-vs-computer .pvc-results th,
+.play-vs-computer .pvc-results td {
+    padding: 8px 6px;
+    border-bottom: 1px solid rgba(125, 132, 156, 0.18);
+    text-align: left;
+}
+
+.play-vs-computer .pvc-results th {
+    color: var(--pvc-muted);
+    font-weight: 500;
+}
+
+.play-vs-computer .pvc-muted {
+    color: var(--pvc-muted);
+    margin: 0;
+}
+
+.play-vs-computer .pvc-save {
+    display: grid;
+    gap: 10px;
+}
+
+.play-vs-computer ::deep .chessboard-root {
+    width: min(1024px, 100%);
+    aspect-ratio: 1 / 1;
+    height: auto;
+    margin: 0 auto;
+}
+
+.play-vs-computer ::deep .board-container-41a68,
+.play-vs-computer ::deep .chessboard-21da3 {
+    width: 100%;
+    height: 100%;
+}
+
+.play-vs-computer .pvc-board-card ::deep .mud-grid {
+    width: min(1024px, 100%);
+    margin: 0 auto;
+}
+
+@media (max-width: 1100px) {
+    .play-vs-computer .pvc-main {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .play-vs-computer .pvc-topbar {
+        grid-template-columns: 1fr;
+    }
+
+    .play-vs-computer .pvc-actions {
+        justify-content: flex-start;
+    }
+
+    .play-vs-computer .pvc-clocks {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 1100px) {
+    .pvc-main {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .pvc-topbar {
+        grid-template-columns: 1fr;
+    }
+
+    .pvc-actions {
+        justify-content: flex-start;
+    }
+
+    .pvc-clocks {
+        grid-template-columns: 1fr;
+    }
+}

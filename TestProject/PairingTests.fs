@@ -31,6 +31,20 @@ let private mkGameWithMoves gameNr fen (moves: PlyMove list) =
 let private mkRatedPlayer name rating =
     { mkEngine name with Rating = rating }
 
+let private mkCupMatch roundNumber (playerA: EngineConfig) (playerB: EngineConfig) : ChessLibrary.TypesDef.Cup.CupMatch =
+    { MatchId = 1
+      RoundNumber = roundNumber
+      PlayerA = playerA.Name
+      PlayerB = playerB.Name
+      PlayerARating = playerA.Rating
+      PlayerBRating = playerB.Rating
+      ScoreA = 0.0
+      ScoreB = 0.0
+      Winner = None
+      IsDecided = false
+      Games = ResizeArray<ChessLibrary.TypesDef.Cup.CupGame>()
+      OpeningOrder = ResizeArray<int>() }
+
 let private seedOrderNames players groupCount =
     tcecSeedOrder players groupCount |> List.map (fun p -> p.Name)
 
@@ -516,6 +530,47 @@ let ``cup round pair increments override games per match`` () =
     Assert.Equal(4, gamesPerMatchForRound 2 [1; 2; 3] 2)
     Assert.Equal(6, gamesPerMatchForRound 2 [1; 2; 3] 3)
     Assert.Equal(6, gamesPerMatchForRound 2 [1; 2; 3] 4)
+
+[<Fact>]
+let ``cup planned pairings include remaining games in match`` () =
+    let playerA = mkRatedPlayer "A" 3000
+    let playerB = mkRatedPlayer "B" 2900
+    let openings = [ mkOpening 1; mkOpening 2; mkOpening 3 ]
+    let matchInfo = mkCupMatch 1 playerA playerB
+    let playOrder = [ (playerA, playerB); (playerB, playerA) ]
+
+    let planned =
+        buildRemainingCupPairings matchInfo playerA playerB openings openings.[0] playOrder 6 0
+
+    Assert.Equal(6, planned.Count)
+    let openingRaws = planned |> Seq.map (fun p -> p.Opening.Raw) |> Seq.toList
+    Assert.Equal<string list>([ "opening-1"; "opening-1"; "opening-2"; "opening-2"; "opening-3"; "opening-3" ], openingRaws)
+    let roundNrs = planned |> Seq.map (fun p -> p.RoundNr) |> Seq.toList
+    Assert.Equal<string list>([ "1.1"; "1.2"; "1.3"; "1.4"; "1.5"; "1.6" ], roundNrs)
+
+[<Fact>]
+let ``cup planned pairings continue after odd game`` () =
+    let playerA = mkRatedPlayer "A" 3000
+    let playerB = mkRatedPlayer "B" 2900
+    let openings = [ mkOpening 1; mkOpening 2; mkOpening 3 ]
+    let matchInfo = mkCupMatch 2 playerA playerB
+    let openingHash = Utilities.Hash.computeOpeningHashFromGame openings.[0]
+    matchInfo.Games.Add
+        { GameNr = 1
+          White = playerA.Name
+          Black = playerB.Name
+          OpeningId = openings.[0].GameNumber.ToString()
+          OpeningHash = openingHash
+          Result = "1-0" }
+
+    let planned =
+        buildRemainingCupPairings matchInfo playerA playerB openings openings.[0] [ (playerB, playerA) ] 3 1
+
+    Assert.Equal(3, planned.Count)
+    let openingRaws = planned |> Seq.map (fun p -> p.Opening.Raw) |> Seq.toList
+    Assert.Equal<string list>([ "opening-1"; "opening-2"; "opening-2" ], openingRaws)
+    let roundNrs = planned |> Seq.map (fun p -> p.RoundNr) |> Seq.toList
+    Assert.Equal<string list>([ "2.2"; "2.3"; "2.4" ], roundNrs)
 
 [<Fact>]
 let ``cup tiebreak picks unused opening when available`` () =

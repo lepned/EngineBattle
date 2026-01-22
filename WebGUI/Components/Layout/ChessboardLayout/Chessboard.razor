@@ -48,7 +48,7 @@
 	}
 
 	<MudItem sm=12 md="12" lg="12">
-		<div style="height:100%" @ref="board"></div>
+		<div class="chessboard-root" style="height:100%" @ref="board"></div>
 	</MudItem>
 
 	@if (!String.IsNullOrEmpty(OpeningMoves))
@@ -220,6 +220,7 @@
 	[Parameter] public string OpeningMoves { get; set; }
 	[Parameter] public EventCallback<string> OnMoveMadeOnBoard { get; set; }
 	[Parameter] public EventCallback<string> OnNewFENOnBoard { get; set; }
+	[Parameter] public EventCallback<bool> OnBoardFlipped { get; set; }
 	[Parameter] public Board ChessBoard { get; set; } = new();
 	[Parameter] public int MoveListFontSize { get; set; }
 	[Parameter] public int MoveListHeight { get; set; }
@@ -251,6 +252,7 @@
 	private List<NNValues> firstNNMoves = new();
 	private List<NNValues> secondNNMoves = new();
 	private string currentId = string.Empty;
+	private bool isBoardFlipped;
 	private double MinPolicyThreshold { get; set; } // Minimum probability threshold for displaying moves
 	private List<MoveAndFen> MoveList { get; set; }
 	private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
@@ -453,6 +455,11 @@
 			await chessJSmodule.InvokeVoidAsync("rotateBoard", board);
 			var lastNNMoves = GetNNValues(currentId);
 			await DisplayMoveAnnotation(lastNNMoves, currentId);
+			isBoardFlipped = !isBoardFlipped;
+			if (OnBoardFlipped.HasDelegate)
+			{
+				await OnBoardFlipped.InvokeAsync(isBoardFlipped);
+			}
 		}
 		await Task.CompletedTask;
 	}
@@ -719,6 +726,16 @@
 
 	private async Task PreviousMove()
 	{
+		await StepBackInternal(true);
+	}
+
+	public async Task StepBack(bool notifyParent = true)
+	{
+		await StepBackInternal(notifyParent);
+	}
+
+	private async Task StepBackInternal(bool notifyParent)
+	{
 		stopAutoPlay = true;
 		var prev = ChessBoard.TryGetPreviousMoveAndFen(fen);
 		if (prev != null)
@@ -727,7 +744,10 @@
 			fen = move.FenAfterMove;
 			ChessBoard.LoadFen(fen);
 			await SetPositionAndMove(move, invokeMove: false);
-			await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			if (notifyParent && OnMoveMadeOnBoard.HasDelegate)
+			{
+				await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+			}
 			UpdateVariationsDisplay();
 			await ScrollToCurrentMove();
 		}
