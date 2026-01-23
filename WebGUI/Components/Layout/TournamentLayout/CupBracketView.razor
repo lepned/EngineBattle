@@ -93,15 +93,19 @@
 @if (UseContainer)
 {
     <MudContainer Class="pa-4">
-        <MudPaper Class="pa-4 bracket-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
-            @content
+        <MudPaper Class="pa-4">
+            <div class="bracket-shell cup-bracket-view" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+                @content
+            </div>
         </MudPaper>
     </MudContainer>
 }
 else
 {
-    <MudPaper Class="pa-4 bracket-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
-        @content
+    <MudPaper Class="pa-4">
+        <div class="bracket-shell cup-bracket-view" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+            @content
+        </div>
     </MudPaper>
 }
 
@@ -460,159 +464,3 @@ else
             Notifier.CupUpdated -= OnCupUpdated;
     }
 }
-
-<style>
-    .bracket-shell {
-        background: radial-gradient(circle at top, #1b1e2b, #12131b 60%);
-        border: 1px solid #2b2f3a;
-        color: #e8edf2;
-        min-height: 70vh;
-        --row-height: calc(var(--font-size, 16px) * 2.6);
-        --row-gap: calc(var(--font-size, 16px) * 0.9);
-    }
-
-    .bracket-grid {
-        display: flex;
-        gap: 28px;
-        margin-top: 24px;
-        overflow-x: auto;
-        padding-bottom: 12px;
-    }
-
-    .round-col {
-        min-width: 310px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        position: relative;
-    }
-
-    .round-title {
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #9aa4b2;
-        margin-bottom: 2px;
-    }
-
-    .round-col.has-prev-col .round-title {
-        padding-left: 6px;
-    }
-
-    .round-grid {
-        display: grid;
-        grid-template-rows: repeat(var(--round-rows), var(--row-height));
-        row-gap: var(--row-gap);
-    }
-
-    .match-card {
-        background: #1c2030;
-        border: 1px solid #343a49;
-        border-radius: 10px;
-        padding: 6px 8px;
-        box-shadow: 0 8px 18px rgba(0,0,0,0.28);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: 2px;
-        position: relative;
-        margin-right: 18px;
-        width: 100%;
-        align-self: center;
-    }
-
-    .match-card::after,
-    .match-card::before {
-        display: none;
-    }
-
-    .match-card.has-next::after {
-        content: "";
-        position: absolute;
-        top: 50%;
-        right: -18px;
-        width: 18px;
-        height: 1px;
-        background: #556070;
-        display: block;
-    }
-
-    .match-card.has-prev::before {
-        content: "";
-        position: absolute;
-        left: -18px;
-        top: 0;
-        bottom: 0;
-        width: 18px;
-        background:
-            linear-gradient(#556070, #556070) right center / 1px 100% no-repeat,
-            linear-gradient(#556070, #556070) left center / 100% 1px no-repeat;
-        display: block;
-    }
-
-    .match-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: calc(var(--font-size, 16px) - 4px);
-        color: #9aa4b2;
-        margin-bottom: 2px;
-    }
-
-    .player-row {
-        display: grid;
-        grid-template-columns: 22px 1fr auto auto;
-        gap: 6px;
-        align-items: center;
-        font-size: calc(var(--font-size, 16px) - 2px);
-        padding: 2px 0;
-    }
-
-    .player-name {
-        font-weight: 600;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .player-rating {
-        font-size: calc(var(--font-size, 16px) - 4px);
-        color: #98a6b7;
-    }
-
-    .player-score {
-        font-variant-numeric: tabular-nums;
-        font-weight: 600;
-        color: #e8edf2;
-    }
-
-    .player-logo {
-        width: 22px;
-        height: 22px;
-        object-fit: contain;
-        border-radius: 4px;
-        background: #0f121a;
-        border: 1px solid #2a2f3d;
-    }
-
-    .is-winner {
-        color: #e7c873;
-    }
-
-    .is-winner .player-score {
-        color: #e7c873;
-    }
-
-    .is-loser {
-        color: #97a2b2;
-    }
-
-    .refresh-button {
-        width: 120px;
-        min-width: 120px;
-    }
-
-    .refresh-row {
-        align-items: center;
-    }
-</style>

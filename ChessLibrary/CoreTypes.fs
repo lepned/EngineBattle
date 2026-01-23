@@ -252,6 +252,7 @@ module TypesDef =
           Dev: string
           LogoPath: string
           mutable IsChallenger: bool
+          Flipped: bool
           ContemptEnabled: bool
           NegativeContemptAllowed: bool
           Protocol: string
@@ -277,6 +278,7 @@ module TypesDef =
                 Dev = ""
                 LogoPath = ""
                 IsChallenger = false
+                Flipped = false
                 ContemptEnabled = false
                 NegativeContemptAllowed = false
                 Protocol = "UCI"
@@ -296,6 +298,7 @@ module TypesDef =
                 Dev = "from xxx"
                 LogoPath = "img/lc0.png"
                 IsChallenger = false
+                Flipped = false
                 ContemptEnabled = false
                 NegativeContemptAllowed = false
                 Protocol = "UCI"

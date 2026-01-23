@@ -16,7 +16,7 @@
         <table class="custom-table">
             <thead>
                 <tr class="header-row">
-                    <th class="header-cell">Seed</th>
+                    <th class="header-cell">Rank</th>
                     <th class="header-cell">Engine</th>
                     <th class="header-cell center">Rating</th>
                     <th class="header-cell">Round</th>
@@ -198,7 +198,11 @@
         }
 
         var ordered = entries.Values
-            .OrderByDescending(e => e.Rating)
+            .OrderByDescending(e => e.IsChampion)
+            .ThenByDescending(e => e.RoundReached)
+            .ThenByDescending(e => e.MatchesWon)
+            .ThenByDescending(e => e.GameScore)
+            .ThenByDescending(e => e.Rating)
             .ThenBy(e => e.Player, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

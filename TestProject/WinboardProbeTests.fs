@@ -110,10 +110,10 @@ let private assertExpected (label: string) (expected: bool option) (actual: bool
     | Some value -> Assert.Equal(value, actual)
     | None -> ()
 
-let private probeEngineResult (engineName: string) (path: string) : ProbeResult =
+let private probeEngineResult (flipped:bool) (engineName: string) (path: string) : ProbeResult =
     use proc = startEngine path
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, engineName)
+    let handler = WinboardHandler(logger, engineName, flipped)
     use cts = new CancellationTokenSource()
     let _pump = pumpOutput proc handler cts
 
@@ -164,14 +164,14 @@ let private probeEngineResult (engineName: string) (path: string) : ProbeResult 
     proc.WaitForExit(1000) |> ignore
     result
 
-let private probeEngine (engineName: string) (path: string) (expectedInit: ExpectedInit) (expected: ExpectedFeatures) =
+let private probeEngine (flipped:bool)  (engineName: string) (path: string) (expectedInit: ExpectedInit) (expected: ExpectedFeatures) =
     if not (isWinboardProbeEnabled()) then
         ()
     elif not (File.Exists(path)) then
         // Skip if engine isn't present on this machine.
         ()
     else
-        let result = probeEngineResult engineName path
+        let result = probeEngineResult flipped engineName path
         if expectedInit.RequiresInit then
             Assert.True(result.InitOk, $"Winboard init failed for {engineName}")
             Assert.True(result.IsInitialized, $"Handler not initialized for {engineName}")
@@ -196,37 +196,37 @@ let private probeEngine (engineName: string) (path: string) (expectedInit: Expec
 
 [<Fact>]
 let ``Winboard probing detects capabilities for ant`` () =
-    probeEngine "ant" @"C:\Dev\Chess\Engines\WB_Natives\ant.exe"
+    probeEngine false "ant" @"C:\Dev\Chess\Engines\WB_Natives\ant.exe"
         { RequiresInit = true }
         { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for Comet_B68`` () =
-    probeEngine "Comet_B68" @"C:\Dev\Chess\Engines\WB_Natives\Comet_B68.exe"
+    probeEngine false "Comet_B68" @"C:\Dev\Chess\Engines\WB_Natives\Comet_B68.exe"
         { RequiresInit = true }
         { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for TheTurk`` () =
-    probeEngine "TheTurk" @"C:\Dev\Chess\Engines\WB_Natives\TheTurk.exe"
+    probeEngine false "TheTurk" @"C:\Dev\Chess\Engines\WB_Natives\TheTurk.exe"
         { RequiresInit = true }
         { Ping = Some false; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for Jonny400`` () =
-    probeEngine "Jonny400" @"C:\Dev\Chess\Engines\WB_Natives\Jonny400.exe"
+    probeEngine false "Jonny400" @"C:\Dev\Chess\Engines\WB_Natives\Jonny400.exe"
         { RequiresInit = true }
         { Ping = Some false; SetBoard = Some false; UserMove = Some false; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for Thinker5.4DUCI`` () =
-    probeEngine "Thinker5.4DUCI" @"C:\Dev\Chess\Engines\WB_Natives\Thinker5.4DUCI.exe"
+    probeEngine false "Thinker5.4DUCI" @"C:\Dev\Chess\Engines\WB_Natives\Thinker5.4DUCI.exe"
         { RequiresInit = true }
         { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for xchenard64`` () =
-    probeEngine "xchenard64" @"C:\Dev\Chess\Engines\WB_Natives\xchenard64.exe"
+    probeEngine false "xchenard64" @"C:\Dev\Chess\Engines\WB_Natives\xchenard64.exe"
         { RequiresInit = true }
         { Ping = Some true; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some false; BlackCmd = Some false; PostCmd = Some true; MoveNowCmd = Some false; ExitCmd = Some false; EasyCmd = None; HardCmd = None }
 
@@ -374,7 +374,7 @@ let ``Winboard probing discovery report`` () =
             engines
             |> List.choose (fun (name, path) ->
                 if File.Exists(path) then
-                    Some (probeEngineResult name path)
+                    Some (probeEngineResult false name path)
                 else
                     None)
 

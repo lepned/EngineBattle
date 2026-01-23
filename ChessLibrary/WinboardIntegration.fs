@@ -225,8 +225,8 @@ module WinboardIntegration =
         if isWinboardEngine config then
             match logger with
             | Some log -> 
-                Some (WinboardHandler(log, config.Name))
+                Some (WinboardHandler(log, config.Name, config.Flipped))
             | None ->                  
-                Some (WinboardHandler(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, config.Name))                
+                Some (WinboardHandler(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, config.Name, config.Flipped))                
         else
             None

@@ -105,15 +105,19 @@
 @if (UseContainer)
 {
     <MudContainer Class="pa-4">
-        <MudPaper Class="pa-4 swiss-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
-            @content
+        <MudPaper Class="pa-4" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+            <div class="swiss-shell swiss-overview-view">
+                @content
+            </div>
         </MudPaper>
     </MudContainer>
 }
 else
 {
-    <MudPaper Class="pa-4 swiss-shell" Style="@(FontSize > 0 ? $"--font-size: {FontSize}px; font-size: {FontSize}px;" : "")">
-        @content
+    <MudPaper Class="pa-4" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+        <div class="swiss-shell swiss-overview-view">
+            @content
+        </div>
     </MudPaper>
 }
 
@@ -410,97 +414,3 @@ else
     }
 }
 
-<style>
-    .swiss-shell {
-        background: radial-gradient(circle at top, #1b2032, #11141d 60%);
-        border: 1px solid #2a3142;
-        color: #e8edf2;
-        min-height: 60vh;
-        --pairing-gap: calc(var(--font-size, 16px) * 0.7);
-        --pairing-padding: calc(var(--font-size, 16px) * 0.7);
-    }
-
-    .swiss-panel {
-        background: #1a1f30;
-        border: 1px solid #343a49;
-        border-radius: 12px;
-        color: #e8edf2;
-    }
-
-    .pairing-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(calc(220px + var(--font-size, 16px) * 4), 1fr));
-        gap: var(--pairing-gap);
-        margin-top: 12px;
-    }
-
-    .pairing-card {
-        padding: var(--pairing-padding);
-        border-radius: 10px;
-        background: #1c2335;
-        border: 1px solid #343a49;
-        box-shadow: 0 8px 18px rgba(0,0,0,0.25);
-    }
-
-    .pairing-header {
-        display: flex;
-        justify-content: space-between;
-        color: #9aa4b2;
-        font-size: calc(var(--font-size, 16px) - 4px);
-        margin-bottom: 4px;
-    }
-
-    .pairing-row {
-        display: grid;
-        grid-template-columns: 1fr auto auto;
-        gap: calc(var(--font-size, 16px) * 0.35);
-        align-items: center;
-        font-size: calc(var(--font-size, 16px) - 1px);
-        padding: 2px 0;
-    }
-
-    .pairing-name {
-        font-weight: 600;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .pairing-rating {
-        font-size: calc(var(--font-size, 16px) - 4px);
-        color: #9aa4b2;
-    }
-
-    .pairing-score {
-        font-variant-numeric: tabular-nums;
-        font-weight: 600;
-    }
-
-    .pairing-row.is-winner {
-        color: #e7c873;
-    }
-
-    .pairing-row.is-winner .pairing-score {
-        color: #e7c873;
-    }
-
-    .pairing-row.is-loser {
-        color: #97a2b2;
-    }
-
-    .refresh-button {
-        width: 120px;
-        min-width: 120px;
-    }
-
-    .refresh-row {
-        align-items: center;
-    }
-
-    .swiss-shell .mud-table,
-    .swiss-shell .mud-table-cell,
-    .swiss-shell .mud-table-head,
-    .swiss-shell .mud-table-body {
-        font-size: var(--font-size, 16px);
-    }
-</style>

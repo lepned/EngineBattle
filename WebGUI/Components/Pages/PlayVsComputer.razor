@@ -100,7 +100,7 @@
                 <button class="pvc-btn secondary" @onclick="RestartGame" disabled="@(!engineReady)">Restart</button>
                 <button class="pvc-btn secondary" @onclick="ForceComputerMove" disabled="@(!CanForceMove)">Force Move</button>
                 <button class="pvc-btn secondary" @onclick="OfferTakeback" disabled="@(!CanTakeback)">Take Back</button>
-                <button class="pvc-btn secondary" @onclick="OfferDraw" disabled="@(!gameActive)">Offer Draw</button>
+                <button class="pvc-btn secondary" @onclick="Abort" disabled="@(!gameActive)">Abort</button>
                 <button class="pvc-btn danger" @onclick="ResignGame" disabled="@(!gameActive)">Resign</button>
             </div>
         </div>
@@ -341,14 +341,14 @@
         StateHasChanged();
     }
 
-    private void OfferDraw()
+    private void Abort()
     {
         if (!gameActive)
         {
             return;
         }
 
-        EndGame("Draw", "Agreement", "Draw agreed.");
+        EndGame("Aborted", "Agreement", "Game aborted.");
         analyzer?.Stop();
         StateHasChanged();
     }

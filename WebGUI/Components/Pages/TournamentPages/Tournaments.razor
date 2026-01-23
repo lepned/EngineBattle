@@ -748,17 +748,17 @@
 	}
 
 
-string Gauntlet => tournament == null ? "" : IsCupMode ?
-			GetCupSummary() :
-			IsSwissMode ?
-			GetSwissSummary() :
-			IsGauntletMode ?
-			$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
-			$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
+	string Gauntlet => tournament == null ? "" : IsCupMode ?
+				GetCupSummary() :
+				IsSwissMode ?
+				GetSwissSummary() :
+				IsGauntletMode ?
+				$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
+				$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
 
-bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);
-bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", StringComparison.OrdinalIgnoreCase);
-bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swiss", StringComparison.OrdinalIgnoreCase);
+	bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);
+	bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", StringComparison.OrdinalIgnoreCase);
+	bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swiss", StringComparison.OrdinalIgnoreCase);
 
 	string GetOpening()
 	{
@@ -1484,7 +1484,7 @@ bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swis
 				{
 					gameResult = string.Empty;
 					activeGameNr = start.Game.CurrentGameNr;
-					
+
 					TimeSpan duration = TimeSpan.Zero;
 					var roundNumber = !string.IsNullOrEmpty(roundNr) && roundNr.Contains('.')
 															? int.Parse(roundNr.Split('.')[0])
@@ -1782,7 +1782,7 @@ bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swis
 			.ToList() ?? new List<string>();
 
 		referenceSansForDeviation = new List<string>();
-				
+
 		if (runner is null)
 			return;
 
@@ -1793,7 +1793,7 @@ bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swis
 			var openingName = info.OpeningName?.Trim() ?? string.Empty;
 			var startPos = info.StartPos?.Trim() ?? string.Empty;
 			var allPairings = runner.GetAllPairings;
-			
+
 			var games = runner.GetPGNGames() ?? new List<ChessLibrary.TypesDef.PGNTypes.PgnGame>();
 			var previousPairGame = games
 				.Where(g =>
@@ -2037,7 +2037,8 @@ bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swis
 			{ "StatePath", statePath },
 			{ "SwissCompleted", stateSummary == SwissStateSummary.Completed },
 			{ "SwissInvalid", stateSummary == SwissStateSummary.Invalid },
-			{ "ShowActions", true }
+			{ "ShowActions", true },
+			{ "FontSize", layoutOptions.Fonts.SwissOverviewFont }
 		};
 		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.SwissOverviewDialog>("", parameters, options);
 		var result = await dialog.Result;
@@ -2182,7 +2183,8 @@ bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swis
 		{
 			{ "BracketPath", bracketPath },
 			{ "CupCompleted", bracketState == CupBracketSummary.Completed },
-			{ "CupInvalid", bracketState == CupBracketSummary.Invalid }
+			{ "CupInvalid", bracketState == CupBracketSummary.Invalid },
+			{ "FontSize", layoutOptions.Fonts.CupBracketFont  }
 		};
 		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupResumeDialog>("", parameters, options);
 		var result = await dialog.Result;

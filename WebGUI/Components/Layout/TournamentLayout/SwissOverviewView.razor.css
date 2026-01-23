@@ -1,0 +1,96 @@
+.swiss-overview-view {
+    background: radial-gradient(circle at top, #1b2032, #11141d 60%);
+    border: 1px solid #2a3142;
+    color: #e8edf2;
+    min-height: 60vh;
+    --pairing-gap: calc(var(--font-size, 16px) * 0.7);
+    --pairing-padding: calc(var(--font-size, 16px) * 0.7);
+    padding-left: 16px;
+    padding-top: 12px;
+    padding-right: 5px;
+    font-size: var(--font-size, 16px);
+}
+
+.swiss-overview-view ::deep .swiss-panel {
+    background: #1a1f30;
+    border: 1px solid #343a49;
+    border-radius: 12px;
+    color: #e8edf2;
+}
+
+.swiss-overview-view .pairing-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(calc(220px + var(--font-size, 16px) * 4), 1fr));
+    gap: var(--pairing-gap);
+    margin-top: 12px;
+}
+
+.swiss-overview-view ::deep .pairing-card {
+    padding: var(--pairing-padding);
+    border-radius: 10px;
+    background: #1c2335;
+    border: 1px solid #343a49;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+}
+
+.swiss-overview-view .pairing-header {
+    display: flex;
+    justify-content: space-between;
+    color: #9aa4b2;
+    font-size: calc(var(--font-size, 16px) - 4px);
+    margin-bottom: 4px;
+}
+
+.swiss-overview-view .pairing-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: calc(var(--font-size, 16px) * 0.35);
+    align-items: center;
+    font-size: calc(var(--font-size, 16px) - 1px);
+    padding: 2px 0;
+}
+
+.swiss-overview-view .pairing-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.swiss-overview-view .pairing-rating {
+    font-size: calc(var(--font-size, 16px) - 4px);
+    color: #9aa4b2;
+}
+
+.swiss-overview-view .pairing-score {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.swiss-overview-view .pairing-row.is-winner {
+    color: #e7c873;
+}
+
+.swiss-overview-view .pairing-row.is-winner .pairing-score {
+    color: #e7c873;
+}
+
+.swiss-overview-view .pairing-row.is-loser {
+    color: #97a2b2;
+}
+
+.swiss-overview-view ::deep .refresh-button {
+    width: 120px;
+    min-width: 120px;
+}
+
+.swiss-overview-view ::deep .refresh-row {
+    align-items: center;
+}
+
+.swiss-overview-view ::deep .mud-table,
+.swiss-overview-view ::deep .mud-table-cell,
+.swiss-overview-view ::deep .mud-table-head,
+.swiss-overview-view ::deep .mud-table-body {
+    font-size: var(--font-size, 16px);
+}

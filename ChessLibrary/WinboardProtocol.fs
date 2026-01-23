@@ -70,6 +70,7 @@ module WinboardProtocol =
         Name: bool
         Pause: bool
         Done: bool
+        SetBoardNeedsFourFieldFen: bool
     }
 
     type ProbeKind =
@@ -129,7 +130,19 @@ module WinboardProtocol =
         Name = false
         Pause = false
         Done = false
+        SetBoardNeedsFourFieldFen = false
     }
+    
+    /// Strip halfmove and fullmove counters from FEN for engines that can't parse them
+    /// Full FEN: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    /// 4-field FEN: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
+    let stripFenMoveCounters (fen: string) =
+        let parts = fen.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
+        if parts.Length >= 4 then
+            // Return first 4 fields only (piece placement, side to move, castling, en passant)
+            String.Join(" ", parts.[0..3])
+        else
+            fen
     
     /// Parse a single feature line from Winboard engine
     /// Example: "feature ping=1 setboard=1 done=1"
@@ -331,7 +344,7 @@ module WinboardProtocol =
     /// Example: "9 12 1000 100000 e2e4 e7e5 Nf3"
     /// Some engines use format like "4001" where depth=4, iteration=001
     /// UCI: "info depth 9 score cp 12 time 10000 nodes 100000 pv e2e4 e7e5 Nf3"
-    let parseThinkingOutput (currentBoard: Chess.Board) (engineName: string) (line: string) =
+    let parseThinkingOutput (flipped: bool) (currentBoard: Chess.Board) (engineName: string) (line: string) =
         let parts = line.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
         
         if parts.Length >= 4 then
@@ -348,10 +361,8 @@ module WinboardProtocol =
                 // UCI standard: scores are from White's perspective
                 // Convert: if Black to move, negate the score
                 // Exception: A few engines (like "the king", "gnuchess") report from White's perspective already
-                let isBlackToMove = currentBoard.Position.STM <> 0uy
-                let engineLower = engineName.ToLower()
-                let reportsFromWhitePerspective = 
-                    engineLower.Contains("king") || engineLower.Contains("gnuchess")
+                let isBlackToMove = currentBoard.Position.STM <> 0uy                
+                let reportsFromWhitePerspective = flipped
                 
                 let adjustedScore = 
                     if reportsFromWhitePerspective then
@@ -423,7 +434,7 @@ module WinboardProtocol =
             false
 
     /// Winboard protocol handler - manages state and translation
-    type WinboardHandler(logger: ILogger, configuredEngineName: string) =         
+    type WinboardHandler(logger: ILogger, configuredEngineName: string, flipped: bool) =         
         
         //let moveList = Array.init 256 (fun _ -> defaultof<TMove>)
         let probeLock = obj()  // Thread safety for probe operations
@@ -582,7 +593,7 @@ module WinboardProtocol =
                 elif thinkingOutputRegex.IsMatch(trimmedLine) then
                     // Thinking output: depth score time nodes [pv...]
                     // Use configured engine name for score perspective detection (works for v1 engines too)
-                    parseThinkingOutput board configuredEngineName trimmedLine
+                    parseThinkingOutput flipped board configuredEngineName trimmedLine
                 elif trimmedLine.StartsWith("Error") || trimmedLine.StartsWith("Illegal") then
                     let lower = trimmedLine.ToLowerInvariant()
                     let mutable updated = false
@@ -592,6 +603,18 @@ module WinboardProtocol =
                             updated <- true
                     // Downgrade capabilities when the engine reports unknown/illegal commands.
                     markFalse "usermove" (fun f -> { f with UserMove = false })
+                    // Check if error is a setboard FEN parsing issue (numeric command error)
+                    if lower.Contains("unknown command") then
+                        let errorParts = trimmedLine.Split([|':'|], StringSplitOptions.RemoveEmptyEntries)
+                        if errorParts.Length > 1 then
+                            let cmdPart = errorParts.[1].Trim()
+                            // If the "unknown command" is just a number, it's likely from FEN parsing
+                            match System.Int32.TryParse(cmdPart) with
+                            | true, _ when features.SetBoard ->
+                                features <- { features with SetBoardNeedsFourFieldFen = true }
+                                logger.LogInformation($"Winboard engine {configuredEngineName} needs 4-field FEN for setboard (detected numeric error)")
+                                updated <- true
+                            | _ -> ()
                     markFalse "setboard" (fun f -> { f with SetBoard = false })
                     markFalse "analyze" (fun f -> { f with Analyze = false; ExitCmd = false })
                     markFalse "ping" (fun f -> { f with Ping = false })
@@ -721,7 +744,12 @@ module WinboardProtocol =
                 let positionCommands, usedForce =
                     if features.SetBoard then
                         // Prefer setboard when supported to avoid replaying moves on v1 engines.
-                        ([ $"setboard {board.FEN()}" ], true)
+                        let fen = 
+                            if features.SetBoardNeedsFourFieldFen then
+                                stripFenMoveCounters (board.FEN())
+                            else
+                                board.FEN()
+                        ([ $"setboard {fen}" ], true)
                     else
                         positionToWinboard cmd features this.SupportsForceCmd
                 positionUsedForce <- usedForce
@@ -827,6 +855,7 @@ module WinboardProtocol =
                 Name = false
                 Pause = false
                 Done = true           // Mark as done
+                SetBoardNeedsFourFieldFen = false
             }
             isInitialized <- true
             isV1Fallback <- true
