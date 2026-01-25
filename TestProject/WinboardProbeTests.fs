@@ -11,6 +11,7 @@ open Microsoft.Extensions.Logging
 open Xunit
 open ChessLibrary.WinboardIntegration
 open ChessLibrary.WinboardProtocol
+open ChessLibrary.Chess
 
 type TestLogger() =
     interface ILogger with
@@ -198,13 +199,13 @@ let private probeEngine (flipped:bool)  (engineName: string) (path: string) (exp
 let ``Winboard probing detects capabilities for ant`` () =
     probeEngine false "ant" @"C:\Dev\Chess\Engines\WB_Natives\ant.exe"
         { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+        { Ping = Some false; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = None; OTimeCmd = None; ForceCmd = None; WhiteCmd = None; BlackCmd = None; PostCmd = None; MoveNowCmd = None; ExitCmd = None; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for Comet_B68`` () =
     probeEngine false "Comet_B68" @"C:\Dev\Chess\Engines\WB_Natives\Comet_B68.exe"
         { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+        { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = None; BlackCmd = None; PostCmd = Some true; MoveNowCmd = Some false; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for TheTurk`` () =
@@ -222,13 +223,79 @@ let ``Winboard probing detects capabilities for Jonny400`` () =
 let ``Winboard probing detects capabilities for Thinker5.4DUCI`` () =
     probeEngine false "Thinker5.4DUCI" @"C:\Dev\Chess\Engines\WB_Natives\Thinker5.4DUCI.exe"
         { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+        { Ping = Some false; SetBoard = Some true; UserMove = Some true; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
 
 [<Fact>]
 let ``Winboard probing detects capabilities for xchenard64`` () =
     probeEngine false "xchenard64" @"C:\Dev\Chess\Engines\WB_Natives\xchenard64.exe"
         { RequiresInit = true }
         { Ping = Some true; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some false; BlackCmd = Some false; PostCmd = Some true; MoveNowCmd = Some false; ExitCmd = Some false; EasyCmd = None; HardCmd = None }
+
+[<Fact>]
+let ``Winboard probing detects capabilities for TheKing350x64`` () =
+    probeEngine false "TheKing350x64" @"C:\Dev\Chess\Engines\WB_Natives\TheKing350x64.exe"
+        { RequiresInit = true }
+        { Ping = None; SetBoard = None; UserMove = None; Analyze = None; TimeCmd = None; OTimeCmd = None; ForceCmd = None; WhiteCmd = None; BlackCmd = None; PostCmd = None; MoveNowCmd = None; ExitCmd = None; EasyCmd = None; HardCmd = None }
+
+[<Fact>]
+let ``Winboard move output formats parse`` () =
+    let startBoard = Board()
+
+    let withFen fen =
+        let b = Board()
+        b.LoadFen(fen)
+        b
+
+    let assertBestmove expected line board =
+        let parsed = tryParseMoveOutput board line
+        Assert.Equal(Some expected, parsed)
+
+    assertBestmove "bestmove e2e4" "move e2e4" startBoard
+    assertBestmove "bestmove e2e4" "e2e4" startBoard
+    assertBestmove "bestmove g6h7" "1. ... g6h7" startBoard
+    assertBestmove "bestmove e2e4" "e2-e4" startBoard
+    assertBestmove "bestmove g6h7" "g6-h7" startBoard
+
+    // SAN without move number
+    let bishopBoard = withFen "8/8/8/8/8/8/2B5/4K3 w - - 0 1"
+    assertBestmove "bestmove c2h7" "move Bh7" bishopBoard
+
+    // SAN with move number and ellipsis
+    let blackPawnBoard = withFen "8/8/8/3p4/8/8/8/4K3 b - - 0 1"
+    assertBestmove "bestmove d5d4" "1. ... d4" blackPawnBoard
+
+[<Fact>]
+let ``Winboard PV formats normalize`` () =
+    let withFen fen =
+        let b = Board()
+        b.LoadFen(fen)
+        b
+
+    let assertPvContains expectedTokens infoLine board =
+        match parseThinkingOutput false board "test" infoLine with
+        | Some uci ->
+            Assert.Contains(" pv ", uci)
+            for token in expectedTokens do
+                Assert.Contains(token, uci)
+        | None ->
+            Assert.True(false, $"Expected pv in '{infoLine}'")
+
+    // Coordinate PV with move number and ellipsis + hyphenated coords
+    let fen1 = "rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7"
+    let board1 = withFen fen1
+    assertPvContains [ "g6h7" ] "1 -13 0 234 1. ... g6-h7 b1c3 e7e6" board1
+
+    // SAN PV with move number and ellipsis
+    let board2 = withFen fen1
+    assertPvContains [ "g6h7" ] "1 -13 0 234 1. ... Bh7 Nc3 e6" board2
+
+    // SAN PV without move number
+    let board3 = withFen fen1
+    assertPvContains [ "g6h7" ] "1 -13 0 234 Bh7 Nc3 e6" board3
+
+    // SAN PV with move number only
+    let board4 = withFen "8/8/8/3p4/8/8/8/4K3 b - - 0 1"
+    assertPvContains [ "d5d4" ] "1 -13 0 234 1. d4" board4
 
 [<Fact>]
 let ``Crafty analysis mode emits analysis and exits with go move`` () =
@@ -367,6 +434,7 @@ let ``Winboard probing discovery report`` () =
             ("TheTurk", @"C:\Dev\Chess\Engines\WB_Natives\TheTurk.exe")
             ("Thinker5.4DUCI", @"C:\Dev\Chess\Engines\WB_Natives\Thinker5.4DUCI.exe")
             ("xchenard64", @"C:\Dev\Chess\Engines\WB_Natives\xchenard64.exe")
+            ("TheKing350x64", @"C:\Dev\Chess\Engines\WB_Natives\TheKing350x64.exe")
             ("Crafty", @"C:\Dev\Chess\Engines\Crafty\crafty-23.5-64bit.exe")
         ]
 

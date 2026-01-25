@@ -50,9 +50,10 @@
   protected override void OnInitialized()
   {
     cycleTimer = new Timer(CycleSeconds * 1000);
-    cycleTimer.Elapsed += (sender, args) =>
+    cycleTimer.Elapsed += async (sender, args) =>
     {
-      activeTableIndex = (activeTableIndex + 1) % 2;      
+      activeTableIndex = (activeTableIndex + 1) % 2;
+      await InvokeAsync(StateHasChanged);
     };
     cycleTimer.Start();
     base.OnInitialized();

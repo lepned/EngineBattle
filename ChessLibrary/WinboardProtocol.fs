@@ -39,6 +39,7 @@ module WinboardProtocol =
     let private setOptionRegex = Regex(@"^setoption\s+name\s+(.+?)(?:\s+value\s+(.+))?$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
     let private coordinateNotationRegex = Regex(@"^[a-h][1-8][a-h][1-8][qrbn]?$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
     let private moveNotationStartRegex = Regex(@"^[a-h][1-8][a-h][1-8]", RegexOptions.Compiled)
+    let private moveNumberPrefixRegex = Regex(@"^\d+\.$", RegexOptions.Compiled)
 
     /// Winboard engine feature support state
     type FeatureState = {
@@ -191,7 +192,8 @@ module WinboardProtocol =
     /// UCI: "position startpos moves e2e4 e7e5"
     /// Winboard: "force" "new" "e2e4" "e7e5"
     /// OR: "force" "setboard <fen>" followed by moves (if setboard supported)
-    let positionToWinboard (command: string) (features: FeatureState) (supportsForce: bool) =
+    let positionToWinboard (command: string) (features: FeatureState) (supportsForce: bool) (allowUserMove: bool) =
+        //printfn $"Converting UCI position command to Winboard: {command}"
         let commands = ResizeArray<string>()
         let mutable usedForce = false
         
@@ -217,7 +219,7 @@ module WinboardProtocol =
                 let movesStr = command.Substring(movesIdx + 6)
                 let moves = movesStr.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
                 for move in moves do
-                    if features.UserMove then
+                    if allowUserMove && features.UserMove then
                         commands.Add($"usermove {move}")
                     else
                         commands.Add(move)
@@ -265,7 +267,7 @@ module WinboardProtocol =
                 if not (String.IsNullOrWhiteSpace(movesStr)) then
                     let moves = movesStr.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
                     for move in moves do
-                        if features.UserMove then
+                        if allowUserMove && features.UserMove then
                             commands.Add($"usermove {move}")
                         else
                             commands.Add(move)
@@ -375,13 +377,15 @@ module WinboardProtocol =
                 // Convert PV from SAN to coordinate notation using the current board state
                 let pv = 
                     if parts.Length > 4 then 
-                        let sanPv = String.Join(" ", parts.[4..])
-                        // Create a temporary board at the current position to parse PV
-                        let tempBoard = Chess.Board()
-                        tempBoard.LoadFen(currentBoard.FEN())
-                        tempBoard.IsFRC <- currentBoard.IsFRC
-                        let sanPVline = sanPv.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                        getLongSanPVFromShortSanPV moveList.Value &tempBoard sanPVline
+                        let rawPv = parts.[4..]
+                        // Normalize PV tokens: drop move numbers / ellipses and dehyphenate coords.
+                        let normalized =
+                            rawPv
+                            |> Array.map (fun t -> t.Trim())
+                            |> Array.filter (fun t -> t <> "" && t <> "..." && not (moveNumberPrefixRegex.IsMatch(t)))
+                            |> Array.map (fun t -> t.Replace("-", ""))
+                        let sanPVline = String.Join(" ", normalized).Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        getLongSanPVFromShortSanPV moveList.Value &currentBoard sanPVline
                     else 
                         ""
                 
@@ -406,6 +410,21 @@ module WinboardProtocol =
             else
                 line.Trim()
         
+        let normalizeToken (token: string) =
+            token.Trim().Trim([|'.'; ','; ';'; ':'; '!'; '?'|])
+        
+        let isEllipsis (token: string) =
+            token = "..." || token = ".." || token = "."
+        
+        let tryNormalizeCoordinate (token: string) =
+            let t = normalizeToken token
+            if coordinateNotationRegex.IsMatch(t) then
+                Some t
+            else
+                // Support hyphenated coordinates like "e2-e4" or "g6-h7"
+                let dehyphen = t.Replace("-", "")
+                if coordinateNotationRegex.IsMatch(dehyphen) then Some dehyphen else None
+        
         // Extract move (ignore ponder for now)
         let parts = moveStr.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
         let move = parts.[0]
@@ -415,18 +434,41 @@ module WinboardProtocol =
         elif coordinateNotationRegex.IsMatch(move) then
             Some $"bestmove {move.ToLower()}"
         else
-            // Try to convert SAN (e.g., cxd5, Nf3, O-O) to coordinate notation
-            let longSan = BoardUtils.getLongSanPVFromShortSanPV moveList.Value &board [move]
-            if String.IsNullOrWhiteSpace(longSan) then
-                None
-            else
-                let converted = longSan.Split([|' '|], StringSplitOptions.RemoveEmptyEntries).[0]
-                Some $"bestmove {converted}"
+            // Some engines prefix moves with move numbers (e.g. "1. ... g6h7")
+            // If so, pick the last coordinate-notation token (including hyphenated coords).
+            let coordToken =
+                parts
+                |> Array.tryFindBack (fun token -> tryNormalizeCoordinate token |> Option.isSome)
+            match coordToken |> Option.bind tryNormalizeCoordinate with
+            | Some token -> Some $"bestmove {token.ToLower()}"
+            | None ->
+                // Try to convert SAN (e.g., cxd5, Nf3, O-O), including move-number prefixes.
+                let sanCandidate =
+                    parts
+                    |> Array.map normalizeToken
+                    |> Array.filter (fun t -> not (String.IsNullOrWhiteSpace(t)) && not (isEllipsis t))
+                    |> Array.tryFindBack (fun t ->
+                        // Skip tokens that are just move numbers like "1"
+                        let mutable v = 0
+                        not (Int32.TryParse(t, &v))
+                    )
+                match sanCandidate with
+                | Some sanMove ->
+                    let longSan = BoardUtils.getLongSanPVFromShortSanPV moveList.Value &board [sanMove]
+                    if String.IsNullOrWhiteSpace(longSan) then
+                        None
+                    else
+                        let converted = longSan.Split([|' '|], StringSplitOptions.RemoveEmptyEntries).[0]
+                        Some $"bestmove {converted}"
+                | None ->
+                    None
     
     /// Check if a line looks like a move in coordinate notation
     let isMoveNotation (line: string) =
         if String.IsNullOrWhiteSpace(line) then false
         elif line.StartsWith("move ") then true
+        // Support move-number prefixes like "1. ... d4"
+        elif Regex.IsMatch(line, @"^\s*\d+\.\s*(\.\.\.)?\s*\S+") then true
         elif line.Length >= 4 then
             let moveCandidate = line.Substring(0, min 4 line.Length)
             moveNotationStartRegex.IsMatch(moveCandidate)
@@ -437,6 +479,7 @@ module WinboardProtocol =
     type WinboardHandler(logger: ILogger, configuredEngineName: string, flipped: bool) =         
         
         //let moveList = Array.init 256 (fun _ -> defaultof<TMove>)
+        let stateLock = obj()  // Thread safety for general state
         let probeLock = obj()  // Thread safety for probe operations
         let mutable features = defaultFeatures
         let mutable isInitialized = false
@@ -446,24 +489,24 @@ module WinboardProtocol =
         let mutable moveCount = 0
         let mutable inAnalyzeMode = false  // Track if we're in analyze mode
         let mutable positionUsedForce = false
-        let mutable activeProbe : (ProbeRequest * int option * System.Threading.Tasks.TaskCompletionSource<bool>) option = None
+        let mutable activeProbe : (ProbeRequest * int option * System.Threading.Tasks.TaskCompletionSource<bool> * System.Threading.CancellationTokenSource) option = None
         
-        member _.Features = features
-        member _.IsInitialized = isInitialized
-        member _.IsV1Fallback = isV1Fallback
-        member _.SupportsTimeCmd = features.TimeCmd
-        member _.SupportsOTimeCmd = features.OTimeCmd
-        member _.SupportsForceCmd = features.ForceCmd
-        member _.SupportsWhiteCmd = features.WhiteCmd
-        member _.SupportsBlackCmd = features.BlackCmd
-        member _.SupportsPostCmd = features.PostCmd
-        member _.SupportsMoveNowCmd = features.MoveNowCmd
-        member _.SupportsExitCmd = features.ExitCmd
-        member _.SupportsOptionCmd = features.OptionCmd
+        member _.Features = lock stateLock (fun () -> features)
+        member _.IsInitialized = lock stateLock (fun () -> isInitialized)
+        member _.IsV1Fallback = lock stateLock (fun () -> isV1Fallback)
+        member _.SupportsTimeCmd = lock stateLock (fun () -> features.TimeCmd)
+        member _.SupportsOTimeCmd = lock stateLock (fun () -> features.OTimeCmd)
+        member _.SupportsForceCmd = lock stateLock (fun () -> features.ForceCmd)
+        member _.SupportsWhiteCmd = lock stateLock (fun () -> features.WhiteCmd)
+        member _.SupportsBlackCmd = lock stateLock (fun () -> features.BlackCmd)
+        member _.SupportsPostCmd = lock stateLock (fun () -> features.PostCmd)
+        member _.SupportsMoveNowCmd = lock stateLock (fun () -> features.MoveNowCmd)
+        member _.SupportsExitCmd = lock stateLock (fun () -> features.ExitCmd)
+        member _.SupportsOptionCmd = lock stateLock (fun () -> features.OptionCmd)
         // Derive isWhiteToMove from actual board state (STM = 0 means white)
-        member _.IsWhiteToMove = board.Position.STM = 0uy
-        member _.CurrentFen = board.FEN()  // Use FEN() method instead of CurrentFEN property
-        member _.Board = board
+        member _.IsWhiteToMove = lock stateLock (fun () -> board.Position.STM = 0uy)
+        member _.CurrentFen = lock stateLock (fun () -> board.FEN())  // Use FEN() method instead of CurrentFEN property
+        member _.Board = lock stateLock (fun () -> board)
         member _.ConfiguredName = configuredEngineName
         
         
@@ -484,21 +527,17 @@ module WinboardProtocol =
                 // Trim the line to handle leading/trailing whitespace
                 let trimmedLine = line.Trim()
 
-                let isProbeErrorLine (text: string) =
-                    let lower = text.ToLowerInvariant()
-                    lower.StartsWith("error")
-                    || lower.StartsWith("illegal")
-                    || lower.Contains("unknown command")
-                    || lower.Contains("not supported")
-                    || lower.Contains("unsupported")
-
                 let tryCompleteProbe (success: bool) =
                     lock probeLock (fun () ->
                         match activeProbe with
-                        | Some (probe, _, tcs) ->
+                        | Some (probe, _, tcs, cts) ->
                             activeProbe <- None
+                            cts.Cancel()  // Cancel the timeout operation
+                            cts.Dispose()
                             if success then
-                                features <- probe.OnSuccess features
+                                lock stateLock (fun () ->
+                                    features <- probe.OnSuccess features
+                                )
                                 logger.LogDebug($"Winboard probe '{probe.Name}' succeeded; updated features.")
                             else
                                 logger.LogWarning($"Winboard probe '{probe.Name}' failed.")
@@ -507,11 +546,12 @@ module WinboardProtocol =
                         | None -> false
                     )
                 
-                // Probe handling: detect error/success while probing
+                // Probe handling: any output means "not supported"; silence means success.
+                // Exception: ping expects "pong" to indicate success.
                 let probeConsumed =
                     lock probeLock (fun () ->
                         match activeProbe with
-                        | Some (probe, pingIdOpt, _) ->
+                        | Some (probe, pingIdOpt, _, _) ->
                             match probe.Kind with
                             | Ping ->
                                 if trimmedLine.StartsWith("pong", StringComparison.OrdinalIgnoreCase) then
@@ -528,39 +568,25 @@ module WinboardProtocol =
                                     else
                                         false
                                 else
-                                if isProbeErrorLine trimmedLine then
-                                    let isIllegal = trimmedLine.StartsWith("Illegal", StringComparison.OrdinalIgnoreCase)
-                                    if probe.TreatIllegalAsSuccess && isIllegal then
-                                        ignore (tryCompleteProbe true)
-                                    else
-                                        logger.LogWarning($"Winboard probe error output: {trimmedLine}")
-                                        ignore (tryCompleteProbe false)
+                                    ignore (tryCompleteProbe false)
                                     true
-                                else
-                                    false
                             | _ ->
-                                if isProbeErrorLine trimmedLine then
-                                    let isIllegal = trimmedLine.StartsWith("Illegal", StringComparison.OrdinalIgnoreCase)
-                                    if probe.TreatIllegalAsSuccess && isIllegal then
-                                        ignore (tryCompleteProbe true)
-                                    else
-                                        logger.LogWarning($"Winboard probe error output: {trimmedLine}")
-                                        ignore (tryCompleteProbe false)
-                                    true
-                                else
-                                    false
-                        | None -> 
+                                ignore (tryCompleteProbe false)
+                                true
+                        | None ->
                             false
                     )
 
                 if probeConsumed then
                     None
                 elif trimmedLine.StartsWith("feature") then
-                    features <- parseFeature trimmedLine features
-                    if features.Done then
-                        isInitialized <- true
-                        let opt = features.MyName |> Option.defaultValue "Unknown"
-                        logger.LogInformation($"Winboard engine features negotiated: {opt}")
+                    lock stateLock (fun () ->
+                        features <- parseFeature trimmedLine features
+                        if features.Done then
+                            isInitialized <- true
+                    )
+                    let opt = lock stateLock (fun () -> features.MyName) |> Option.defaultValue "Unknown"
+                    logger.LogInformation($"Winboard engine features negotiated: {opt}")
                     None
                 elif trimmedLine.StartsWith("pong") then
                     let pongId =
@@ -570,70 +596,90 @@ module WinboardProtocol =
                             | true, id -> Some id
                             | _ -> None
                         else None
-                    match pendingPing with
-                    | Some id when pongId = Some id || pongId.IsNone ->
-                        pendingPing <- None
-                        Some "readyok"
-                    | _ ->
-                        None
+                    lock stateLock (fun () ->
+                        match pendingPing with
+                        | Some id when pongId = Some id || pongId.IsNone ->
+                            pendingPing <- None
+                            Some "readyok"
+                        | _ ->
+                            None
+                    )
                 elif trimmedLine.StartsWith("move ") || isMoveNotation trimmedLine then
                     // Engine is sending its move - translate to UCI format (coordinate or SAN)
                     // Don't try to track it on our internal board, as the position command
                     // will give us the correct state for the next move
-                    match tryParseMoveOutput board trimmedLine with
+                    let currentBoard = lock stateLock (fun () -> board)
+                    match tryParseMoveOutput currentBoard trimmedLine with
                     | Some uciMove -> Some uciMove
                     | None ->
                         logger.LogWarning($"Winboard move not understood: {trimmedLine}")
                         None
                 elif trimmedLine.StartsWith("option ", StringComparison.OrdinalIgnoreCase) then
-                    if not features.OptionCmd then
-                        features <- { features with OptionCmd = true }
-                        logger.LogDebug($"Winboard option support detected for {configuredEngineName}.")
+                    lock stateLock (fun () ->
+                        if not features.OptionCmd then
+                            features <- { features with OptionCmd = true }
+                            logger.LogDebug($"Winboard option support detected for {configuredEngineName}.")
+                    )
+                    None
+                elif trimmedLine.StartsWith("strange char:", StringComparison.OrdinalIgnoreCase)
+                     || trimmedLine.StartsWith("Command: setboard", StringComparison.OrdinalIgnoreCase)
+                     || trimmedLine.Contains("setboard", StringComparison.OrdinalIgnoreCase) && trimmedLine.StartsWith("Command:", StringComparison.OrdinalIgnoreCase)
+                     || trimmedLine.StartsWith("Error(setboard", StringComparison.OrdinalIgnoreCase)
+                     || trimmedLine.StartsWith("Error (unknown command): setboard", StringComparison.OrdinalIgnoreCase)
+                     || trimmedLine.StartsWith("Illegal move: setboard", StringComparison.OrdinalIgnoreCase) then
+                    lock stateLock (fun () ->
+                        if features.SetBoard then
+                            features <- { features with SetBoard = false }
+                            logger.LogWarning($"Winboard setboard disabled due to engine output: {trimmedLine}")
+                    )
                     None
                 elif thinkingOutputRegex.IsMatch(trimmedLine) then
                     // Thinking output: depth score time nodes [pv...]
                     // Use configured engine name for score perspective detection (works for v1 engines too)
-                    parseThinkingOutput flipped board configuredEngineName trimmedLine
+                    let currentBoard = lock stateLock (fun () -> board)
+                    parseThinkingOutput flipped currentBoard configuredEngineName trimmedLine
                 elif trimmedLine.StartsWith("Error") || trimmedLine.StartsWith("Illegal") then
                     let lower = trimmedLine.ToLowerInvariant()
-                    let mutable updated = false
-                    let markFalse (flagName: string) setter =
-                        if lower.Contains(flagName) then
-                            features <- setter features
-                            updated <- true
-                    // Downgrade capabilities when the engine reports unknown/illegal commands.
-                    markFalse "usermove" (fun f -> { f with UserMove = false })
-                    // Check if error is a setboard FEN parsing issue (numeric command error)
-                    if lower.Contains("unknown command") then
-                        let errorParts = trimmedLine.Split([|':'|], StringSplitOptions.RemoveEmptyEntries)
-                        if errorParts.Length > 1 then
-                            let cmdPart = errorParts.[1].Trim()
-                            // If the "unknown command" is just a number, it's likely from FEN parsing
-                            match System.Int32.TryParse(cmdPart) with
-                            | true, _ when features.SetBoard ->
-                                features <- { features with SetBoardNeedsFourFieldFen = true }
-                                logger.LogInformation($"Winboard engine {configuredEngineName} needs 4-field FEN for setboard (detected numeric error)")
+                    lock stateLock (fun () ->
+                        let mutable updated = false
+                        let markFalse (flagName: string) setter =
+                            if lower.Contains(flagName) then
+                                features <- setter features
                                 updated <- true
-                            | _ -> ()
-                    markFalse "setboard" (fun f -> { f with SetBoard = false })
-                    markFalse "analyze" (fun f -> { f with Analyze = false; ExitCmd = false })
-                    markFalse "ping" (fun f -> { f with Ping = false })
-                    markFalse "time" (fun f -> { f with TimeCmd = false })
-                    markFalse "otim" (fun f -> { f with OTimeCmd = false })
-                    markFalse "force" (fun f -> { f with ForceCmd = false })
-                    markFalse "white" (fun f -> { f with WhiteCmd = false })
-                    markFalse "black" (fun f -> { f with BlackCmd = false })
-                    markFalse "post" (fun f -> { f with PostCmd = false })
-                    markFalse "?" (fun f -> { f with MoveNowCmd = false })
-                    markFalse "exit" (fun f -> { f with ExitCmd = false })
-                    markFalse "option" (fun f -> { f with OptionCmd = false })
-                    if lower.Contains("protover") then
-                        isV1Fallback <- true
-                        updated <- true
-                    if updated then
-                        logger.LogWarning($"Winboard capabilities downgraded based on error: {trimmedLine}")
-                    else
-                        logger.LogWarning($"Winboard engine error: {trimmedLine}")
+                        // Downgrade capabilities when the engine reports unknown/illegal commands.
+                        markFalse "usermove" (fun f -> { f with UserMove = false })
+                        // Check if error is a setboard FEN parsing issue (numeric command error)
+                        if lower.Contains("unknown command") then
+                            let errorParts = trimmedLine.Split([|':'|], StringSplitOptions.RemoveEmptyEntries)
+                            if errorParts.Length > 1 then
+                                let cmdPart = errorParts.[1].Trim()
+                                // If the "unknown command" is just a number, it's likely from FEN parsing
+                                match System.Int32.TryParse(cmdPart) with
+                                | true, _ when features.SetBoard ->
+                                    features <- { features with SetBoardNeedsFourFieldFen = true }
+                                    logger.LogInformation($"Winboard engine {configuredEngineName} needs 4-field FEN for setboard (detected numeric error)")
+                                    updated <- true
+                                | _ -> ()
+                        markFalse "setboard" (fun f -> { f with SetBoard = false })
+                        markFalse "analyze" (fun f -> { f with Analyze = false; ExitCmd = false })
+                        markFalse "ping" (fun f -> { f with Ping = false })
+                        markFalse "time" (fun f -> { f with TimeCmd = false })
+                        markFalse "otim" (fun f -> { f with OTimeCmd = false })
+                        markFalse "force" (fun f -> { f with ForceCmd = false })
+                        markFalse "white" (fun f -> { f with WhiteCmd = false })
+                        markFalse "black" (fun f -> { f with BlackCmd = false })
+                        markFalse "post" (fun f -> { f with PostCmd = false })
+                        markFalse "?" (fun f -> { f with MoveNowCmd = false })
+                        markFalse "exit" (fun f -> { f with ExitCmd = false })
+                        markFalse "option" (fun f -> { f with OptionCmd = false })
+                        if lower.Contains("protover") then
+                            isV1Fallback <- true
+                            updated <- true
+                        if updated then
+                            logger.LogWarning($"Winboard capabilities downgraded based on error: {trimmedLine}")
+                        else
+                            logger.LogWarning($"Winboard engine error: {trimmedLine}")
+                    )
                     None
                 elif trimmedLine.StartsWith("#") then
                     // Comment line - ignore
@@ -643,7 +689,8 @@ module WinboardProtocol =
                     None
                 else
                     // Try SAN move without the "move " prefix
-                    match tryParseMoveOutput board trimmedLine with
+                    let currentBoard = lock stateLock (fun () -> board)
+                    match tryParseMoveOutput currentBoard trimmedLine with
                     | Some uciMove -> Some uciMove
                     | None ->
                         // Unknown output - log for debugging
@@ -660,134 +707,148 @@ module WinboardProtocol =
             if cmd = "uci" then
                 this.Initialize()
             elif cmd = "isready" then
-                if not isInitialized then
+                let initialized = lock stateLock (fun () -> isInitialized)
+                if not initialized then
                     []
-                elif features.Ping then
-                    // Only use ping if engine supports it
-                    let pingId = System.Random().Next(1, 10000)
-                    pendingPing <- Some pingId
-                    [$"ping {pingId}"]
                 else
-                    // Winboard v1 engines don't support ping - just return empty
-                    // The engine is considered "ready" after initialization
-                    []
+                    let ping = lock stateLock (fun () -> features.Ping)
+                    if ping then
+                        // Only use ping if engine supports it
+                        let pingId = System.Random().Next(1, 10000)
+                        lock stateLock (fun () -> pendingPing <- Some pingId)
+                        [$"ping {pingId}"]
+                    else
+                        // Winboard v1 engines don't support ping - just return empty
+                        // The engine is considered "ready" after initialization
+                        []
             elif cmd = "ucinewgame" then
                 // Reset board to starting position
-                board.ResetBoardState()
-                moveCount <- 0
-                logger.LogDebug($"Board reset to starting position: {board.FEN()}")
+                lock stateLock (fun () ->
+                    board.ResetBoardState()
+                    moveCount <- 0
+                    logger.LogDebug($"Board reset to starting position: {board.FEN()}")
+                )
                 ["new"]
             elif cmd.StartsWith("position") then
-                // Create a fresh board for this position to avoid accumulated state corruption
-                board.ResetBoardState() // <- new Board()
-                
-                // Parse and apply position command to our board
-                try
-                    if cmd.Contains("startpos") then
-                        board.ResetBoardState()
-                        logger.LogDebug($"Board set to startpos: {board.FEN()}")
-                    elif cmd.Contains("fen") then
-                        let fenIdx = cmd.IndexOf("fen")
-                        if fenIdx >= 0 && fenIdx + 4 < cmd.Length then
-                            let fenStart = fenIdx + 4
-                            let movesIdx = cmd.IndexOf("moves")
-                            let fen = 
-                                if movesIdx >= 0 && movesIdx > fenStart then
-                                    cmd.Substring(fenStart, movesIdx - fenStart).Trim()
-                                elif fenStart < cmd.Length then
-                                    cmd.Substring(fenStart).Trim()
-                                else
-                                    ""
-                            
-                            if not (String.IsNullOrWhiteSpace(fen)) then
-                                board.LoadFen(fen)
-                                logger.LogDebug($"Board set to FEN: {board.FEN()}")
-                            else
-                                logger.LogWarning($"Empty FEN in position command: {cmd}")
-                        else
-                            logger.LogWarning($"Invalid position command format: {cmd}")
+                lock stateLock (fun () ->
+                    // Create a fresh board for this position to avoid accumulated state corruption
+                    board.ResetBoardState() // <- new Board()
                     
-                    // Apply moves if present - stop on first error to prevent corruption
-                    let movesIdx = cmd.IndexOf("moves")
-                    if movesIdx >= 0 && movesIdx + 6 <= cmd.Length then
-                        let movesStr = cmd.Substring(movesIdx + 6).Trim()
-                        if not (String.IsNullOrWhiteSpace(movesStr)) then
-                            let moves = movesStr.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
-                            let mutable moveIndex = 0
-                            let mutable continueApplying = true
-                            while continueApplying && moveIndex < moves.Length do
-                                let moveStr = moves.[moveIndex]
-                                match tryGetTMoveFromCoordinateNotation &board moveStr with
-                                | Some tmove ->
-                                    try
-                                        board.MakeMove(&tmove)
-                                        moveIndex <- moveIndex + 1
-                                    with ex ->
-                                        logger.LogError($"Failed to apply move {moveIndex + 1}/{moves.Length}: {moveStr}")
-                                        logger.LogError($"Board FEN before failed move: {board.FEN()}")
-                                        logger.LogError($"Error: {ex.Message}")
-                                        continueApplying <- false
-                                | None ->
-                                    logger.LogWarning($"Could not parse move {moveIndex + 1}/{moves.Length}: {moveStr}, stopping at FEN: {board.FEN()}")
-                                    continueApplying <- false
-                            
-                            // Log success
-                            if moveIndex = moves.Length then
-                                logger.LogDebug($"Successfully applied all {moves.Length} moves, final FEN: {board.FEN()}")
-                with ex ->
-                    logger.LogError($"Error processing position command: {ex.Message}")
-                    logger.LogError($"Full command: {cmd}")
-                    logger.LogError($"Stack trace: {ex.StackTrace}")
-                    logger.LogError($"Current board state: {board.FEN()}")
-                
-                // Send commands to Winboard engine, then ping to ensure synchronization
-                let positionCommands, usedForce =
-                    if features.SetBoard then
-                        // Prefer setboard when supported to avoid replaying moves on v1 engines.
-                        let fen = 
-                            if features.SetBoardNeedsFourFieldFen then
-                                stripFenMoveCounters (board.FEN())
+                    // Parse and apply position command to our board
+                    try
+                        if cmd.Contains("startpos") then
+                            board.ResetBoardState()
+                            logger.LogDebug($"Board set to startpos: {board.FEN()}")
+                        elif cmd.Contains("fen") then
+                            let fenIdx = cmd.IndexOf("fen")
+                            if fenIdx >= 0 && fenIdx + 4 < cmd.Length then
+                                let fenStart = fenIdx + 4
+                                let movesIdx = cmd.IndexOf("moves")
+                                let fen = 
+                                    if movesIdx >= 0 && movesIdx > fenStart then
+                                        cmd.Substring(fenStart, movesIdx - fenStart).Trim()
+                                    elif fenStart < cmd.Length then
+                                        cmd.Substring(fenStart).Trim()
+                                    else
+                                        ""
+                                
+                                if not (String.IsNullOrWhiteSpace(fen)) then
+                                    board.LoadFen(fen)
+                                    logger.LogDebug($"Board set to FEN: {board.FEN()}")
+                                else
+                                    logger.LogWarning($"Empty FEN in position command: {cmd}")
                             else
-                                board.FEN()
-                        ([ $"setboard {fen}" ], true)
+                                logger.LogWarning($"Invalid position command format: {cmd}")
+                        
+                        // Apply moves if present - stop on first error to prevent corruption
+                        let movesIdx = cmd.IndexOf("moves")
+                        if movesIdx >= 0 && movesIdx + 6 <= cmd.Length then
+                            let movesStr = cmd.Substring(movesIdx + 6).Trim()
+                            if not (String.IsNullOrWhiteSpace(movesStr)) then
+                                let moves = movesStr.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
+                                let mutable moveIndex = 0
+                                let mutable continueApplying = true
+                                while continueApplying && moveIndex < moves.Length do
+                                    let moveStr = moves.[moveIndex]
+                                    match tryGetTMoveFromCoordinateNotation &board moveStr with
+                                    | Some tmove ->
+                                        try
+                                            board.MakeMove(&tmove)
+                                            moveIndex <- moveIndex + 1
+                                        with ex ->
+                                            logger.LogError($"Failed to apply move {moveIndex + 1}/{moves.Length}: {moveStr}")
+                                            logger.LogError($"Board FEN before failed move: {board.FEN()}")
+                                            logger.LogError($"Error: {ex.Message}")
+                                            continueApplying <- false
+                                    | None ->
+                                        logger.LogWarning($"Could not parse move {moveIndex + 1}/{moves.Length}: {moveStr}, stopping at FEN: {board.FEN()}")
+                                        continueApplying <- false
+                                
+                                // Log success
+                                if moveIndex = moves.Length then
+                                    logger.LogDebug($"Successfully applied all {moves.Length} moves, final FEN: {board.FEN()}")
+                    with ex ->
+                        logger.LogError($"Error processing position command: {ex.Message}")
+                        logger.LogError($"Full command: {cmd}")
+                        logger.LogError($"Stack trace: {ex.StackTrace}")
+                        logger.LogError($"Current board state: {board.FEN()}")
+                    
+                    // Send commands to Winboard engine, then ping to ensure synchronization
+                    let positionCommands, usedForce =
+                        if not isV1Fallback && features.SetBoard then
+                            // Prefer setboard when supported to avoid replaying moves on v1 engines.
+                            let fen = 
+                                if features.SetBoardNeedsFourFieldFen then
+                                    stripFenMoveCounters (board.FEN())
+                                else
+                                    board.FEN()
+                            if this.SupportsForceCmd then
+                                ([ "force"; $"setboard {fen}" ], true)
+                            else
+                                ([ $"setboard {fen}" ], false)
+                        else
+                            positionToWinboard cmd features this.SupportsForceCmd (not isV1Fallback)
+                    positionUsedForce <- usedForce
+                    if features.Ping && positionCommands.Length > 2 then
+                        // Send ping after position update to ensure engine has processed all moves
+                        let pingId = System.Random().Next(1, 10000)
+                        pendingPing <- Some pingId
+                        positionCommands @ [$"ping {pingId}"]
                     else
-                        positionToWinboard cmd features this.SupportsForceCmd
-                positionUsedForce <- usedForce
-                if features.Ping && positionCommands.Length > 2 then
-                    // Send ping after position update to ensure engine has processed all moves
-                    let pingId = System.Random().Next(1, 10000)
-                    pendingPing <- Some pingId
-                    positionCommands @ [$"ping {pingId}"]
-                else
-                    positionCommands
+                        positionCommands
+                )
             elif cmd.StartsWith("go") then
-                let winboardCmds = goToWinboard cmd features this.IsWhiteToMove (Some logger) this.SupportsTimeCmd this.SupportsOTimeCmd this.SupportsWhiteCmd this.SupportsBlackCmd
-                let winboardCmds =
-                    if positionUsedForce then
-                        positionUsedForce <- false
-                        if this.IsWhiteToMove && this.SupportsWhiteCmd then
-                            "white" :: winboardCmds
-                        elif (not this.IsWhiteToMove) && this.SupportsBlackCmd then
-                            "black" :: winboardCmds
+                lock stateLock (fun () ->
+                    let winboardCmds = goToWinboard cmd features this.IsWhiteToMove (Some logger) this.SupportsTimeCmd this.SupportsOTimeCmd this.SupportsWhiteCmd this.SupportsBlackCmd
+                    let winboardCmds =
+                        if positionUsedForce then
+                            positionUsedForce <- false
+                            if this.IsWhiteToMove && this.SupportsWhiteCmd then
+                                "white" :: winboardCmds
+                            elif (not this.IsWhiteToMove) && this.SupportsBlackCmd then
+                                "black" :: winboardCmds
+                            else
+                                winboardCmds
                         else
                             winboardCmds
-                    else
-                        winboardCmds
-                let isInfinite = cmd.Contains("infinite")
-                let useAnalyze = isInfinite && features.Analyze
-                inAnalyzeMode <- useAnalyze
-                winboardCmds
+                    let isInfinite = cmd.Contains("infinite")
+                    let useAnalyze = isInfinite && features.Analyze
+                    inAnalyzeMode <- useAnalyze
+                    winboardCmds
+                )
             elif cmd = "stop" then
-                if inAnalyzeMode then
-                    // Exit analyze mode
-                    inAnalyzeMode <- false
-                    if this.SupportsMoveNowCmd && this.SupportsExitCmd then ["?"; "exit"; "force"]
-                    elif this.SupportsMoveNowCmd then ["?"; "force"]
-                    elif this.SupportsExitCmd then ["exit"; "force"]
-                    else []
-                else
-                    // Force move immediately
-                    if this.SupportsMoveNowCmd then ["?"] else []
+                lock stateLock (fun () ->
+                    if inAnalyzeMode then
+                        // Exit analyze mode
+                        inAnalyzeMode <- false
+                        if this.SupportsMoveNowCmd && this.SupportsExitCmd then ["?"; "exit"; "force"]
+                        elif this.SupportsMoveNowCmd then ["?"; "force"]
+                        elif this.SupportsExitCmd then ["exit"; "force"]
+                        else []
+                    else
+                        // Force move immediately
+                        if this.SupportsMoveNowCmd then ["?"] else []
+                )
             elif cmd = "quit" then
                 ["quit"]
             elif cmd.StartsWith("setoption") then
@@ -816,227 +877,246 @@ module WinboardProtocol =
         
         /// Reset state for new game
         member this.Reset() =
-            board.ResetBoardState()
-            moveCount <- 0
-            pendingPing <- None
-            logger.LogDebug("Winboard handler reset")
+            lock stateLock (fun () ->
+                board.ResetBoardState()
+                moveCount <- 0
+                pendingPing <- None
+                logger.LogDebug("Winboard handler reset")
+            )
         
         /// Force initialization for Winboard v1 engines (no protover 2 support)
         /// Sets basic features that work with v1 engines
         member this.ForceInitialize() =
-            // Set conservative v1 features (most basic Winboard commands)
-            features <- {
-                Ping = false          // v1 engines don't support ping
-                SetBoard = false      // v1 engines don't support setboard
-                PlayOther = false
-                San = false
-                UserMove = false      // v1 engines expect raw moves like "e2e4"
-                Time = false          // v1 engines DON'T support 'st' command (time per move)
-                                      // They only support 'time'/'otim' (tournament clock time)
-                TimeCmd = false
-                OTimeCmd = false
-                ForceCmd = false
-                WhiteCmd = false
-                BlackCmd = false
-                PostCmd = false
-                MoveNowCmd = false
-                ExitCmd = false
-                OptionCmd = false
-                EasyCmd = false
-                HardCmd = false
-                Sigint = false
-                Sigterm = false
-                Reuse = false
-                Analyze = false
-                MyName = Some "Winboard v1 Engine"
-                Variants = None
-                Colors = false
-                Ics = false
-                Name = false
-                Pause = false
-                Done = true           // Mark as done
-                SetBoardNeedsFourFieldFen = false
-            }
-            isInitialized <- true
-            isV1Fallback <- true
-            logger.LogInformation("Forced Winboard v1 initialization with basic feature set")
+            lock stateLock (fun () ->
+                // Set conservative v1 features (most basic Winboard commands)
+                features <- {
+                    Ping = false          // v1 engines don't support ping
+                    SetBoard = false      // v1 engines don't support setboard
+                    PlayOther = false
+                    San = false
+                    UserMove = false      // v1 engines expect raw moves like "e2e4"
+                    Time = false          // v1 engines DON'T support 'st' command (time per move)
+                                          // They only support 'time'/'otim' (tournament clock time)
+                    TimeCmd = false
+                    OTimeCmd = false
+                    ForceCmd = false
+                    WhiteCmd = false
+                    BlackCmd = false
+                    PostCmd = false
+                    MoveNowCmd = false
+                    ExitCmd = false
+                    OptionCmd = false
+                    EasyCmd = false
+                    HardCmd = false
+                    Sigint = false
+                    Sigterm = false
+                    Reuse = false
+                    Analyze = false
+                    MyName = Some "Winboard v1 Engine"
+                    Variants = None
+                    Colors = false
+                    Ics = false
+                    Name = false
+                    Pause = false
+                    Done = true           // Mark as done
+                    SetBoardNeedsFourFieldFen = false
+                }
+                isInitialized <- true
+                isV1Fallback <- true
+                logger.LogInformation("Forced Winboard v1 initialization with basic feature set")
+            )
         
         /// Mark as initialized without overwriting features (for v2 engines that don't send 'done=1')
         member this.MarkInitialized() =
-            isInitialized <- true
-            logger.LogInformation($"Marked Winboard engine as initialized with features: Time={features.Time}, Analyze={features.Analyze}, Ping={features.Ping}")
+            lock stateLock (fun () ->
+                isInitialized <- true
+                let time = features.Time
+                let analyze = features.Analyze
+                let ping = features.Ping
+                logger.LogInformation($"Marked Winboard engine as initialized with features: Time={time}, Analyze={analyze}, Ping={ping}")
+            )
 
         member _.GetProbePlan(includeFeatureProbes: bool) =
-            let startingPosFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-            let commonProbes = [
-                {
-                    Name = "time"
-                    Kind = TimeCmd
-                    Commands = [ "time 10" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with TimeCmd = true }
-                }
-                {
-                    Name = "otim"
-                    Kind = OTimeCmd
-                    Commands = [ "otim 10" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with OTimeCmd = true }
-                }
-                {
-                    Name = "force"
-                    Kind = ForceCmd
-                    Commands = [ "force" ]
-                    CleanupCommands = [ "new" ]
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with ForceCmd = true }
-                }
-                {
-                    Name = "white"
-                    Kind = WhiteCmd
-                    Commands = [ "force"; "white" ]
-                    CleanupCommands = [ "new" ]
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with WhiteCmd = true }
-                }
-                {
-                    Name = "black"
-                    Kind = BlackCmd
-                    Commands = [ "force"; "black" ]
-                    CleanupCommands = [ "new" ]
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with BlackCmd = true }
-                }
-                {
-                    Name = "post"
-                    Kind = PostCmd
-                    Commands = [ "post" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with PostCmd = true }
-                }
-                {
-                    Name = "movnow"
-                    Kind = MoveNowCmd
-                    Commands = [ "?" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with MoveNowCmd = true }
-                }
-                {
-                    Name = "exit"
-                    Kind = ExitCmd
-                    Commands = [ "exit" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with ExitCmd = true }
-                }
-                {
-                    Name = "easy"
-                    Kind = EasyCmd
-                    Commands = [ "easy" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with EasyCmd = true }
-                }
-                {
-                    Name = "hard"
-                    Kind = HardCmd
-                    Commands = [ "hard" ]
-                    CleanupCommands = []
-                    TimeoutMs = ProbeTimeoutMs
-                    AssumeSuccessOnSilence = true
-                    TreatIllegalAsSuccess = false
-                    OnSuccess = fun f -> { f with HardCmd = true }
-                }
-            ]
+            lock stateLock (fun () ->
+                let startingPosFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                let isV1 = isV1Fallback
+                let commonProbes = [
+                    {
+                        Name = "time"
+                        Kind = TimeCmd
+                        Commands = [ "time 10" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with TimeCmd = true }
+                    }
+                    {
+                        Name = "otim"
+                        Kind = OTimeCmd
+                        Commands = [ "otim 10" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with OTimeCmd = true }
+                    }
+                    {
+                        Name = "force"
+                        Kind = ForceCmd
+                        Commands = [ "force" ]
+                        CleanupCommands = [ "new" ]
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with ForceCmd = true }
+                    }
+                    {
+                        Name = "white"
+                        Kind = WhiteCmd
+                        Commands = [ "force"; "white" ]
+                        CleanupCommands = [ "new" ]
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with WhiteCmd = true }
+                    }
+                    {
+                        Name = "black"
+                        Kind = BlackCmd
+                        Commands = [ "force"; "black" ]
+                        CleanupCommands = [ "new" ]
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with BlackCmd = true }
+                    }
+                    {
+                        Name = "post"
+                        Kind = PostCmd
+                        Commands = [ "post" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with PostCmd = true }
+                    }
+                    {
+                        Name = "movnow"
+                        Kind = MoveNowCmd
+                        Commands = [ "?" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with MoveNowCmd = true }
+                    }
+                    {
+                        Name = "exit"
+                        Kind = ExitCmd
+                        Commands = [ "exit" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with ExitCmd = true }
+                    }
+                    {
+                        Name = "easy"
+                        Kind = EasyCmd
+                        Commands = [ "easy" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with EasyCmd = true }
+                    }
+                    {
+                        Name = "hard"
+                        Kind = HardCmd
+                        Commands = [ "hard" ]
+                        CleanupCommands = []
+                        TimeoutMs = ProbeTimeoutMs
+                        AssumeSuccessOnSilence = true
+                        TreatIllegalAsSuccess = false
+                        OnSuccess = fun f -> { f with HardCmd = true }
+                    }
+                ]
 
-            let featureProbes =
-                if includeFeatureProbes then
-                    [
-                        {
-                            Name = "ping"
-                            Kind = Ping
-                            Commands = []  // ping command is set in BeginProbe for unique id
-                            CleanupCommands = []
-                            TimeoutMs = PingProbeTimeoutMs
-                            AssumeSuccessOnSilence = false
-                            TreatIllegalAsSuccess = false
-                            OnSuccess = fun f -> { f with Ping = true }
-                        }
-                        {
-                            Name = "setboard"
-                            Kind = SetBoard
-                            Commands = [ $"setboard {startingPosFen}" ]
-                            CleanupCommands = [ "new" ]
-                            TimeoutMs = SetboardProbeTimeoutMs
-                            AssumeSuccessOnSilence = true
-                            TreatIllegalAsSuccess = false
-                            OnSuccess = fun f -> { f with SetBoard = true }
-                        }
-                        {
-                            Name = "usermove"
-                            Kind = UserMove
-                            Commands = [ "force"; "usermove a2a5" ]
-                            CleanupCommands = [ "new" ]
-                            TimeoutMs = UserMoveProbeTimeoutMs
-                            AssumeSuccessOnSilence = false
-                            TreatIllegalAsSuccess = true
-                            OnSuccess = fun f -> { f with UserMove = true }
-                        }
-                        {
-                            Name = "analyze"
-                            Kind = Analyze
-                            Commands = [ "analyze" ]
-                            CleanupCommands = [ "exit" ]
-                            TimeoutMs = AnalyzeProbeTimeoutMs
-                            AssumeSuccessOnSilence = true
-                            TreatIllegalAsSuccess = false
-                            OnSuccess = fun f -> { f with Analyze = true }
-                        }
-                    ]
-                else
-                    []
+                let featureProbes =
+                    if includeFeatureProbes then
+                        [
+                            {
+                                Name = "ping"
+                                Kind = Ping
+                                Commands = []  // ping command is set in BeginProbe for unique id
+                                CleanupCommands = []
+                                TimeoutMs = PingProbeTimeoutMs
+                                AssumeSuccessOnSilence = false
+                                TreatIllegalAsSuccess = false
+                                OnSuccess = fun f -> { f with Ping = true }
+                            }
+                            {
+                                Name = "setboard"
+                                Kind = SetBoard
+                                Commands = [ $"setboard {startingPosFen}" ]
+                                CleanupCommands = [ "new" ]
+                                TimeoutMs = SetboardProbeTimeoutMs
+                                AssumeSuccessOnSilence = true
+                                TreatIllegalAsSuccess = false
+                                OnSuccess = fun f -> { f with SetBoard = true }
+                            }
+                            {
+                                Name = "usermove"
+                                Kind = UserMove
+                                Commands = [ "force"; "usermove a2a5" ]
+                                CleanupCommands = [ "new" ]
+                                TimeoutMs = UserMoveProbeTimeoutMs
+                                AssumeSuccessOnSilence = true
+                                TreatIllegalAsSuccess = false
+                                OnSuccess = fun f -> { f with UserMove = true }
+                            }
+                            {
+                                Name = "analyze"
+                                Kind = Analyze
+                                Commands = [ "analyze" ]
+                                CleanupCommands = [ "exit" ]
+                                TimeoutMs = AnalyzeProbeTimeoutMs
+                                AssumeSuccessOnSilence = true
+                                TreatIllegalAsSuccess = false
+                                OnSuccess = fun f -> { f with Analyze = true }
+                            }
+                        ]
+                    else
+                        []
 
-            let isSupported kind =
-                match kind with
-                | Ping -> features.Ping
-                | SetBoard -> features.SetBoard
-                | UserMove -> features.UserMove
-                | Analyze -> features.Analyze
-                | TimeCmd -> features.TimeCmd
-                | OTimeCmd -> features.OTimeCmd
-                | ForceCmd -> features.ForceCmd
-                | WhiteCmd -> features.WhiteCmd
-                | BlackCmd -> features.BlackCmd
-                | PostCmd -> features.PostCmd
-                | MoveNowCmd -> features.MoveNowCmd
-                | ExitCmd -> features.ExitCmd
-                | EasyCmd -> features.EasyCmd
-                | HardCmd -> features.HardCmd
+                let isSupported kind =
+                    match kind with
+                    | Ping -> features.Ping
+                    | SetBoard -> features.SetBoard
+                    | UserMove -> features.UserMove
+                    | Analyze -> features.Analyze
+                    | TimeCmd -> features.TimeCmd
+                    | OTimeCmd -> features.OTimeCmd
+                    | ForceCmd -> features.ForceCmd
+                    | WhiteCmd -> features.WhiteCmd
+                    | BlackCmd -> features.BlackCmd
+                    | PostCmd -> features.PostCmd
+                    | MoveNowCmd -> features.MoveNowCmd
+                    | ExitCmd -> features.ExitCmd
+                    | EasyCmd -> features.EasyCmd
+                    | HardCmd -> features.HardCmd
 
-            (featureProbes @ commonProbes)
-            |> List.filter (fun p -> not (isSupported p.Kind))
+                let probes =
+                    if isV1 then
+                        // v1 engines don't support setboard; avoid false positives from silent probes.
+                        featureProbes |> List.filter (fun p -> p.Kind <> SetBoard)
+                    else
+                        featureProbes
+
+                (probes @ commonProbes)
+                |> List.filter (fun p -> not (isSupported p.Kind))
+            )
 
         member this.BeginProbe (probe: ProbeRequest) =
             async {
@@ -1048,41 +1128,50 @@ module WinboardProtocol =
                             false
                         else
                             let tcs = System.Threading.Tasks.TaskCompletionSource<bool>()
+                            let cts = new System.Threading.CancellationTokenSource()
                             let pingId =
                                 match probe.Kind with
                                 | Ping -> Some (System.Random().Next(PingIdMin, PingIdMax))
                                 | _ -> None
-                            activeProbe <- Some (probe, pingId, tcs)
+                            activeProbe <- Some (probe, pingId, tcs, cts)
                             true
                     )
                 
                 if not shouldStart then
                     return false
                 else
-                    let tcs = 
+                    let tcs, cts = 
                         lock probeLock (fun () ->
                             match activeProbe with
-                            | Some (_, _, t) -> t
-                            | None -> System.Threading.Tasks.TaskCompletionSource<bool>()
+                            | Some (_, _, t, c) -> (t, c)
+                            | None -> (System.Threading.Tasks.TaskCompletionSource<bool>(), new System.Threading.CancellationTokenSource())
                         )
 
-                    // Timeout handling
+                    // Timeout handling with cancellation support
                     Async.Start(async {
-                        do! Async.Sleep(probe.TimeoutMs)
-                        lock probeLock (fun () ->
-                            match activeProbe with
-                            | Some (p, _, tcs2) when obj.ReferenceEquals(p, probe) ->
-                                activeProbe <- None
-                                let success = probe.AssumeSuccessOnSilence
-                                if success then
-                                    features <- probe.OnSuccess features
-                                    logger.LogDebug($"Winboard probe '{probe.Name}' timed out; assuming success.")
-                                else
-                                    logger.LogDebug($"Winboard probe '{probe.Name}' timed out; assuming failure.")
-                                tcs2.TrySetResult(success) |> ignore
-                            | _ -> ()
-                        )
-                    })
+                        try
+                            do! Async.Sleep(probe.TimeoutMs)
+                            lock probeLock (fun () ->
+                                match activeProbe with
+                                | Some (p, _, tcs2, cts2) when obj.ReferenceEquals(p, probe) ->
+                                    activeProbe <- None
+                                    cts2.Dispose()
+                                    let success = probe.AssumeSuccessOnSilence
+                                    if success then
+                                        lock stateLock (fun () ->
+                                            features <- probe.OnSuccess features
+                                        )
+                                        logger.LogDebug($"Winboard probe '{probe.Name}' timed out; assuming success.")
+                                    else
+                                        logger.LogDebug($"Winboard probe '{probe.Name}' timed out; assuming failure.")
+                                    tcs2.TrySetResult(success) |> ignore
+                                | _ -> ()
+                            )
+                        with
+                        | :? System.OperationCanceledException -> 
+                            // Probe completed before timeout - this is expected
+                            ()
+                    }, cts.Token)
 
                     return! tcs.Task |> Async.AwaitTask
             }
@@ -1090,6 +1179,6 @@ module WinboardProtocol =
         member _.GetProbePingCommand() =
             lock probeLock (fun () ->
                 match activeProbe with
-                | Some (probe, Some id, _) when probe.Kind = Ping -> Some $"ping {id}"
+                | Some (probe, Some id, _, _) when probe.Kind = Ping -> Some $"ping {id}"
                 | _ -> None
             )

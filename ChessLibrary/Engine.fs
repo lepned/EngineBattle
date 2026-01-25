@@ -857,6 +857,10 @@ module Engine =
                           
                           for cmd in winboardCmds do                              
                               logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
+                              if cmd.StartsWith("go") then
+                                  //logDebug (sprintf "Delaying 'go' command for %s (%dms) to ensure engine is ready" name 150)
+                                  Thread.Sleep 150 // Slight delay before go command to ensure engine is ready
+                                  
                               proc.StandardInput.WriteLine(cmd)
                       | None ->
                           // Normal UCI
