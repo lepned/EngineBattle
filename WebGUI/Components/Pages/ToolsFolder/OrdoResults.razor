@@ -43,7 +43,7 @@
 		<MudTd Style="font-size:16px" DataLabel="Win">@context.Played</MudTd>
 		<MudTd Style="font-size:16px" DataLabel="Win">@context.Percent.ToString("F0")</MudTd>
 		<MudTd Style="font-size:16px" DataLabel="Win">@context.CFS.ToString("F0")</MudTd>
-		<MudTd Style="font-size:16px" DataLabel="Win">@FormatNps(context.Speed)</MudTd>
+		<MudTd Style="font-size:16px" DataLabel="Win">@FormatSpeedWithEps(context.Speed, context.Player)</MudTd>
 		<MudTd Style="font-size:16px" DataLabel="Win">@context.Win</MudTd>
 		<MudTd Style="font-size:16px" DataLabel="Win">@context.Draw</MudTd>
 		<MudTd Style="font-size:16px" DataLabel="Win">@context.Loss</MudTd>
@@ -64,8 +64,19 @@
 	private Int64 testDuration = 0;
 	private string refEngine = string.Empty;
 	private string executablePath = @"C:/Dev/Chess/Ordo/ordo-win64.exe";
+	private readonly Dictionary<string, double> epsByPlayer = new(StringComparer.OrdinalIgnoreCase);
 
 	string FormatNps(double nps) => Formatting.formatNPS(nps);
+	string FormatEps(double eps) => Formatting.formatEPS(eps);
+	string FormatSpeedWithEps(double nps, string player)
+	{
+		var baseSpeed = FormatNps(nps);
+		if (epsByPlayer.TryGetValue(player, out var eps) && eps > 0.0)
+		{
+			return $"{baseSpeed} ({FormatEps(eps)})";
+		}
+		return baseSpeed;
+	}
 
 	string CheckForNanAndInfinity(double value)
 	{
@@ -99,6 +110,7 @@
 	private async Task OpenPGNFile(InputFileChangeEventArgs e)
 	{
 		engineLineData.Clear();
+		epsByPlayer.Clear();
 		var pgnName = e.File.Name;
 		logger.LogInformation("PGN file opened {File}", pgnName);
 		var env = Environment.CurrentDirectory;
@@ -109,6 +121,14 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 		var games = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
+		var speedStats = Parser.PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
+		foreach (var stat in speedStats)
+		{
+			if (stat.Median && stat.EPS > 0.0)
+			{
+				epsByPlayer[stat.Player] = stat.EPS;
+			}
+		}
 		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = Chess.Deviation.analyzeDeviations(games);
 		Utilities.PGNCalculator.idealizedEloPrint(cross);
 		var pentaDefault = Utilities.Pentanomial.formatPerEngineDefault(games);

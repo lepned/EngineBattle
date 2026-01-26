@@ -314,7 +314,18 @@ module OrdoHelper =
     let wScorePadding = calcPadding minPadding delta (fun e -> e.WhiteScore.ToString()) engineData
     let bScorePadding = calcPadding minPadding delta (fun e -> e.BlackScore.ToString()) engineData
     let pairsPadding  = calcPadding minPadding delta (fun e -> e.Pairs) engineData
-    let speedPadding  = calcPadding minPadding delta (fun e -> Formatting.formatNPS e.Speed) engineData   
+    let formatSpeed (e: EngineLineData) =
+      let nps = Formatting.formatNPS e.Speed
+      if e.EPS > 0.0 then $"{nps} ({Formatting.formatEPS e.EPS})" else nps
+    let speedPadding  = calcPadding minPadding delta formatSpeed engineData   
+    let speedHeader =
+      let label = "Speed"
+      let diff = speedPadding - label.Length
+      if diff <= 0 then label
+      else
+        let left = diff / 2
+        let right = diff - left
+        (String.replicate left " ") + label + (String.replicate right " ")
     
     let converted =      
       for line in lines do          
@@ -324,8 +335,9 @@ module OrdoHelper =
             sb.Append (e.WhiteScore.ToString().PadLeft(wScorePadding)) |> ignore
             sb.Append (e.BlackScore.ToString().PadLeft(bScorePadding)) |> ignore
             sb.Append (e.Pairs.PadLeft(pairsPadding)) |> ignore
-            let nps = Formatting.formatNPS e.Speed
-            sb.Append (nps.PadLeft(speedPadding) + "\n") |> ignore
+            sb.Append "   " |> ignore
+            let speed = formatSpeed e
+            sb.Append (speed.PadRight(speedPadding) + "\n") |> ignore
         | None -> 
             match engineData |> Seq.tryFind (fun _ -> line.Contains "RATING") with
             | Some _ -> 
@@ -333,7 +345,8 @@ module OrdoHelper =
                 sb.Append ("Wscore".PadLeft(wScorePadding)) |> ignore
                 sb.Append ("Bscore".PadLeft(bScorePadding)) |> ignore
                 sb.Append ("Pairs".PadLeft(pairsPadding)) |> ignore
-                sb.Append ("Speed".PadLeft(speedPadding) + "\n") |> ignore
+                sb.Append "   " |> ignore
+                sb.Append (speedHeader.PadLeft(speedPadding) + "\n") |> ignore
             | _ -> sb.AppendLine line |> ignore
       sb.ToString()
     converted  
@@ -349,7 +362,7 @@ module OrdoHelper =
               //let msg = removeTopThreeLines (result.StandardOutput.Trim())
               sb.Append "\n```" |> ignore
               let msg = addDataFromEBToOrdo result.StandardOutput engineData
-              sb.Append msg |> ignore              
+              sb.Append msg |> ignore
               sb.Append "```\n" |> ignore
               if result.StandardError.Length > 0 then
                 //printfn "Standard Error: %s" result.StandardError
@@ -379,6 +392,7 @@ module OrdoHelper =
         Played = p.Played
         Percent = p.Percent
         CFS = p.CFS
+        EPS = 0.0
         Speed = p.MedSpeed
         Win = p.Win
         Draw = p.Draw
@@ -436,6 +450,18 @@ module OrdoHelper =
   let writeResultHeader (n:int) : string =    
     sprintf "%-*s : %7s %6s %7s %7s %4s %10s %5s %5s %5s %5s %7s %7s %8s" n "# PLAYER" "ELO" "ERROR" "POINTS" "PLAYED" "(%)" "Speed" "W" "D" "L" "D(%)" "WScore" "BScore" "Pairs"
 
+  let writeResultHeaderWithSpeed (n:int) (speedPadding:int) : string =
+    let label = "Speed"
+    let leftPad =
+      let diff = speedPadding - label.Length
+      if diff > 0 then diff / 2 else 0
+    let rightPad =
+      let diff = speedPadding - label.Length - leftPad
+      if diff > 0 then diff else 0
+    let speedHeader = (String.replicate leftPad " ") + label + (String.replicate rightPad " ")
+    sprintf "%-*s : %7s %6s %7s %7s %4s %6s   %*s %5s %5s %5s %5s %7s %7s %8s"
+            n "# PLAYER" "ELO" "ERROR" "POINTS" "PLAYED" "(%)" "CFS%" speedPadding speedHeader "W" "D" "L" "D(%)" "WScore" "BScore" "Pairs"
+
   let private formatElo (elo: float) (isChallenger: bool) =
     if isChallenger then "0.0"
     elif Double.IsNaN(elo) then "---"
@@ -461,7 +487,18 @@ module OrdoHelper =
       let speed = Formatting.formatNPS p.MedSpeed
       sprintf "%-*s : %7s %6s %7.1f %7d %4d %10s %5d %5d %5d %5d %7.1f %7.1f %8s"
               n p.Player elo error p.Points p.Played p.Percent speed p.Win p.Draw p.Loss p.D wscore bscore pairs
-            
+             
+  let writeEngineLineForPlayerWithSpeed (p: PlayerResult) pairWins pairLosses n (speed: string) (speedPadding:int) =
+      let bw, bd, _ = p.BlackWDL
+      let ww, wd, _ = p.WhiteWDL
+      let bscore = float bw + float bd * 0.5
+      let wscore = float ww + float wd * 0.5
+      let pairs = sprintf "%2d-%d" pairWins pairLosses
+      let elo = formatElo p.Elo p.Challenger
+      let error = formatError p.Error p.Challenger
+      sprintf "%-*s : %7s %6s %7.1f %7d %4d %6d   %-*s %5d %5d %5d %5d %7.1f %7.1f %8s"
+              n p.Player elo error p.Points p.Played p.Percent p.CFS speedPadding speed p.Win p.Draw p.Loss p.D wscore bscore pairs
+
   let printStatsMatrix (table: CrossTableEntry seq) =
     let endOfLine = "\n```\n"
     let players = table |> Seq.map (fun t -> t.Player) |> Seq.toArray
@@ -563,6 +600,64 @@ module OrdoHelper =
     appendLine "\n```"
     sb.ToString()
 
+  let getResultsAndPairsInConsoleFormatWithEps
+    (engines: PlayerResult seq)
+    (table: CrossTableEntry seq)
+    (epsByPlayer: Map<string, float>) =
+      let sb = new StringBuilder()
+      let appendLine (txt: string) = sb.AppendLine txt |> ignore
+
+      appendLine "\n```\n"
+
+      let longest = engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
+      let players =
+          engines
+          |> Seq.mapi (fun idx p ->
+              let isChallenger =
+                  table |> Seq.length = 2 && idx = 0
+              { p with Challenger = isChallenger }
+          )
+          |> Seq.toList
+
+      let sortedPlayers =
+          let (challengers, rest) = players |> List.partition (fun p -> p.Challenger)
+          let restSorted = rest |> List.sortByDescending (fun e -> e.Elo)
+          challengers @ restSorted
+
+      let speedStrings =
+          sortedPlayers
+          |> List.map (fun p ->
+              let baseSpeed = Formatting.formatNPS p.MedSpeed
+              match epsByPlayer |> Map.tryFind p.Player with
+              | Some eps when eps > 0.0 -> $"{baseSpeed} ({Formatting.formatEPS eps})"
+              | _ -> baseSpeed)
+
+      let speedPadding = calcPadding 8 0 id speedStrings
+      writeResultHeaderWithSpeed longest speedPadding |> appendLine
+
+      for p in sortedPlayers do
+          let (wins, losses) =
+              match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
+              | Some t ->
+                  let w, _, l = getAllPairs t
+                  w, l
+              | None -> 0, 0
+          let bw, bd, _ = p.BlackWDL
+          let ww, wd, _ = p.WhiteWDL
+          let bscore = float bw + float bd * 0.5
+          let wscore = float ww + float wd * 0.5
+          let pairs = sprintf "%2d-%d" wins losses
+          let baseSpeed = Formatting.formatNPS p.MedSpeed
+          let speed =
+              match epsByPlayer |> Map.tryFind p.Player with
+              | Some eps when eps > 0.0 ->
+                  $"{baseSpeed} ({Formatting.formatEPS eps})"
+              | _ -> baseSpeed
+          writeEngineLineForPlayerWithSpeed p wins losses longest speed speedPadding |> appendLine
+
+      appendLine "\n```"
+      sb.ToString()
+
   let getIdealized_UHO_Elo (table:CrossTableEntry seq) =
     let eb = 2.0
     [
@@ -616,6 +711,87 @@ module ConsoleHelper =
     else 
         printfn "No engines in tournament"
         
+  let writeSwissPairingsPerRoundFromFile (filePath: string) =
+    let loadState () =
+      try
+        if String.IsNullOrWhiteSpace filePath then
+          ConsoleUtils.redConsole "Swiss state file path is empty."
+          None
+        elif not (File.Exists filePath) then
+          ConsoleUtils.redConsole (sprintf "Swiss state file not found: %s" filePath)
+          None
+        else
+          let json = File.ReadAllText filePath
+          if String.IsNullOrWhiteSpace json then
+            ConsoleUtils.redConsole (sprintf "Swiss state file is empty: %s" filePath)
+            None
+          else
+            let options = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+            let state = JsonSerializer.Deserialize<TypesDef.Swiss.SwissState>(json, options)
+            if obj.ReferenceEquals(state, null) then
+              ConsoleUtils.redConsole (sprintf "Failed to parse swiss state: %s" filePath)
+              None
+            else
+              Some state
+      with ex ->
+        ConsoleUtils.redConsole (sprintf "Failed to read swiss state: %s" ex.Message)
+        None
+
+    match loadState () with
+    | None -> ()
+    | Some state ->
+        printfn "Swiss pairings for \"%s\"" state.TournamentName
+        let rounds =
+          if isNull state.Rounds then Seq.empty
+          else state.Rounds |> Seq.sortBy (fun r -> r.RoundNumber)
+        if Seq.isEmpty rounds then
+          printfn "No rounds in swiss state."
+        else
+          for round in rounds do
+            printfn ""
+            printfn "Round %d" round.RoundNumber
+            if isNull round.Pairings || round.Pairings.Count = 0 then
+              printfn "  (no pairings)"
+            else
+              let maxName =
+                round.Pairings
+                |> Seq.collect (fun p -> [ p.PlayerA; p.PlayerB ])
+                |> Seq.choose (fun s -> if String.IsNullOrWhiteSpace s then None else Some s.Length)
+                |> Seq.append [0]
+                |> Seq.max
+              for pairing in round.Pairings do
+                let playerA = if String.IsNullOrWhiteSpace pairing.PlayerA then "" else pairing.PlayerA
+                let playerB = if String.IsNullOrWhiteSpace pairing.PlayerB then "" else pairing.PlayerB
+                let scoreA = pairing.ScoreA.ToString("0.##")
+                let scoreB = pairing.ScoreB.ToString("0.##")
+                printfn "  #%d: %-*s vs %-*s   %s-%s" pairing.PairId maxName playerA maxName playerB scoreA scoreB
+
+          let addOpponent (pairsByPlayer: Dictionary<string, ResizeArray<string>>) (player: string) (opponent: string) =
+            if not (String.IsNullOrWhiteSpace player) then
+              let opp =
+                if String.IsNullOrWhiteSpace opponent then "BYE"
+                else opponent
+              match pairsByPlayer.TryGetValue(player) with
+              | true, lst -> lst.Add(opp)
+              | false, _ ->
+                  let lst = ResizeArray<string>()
+                  lst.Add(opp)
+                  pairsByPlayer.Add(player, lst)
+
+          let pairsByPlayer = Dictionary<string, ResizeArray<string>>(StringComparer.OrdinalIgnoreCase)
+          for round in rounds do
+            if not (isNull round.Pairings) then
+              for pairing in round.Pairings do
+                addOpponent pairsByPlayer pairing.PlayerA pairing.PlayerB
+                addOpponent pairsByPlayer pairing.PlayerB pairing.PlayerA
+
+          if pairsByPlayer.Count > 0 then
+            printfn ""
+            printfn "Pairings by player"
+            for KeyValue(player, opponents) in pairsByPlayer |> Seq.sortBy (fun kv -> kv.Key) do
+              printfn "%s:" player
+              for opp in opponents do
+                printfn "  %s" opp
 
   let writeEngineStatsPerGame (engineStat: EngineStatsPerGame) n includeEps =
       let speed nps = Formatting.formatNPS nps
@@ -2164,8 +2340,22 @@ module PGNCalculator =
           player.MedSpeed <- speed.Value.AvgNPS
           player.AvgNPM <- speed.Value.AvgNodes
     
-    let consoleContent = OrdoHelper.getResultsAndPairsInConsoleFormat playerRes cross
-    let engineStats = OrdoHelper.getEngineLineData playerRes cross
+    let epsByPlayer =
+      avgSpeed
+      |> Seq.filter (fun e -> e.EPS > 0.0)
+      |> Seq.map (fun e -> e.Player, e.EPS)
+      |> Map.ofSeq
+    let consoleContent =
+      OrdoHelper.getResultsAndPairsInConsoleFormatWithEps playerRes cross epsByPlayer
+    let engineStats =
+      OrdoHelper.getEngineLineData playerRes cross
+      |> Seq.map (fun e ->
+          match epsByPlayer |> Map.tryFind e.Player with
+          | Some eps when eps > 0.0 ->
+              e.EPS <- eps
+              e
+          | _ -> e)
+      |> Seq.toList
 
     consoleContent, engineStats, cross, allResults
 
@@ -2437,7 +2627,7 @@ module PairingHelper =
     else
       $"{b}|{a}"
 
-  let swissRoundPairings
+  let swissRoundPairingsGroupedOnly
     (players: EngineConfig list)
     (seedOrder: EngineConfig list)
     (scores: Map<string, float>)
@@ -2461,47 +2651,86 @@ module PairingHelper =
           let preferred =
             ordered |> List.tryFind (fun p -> byeSet.Contains p.Name |> not)
           preferred |> Option.orElse (ordered |> List.tryHead)
-      let (pairingPlayers, byePlayer) =
+      let (pairingPlayers: EngineConfig list), byePlayer =
         match byeCandidate with
         | None -> players, None
         | Some bye -> players |> List.filter (fun p -> p.Name <> bye.Name), Some bye
-      let groups =
+      let groups: (float * EngineConfig list) list =
         pairingPlayers
         |> List.groupBy (fun p -> scoreFor p.Name)
         |> List.sortByDescending fst
-      let mutable carry = List.empty<EngineConfig>
-      let roundPairs = ResizeArray<(EngineConfig * EngineConfig * float)>()
-      for (score, groupPlayers) in groups do
-        let group =
-          (carry @ groupPlayers)
-          |> List.sortBy (fun p -> seedMap.[p.Name])
-        carry <- []
-        let mutable groupList = group
-        if groupList.Length % 2 = 1 then
-          carry <- [ groupList.[groupList.Length - 1] ]
-          groupList <- groupList |> List.take (groupList.Length - 1)
-        let half = groupList.Length / 2
-        let top = groupList |> List.take half
-        let bottom = ResizeArray(groupList |> List.skip half)
-        for t in top do
-          let mutable pickIndex = -1
-          let mutable idx = 0
-          while idx < bottom.Count && pickIndex < 0 do
-            let opp = bottom.[idx]
-            let key = swissPairKey t.Name opp.Name
-            if priorPairs.Contains key |> not then
-              pickIndex <- idx
-            idx <- idx + 1
-          if pickIndex < 0 then
-            pickIndex <- 0
-          let opponent = bottom.[pickIndex]
-          bottom.RemoveAt(pickIndex)
-          roundPairs.Add((t, opponent, score))
-      if carry.Length > 0 then
-        let remaining = carry
-        if remaining.Length >= 2 then
-          for i in 0 .. 2 .. (remaining.Length - 2) do
-            roundPairs.Add((remaining.[i], remaining.[i + 1], scoreFor remaining.[i].Name))
+      let rec matchTopBottom
+        (score: float)
+        (top: EngineConfig list)
+        (bottom: EngineConfig list)
+        (acc: (EngineConfig * EngineConfig * float) list) =
+          match top with
+          | [] -> Some (List.rev acc)
+          | (player: EngineConfig) :: rest ->
+              let rec tryOpps (options: EngineConfig list) =
+                match options with
+                | [] -> None
+                | (opp: EngineConfig) :: tail ->
+                    if priorPairs.Contains (swissPairKey player.Name opp.Name) then
+                      tryOpps tail
+                    else
+                      let nextBottom = bottom |> List.filter (fun p -> p.Name <> opp.Name)
+                      match matchTopBottom score rest nextBottom ((player, opp, score) :: acc) with
+                      | Some pairs -> Some pairs
+                      | None -> tryOpps tail
+              tryOpps bottom
+      let rec matchGroup
+        (remaining: EngineConfig list)
+        (acc: (EngineConfig * EngineConfig * float) list) =
+          match remaining with
+          | [] -> Some (List.rev acc)
+          | (player: EngineConfig) :: rest ->
+              let rec tryOpps (options: EngineConfig list) =
+                match options with
+                | [] -> None
+                | (opp: EngineConfig) :: tail ->
+                    if priorPairs.Contains (swissPairKey player.Name opp.Name) then
+                      tryOpps tail
+                    else
+                      let nextRemaining = rest |> List.filter (fun p -> p.Name <> opp.Name)
+                      match matchGroup nextRemaining ((player, opp, scoreFor player.Name) :: acc) with
+                      | Some pairs -> Some pairs
+                      | None -> tryOpps tail
+              tryOpps rest
+      let buildGroupedPairs () =
+        let mutable carry = List.empty<EngineConfig>
+        let groupedPairs = ResizeArray<(EngineConfig * EngineConfig * float)>()
+        for (score, (groupPlayers: EngineConfig list)) in groups do
+          let group: EngineConfig list =
+            (carry @ groupPlayers)
+            |> List.sortBy (fun p -> seedMap.[p.Name])
+          carry <- []
+          let mutable groupList: EngineConfig list = group
+          if groupList.Length % 2 = 1 then
+            carry <- [ groupList.[groupList.Length - 1] ]
+            groupList <- groupList |> List.take (groupList.Length - 1)
+          let half = groupList.Length / 2
+          let top: EngineConfig list = groupList |> List.take half
+          let bottom: EngineConfig list = groupList |> List.skip half
+          let matched =
+            match matchTopBottom score top bottom [] with
+            | Some pairs -> pairs
+            | None ->
+                match matchGroup groupList [] with
+                | Some pairs -> pairs
+                | None -> failwith "Swiss pairing failed: no valid non-repeat pairings found for this round."
+          for pair in matched do
+            groupedPairs.Add pair
+        if carry.Length > 0 then
+          let remaining = carry
+          if remaining.Length >= 2 then
+            match matchGroup remaining [] with
+            | Some pairs ->
+                for pair in pairs do
+                  groupedPairs.Add pair
+            | None -> failwith "Swiss pairing failed: no valid non-repeat pairings found for this round."
+        groupedPairs
+      let roundPairs = buildGroupedPairs ()
       match byePlayer with
       | Some bye ->
           let byeEngine = { EngineConfig.Empty with Name = "BYE" }
@@ -2517,6 +2746,49 @@ module PairingHelper =
           score, -minSeed)
       |> Seq.map (fun (a, b, _) -> (a, b))
       |> Seq.toList
+
+  let swissRoundPairings
+    (players: EngineConfig list)
+    (seedOrder: EngineConfig list)
+    (scores: Map<string, float>)
+    (priorPairs: Set<string>)
+    (byeSet: Set<string>) =
+      try
+        swissRoundPairingsGroupedOnly players seedOrder scores priorPairs byeSet
+      with _ ->
+        let seedMap =
+          seedOrder
+          |> List.mapi (fun idx p -> p.Name, idx + 1)
+          |> Map.ofList
+        let scoreFor name =
+          scores |> Map.tryFind name |> Option.defaultValue 0.0
+        let orderedPlayers =
+          players
+          |> List.sortBy (fun p -> (-(scoreFor p.Name), seedMap.[p.Name]))
+        let rec findPairs
+          (remaining: EngineConfig list)
+          (acc: (EngineConfig * EngineConfig * float) list) =
+            match remaining with
+            | [] -> Some (List.rev acc)
+            | (player: EngineConfig) :: rest ->
+                let candidates =
+                  rest
+                  |> List.filter (fun (opp: EngineConfig) -> priorPairs.Contains (swissPairKey player.Name opp.Name) |> not)
+                  |> List.sortBy (fun (opp: EngineConfig) ->
+                      let scoreDiff = abs (scoreFor player.Name - scoreFor opp.Name)
+                      scoreDiff, seedMap.[opp.Name])
+                let rec tryCandidate options =
+                  match options with
+                  | [] -> None
+                  | (opp: EngineConfig) :: tail ->
+                      let nextRemaining = rest |> List.filter (fun p -> p.Name <> opp.Name)
+                      match findPairs nextRemaining ((player, opp, scoreFor player.Name) :: acc) with
+                      | Some pairs -> Some pairs
+                      | None -> tryCandidate tail
+                tryCandidate candidates
+        match findPairs orderedPlayers [] with
+        | Some pairs -> pairs |> List.map (fun (a, b, _) -> (a, b))
+        | None -> failwith "Swiss pairing failed: no valid non-repeat pairings found for this round."
 
   let addPlannedPairings
     (planned: ResizeArray<Pairing>)

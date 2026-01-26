@@ -326,6 +326,7 @@ module TypesDef =
         Played : int
         Percent : float
         CFS : int
+        mutable EPS: double
         mutable Speed: double
         Win : int
         Draw : int

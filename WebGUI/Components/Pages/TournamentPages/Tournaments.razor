@@ -1640,9 +1640,17 @@
 						if (IsCupMode)
 							await InvokeAsync(OpenCupBracketDialog);
 						else if (IsSwissMode)
-							await InvokeAsync(() => OpenSwissDialog(false));
+						{
+							await InvokeAsync(() => OpenSwissDialog(false));							
+						}
 						else
 							await InvokeAsync(OpenDialog);
+					}
+					if (IsSwissMode)
+					{
+						var path = Path.Combine(Environment.ContentRootPath, "wwwroot", "swiss_state.json");
+						if (File.Exists(path))						
+							Utilities.ConsoleHelper.writeSwissPairingsPerRoundFromFile(path);
 					}
 				}
 				break;
