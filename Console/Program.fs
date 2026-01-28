@@ -313,7 +313,7 @@ module Program =
       Log.Logger <- LoggerConfiguration() // Create a Serilog logger configuration
         .MinimumLevel.Information() // Set the minimum log level
         //.WriteTo.Console() // Write to console
-        .WriteTo.File(logPath) // Write to file
+        .WriteTo.File(logPath, rollingInterval = Serilog.RollingInterval.Day) // Write to file
         .CreateLogger() // Create the logger
       Host.CreateDefaultBuilder()
           .ConfigureLogging(configureLogging)

@@ -1,0 +1,328 @@
+/* Modern Engine Stats - 3-Column Layout with User-Adjustable Font Size */
+
+.engine-stats-container {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.3em 0.5em;
+  padding: 0.75em;
+  width: 100%;
+  background:transparent;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #e0e0e0;
+  align-items: center;
+  container-type: inline-size;
+  container-name: engine-stats;
+}
+
+/* Scale down fonts in very narrow containers while respecting user FontSize */
+@container engine-stats (max-width: 300px) {
+  .engine-stats-container {
+    font-size: max(0.7em, 10px);
+  }
+}
+
+@container engine-stats (max-width: 200px) {
+  .engine-stats-container {
+    font-size: max(0.6em, 9px);
+    gap: 0.2em 0.3em;
+    padding: 0.5em;
+  }
+}
+
+/* Engine Header Row */
+.engine-header-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2em;
+  padding: 0.3em;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Header highlighting disabled */
+/*
+.engine-header-cell.active {
+  background: rgba(76, 175, 80, 0.05);
+  border-radius: 6px;
+  border: 2px solid rgba(76, 175, 80, 0.2);
+}
+*/
+
+/* Compact headers in narrow containers */
+@container engine-stats (max-width: 250px) {
+  .engine-header-cell {
+    gap: 0.1em;
+    padding: 0.2em;
+  }
+}
+
+/* Engine Logo - Fluid scaling using container query width units, fixed size wrapper */
+.engine-logo-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 0.5em;
+  overflow: hidden;
+  flex-shrink: 0;
+  width: min(15em, 200px, 25cqw);
+  height: min(15em, 150px, 25cqw);
+}
+
+.engine-logo {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+/* Shrink engine logos progressively in narrow containers */
+@container engine-stats (max-width: 600px) {
+  .engine-logo-wrapper {
+    width: min(12em, 140px, 22cqw);
+    height: min(12em, 140px, 22cqw);
+  }
+}
+
+@container engine-stats (max-width: 450px) {
+  .engine-logo-wrapper {
+    width: min(10em, 120px, 24cqw);
+    height: min(10em, 120px, 24cqw);
+  }
+}
+
+@container engine-stats (max-width: 350px) {
+  .engine-logo-wrapper {
+    width: min(8em, 100px, 25cqw);
+    height: min(8em, 100px, 25cqw);
+  }
+}
+
+@container engine-stats (max-width: 250px) {
+  .engine-logo-wrapper {
+    width: min(6em, 70px, 25cqw);
+    height: min(6em, 70px, 25cqw);
+  }
+}
+
+@container engine-stats (max-width: 180px) {
+  .engine-logo-wrapper {
+    width: min(4em, 50px, 25cqw);
+    height: min(4em, 50px, 25cqw);
+  }
+}
+
+/* Engine Header */
+.side-label {
+  font-size: 0.6em;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #999;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.engine-name {
+  font-size: 0.75em;
+  font-weight: 700;
+  margin: 0;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.engine-version {
+  font-size: 0.5em;
+  color: #888;
+  font-style: italic;
+  text-align: center;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+/* Evaluation */
+.eval {
+  font-size: 1em;
+  font-weight: 700;
+  padding: 0.2em 0.4em;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eval.active-eval {
+  background: rgba(76, 175, 80, 0.15);
+  border-color: rgba(76, 175, 80, 0.3);
+  color: #81c784;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+/* Stat Row Cells */
+.stat-cell {
+  color: #e0e0e0;
+  text-align: center;
+  padding: 0.15em 0.25em;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 3px;
+  font-size: 0.7em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-cell.wdl {
+  font-family: 'Courier New', monospace;
+  font-size: 0.65em;
+}
+
+.stat-cell.move-time {
+  font-weight: 600;
+}
+
+.stat-cell.move-time.active-time {
+  color: #81c784;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+/* Center Label Cells */
+.label-cell {
+  font-size: 0.70em;
+  color: #999;
+  text-align: center;
+  padding: 0.15em 0.25em;
+  min-width: 0;
+  max-width: 6em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-wrap: break-word;
+  hyphens: auto;
+  justify-self: center;
+}
+
+.label-cell.header {
+  font-weight: 600;
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+/* Shrink labels in narrow containers */
+@container engine-stats (max-width: 250px) {
+  .label-cell {
+    font-size: 0.55em;
+    max-width: 4em;
+  }
+}
+
+.main-logo-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  padding: 0.3em;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  justify-self: center;
+}
+
+/* Main logo - fluid scaling using container query width units */
+.main-logo {
+  max-width: min(20em, 300px, 30cqw);
+  max-height: min(12em, 200px, 20cqw);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  flex-shrink: 1;
+}
+
+/* Shrink main logo progressively in narrow containers */
+@container engine-stats (max-width: 600px) {
+  .main-logo {
+    max-width: min(16em, 240px, 30cqw);
+    max-height: min(10em, 150px, 20cqw);
+  }
+}
+
+@container engine-stats (max-width: 450px) {
+  .main-logo {
+    max-width: min(13em, 200px, 35cqw);
+    max-height: min(8em, 120px, 22cqw);
+  }
+}
+
+@container engine-stats (max-width: 350px) {
+  .main-logo {
+    max-width: min(10em, 150px, 35cqw);
+    max-height: min(6em, 90px, 22cqw);
+  }
+}
+
+@container engine-stats (max-width: 250px) {
+  .main-logo {
+    max-width: min(7em, 100px, 35cqw);
+    max-height: min(5em, 70px, 22cqw);
+  }
+}
+
+@container engine-stats (max-width: 180px) {
+  .main-logo {
+    max-width: min(5em, 70px, 35cqw);
+    max-height: min(3em, 50px, 22cqw);
+  }
+}
+
+.powered-by {
+  font-size: 0.5em;
+  color: #999;
+  text-align: center;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.author {
+  font-size: 0.45em;
+  color: #777;
+  text-align: center;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+/* Hide branding in very narrow containers */
+@container engine-stats (max-width: 200px) {
+  .powered-by,
+  .author {
+    display: none;
+  }
+}
+
+/* Responsive - no changes needed, compact design works for narrow spaces */

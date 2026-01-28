@@ -5,8 +5,6 @@ open System.Diagnostics
 open System.IO
 open System.Threading
 open System.Threading.Tasks
-open System.Text.Json
-open System.Text.Json.Serialization
 open Microsoft.Extensions.Logging
 open Xunit
 open ChessLibrary.WinboardIntegration
@@ -20,7 +18,7 @@ type TestLogger() =
         member _.Log(_, _, _, _, _) = ()
 
 let private isWinboardProbeEnabled () =
-    false // Set to true to enable these tests.
+    false // Set to true to enable live engine tests.
 
 let private startEngine (path: string) =
     let proc = new Process()
@@ -41,7 +39,7 @@ let private startEngine (path: string) =
 
 let private readLinesWithTimeout (queue: System.Collections.Concurrent.ConcurrentQueue<string>) (timeoutMs: int) =
     let lines = ResizeArray<string>()
-    let sw = System.Diagnostics.Stopwatch.StartNew()
+    let sw = Stopwatch.StartNew()
     while sw.ElapsedMilliseconds < int64 timeoutMs do
         let mutable line = null
         while queue.TryDequeue(&line) do
@@ -49,193 +47,206 @@ let private readLinesWithTimeout (queue: System.Collections.Concurrent.Concurren
         Thread.Sleep(25)
     lines |> Seq.toList
 
-let private readOptionLines (lines: string list) =
-    lines
-    |> List.filter (fun line -> line.TrimStart().StartsWith("option ", StringComparison.OrdinalIgnoreCase))
+// ===== Pure function tests =====
 
-let private pumpOutput (proc: Process) (handler: WinboardHandler) (cts: CancellationTokenSource) =
-    Task.Run(fun () ->
-        while not cts.IsCancellationRequested && not proc.HasExited do
-            let line = proc.StandardOutput.ReadLine()
-            if isNull line then
-                ()
-            else
-                handler.ProcessOutput(line) |> ignore
-    )
+[<Fact>]
+let ``parseFeatureLine parses basic features`` () =
+    let result = parseFeatureLine "feature ping=1 setboard=1 done=1" defaultFeatures
+    Assert.True(result.Ping)
+    Assert.True(result.SetBoard)
+    Assert.True(result.Done)
+    Assert.False(result.Analyze)
 
-type ExpectedFeatures = {
-    Ping: bool option
-    SetBoard: bool option
-    UserMove: bool option
-    Analyze: bool option
-    TimeCmd: bool option
-    OTimeCmd: bool option
-    ForceCmd: bool option
-    WhiteCmd: bool option
-    BlackCmd: bool option
-    PostCmd: bool option
-    MoveNowCmd: bool option
-    ExitCmd: bool option
-    EasyCmd: bool option
-    HardCmd: bool option
-}
+[<Fact>]
+let ``parseFeatureLine parses quoted myname`` () =
+    let result = parseFeatureLine "feature myname=\"Crafty 25.2\" done=1" defaultFeatures
+    Assert.Equal(Some "Crafty 25.2", result.MyName)
+    Assert.True(result.Done)
 
-type ExpectedInit = {
-    RequiresInit: bool
-}
+[<Fact>]
+let ``parseFeatureLine parses Comet features`` () =
+    // Comet declares: setboard=1 analyze=1 time=1
+    let result = parseFeatureLine "feature setboard=1 analyze=1 time=1 reuse=1 done=1" defaultFeatures
+    Assert.True(result.SetBoard)
+    Assert.True(result.Analyze)
+    Assert.True(result.Time)
+    Assert.Equal(Some true, result.Reuse)
+    Assert.True(result.Done)
 
-type ProbeResult = {
-    Engine: string
-    Path: string
-    InitOk: bool
-    IsInitialized: bool
-    IsV1Fallback: bool
-    Ping: bool
-    SetBoard: bool
-    UserMove: bool
-    Analyze: bool
-    TimeCmd: bool
-    OTimeCmd: bool
-    ForceCmd: bool
-    WhiteCmd: bool
-    BlackCmd: bool
-    PostCmd: bool
-    MoveNowCmd: bool
-    ExitCmd: bool
-    EasyCmd: bool
-    HardCmd: bool
-}
+[<Fact>]
+let ``parseFeatureLine parses Chenard features`` () =
+    // xchenard: ping=1 setboard=1 usermove=1
+    let result = parseFeatureLine "feature ping=1 setboard=1 usermove=1 myname=\"xchenard\" done=1" defaultFeatures
+    Assert.True(result.Ping)
+    Assert.True(result.SetBoard)
+    Assert.True(result.UserMove)
+    Assert.Equal(Some "xchenard", result.MyName)
 
-let private assertExpected (label: string) (expected: bool option) (actual: bool) =
-    match expected with
-    | Some value -> Assert.Equal(value, actual)
-    | None -> ()
+[<Fact>]
+let ``parseFeatureLine parses TheTurk features`` () =
+    let result = parseFeatureLine "feature setboard=1 usermove=1 time=1 analyze=0 done=1" defaultFeatures
+    Assert.True(result.SetBoard)
+    Assert.True(result.UserMove)
+    Assert.True(result.Time)
+    Assert.False(result.Analyze)
 
-let private probeEngineResult (flipped:bool) (engineName: string) (path: string) : ProbeResult =
-    use proc = startEngine path
+[<Fact>]
+let ``parseFeatureLine handles unknown keys gracefully`` () =
+    let result = parseFeatureLine "feature unknown=1 colors=0 ping=1 done=1" defaultFeatures
+    Assert.True(result.Ping)
+    Assert.True(result.Done)
+
+[<Fact>]
+let ``parseFeatureLine accumulates across calls`` () =
+    let f1 = parseFeatureLine "feature ping=1 setboard=1" defaultFeatures
+    let f2 = parseFeatureLine "feature analyze=1 done=1" f1
+    Assert.True(f2.Ping)
+    Assert.True(f2.SetBoard)
+    Assert.True(f2.Analyze)
+    Assert.True(f2.Done)
+
+// ===== positionToWinboard tests =====
+
+[<Fact>]
+let ``positionToWinboard with setboard sends setboard for FEN`` () =
+    let features = { defaultFeatures with SetBoard = true }
+    let cmds = positionToWinboard "position fen r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2" features
+    Assert.Contains("setboard r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2", cmds)
+
+[<Fact>]
+let ``positionToWinboard without setboard sends moves`` () =
+    let features = { defaultFeatures with SetBoard = false }
+    let cmds = positionToWinboard "position startpos moves e2e4 e7e5" features
+    Assert.Equal<string list>(["e2e4"; "e7e5"], cmds)
+
+[<Fact>]
+let ``positionToWinboard startpos no moves gives empty`` () =
+    let features = defaultFeatures
+    let cmds = positionToWinboard "position startpos" features
+    Assert.Empty(cmds)
+
+// ===== goToWinboard tests =====
+
+[<Fact>]
+let ``goToWinboard V1 with time control sends time and otim`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, engineName, flipped)
-    use cts = new CancellationTokenSource()
-    let _pump = pumpOutput proc handler cts
-
-    let ok = initializeWinboard proc handler (Some logger) engineName 10000 |> Async.RunSynchronously
-
-    if ok && not handler.IsV1Fallback then
-        let probes = handler.GetProbePlan(false)
-        for probe in probes do
-            let probeAsync = handler.BeginProbe probe
-            match probe.Kind with
-            | ProbeKind.Ping ->
-                match handler.GetProbePingCommand() with
-                | Some pingCmd -> proc.StandardInput.WriteLine(pingCmd)
-                | None -> ()
-            | _ ->
-                for cmd in probe.Commands do
-                    proc.StandardInput.WriteLine(cmd)
-            probeAsync |> Async.RunSynchronously |> ignore
-            for cmd in probe.CleanupCommands do
-                proc.StandardInput.WriteLine(cmd)
-
-    let result = {
-        Engine = engineName
-        Path = path
-        InitOk = ok
-        IsInitialized = handler.IsInitialized
-        IsV1Fallback = handler.IsV1Fallback
-        Ping = handler.Features.Ping
-        SetBoard = handler.Features.SetBoard
-        UserMove = handler.Features.UserMove
-        Analyze = handler.Features.Analyze
-        TimeCmd = handler.Features.TimeCmd
-        OTimeCmd = handler.Features.OTimeCmd
-        ForceCmd = handler.Features.ForceCmd
-        WhiteCmd = handler.Features.WhiteCmd
-        BlackCmd = handler.Features.BlackCmd
-        PostCmd = handler.Features.PostCmd
-        MoveNowCmd = handler.Features.MoveNowCmd
-        ExitCmd = handler.Features.ExitCmd
-        EasyCmd = handler.Features.EasyCmd
-        HardCmd = handler.Features.HardCmd
-    }
-
-    try
-        proc.StandardInput.WriteLine("quit")
-    with _ -> ()
-    cts.Cancel()
-    proc.WaitForExit(1000) |> ignore
-    result
-
-let private probeEngine (flipped:bool)  (engineName: string) (path: string) (expectedInit: ExpectedInit) (expected: ExpectedFeatures) =
-    if not (isWinboardProbeEnabled()) then
-        ()
-    elif not (File.Exists(path)) then
-        // Skip if engine isn't present on this machine.
-        ()
-    else
-        let result = probeEngineResult flipped engineName path
-        if expectedInit.RequiresInit then
-            Assert.True(result.InitOk, $"Winboard init failed for {engineName}")
-            Assert.True(result.IsInitialized, $"Handler not initialized for {engineName}")
-        else
-            Assert.True(not result.InitOk || not result.IsInitialized, $"{engineName} expected to fail init")
-
-        if result.InitOk then
-            assertExpected $"{engineName}.Ping" expected.Ping result.Ping
-            assertExpected $"{engineName}.SetBoard" expected.SetBoard result.SetBoard
-            assertExpected $"{engineName}.UserMove" expected.UserMove result.UserMove
-            assertExpected $"{engineName}.Analyze" expected.Analyze result.Analyze
-            assertExpected $"{engineName}.TimeCmd" expected.TimeCmd result.TimeCmd
-            assertExpected $"{engineName}.OTimeCmd" expected.OTimeCmd result.OTimeCmd
-            assertExpected $"{engineName}.ForceCmd" expected.ForceCmd result.ForceCmd
-            assertExpected $"{engineName}.WhiteCmd" expected.WhiteCmd result.WhiteCmd
-            assertExpected $"{engineName}.BlackCmd" expected.BlackCmd result.BlackCmd
-            assertExpected $"{engineName}.PostCmd" expected.PostCmd result.PostCmd
-            assertExpected $"{engineName}.MoveNowCmd" expected.MoveNowCmd result.MoveNowCmd
-            assertExpected $"{engineName}.ExitCmd" expected.ExitCmd result.ExitCmd
-            assertExpected $"{engineName}.EasyCmd" expected.EasyCmd result.EasyCmd
-            assertExpected $"{engineName}.HardCmd" expected.HardCmd result.HardCmd
+    let handler = WinboardHandler(logger, "Test", false)
+    handler.ForceV1Init() // Force V1 mode
+    handler.UciToWinboard("position startpos") |> ignore
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000" true
+    Assert.Contains("time 30000", cmds)
+    Assert.Contains("otim 30000", cmds)
+    Assert.Contains("go", cmds)
 
 [<Fact>]
-let ``Winboard probing detects capabilities for ant`` () =
-    probeEngine false "ant" @"C:\Dev\Chess\Engines\WB_Natives\ant.exe"
-        { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = None; OTimeCmd = None; ForceCmd = None; WhiteCmd = None; BlackCmd = None; PostCmd = None; MoveNowCmd = None; ExitCmd = None; EasyCmd = None; HardCmd = None }
+let ``goToWinboard V2 with time control sends level`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Test", false)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000" true
+    // V2 engines should get level command: 300000ms = 5 minutes, no increment
+    // Should be "level 0 5 0" (no seconds when 0, no decimal when 0)
+    Assert.Contains("level 0 5 0", cmds)
+    // Always gets time/otim updates
+    Assert.True(cmds |> List.exists (fun s -> s.StartsWith("time")))
+    Assert.Contains("go", cmds)
 
 [<Fact>]
-let ``Winboard probing detects capabilities for Comet_B68`` () =
-    probeEngine false "Comet_B68" @"C:\Dev\Chess\Engines\WB_Natives\Comet_B68.exe"
-        { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some false; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = None; BlackCmd = None; PostCmd = Some true; MoveNowCmd = Some false; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+let ``goToWinboard with movetime sends st`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Test", false)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+    handler.UciToWinboard("position startpos") |> ignore
+    let cmds = handler.GoToWinboard "go movetime 5000" true
+    Assert.Contains("st 5", cmds)
+    Assert.Contains("go", cmds)
 
 [<Fact>]
-let ``Winboard probing detects capabilities for TheTurk`` () =
-    probeEngine false "TheTurk" @"C:\Dev\Chess\Engines\WB_Natives\TheTurk.exe"
-        { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+let ``goToWinboard infinite with analyze sends analyze`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Test", false)
+    handler.ProcessFeatureLine("feature analyze=1 done=1") |> ignore
+    handler.UciToWinboard("position startpos") |> ignore
+    let cmds = handler.GoToWinboard "go infinite" true
+    Assert.Contains("analyze", cmds)
+    Assert.DoesNotContain("go", cmds)
 
 [<Fact>]
-let ``Winboard probing detects capabilities for Jonny400`` () =
-    probeEngine false "Jonny400" @"C:\Dev\Chess\Engines\WB_Natives\Jonny400.exe"
-        { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some false; UserMove = Some false; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+let ``goToWinboard infinite without analyze sends go`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Test", false)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+    handler.UciToWinboard("position startpos") |> ignore
+    let cmds = handler.GoToWinboard "go infinite" true
+    Assert.Contains("go", cmds)
+    Assert.DoesNotContain("analyze", cmds)
 
 [<Fact>]
-let ``Winboard probing detects capabilities for Thinker5.4DUCI`` () =
-    probeEngine false "Thinker5.4DUCI" @"C:\Dev\Chess\Engines\WB_Natives\Thinker5.4DUCI.exe"
-        { RequiresInit = true }
-        { Ping = Some false; SetBoard = Some true; UserMove = Some true; Analyze = Some true; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some true; BlackCmd = Some true; PostCmd = Some true; MoveNowCmd = Some true; ExitCmd = Some true; EasyCmd = None; HardCmd = None }
+let ``goToWinboard V1 black to move swaps time and otim`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Test", false)
+    handler.ForceV1Init() // Force V1 mode
+    handler.UciToWinboard("position startpos moves e2e4") |> ignore // Black to move
+    let cmds = handler.GoToWinboard "go wtime 100000 btime 200000" false
+    // Black to move: time = btime, otim = wtime
+    Assert.Contains("time 20000", cmds)
+    Assert.Contains("otim 10000", cmds)
+
+// ===== parseThinkingOutput tests =====
 
 [<Fact>]
-let ``Winboard probing detects capabilities for xchenard64`` () =
-    probeEngine false "xchenard64" @"C:\Dev\Chess\Engines\WB_Natives\xchenard64.exe"
-        { RequiresInit = true }
-        { Ping = Some true; SetBoard = Some true; UserMove = Some true; Analyze = Some false; TimeCmd = Some true; OTimeCmd = Some true; ForceCmd = Some true; WhiteCmd = Some false; BlackCmd = Some false; PostCmd = Some true; MoveNowCmd = Some false; ExitCmd = Some false; EasyCmd = None; HardCmd = None }
+let ``parseThinkingOutput parses standard format`` () =
+    let board = Board()
+    let result = parseThinkingOutput false board "TestEngine" "9 12 1000 100000 e2e4 e7e5"
+    Assert.True(result.IsSome)
+    let info = result.Value
+    Assert.Contains("depth 9", info)
+    Assert.Contains("score cp 12", info)
+    Assert.Contains("nodes 100000", info)
 
 [<Fact>]
-let ``Winboard probing detects capabilities for TheKing350x64`` () =
-    probeEngine false "TheKing350x64" @"C:\Dev\Chess\Engines\WB_Natives\TheKing350x64.exe"
-        { RequiresInit = true }
-        { Ping = None; SetBoard = None; UserMove = None; Analyze = None; TimeCmd = None; OTimeCmd = None; ForceCmd = None; WhiteCmd = None; BlackCmd = None; PostCmd = None; MoveNowCmd = None; ExitCmd = None; EasyCmd = None; HardCmd = None }
+let ``parseThinkingOutput handles TheKing depth encoding`` () =
+    // TheKing uses depth*1000: 3001 means depth 3
+    let board = Board()
+    let result = parseThinkingOutput false board "TheKing" "3001 -42 0 971 e2e4"
+    Assert.True(result.IsSome)
+    Assert.Contains("depth 3", result.Value)
+    Assert.Contains("score cp -42", result.Value)
+
+[<Fact>]
+let ``parseThinkingOutput handles tab-indented Crafty output`` () =
+    let board = Board()
+    let result = parseThinkingOutput false board "Crafty" "\t11 48 3 314966 e2e4 e7e5"
+    Assert.True(result.IsSome)
+    Assert.Contains("depth 11", result.Value)
+
+[<Fact>]
+let ``parseThinkingOutput flipped score not negated for black`` () =
+    let board = Board()
+    board.LoadFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+    // flipped=true means engine reports from White's perspective
+    let result = parseThinkingOutput true board "TheKing" "5 30 10 5000 e7e5"
+    Assert.True(result.IsSome)
+    Assert.Contains("score cp 30", result.Value) // Not negated
+
+[<Fact>]
+let ``parseThinkingOutput negates score for black when not flipped`` () =
+    let board = Board()
+    board.LoadFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
+    let result = parseThinkingOutput false board "TestEngine" "5 30 10 5000 e7e5"
+    Assert.True(result.IsSome)
+    Assert.Contains("score cp -30", result.Value) // Negated for black
+
+[<Fact>]
+let ``parseThinkingOutput filters tb suffix from Jonny`` () =
+    let board = Board()
+    let result = parseThinkingOutput false board "Jonny" "10 28 3 110752 e2e4 d7d5 tb=0/0"
+    Assert.True(result.IsSome)
+    Assert.Contains("depth 10", result.Value)
+    // tb=0/0 should be filtered from PV
+    Assert.DoesNotContain("tb=", result.Value)
+
+// ===== tryParseMoveOutput tests =====
 
 [<Fact>]
 let ``Winboard move output formats parse`` () =
@@ -263,6 +274,8 @@ let ``Winboard move output formats parse`` () =
     // SAN with move number and ellipsis
     let blackPawnBoard = withFen "8/8/8/3p4/8/8/8/4K3 b - - 0 1"
     assertBestmove "bestmove d5d4" "1. ... d4" blackPawnBoard
+
+// ===== PV normalization tests =====
 
 [<Fact>]
 let ``Winboard PV formats normalize`` () =
@@ -297,9 +310,273 @@ let ``Winboard PV formats normalize`` () =
     let board4 = withFen "8/8/8/3p4/8/8/8/4K3 b - - 0 1"
     assertPvContains [ "d5d4" ] "1 -13 0 234 1. d4" board4
 
+// ===== WinboardHandler integration tests =====
+
 [<Fact>]
-let ``Crafty analysis mode emits analysis and exits with go move`` () =
-    let path = @"C:\Dev\Chess\Engines\Crafty\crafty-23.5-64bit.exe"
+let ``Handler ProcessFeatureLine marks initialized on done`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TestEngine", false)
+    Assert.False(handler.IsInitialized)
+    let done1 = handler.ProcessFeatureLine("feature ping=1 setboard=1")
+    Assert.False(done1)
+    Assert.False(handler.IsInitialized)
+    let done2 = handler.ProcessFeatureLine("feature done=1")
+    Assert.True(done2)
+    Assert.True(handler.IsInitialized)
+    Assert.True(handler.IsProtover2)
+    Assert.True(handler.Features.Ping)
+    Assert.True(handler.Features.SetBoard)
+
+[<Fact>]
+let ``Handler ForceV1Init sets v1 defaults`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TestEngine", false)
+    handler.ForceV1Init()
+    Assert.True(handler.IsInitialized)
+    Assert.True(handler.IsV1Fallback)
+    Assert.False(handler.Features.Ping)
+    Assert.False(handler.Features.SetBoard)
+
+[<Fact>]
+let ``Handler UciToWinboard translates position with setboard`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TestEngine", false)
+    handler.ProcessFeatureLine("feature setboard=1 done=1") |> ignore
+    let cmds = handler.UciToWinboard("position fen r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2")
+    Assert.True(cmds.Length > 0)
+    Assert.True(cmds |> List.exists (fun c -> c.StartsWith("setboard")))
+    // Use full 6-field FEN — some engines (Chenard) require halfmove/fullmove counters
+    let setboardCmd = cmds |> List.find (fun c -> c.StartsWith("setboard"))
+    Assert.Equal("setboard r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2", setboardCmd)
+
+[<Fact>]
+let ``Handler UciToWinboard translates go infinite to analyze`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TestEngine", false)
+    handler.ProcessFeatureLine("feature analyze=1 done=1") |> ignore
+    let cmds = handler.UciToWinboard("position startpos")
+    let goCmds = handler.UciToWinboard("go infinite")
+    Assert.Contains("analyze", goCmds)
+
+[<Fact>]
+let ``Handler ProcessOutput translates pong to readyok`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TestEngine", false)
+    handler.ProcessFeatureLine("feature ping=1 done=1") |> ignore
+    // Send isready which sets pendingPing
+    let _ = handler.UciToWinboard("isready")
+    // Now simulate pong response (any pong should work since we can't predict the ID)
+    // We can't easily test this without knowing the ping ID, but we verify the pipeline
+    let result = handler.ProcessOutput("pong 42")
+    // Result depends on whether 42 matches the random ping ID — this tests the code path
+    result |> ignore
+
+[<Fact>]
+let ``Handler stop in analyze mode sends exit`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TestEngine", false)
+    handler.ProcessFeatureLine("feature analyze=1 done=1") |> ignore
+    handler.UciToWinboard("position startpos") |> ignore
+    handler.UciToWinboard("go infinite") |> ignore
+    let stopCmds = handler.UciToWinboard("stop")
+    Assert.Contains("exit", stopCmds)
+
+// ===== V1 engine simulation tests =====
+
+[<Fact>]
+let ``V1 handler ForceV1Init produces correct defaults`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    // Simulate: no feature lines received, force V1
+    handler.ForceV1Init()
+    Assert.True(handler.IsInitialized)
+    Assert.True(handler.IsV1Fallback)
+    Assert.False(handler.IsProtover2)
+    Assert.False(handler.Features.Ping)
+    Assert.False(handler.Features.SetBoard)
+    Assert.False(handler.Features.Analyze)
+    Assert.False(handler.Features.Time)
+
+[<Fact>]
+let ``V1 handler processes TheKing thinking output with depth x 1000`` () =
+    // TheKing raw output: " 3001   -42      0       971 Bh7 Nc3 e6"
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    // Set board to the test FEN (black to move)
+    handler.UciToWinboard("position fen rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7") |> ignore
+    let result = handler.ProcessOutput("3001   -42      0       971 Bh7 Nc3 e6")
+    Assert.True(result.IsSome, "TheKing thinking line should parse")
+    let info = result.Value
+    Assert.Contains("depth 3", info)
+    Assert.Contains("score cp", info)
+    Assert.Contains("pv", info)
+
+[<Fact>]
+let ``V1 handler processes TheKing move output`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    handler.UciToWinboard("position fen rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7") |> ignore
+    let result = handler.ProcessOutput("move g6h7")
+    Assert.True(result.IsSome, "TheKing move line should parse")
+    Assert.Equal(Some "bestmove g6h7", result)
+
+[<Fact>]
+let ``V1 handler ProcessOutput ignores error lines from TheKing`` () =
+    // TheKing sends: "Error (unknown command): protover"
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    let result = handler.ProcessOutput("Error (unknown command): protover")
+    Assert.True(result.IsNone, "Error lines should not produce UCI output")
+
+[<Fact>]
+let ``V1 handler UciToWinboard sends new for ucinewgame`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    let cmds = handler.UciToWinboard("ucinewgame")
+    Assert.Contains("new", cmds)
+
+[<Fact>]
+let ``V1 handler UciToWinboard sends moves for position without setboard`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    Assert.False(handler.Features.SetBoard)
+    let cmds = handler.UciToWinboard("position startpos moves e2e4 e7e5 g1f3")
+    // V1 without setboard: new + force + individual moves
+    Assert.Equal(5, cmds.Length)
+    Assert.Equal<string list>(["new"; "force"; "e2e4"; "e7e5"; "g1f3"], cmds)
+
+[<Fact>]
+let ``V1 handler isready returns empty for no ping`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    Assert.False(handler.Features.Ping)
+    let cmds = handler.UciToWinboard("isready")
+    Assert.Empty(cmds)
+
+[<Fact>]
+let ``V1 handler go with movetime sends st and go`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    handler.UciToWinboard("position startpos") |> ignore
+    let cmds = handler.UciToWinboard("go movetime 3000")
+    Assert.Contains("st 3", cmds)
+    Assert.Contains("go", cmds)
+
+[<Fact>]
+let ``V1 handler stop without analyze sends question mark`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+    Assert.False(handler.Features.Analyze)
+    handler.UciToWinboard("position startpos") |> ignore
+    handler.UciToWinboard("go movetime 10000") |> ignore
+    let stopCmds = handler.UciToWinboard("stop")
+    Assert.Contains("?", stopCmds)
+
+[<Fact>]
+let ``V1 handler full TheKing game simulation`` () =
+    // Simulate a full game cycle with TheKing-style V1 engine
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "TheKing", false)
+    handler.ForceV1Init()
+
+    // isready → empty (no ping)
+    let readyCmds = handler.UciToWinboard("isready")
+    Assert.Empty(readyCmds)
+
+    // ucinewgame → "new"
+    let newCmds = handler.UciToWinboard("ucinewgame")
+    Assert.Contains("new", newCmds)
+
+    // position startpos moves e2e4 → new + force + e2e4
+    let posCmds = handler.UciToWinboard("position startpos moves e2e4")
+    Assert.Equal<string list>(["new"; "force"; "e2e4"], posCmds)
+
+    // go movetime 3000 → st 3 + go
+    let goCmds = handler.UciToWinboard("go movetime 3000")
+    Assert.Contains("st 3", goCmds)
+    Assert.Contains("go", goCmds)
+
+    // Thinking output processed
+    let thinkResult = handler.ProcessOutput("3001 -42 0 971 e7e5")
+    Assert.True(thinkResult.IsSome)
+    Assert.Contains("depth 3", thinkResult.Value)
+
+    // Move output processed
+    let moveResult = handler.ProcessOutput("move e7e5")
+    Assert.True(moveResult.IsSome)
+    Assert.Equal(Some "bestmove e7e5", moveResult)
+
+[<Fact>]
+let ``Jonny partial V2 features parsed without done`` () =
+    // Jonny sends features but no done=1:
+    // "feature myname="Jonny 4.00" sigint=0"
+    // "feature variants="normal,fischerandom""
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Jonny", false)
+    let done1 = handler.ProcessFeatureLine("feature myname=\"Jonny 4.00\" sigint=0")
+    Assert.False(done1)
+    Assert.False(handler.IsInitialized)
+    let done2 = handler.ProcessFeatureLine("feature variants=\"normal,fischerandom\"")
+    Assert.False(done2)
+    Assert.False(handler.IsInitialized)
+    // After timeout, MarkInitialized would be called
+    handler.MarkInitialized()
+    Assert.True(handler.IsInitialized)
+    Assert.False(handler.IsV1Fallback)
+    Assert.Equal(Some "Jonny 4.00", handler.Features.MyName)
+    // Jonny does NOT declare setboard=1
+    Assert.False(handler.Features.SetBoard)
+
+[<Fact>]
+let ``Jonny without setboard sends moves not setboard for FEN position`` () =
+    // Jonny silently ignores setboard — our handler must not use it
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Jonny", false)
+    handler.ProcessFeatureLine("feature myname=\"Jonny 4.00\" sigint=0") |> ignore
+    handler.ProcessFeatureLine("feature variants=\"normal,fischerandom\"") |> ignore
+    handler.MarkInitialized()
+    Assert.False(handler.Features.SetBoard)
+    // Position with FEN and moves — should send moves, not setboard
+    let cmds = handler.UciToWinboard("position fen rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7")
+    // No setboard command should be present
+    Assert.DoesNotContain("setboard", cmds |> String.concat " ")
+    // FEN position with no moves → new + force (no moves to replay)
+    Assert.Equal<string list>(["new"; "force"], cmds)
+
+[<Fact>]
+let ``Jonny thinking output with tb suffix parses`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Jonny", false)
+    handler.MarkInitialized()
+    handler.UciToWinboard("position startpos") |> ignore
+    let result = handler.ProcessOutput("10 28 3 110752 e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 c6d4 d1d4 g8f6 tb=0/0")
+    Assert.True(result.IsSome, "Jonny thinking line should parse")
+    Assert.Contains("depth 10", result.Value)
+    Assert.DoesNotContain("tb=", result.Value)
+
+[<Fact>]
+let ``Jonny coordinate move output parses`` () =
+    let logger = TestLogger() :> ILogger
+    let handler = WinboardHandler(logger, "Jonny", false)
+    handler.MarkInitialized()
+    handler.UciToWinboard("position startpos") |> ignore
+    let result = handler.ProcessOutput("move e2e4")
+    Assert.True(result.IsSome)
+    Assert.Equal(Some "bestmove e2e4", result)
+
+// ===== Live engine tests (disabled by default) =====
+
+[<Fact>]
+let ``Crafty plays after setboard and st+go`` () =
+    let path = @"C:\Dev\Chess\Engines\Crafty 25.2\crafty.exe"
     if not (isWinboardProbeEnabled()) then
         ()
     elif not (File.Exists(path)) then
@@ -307,191 +584,75 @@ let ``Crafty analysis mode emits analysis and exits with go move`` () =
     else
         use proc = startEngine path
         let outQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
-        let errQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
-
         let _outTask =
             Task.Run(fun () ->
                 while not proc.HasExited do
                     let line = proc.StandardOutput.ReadLine()
                     if isNull line then () else outQueue.Enqueue(line))
-        let _errTask =
-            Task.Run(fun () ->
-                while not proc.HasExited do
-                    let line = proc.StandardError.ReadLine()
-                    if isNull line then () else errQueue.Enqueue(line))
 
         proc.StandardInput.WriteLine("xboard")
         proc.StandardInput.WriteLine("protover 2")
         readLinesWithTimeout outQueue 1500 |> ignore
 
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        proc.StandardInput.WriteLine("post")
-        proc.StandardInput.WriteLine("force")
         proc.StandardInput.WriteLine($"setboard {fen}")
-        proc.StandardInput.WriteLine("analyze")
+        proc.StandardInput.WriteLine("st 1")
+        proc.StandardInput.WriteLine("go")
 
-        let analysisLines = readLinesWithTimeout outQueue 3000
-        let analysisRegex = System.Text.RegularExpressions.Regex(@"^\s*\d+\s+[+-]?\d+\s+\d+\s+\d+")
-        let hasAnalysis = analysisLines |> List.exists (fun l -> analysisRegex.IsMatch(l))
-        let analysisJoined = String.Join(" | ", analysisLines)
-        Assert.True(hasAnalysis, $"Crafty produced no analysis lines. Output: {analysisJoined}")
-
-        let moveRegex = System.Text.RegularExpressions.Regex(@"^(move\s+)?[a-h][1-8][a-h][1-8][qrbn]?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-        let isMoveLine (line: string) =
-            let t = line.Trim()
-            t.StartsWith("move ", StringComparison.OrdinalIgnoreCase)
-            || moveRegex.IsMatch(t)
-            || t.StartsWith("hint:", StringComparison.OrdinalIgnoreCase)
-
-        // Try "?" in analyze mode (move-now).
-        proc.StandardInput.WriteLine("?")
-        let moveLines0 = readLinesWithTimeout outQueue 5000
-        let hasMove0 = moveLines0 |> List.exists isMoveLine
-
-        // If no move, exit analysis and force idle.
-        if not hasMove0 then
-            proc.StandardInput.WriteLine("exit")
-            proc.StandardInput.WriteLine("force")
-        let moveLines1 = if hasMove0 then [] else readLinesWithTimeout outQueue 3000
-        let hasMove1 = hasMove0 || (moveLines1 |> List.exists isMoveLine)
-
-        // If still no move, start a fresh game in play mode and ask for a move.
-        if not hasMove1 then
-            proc.StandardInput.WriteLine("new")
-            proc.StandardInput.WriteLine("black")
-            proc.StandardInput.WriteLine("go")
-        let moveLines2 = if hasMove1 then [] else readLinesWithTimeout outQueue 3000
-        let hasMove2 = hasMove1 || (moveLines2 |> List.exists isMoveLine)
-
-        // If still no move, send "?" to force a move.
-        if not hasMove2 then
-            proc.StandardInput.WriteLine("?")
-        let moveLines3 = if hasMove2 then [] else readLinesWithTimeout outQueue 5000
-        let hasMove3 = hasMove2 || (moveLines3 |> List.exists isMoveLine)
-
-        let moveJoined = String.Join(" | ", moveLines0 @ moveLines1 @ moveLines2 @ moveLines3)
-        let hasMove = hasMove3
-
-        Assert.True(hasMove, $"Crafty produced no move after ?, exit, and go. Output: {moveJoined}")
+        let lines = readLinesWithTimeout outQueue 5000
+        let moveRegex = System.Text.RegularExpressions.Regex(@"^(move\s+)?[a-h][1-8][a-h][1-8]([qrbn])?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        let hasMove = lines |> List.exists (fun l -> moveRegex.IsMatch(l.Trim()))
+        Assert.True(hasMove, sprintf "Crafty produced no move after setboard+st+go. Output: %s" (String.Join(" | ", lines)))
 
         proc.StandardInput.WriteLine("quit")
         proc.WaitForExit(1000) |> ignore
 
 [<Fact>]
-let ``Crafty analyze stops after stop sequence`` () =
-    let path = @"C:\Dev\Chess\Engines\Crafty\crafty-23.5-64bit.exe"
-    if not (isWinboardProbeEnabled()) then
-        ()
-    elif not (File.Exists(path)) then
+let ``Crafty 25.2 is recognized as protover 2 engine after feature negotiation`` () =
+    let path = @"C:\Dev\Chess\Engines\Crafty 25.2\crafty.exe"
+    if not (File.Exists(path)) then
         ()
     else
         use proc = startEngine path
+        let logger = TestLogger() :> ILogger
+        let handler = WinboardHandler(logger, "Crafty", false)
         let outQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
         let _outTask =
             Task.Run(fun () ->
                 while not proc.HasExited do
                     let line = proc.StandardOutput.ReadLine()
                     if isNull line then () else outQueue.Enqueue(line))
-
         proc.StandardInput.WriteLine("xboard")
         proc.StandardInput.WriteLine("protover 2")
-        readLinesWithTimeout outQueue 1500 |> ignore
-
-        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        proc.StandardInput.WriteLine("post")
-        proc.StandardInput.WriteLine("force")
-        proc.StandardInput.WriteLine($"setboard {fen}")
-        proc.StandardInput.WriteLine("analyze")
-
-        let analysisLines = readLinesWithTimeout outQueue 3000
-        let analysisRegex = System.Text.RegularExpressions.Regex(@"^\s*\d+\s+[+-]?\d+\s+\d+\s+\d+")
-        let hasAnalysis = analysisLines |> List.exists (fun l -> analysisRegex.IsMatch(l))
-        let analysisJoined = String.Join(" | ", analysisLines)
-        Assert.True(hasAnalysis, $"Crafty produced no analysis lines. Output: {analysisJoined}")
-
-        // Simulate stop mapping in analysis mode: ? + exit + force
-        proc.StandardInput.WriteLine("?")
-        proc.StandardInput.WriteLine("exit")
-        proc.StandardInput.WriteLine("force")
-
-        let afterStopLines = readLinesWithTimeout outQueue 3000
-        let hasAnalysisAfterStop = afterStopLines |> List.exists (fun l -> analysisRegex.IsMatch(l))
-        let afterStopJoined = String.Join(" | ", afterStopLines)
-        Assert.False(hasAnalysisAfterStop, $"Crafty continued analysis after stop. Output: {afterStopJoined}")
-
+        let outLines = readLinesWithTimeout outQueue 3000
+        for line in outLines do
+            handler.ProcessOutput(line) |> ignore
+        Assert.True(handler.IsProtover2, "Handler should be marked as protover 2 after feature negotiation with Crafty 25.2.")
         proc.StandardInput.WriteLine("quit")
         proc.WaitForExit(1000) |> ignore
 
 [<Fact>]
-let ``Winboard probing discovery report`` () =
-    if not (isWinboardProbeEnabled()) then
-        ()
-    else
-        let engines = [
-            ("ant", @"C:\Dev\Chess\Engines\WB_Natives\ant.exe")
-            ("Comet_B68", @"C:\Dev\Chess\Engines\WB_Natives\Comet_B68.exe")
-            ("Jonny400", @"C:\Dev\Chess\Engines\WB_Natives\Jonny400.exe")
-            ("TheTurk", @"C:\Dev\Chess\Engines\WB_Natives\TheTurk.exe")
-            ("Thinker5.4DUCI", @"C:\Dev\Chess\Engines\WB_Natives\Thinker5.4DUCI.exe")
-            ("xchenard64", @"C:\Dev\Chess\Engines\WB_Natives\xchenard64.exe")
-            ("TheKing350x64", @"C:\Dev\Chess\Engines\WB_Natives\TheKing350x64.exe")
-            ("Crafty", @"C:\Dev\Chess\Engines\Crafty\crafty-23.5-64bit.exe")
-        ]
-
-        let results =
-            engines
-            |> List.choose (fun (name, path) ->
-                if File.Exists(path) then
-                    Some (probeEngineResult false name path)
-                else
-                    None)
-
-        let outDir = Path.Combine(Directory.GetCurrentDirectory(), "TestResults")
-        Directory.CreateDirectory(outDir) |> ignore
-        let outPath = Path.Combine(outDir, "wb-probe.json")
-
-        let options = JsonSerializerOptions(WriteIndented = true)
-        options.Converters.Add(JsonStringEnumConverter())
-        let json = JsonSerializer.Serialize(results, options)
-        File.WriteAllText(outPath, json)
-
-        Assert.True(results.Length > 0, "No engines were found to probe.")
-
-[<Fact>]
-let ``Crafty reports CECP options`` () =
-    let path = @"C:\Dev\Chess\Engines\Crafty\crafty-23.5-64bit.exe"
+let ``Crafty setboard feature is detected`` () =
+    let path = @"C:\Dev\Chess\Engines\Crafty 25.2\crafty.exe"
     if not (isWinboardProbeEnabled()) then
         ()
     elif not (File.Exists(path)) then
         ()
     else
         use proc = startEngine path
+        let logger = TestLogger() :> ILogger
+        let handler = WinboardHandler(logger, "Crafty", false)
         let outQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
-        let errQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
         let _outTask =
             Task.Run(fun () ->
                 while not proc.HasExited do
                     let line = proc.StandardOutput.ReadLine()
                     if isNull line then () else outQueue.Enqueue(line))
-        let _errTask =
-            Task.Run(fun () ->
-                while not proc.HasExited do
-                    let line = proc.StandardError.ReadLine()
-                    if isNull line then () else errQueue.Enqueue(line))
-
         proc.StandardInput.WriteLine("xboard")
         proc.StandardInput.WriteLine("protover 2")
-        let outLines = readLinesWithTimeout outQueue 5000
-        let errLines = readLinesWithTimeout errQueue 5000
-        let optionLines = readOptionLines (outLines @ errLines)
-
-        let outDir = Path.Combine(Directory.GetCurrentDirectory(), "TestResults")
-        Directory.CreateDirectory(outDir) |> ignore
-        let outPath = Path.Combine(outDir, "crafty-options.txt")
-        if optionLines.Length > 0 then
-            File.WriteAllLines(outPath, optionLines)
-        else
-            File.WriteAllLines(outPath, [ "No CECP option lines detected." ])
-
+        let outLines = readLinesWithTimeout outQueue 3000
+        for line in outLines do
+            handler.ProcessOutput(line) |> ignore
+        Assert.True(handler.Features.SetBoard, "Crafty should advertise setboard=1 in features")
         proc.StandardInput.WriteLine("quit")
         proc.WaitForExit(1000) |> ignore

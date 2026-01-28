@@ -38,15 +38,18 @@ module Initialization =
       do! Async.Sleep(delay) 
       return true } 
 
-  let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILogger) = async { 
-    let pumpCleanupDelay = 200
-    let engineStopDelay = 300
-    let engineStartDelay = 2000
-    let engineRecoveryDelay = 1000
-    
-    try         
+  let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILogger) = async {
+    let isWinBoard = engine.Config.Protocol.ToLower().Contains("winboard")
+    // Winboard engines already complete init during StartProcess (wait for done=1)
+    // UCI engines need extra time for internal initialization and cleanup
+    let pumpCleanupDelay = if isWinBoard then 50 else 200
+    let engineStopDelay = if isWinBoard then 100 else 300
+    let engineStartDelay = if isWinBoard then 100 else 2000
+    let engineRecoveryDelay = if isWinBoard then 100 else 1000
+
+    try
         do! Async.Sleep pumpCleanupDelay
-        
+
         //Handle engine process state
         let! processReady = async {
             if engine.HasExited() then
@@ -62,15 +65,19 @@ module Initialization =
                     logger.LogError(ex, "Failed to start engine {Engine}", engine.Name)
                     return false
             else
-                logger.LogDebug("Engine {Engine} still running, resetting", engine.Name)
                 try
-                    // Graceful stop attempt
-                    engine.Stop()
-                    do! Async.Sleep engineStopDelay
-                    let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
-                    if not ok then
-                        failwith "Engine did not respond to isready command."
-                    return true
+                    if isWinBoard then
+                        logger.LogDebug("Engine {Engine} running (WinBoard protocol)", engine.Name)
+                        return true
+                    else
+                        logger.LogDebug("Engine {Engine} still running, resetting", engine.Name)
+                        // Graceful stop attempt
+                        engine.Stop()
+                        do! Async.Sleep engineStopDelay
+                        let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                        if not ok then
+                            failwith "Engine did not respond to isready command."
+                        return true
                 with ex ->
                     logger.LogWarning(ex, "Error resetting engine {Engine}, forcing restart", engine.Name)
                     engine.StopProcess()
@@ -90,14 +97,39 @@ module Initialization =
             if engine.HasExited() then
                 logger.LogError("Engine {Engine} failed to start after all attempts", engine.Name)
                 return false
+            elif isWinBoard then
+                // Winboard engines with reuse=0 (e.g. Crafty 25.2) need a full process restart
+                if not engine.CanReuseWinboard then
+                    logger.LogDebug("Engine {Engine} has reuse=0, forcing process restart", engine.Name)
+                    engine.StopProcess()
+                    do! Async.Sleep engineRecoveryDelay
+                    engine.StartProcess()
+                    do! Async.Sleep engineStartDelay
+                    let readyOk = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000)
+                    if readyOk then
+                        logger.LogDebug("Engine {Engine} restarted and ready (WinBoard reuse=0)", engine.Name)
+                        return true
+                    else
+                        logger.LogError("Engine {Engine} timed out after restart (WinBoard reuse=0)", engine.Name)
+                        return false
+                else
+                    // Winboard engines need 'new' to reset between games
+                    engine.UciNewGame()
+                    let readyOk = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000)
+                    if readyOk then
+                        logger.LogDebug("Engine {Engine} ready (WinBoard protocol)", engine.Name)
+                        return true
+                    else
+                        logger.LogError("Engine {Engine} timed out waiting for readyok (WinBoard)", engine.Name)
+                        return false
             else
                 engine.UciNewGame()
 
                 //Wait for ready acknowledgment
                 let timeoutInSec = max 180 tourny.EngineStartupTimeoutInSec
-                let timeoutInMs = timeoutInSec * 1000                    
+                let timeoutInMs = timeoutInSec * 1000
                 let readyOk = engine.WaitForReadyOk(timeoutInMs)
-                
+
                 if readyOk then
                     logger.LogDebug("Engine {Engine} ready", engine.Name)
                     return true
@@ -529,6 +561,14 @@ module Adjudication =
           | _ -> false
       countEvalsBasedOnCondition (List.truncate minHighEvalSize evaluations) isHighEval >= minHighEvalSize
 
+    // Function to check if two evaluations agree on which side is winning
+    let evalsAgreeOnWinner (eval1: EvalType) (eval2: EvalType) =
+      match eval1, eval2 with
+      | CP e1, CP e2 -> (e1 > 0.0 && e2 > 0.0) || (e1 < 0.0 && e2 < 0.0)
+      | Mate m1, Mate m2 -> (m1 > 0 && m2 > 0) || (m1 < 0 && m2 < 0)
+      | _ -> 
+            false  // If either is NA, don't agree
+
       // Function to check for sufficient low evaluations
     let consecutiveNumberOfLowEvalsLeft (evaluations: EvalType list) minLowEvalSize maxDrawScore =
       let isLowEval = function
@@ -663,8 +703,20 @@ module Adjudication =
         match result with
         |None -> None
         |Some result ->
-            let res = createResultWithEval player1 player2 gameMoveList result Misc.ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
-            Some res     
+            // Check if engines agree on winner before adjudicating
+            let pos = board.Position
+            let ismate = board.AnyLegalMove() |> not && (ChessLibrary.MoveGeneration.InCheck &pos <> 0UL)
+            if ismate then                 
+                let gameRes = if pos.STM = 0uy then "0-1" else "1-0"
+                let res = createResultWithEval player1 player2 gameMoveList gameRes Misc.ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+                Some res
+                
+            elif evals.Length >= 2 && not (evalsAgreeOnWinner evals.[0] evals.[1]) then
+                logger.LogDebug("High evals but engines disagree on winner (signs differ) - not adjudicating")
+                None
+            else
+                let res = createResultWithEval player1 player2 gameMoveList result Misc.ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+                Some res     
   
       elif moves >= (tourny.Adjudication.DrawOption.MinDrawMove * 2 + drawPlyLength) && tooLowEvals() then                   
             let res = createResultWithEval player1 player2 gameMoveList "1/2-1/2" Misc.ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
@@ -1843,14 +1895,14 @@ module Match =
             player1.SetMoveOverhead("overhead", ms)
             player2.SetMoveOverhead("overhead", ms)
         
-        if not tourny.ConsoleOnly then     
+        if not tourny.ConsoleOnly then
           let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
           let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
           let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
           Initialization.initEngines openingDelayMs tourny player1 player2 logger
         else
-          if player1.HasExited() || player2.HasExited() then            
-            Initialization.initEngines 0 tourny player1 player2 logger 
+          if player1.HasExited() || player2.HasExited() then
+            Initialization.initEngines 0 tourny player1 player2 logger
     with ex -> raise (CustomException.EngineStartupException (ex.Message))
     
     // preserve existing logging/description behavior
@@ -1967,7 +2019,7 @@ module Match =
         | Choice1Of2 line ->
          
         if String.IsNullOrWhiteSpace line then
-          logger.LogDebug $"Empty line or null from {playing.Name}"
+          logger.LogTrace $"Empty line or null from {playing.Name}"
           if playing.HasExited() then
             do! Async.Sleep 1000
             match playing.GetExitCode() with            
@@ -3040,7 +3092,8 @@ module Match =
       else
         [||]
 
-    let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
+    let maxCupOpenings = 50
+    let openings = games |> Seq.truncate maxCupOpenings |> Seq.toList
     if openings.IsEmpty then
       logger.LogError("No openings available for cup tournament")
       failwith "No openings available for cup tournament."
@@ -3110,9 +3163,12 @@ module Match =
             Utilities.PairingHelper.seedByBands players seedBands true
 
     let seedPairs (players: EngineConfig list) =
-      let half = players.Length / 2
-      let top, bottom = players |> List.splitAt half
-      List.zip top (List.rev bottom)
+      players
+      |> List.chunkBySize 2
+      |> List.map (fun chunk ->
+          match chunk with
+          | [a; b] -> (a, b)
+          | _ -> failwith "Cup bracket requires even number of players")
 
     let seededPlayers = seedPlayers tourny.EngineSetup.Engines
 
@@ -4242,6 +4298,23 @@ module Match =
         roundNumber <- roundNumber + 1
 
     if tourny.SwissOptions.AllowExtraPairsOnTie && not cts.IsCancellationRequested then
+      // Sonneborn-Berger tiebreak: for each player, sum over all opponents of
+      // (points scored against that opponent) × (opponent's total score).
+      let computeSBScores (scores: Map<string, float>) =
+        let sb = Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
+        for p in tourny.EngineSetup.Engines do
+          sb.[p.Name] <- 0.0
+        for round in state.Rounds do
+          for pairing in round.Pairings do
+            if pairing.PlayerB <> "BYE" then
+              let oppAScore = scores |> Map.tryFind pairing.PlayerB |> Option.defaultValue 0.0
+              let oppBScore = scores |> Map.tryFind pairing.PlayerA |> Option.defaultValue 0.0
+              if sb.ContainsKey pairing.PlayerA then
+                sb.[pairing.PlayerA] <- sb.[pairing.PlayerA] + pairing.ScoreA * oppAScore
+              if sb.ContainsKey pairing.PlayerB then
+                sb.[pairing.PlayerB] <- sb.[pairing.PlayerB] + pairing.ScoreB * oppBScore
+        sb |> Seq.map (fun kvp -> kvp.Key, kvp.Value) |> Map.ofSeq
+
       let rec resolveTieBreak tieRoundNumber = async {
         let scores = buildScores ()
         if scores.IsEmpty then
@@ -4255,14 +4328,22 @@ module Match =
             |> Seq.toList
           if tied.Length <= 1 then
             return ()
-          elif tied.Length % 2 = 1 then
-            logger.LogWarning("Swiss tiebreak requires an even number of tied players. Skipping extra pairs.")
+          elif tied.Length > 2 then
+            let sbScores = computeSBScores scores
+            let ranked =
+              tied
+              |> List.sortByDescending (fun name -> sbScores |> Map.tryFind name |> Option.defaultValue 0.0)
+            logger.LogInformation(
+              "Swiss tiebreak: {Count} players tied at {Score}. Resolved by Sonneborn-Berger: {Ranking}",
+              tied.Length, maxScore,
+              ranked |> List.map (fun n -> sprintf "%s (SB=%.1f)" n (sbScores |> Map.tryFind n |> Option.defaultValue 0.0)) |> String.concat ", ")
             return ()
           else
+            // Exactly 2 players tied — playoff: keep playing until one wins a match.
             let tiedPlayers =
               tourny.EngineSetup.Engines
               |> List.filter (fun p -> tied |> List.contains p.Name)
-            logger.LogInformation("Swiss tiebreak: {Count} players tied at {Score}, playing extra pairs.", tiedPlayers.Length, maxScore)
+            logger.LogInformation("Swiss tiebreak: 2 players tied at {Score}, playing playoff match.", maxScore)
             let byeSet = buildByeSet ()
             let roundPairs : (EngineConfig * EngineConfig) list =
               Utilities.PairingHelper.swissRoundPairings tiedPlayers seedOrder scores Set.empty byeSet

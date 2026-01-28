@@ -9,220 +9,180 @@ open ChessLibrary.Chess
 
 /// Integration module for adding Winboard support to ChessEngine
 module WinboardIntegration =
-    
+
     // Constants
     [<Literal>]
     let private MaxInitAttempts = 20
     [<Literal>]
-    let private InitRetryDelayMs = 100
-    
-    /// Lightweight wrapper around ILogger option for consistent logging
-    type private LoggerWrapper(logger: ILogger option) =
-        member _.LogDebug(message: string) =
-            logger |> Option.iter (fun log -> log.LogDebug(message))
-        
-        member _.LogInfo(message: string) =
-            logger |> Option.iter (fun log -> log.LogInformation(message))
-        
-        member _.LogWarning(message: string) =
-            logger |> Option.iter (fun log -> log.LogWarning(message))
-        
-        member _.LogError(message: string) =
-            logger |> Option.iter (fun log -> log.LogError(message))
-        
-        member _.LogCritical(message: string) =
-            logger |> Option.iter (fun log -> log.LogCritical(message))
-    
-    /// Create a concise log message for UCI commands (truncates long position commands)
-    let private formatCommandForLogging (uciCommand: string) =
-        if uciCommand.StartsWith("position") && uciCommand.Length > 100 then
-            let movesIdx = uciCommand.IndexOf("moves")
-            if movesIdx > 0 then
-                let movesPart = uciCommand.Substring(movesIdx + 6)
-                let moves = movesPart.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
-                $"position with {moves.Length} moves"
-            else
-                "position startpos"
-        else
-            uciCommand
-    
+    let private FeatureTimeoutMs = 2000
+
     /// Check if engine config specifies Winboard protocol
     let isWinboardEngine (config: TypesDef.CoreTypes.EngineConfig) =
         match config.Protocol with
         | null | "" -> false
-        | protocol -> 
+        | protocol ->
             let p = protocol.ToLower()
             p = "winboard" || p = "xboard"
-    
-    /// Wrapper that adds Winboard translation to engine write operations
-    type ProtocolWriter(proc: Process, handler: WinboardHandler option, logger: ILogger option, engineName: string) =
-        
-        let log = LoggerWrapper(logger)
-        let mutable lastWasPosition = false
-        
-        /// Write a UCI command, translating to Winboard if needed
-        member _.Write(uciCommand: string) =
-            try
-                if proc <> null && not proc.HasExited then
-                    // If last command was position and this is go, add sync delay for engines without ping
-                    if lastWasPosition && uciCommand.StartsWith("go") then
-                        match handler with
-                        | Some wb when wb.IsInitialized && not wb.Features.Ping ->
-                            // The King and other v1 engines need time to process position before go
-                            System.Threading.Thread.Sleep(250)  // 250ms delay
-                            log.LogInfo $"Added 250ms sync delay before 'go' for {engineName} (no ping support)"
-                        | _ -> ()
-                    
-                    lastWasPosition <- uciCommand.StartsWith("position")
-                    
-                    match handler with
-                    | Some wb ->
-                        // Translate UCI to Winboard
-                        let winboardCmds = wb.UciToWinboard(uciCommand)
-                        let logMsg = formatCommandForLogging uciCommand
-                        
-                        for cmd in winboardCmds do
-                            log.LogDebug $"[UCI→Winboard] '{logMsg}' → '{cmd}' for {engineName}"
-                            proc.StandardInput.WriteLine(cmd)
-                    | None ->
-                        // Normal UCI
-                        log.LogDebug $"[UCI] Writing to {engineName}: {uciCommand}"
-                        proc.StandardInput.WriteLine(uciCommand)
-                else
-                    log.LogWarning $"Attempted to write to disposed engine {engineName}"
-            with ex ->
-                log.LogError $"Error writing to engine {engineName}: {ex.Message}"
-    
-    /// Wrapper that translates Winboard output to UCI
-    type ProtocolReader(handler: WinboardHandler option, logger: ILogger option, engineName: string) =
-        
-        let log = LoggerWrapper(logger)
-        
-        /// Process a line from the engine, translating Winboard to UCI if needed
-        member _.ProcessLine(line: string) : string option =
-            if String.IsNullOrWhiteSpace(line) then
-                None
-            else
-                match handler with
-                | Some wb ->
-                    // Translate Winboard to UCI
-                    let translated = wb.ProcessOutput(line)
-                    match translated with
-                    | Some uciLine ->
-                        log.LogDebug $"[Winboard→UCI] '{line}' → '{uciLine}' from {engineName}"
-                        Some uciLine
-                    | None ->
-                        // Not translated, but might be informational
-                        log.LogDebug $"[Winboard] {engineName}: {line}"
-                        None
-                | None ->
-                    // Normal UCI - return as-is
-                    Some line
 
-    
     /// Initialize Winboard engine (supports both v1 and v2)
+    /// 1. Send xboard + protover 2
+    /// 2. Read output until done=1 or timeout
+    /// 3. If no features at all → ForceV1Init
+    /// 4. Send post + easy
     let initializeWinboard (proc: Process) (handler: WinboardHandler) (logger: ILogger option) (engineName: string) (timeoutMs: int) =
         async {
             try
-                use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutMs))
-                let log = LoggerWrapper(logger)
-                
-                // Send xboard and protover 2
-                let initCmds = handler.Initialize()
+                let log msg = logger |> Option.iter (fun l -> l.LogInformation(msg))
+                let logDebug msg = logger |> Option.iter (fun l -> l.LogDebug(msg))
+                let logWarn msg = logger |> Option.iter (fun l -> l.LogWarning(msg))
+                let logCrit msg = logger |> Option.iter (fun l -> l.LogCritical(msg))
+
+                // Step 1: Send xboard + protover 2
+                let initCmds = handler.GetInitCommands()
                 for cmd in initCmds do
                     proc.StandardInput.WriteLine(cmd)
-                    log.LogDebug $"Winboard init: {cmd}"
-                
-                // Wait for feature negotiation (v2) or timeout for v1 engines
+                    logDebug $"Winboard init: {cmd}"
+
+                // Step 2: Wait for feature negotiation (done=1) or timeout
+                // Read directly with cancellable ReadLineAsync — no background task needed
+                use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutMs))
                 let rec waitForInit attempts =
                     async {
                         if handler.IsInitialized then
-                            log.LogInfo $"Winboard v2 engine {engineName} initialized"
+                            log $"Winboard v2 engine {engineName} initialized"
                             return true
                         elif cts.Token.IsCancellationRequested then
-                            log.LogCritical $"Winboard engine {engineName} initialization timed out"
-                            return false
-                        elif attempts >= MaxInitAttempts then
-                            // After ~2 seconds with no feature response, assume v1 engine
-                            // BUT: if handler has already received features (even without 'done=1'),
-                            // don't force-initialize as that would overwrite them!
-                            if not handler.IsInitialized && handler.Features = defaultFeatures then
-                                log.LogWarning $"Winboard v1 engine {engineName} detected (no protover 2 support)"
-                                log.LogInfo $"Using default Winboard v1 feature set for {engineName}"
-                                // Mark as initialized with basic v1 features
-                                handler.ForceInitialize()
+                            // Step 3: No done=1 received within timeout
+                            if handler.Features = defaultFeatures then
+                                logWarn $"Winboard v1 engine {engineName} detected (no protover 2 support)"
+                                handler.ForceV1Init()
                             else
-                                // Handler has partial features but no 'done=1' - accept what we have
-                                log.LogWarning $"Winboard v2 engine {engineName} didn't send 'done=1', accepting partial features"
-                                log.LogDebug $"Features received: Time={handler.Features.Time}, Analyze={handler.Features.Analyze}"
-                                // Manually mark as initialized without overwriting features
+                                logWarn $"Winboard v2 engine {engineName} didn't send done=1, accepting partial features"
                                 handler.MarkInitialized()
                             return true
+                        elif proc.HasExited then
+                            logCrit $"Winboard engine {engineName} exited during init"
+                            return false
                         else
-                            do! Async.Sleep(InitRetryDelayMs)
-                            return! waitForInit (attempts + 1)
+                            try
+                                let! line = proc.StandardOutput.ReadLineAsync(cts.Token).AsTask() |> Async.AwaitTask
+                                if not (isNull line) && not (String.IsNullOrWhiteSpace line) then
+                                    logDebug $"[WB init {engineName}] {line}"
+                                    handler.ProcessOutput(line) |> ignore
+                                return! waitForInit (attempts + 1)
+                            with
+                            | :? OperationCanceledException ->
+                                // Timeout — apply V1 fallback
+                                if handler.Features = defaultFeatures then
+                                    logWarn $"Winboard v1 engine {engineName} detected (no protover 2 support)"
+                                    handler.ForceV1Init()
+                                else
+                                    logWarn $"Winboard v2 engine {engineName} didn't send done=1, accepting partial features"
+                                    handler.MarkInitialized()
+                                return true
+                            | :? System.AggregateException as agg when (agg.InnerException :? OperationCanceledException) ->
+                                if handler.Features = defaultFeatures then
+                                    logWarn $"Winboard v1 engine {engineName} detected (no protover 2 support)"
+                                    handler.ForceV1Init()
+                                else
+                                    logWarn $"Winboard v2 engine {engineName} didn't send done=1, accepting partial features"
+                                    handler.MarkInitialized()
+                                return true
                     }
-                
+
                 let! initResult = waitForInit 0
-                
-                // After successful initialization, send 'post' to enable thinking output
+
+                // Step 4: For V1 engines, probe setboard support (e.g. TheKing)
+                if initResult && handler.IsV1Fallback && not handler.Features.SetBoard then
+                    log $"Probing setboard support for V1 engine {engineName}"
+                    proc.StandardInput.WriteLine("new")
+                    proc.StandardInput.WriteLine("force")
+                    proc.StandardInput.WriteLine("setboard rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+                    // Read briefly to check for error response
+                    use probeCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500.0))
+                    let mutable gotError = false
+                    let rec drainProbe () = async {
+                        try
+                            let! line = proc.StandardOutput.ReadLineAsync(probeCts.Token).AsTask() |> Async.AwaitTask
+                            if not (isNull line) && not (String.IsNullOrWhiteSpace line) then
+                                logDebug $"[WB setboard probe {engineName}] {line}"
+                                let trimmed = line.Trim()
+                                if trimmed.StartsWith("Error") || trimmed.StartsWith("Illegal") || trimmed.Contains("unknown command") then
+                                    gotError <- true
+                                elif not gotError then
+                                    return! drainProbe ()
+                        with
+                        | :? OperationCanceledException -> ()
+                        | :? System.AggregateException as agg when (agg.InnerException :? OperationCanceledException) -> ()
+                    }
+                    do! drainProbe ()
+                    if not gotError then
+                        handler.EnableSetBoard()
+                        log $"V1 engine {engineName} supports setboard (probe succeeded)"
+                    else
+                        logWarn $"V1 engine {engineName} does not support setboard (probe returned error)"
+
+                // Step 5: Send post + easy
                 if initResult then
-                    // Give engines time to finish startup banners before probing.
-                    Thread.Sleep(250)
+                    for cmd in handler.GetPostInitCommands() do
+                        proc.StandardInput.WriteLine(cmd)
+                        logDebug $"Sent '{cmd}' to {engineName}"
 
-                    // Run cautious probes to detect command support before EngineBattle sends commands.
-                    let includeFeatureProbes = handler.IsV1Fallback
-                    let probes = handler.GetProbePlan(includeFeatureProbes)
-                    if probes.Length > 0 then
-                        for probe in probes do                            
-                            log.LogDebug $"Winboard probe start: {probe.Name}"
-
-                            // Activate probe before sending commands so we can capture immediate errors.
-                            let probeAsync = handler.BeginProbe probe
-
-                            // Ping probe needs a unique ping id.
-                            match probe.Kind with
-                            | WinboardProtocol.ProbeKind.Ping ->
-                                match handler.GetProbePingCommand() with
-                                | Some pingCmd -> proc.StandardInput.WriteLine(pingCmd)
-                                | None -> ()
-                            | _ ->
-                                for cmd in probe.Commands do
-                                    proc.StandardInput.WriteLine(cmd)
-
-                            let! ok = probeAsync
-
-                            // Cleanup commands regardless of result.
-                            for cmd in probe.CleanupCommands do
-                                proc.StandardInput.WriteLine(cmd)
-                            
-                            if ok then
-                                log.LogDebug $"Winboard probe ok: {probe.Name}"
-                            else
-                                log.LogDebug $"Winboard probe failed: {probe.Name}"
-
-                    if handler.SupportsPostCmd then
-                        proc.StandardInput.WriteLine("post")
-                        log.LogDebug $"Sent 'post' command to enable thinking output for {engineName}"
-                        
-                    if handler.Features.EasyCmd then
-                        proc.StandardInput.WriteLine("easy")
-                        log.LogDebug $"Sent 'easy' command to disable pondering for {engineName}"
-                
                 return initResult
             with ex ->
-                let log = LoggerWrapper(logger)
-                log.LogError $"Error initializing Winboard engine {engineName}: {ex.Message}"
+                logger |> Option.iter (fun l -> l.LogError($"Error initializing Winboard engine {engineName}: {ex.Message}"))
                 return false
         }
-    
+
+    /// Initialize Winboard engine using event-based reading (for use with BeginOutputReadLine)
+    /// This version doesn't read from stdout directly; it relies on the event handler to call ProcessOutput
+    let initializeWinboardEventBased (handler: WinboardHandler) (logger: ILogger option) (engineName: string) (timeoutMs: int) =
+        async {
+            try
+                let log msg = logger |> Option.iter (fun l -> l.LogInformation(msg))
+                let logDebug msg = logger |> Option.iter (fun l -> l.LogDebug(msg))
+                let logWarn msg = logger |> Option.iter (fun l -> l.LogWarning(msg))
+
+                logDebug $"Waiting for {engineName} initialization (timeout: {timeoutMs}ms)"
+
+                // Simple polling approach - check IsInitialized flag every 10ms
+                let startTime = System.DateTime.UtcNow
+                let mutable elapsed = 0
+                let pollInterval = 10
+
+                while not handler.IsInitialized && elapsed < timeoutMs do
+                    do! Async.Sleep pollInterval
+                    elapsed <- int (System.DateTime.UtcNow - startTime).TotalMilliseconds
+                    if elapsed % 500 = 0 then
+                        logDebug $"[{engineName}] Still waiting... ({elapsed}ms elapsed)"
+
+                logDebug $"Wait completed for {engineName} after {elapsed}ms, initialized={handler.IsInitialized}"
+
+                if handler.IsInitialized then
+                    // Initialization completed before timeout
+                    log $"Winboard v2 engine {engineName} initialized"
+                    return true
+                else
+                    // Timeout: apply V1 fallback or accept partial features
+                    if handler.Features = defaultFeatures then
+                        logWarn $"Winboard v1 engine {engineName} detected (no protover 2 support)"
+                        handler.ForceV1Init()
+                    else
+                        logWarn $"Winboard v2 engine {engineName} didn't send done=1, accepting partial features"
+                        handler.MarkInitialized()
+                    return true
+            with ex ->
+                logger |> Option.iter (fun l -> l.LogError($"Error initializing Winboard engine {engineName}: {ex.Message}"))
+                return false
+        }
+
     /// Create a Winboard handler if the config specifies Winboard protocol
     let createHandlerIfNeeded (config: TypesDef.CoreTypes.EngineConfig) (logger: ILogger option) =
         if isWinboardEngine config then
             match logger with
-            | Some log -> 
+            | Some log ->
                 Some (WinboardHandler(log, config.Name, config.Flipped))
-            | None ->                  
-                Some (WinboardHandler(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, config.Name, config.Flipped))                
+            | None ->
+                Some (WinboardHandler(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, config.Name, config.Flipped))
         else
             None

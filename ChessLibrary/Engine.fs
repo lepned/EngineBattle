@@ -26,6 +26,9 @@ module Engine =
   type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool)  =
       let logDebug (text: string) = logger.LogDebug text
       let logInformation (text: string) = logger.LogInformation text
+      let logWarning (text: string) = logger.LogWarning text
+      let logError (text: string) = logger.LogError text
+      let logCritical (text: string) = logger.LogCritical text
 
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
@@ -285,12 +288,21 @@ module Engine =
             | Some handler ->
                 // Translate UCI to Winboard
                 let winboardCmds = handler.UciToWinboard(s)
+                let hasGo = winboardCmds |> List.exists ((=) "go")
+                let hasTimeCommands = winboardCmds |> List.exists (fun c -> c.StartsWith("time ") || c.StartsWith("otim "))
+
                 for cmd in winboardCmds do
                     logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" s cmd name)
                     engineProcess.StandardInput.WriteLine(cmd)
+
+                    // For engines without ping support: add delay after time/otim and before go
+                    // to ensure time commands are processed before engine starts searching
+                    if hasGo && hasTimeCommands && not handler.Features.Ping then
+                        if cmd.StartsWith("time ") || cmd.StartsWith("otim ") then
+                            System.Threading.Thread.Sleep(100)  // Small delay to avoid race condition
             | None ->
                 // Normal UCI
-                engineProcess.StandardInput.WriteLine(s)        
+                engineProcess.StandardInput.WriteLine(s)
                 logDebug (sprintf "Writing to %s: %s" name s)
     
       let assignbackend (option:string) =
@@ -387,28 +399,30 @@ module Engine =
           engineProcess.EnableRaisingEvents <- true
           
           
-          engineProcess.OutputDataReceived.Add(fun args -> 
+          engineProcess.OutputDataReceived.Add(fun args ->
               if not (String.IsNullOrEmpty args.Data) then
                 match winboardHandler with
                 | Some handler ->
                     // Translate Winboard output to UCI
+                    logDebug $"[{name}] Received output: {args.Data}"
                     let translated = handler.ProcessOutput(args.Data)
                     match translated with
                     | Some uciLine ->
+                        logDebug $"[{name}] Translated to UCI: {uciLine}"
                         // Handle UCI-translated output
-                        if inUciResponsMode then  
-                          if uciLine = "uciok" then              
+                        if inUciResponsMode then
+                          if uciLine = "uciok" then
                             inUciResponsMode <- false
                           else
                             UciOption.addOptionToMap optionsMap uciLine
                         elif inIsreadyMode then
                           if uciLine = "readyok" then
-                            inIsreadyMode <- false           
-                        else 
+                            inIsreadyMode <- false
+                        else
                           processLine callbackFunc name uciLine
                     | None ->
                         // Not translated - this is normal for some Winboard output
-                        ()
+                        logDebug $"[{name}] Output not translated (normal for some Winboard output)"
                 | None ->
                     // Normal UCI processing
                     if inUciResponsMode then  
@@ -425,22 +439,39 @@ module Engine =
               // Ensure LF newline and immediate flush so WriteLine uses LF on all platforms
               engineProcess.StandardInput.NewLine <- "\n"
               engineProcess.StandardInput.AutoFlush <- true
-              engineProcess.BeginOutputReadLine()
               engineProcess.BeginErrorReadLine()  // Start stderr capture
           else
               failwith (sprintf "Engine %s could not be started" name)
-          
+
           let mutable isWinboard = false
+
+          // Start event-based output reading for BOTH UCI and Winboard
+          engineProcess.BeginOutputReadLine()
+
           // Initialize based on protocol
           match winboardHandler with
           | Some handler ->
-              // Winboard initialization
+              // Winboard initialization using event-based reading
               isWinboard <- true
-              let initSuccess = initializeWinboard engineProcess handler (Some logger) name 30000 |> Async.RunSynchronously
+              logInformation $"[{name}] Starting Winboard initialization"
+              // Send init commands DIRECTLY (don't use write - these are already Winboard commands)
+              for cmd in handler.GetInitCommands() do
+                  logDebug $"[{name}] Sending init command: {cmd}"
+                  engineProcess.StandardInput.WriteLine(cmd)
+              // Wait for initialization (2 second timeout for V1 engine detection)
+              logDebug $"[{name}] Waiting for Winboard initialization to complete..."
+              let startWait = System.DateTime.UtcNow
+              let initSuccess = initializeWinboardEventBased handler (Some logger) name 2000 |> Async.RunSynchronously
+              let waitTime = (System.DateTime.UtcNow - startWait).TotalMilliseconds
+              logInformation $"[{name}] Winboard init wait completed in {waitTime}ms, success={initSuccess}"
               if not initSuccess then
                   failwith "Winboard engine did not initialize properly."
               // Winboard engines don't send "uciok", so manually exit UCI response mode
               inUciResponsMode <- false
+              // Send post-init commands DIRECTLY (these are also Winboard commands)
+              for cmd in handler.GetPostInitCommands() do
+                  logDebug $"[{name}] Sending post-init command: {cmd}"
+                  engineProcess.StandardInput.WriteLine(cmd)
           | None ->
               // UCI initialization
               write "uci"
@@ -841,9 +872,11 @@ module Engine =
                       | Some handler ->
                           // Translate UCI to Winboard
                           let winboardCmds = handler.UciToWinboard(s)
-                          
+                          let hasGo = winboardCmds |> List.exists ((=) "go")
+                          let hasTimeCommands = winboardCmds |> List.exists (fun c -> c.StartsWith("time ") || c.StartsWith("otim "))
+
                           // Create a shorter log message for position commands
-                          let logMsg = 
+                          let logMsg =
                               if s.StartsWith("position") && s.Length > 100 then
                                   let movesIdx = s.IndexOf("moves")
                                   if movesIdx > 0 then
@@ -854,14 +887,16 @@ module Engine =
                                       "position startpos"
                               else
                                   s
-                          
-                          for cmd in winboardCmds do                              
+
+                          for cmd in winboardCmds do
                               logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
-                              if cmd.StartsWith("go") then
-                                  //logDebug (sprintf "Delaying 'go' command for %s (%dms) to ensure engine is ready" name 150)
-                                  Thread.Sleep 150 // Slight delay before go command to ensure engine is ready
-                                  
                               proc.StandardInput.WriteLine(cmd)
+
+                              // For engines without ping support: add delay after time/otim and before go
+                              // to ensure time commands are processed before engine starts searching
+                              if hasGo && hasTimeCommands && not handler.Features.Ping then
+                                  if cmd.StartsWith("time ") || cmd.StartsWith("otim ") then
+                                      System.Threading.Thread.Sleep(100)  // Small delay to avoid race condition
                       | None ->
                           // Normal UCI
                           logDebug (sprintf "Writing to %s: %s" name s)
@@ -876,13 +911,28 @@ module Engine =
       let readAsync () = proc.StandardOutput.ReadLineAsync()
       let readAsyncWithTimeout (token: CancellationToken) = 
           task {
-            let! line = proc.StandardOutput.ReadLineAsync(token)
-            match winboardHandler with
-            | Some handler when not (String.IsNullOrWhiteSpace line) ->
-                match handler.ProcessOutput(line) with
-                | Some translatedLine -> return translatedLine
-                | None -> return line
-            | _ -> return line
+            try
+                let! line = proc.StandardOutput.ReadLineAsync(token)
+                match winboardHandler with
+                | Some handler when not (String.IsNullOrWhiteSpace line) ->
+                    match handler.ProcessOutput(line) with
+                    | Some translatedLine -> return translatedLine
+                    | None -> return line
+                | _ -> return line
+            with
+            | :? OperationCanceledException ->
+                // Read was cancelled - return null marker
+                return null
+            | :? System.ArgumentOutOfRangeException ->
+                // StreamReader can throw this when the underlying stream is closed/cancelled
+                return null
+            | :? System.IO.IOException as ioex ->
+                logCritical (sprintf "IO error reading engine output: %s" ioex.Message)
+                return null
+            | ex ->
+                // Unexpected error - log and return null to avoid crashing the host
+                logCritical (sprintf "Unexpected error reading engine output: %s" ex.Message)
+                return null
           }
 
       //let readAsyncWithTimeout (token: CancellationToken) = proc.StandardOutput.ReadLineAsync(token).AsTask()
@@ -1008,6 +1058,12 @@ module Engine =
       member _.FullName = if network <> "" then $"{name} with net: {network}" else name
 
       member val IsReference = isReference with get, set
+      /// True if the Winboard engine supports reuse (per CECP spec, defaults to true).
+      /// Always true for UCI engines.
+      member _.CanReuseWinboard =
+          match winboardHandler with
+          | Some handler -> handler.CanReuse
+          | None -> true
       member this.GetDefaultOptions() = getAllDefaultOptions()
       
       member this.TryToUpdateOption (name:string) (value:string) =        
@@ -1199,7 +1255,11 @@ module Engine =
             }
             let res = readUntilReady() |> Async.RunSynchronously
             cts.Dispose()
-            res
+            if res then res
+            else
+                // If ping/readied failed for Winboard engine, assume ready to avoid blocking game start
+                logDebug (sprintf "Engine %s did not respond to ping/isready; assuming ready" name)
+                true
         | None ->
             // Normal UCI engine
             write "isready"

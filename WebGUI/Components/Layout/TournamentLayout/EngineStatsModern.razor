@@ -1,0 +1,240 @@
+@using WebGUI.Components.Layout.ChessboardLayout
+@inject NotifierService notify
+
+@implements IAsyncDisposable
+
+<div class="engine-stats-container" style="font-size: @(FontSize)px;">
+  <!-- Row 1: Engine Headers & Main Logo -->
+  <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
+    <span class="side-label">White</span>
+    <div class="engine-logo-wrapper">
+      <img src="@Engine1Logo" alt="@Engine1Name" class="engine-logo" />
+    </div>
+    <h3 class="engine-name">@Engine1Name</h3>
+    <span class="engine-version">@Engine1Version</span>
+  </div>
+  <div class="main-logo-wrapper">
+    <img src="@MainLogo" alt="EngineBattle" class="main-logo" />
+    <span class="powered-by">Powered by EngineBattle</span>
+    <span class="author">Lars E. Pedersen</span>
+  </div>
+  <div class="engine-header-cell @(Engine1ToMove ? "" : "active")">
+    <span class="side-label">Black</span>
+    <div class="engine-logo-wrapper">
+      <img src="@Engine2Logo" alt="@Engine2Name" class="engine-logo" />
+    </div>
+    <h3 class="engine-name">@Engine2Name</h3>
+    <span class="engine-version">@Engine2Version</span>
+  </div>
+
+  <!-- Row 2: Evaluation -->
+  <div class="eval @(Engine1ToMove ? "active-eval" : "")">@Engine1.Eval</div>
+  <div class="label-cell header">Evaluation</div>
+  <div class="eval @(Engine1ToMove ? "" : "active-eval")">@Engine2.Eval</div>
+
+  <!-- Row 3: Depth/SD -->
+  <div class="stat-cell">@Engine1.Depth/@Engine1.SD</div>
+  <div class="label-cell">Depth/SD</div>
+  <div class="stat-cell">@Engine2.Depth/@Engine2.SD</div>
+
+  <!-- Row 4: Speed -->
+  <div class="stat-cell">@(Engine1.EPS > 0 ? FormatNPS(Engine1.NPS) + " (" + FormatEPS(Engine1.EPS) + ")" : FormatNPS(Engine1.NPS))</div>
+  <div class="label-cell">Speed</div>
+  <div class="stat-cell">@(Engine2.EPS > 0 ? FormatNPS(Engine2.NPS) + " (" + FormatEPS(Engine2.EPS) + ")" : FormatNPS(Engine2.NPS))</div>
+
+  <!-- Row 5: Nodes -->
+  <div class="stat-cell">@FormatNodes(Engine1.Nodes)</div>
+  <div class="label-cell">Nodes</div>
+  <div class="stat-cell">@FormatNodes(Engine2.Nodes)</div>
+
+  <!-- Row 6: TB Hits -->
+  <div class="stat-cell">@FormatNodes(Engine1.TBhits)</div>
+  <div class="label-cell">TB Hits</div>
+  <div class="stat-cell">@FormatNodes(Engine2.TBhits)</div>
+
+  <!-- Row 7: WDL -->
+  <div class="stat-cell wdl">@GetWDLString(Engine1.WDL)</div>
+  <div class="label-cell">WDL</div>
+  <div class="stat-cell wdl">@GetWDLString(Engine2.WDL)</div>
+
+  <!-- Row 8: Time left -->
+  <div class="stat-cell">@Engine1TimeLeft</div>
+  <div class="label-cell">Time left</div>
+  <div class="stat-cell">@Engine2TimeLeft</div>
+
+  <!-- Row 9: Move time -->
+  <div class="stat-cell move-time @(Engine1ToMove ? "active-time" : "")">@Engine1TimePerMove</div>
+  <div class="label-cell">Move time</div>
+  <div class="stat-cell move-time @(Engine1ToMove ? "" : "active-time")">@Engine2TimePerMove</div>
+</div>
+
+@code {
+
+  private async Task OnNextTick(bool whiteToMove, string timeLeft, string moveTime)
+  {
+    if (whiteToMove)
+    {
+      Engine1TimeLeft = timeLeft;
+      Engine1TimePerMove = moveTime;
+    }
+    else
+    {
+      Engine2TimeLeft = timeLeft;
+      Engine2TimePerMove = moveTime;
+    }
+
+    await InvokeAsync(StateHasChanged);
+  }
+
+  [Parameter]
+  public bool ShowCompletePV { get; set; } = true;
+
+  [Parameter]
+  public bool ShowPV { get; set; }
+
+  [Parameter]
+  public string Engine1Logo { get; set; }
+
+  [Parameter]
+  public string Engine1Name { get; set; }
+
+  [Parameter]
+  public string Engine1Version { get; set; }
+
+  [Parameter]
+  public string Engine2Logo { get; set; }
+
+  [Parameter]
+  public string Engine2Name { get; set; }
+
+  [Parameter]
+  public string Engine2Version { get; set; }
+
+  [Parameter]
+  public EngineStatus Engine1 { get; set; }
+
+  [Parameter]
+  public EngineStatus Engine2 { get; set; }
+
+  [Parameter]
+  public string Engine1TimeLeft { get; set; } = "00:00:00";
+
+  [Parameter]
+  public string Engine1TimePerMove { get; set; } = "00:00:00";
+
+  [Parameter]
+  public string Engine2TimeLeft { get; set; } = "00:00:00";
+
+  [Parameter]
+  public string Engine2TimePerMove { get; set; } = "00:00:00";
+
+  [Parameter]
+  public bool Engine1ToMove { get; set; }
+
+  [Parameter]
+  public bool IsFRC { get; set; }
+
+  [Parameter]
+  public int FontSize { get; set; }
+
+  [Parameter]
+  public string MainLogoFileName { get; set; }
+
+  private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"Img/{MainLogoFileName}";
+
+  private string LogoBackup = "Img/MainLogoEB.png";
+
+  private string GetWDLString(CoreTypes.WDLType wdlValue)
+  {
+    string msg = "[0.0%|0.0%|0.0%]";
+    switch (wdlValue)
+    {
+      case CoreTypes.WDLType.HasValue wdlinput:
+        var wdl = wdlinput.Values;
+        msg = $"[{(wdl.Win / 1000):P1}|{(wdl.Draw / 1000):P1}|{(wdl.Loss / 1000):P1}]";
+        break;
+    }
+    return msg;
+  }
+
+  private string FormatNodes(long nodes)
+  {
+    if (nodes > 1_000_000_000)
+    {
+      var giga = (decimal)nodes / 1_000_000_000;
+      return giga.ToString("F1") + "G";
+    }
+    else if (nodes > 1_000_000)
+    {
+      var mill = (decimal)nodes / 1_000_000;
+      return mill.ToString("F1") + "M";
+    }
+    else if (nodes > 1_000)
+    {
+      var mill = (decimal)nodes / 1_000;
+      return mill.ToString("F1") + "K";
+    }
+    else
+    {
+      return nodes.ToString("F1");
+    }
+  }
+
+  private string FormatEPS(double nps)
+  {
+    if (nps > 1_000_000_000)
+    {
+        var mill = (decimal)nps / 1_000_000_000;
+        return mill.ToString("F1") + "Geps";
+    }
+    else if (nps > 1_000_000)
+    {
+        var mill = (decimal)nps / 1_000_000;
+        return mill.ToString("F1") + "Meps";
+    }
+    else if (nps > 1_000)
+    {
+        var thousand = (decimal)nps / 1_000;
+        return thousand.ToString("F1") + "Keps";
+    }
+    else
+    {
+        return nps.ToString("F1") + " eps";
+    }
+  }
+
+  private string FormatNPS(double nps)
+  {
+    if (nps > 1_000_000_000)
+    {
+      var mill = (decimal)nps / 1_000_000_000;
+      return mill.ToString("F1") + "Gnps";
+    }
+    else if (nps > 1_000_000)
+    {
+      var mill = (decimal)nps / 1_000_000;
+      return mill.ToString("F1") + "Mnps";
+    }
+    else if (nps > 1_000)
+    {
+      var thousand = (decimal)nps / 1_000;
+      return thousand.ToString("F1") + "Knps";
+    }
+    else
+    {
+      return nps.ToString("F1") + " nps";
+    }
+  }
+
+  protected override void OnInitialized()
+  {
+    notify.NextTick += OnNextTick;
+  }
+
+  async ValueTask IAsyncDisposable.DisposeAsync()
+  {
+    notify.NextTick -= OnNextTick;
+    await ValueTask.CompletedTask;
+  }
+
+}

@@ -2762,8 +2762,24 @@ module PairingHelper =
           |> Map.ofList
         let scoreFor name =
           scores |> Map.tryFind name |> Option.defaultValue 0.0
+        let byeCandidate =
+          if players.Length % 2 = 0 then
+            None
+          else
+            let ordered =
+              players
+              |> List.sortBy (fun p ->
+                  let seed = seedMap.[p.Name]
+                  scoreFor p.Name, -seed)
+            let preferred =
+              ordered |> List.tryFind (fun p -> byeSet.Contains p.Name |> not)
+            preferred |> Option.orElse (ordered |> List.tryHead)
+        let pairingPlayers, byePlayer =
+          match byeCandidate with
+          | None -> players, None
+          | Some bye -> players |> List.filter (fun p -> p.Name <> bye.Name), Some bye
         let orderedPlayers =
-          players
+          pairingPlayers
           |> List.sortBy (fun p -> (-(scoreFor p.Name), seedMap.[p.Name]))
         let rec findPairs
           (remaining: EngineConfig list)
@@ -2786,9 +2802,15 @@ module PairingHelper =
                       | Some pairs -> Some pairs
                       | None -> tryCandidate tail
                 tryCandidate candidates
-        match findPairs orderedPlayers [] with
-        | Some pairs -> pairs |> List.map (fun (a, b, _) -> (a, b))
-        | None -> failwith "Swiss pairing failed: no valid non-repeat pairings found for this round."
+        let gamePairs =
+          match findPairs orderedPlayers [] with
+          | Some pairs -> pairs |> List.map (fun (a, b, _) -> (a, b))
+          | None -> failwith "Swiss pairing failed: no valid non-repeat pairings found for this round."
+        match byePlayer with
+        | Some bye ->
+            let byeEngine = { EngineConfig.Empty with Name = "BYE" }
+            gamePairs @ [ (bye, byeEngine) ]
+        | None -> gamePairs
 
   let addPlannedPairings
     (planned: ResizeArray<Pairing>)
@@ -2823,38 +2845,6 @@ module PairingHelper =
         index
 
   /// Generate cup pairings for N games per match, using a new opening per two-game mini-match.
-  let cupNRound (gamesPerMatch: int) (strategy: CupSeedingStrategy) (players: EngineConfig list) (openings: PGNTypes.PgnGame list) =
-    let seeded =
-        match strategy with
-        | Random ->
-            let shuffled = players |> List.toArray
-            Random.Shuffle(shuffled)
-            shuffled |> Array.toList
-        | ByRating ->
-            players |> List.sortByDescending (fun p -> p.Rating)
-    let half = seeded.Length / 2
-    let top, bottom = seeded |> List.splitAt half
-    let pairs = List.zip top (List.rev bottom)
-
-    let normalizedGames =
-        if gamesPerMatch < 2 then 2
-        elif gamesPerMatch % 2 = 1 then gamesPerMatch + 1
-        else gamesPerMatch
-    let openingsPerMatch = normalizedGames / 2
-
-    let games =
-        [ for pairIndex, (w, b) in pairs |> List.mapi (fun idx p -> idx, p) do
-            let mutable subIndex = 0
-            for openingOffset in 0 .. openingsPerMatch - 1 do
-                let opening = openings.[(pairIndex + openingOffset) % openings.Length]
-                let openingHash = Hash.computeOpeningHashFromGame opening
-                subIndex <- subIndex + 1
-                yield { Opening = opening; White = w; Black = b; GameNr = 0; RoundNr = $"{opening.GameNumber}.{subIndex}"; OpeningHash = openingHash }
-                subIndex <- subIndex + 1
-                yield { Opening = opening; White = b; Black = w; GameNr = 0; RoundNr = $"{opening.GameNumber}.{subIndex}"; OpeningHash = openingHash } ]
-
-    games |> List.mapi (fun i g -> { g with GameNr = i + 1 })
-
   // Key generator
   let pairingKey (openingHash: string) (fen: string) (white: string) (black: string) =
         $"{openingHash}|{fen}|{white.Trim()}|{black.Trim()}"

@@ -57,7 +57,7 @@
 			<MudItem>
 				<div class="lhs">
 
-					<EngineStats Engine1Logo="@whiteEngineLogo"
+					<EngineStatsModern Engine1Logo="@whiteEngineLogo"
 								 Engine1Name="@whitePlayer"
 								 Engine2Logo="@blackEngineLogo"
 								 Engine2Name="@blackPlayer"
@@ -369,7 +369,7 @@
 		windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight");
 		var elementsAboveCycleTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "rhs");
 		var standingTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "standingTable");
-		int buffer = 130; //CalcBufferFunction((int)unzoomedHeight);
+		int buffer = 140; //CalcBufferFunction((int)unzoomedHeight);
 		var elementsAboveStandings = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "lhs") + buffer;
 		if (showPVBoard)
 		{
@@ -2035,7 +2035,8 @@
 		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
 			return true;
 
-		var stateSummary = GetSwissStateSummary(statePath);
+		var configuredRounds = tournament?.EffectiveSwissRounds() ?? 0;
+		var stateSummary = GetSwissStateSummary(statePath, configuredRounds);
 		if (stateSummary == SwissStateSummary.Missing)
 			return true;
 
@@ -2117,7 +2118,7 @@
 		}
 	}
 
-	private static SwissStateSummary GetSwissStateSummary(string statePath)
+	private static SwissStateSummary GetSwissStateSummary(string statePath, int configuredRounds)
 	{
 		try
 		{
@@ -2134,7 +2135,15 @@
 				return SwissStateSummary.Invalid;
 
 			var hasOpen = state.Rounds.SelectMany(r => r.Pairings ?? []).Any(p => p != null && !p.IsDecided);
-			return hasOpen ? SwissStateSummary.InProgress : SwissStateSummary.Completed;
+			if (hasOpen)
+				return SwissStateSummary.InProgress;
+
+			// All saved rounds are decided, but if the configured round count
+			// exceeds the number of completed rounds, the tournament is resumable.
+			if (configuredRounds > state.Rounds.Count)
+				return SwissStateSummary.InProgress;
+
+			return SwissStateSummary.Completed;
 		}
 		catch (JsonException)
 		{
