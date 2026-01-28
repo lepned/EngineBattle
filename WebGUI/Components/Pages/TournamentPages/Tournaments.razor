@@ -93,9 +93,10 @@
 			<div class="standingTable">
 				@if (IsCupMode)
 				{
-					<CupProgressTable FontSize=@layoutOptions.Fonts.StandingsFont Height="height"
-									  CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle
-									  WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer" />
+					<CupCyclingView FontSize=@layoutOptions.Fonts.StandingsFont Height=@height
+									CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
+									WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
+									ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 				}
 				else
 				{
@@ -117,9 +118,10 @@
 				@if (IsCupMode)
 				{
 					<div class="standingTable">
-						<CupProgressTable FontSize=@layoutOptions.Fonts.StandingsFont Height="height"
-										  CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle
-										  WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer" />
+						<CupCyclingView FontSize=@layoutOptions.Fonts.StandingsFont Height=@height
+										CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
+										WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
+										ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 					</div>
 				}
 				else
@@ -135,9 +137,10 @@
 				<div class="standingTable">
 					@if (IsCupMode)
 					{
-						<CupProgressTable FontSize=@layoutOptions.Fonts.StandingsFont Height="height"
-										  CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle
-										  WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer" />
+						<CupCyclingView FontSize=@layoutOptions.Fonts.StandingsFont Height=@height
+										CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
+										WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
+										ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 					}
 					else
 					{
