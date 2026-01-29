@@ -127,11 +127,9 @@
 }
 
 .engine-name {
-  font-size: 0.75em;
-  font-weight: 700;
+  font-size: 0.75em;  
   margin: 0;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: #fff;  
   text-align: center;
   width: 100%;
   overflow: hidden;
@@ -141,8 +139,8 @@
 }
 
 .engine-version {
-  font-size: 0.5em;
-  color: #888;
+  font-size: 0.55em;
+  color: #999;
   font-style: italic;
   text-align: center;
   line-height: 1.1;
@@ -155,23 +153,18 @@
 /* Evaluation */
 .eval {
   font-size: 1em;
-  font-weight: 700;
-  padding: 0.2em 0.4em;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  padding: 0.1em 0.3em;
   text-align: center;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.eval.active-eval {
-  background: rgba(76, 175, 80, 0.15);
-  border-color: rgba(76, 175, 80, 0.3);
-  color: #81c784;
-  animation: pulse 2s ease-in-out infinite;
-}
+    .eval.active-eval {
+        color: #81c784;
+        animation: pulse 2s ease-in-out infinite;
+    }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -180,11 +173,10 @@
 
 /* Stat Row Cells */
 .stat-cell {
-  color: #e0e0e0;
+  color: #fff;
   text-align: center;
   padding: 0.15em 0.25em;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 3px;
+  background: transparent;  
   font-size: 0.7em;
   min-width: 0;
   overflow: hidden;
@@ -192,23 +184,21 @@
 }
 
 .stat-cell.wdl {
-  font-family: 'Courier New', monospace;
+  
   font-size: 0.65em;
 }
 
-.stat-cell.move-time {
-  font-weight: 600;
-}
+    .stat-cell.move-time {        
+        border: none;
+    }
 
 .stat-cell.move-time.active-time {
-  color: #81c784;
-  background: rgba(76, 175, 80, 0.1);
-}
+        color: #81c784;
+    }
 
 /* Center Label Cells */
 .label-cell {
-  font-size: 0.70em;
-  color: #999;
+  font-size: 0.70em;  
   text-align: center;
   padding: 0.15em 0.25em;
   min-width: 0;
@@ -221,16 +211,15 @@
 }
 
 .label-cell.header {
-  font-weight: 600;
-  color: #aaa;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 3px;
-}
+        font-size: 0.75em;
+        font-weight:600;
+        border:none;        
+    }
 
 /* Shrink labels in narrow containers */
 @container engine-stats (max-width: 250px) {
   .label-cell {
-    font-size: 0.55em;
+    font-size: 0.65em;
     max-width: 4em;
   }
 }
