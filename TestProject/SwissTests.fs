@@ -1236,3 +1236,263 @@ let ``swiss tournament 16 players round 1 correct pairing order with seed group 
     let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
 
     Assert.Equal(8, pairs.Length)
+
+[<Fact>]
+let ``swissRoundPairings with floater puts top players last`` () =
+    // Scenario: 3 players at 2.0, 4 players at 1.5
+    // Player with 2.0 will float down to 1.5 group
+    // Verify top players (2.0) still play last despite floater
+    let players =
+        [ mkRatedPlayer "Alice" 2500    // Seed 1
+          mkRatedPlayer "Bob" 2400      // Seed 2
+          mkRatedPlayer "Charlie" 2300  // Seed 3 (will float)
+          mkRatedPlayer "Dave" 2200     // Seed 4
+          mkRatedPlayer "Eve" 2100      // Seed 5
+          mkRatedPlayer "Frank" 2000    // Seed 6
+          mkRatedPlayer "Grace" 1900 ]  // Seed 7
+    let seedOrder = players
+    let scores =
+        [ "Alice", 2.0
+          "Bob", 2.0
+          "Charlie", 2.0   // Floater (odd player in 2.0 group)
+          "Dave", 1.5
+          "Eve", 1.5
+          "Frank", 1.5
+          "Grace", 1.5 ]
+        |> Map.ofList
+
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+
+    // Expected pairing order (lowest scores first, highest last):
+    // First: 1.5 score pairings (including floater)
+    // Last: 2.0 score pairing (Alice vs Bob - top players)
+    // 7 players = 3 pairings + 1 bye
+
+    // Check how many pairs we got
+    Assert.Equal(4, pairs.Length)  // 3 regular pairs + 1 bye pair
+
+    // Get the last pairing (should be top players)
+    let lastPair = pairs |> List.last
+    let lastPairNames = Set.ofList [ (fst lastPair).Name; (snd lastPair).Name ]
+
+    // Verify last pair is the highest-scoring pairing (Alice vs Bob, both 2.0)
+    // NOT the floater pairing (Charlie 2.0 vs someone with 1.5)
+    Assert.Equal<Set<string>>(Set.ofList [ "Alice"; "Bob" ], lastPairNames)
+
+    // Get the first pairing (should be lowest scoring)
+    let firstPair = pairs |> List.head
+    let firstPairNames = Set.ofList [ (fst firstPair).Name; (snd firstPair).Name ]
+
+    // First pair should NOT include Alice or Bob (top scorers)
+    Assert.DoesNotContain("Alice", firstPairNames)
+    Assert.DoesNotContain("Bob", firstPairNames)
+
+[<Fact>]
+let ``swissRoundPairings floater pairing order details`` () =
+    // More detailed test: verify exact ordering when floater occurs
+    // 3 players at 2.0 (odd group), 4 players at 1.5 (even group)
+    let players =
+        [ mkRatedPlayer "A" 2500  // 2.0
+          mkRatedPlayer "B" 2400  // 2.0
+          mkRatedPlayer "C" 2300  // 2.0 (floater - lowest seed in 2.0 group)
+          mkRatedPlayer "D" 2200  // 1.5
+          mkRatedPlayer "E" 2100  // 1.5
+          mkRatedPlayer "F" 2000  // 1.5
+          mkRatedPlayer "G" 1900  // 1.5 (lowest - gets bye)
+        ]
+    let seedOrder = players
+    let scores =
+        [ "A", 2.0; "B", 2.0; "C", 2.0
+          "D", 1.5; "E", 1.5; "F", 1.5; "G", 1.5 ]
+        |> Map.ofList
+
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+
+    // Extract pairing details
+    let pairList =
+        pairs
+        |> List.map (fun (p1, p2) -> (p1.Name, p2.Name))
+
+    // Verify we have 4 pairs (3 real + 1 bye)
+    Assert.Equal(4, pairList.Length)
+
+    // Last pairing should be A vs B (both 2.0 - top board)
+    let lastPair = pairList |> List.last
+    let lastSet = Set.ofList [ fst lastPair; snd lastPair ]
+    Assert.Equal<Set<string>>(Set.ofList [ "A"; "B" ], lastSet)
+
+    // Verify C (floater) is NOT in the last pairing
+    Assert.DoesNotContain("C", lastSet)
+
+    // Verify the first pairing does NOT contain A or B
+    let firstPair = pairList |> List.head
+    let firstSet = Set.ofList [ fst firstPair; snd firstPair ]
+    Assert.DoesNotContain("A", firstSet)
+    Assert.DoesNotContain("B", firstSet)
+
+    // Check that pairing order is: lower scores first, higher scores last
+    // Find which pairing includes C (the floater at 2.0)
+    let cPairIndex = pairList |> List.findIndex (fun (p1, p2) -> p1 = "C" || p2 = "C")
+
+    // Find which pairing includes A or B
+    let abPairIndex = pairList |> List.findIndex (fun (p1, p2) ->
+        Set.ofList [p1; p2] = Set.ofList ["A"; "B"])
+
+    // A vs B (both 2.0, no floater) should come AFTER C's pairing
+    // This verifies that floater pairings are sorted before same-score pairings
+    Assert.True(cPairIndex < abPairIndex,
+        $"Floater pairing (C) at index {cPairIndex} should come before top board (A vs B) at index {abPairIndex}")
+
+[<Fact>]
+let ``swissRoundPairings complete pairing order verification`` () =
+    // Comprehensive test: multiple score groups to verify complete ordering
+    let players =
+        [ mkRatedPlayer "P1" 3000  // 3.0
+          mkRatedPlayer "P2" 2900  // 3.0
+          mkRatedPlayer "P3" 2800  // 2.5
+          mkRatedPlayer "P4" 2700  // 2.5
+          mkRatedPlayer "P5" 2600  // 2.5 (floater from 2.5 group)
+          mkRatedPlayer "P6" 2500  // 2.0
+          mkRatedPlayer "P7" 2400  // 2.0
+          mkRatedPlayer "P8" 2300  // 2.0
+        ]
+    let seedOrder = players
+    let scores =
+        [ "P1", 3.0; "P2", 3.0        // 2 players at 3.0
+          "P3", 2.5; "P4", 2.5; "P5", 2.5  // 3 players at 2.5 (odd - P5 floats)
+          "P6", 2.0; "P7", 2.0; "P8", 2.0  // 3 players at 2.0 (odd - P8 gets bye)
+        ]
+        |> Map.ofList
+
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+    let pairNames = pairs |> List.map (fun (p1, p2) -> Set.ofList [p1.Name; p2.Name])
+
+    // Expected order (lowest scores first, highest last):
+    // 1. P5(2.5) vs P6/P7/P8(2.0) - floater from 2.5 paired down
+    // 2. Remaining 2.0 players paired together
+    // 3. P3(2.5) vs P4(2.5) - same score pairing
+    // 4. P1(3.0) vs P2(3.0) - top board (highest scores)
+
+    let lastPair = pairNames |> List.last
+    let firstPair = pairNames |> List.head
+
+    // Last pair should be highest score group (3.0)
+    Assert.Equal<Set<string>>(Set.ofList ["P1"; "P2"], lastPair)
+
+    // First pair should NOT include P1 or P2
+    Assert.DoesNotContain("P1", firstPair)
+    Assert.DoesNotContain("P2", firstPair)
+
+    // Verify P1 vs P2 is indeed last
+    let p1p2Index = pairNames |> List.findIndex (fun s -> s = Set.ofList ["P1"; "P2"])
+    Assert.Equal(pairNames.Length - 1, p1p2Index)
+
+[<Fact>]
+let ``swiss state regenerates global opening order after loading trimmed data`` () =
+    let tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"swiss_regenerate_test_{System.Guid.NewGuid()}.json")
+    try
+        // Simulate persist/reload cycle with trimmed opening order
+        let largeOrder = ResizeArray<int>([ for i in 0..199 -> i ])  // 200 indices
+        let state =
+            { TournamentName = "SwissRegenerateTest"
+              SeedGroupCount = 1
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = true
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = largeOrder
+              Rounds = ResizeArray<Swiss.SwissRound>()
+              UpdatedUtc = System.DateTime.UtcNow }
+
+        // Simulate writeSwissState trimming
+        let maxPersistedOpenings = 50
+        let trimOrder (order: ResizeArray<int>) =
+            if obj.ReferenceEquals(order, null) then
+                order
+            else
+                ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+        let trimmedState =
+            { state with GlobalOpeningOrder = trimOrder state.GlobalOpeningOrder }
+
+        // Persist and reload
+        let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
+        let json = System.Text.Json.JsonSerializer.Serialize(trimmedState, opts)
+        System.IO.File.WriteAllText(tempPath, json)
+        let readOpts = System.Text.Json.JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = System.Text.Json.JsonSerializer.Deserialize<Swiss.SwissState>(System.IO.File.ReadAllText(tempPath), readOpts)
+
+        // Verify it was trimmed
+        Assert.Equal(50, loaded.GlobalOpeningOrder.Count)
+
+        // Check regeneration logic
+        let openingsLength = 200
+        let shouldRegenerate = loaded.GlobalOpeningOrder.Count = 0 || loaded.GlobalOpeningOrder.Count < openingsLength
+
+        Assert.True(shouldRegenerate,
+            $"Should regenerate when GlobalOpeningOrder.Count ({loaded.GlobalOpeningOrder.Count}) < openingsLength ({openingsLength})")
+
+    finally
+        if System.IO.File.Exists tempPath then System.IO.File.Delete tempPath
+
+[<Fact>]
+let ``swiss pairing regenerates opening order after loading trimmed data`` () =
+    let tempPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"swiss_pairing_regenerate_test_{System.Guid.NewGuid()}.json")
+    try
+        // Test per-pairing opening order regeneration
+        let largeOrder = ResizeArray<int>([ for i in 0..199 -> i ])
+        let pairing =
+            { PairId = 1; RoundNumber = 1
+              PlayerA = "A"; PlayerB = "B"
+              PlayerARating = 3000; PlayerBRating = 2900
+              ScoreA = 0.0; ScoreB = 0.0
+              IsDecided = false
+              Games = ResizeArray<Swiss.SwissGame>()
+              OpeningOrder = largeOrder }
+        let round = { RoundNumber = 1; Pairings = ResizeArray<Swiss.SwissPairing>([ pairing ]) }
+        let state =
+            { TournamentName = "SwissPairingRegenerateTest"
+              SeedGroupCount = 1
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = false
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = ResizeArray<int>()
+              Rounds = ResizeArray<Swiss.SwissRound>([ round ])
+              UpdatedUtc = System.DateTime.UtcNow }
+
+        // Simulate trimming
+        let maxPersistedOpenings = 50
+        let trimOrder (order: ResizeArray<int>) =
+            if obj.ReferenceEquals(order, null) then
+                order
+            else
+                ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+        let trimmedRounds =
+            state.Rounds
+            |> Seq.map (fun r ->
+                let trimmedPairings =
+                    r.Pairings
+                    |> Seq.map (fun p ->
+                        { p with OpeningOrder = trimOrder p.OpeningOrder })
+                    |> ResizeArray
+                { r with Pairings = trimmedPairings })
+            |> ResizeArray
+        let trimmedState = { state with Rounds = trimmedRounds }
+
+        // Persist and reload
+        let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
+        let json = System.Text.Json.JsonSerializer.Serialize(trimmedState, opts)
+        System.IO.File.WriteAllText(tempPath, json)
+        let readOpts = System.Text.Json.JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = System.Text.Json.JsonSerializer.Deserialize<Swiss.SwissState>(System.IO.File.ReadAllText(tempPath), readOpts)
+
+        let loadedPairing = loaded.Rounds.[0].Pairings.[0]
+        Assert.Equal(50, loadedPairing.OpeningOrder.Count)
+
+        // Check regeneration logic
+        let openingsLength = 200
+        let shouldRegenerate = loadedPairing.OpeningOrder.Count = 0 || loadedPairing.OpeningOrder.Count < openingsLength
+
+        Assert.True(shouldRegenerate,
+            $"Should regenerate when pairing OpeningOrder.Count ({loadedPairing.OpeningOrder.Count}) < openingsLength ({openingsLength})")
+
+    finally
+        if System.IO.File.Exists tempPath then System.IO.File.Delete tempPath

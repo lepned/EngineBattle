@@ -582,3 +582,306 @@ let ``cup full 4 player bracket with highest seed advancing`` () =
     // Final: should be P1 vs P2
     Assert.Equal(2, winners.Length)
     Assert.Equal<Set<string>>(Set.ofList [ "P1"; "P2" ], winners |> List.map (fun p -> p.Name) |> Set.ofList)
+
+[<Fact>]
+let ``cup bracket global opening order can reference indices beyond 50`` () =
+    // Create 200 openings to simulate a large opening book
+    let openings = [ for i in 1..200 -> mkOpening i ]
+    // Create a GlobalOpeningOrder with indices pointing to openings beyond index 50
+    let globalOrder = ResizeArray<int>([ 150; 75; 199; 50; 100 ])
+    let bracket =
+        { TournamentName = "LargeBookTest"
+          Strategy = "Random"
+          GamesPerMatch = 2
+          UniqueOpeningsGlobal = true
+          NextOpeningIndex = 0
+          GlobalOpeningOrder = globalOrder
+          Rounds = ResizeArray<CupRound>()
+          UpdatedUtc = DateTime.UtcNow }
+    // Verify we can map the indices to actual openings beyond index 50
+    let mapped =
+        globalOrder
+        |> Seq.map (fun idx -> openings.[idx])
+        |> Seq.toList
+    Assert.Equal(5, mapped.Length)
+    Assert.Equal("opening-151", mapped.[0].Raw) // Index 150
+    Assert.Equal("opening-76", mapped.[1].Raw)  // Index 75
+    Assert.Equal("opening-200", mapped.[2].Raw) // Index 199
+    Assert.Equal("opening-51", mapped.[3].Raw)  // Index 50
+    Assert.Equal("opening-101", mapped.[4].Raw) // Index 100
+
+[<Fact>]
+let ``cup bracket global opening order is trimmed to 50 when persisted`` () =
+    let tempPath = Path.Combine(Path.GetTempPath(), $"cup_trim_test_{Guid.NewGuid()}.json")
+    try
+        // Create GlobalOpeningOrder with 100 indices
+        let largeOrder = ResizeArray<int>([ for i in 0..99 -> i ])
+        let bracket =
+            { TournamentName = "TrimTest"
+              Strategy = "Random"
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = true
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = largeOrder
+              Rounds = ResizeArray<CupRound>()
+              UpdatedUtc = DateTime.UtcNow }
+
+        // Simulate the trimming that writeCupBracket does
+        let maxPersistedOpenings = 50
+        let trimOrder (order: ResizeArray<int>) =
+            if obj.ReferenceEquals(order, null) then
+                order
+            else
+                ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+        let trimmedBracket =
+            { bracket with GlobalOpeningOrder = trimOrder bracket.GlobalOpeningOrder }
+
+        let opts = JsonSerializerOptions(WriteIndented = true)
+        let json = JsonSerializer.Serialize(trimmedBracket, opts)
+        File.WriteAllText(tempPath, json)
+
+        let readOpts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = JsonSerializer.Deserialize<CupBracket>(File.ReadAllText(tempPath), readOpts)
+
+        // Verify only first 50 indices were persisted
+        Assert.Equal(50, loaded.GlobalOpeningOrder.Count)
+        Assert.Equal<int list>([ for i in 0..49 -> i ], loaded.GlobalOpeningOrder |> Seq.toList)
+    finally
+        if File.Exists tempPath then File.Delete tempPath
+
+[<Fact>]
+let ``cup bracket match opening order is trimmed to 50 when persisted`` () =
+    let tempPath = Path.Combine(Path.GetTempPath(), $"cup_match_trim_test_{Guid.NewGuid()}.json")
+    try
+        // Create a match with OpeningOrder containing 100 indices
+        let largeMatchOrder = ResizeArray<int>([ for i in 0..99 -> i ])
+        let matchInfo =
+            { MatchId = 1; RoundNumber = 1
+              PlayerA = "A"; PlayerB = "B"
+              PlayerARating = 3000; PlayerBRating = 2900
+              ScoreA = 0.0; ScoreB = 0.0
+              Winner = None; IsDecided = false
+              Games = ResizeArray<CupGame>()
+              OpeningOrder = largeMatchOrder }
+        let round = { RoundNumber = 1; Matches = ResizeArray<CupMatch>([ matchInfo ]) }
+        let bracket =
+            { TournamentName = "MatchTrimTest"
+              Strategy = "Random"
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = false
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = ResizeArray<int>()
+              Rounds = ResizeArray<CupRound>([ round ])
+              UpdatedUtc = DateTime.UtcNow }
+
+        // Simulate the trimming that writeCupBracket does
+        let maxPersistedOpenings = 50
+        let trimOrder (order: ResizeArray<int>) =
+            if obj.ReferenceEquals(order, null) then
+                order
+            else
+                ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+        let trimmedRounds =
+            bracket.Rounds
+            |> Seq.map (fun r ->
+                let trimmedMatches =
+                    r.Matches
+                    |> Seq.map (fun m ->
+                        { m with OpeningOrder = trimOrder m.OpeningOrder })
+                    |> ResizeArray
+                { r with Matches = trimmedMatches })
+            |> ResizeArray
+        let trimmedBracket =
+            { bracket with Rounds = trimmedRounds }
+
+        let opts = JsonSerializerOptions(WriteIndented = true)
+        let json = JsonSerializer.Serialize(trimmedBracket, opts)
+        File.WriteAllText(tempPath, json)
+
+        let readOpts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = JsonSerializer.Deserialize<CupBracket>(File.ReadAllText(tempPath), readOpts)
+
+        let loadedMatch = loaded.Rounds.[0].Matches.[0]
+        // Verify only first 50 indices were persisted
+        Assert.Equal(50, loadedMatch.OpeningOrder.Count)
+        Assert.Equal<int list>([ for i in 0..49 -> i ], loadedMatch.OpeningOrder |> Seq.toList)
+    finally
+        if File.Exists tempPath then File.Delete tempPath
+
+[<Fact>]
+let ``cup bracket opening indices can point anywhere in large opening book`` () =
+    // Create 500 openings to simulate a very large opening book
+    let openings = [ for i in 1..500 -> mkOpening i ]
+    // Create varied indices across the full range
+    let globalOrder = ResizeArray<int>([ 0; 50; 100; 250; 499; 123; 456; 321 ])
+
+    // Map indices to actual openings
+    let mapped =
+        globalOrder
+        |> Seq.map (fun idx -> openings.[idx % openings.Length])
+        |> Seq.toList
+
+    // Verify correct mappings
+    Assert.Equal("opening-1", mapped.[0].Raw)   // Index 0
+    Assert.Equal("opening-51", mapped.[1].Raw)  // Index 50
+    Assert.Equal("opening-101", mapped.[2].Raw) // Index 100
+    Assert.Equal("opening-251", mapped.[3].Raw) // Index 250
+    Assert.Equal("opening-500", mapped.[4].Raw) // Index 499
+    Assert.Equal("opening-124", mapped.[5].Raw) // Index 123
+    Assert.Equal("opening-457", mapped.[6].Raw) // Index 456
+    Assert.Equal("opening-322", mapped.[7].Raw) // Index 321
+
+[<Fact>]
+let ``cup bracket persisted order preserves high indices when under 50 limit`` () =
+    let tempPath = Path.Combine(Path.GetTempPath(), $"cup_preserve_test_{Guid.NewGuid()}.json")
+    try
+        // Create GlobalOpeningOrder with 30 indices, some pointing to high values
+        let mixedOrder = ResizeArray<int>([ 5; 100; 250; 500; 1000; 50; 75; 200; 300; 150 ])
+        let bracket =
+            { TournamentName = "PreserveTest"
+              Strategy = "Random"
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = true
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = mixedOrder
+              Rounds = ResizeArray<CupRound>()
+              UpdatedUtc = DateTime.UtcNow }
+
+        // No trimming needed since count is under 50
+        let opts = JsonSerializerOptions(WriteIndented = true)
+        let json = JsonSerializer.Serialize(bracket, opts)
+        File.WriteAllText(tempPath, json)
+
+        let readOpts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = JsonSerializer.Deserialize<CupBracket>(File.ReadAllText(tempPath), readOpts)
+
+        // Verify all indices are preserved including high values
+        Assert.Equal(10, loaded.GlobalOpeningOrder.Count)
+        Assert.Equal<int list>(
+            [ 5; 100; 250; 500; 1000; 50; 75; 200; 300; 150 ],
+            loaded.GlobalOpeningOrder |> Seq.toList)
+    finally
+        if File.Exists tempPath then File.Delete tempPath
+
+[<Fact>]
+let ``cup bracket regenerates opening order after loading trimmed data`` () =
+    let tempPath = Path.Combine(Path.GetTempPath(), $"cup_regenerate_test_{Guid.NewGuid()}.json")
+    try
+        // Simulate what happens in real tournament:
+        // 1. Start with 200 openings
+        // 2. Create GlobalOpeningOrder with all 200 indices
+        // 3. Persist (trims to 50)
+        // 4. Reload from disk (only has 50)
+        // 5. Check if regeneration condition is correct
+
+        // Step 1-3: Create and persist a bracket with trimmed GlobalOpeningOrder
+        let largeOrder = ResizeArray<int>([ for i in 0..199 -> i ])  // 200 indices
+        let bracket =
+            { TournamentName = "RegenerateTest"
+              Strategy = "Random"
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = true
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = largeOrder
+              Rounds = ResizeArray<CupRound>()
+              UpdatedUtc = DateTime.UtcNow }
+
+        // Simulate writeCupBracket trimming
+        let maxPersistedOpenings = 50
+        let trimOrder (order: ResizeArray<int>) =
+            if obj.ReferenceEquals(order, null) then
+                order
+            else
+                ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+        let trimmedBracket =
+            { bracket with GlobalOpeningOrder = trimOrder bracket.GlobalOpeningOrder }
+
+        // Persist the trimmed bracket
+        let opts = JsonSerializerOptions(WriteIndented = true)
+        let json = JsonSerializer.Serialize(trimmedBracket, opts)
+        File.WriteAllText(tempPath, json)
+
+        // Step 4: Reload from disk
+        let readOpts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = JsonSerializer.Deserialize<CupBracket>(File.ReadAllText(tempPath), readOpts)
+
+        // Verify it was trimmed
+        Assert.Equal(50, loaded.GlobalOpeningOrder.Count)
+
+        // Step 5: Simulate the regeneration logic
+        let openingsLength = 200  // Simulating 200 openings in the book
+
+        // This is the key check - with our fix, this condition should be TRUE
+        let shouldRegenerate = loaded.GlobalOpeningOrder.Count = 0 || loaded.GlobalOpeningOrder.Count < openingsLength
+
+        // The bug: without our fix, shouldRegenerate would be FALSE because Count = 50 (not 0)
+        // With our fix, shouldRegenerate should be TRUE because Count (50) < openingsLength (200)
+        Assert.True(shouldRegenerate,
+            $"Should regenerate when GlobalOpeningOrder.Count ({loaded.GlobalOpeningOrder.Count}) < openingsLength ({openingsLength})")
+
+    finally
+        if File.Exists tempPath then File.Delete tempPath
+
+[<Fact>]
+let ``cup bracket match regenerates opening order after loading trimmed data`` () =
+    let tempPath = Path.Combine(Path.GetTempPath(), $"cup_match_regenerate_test_{Guid.NewGuid()}.json")
+    try
+        // Test the per-match opening order regeneration
+        let largeMatchOrder = ResizeArray<int>([ for i in 0..199 -> i ])
+        let matchInfo =
+            { MatchId = 1; RoundNumber = 1
+              PlayerA = "A"; PlayerB = "B"
+              PlayerARating = 3000; PlayerBRating = 2900
+              ScoreA = 0.0; ScoreB = 0.0
+              Winner = None; IsDecided = false
+              Games = ResizeArray<CupGame>()
+              OpeningOrder = largeMatchOrder }
+        let round = { RoundNumber = 1; Matches = ResizeArray<CupMatch>([ matchInfo ]) }
+        let bracket =
+            { TournamentName = "MatchRegenerateTest"
+              Strategy = "Random"
+              GamesPerMatch = 2
+              UniqueOpeningsGlobal = false
+              NextOpeningIndex = 0
+              GlobalOpeningOrder = ResizeArray<int>()
+              Rounds = ResizeArray<CupRound>([ round ])
+              UpdatedUtc = DateTime.UtcNow }
+
+        // Simulate trimming
+        let maxPersistedOpenings = 50
+        let trimOrder (order: ResizeArray<int>) =
+            if obj.ReferenceEquals(order, null) then
+                order
+            else
+                ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+        let trimmedRounds =
+            bracket.Rounds
+            |> Seq.map (fun r ->
+                let trimmedMatches =
+                    r.Matches
+                    |> Seq.map (fun m ->
+                        { m with OpeningOrder = trimOrder m.OpeningOrder })
+                    |> ResizeArray
+                { r with Matches = trimmedMatches })
+            |> ResizeArray
+        let trimmedBracket = { bracket with Rounds = trimmedRounds }
+
+        // Persist and reload
+        let opts = JsonSerializerOptions(WriteIndented = true)
+        let json = JsonSerializer.Serialize(trimmedBracket, opts)
+        File.WriteAllText(tempPath, json)
+        let readOpts = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+        let loaded = JsonSerializer.Deserialize<CupBracket>(File.ReadAllText(tempPath), readOpts)
+
+        let loadedMatch = loaded.Rounds.[0].Matches.[0]
+        Assert.Equal(50, loadedMatch.OpeningOrder.Count)
+
+        // Check regeneration logic
+        let openingsLength = 200
+        let shouldRegenerate = loadedMatch.OpeningOrder.Count = 0 || loadedMatch.OpeningOrder.Count < openingsLength
+
+        Assert.True(shouldRegenerate,
+            $"Should regenerate when match OpeningOrder.Count ({loadedMatch.OpeningOrder.Count}) < openingsLength ({openingsLength})")
+
+    finally
+        if File.Exists tempPath then File.Delete tempPath

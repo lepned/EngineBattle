@@ -3043,7 +3043,27 @@ module Match =
       fullPath
 
     let writeCupBracket (agent: MailboxProcessor<CupBracketMessage>) (bracket: CupBracket) =
-      agent.PostAndReply(fun reply -> WriteCupBracket(bracket, reply))
+      let maxPersistedOpenings = 50
+      let trimOrder (order: ResizeArray<int>) =
+        if obj.ReferenceEquals(order, null) then
+          order
+        else
+          ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
+      let trimmedRounds =
+        bracket.Rounds
+        |> Seq.map (fun r ->
+            let trimmedMatches =
+              r.Matches
+              |> Seq.map (fun m ->
+                  { m with OpeningOrder = trimOrder m.OpeningOrder })
+              |> ResizeArray
+            { r with Matches = trimmedMatches })
+        |> ResizeArray
+      let trimmedBracket =
+        { bracket with
+            GlobalOpeningOrder = trimOrder bracket.GlobalOpeningOrder
+            Rounds = trimmedRounds }
+      agent.PostAndReply(fun reply -> WriteCupBracket(trimmedBracket, reply))
       callback Update.CupBracketUpdated
 
     let roundPairIncrements =
@@ -3092,8 +3112,7 @@ module Match =
       else
         [||]
 
-    let maxCupOpenings = 50
-    let openings = games |> Seq.truncate maxCupOpenings |> Seq.toList
+    let openings = games |> Seq.toList
     if openings.IsEmpty then
       logger.LogError("No openings available for cup tournament")
       failwith "No openings available for cup tournament."
@@ -3256,7 +3275,7 @@ module Match =
 
     let ensureGlobalOpeningOrder () =
       if randomOpenings && openings.Length > 1 && not uniquePerMatchOnly then
-        if bracket.GlobalOpeningOrder.Count = 0 then
+        if bracket.GlobalOpeningOrder.Count = 0 || bracket.GlobalOpeningOrder.Count < openings.Length then
           let order = [0 .. openings.Length - 1]
           let shuffled = order |> List.toArray
           Random.Shuffle(shuffled)
@@ -3516,7 +3535,7 @@ module Match =
           let matchOpenings =
             if uniquePerMatchOnly then
               if randomOpenings && openings.Length > 1 then
-                if matchInfo.OpeningOrder.Count = 0 then
+                if matchInfo.OpeningOrder.Count = 0 || matchInfo.OpeningOrder.Count < openings.Length then
                   let order = [0 .. openings.Length - 1]
                   let shuffled = order |> List.toArray
                   Random.Shuffle(shuffled)
@@ -3730,10 +3749,8 @@ module Match =
       let trimOrder (order: ResizeArray<int>) =
         if obj.ReferenceEquals(order, null) then
           order
-        elif order.Count > maxPersistedOpenings then
-          ResizeArray<int>(order |> Seq.take maxPersistedOpenings)
         else
-          order
+          ResizeArray<int>(order |> Seq.truncate maxPersistedOpenings)
       let trimmedRounds =
         state.Rounds
         |> Seq.map (fun r ->
@@ -3892,7 +3909,7 @@ module Match =
 
     let ensureGlobalOrder () =
       if tourny.SwissOptions.RandomOpenings && openings.Length > 1 && not tourny.SwissOptions.UniquePerMatchOnly then
-        if state.GlobalOpeningOrder.Count = 0 then
+        if state.GlobalOpeningOrder.Count = 0 || state.GlobalOpeningOrder.Count < openings.Length then
           let order = [0 .. openings.Length - 1]
           let shuffled = order |> List.toArray
           Random.Shuffle(shuffled)
@@ -4125,7 +4142,7 @@ module Match =
         let matchOpenings =
           if tourny.SwissOptions.UniquePerMatchOnly then
             if tourny.SwissOptions.RandomOpenings && openings.Length > 1 then
-              if pairing.OpeningOrder.Count = 0 then
+              if pairing.OpeningOrder.Count = 0 || pairing.OpeningOrder.Count < openings.Length then
                 let order = [0 .. openings.Length - 1]
                 let shuffled = order |> List.toArray
                 Random.Shuffle(shuffled)
