@@ -77,7 +77,7 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.FullPGNParser.parsePgnFile(fullPath);
+		var games = FullPGNParser.parsePgnFile(fullPath);
 		PGNWriter.writeMinimalPgnFile(games, minimalPGNpath);
 		logger.LogInformation($"Done with writing minimal PGN file to {minimalPGNpath}");
 		File.Delete(fullPath);
@@ -96,7 +96,7 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.FullPGNParser.parsePgnFileWithRaw(fullPath);
+		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
 		var exportPath = GetExportFileName(pgnName);
 		PGNWriter.ensureBlankLinesBetweenGames(exportPath, games);
 		File.Delete(fullPath);
@@ -121,7 +121,7 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.FullPGNParser.parsePgnFile(fullPath);
+		var games = FullPGNParser.parsePgnFile(fullPath);
 		var fileNamePath = GetFileName(pgnName, engineName);
 		PGNWriter.removePlayerFromPGN(engineName, games, fileNamePath);
 		File.Delete(fullPath);

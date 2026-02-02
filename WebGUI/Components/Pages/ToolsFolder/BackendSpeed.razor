@@ -98,7 +98,7 @@
 		}
 
 		// F# print function expects the grouped shape, so pass original array
-		Parser.PGNStatistics.printPieceCountDataPerPgnFile(dummyOutputFilePath, pieceCountDataPerPgnFile);
+		PGNStatistics.printPieceCountDataPerPgnFile(dummyOutputFilePath, pieceCountDataPerPgnFile);
 	}
 
 	private async Task OpenPGNFile(InputFileChangeEventArgs e)
@@ -114,11 +114,11 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
+		var games = FullPGNParser.parsePgnFile(fullPath).ToList();
 		logger.LogInformation("PGN file parsed {File}", pgnName);
 
 		// keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
-		pieceCountDataPerPgnFile = Parser.PGNStatistics.calculatePieceCountDataPerPgnFile(games);
+		pieceCountDataPerPgnFile = PGNStatistics.calculatePieceCountDataPerPgnFile(games);
 		logger.LogInformation("Groups: {Count}", pieceCountDataPerPgnFile.Length);
 		StateHasChanged();
 

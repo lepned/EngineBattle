@@ -97,7 +97,7 @@
 
 	private void GenerateChess960Positions()
 	{
-		Chess960.writeChess960PositionsToFile(chess960Path, numberOfPositions);
+		ChessUtilities.Chess960.writeChess960PositionsToFile(chess960Path, numberOfPositions);
 	}
 
 	private async Task EvaluateAndSortOpeningBookAsync(InputFileChangeEventArgs e)
@@ -114,13 +114,13 @@
 		}
 		if (pgnName.ToLower().EndsWith(".pgn"))
 		{
-			var games = Parser.FullPGNParser.parsePgnFile(fullPath).Take(nOpenings).ToList();
+			var games = FullPGNParser.parsePgnFile(fullPath).Take(nOpenings).ToList();
 			WriteEvaluatedPgnOpenings(pgnName, games);
 			File.Delete(fullPath);
 		}
 		else if (pgnName.ToLower().EndsWith(".epd"))
 		{
-			var positions = Parser.EPDExtractor.readEPDs(fullPath).Take(nOpenings).ToList();
+			var positions = EPDExtractor.readEPDs(fullPath).Take(nOpenings).ToList();
 			WriteEvaluatedEpdOpenings(pgnName, positions);
 			File.Delete(fullPath);
 		}
@@ -130,7 +130,7 @@
 		}
 	}
 
-	private void WriteEvaluatedEpdOpenings(string epdName, List<EPD.EPDEntry> positions)
+	private void WriteEvaluatedEpdOpenings(string epdName, List<EPDTypes.EPDEntry> positions)
 	{
 		var totalSw = System.Diagnostics.Stopwatch.StartNew();
 		var tourny = ChessLibrary.Tournament.Manager.loadTournament();
@@ -179,7 +179,7 @@
 		string outPutDir = $"{chess960Path}/BookEvals";
 		var filePath = Path.Combine(outPutDir, $"BookEval_{epdName}_{concatenatedString}.epd");
 		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");		
-		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(nodeList, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff);
+		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(nodeList, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff);
 		
 		if (!Directory.Exists(outPutDir))
 		{
@@ -254,7 +254,7 @@
 		string outPutDir = $"{chess960Path}/BookEvals";
 		var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.pgn");
 		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
-		var positionEvalsWithMoves = Analysis.PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);		
+		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);		
 		
 		if (!Directory.Exists(outPutDir))
 		{
@@ -309,7 +309,7 @@
 
 	private void GenerateDoubleChess960Positions()
 	{
-		Chess960.writeChess960DoublePositionsToFile(chess960Path, numberOfPositions);
+		ChessUtilities.Chess960.writeChess960DoublePositionsToFile(chess960Path, numberOfPositions);
 	}
 
 	private async Task ShufflePgnOpeningBookAsync(InputFileChangeEventArgs e)
@@ -323,7 +323,7 @@
 			browserFile = e.File;
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
-		var games = Parser.FullPGNParser.parsePgnFileWithRaw(fullPath);
+		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
 		var filePath = Path.Combine(chess960Path, $"Shuffled_{pgnName}");
 		//logger.LogInformation($"Shuffle started...");
 		PGNHelper.shufflePgnGames(filePath, games);
@@ -357,8 +357,8 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = Parser.FullPGNParser.parsePgnFile(fullPath);
-        //var uniqueOpenings = Analysis.PuzzleEngineAnalysis.onlyUniqueOpenings(games);
+		var games = FullPGNParser.parsePgnFile(fullPath);
+        //var uniqueOpenings = PuzzleEngineAnalysis.onlyUniqueOpenings(games);
 		//PGNWriter.writeNewOpeningBookBasedOnOlder(uniqueOpenings, pgnOpeningFullName);
 		PGNWriter.writeOpeningPgnFile(games, pgnOpeningFullName);
 		logger.LogInformation("Opening book created: analyzed {GameCount} games. Written to {Path}", games.Count(), pgnOpeningFullName);
@@ -381,7 +381,7 @@
 		var directory = Path.GetDirectoryName(epdToPgnFileName);
 		var newFilePath = Path.Combine(directory, fileNameWithoutExt + ".pgn");
 
-		var games = Parser.EPDExtractor.readEPDs(fullPath).ToList();
+		var games = EPDExtractor.readEPDs(fullPath).ToList();
 		PGNWriter.writeOpeningPgnFromEPD(games, newFilePath);
 		logger.LogInformation("Opening book written to path", newFilePath);
 		File.Delete(fullPath);

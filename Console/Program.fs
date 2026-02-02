@@ -9,12 +9,15 @@ open System.Linq
 open Serilog
 open ChessLibrary
 open TypesDef
+open TimeControlTypes
+open PuzzleTypes
 open Tournament
-open Tournament.Match
-open Utilities
+open Configuration
+open GameAnalysis
+open TournamentPairing
 open LowLevelUtilities
 open CliParser
-open BenchmarkRunner
+
 
 module BlazorInterop =
     let mutable blazorProcess: Process option = None
@@ -227,17 +230,16 @@ module TestPath =
   let createTournamentJsonAndEngineJsonFromDirectory() =
     let networkFolder = "C:/Dev/Chess/Networks/CeresLatest"
     let folder = "C:/Dev/Chess/Networks/CeresLatest/output_EngineJson"
-    Utilities.JSON.getAllConfigFiles networkFolder    
-    let tournyCloned = Utilities.JSON.createTournamentFile (tournamentPath()) folder
-    Utilities.JSON.writeTournamentJson tournyCloned folder
+    JSON.getAllConfigFiles networkFolder
+    let tournyCloned = JSON.createTournamentFile (tournamentPath()) folder
+    JSON.writeTournamentJson tournyCloned folder
 
 module Eret =
-  open TypesDef.Puzzle
-
+  
   let eretPath = "C:/Dev/Chess/Puzzles/ERET_VESELY203.epd"
   let eretPath2 = "C:/Dev/Chess/Puzzles/chad_tactics-100M.epd"  
-  let timeConfig = TimeControl.FixedTime (TimeOnly(0,0,5)) //10 seconds
-  let timeConfig2 = TimeControl.Nodes 1_000_000
+  let timeConfig = UnionType.FixedTime (TimeOnly(0,0,5)) //10 seconds
+  let timeConfig2 = UnionType.Nodes 1_000_000
 
   /// <summary>
   /// Processes the ERET update and prints relevant information.
@@ -261,7 +263,7 @@ module Eret =
             for (puzzle,_) in res.FailedPuzzles do                
                 printfn "%s" puzzle.RawInput
         printfn "\n--------------------------------------------------------------------"
-        let escaped = Utilities.JSONParser.escapeString data.FailedPuzzlesOutputFolder
+        let escaped = JSONParser.escapeString data.FailedPuzzlesOutputFolder
 
         if Directory.Exists(escaped) then
             let datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture)
@@ -270,14 +272,14 @@ module Eret =
             let boardAm = Chess.Board()
             try
               use sw = File.AppendText(fileName)
-              Analysis.PuzzleRunners.writeToFile data eretResults sw boardBm boardAm
+              PuzzleRunners.writeToFile data eretResults sw boardBm boardAm
               Console.WriteLine($"Failed Eret puzzles written to {fileName}")
             with 
             | ex ->
                 Console.WriteLine($"Failed to write results to file: {ex.Message}")
        
     | ResultsInConsole table ->
-        let escaped = Utilities.JSONParser.escapeString data.FailedPuzzlesOutputFolder
+        let escaped = JSONParser.escapeString data.FailedPuzzlesOutputFolder
         if Directory.Exists(escaped) then        
           let datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm")
           let outputPath = Path.Combine(escaped, $"EretSummary_{datePart}.txt")
@@ -291,8 +293,9 @@ module Eret =
 
  
 module Program =
-  open Utilities.JSONParser
+  open Configuration.JSONParser
   open System.Globalization
+  open TournamentTypes
 
   /// <summary>
   /// Configures logging for the application.
@@ -325,14 +328,14 @@ module Program =
     let normalizedPath = normalizePath path
     let data = loadEretConfig normalizedPath
     printfn "Processing ERET puzzle file: %s" path 
-    let time = TimeControl.FixedTime (TimeOnly(0,0,data.TimeInSeconds))
-    let nodes = TimeControl.Nodes data.Nodes
+    let time = UnionType.FixedTime (TimeOnly(0,0,data.TimeInSeconds))
+    let nodes = UnionType.Nodes data.Nodes
     let engineConfigs = 
         data.Engines 
         |> Seq.collect (mapToEngPuzzleConfig data.EngineFolder)
         |> ResizeArray   
     let timeControl = if data.RunWithNodeLimit then nodes else time
-    Analysis.PuzzleRunners.runEretTests 
+    PuzzleRunners.runEretTests 
       timeControl 
       engineConfigs
       data
@@ -351,30 +354,30 @@ module Program =
     let formattedLength = puzzles.Length.ToString("N0")
     printfn $"Loaded {formattedLength} puzzles from {normalizedPath}"
 
-    let puzzleInput = 
-        Puzzle.PuzzleInput.Create(
-            puzzles, 
-            data.MaxRating, 
-            data.MinRating, 
+    let puzzleInput =
+        TypesDef.PuzzleInput.PuzzleInput.Create(
+            puzzles,
+            data.MaxRating,
+            data.MinRating,
             data.RatingGroups,
-            data.PuzzleFilter, 
-            engineConfigs, 
-            1, 
+            data.PuzzleFilter,
+            engineConfigs,
+            1,
             data.SampleSize,
             data.Nodes,
             data.Failed,
             data.Solved,
             data.Concurrency   )
 
-    let update (res: Puzzle.Lichess) =
+    let update (res: Lichess) =
         match res with
-        | Puzzle.PuzzleResult score -> 
+        | PuzzleResult score ->
             let correct = score.Correct
             let total = score.TotalNumber
             let failed = total - correct
             let name = score.Engine
             printfn "Puzzle result for %s: Correct: %d, Failed: %d" name correct failed
-        | Puzzle.Done msg -> printfn "Puzzle done: %s" msg
+        | Done msg -> printfn "Puzzle done: %s" msg
                   
     let types = 
         if String.IsNullOrEmpty(data.Type) || String.IsNullOrWhiteSpace (data.Type.Trim()) then            
@@ -388,40 +391,40 @@ module Program =
         match types with
         | [] -> 
             printfn "No puzzle types specified, defaulting to both policy and value test"
-            Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput,  update)
+            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput,  update)
         | [a] -> 
             printfn "Puzzle type specified: %s" a
             match a with
-            | "policy" -> Analysis.PuzzleRunners.runPolicyHeadTest(puzzleInput, update)
-            | "value" -> Analysis.PuzzleRunners.runValueHeadTest(puzzleInput, update)
-            | "search" -> Analysis.PuzzleRunners.runSearchTests(puzzleInput, update)
+            | "policy" -> PuzzleRunners.runPolicyHeadTest(puzzleInput, update)
+            | "value" -> PuzzleRunners.runValueHeadTest(puzzleInput, update)
+            | "search" -> PuzzleRunners.runSearchTests(puzzleInput, update)
             | _ -> 
                 printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
         | [a;b] ->            
             printfn "Puzzle type specified: %s" data.Type
             match Set.ofList [a; b] with
             | set when set = Set.ofList ["policy"; "search"] -> 
-                Analysis.PuzzleRunners.runPolicyAndSearchTests(puzzleInput, update)
+                PuzzleRunners.runPolicyAndSearchTests(puzzleInput, update)
             | set when set = Set.ofList ["policy"; "value"] -> 
-                Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)                
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)                
             | set when set = Set.ofList ["search"; "value"] -> 
-                Analysis.PuzzleRunners.runValueAndSearchTest(puzzleInput, update) 
+                PuzzleRunners.runValueAndSearchTest(puzzleInput, update) 
             | _ -> 
                 printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
         | [a;b;c] ->            
             printfn "Puzzle type specified: %s" data.Type
             match Set.ofList [a; b; c] with
             | set when set = Set.ofList ["policy"; "value"; "search"] -> 
                 printfn "All three puzzle types specified: %s - running all tests, including search" data.Type
-                Analysis.PuzzleRunners.runAllTests(puzzleInput, update)
+                PuzzleRunners.runAllTests(puzzleInput, update)
             | _ ->
                 printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
         | _ -> 
             printfn "Invalid puzzle type specified: %s - max three options are allowed, defaulting to policy and value test" data.Type
-            Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
+            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
 
     let valueScores = 
         scores 
@@ -447,7 +450,7 @@ module Program =
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
         |> Seq.toList
 
-    let writeToFile (scores: Puzzle.Score seq) (sw:StreamWriter) (boardBm: Chess.Board) (boardAm: Chess.Board) =
+    let writeToFile (scores: Score seq) (sw:StreamWriter) (boardBm: Chess.Board) (boardAm: Chess.Board) =
         for item in scores do
             sw.WriteLine($"\n## Failed puzzles by {item.Engine} (nn: {item.NeuralNet}) - overall performance: {item.PlayerRecord.Rating:F0} - Type: {item.Type} - Theme: {item.Filter} - Nodes: {item.Nodes}\n")
             let sorted =
@@ -628,14 +631,14 @@ module Program =
     if test then      
       try 
         let start = Stopwatch.GetTimestamp()
-        let parsedGames = Parser.FullPGNParser.parsePgnFile TestPath.pgnTest17
+        let parsedGames = ChessLibrary.FullPGNParser.parsePgnFile TestPath.pgnTest17
         let game = parsedGames |> Seq.item 0
         for m in game.Mainline do
             printfn "%s (%s) %s" m.San m.Color m.Comment
         for g in parsedGames do
             if g.GameNumber % 100000 = 0 then
                 if String.IsNullOrEmpty g.Raw then
-                    let raw = Parser.FullPGNParser.toPgnString g
+                    let raw = ChessLibrary.FullPGNParser.toPgnString g
                     printfn "\n%s" raw 
                 else
                     printfn "\n%s" g.Raw                
@@ -717,16 +720,19 @@ module Program =
                 | Verb (Perft (depth, sampleSize)) ->
                     printfn "Running Chess960 PERFT with depth: %d and sample size: %d" depth sampleSize
                     Test.completeFRCPerftVerificationTest depth sampleSize
+                | Verb (PerftFast (depth, sampleSize)) ->
+                    printfn "Running Chess960 PERFT (FAST) with depth: %d and sample size: %d" depth sampleSize
+                    Test.completeFRCPerftVerificationTestFast depth sampleSize
                 | Verb (Analyze fenOrFile) ->
                     let board = Chess.Board()
                     board.LoadFen fenOrFile
-                    let update (engineUpdate: ChessLibrary.TypesDef.Engine.EngineUpdate)  = 
+                    let update (engineUpdate: ChessLibrary.EngineTypes.EngineUpdate)  =
                         match engineUpdate with
-                        | TypesDef.Engine.EngineUpdate.Info (p, info) -> 
+                        | EngineTypes.EngineUpdate.Info (p, info) ->
                             printfn "Info: %s" info
-                        | TypesDef.Engine.EngineUpdate.BestMove bestMove -> 
-                            printfn "Best move: %s" bestMove.MoveHistory                            
-                        | TypesDef.Engine.EngineUpdate.Eval (p,eval) -> 
+                        | EngineTypes.EngineUpdate.BestMove bestMove ->
+                            printfn "Best move: %s" bestMove.MoveHistory
+                        | EngineTypes.EngineUpdate.Eval (p,eval) ->
                             printfn "Eval: %A" eval
                         | _ -> ()
                     printfn "Todo - Analyzing FEN not implemented: %s" fenOrFile
@@ -774,7 +780,8 @@ module Program =
                     BenchmarkRunner.runBenchmark path
                 | Help ->
                     printfn "Help: Available commands are:"
-                    printfn "  - Perft <depth> <sampleSize>"                   
+                    printfn "  - Perft <depth> <sampleSize>"
+                    printfn "  - PerftFast <depth> <sampleSize> (for testing only, skips hash)"
                     printfn "  - PuzzleJson <path>"
                     printfn "  - Eret <path>"
                     printfn "  - Tournament <configFile>"

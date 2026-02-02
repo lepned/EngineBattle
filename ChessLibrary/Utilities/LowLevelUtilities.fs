@@ -4,10 +4,30 @@ open System
 open System.IO
 open System.Text
 open System.Diagnostics
+open System.Collections.Concurrent
 open QBBOperations
-open TypesDef.Position
-open TypesDef.TMove
+open PositionTypes
+open MoveTypes
 open MoveGeneration
+
+/// A simple object pool for StringBuilder instances to reduce allocations.
+type StringBuilderPool(initialCapacity: int, maxCapacity: int) =
+    let pool = ConcurrentQueue<StringBuilder>()
+    let mutable maxCapacity_ = maxCapacity
+    do
+        for _ in 1 .. initialCapacity do
+            pool.Enqueue(StringBuilder())
+    member _.Get() =
+        match pool.TryDequeue() with
+        | true, sb -> sb.Clear() |> ignore; sb
+        | _ -> StringBuilder()
+    member _.Return(sb: StringBuilder) =
+        if sb.Capacity > maxCapacity_ then ()
+        elif pool.Count < maxCapacity_ then pool.Enqueue(sb)
+        else
+            match pool.TryDequeue() with
+            | true, oldSb -> oldSb.Clear() |> ignore; pool.Enqueue(sb)
+            | _ -> ()
 
 module Agents =
 
@@ -94,16 +114,18 @@ module Agents =
       let logWriter = new StreamWriter(logFilePath, true)
       MailboxProcessor.Start(fun inbox ->
           let rec loop () = async {
-              let! msg = inbox.Receive()
-              match msg with
-              | Line line -> 
-                  let logLine = sprintf "[%s] %s" (DateTime.Now.ToString("o")) line
-                  logWriter.WriteLine(logLine)
-                  logWriter.Flush()
-                  return! loop()
-              | Stop -> 
-                  logWriter.Close()
-                  () // Exit the loop
+              try
+                  let! msg = inbox.Receive()
+                  match msg with
+                  | Line line ->
+                      let logLine = sprintf "[%s] %s" (DateTime.Now.ToString("o")) line
+                      logWriter.WriteLine(logLine)
+                      logWriter.Flush()
+                      return! loop()
+                  | Stop ->
+                      logWriter.Dispose()
+              with _ ->
+                  logWriter.Dispose()
           }
           loop ())
   
@@ -204,16 +226,10 @@ module Agents =
       with ex ->
           Console.WriteLine("Exception: " + ex.Message)
 
-  let testUciAgents () =     
-      Console.WriteLine("Usage: ChessEngineAgent <path-to-uci-engine>")
-      printfn "Hello World from F# agents!"   
-      let ceresPath = @"C:/Dev/Chess/Engines/Ceres/v0.97RC3/Ceres.exe"
-      runUciChessEngine(ceresPath)
-
 module ConsoleUtils =
 
-  let positiveInfinitySymbol = "\u221E" // Positive infinity symbol
-  let negativeInfinitySymbol = "\u221E" // Negative infinity symbol
+  let positiveInfinitySymbol = "\u221E" // Positive infinity symbol (∞)
+  let negativeInfinitySymbol = "-\u221E" // Negative infinity symbol (-∞)
   let mutable originalColor = ConsoleColor.Gray
   let mutable originalBGColor = ConsoleColor.Black
 
@@ -230,10 +246,20 @@ module ConsoleUtils =
   let yellowConsole (text: string) = printInColor ConsoleColor.Yellow text
 
 module BoardHelper =
-  
+
   let frcFen = "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-  let normalCastle = ['Q'; 'K'; 'q'; 'k']
+  let normalCastle = Set.ofList ['Q'; 'K'; 'q'; 'k']
+
+  let inline charToPieceType (c: char) =
+    match Char.ToLower c with
+    | 'p' -> uint64 TPieceType.PAWN
+    | 'n' -> uint64 TPieceType.KNIGHT
+    | 'b' -> uint64 TPieceType.BISHOP
+    | 'r' -> uint64 TPieceType.ROOK
+    | 'q' -> uint64 TPieceType.QUEEN
+    | 'k' -> uint64 TPieceType.KING
+    | _ -> failwith $"Invalid piece character in FEN: '{c}'"
 
   let charToNumber (c : char) white =
     let lowerCase = Char.ToLower c
@@ -259,21 +285,7 @@ module BoardHelper =
       elif cur <> '/' then
         let bit = OppSq square
         let pieceside = if Char.IsUpper cur then PositionOps.WHITE else PositionOps.BLACK
-        let mutable piece = 
-          match cur with
-          | 'p' -> uint64 TPieceType.PAWN
-          | 'n' -> uint64 TPieceType.KNIGHT
-          | 'b' -> uint64 TPieceType.BISHOP
-          | 'r' -> uint64 TPieceType.ROOK
-          | 'q' -> uint64 TPieceType.QUEEN
-          | 'k' -> uint64 TPieceType.KING
-          | 'P' -> uint64 TPieceType.PAWN 
-          | 'N' -> uint64 TPieceType.KNIGHT 
-          | 'B' -> uint64 TPieceType.BISHOP 
-          | 'R' -> uint64 TPieceType.ROOK 
-          | 'Q' -> uint64 TPieceType.QUEEN
-          | 'K' -> uint64 TPieceType.KING 
-          | _ -> failwith "Invalid character in FEN"
+        let mutable piece = charToPieceType cur
         pos.P0 <- pos.P0 ||| ((piece &&& 1UL) <<< bit)  //001
         pos.P1 <- pos.P1 ||| (((piece >>> 1) &&& 1UL) <<< bit)  //010
         pos.P2 <- pos.P2 ||| ((piece >>> 2) <<< bit)  //100
@@ -301,7 +313,7 @@ module BoardHelper =
     if fen.[cursor] <> '-' then  
         let mutable i = cursor
         let len = fen.Length
-        if normalCastle |> List.contains fen.[i] then
+        if normalCastle |> Set.contains fen.[i] then
             while i < len && fen.[i] <> ' ' do
                 let cur = fen.[i]
                 match cur with
@@ -323,7 +335,7 @@ module BoardHelper =
                   pos.CastleFlags <- pos.CastleFlags ||| 0x02uy                  
                 elif pos.RookInfo.WhiteQRInitPlacement = (byte)curRookPlacement then
                   pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                elif normalCastle |> List.exists(fun e -> e = cur) then
+                elif Set.contains cur normalCastle then
                   match cur with
                   | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
                   | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
@@ -335,7 +347,7 @@ module BoardHelper =
                   pos.CastleFlags <- pos.CastleFlags ||| 0x20uy                  
                 elif pos.RookInfo.BlackQRInitPlacement = (byte)(curRookPlacement-56) then
                   pos.CastleFlags <- pos.CastleFlags ||| 0x10uy 
-                elif normalCastle |> List.exists(fun e -> e = cur) then
+                elif Set.contains cur normalCastle then
                   match cur with
                   | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
                   | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
@@ -364,126 +376,7 @@ module BoardHelper =
     
   
   let loadFen (fenOption: string option, position: Position outref) =
-    let fen = defaultArg fenOption start
-    let mutable pos = Position.Default
-    pos.EnPassant <- 8uy
-    pos.STM <- PositionOps.WHITE
-    pos.CastleFlags <- 0uy
-    let mutable square = 0
-    let mutable cursor = 0
-    while fen.[cursor] <> ' ' do
-      let cur = fen.[cursor]
-      if cur >= '1' && cur <= '8' then
-          square <- square + (int (cur - '0'))
-      elif cur <> '/' then
-        let bit = OppSq square
-        let pieceside = if Char.IsUpper cur then PositionOps.WHITE else PositionOps.BLACK
-        let mutable piece = 
-          match cur with
-          | 'p' -> uint64 TPieceType.PAWN
-          | 'n' -> uint64 TPieceType.KNIGHT
-          | 'b' -> uint64 TPieceType.BISHOP
-          | 'r' -> uint64 TPieceType.ROOK
-          | 'q' -> uint64 TPieceType.QUEEN
-          | 'k' -> uint64 TPieceType.KING
-          | 'P' -> uint64 TPieceType.PAWN 
-          | 'N' -> uint64 TPieceType.KNIGHT 
-          | 'B' -> uint64 TPieceType.BISHOP 
-          | 'R' -> uint64 TPieceType.ROOK 
-          | 'Q' -> uint64 TPieceType.QUEEN
-          | 'K' -> uint64 TPieceType.KING 
-          | _ -> failwith "Invalid character in FEN"
-        pos.P0 <- pos.P0 ||| ((piece &&& 1UL) <<< bit)  //001
-        pos.P1 <- pos.P1 ||| (((piece >>> 1) &&& 1UL) <<< bit)  //010
-        pos.P2 <- pos.P2 ||| ((piece >>> 2) <<< bit)  //100
-        if pieceside = PositionOps.WHITE then
-            pos.PM <- pos.PM ||| (1UL <<< bit)
-            piece <- piece ||| uint64 PositionOps.BLACK
-        square <- square + 1
-      cursor <- cursor + 1
-
-    cursor <- cursor + 1  
-    let sidetomove = 
-        match fen.[cursor] with
-        | 'w' -> PositionOps.WHITE
-        | 'b' -> PositionOps.BLACK
-        | _ -> failwith "Invalid character in FEN"
-    cursor <- cursor + 2
-    
-    //set the rook positions for rookInfo
-    let (wKr,wQr),(bKr,bQr) = PositionOps.getRookPositionsForCastling &pos
-    pos.RookInfo.WhiteKRInitPlacement <- (byte)wKr 
-    pos.RookInfo.WhiteQRInitPlacement <- (byte)wQr 
-    pos.RookInfo.BlackKRInitPlacement <- (byte)(bKr-56) 
-    pos.RookInfo.BlackQRInitPlacement <- (byte)(bQr-56)
-
-    if fen.[cursor] <> '-' then  
-        let mutable i = cursor
-        let len = fen.Length
-        
-        if normalCastle |> List.contains fen.[i] then
-            while i < len && fen.[i] <> ' ' do
-                let cur = fen.[i]
-                match cur with
-                | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
-                | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy 
-                | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy 
-                | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
-                | _ -> failwith "Invalid character in FEN"
-                i <- i + 1
-            cursor <- i + 1            
-        else
-
-          while i < len && fen.[i] <> ' ' do
-            let cur = fen.[i]
-            let color = if Char.IsUpper cur then true else false
-            let curRookPlacement = charToNumber cur color 
-            
-            match cur with
-            | _ when Char.IsUpper cur -> // Adjust for white's castling flags in Chess960                
-                if pos.RookInfo.WhiteKRInitPlacement = (byte)curRookPlacement then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x02uy                  
-                elif pos.RookInfo.WhiteQRInitPlacement = (byte)curRookPlacement then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                elif normalCastle |> List.exists(fun e -> e = cur) then
-                  match cur with
-                  | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
-                  | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                  | _ -> failwith "Invalid character in FEN"
-                else
-                  failwith "Invalid character in FEN"                  
-            | _ when Char.IsLower cur -> // Adjust for black's castling flags in Chess960
-                if pos.RookInfo.BlackKRInitPlacement = (byte)(curRookPlacement-56) then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x20uy                  
-                elif pos.RookInfo.BlackQRInitPlacement = (byte)(curRookPlacement-56) then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x10uy 
-                elif normalCastle |> List.exists(fun e -> e = cur) then
-                  match cur with
-                  | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
-                  | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
-                  | _ -> failwith "Invalid character in FEN"
-                else
-                  failwith "Invalid character in FEN"                   
-            | '-' -> () // No castling available
-            | _ -> failwith "Invalid character in FEN"
-            i <- i + 1
-        cursor <- i + 1
-
-    else
-        cursor <- cursor + 2
-    if fen.[cursor] <> '-' then  // Read the enpassant column
-        pos.EnPassant <- byte (fen.[cursor] - 'a')
-    cursor <- cursor + 2
-    if fen.Length > cursor then
-      let rest = fen.Substring(cursor).TrimStart().Split(' ')
-      if rest.Length = 2 then
-        pos.Count50 <- byte rest.[0]
-        let ply = uint16 rest.[1]
-        if ply > 0us then
-          pos.Ply <-  (if sidetomove = PositionOps.BLACK then (ply - 1us) * 2us + 1us else (ply - 1us) * 2us) 
-    if sidetomove = PositionOps.BLACK then
-        PositionOps.changeSide (&pos)
-    position <- pos
+    position <- getPosFromFen fenOption
   
   let Illegal (move: TMove inref) (position: _ inref) =
       let from = 1UL <<< int move.From
@@ -551,8 +444,7 @@ module BoardHelper =
             legal <- false
 
         mask <- PositionOps.queenOrBishops &position &&& newopposing
-        if legal && mask <> 0UL && (mask &&&  GenBishop(kingsq, newoccupation)) > 0UL then
-            let bishops = GenBishop(kingsq, newoccupation)
+        if legal && mask <> 0UL && (mask &&& GenBishop(kingsq, newoccupation)) > 0UL then
             legal <- false
 
         mask <- PositionOps.queenOrRooks &position &&& newopposing
@@ -566,16 +458,6 @@ module BoardHelper =
           true
       else
         true
-  
-  //only testing and debugging
-  let flipVertical (bitboard: uint64) =
-    let k1 = 0x00FF00FF00FF00FFUL
-    let k2 = 0x0000FFFF0000FFFFUL
-    let x = bitboard
-    let x = ((x >>> 8) &&& k1) ||| ((x &&& k1) <<< 8)
-    let x = ((x >>> 16) &&& k2) ||| ((x &&& k2) <<< 16)
-    let x = (x >>> 32) ||| (x <<< 32)
-    x
   
   let posToFen (position : Position) =
     let stm = position.STM

@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using ChessLibrary;
-using static ChessLibrary.TypesDef.PGNTypes;
+using static ChessLibrary.PGNTypes;
 
 namespace WebGUI.Plotting
 {
@@ -184,7 +184,7 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            var (whiteMoves, blackMoves) = PGNExtractor.extractWhiteAndBlackEngineStats(Game);
             
             PlayerWhiteData =
               whiteMoves
@@ -202,7 +202,7 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            var (whiteMoves, blackMoves) = PGNExtractor.extractWhiteAndBlackEngineStats(Game);
             
             PlayerWhiteData =
               whiteMoves
@@ -222,7 +222,7 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            var (whiteMoves, blackMoves) = PGNExtractor.extractWhiteAndBlackEngineStats(Game);
             
             PlayerWhiteData =
               whiteMoves
@@ -244,7 +244,7 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;            
-            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);            
+            var (whiteMoves, blackMoves) = PGNExtractor.extractWhiteAndBlackEngineStats(Game);            
             PlayerWhiteData =
               whiteMoves
               .Select(e => PseudoLogTransform(e.wv)).ToArray();
@@ -263,7 +263,7 @@ namespace WebGUI.Plotting
             var currIdx = currentMoveIndex;
             ClearData(PlayerWhite, PlayerBlack);
             currentMoveIndex = currIdx;
-            var (whiteMoves, blackMoves) = Parser.PGNExtractor.extractWhiteAndBlackEngineStats(Game);
+            var (whiteMoves, blackMoves) = PGNExtractor.extractWhiteAndBlackEngineStats(Game);
             PlayerWhiteData =
               whiteMoves
               .Where(e => e.mt >= minMoveTimeInMs)

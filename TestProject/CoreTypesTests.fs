@@ -2,11 +2,11 @@
 
 open Xunit
 open System
-open ChessLibrary.TypesDef.TimeControl
+open ChessLibrary.TimeControlTypes
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.TypesDef.Misc
-open ChessLibrary.TypesDef.PGNTypes
-open ChessLibrary.TypesDef
+open ChessLibrary.MiscTypes
+open ChessLibrary.PGNTypes
+open ChessLibrary.EngineTypes
 open ChessLibrary.TypesDef.Tournament
 
 // Test for EvalType
@@ -71,7 +71,7 @@ let ``stringToResultReason throws on invalid string`` () =
 let ``GameMetadata Empty initializes correctly`` () =
     let metadata = GameMetadata.Empty
     Assert.Equal("", metadata.Event)
-    Assert.Equal(Misc.ResultReason.NotStarted, metadata.Reason)
+    Assert.Equal(ResultReason.NotStarted, metadata.Reason)
 
 [<Fact>]
 let ``GameMetadata Opening returns correct value`` () =

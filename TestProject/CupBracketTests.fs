@@ -6,9 +6,9 @@ open System.IO
 open Xunit
 open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.TypesDef.PGNTypes
-open ChessLibrary.TypesDef.Cup
-open ChessLibrary.Utilities.PairingHelper
+open ChessLibrary.PGNTypes
+open ChessLibrary.CupTypes
+open ChessLibrary.TournamentPairing.PairingHelper
 open System.Text.Json
 
 let private mkEngine name =
@@ -161,7 +161,7 @@ let ``cup planned pairings continue after odd game`` () =
     let playerB = mkRatedPlayer "B" 2900
     let openings = [ mkOpening 1; mkOpening 2; mkOpening 3 ]
     let matchInfo = mkCupMatch 2 playerA playerB
-    let openingHash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame openings.[0]
+    let openingHash = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame openings.[0]
     matchInfo.Games.Add
         { GameNr = 1
           White = playerA.Name
@@ -185,7 +185,7 @@ let ``cup tiebreak picks unused opening when available`` () =
     let used =
         [ openings.[0]; openings.[1] ]
         |> Seq.map (fun o ->
-            ChessLibrary.Utilities.Hash.computeOpeningHashFromGame o)
+            ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame o)
         |> Set.ofSeq
     let idx = nextUnusedOpeningIndex used openings 0
     Assert.Equal(2, idx)
@@ -454,7 +454,7 @@ let ``cup tiebreak cycles openings when all are exhausted`` () =
     let openings = [ mkOpening 1; mkOpening 2 ]
     let allUsed =
         openings
-        |> Seq.map (fun o -> ChessLibrary.Utilities.Hash.computeOpeningHashFromGame o)
+        |> Seq.map (fun o -> ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame o)
         |> Set.ofSeq
     // When all openings used, should wrap around using modular index
     let idx = 3

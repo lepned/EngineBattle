@@ -1087,8 +1087,8 @@
 	}
 
 	private bool TournamentJsonOk() =>
-	ChessLibrary.Utilities.Validation.validateTournament(tournament) is Utilities.Validation.ValidationResult res &&
-	res == Utilities.Validation.ValidationResult.Ok;
+	ChessLibrary.Configuration.Validation.validateTournament(tournament) is ChessLibrary.Configuration.Validation.ValidationResult res &&
+	res == ChessLibrary.Configuration.Validation.ValidationResult.Ok;
 
 	private async Task ValidateTournamentInput()
 	{
@@ -1302,11 +1302,11 @@
 			await searchInfoPlot?.ResetPlot(true);
 	}
 
-	private async void Update(ChessLibrary.Tournament.Match.Update update)
+	private async void Update(TournamentTypes.Update update)
 	{
 		switch (update)
 		{
-			case ChessLibrary.Tournament.Match.Update.GameStarted player:
+			case TournamentTypes.Update.GameStarted player:
 				await InvokeAsync(StartTimer);
 				ResetGameState();
 				DrawP = tournament.Adjudication.DrawOption.DrawMoveLength * 2;
@@ -1327,7 +1327,7 @@
 				await InvokeAsync(StateHasChanged);
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.EndOfGame e:
+			case TournamentTypes.Update.EndOfGame e:
 				if (tournament.VerboseLogging)
 					logger.LogDebug($"Game over: {e.Result.Reason} - deviation counter: {tournament.DeviationCounter}");
 				tournamentGamesHeader = $"Last result: {e.Result.Reason}";
@@ -1339,7 +1339,7 @@
 				moveHistory = mh;
 				await Task.Delay(200);
 				await InvokeAsync(() => streamingBoard.UpdateMoveHistory(mh));
-				if (e.Result.Reason != Misc.ResultReason.Cancel)
+				if (e.Result.Reason != ResultReason.Cancel)
 				{
 					results.Insert(0, e.Result);
 					infoBannerInfo.ResultTxt = e.Result.Result;
@@ -1356,7 +1356,7 @@
 				table = runner.GenerateStatsCrosstable(results);
 				await UpdateSpeed(0);
 				await InvokeAsync(StateHasChanged);
-				var resLog = OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
+				var resLog = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
 				Console.WriteLine(resLog);
 				if (tournament.VerboseLogging)
 					logger.LogInformation(resLog);
@@ -1378,7 +1378,7 @@
 				}
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.BestMove b:
+			case TournamentTypes.Update.BestMove b:
 				moveHistory = b.Info.MoveHistory;
 				FinalStatusReceived(b.Status);
 				await streamingBoard.OnNotifyMoveAndFen(b.Info.MoveAndFen);
@@ -1436,18 +1436,18 @@
 				await DoChartUpdates();
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.Info i:
+			case TournamentTypes.Update.Info i:
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.Eval e:
+			case TournamentTypes.Update.Eval e:
 				//SetSpeedFactor();
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.Status s:
+			case TournamentTypes.Update.Status s:
 				await StatusReceived(s.Engine);
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.Time t:
+			case TournamentTypes.Update.Time t:
 				if (t.Player == blackPlayer)
 				{
 					blackTimeOnly = t.Time;
@@ -1460,7 +1460,7 @@
 				}
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.NNSeq n:
+			case TournamentTypes.Update.NNSeq n:
 				try
 				{
 					if (runWithLogLiveStats && n.NNSeq.Count > 0)
@@ -1482,7 +1482,7 @@
 
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.StartOfGame start:
+			case TournamentTypes.Update.StartOfGame start:
 				try
 				{
 					gameResult = string.Empty;
@@ -1514,7 +1514,7 @@
 						}
 						else
 						{
-							var (tTime, _) = ChessLibrary.Tournament.TournamentUtils.estimateTournamentAndGameTime(gamesLeft, tournament, allPairings);
+							var (tTime, _) = ChessLibrary.TournamentRunners.TournamentUtils.estimateTournamentAndGameTime(gamesLeft, tournament, allPairings);
 							duration = tTime;
 						}
 					}
@@ -1552,7 +1552,7 @@
 
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.StartOfTournament tournyStart:
+			case TournamentTypes.Update.StartOfTournament tournyStart:
 				try
 				{
 					startTournyInfo = tournyStart.Info;
@@ -1572,7 +1572,7 @@
 					{
 						await UpdateSpeed(0);
 					}
-					var consoleInfo = OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
+					var consoleInfo = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
 					Console.WriteLine(consoleInfo);
 					if (tournament.VerboseLogging)
 						logger.LogInformation(consoleInfo);
@@ -1586,7 +1586,7 @@
 				}
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.EndOfTournament tourny:
+			case TournamentTypes.Update.EndOfTournament tourny:
 				try
 				{
 					if (File.Exists(tourny.Info.PgnOutPath))
@@ -1621,7 +1621,7 @@
 						}
 						Console.WriteLine(durMsg);
 						tournament.PrintTournamentSummary();
-						var consoleRes = OrdoHelper.getResultsAndPairsInConsoleFormat(scoreTable, table);
+						var consoleRes = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(scoreTable, table);
 						Console.WriteLine(consoleRes);
 						if (tournament.VerboseLogging)
 							logger.LogDebug(consoleRes);
@@ -1653,12 +1653,12 @@
 					{
 						var path = Path.Combine(Environment.ContentRootPath, "wwwroot", "swiss_state.json");
 						if (File.Exists(path))						
-							Utilities.ConsoleHelper.writeSwissPairingsPerRoundFromFile(path);
+							ChessLibrary.Configuration.ConsoleHelper.writeSwissPairingsPerRoundFromFile(path);
 					}
 				}
 				break;
 
-			case ChessLibrary.Tournament.Match.Update.MessagesFromEngine sender:
+			case TournamentTypes.Update.MessagesFromEngine sender:
 				MessagesFromCeres.Insert(0, sender.Message);
 				if (MessagesFromCeres.Count > 10)
 				{
@@ -1666,14 +1666,14 @@
 					MessagesFromCeres.Remove(last);
 				}
 				break;
-			case ChessLibrary.Tournament.Match.Update.PairingList list:
+			case TournamentTypes.Update.PairingList list:
 				runner.Pairings = list.Pairings;
 				pairings = list.Pairings;
 				break;
-			case ChessLibrary.Tournament.Match.Update.TotalNumberOfPairs games:
+			case TournamentTypes.Update.TotalNumberOfPairs games:
 				totalNumberOfPairs = games.PairingsNumber;
 				break;
-			case ChessLibrary.Tournament.Match.Update.RoundNr data:
+			case TournamentTypes.Update.RoundNr data:
 				roundNr = data.Round;
 				break;
 			case var cupUpdate when cupUpdate.IsCupBracketUpdated:
@@ -1701,7 +1701,7 @@
 					}
 				}
 				break;
-			case ChessLibrary.Tournament.Match.Update.PonderStatus ponderStatus:
+			case TournamentTypes.Update.PonderStatus ponderStatus:
 				await PonderStatusReceived(ponderStatus.Engine);
 				break;
 		}
@@ -1805,7 +1805,7 @@
 			var startPos = info.StartPos?.Trim() ?? string.Empty;
 			var allPairings = runner.GetAllPairings;
 
-			var games = runner.GetPGNGames() ?? new List<ChessLibrary.TypesDef.PGNTypes.PgnGame>();
+			var games = runner.GetPGNGames() ?? new List<ChessLibrary.PGNTypes.PgnGame>();
 			var previousPairGame = games
 				.Where(g =>
 				{					
@@ -2469,7 +2469,7 @@
 		var engines = tournament.EngineSetup.Engines.Where(e => e.Name.ToLower().Contains("lc0"));
 		foreach (var config in engines)
 		{
-			var res = Utilities.Engine.createLC0BenchmarkString(config);
+			var res = EngineProtocol.Engine.createLC0BenchmarkString(config);
 			var msg = $"{config.Name}\n{res}";
 			logger.LogInformation(msg);
 		}

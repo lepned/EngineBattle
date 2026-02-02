@@ -4,10 +4,9 @@
 @using System.Collections.Concurrent
 @using WebGUI.Services
 @using WebGUI.Components.Layout.VisualizationLayout
-@using static ChessLibrary.TypesDef.EPD
-@using static ChessLibrary.Analysis.PuzzleEngineAnalysis
-@using static ChessLibrary.TypesDef
-@using static ChessLibrary.TypesDef.Puzzle
+@using static ChessLibrary.EPDTypes
+@using static ChessLibrary.PuzzleRunners
+@using static ChessLibrary.PuzzleTypes
 
 @inject ILogger<EretPuzzles> logger
 
@@ -123,7 +122,7 @@
     int solvedNumber = 3;
     private string fullPath = string.Empty;
     private string finalMessage = "";
-    private EPD.EPDEntry epd = EPD.EPDEntry.Empty;
+    private EPDTypes.EPDEntry epd = EPDTypes.EPDEntry.Empty;
     private string outputFileFolder = string.Empty;
     private EretConfig data = EretConfig.empty;
     private bool isProcessing = false;
@@ -154,7 +153,7 @@
                     var eretResults = allRes.Item.ToList();
                     Scores.Clear();
                     Scores.AddRange(eretResults);
-                    var normalizedFolder = Utilities.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
+                    var normalizedFolder = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
                     var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
                     var fileName = Path.Combine(normalizedFolder, $"failedEretPuzzles_{datePart}.epd");
                     if (Directory.Exists(normalizedFolder))
@@ -163,7 +162,7 @@
                         {
                             var boardBm = new Chess.Board();
                             var boardAm = new Chess.Board();
-                            Analysis.PuzzleRunners.writeToFile(data, eretResults, sw, boardBm, boardAm);
+                            PuzzleRunners.writeToFile(data, eretResults, sw, boardBm, boardAm);
                             Console.WriteLine($"Failed puzzles written to {fileName}");
                         }
                     }
@@ -184,7 +183,7 @@
                 var table = resConsole.Item;
                 Console.WriteLine(Environment.NewLine);
                 Console.WriteLine(table);
-                var escaped = Utilities.JSONParser.escapeString(outputFileFolder);
+                var escaped = Configuration.JSONParser.escapeString(outputFileFolder);
 
                 if (Directory.Exists(escaped))
                 {
@@ -220,14 +219,14 @@
             await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
         }
 
-        data = Utilities.JSONParser.loadEretConfig(fullPath);
+        data = Configuration.JSONParser.loadEretConfig(fullPath);
         puzzleFileName = Path.GetFileName(data.PuzzleFile);
         finalMessage = $"Running tests on {puzzleFileName}";
         await InvokeAsync(StateHasChanged);
         outputFileFolder = data.FailedPuzzlesOutputFolder;
         // Build engine configs
         var engineConfigs = data.Engines
-          .SelectMany(e => Utilities.JSONParser.mapToEngPuzzleConfig(data.EngineFolder, e))
+          .SelectMany(e => Configuration.JSONParser.mapToEngPuzzleConfig(data.EngineFolder, e))
           .ToList();
 
         List<ERETResults> results = new();
@@ -236,15 +235,15 @@
           {
               try
               {
-                  var timeConfig = TimeControl.TimeControlCommands.getFixedTime(new TimeOnly(0, 0, data.TimeInSeconds));
-                  var nodesConfig = TimeControl.TimeControlCommands.getNodeTime(data.Nodes);
+                  var timeConfig = TimeControlTypes.TimeControlCommands.getFixedTime(new TimeOnly(0, 0, data.TimeInSeconds));
+                  var nodesConfig = TimeControlTypes.TimeControlCommands.getNodeTime(data.Nodes);
                   if (data.RunWithNodeLimit)
                   {
-                      results = Analysis.PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update);
+                      results = PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update);
                   }
                   else
                   {
-                      results = Analysis.PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update);
+                      results = PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update);
                   }
               }
               catch (Exception ex)

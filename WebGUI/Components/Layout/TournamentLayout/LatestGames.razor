@@ -30,7 +30,7 @@ style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
               <td class="data-cell">@context.Moves</td>
               <td class="data-cell">@context.Result</td>
               <td class="data-cell">@context.Reason</td>
-              <td class="data-cell">@(Formatting.formatMoveTime(context.GameTime))</td>
+              <td class="data-cell">@(GameAnalysis.Formatting.formatMoveTime(context.GameTime))</td>
             </tr>
           }
         }

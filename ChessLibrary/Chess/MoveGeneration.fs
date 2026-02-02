@@ -4,8 +4,8 @@ module ChessLibrary.MoveGeneration
 open System
 open System.Text
 open ChessLibrary.QBBOperations
-open TypesDef.Position
-open TypesDef.TMove
+open PositionTypes
+open MoveTypes
 
 //reverse a binary string
 let binaryReversed (binary:string) = System.String(Array.rev (binary.ToCharArray()))
@@ -28,7 +28,7 @@ let inline GenBishop(sq:int, occupation:uint64) =
     ((0x8102040810204081UL >>> (63 ^^^ int (LSB((0x8102040810204081UL <<< sq) &&& (occupation ||| 0xFF01010101010101UL))))) &&&
     (0x8102040810204081UL <<< int (MSB((0x8102040810204081UL >>> (63 ^^^ sq)) &&& (occupation ||| 0x80808080808080FFUL))))))
 
-let BBPieces (piece: TPieceType, position: Position inref) =
+let inline BBPieces (piece: TPieceType, position: Position inref) =
     match piece with
     | TPieceType.PAWN -> PositionOps.pawns &position
     | TPieceType.KNIGHT -> PositionOps.knights &position
@@ -38,7 +38,7 @@ let BBPieces (piece: TPieceType, position: Position inref) =
     | TPieceType.KING -> PositionOps.kings &position
     | _ -> 0UL
 
-let BBDestinations (piece: TPieceType, sq: int, occupation: uint64) =
+let inline BBDestinations (piece: TPieceType, sq: int, occupation: uint64) =
     match piece with
     | TPieceType.KNIGHT -> KnightDest.[sq]
     | TPieceType.BISHOP -> GenBishop(sq, occupation)
@@ -156,17 +156,17 @@ let inline canKingReachShortRook (pos:Position inref) =
     let occRow1WithoutKingAndRook = PositionOps.occupation &pos &&& QBBOperations.firstRank &&& (~~~((1UL <<< kingSq) ||| (1UL <<< rookShort)))
     ShortRookKingMask[rookShort][kingSq] &&& occRow1WithoutKingAndRook = 0UL
 
-let generateQuiets (moves: TMove array inref) (index: int outref) (position : _ byref) isFRC =        
+let generateQuiets (moves: TMove Span) (index: int outref) (position : _ inref) isFRC =
     let occupation = PositionOps.occupation &position
-    
+
     // generate moves from king to knight
     for piece in TPieceType.pieceTraversal do
-      
-      //generate moves for every piece of the same type of the side to move      
+
+      //generate moves for every piece of the same type of the side to move
       let mutable pieces = BBPieces(piece, &position) &&& PositionOps.sideToMove &position
       while (pieces <> 0UL) do
         let square = int (LSB(pieces));
-        
+
         // for every destinations on a free square generate a move
         let mutable destinations = ~~~occupation &&& BBDestinations(piece, square, occupation);
         while (destinations <> 0UL) do
@@ -185,7 +185,7 @@ let generateQuiets (moves: TMove array inref) (index: int outref) (position : _ 
       push1 <- ClearLSB push1
 
       //* two pawns push */
-    let mutable push2 = (onePush <<< 8) &&& ~~~occupation &&& 0x00000000FF000000UL    
+    let mutable push2 = (onePush <<< 8) &&& ~~~occupation &&& 0x00000000FF000000UL
     while (push2 <> 0UL) do
       let square = int (LSB push2);
       moves.[index] <-  { MoveType = TPieceType.PAWN; From = byte (square - 16); To = byte square; Promotion = TPieceType.EMPTY }
@@ -194,143 +194,57 @@ let generateQuiets (moves: TMove array inref) (index: int outref) (position : _ 
 
     // check if long castling is possible */
     if (PositionOps.CanCastleLM &position && canKingReachLongRook &position) then
-        let longRookSq = 
+        let longRookSq =
           if position.STM = PositionOps.WHITE then
             position.RookInfo.WhiteQRInitPlacement
           else
             position.RookInfo.BlackQRInitPlacement
         let kingSq = LSB(PositionOps.kings &position &&& position.PM) |> int
 
-        let opposing = PositionOps.opposing &position      
-        let rookOcc = getRookMaskWithOccupancy kingSq 2 occupation
-        let bishopOcc = getBishopMaskWithOccupancy kingSq 2 occupation
-        
-        let knightAttacks = (getKnightMask kingSq 2) &&& PositionOps.knights &position
-        let pawnAttacks = (getPawnMask kingSq 2) &&& PositionOps.pawns &position
-        let kingAttacks = (getKingMask kingSq 2) &&& PositionOps.kings &position
-        let rookBishop = (rookOcc &&& PositionOps.queenOrRooks &position) ||| (bishopOcc &&& PositionOps.queenOrBishops &position)
-        let attacks = (rookBishop ||| knightAttacks ||| pawnAttacks ||| kingAttacks) &&& opposing
-        if attacks = 0UL then          
-          if isFRC then
-            moves.[index] <-  { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = byte longRookSq; Promotion = TPieceType.EMPTY }
-            index <- index + 1
-          else
-            moves.[index] <-  { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = 2uy; Promotion = TPieceType.EMPTY }
-            index <- index + 1       
-          
-    if (PositionOps.CanCastleSM &position && canKingReachShortRook &position) then
-        let shortRookSq = MSB (PositionOps.rooksM &position) |> int
-        let kingSq = LSB(PositionOps.kings &position &&& position.PM) |> int      
         let opposing = PositionOps.opposing &position
-        let rookOcc = getRookMaskWithOccupancy kingSq 6 occupation
-        let bishopOcc = getBishopMaskWithOccupancy kingSq 6 occupation      
-        let knightAttacks = (getKnightMask kingSq 6) &&& PositionOps.knights &position
-        let pawnAttacks = (getPawnMask kingSq 6) &&& PositionOps.pawns &position
-        let kingAttacks = (getKingMask kingSq 6) &&& PositionOps.kings &position
-        let rookBishop = (rookOcc &&& PositionOps.queenOrRooks &position) ||| (bishopOcc &&& PositionOps.queenOrBishops &position)
-        let attacks = (rookBishop ||| knightAttacks ||| pawnAttacks ||| kingAttacks) &&& opposing
-        if attacks = 0UL then 
-          if isFRC then
-            moves.[index] <- { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = byte shortRookSq; Promotion = TPieceType.EMPTY }
-            index <- index + 1            
-          else
-            moves.[index] <- { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = 6uy; Promotion = TPieceType.EMPTY }
-            index <- index + 1      
-
-
-let generateQuietsInSpan (moves: TMove Span) (index: int outref) (position : _ inref) isFRC =            
-    let occupation = PositionOps.occupation &position
-    
-    // generate moves from king to knight
-    for piece in TPieceType.pieceTraversal do
-      
-      //generate moves for every piece of the same type of the side to move      
-      let mutable pieces = BBPieces(piece, &position) &&& PositionOps.sideToMove &position
-      while (pieces <> 0UL) do
-        let square = int (LSB(pieces));
-        
-        // for every destinations on a free square generate a move
-        let mutable destinations = ~~~occupation &&& BBDestinations(piece, square, occupation);
-        while (destinations <> 0UL) do
-            moves.[index] <-  { MoveType = piece; From = byte square; To = byte (LSB(destinations)); Promotion = TPieceType.EMPTY }
-            index <- index + 1
-            destinations <- ClearLSB destinations
-        pieces <- ClearLSB pieces
-
-  //* one pawns push */
-    let onePush = (((PositionOps.pawns &position &&& PositionOps.sideToMove &position) <<< 8) &&& ~~~occupation) &&& 0x00FFFFFFFFFFFFFFUL
-    let mutable push1 = onePush
-    while (push1 <> 0UL) do
-      let square = int (LSB push1)
-      moves.[index] <-  { MoveType = TPieceType.PAWN; From = byte (square - 8); To = byte square; Promotion = TPieceType.EMPTY }
-      index <- index + 1
-      push1 <- ClearLSB push1
-
-      //* two pawns push */
-    let mutable push2 = (onePush <<< 8) &&& ~~~occupation &&& 0x00000000FF000000UL    
-    while (push2 <> 0UL) do
-      let square = int (LSB push2);
-      moves.[index] <-  { MoveType = TPieceType.PAWN; From = byte (square - 16); To = byte square; Promotion = TPieceType.EMPTY }
-      index <- index + 1
-      push2 <- ClearLSB push2
-
-    // check if long castling is possible */
-    if (PositionOps.CanCastleLM &position && canKingReachLongRook &position) then        
-        let longRookSq = 
-          if position.STM = PositionOps.WHITE then
-            position.RookInfo.WhiteQRInitPlacement
-          else
-            position.RookInfo.BlackQRInitPlacement
-        let kingSq = LSB(PositionOps.kings &position &&& position.PM) |> int
-
-        let opposing = PositionOps.opposing &position      
         let rookOcc = getRookMaskWithOccupancy kingSq 2 occupation
         let bishopOcc = getBishopMaskWithOccupancy kingSq 2 occupation
-        
+
         let knightAttacks = (getKnightMask kingSq 2) &&& PositionOps.knights &position
         let pawnAttacks = (getPawnMask kingSq 2) &&& PositionOps.pawns &position
         let kingAttacks = (getKingMask kingSq 2) &&& PositionOps.kings &position
         let rookBishop = (rookOcc &&& PositionOps.queenOrRooks &position) ||| (bishopOcc &&& PositionOps.queenOrBishops &position)
         let attacks = (rookBishop ||| knightAttacks ||| pawnAttacks ||| kingAttacks) &&& opposing
-        if attacks = 0UL then          
+        if attacks = 0UL then
           if isFRC then
             moves.[index] <-  { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = byte longRookSq; Promotion = TPieceType.EMPTY }
             index <- index + 1
-            //moves.[index] <-  { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = 2uy; Promotion = TPieceType.EMPTY }
-            //index <- index + 1  
           else
             moves.[index] <-  { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = 2uy; Promotion = TPieceType.EMPTY }
-            index <- index + 1       
-          
+            index <- index + 1
+
     if (PositionOps.CanCastleSM &position && canKingReachShortRook &position) then
-        let shortRookSq = 
+        let shortRookSq =
           if position.STM = PositionOps.WHITE then
             position.RookInfo.WhiteKRInitPlacement
           else
             position.RookInfo.BlackKRInitPlacement
-        let kingSq = LSB(PositionOps.kings &position &&& position.PM) |> int      
+        let kingSq = LSB(PositionOps.kings &position &&& position.PM) |> int
         let opposing = PositionOps.opposing &position
         let rookOcc = getRookMaskWithOccupancy kingSq 6 occupation
-        let bishopOcc = getBishopMaskWithOccupancy kingSq 6 occupation      
+        let bishopOcc = getBishopMaskWithOccupancy kingSq 6 occupation
         let knightAttacks = (getKnightMask kingSq 6) &&& PositionOps.knights &position
         let pawnAttacks = (getPawnMask kingSq 6) &&& PositionOps.pawns &position
         let kingAttacks = (getKingMask kingSq 6) &&& PositionOps.kings &position
         let rookBishop = (rookOcc &&& PositionOps.queenOrRooks &position) ||| (bishopOcc &&& PositionOps.queenOrBishops &position)
         let attacks = (rookBishop ||| knightAttacks ||| pawnAttacks ||| kingAttacks) &&& opposing
-        if attacks = 0UL then 
+        if attacks = 0UL then
           if isFRC then
             moves.[index] <- { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = byte shortRookSq; Promotion = TPieceType.EMPTY }
-            index <- index + 1  
-            //moves.[index] <- { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = 6uy; Promotion = TPieceType.EMPTY }
-            //index <- index + 1
+            index <- index + 1
           else
             moves.[index] <- { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSq; To = 6uy; Promotion = TPieceType.EMPTY }
             index <- index + 1
 
-let generateCaptures (moves: TMove array inref) (index: int outref) (position : _ byref) = 
+let generateCaptures (moves: TMove Span) (index: int outref) (position : Position inref) =
     let mutable occupation = PositionOps.occupation &position
     let opposing = PositionOps.opposing &position
-    
+
     // generate moves from king to knight
     for piece in TPieceType.pieceTraversal do
     // generate moves for every piece of the same type of the side to move
@@ -354,7 +268,7 @@ let generateCaptures (moves: TMove array inref) (index: int outref) (position : 
       index <- index + 1
       rpc <- ClearLSB rpc
 
-    //left pawn captures (lpc)    
+    //left pawn captures (lpc)
     let mutable lpc = (pawns <<< 7) &&& 0x007F7F7F7F7F7F7FUL &&& opposing
     while (lpc <> 0UL) do
       let square = int (LSB lpc)
@@ -372,7 +286,7 @@ let generateCaptures (moves: TMove array inref) (index: int outref) (position : 
           moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE; From = byte (square - 9UL); To = byte square; Promotion = piece }
           index <- index + 1
         promoL <- ClearLSB promoL
-  
+
       //right promo captures
       let mutable promoR = (pawns <<< 7) &&& 0x7F00000000000000UL  &&& opposing
       while (promoR <> 0UL) do
@@ -381,7 +295,7 @@ let generateCaptures (moves: TMove array inref) (index: int outref) (position : 
           moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE; From = byte (square - 7); To = byte square; Promotion = piece }
           index <- index + 1
         promoR <- ClearLSB promoR
-    
+
       // no capture promotions
       let mutable promoNoC = (pawns <<< 8) &&& ~~~occupation &&& 0xFF00000000000000UL
       while (promoNoC <> 0UL) do
@@ -394,81 +308,7 @@ let generateCaptures (moves: TMove array inref) (index: int outref) (position : 
     if (position.EnPassant <> 8uy) then
       let mutable ep = pawns &&& EnPassant[int position.EnPassant]
       while (ep <> 0UL) do
-        let square = int (LSB ep)        
-        moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.EP ||| TPieceType.CAPTURE; From = byte square; To = (40uy + PositionOps.enPass(&position)); Promotion = TPieceType.EMPTY }
-        index <- index + 1
-        ep <- ClearLSB ep
-
-
-let generateCapturesInSpan (moves: TMove Span) (index: int outref) (position : Position inref) =     
-    //let moves = moves.Span
-    let mutable occupation = PositionOps.occupation &position
-    let opposing = PositionOps.opposing &position
-    
-    // generate moves from king to knight
-    for piece in TPieceType.pieceTraversal do
-    // generate moves for every piece of the same type of the side to move
-      let mutable pieces = BBPieces(piece, &position) &&& PositionOps.sideToMove &position
-      while (pieces <> 0UL) do
-        let square = int (LSB pieces);
-        // for every destinations on a free square generate a move
-        let mutable destinations = opposing &&& BBDestinations(piece, square, occupation)
-        while (destinations <> 0UL) do
-            moves.[index] <-  { MoveType = piece ||| TPieceType.CAPTURE; From = byte square; To = byte (LSB destinations); Promotion = TPieceType.EMPTY }
-            index <- index + 1
-            destinations <- ClearLSB destinations
-        pieces <- ClearLSB pieces
-
-    //right pawn captures (rpc)
-    let pawns = PositionOps.pawns &position &&& PositionOps.sideToMove &position
-    let mutable rpc = (pawns <<< 9) &&& 0x00FEFEFEFEFEFEFEUL &&& opposing
-    while (rpc <> 0UL) do
-      let square = int (LSB rpc)
-      moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.CAPTURE; From = byte (square - 9); To = byte square; Promotion = TPieceType.EMPTY }
-      index <- index + 1
-      rpc <- ClearLSB rpc
-
-    //left pawn captures (lpc)    
-    let mutable lpc = (pawns <<< 7) &&& 0x007F7F7F7F7F7F7FUL &&& opposing
-    while (lpc <> 0UL) do
-      let square = int (LSB lpc)
-      moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.CAPTURE; From = byte (square - 7); To = byte square; Promotion = TPieceType.EMPTY }
-      index <- index + 1
-      lpc <- ClearLSB lpc
-
-    // Generate pawn promotions
-    if (pawns &&& 0x00FF000000000000UL) <> 0UL then
-      //left promo captures
-      let mutable promoL = (pawns <<< 9) &&& 0xFE00000000000000UL &&& opposing
-      while (promoL <> 0UL) do
-        for piece in TPieceType.piecePromoTraversal do
-          let square = LSB promoL
-          moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE; From = byte (square - 9UL); To = byte square; Promotion = piece }
-          index <- index + 1
-        promoL <- ClearLSB promoL
-  
-      //right promo captures
-      let mutable promoR = (pawns <<< 7) &&& 0x7F00000000000000UL  &&& opposing
-      while (promoR <> 0UL) do
-        for piece in TPieceType.piecePromoTraversal do
-          let square = int (LSB promoR)
-          moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE; From = byte (square - 7); To = byte square; Promotion = piece }
-          index <- index + 1
-        promoR <- ClearLSB promoR
-    
-      // no capture promotions
-      let mutable promoNoC = (pawns <<< 8) &&& ~~~occupation &&& 0xFF00000000000000UL
-      while (promoNoC <> 0UL) do
-        for piece in TPieceType.piecePromoTraversal do
-          let square = int (LSB promoNoC)
-          moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO; From = byte (square - 8); To = byte square; Promotion = piece }
-          index <- index + 1
-        promoNoC <- ClearLSB promoNoC
-
-    if (position.EnPassant <> 8uy) then
-      let mutable ep = pawns &&& EnPassant[int position.EnPassant]
-      while (ep <> 0UL) do
-        let square = int (LSB ep)        
+        let square = int (LSB ep)
         moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.EP ||| TPieceType.CAPTURE; From = byte square; To = (40uy + PositionOps.enPass(&position)); Promotion = TPieceType.EMPTY }
         index <- index + 1
         ep <- ClearLSB ep

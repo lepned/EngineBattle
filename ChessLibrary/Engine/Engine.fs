@@ -9,13 +9,14 @@ open System.Collections.Generic
 open System.Threading
 open System.Text.Json
 open Microsoft.FSharp.Core.Operators.Unchecked
-open Utilities
+open Configuration
+open EngineProtocol
 open LowLevelUtilities
 open TypesDef.CoreTypes
-open TypesDef.Engine
-open TypesDef.TMove
-open TypesDef.Position
-open TypesDef.TimeControl
+open EngineTypes
+open MoveTypes
+open PositionTypes
+open ChessLibrary.TimeControlTypes
 open Chess.BoardUtils
 open Microsoft.Extensions.Logging
 open ChessLibrary.WinboardIntegration
@@ -41,8 +42,8 @@ module Engine =
 
       let mutable state = EngineState.Start
       let mutable numberOfNodes = 0L
-      let mutable evalList : TypesDef.Misc.EvalType list = []
-      let mutable fullEvalList :TypesDef.Misc.EvalType list = []
+      let mutable evalList : MiscTypes.EvalType list = []
+      let mutable fullEvalList :MiscTypes.EvalType list = []
       let mutable nps = 0.0
       let mutable depth = 0
       let mutable Player1PV = String.Empty
@@ -138,7 +139,7 @@ module Engine =
             if evalList.Length > 0 then 
               evalList.[0] 
             else 
-              if fullEvalList.Length > 0 then fullEvalList[0] else TypesDef.Misc.EvalType.CP 0.0
+              if fullEvalList.Length > 0 then fullEvalList[0] else MiscTypes.EvalType.CP 0.0
           let pv = Player1PV
           let fen = BoardHelper.posToFen moveBoard.Position
           let moveDetail = 
@@ -186,7 +187,7 @@ module Engine =
       let regular callback (engineName:string) (line:string) =
         let mutable avgNps = 0.0
         let isWhite = moveBoard.Position.STM = 0uy
-        match Utilities.Regex.getEssentialDataWithEPS line isWhite with
+        match EngineProtocol.Regex.getEssentialDataWithEPS line isWhite with
         |Some (d, eval, nodes, nps, eps, pvLine, tbHits, wdl, sd, mPv ) ->         
           numberOfNodes <- nodes
           if d > depth then
@@ -236,10 +237,10 @@ module Engine =
                 match state with
                 |InMoveStatMode list ->
                   if line.StartsWith "info string node" |> not then
-                    let nn = Utilities.Regex.getInfoStringData name line
+                    let nn = EngineProtocol.Regex.getInfoStringData name line
                     list.Add nn
                   else
-                    let nn = Utilities.Regex.getInfoStringData name line
+                    let nn = EngineProtocol.Regex.getInfoStringData name line
                     if nn.Nodes = 1 then //will only be one node in policy test like go nodes 1
                       let bp = list |> Seq.maxBy(fun e -> e.P)
                       bp.Q <- nn.Q
@@ -247,7 +248,7 @@ module Engine =
                 |_ -> 
                   let list = ResizeArray<NNValues>()  
                   if line.StartsWith "info string node" |> not then
-                    let nn = Utilities.Regex.getInfoStringData name line
+                    let nn = EngineProtocol.Regex.getInfoStringData name line
                     list.Add nn
                   state <- InMoveStatMode list
             | line when line.StartsWith("info") ->
@@ -1353,7 +1354,7 @@ module EngineHelper =
           let (ok,v) = Boolean.TryParse value
           if ok then
             value <- sprintf "%b" v
-          elif option.Key = "WeightsFile" && Utilities.Validation.checkPathExists value |> not then          
+          elif option.Key = "WeightsFile" && Configuration.Validation.checkPathExists value |> not then          
             let combine = Path.Combine(config.NetworkPath, value)
             value <- combine
           sprintf "setoption name %s value %s" option.Key value        
@@ -1366,24 +1367,24 @@ module EngineHelper =
       eng
 
   let createEngine (config:EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : ChessEngine = 
-      let validation = Utilities.Validation.validateChessEngineCmds config
+      let validation = Configuration.Validation.validateChessEngineCmds config
       match validation with
-      |Utilities.Validation.Errors errors -> 
+      |Configuration.Validation.Errors errors -> 
         for error in errors do
           ConsoleUtils.printInColor ConsoleColor.Red error
         failwith "Engine could not be created"
-      |Utilities.Validation.Ok -> 
+      |Configuration.Validation.Ok -> 
           let cmds = createInitialUCICommands config
           new ChessEngine(config, cmds, logger)
 
   let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : ChessEngineWithUCIProcessing =     
-      let validation = Utilities.Validation.validateChessEngineCmds config
+      let validation = Configuration.Validation.validateChessEngineCmds config
       match validation with
-      |Utilities.Validation.Errors errors -> 
+      |Configuration.Validation.Errors errors -> 
         for error in errors do
           ConsoleUtils.printInColor ConsoleColor.Red error
         failwith "Engine could not be created"
-      |Utilities.Validation.Ok -> 
+      |Configuration.Validation.Ok -> 
           let cmds = createInitialUCICommands config
           new ChessEngineWithUCIProcessing(callback, config, cmds, logger, writeToConsole) 
 
@@ -1515,7 +1516,7 @@ module EngineHelper =
               engine.Go(time) // Adjust the time as needed
               let! line = engine.ReadLineAsync() |> Async.AwaitTask
               let eval = 
-                  match Utilities.Regex.getEssentialData line (board.Position.STM = 0uy) with
+                  match EngineProtocol.Regex.getEssentialData line (board.Position.STM = 0uy) with
                   | Some (_, eval, _, _, _, _, _, _, _) -> eval
                   | None -> failwith "Failed to get evaluation"
               return { EngineName = engine.Name; Eval = eval.Value }

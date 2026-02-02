@@ -45,17 +45,17 @@
 </MudContainer>
 
 @code {
-  [Parameter] public List<EPD.EPDEntry> EPDList { get; set; } = new();
-  [Parameter] public List<EPD.TablebaseEPDEntry> TBEPDList { get; set; } = new();
+  [Parameter] public List<EPDTypes.EPDEntry> EPDList { get; set; } = new();
+  [Parameter] public List<EPDTypes.TablebaseEPDEntry> TBEPDList { get; set; } = new();
 
   private int ItemsPerPage { get; set; } = 100; // Adjust based on your needs
   private int CurrentPage { get; set; } = 1;
   private string PageIdentifier => $"page-{CurrentPage}-";
 
-  private IEnumerable<EPD.EPDEntry> CurrentPageEPDItems =>
+  private IEnumerable<EPDTypes.EPDEntry> CurrentPageEPDItems =>
       EPDList.Skip((CurrentPage - 1) * ItemsPerPage).Take(ItemsPerPage);
 
-  private IEnumerable<EPD.TablebaseEPDEntry> CurrentPageTBItems =>
+  private IEnumerable<EPDTypes.TablebaseEPDEntry> CurrentPageTBItems =>
       TBEPDList.Skip((CurrentPage - 1) * ItemsPerPage).Take(ItemsPerPage);
 
   private int TotalPages =>

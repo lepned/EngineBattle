@@ -6,6 +6,7 @@ using System.Drawing;
 using WebGUI;
 using static ChessLibrary.TypesDef;
 using static ChessLibrary.TypesDef.CoreTypes;
+using static ChessLibrary.EngineTypes;
 
 namespace WebGUI.Plotting
 {

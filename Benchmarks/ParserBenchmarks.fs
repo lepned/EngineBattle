@@ -4,8 +4,7 @@ open System
 open System.IO
 open BenchmarkDotNet.Attributes
 open BenchmarkDotNet.Columns
-open ChessLibrary.Parser
-
+open ChessLibrary
 /// BenchmarkDotNet benchmarks comparing full PGN parser vs lightweight FastPGNParser
 module ParserBenchmarks =
 

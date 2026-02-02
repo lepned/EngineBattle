@@ -20,10 +20,10 @@
 
 @code {
 
-  private List<EPD.EPDEntry> EPDs = new();
+  private List<EPDTypes.EPDEntry> EPDs = new();
   IBrowserFile browserFile;
 
-  string GetHeader(EPD.EPDEntry EPD)
+  string GetHeader(EPDTypes.EPDEntry EPD)
   {
     StringBuilder msgBuilder = new StringBuilder();
 
@@ -62,7 +62,7 @@
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
     }
 
-    EPDs = Parser.EPDExtractor.readEPDs(path).Take(100).ToList();
+    EPDs = EPDExtractor.readEPDs(path).Take(100).ToList();
     File.Delete(path);    
   }
 }

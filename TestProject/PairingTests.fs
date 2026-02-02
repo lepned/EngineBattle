@@ -1,10 +1,9 @@
 module PairingTests
 
 open Xunit
-open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.TypesDef.PGNTypes
-open ChessLibrary.Utilities.PairingHelper
+open ChessLibrary.PGNTypes
+open ChessLibrary.TournamentPairing.PairingHelper
 open ChessLibrary
 
 let private mkEngine name =
@@ -67,8 +66,8 @@ let ``opening hash is deterministic for identical content`` () =
         [ mkPlyMove 0 1 "w" "e4" ""
           mkPlyMove 1 1 "b" "e5" "" ]
     let game = mkGameWithMoves 1 "startpos" moves
-    let hash1 = Utilities.Hash.computeOpeningHashFromGame game
-    let hash2 = Utilities.Hash.computeOpeningHashFromGame game
+    let hash1 = ChessUtilities.Hash.computeOpeningHashFromGame game
+    let hash2 = ChessUtilities.Hash.computeOpeningHashFromGame game
     Assert.Equal(hash1, hash2)
 
 [<Fact>]
@@ -77,33 +76,33 @@ let ``opening hash changes when fen or moves change`` () =
         [ mkPlyMove 0 1 "w" "e4" ""
           mkPlyMove 1 1 "b" "e5" "" ]
     let game = mkGameWithMoves 1 "startpos" moves
-    let baseHash = Utilities.Hash.computeOpeningHashFromGame game
+    let baseHash = ChessUtilities.Hash.computeOpeningHashFromGame game
 
     let gameDiffFen = { game with GameMetaData = { game.GameMetaData with Fen = "different" } }
-    let diffFenHash = Utilities.Hash.computeOpeningHashFromGame gameDiffFen
+    let diffFenHash = ChessUtilities.Hash.computeOpeningHashFromGame gameDiffFen
     Assert.NotEqual<string>(baseHash, diffFenHash)
 
     let movesDiff =
         [ mkPlyMove 0 1 "w" "d4" ""
           mkPlyMove 1 1 "b" "d5" "" ]
     let gameDiffMoves = mkGameWithMoves 1 "startpos" movesDiff
-    let diffMovesHash = Utilities.Hash.computeOpeningHashFromGame gameDiffMoves
+    let diffMovesHash = ChessUtilities.Hash.computeOpeningHashFromGame gameDiffMoves
     Assert.NotEqual<string>(baseHash, diffMovesHash)
 
 [<Fact>]
 let ``opening hash falls back to game number when empty`` () =
-    let hash1 = Utilities.Hash.computeOpeningHashFromGame (PgnGame.Empty 1)
-    let hash2 = Utilities.Hash.computeOpeningHashFromGame (PgnGame.Empty 2)
+    let hash1 = ChessUtilities.Hash.computeOpeningHashFromGame (PgnGame.Empty 1)
+    let hash2 = ChessUtilities.Hash.computeOpeningHashFromGame (PgnGame.Empty 2)
     Assert.NotEqual<string>(hash1, hash2)
 
 [<Fact>]
 let ``opening hash uses fen when present (epd style)`` () =
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     let game = mkGameWithMoves 1 fen []
-    let hash = Utilities.Hash.computeOpeningHashFromGame game
+    let hash = ChessUtilities.Hash.computeOpeningHashFromGame game
     let expected =
         let nl = System.Environment.NewLine
-        Utilities.Hash.computeOpeningHash (sprintf "[Fen \"%s\"]%s%s" fen nl nl)
+        ChessUtilities.Hash.computeOpeningHash (sprintf "[Fen \"%s\"]%s%s" fen nl nl)
     Assert.Equal(expected, hash)
 
 [<Fact>]

@@ -4,17 +4,19 @@ open System
 open System.Threading
 open System.Collections.Generic
 open QBBOperations
-open TypesDef
-open TypesDef.Position
-open TypesDef.TMove
+open MiscTypes
+open PositionTypes
+open MoveTypes
+open EngineTypes
 open TypesDef.CoreTypes
 open LowLevelUtilities
-open Utilities
+open GameAnalysis
+open ChessUtilities
 open MoveGeneration
-open Parser
+open ChessLibrary.MoveParser
 open System.Text.RegularExpressions
 
-let startPos = Misc.startPosition
+let startPos = startPosition
 
 let [<Literal>] MAX_PLY = 1000
 let [<Literal>] MAX_MOVES = 256
@@ -68,7 +70,7 @@ type Board() =
     let mutable position = game.[0]    
     let mutable hashKeys = ResizeArray<uint64>()
     let mutable lastHistoryTokens : string array option = None
-    let sbPool = Utils.StringBuilderPool(10,20)
+    let sbPool = StringBuilderPool(10,20)
     let moves = ResizeArray<TMove>()
     let longSanMoves = ResizeArray<string>()
     let shortSanMoves = ResizeArray<string>()
@@ -94,7 +96,10 @@ type Board() =
 
     let mutable createNodeIsVariation = false
     let lockObject = obj()
-    
+
+    /// Returns the color string ("w" or "b") of the player who just moved
+    let colorOfPlayerWhoJustMoved (stm: byte) = if stm = 0uy then "b" else "w"
+
     let updatePosition action =
       Monitor.Enter(lockObject)
       try
@@ -103,6 +108,13 @@ type Board() =
           Monitor.Exit(lockObject)
 
     // --- MoveGraph helpers --------------------------------------------------
+    /// Resolves edge IDs to actual MoveEdge records, filtering out missing edges
+    let getEdgesFromIds (edgeIds: EdgeId list) =
+      edgeIds |> List.choose (fun eid ->
+        match moveGraph.EdgesById.TryGetValue eid with
+        | true, e -> Some e
+        | _ -> None)
+
     let addNodeToHashMap (node: PositionNode) =
       match moveGraph.NodesByHash.TryGetValue node.Hash with
       | true, ids -> ids.Add node.Id
@@ -142,7 +154,7 @@ type Board() =
       match moveGraph.NodesById.TryGetValue parentId with
       | true, parent ->
           parent.Children
-          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+          |> getEdgesFromIds
           |> List.sortBy (fun e -> e.Order)
           |> List.mapi (fun idx e -> e.Id, idx)
           |> List.iter (fun (eid, order) ->
@@ -156,7 +168,7 @@ type Board() =
       | true, parent ->
           let edges =
             parent.Children
-            |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+            |> getEdgesFromIds
 
           let reordered =
             edges
@@ -226,7 +238,7 @@ type Board() =
 
       let children =
         fromNode.Children
-        |> List.choose (fun eid -> moveGraph.EdgesById.TryGetValue eid |> function | true, e -> Some e | _ -> None)
+        |> getEdgesFromIds
       let hasMainline = children |> List.exists (fun e -> e.IsMainline)
       let order = defaultArg orderOpt children.Length
       let isMainline =
@@ -257,7 +269,7 @@ type Board() =
     let mainChildEdgeId (nodeId: NodeId) =
       let children =
         moveGraph.NodesById[nodeId].Children
-        |> List.choose (fun eid -> moveGraph.EdgesById.TryGetValue eid |> function | true, e -> Some e | _ -> None)
+        |> getEdgesFromIds
         |> List.sortBy (fun e -> e.Order)
       children
       |> List.tryFind (fun e -> e.IsMainline)
@@ -309,34 +321,46 @@ type Board() =
       let lan = edge.Lan
       let fromSq = if lan.Length >= 2 then lan.Substring(0,2) else ""
       let toSq = if lan.Length >= 4 then lan.Substring(2,2) else ""
-      let md =
-        { MoveDetail.Empty with
-            LongSan = lan
-            FromSq = fromSq
-            ToSq = toSq
-            Color = edge.Color
-            IsCastling = edge.IsCastling
-            Comments = edge.Comments }
+      let md = MoveDetail.Create(lan, fromSq, toSq, edge.Color, edge.IsCastling, edge.Comments)
       { Move = md; ShortSan = edge.San; FenAfterMove = toNode.Fen }
 
-    let updatePathFromCurrent () =
-      moveAndFens.Clear()
-      longSanMoves.Clear()
+    /// Gets sorted child edges for a node
+    let childEdgesOf nodeId =
+      moveGraph.NodesById[nodeId].Children
+      |> getEdgesFromIds
+      |> List.sortBy (fun e -> e.Order)
+
+    /// Computes the maximum depth of the subtree from a node
+    let rec depthFromNode nodeId =
+      match childEdgesOf nodeId with
+      | [] -> 0
+      | children -> children |> List.map (fun e -> 1 + depthFromNode e.To) |> List.max
+
+    /// Selects the main child edge from a list: prefers IsMainline, otherwise picks deepest
+    let selectMainChild children =
+      match children |> List.tryFind (fun e -> e.IsMainline) with
+      | Some mc -> mc
+      | None -> children |> List.maxBy (fun e -> (depthFromNode e.To, -e.Order))
+
+    /// Ascends from a node to root, returning edges in root-to-node order
+    let ascendToRoot startNodeId =
       let visited = HashSet<NodeId>()
-      let rec ascend nodeId acc =
+      let rec loop nodeId acc =
         if visited.Contains nodeId then acc
         else
           visited.Add nodeId |> ignore
           let node = moveGraph.NodesById[nodeId]
-          match node.Parents |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None) with
+          match node.Parents |> getEdgesFromIds with
           | [] -> acc
           | parents ->
-              let chosen =
-                parents
-                |> List.sortBy (fun e -> e.Order)
-                |> List.head
-              ascend chosen.From (chosen :: acc)
-      let pathEdges = ascend currentGraphNodeId []
+              let chosen = parents |> List.sortBy (fun e -> e.Order) |> List.head
+              loop chosen.From (chosen :: acc)
+      loop startNodeId []
+
+    let updatePathFromCurrent () =
+      moveAndFens.Clear()
+      longSanMoves.Clear()
+      let pathEdges = ascendToRoot currentGraphNodeId
       for e in pathEdges do
         let toNode = moveGraph.NodesById[e.To]
         moveAndFens.Add (moveAndFenFromEdge e toNode)
@@ -344,17 +368,6 @@ type Board() =
 
     let endCurrentVariation () =
       moveAndFens.Clear()
-      let visitedAscend = HashSet<NodeId>()
-      let rec ascend nodeId acc =
-        if visitedAscend.Contains nodeId then acc
-        else
-          visitedAscend.Add nodeId |> ignore
-          let node = moveGraph.NodesById[nodeId]
-          match node.Parents |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None) with
-          | [] -> acc
-          | parents ->
-              let chosen = parents |> List.sortBy (fun e -> e.Order) |> List.head
-              ascend chosen.From (chosen :: acc)
       let visitedDescend = HashSet<NodeId>()
       let rec descend nodeId =
         if visitedDescend.Contains nodeId then ()
@@ -367,7 +380,7 @@ type Board() =
               moveAndFens.Add (moveAndFenFromEdge edge toNode)
               descend edge.To
           | None -> ()
-      ascend currentGraphNodeId [] |> List.iter (fun e -> let toNode = moveGraph.NodesById[e.To] in moveAndFens.Add (moveAndFenFromEdge e toNode))
+      ascendToRoot currentGraphNodeId |> List.iter (fun e -> let toNode = moveGraph.NodesById[e.To] in moveAndFens.Add (moveAndFenFromEdge e toNode))
       descend currentGraphNodeId
 
     let resetWithFen (fenOpt:string option) =
@@ -390,8 +403,7 @@ type Board() =
       mostCurrentFEN <- startPos
       isFRC <- PositionOps.isFRC &position
       numberOfMoves <- 0L
-      numberOfMoves <- 0L
-      let rootHash = Utilities.Hash.hashBoard position
+      let rootHash = Hash.hashBoard position
       resetGraph startPos rootHash
       updatePathFromCurrent()
       lastHistoryTokens <- None
@@ -410,7 +422,7 @@ type Board() =
       BoardHelper.loadFen(None, &position)
       startPos <- BoardHelper.posToFen position
       mostCurrentFEN <- startPos
-      let rootHash = Utilities.Hash.hashBoard position
+      let rootHash = Hash.hashBoard position
       resetGraph startPos rootHash
       updatePathFromCurrent()
       ZobrishHash.initializeZobristTables()
@@ -463,7 +475,7 @@ type Board() =
         isFRC <- PositionOps.isFRC &position
         // Try to move the graph cursor to the matching node for this FEN.
         let fenStr = this.FEN()
-        let hash = Utilities.Hash.hashBoard position
+        let hash = Hash.hashBoard position
         setCurrentGraphNodeFromHash fenStr hash
         updatePathFromCurrent()
 
@@ -489,7 +501,7 @@ type Board() =
         match moveGraph.NodesById.TryGetValue currentGraphNodeId with
         | true, node ->
             node.Parents
-            |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+            |> getEdgesFromIds
             |> List.sortBy (fun e -> e.Order)
             |> List.tryHead
             |> Option.map (fun edge -> edge.Comments)
@@ -508,7 +520,7 @@ type Board() =
         match moveGraph.NodesById.TryGetValue currentGraphNodeId with
         | true, node ->
             node.Parents
-            |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+            |> getEdgesFromIds
             |> List.sortBy (fun e -> e.Order)
             |> List.tryHead
             |> Option.iter (fun edge -> moveGraph.EdgesById[edge.Id] <- { edge with Comments = comment })
@@ -589,53 +601,34 @@ type Board() =
           writer.WriteLine()
     
     member this.MoveLinesFromGraph (asLAN:bool) =
-      let childEdges nodeId =
-        moveGraph.NodesById[nodeId].Children
-        |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
-        |> List.sortBy (fun e -> e.Order)
-
-      let rec depthFrom nodeId =
-        match childEdges nodeId with
-        | [] -> 0
-        | children -> children |> List.map (fun e -> 1 + depthFrom e.To) |> List.max
-
-      let appendMove path (move : MoveEdge) =        
+      let appendMove path (move : MoveEdge) =
           let moveText =
               let baseText = if asLAN then move.Lan else move.San
               if String.IsNullOrWhiteSpace baseText then None
-              //elif not withComments then Some baseText
               elif String.IsNullOrWhiteSpace move.Comments then Some baseText
-              else 
-                let comment = baseText + " {" + move.Comments + "}"
-                Some comment
+              else Some (baseText + " {" + move.Comments + "}")
           match moveText with
           | Some t -> path @ [t]
           | None -> path
 
       let rec traverse nodeId path =
-        match childEdges nodeId with
+        match childEdgesOf nodeId with
         | [] -> [path]
         | children ->
-          let main =
-            match children |> List.tryFind (fun e -> e.IsMainline) with
-            | Some mc -> mc
-            | None -> children |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+          let main = selectMainChild children
           let mainPaths = traverse main.To (appendMove path main)
           let variationPaths =
               children
               |> List.filter (fun e -> e.Id <> main.Id)
-              |> List.collect (fun v -> traverse v.To (appendMove path v))            
+              |> List.collect (fun v -> traverse v.To (appendMove path v))
           mainPaths @ variationPaths
 
-      match childEdges moveGraph.Root with
+      match childEdgesOf moveGraph.Root with
       | [] -> []
       | rootChildren ->
-        let main =
-          match rootChildren |> List.tryFind (fun e -> e.IsMainline) with
-          | Some mc -> mc
-          | None -> rootChildren |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+        let main = selectMainChild rootChildren
         let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
-        let mainPaths = traverse main.To (appendMove [] main)            
+        let mainPaths = traverse main.To (appendMove [] main)
         let variationPaths = rootVariations |> List.collect (fun v -> traverse v.To (appendMove [] v))          
         mainPaths @ variationPaths
     
@@ -690,14 +683,14 @@ type Board() =
       with get() = hashKeys
       and set(v) = hashKeys <- v
     
-    member this.PositionHash () = Utilities.Hash.hashBoard position
+    member this.PositionHash () = Hash.hashBoard position
     
-    member this.DeviationHash () = Utilities.Hash.deviationHash position
+    member this.DeviationHash () = Hash.deviationHash position
 
     member this.TryGetNextMoveAndFen (fen:string) =
       if String.IsNullOrWhiteSpace fen |> not then
         let pos = BoardHelper.getPosFromFen(Some fen)
-        let hash = Utilities.Hash.hashBoard pos
+        let hash = Hash.hashBoard pos
         setCurrentGraphNodeFromHash fen hash
       match mainChildEdgeId currentGraphNodeId with
       | Some eid ->
@@ -711,10 +704,10 @@ type Board() =
     member this.TryGetPreviousMoveAndFen (fen:string) =
       if String.IsNullOrWhiteSpace fen |> not then
         let pos = BoardHelper.getPosFromFen(Some fen)
-        let hash = Utilities.Hash.hashBoard pos
+        let hash = Hash.hashBoard pos
         setCurrentGraphNodeFromHash fen hash
       let node = moveGraph.NodesById[currentGraphNodeId]
-      match node.Parents |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None) with
+      match node.Parents |> getEdgesFromIds with
       | [] -> Some {MoveAndFen.FirstEntry with FenAfterMove=startPos}
       | parents ->
           let chosen = parents |> List.sortBy (fun e -> e.Order) |> List.head
@@ -742,7 +735,7 @@ type Board() =
     member _.MoveGraphNode(nodeId: NodeId) = moveGraph.NodesById[nodeId]
     member _.MoveGraphChildren(nodeId: NodeId) =
       moveGraph.NodesById[nodeId].Children
-      |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+      |> getEdgesFromIds
       |> List.sortBy (fun e -> e.Order)
 
     member this.JumpToHash (hash:uint64) =
@@ -768,38 +761,37 @@ type Board() =
           true
       | _ -> false
 
-    // Remove a variation edge that leads to the provided FEN (matching SAN if supplied).
-    // When removeEntireVariation = true the whole branch is pruned from the variation head.
-    member this.RemoveVariationNode (san:string) (fen:string) (removeEntireVariation: bool) =
-      if String.IsNullOrWhiteSpace fen then false
+    /// Finds a variation edge and its target node given a SAN move and FEN position.
+    /// Returns None if the FEN is invalid or no matching edge is found.
+    member private _.FindVariationEdgeAndNode (san: string) (fen: string) =
+      if String.IsNullOrWhiteSpace fen then None
       else
         let pos = BoardHelper.getPosFromFen(Some fen)
-        let hash = Utilities.Hash.hashBoard pos
-
+        let hash = Hash.hashBoard pos
         let matchingNodes =
           match moveGraph.NodesByHash.TryGetValue hash with
           | true, ids when ids.Count > 0 -> ids |> Seq.filter (fun id -> moveGraph.NodesById[id].Fen = fen) |> Seq.toList
           | _ -> []
-
         let tryFindEdge nodeId =
           moveGraph.NodesById[nodeId].Parents
-          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
+          |> getEdgesFromIds
           |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
           |> Option.map (fun e -> e, nodeId)
+        matchingNodes
+        |> List.tryPick tryFindEdge
+        |> Option.orElseWith (fun () ->
+            match matchingNodes with
+            | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
+                let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
+                match moveGraph.EdgesById.TryGetValue parentEdgeId with
+                | true, e -> Some (e, nodeId)
+                | _ -> None
+            | _ -> None)
 
-        let target =
-          matchingNodes
-          |> List.tryPick tryFindEdge
-          |> Option.orElseWith (fun () ->
-              match matchingNodes with
-              | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
-                  let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
-                  match moveGraph.EdgesById.TryGetValue parentEdgeId with
-                  | true, e -> Some (e, nodeId)
-                  | _ -> None
-              | _ -> None)
-
-        match target with
+    // Remove a variation edge that leads to the provided FEN (matching SAN if supplied).
+    // When removeEntireVariation = true the whole branch is pruned from the variation head.
+    member this.RemoveVariationNode (san:string) (fen:string) (removeEntireVariation: bool) =
+        match this.FindVariationEdgeAndNode san fen with
         | None -> false
         | Some (edge, _) ->
             // Allow deleting a "mainline" edge only if it belongs to a variation branch.
@@ -807,14 +799,14 @@ type Board() =
               if not e.IsMainline then true
               else
                 moveGraph.NodesById[e.From].Parents
-                |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None)
+                |> getEdgesFromIds
                 |> List.exists hasVariationAncestor
             if edge.IsMainline && not (hasVariationAncestor edge) then false
             else
             let rec findVariationHead (e: MoveEdge) =
               let parents =
                 moveGraph.NodesById[e.From].Parents
-                |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None)
+                |> getEdgesFromIds
                 |> List.filter (fun pe -> pe.IsMainline |> not)
               match parents with
               | parent :: _ -> findVariationHead parent
@@ -839,35 +831,7 @@ type Board() =
             true
 
     member this.RemoveVariationTail (san:string) (fen:string) =
-      if String.IsNullOrWhiteSpace fen then false
-      else
-        let pos = BoardHelper.getPosFromFen(Some fen)
-        let hash = Utilities.Hash.hashBoard pos
-
-        let matchingNodes =
-          match moveGraph.NodesByHash.TryGetValue hash with
-          | true, ids when ids.Count > 0 -> ids |> Seq.filter (fun id -> moveGraph.NodesById[id].Fen = fen) |> Seq.toList
-          | _ -> []
-
-        let tryFindEdge nodeId =
-          moveGraph.NodesById[nodeId].Parents
-          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
-          |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
-          |> Option.map (fun e -> e, nodeId)
-
-        let target =
-          matchingNodes
-          |> List.tryPick tryFindEdge
-          |> Option.orElseWith (fun () ->
-              match matchingNodes with
-              | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
-                  let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
-                  match moveGraph.EdgesById.TryGetValue parentEdgeId with
-                  | true, e -> Some (e, nodeId)
-                  | _ -> None
-              | _ -> None)
-
-        match target with
+        match this.FindVariationEdgeAndNode san fen with
         | None -> false
         | Some (edge, _) ->
             let parentId = edge.From
@@ -880,39 +844,12 @@ type Board() =
             true
 
     member this.PromoteVariationToMainline (san:string) (fen:string) =
-      if String.IsNullOrWhiteSpace fen then false
-      else
-        let pos = BoardHelper.getPosFromFen(Some fen)
-        let hash = Utilities.Hash.hashBoard pos
-        let matchingNodes =
-          match moveGraph.NodesByHash.TryGetValue hash with
-          | true, ids when ids.Count > 0 -> ids |> Seq.filter (fun id -> moveGraph.NodesById[id].Fen = fen) |> Seq.toList
-          | _ -> []
-
-        let tryFindEdge nodeId =
-          moveGraph.NodesById[nodeId].Parents
-          |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None)
-          |> List.tryFind (fun e -> String.IsNullOrWhiteSpace san || e.San.Equals(san, StringComparison.OrdinalIgnoreCase))
-          |> Option.map (fun e -> e, nodeId)
-
-        let target =
-          matchingNodes
-          |> List.tryPick tryFindEdge
-          |> Option.orElseWith (fun () ->
-              match matchingNodes with
-              | nodeId :: _ when moveGraph.NodesById[nodeId].Parents.IsEmpty |> not ->
-                  let parentEdgeId = moveGraph.NodesById[nodeId].Parents |> List.head
-                  match moveGraph.EdgesById.TryGetValue parentEdgeId with
-                  | true, e -> Some (e, nodeId)
-                  | _ -> None
-              | _ -> None)
-
-        match target with
+        match this.FindVariationEdgeAndNode san fen with
         | None -> false
         | Some (edge, _) ->
             let rec variationHead (e: MoveEdge) (lastNonMain: MoveEdge option) =
               let nextLast = if e.IsMainline then lastNonMain else Some e
-              match moveGraph.NodesById[e.From].Parents |> List.choose (fun pid -> match moveGraph.EdgesById.TryGetValue pid with | true, pe -> Some pe | _ -> None) |> List.tryHead with
+              match moveGraph.NodesById[e.From].Parents |> getEdgesFromIds |> List.tryHead with
               | Some parentEdge -> variationHead parentEdge nextLast
               | None -> defaultArg nextLast e
 
@@ -1028,15 +965,9 @@ type Board() =
               parts[5] <- string (fm + 1)
             let altFen = String.Join(" ", parts)
             this.LoadFen(altFen)
-            let altHash = Utilities.Hash.hashBoard position
-            let md =
-              { MoveDetail.Empty with
-                  LongSan = san
-                  FromSq = ""
-                  ToSq = ""
-                  Color = if parts[1] = "w" then "b" else "w"
-                  IsCastling = false
-                  Comments = comment }
+            let altHash = Hash.hashBoard position
+            let color = if parts[1] = "w" then "b" else "w"
+            let md = MoveDetail.Create(san, "", "", color, false, comment)
             let maf = { Move = md; ShortSan = san; FenAfterMove = altFen }
             moveAndFens.Add maf
             let edgeId =
@@ -1092,7 +1023,7 @@ type Board() =
               match lastMoveNodeId with
               | Some id when isAlt ->
                   let node = moveGraph.NodesById[id]
-                  match node.Parents |> List.choose (fun eid -> match moveGraph.EdgesById.TryGetValue eid with | true, e -> Some e | _ -> None) with
+                  match node.Parents |> getEdgesFromIds with
                   | parent :: _ -> parent.From
                   | [] -> moveGraph.Root
               | Some id -> id
@@ -1173,12 +1104,8 @@ type Board() =
       | None -> ()
       let sb = sbPool.Get()
       let mutable nr = ply
-      let mutable moveNr = 
-        if ply % 2 = 1 then
-          ply / 2 + ply % 2
-        else      
-          ply / 2 + 1
-      
+      let mutable moveNr = (ply / 2) + 1
+
       for moveStr in priorMoves do
           if moveStr.Move.Color = "w" then
             sb.Append $" {moveNr}. {moveStr.ShortSan}" |> ignore
@@ -1199,12 +1126,7 @@ type Board() =
       let ply = if openingMoves.Count = 0 then game.[0].Ply |> int else openingMoves.Count
       let mutable white = game.[0].STM = 0uy      
       let mutable nr = ply
-      let mutable moveNr = 
-        if ply % 2 = 1 then
-          let n = ply / 2 + ply % 2
-          n
-        else      
-          ply / 2 + 1
+      let mutable moveNr = (ply / 2) + 1
       for moveStr in this.ShortSANMovesPlayed do
         if nr % 2 = 1 && not white then                        
           sb.Append $" {moveNr}... {moveStr}" |> ignore
@@ -1241,25 +1163,6 @@ type Board() =
         elif inVariation && isLineStart then sprintf "%d... %s" moveNr san
         else san
 
-      let childEdges nodeId =
-        moveGraph.NodesById[nodeId].Children
-        |> List.choose (fun eid ->
-            match moveGraph.EdgesById.TryGetValue eid with
-            | true, e -> Some e
-            | _ -> None)
-        |> List.sortBy (fun e -> e.Order)
-
-      let rec depthFrom nodeId =
-        let children =
-          moveGraph.NodesById[nodeId].Children
-          |> List.choose (fun eid ->
-              match moveGraph.EdgesById.TryGetValue eid with
-              | true, e -> Some e
-              | _ -> None)
-        match children with
-        | [] -> 0
-        | _ -> children |> List.map (fun e -> 1 + depthFrom e.To) |> List.max
-
       let rec emitBranch (edge: MoveEdge) ply isLineStart inVariation =
         tokens.Add
           { Text = edge.San
@@ -1273,14 +1176,11 @@ type Board() =
             Evaluation = edge.Comments
             IsLineStart = isLineStart }
 
-        let children = childEdges edge.To
+        let children = childEdgesOf edge.To
         match children with
         | [] -> ()
         | _ ->
-            let mainChild =
-              match children |> List.tryFind (fun e -> e.IsMainline) with
-              | Some mc -> mc
-              | None -> children |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+            let mainChild = selectMainChild children
             let variations = children |> List.filter (fun e -> e.Id <> mainChild.Id)
 
             let firstMoveWasWhiteAtVariationStart = isLineStart && inVariation && (ply % 2 = 0)
@@ -1308,14 +1208,11 @@ type Board() =
             emitMainLine mainChild (ply + 1) inVariation (variations.Length > 0)
 
       and emitMainLine (edge: MoveEdge) ply inVariation isLineStart =
-        let children = childEdges edge.To
+        let children = childEdgesOf edge.To
         match children with
         | [] -> ()
         | _ ->
-            let mainChild =
-              match children |> List.tryFind (fun e -> e.IsMainline) with
-              | Some mc -> mc
-              | None -> children |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+            let mainChild = selectMainChild children
             let variations = children |> List.filter (fun e -> e.Id <> mainChild.Id)
 
             if String.IsNullOrWhiteSpace mainChild.San |> not then
@@ -1338,14 +1235,11 @@ type Board() =
 
             emitMainLine mainChild (ply + 1) inVariation (variations.Length > 0)
 
-      let rootChildren = childEdges moveGraph.Root
+      let rootChildren = childEdgesOf moveGraph.Root
       match rootChildren with
       | [] -> List.empty
       | _ ->
-          let main =
-            match rootChildren |> List.tryFind (fun e -> e.IsMainline) with
-            | Some mc -> mc
-            | None -> rootChildren |> List.maxBy (fun e -> (depthFrom e.To, -e.Order))
+          let main = selectMainChild rootChildren
           let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
           emitBranch main 0 true false
           for variation in rootVariations do
@@ -1357,34 +1251,45 @@ type Board() =
     member this.GenerateMoves () = this.GenerateMovesFast()
 
     member this.GenerateMovesFast () =
-      let mutable index = 0      
+      let mutable index = 0
       let span = moveList.Value.AsSpan()
-      generateCapturesInSpan span &index &position      
-      generateQuietsInSpan span &index &position isFRC
+      generateCaptures span &index &position
+      generateQuiets span &index &position isFRC
       span.Slice(0, index).ToArray()
+
+    member this.GenerateMovesToBuffer (buffer: TMove Span) : int =
+      let mutable index = 0
+      generateCaptures buffer &index &position
+      generateQuiets buffer &index &position isFRC
+      index
 
     member this.SafeMoveGenerator() =
         let span = Span<TMove>(Array.zeroCreate<TMove>(256))
         let mutable index = 0
-        generateCapturesInSpan span &index &position      
-        generateQuietsInSpan span &index &position this.IsFRC
+        generateCaptures span &index &position      
+        generateQuiets span &index &position this.IsFRC
         span.Slice(0, index).ToArray()
           
     member this.MakeMove (move:TMove inref) =
       game.[iPosition] <- PositionOps.copy(&position)
       iPosition <- iPosition + 1
-      makeMove &move &position 
+      makeMove &move &position
       let hash = this.PositionHash()
       this.HashKeys.Add hash
-      this.MovesPlayed.Add move      
+      this.MovesPlayed.Add move
       //this.CollectStat &move
+
+    member this.MakeMoveNoHash (move:TMove inref) =
+      game.[iPosition] <- PositionOps.copy(&position)
+      iPosition <- iPosition + 1
+      makeMove &move &position
 
     member this.ClaimThreeFoldRep () =       
       let key = this.PositionHash()
       let keys = hashKeys |> Seq.sumBy (fun e -> if e = key then 1 else 0)
       keys >= 3
     
-    member this.InsufficentMaterial() =
+    member this.InsufficientMaterial() =
       let piecesLeft = PositionOps.numberOfPieces &position
       if piecesLeft > 4 then
         false
@@ -1509,15 +1414,9 @@ type Board() =
         let shortSan = TMoveOps.getShortSanMoveFromTmove moveList tmove position
         this.ShortSANMovesPlayed.Add(shortSan)
         this.MakeMove(&tmove)
-        let fenAndMoves = 
-          {
-            LongSan = move
-            FromSq = move[0..1]
-            ToSq = move[2..3]
-            Color = (if position.STM=0uy then "b" else "w")
-            IsCastling = (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY 
-            Comments = String.Empty
-          }
+        let color = colorOfPlayerWhoJustMoved position.STM
+        let isCastling = (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+        let fenAndMoves = MoveDetail.Create(move, move[0..1], move[2..3], color, isCastling)
         let fenAfter = this.FEN()
         let hashAfter = this.PositionHash()
         let maf = {Move=fenAndMoves; ShortSan=shortSan; FenAfterMove=fenAfter}
@@ -1525,10 +1424,7 @@ type Board() =
 
         let childrenEdges =
           moveGraph.NodesById[currentGraphNodeId].Children
-          |> List.choose (fun eid ->
-              match moveGraph.EdgesById.TryGetValue eid with
-              | true, e -> Some e
-              | _ -> None)
+          |> getEdgesFromIds
         let existingEdge =
           childrenEdges
           |> List.tryFind (fun e ->
@@ -1559,9 +1455,9 @@ type Board() =
                 fenAfter
                 shortSan
                 move
-                fenAndMoves.Color
-                fenAndMoves.IsCastling
-                fenAndMoves.Comments
+                color
+                isCastling
+                String.Empty
                 isMainlineOpt
                 None
         currentGraphNodeId <-
@@ -1575,21 +1471,15 @@ type Board() =
       let islegal move = this.IllegalMove &move |> not      
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
-      | Some move -> 
+      | Some move ->
         let moveStr = TMoveOps.getSanLong move position.STM
         this.MakeMove(&move)
         openingMoves.Add fromSan
         this.LongSANMovesPlayed.Add(moveStr.Trim())
         let fenPos = BoardHelper.posToFen position
-        let fenAndMoves = 
-          {
-            LongSan = moveStr
-            FromSq = moveStr[0..1]
-            ToSq = moveStr[2..3]
-            Color = (if position.STM=0uy then "b" else "w")
-            IsCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY 
-            Comments = String.Empty
-          }
+        let color = colorOfPlayerWhoJustMoved position.STM
+        let isCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+        let fenAndMoves = MoveDetail.Create(moveStr, moveStr[0..1], moveStr[2..3], color, isCastling)
         moveAndFens.Add({Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos})
 
       | None -> failwith $"failed to parse opening move {fromSan}"
@@ -1609,7 +1499,7 @@ type Board() =
       this.ResetBoardState()
       let fen = 
         if String.IsNullOrEmpty(pgn.Fen) then 
-          Misc.startPosition
+          startPosition
         else pgn.Fen
       this.LoadFen(fen)      
       for m in pgn.Mainline do        
@@ -1621,66 +1511,23 @@ type Board() =
       let movesAndFen = this.MovesAndFenPlayed |> Seq.last
       movesAndFen
         
-    member this.PlaySimpleShortSan (fromSan: string) = 
-      let islegal move = this.IllegalMove &move |> not
-      let moveList = this.GenerateMoves ()
-      match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
-      | Some (move) -> 
-        let moveStr = TMoveOps.getSanLong move position.STM
-        this.MakeMove(&move)
-        longSanMoves.Add (moveStr.Trim())
-        let fenPos = BoardHelper.posToFen position
-        let hashPos = this.PositionHash()
-        let fenAndMoves = 
-          {
-            LongSan = moveStr
-            FromSq = moveStr[0..1]
-            ToSq = moveStr[2..3]
-            Color = (if position.STM=0uy then "b" else "w")
-            IsCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
-            Comments = String.Empty
-          }
-        let maf = {Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos}
-        moveAndFens.Add maf
-        let isMainlineOpt = if createNodeIsVariation then Some false else None
-        let edgeId =
-          addGraphEdge
-            currentGraphNodeId
-            hashPos
-            fenPos
-            fromSan
-            moveStr
-            fenAndMoves.Color
-            fenAndMoves.IsCastling
-            fenAndMoves.Comments
-            isMainlineOpt
-            None
-        currentGraphNodeId <- moveGraph.EdgesById[edgeId].To
-        updatePathFromCurrent()
-      | None ->        
-        () // keep quiet in parsing errors to avoid writing to closed TextWriter contexts
-      lastHistoryTokens <- None
+    member this.PlaySimpleShortSan (fromSan: string) =
+      this.PlaySimpleShortSanWithComments fromSan String.Empty
 
-    member this.PlaySimpleShortSanWithComments (fromSan: string) (comments : string) = 
+    member this.PlaySimpleShortSanWithComments (fromSan: string) (comments: string) =
       let islegal move = this.IllegalMove &move |> not
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
-      | Some (move) ->         
+      | Some move ->
         let moveStr = TMoveOps.getSanLong move position.STM
         this.MakeMove(&move)
         longSanMoves.Add (moveStr.Trim())
         let fenPos = BoardHelper.posToFen position
         let hashPos = this.PositionHash()
-        let fenAndMoves = 
-          {
-            LongSan = moveStr
-            FromSq = moveStr[0..1]
-            ToSq = moveStr[2..3]
-            Color = (if position.STM=0uy then "b" else "w")
-            IsCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
-            Comments = comments
-          }
-        let maf = {Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos}
+        let colorAfterMove = colorOfPlayerWhoJustMoved position.STM
+        let isCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+        let fenAndMoves = MoveDetail.Create(moveStr, moveStr[0..1], moveStr[2..3], colorAfterMove, isCastling, comments)
+        let maf = { Move = fenAndMoves; ShortSan = fromSan; FenAfterMove = fenPos }
         moveAndFens.Add maf
         let isMainlineOpt = if createNodeIsVariation then Some false else None
         let edgeId =
@@ -1690,29 +1537,20 @@ type Board() =
             fenPos
             fromSan
             moveStr
-            fenAndMoves.Color
-            fenAndMoves.IsCastling
+            colorAfterMove
+            isCastling
             comments
             isMainlineOpt
             None
         currentGraphNodeId <- moveGraph.EdgesById[edgeId].To
         updatePathFromCurrent()
-      | None ->        
+      | None ->
         () // keep quiet in parsing errors to avoid writing to closed TextWriter contexts
       lastHistoryTokens <- None
 
-    // Method that needs to be made thread-safe
-    member this.PlayPVLineThreadSafe moves fen = 
-        lock lockObject (fun () -> 
-          this.ResetBoardState()
-          this.LoadFen fen
-          for m in moves do
-            this.PlayLongSanMove m
-          if this.MovesAndFenPlayed.Count > 0 then
-            let movesAndFen = this.MovesAndFenPlayed |> Seq.last
-            movesAndFen
-          else
-            MoveAndFen.FirstEntry )
+    // Thread-safe wrapper for PlayPVLine
+    member this.PlayPVLineThreadSafe moves fen =
+        lock lockObject (fun () -> this.PlayPVLine(moves, fen))
     
     member this.PlayPVLine (moves: string seq, fen: string) =
       this.ResetBoardState()
@@ -1727,7 +1565,7 @@ type Board() =
 
     member this.PlayCommands (fenMoves : string) =
       this.ResetBoardState()
-      let (fenCmd, moves) = Utilities.FEN.parseFENandMoves fenMoves
+      let (fenCmd, moves) = FEN.parseFENandMoves fenMoves
       let fenOption = FEN.extractFEN fenCmd
       match fenOption with 
       |Some fen -> 
@@ -1740,7 +1578,7 @@ type Board() =
     
     member this.PlayFenWithMoves (fenMoves : string) =
       this.ResetBoardState()
-      let (fen, moves) = Utilities.FEN.parseFENandMoves fenMoves
+      let (fen, moves) = FEN.parseFENandMoves fenMoves
       this.LoadFen fen      
       this.CurrentFEN <- fen
       this.StartPosition <- fen
@@ -1891,7 +1729,7 @@ module Deviation =
         if openingHashesExists then
           allGames |> List.groupBy(fun e -> e.GameMetaData.OpeningHash)
         else 
-          allGames |> List.iter(fun game -> Utilities.Hash.writeOpeningHashToPgnGame game)
+          allGames |> List.iter(fun game -> Hash.writeOpeningHashToPgnGame game)
           allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash )      
       let devs =
         [
@@ -2057,7 +1895,7 @@ module Deviation =
       if openingHashesExists then
         allGames |> List.groupBy(fun e -> e.GameMetaData.OpeningHash)
       else 
-        allGames |> List.iter(fun game -> Utilities.Hash.writeOpeningHashToPgnGame game)
+        allGames |> List.iter(fun game -> Hash.writeOpeningHashToPgnGame game)
         allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash )
 
     let gameStore = ResizeArray<GameStore>()
@@ -2217,14 +2055,14 @@ module Deviation =
     res
   
   let returnListOfPositionsToCheck (fen:string) (list: string ResizeArray) =
-      let movesToCheck = ResizeArray<Puzzle.Position>()
+      let movesToCheck = ResizeArray<PuzzleTypes.Position>()
       let mutable moves = ""
-      list 
-      |> Seq.iteri(fun idx el ->            
-            moves <- 
-            if idx % 2 = 1 then 
-              let puzzle = $"position fen {fen} moves {moves}" 
-              let pos : Puzzle.Position = {Command=puzzle; CorrectMove = list[idx]; MovePlayed = ""}
+      list
+      |> Seq.iteri(fun idx el ->
+            moves <-
+            if idx % 2 = 1 then
+              let puzzle = $"position fen {fen} moves {moves}"
+              let pos : PuzzleTypes.Position = {Command=puzzle; CorrectMove = list[idx]; MovePlayed = ""}
               movesToCheck.Add pos 
             if idx = 0 then 
               sprintf "%s" el
@@ -2308,8 +2146,8 @@ module BoardUtils =
         let ret = ResizeArray<string>(shortSanMoves |> Seq.length)
         for m in shortSanMoves do
           let mutable index = 0
-          generateCaptures &(moveList) &index &position      
-          generateQuiets &(moveList) &index &position isFRC
+          generateCaptures (moveList.AsSpan()) &index &position      
+          generateQuiets (moveList.AsSpan()) &index &position isFRC
           let moves = moveList[0..index-1]
           let islegal move = BoardHelper.Illegal &move &position |> not
           
@@ -2348,8 +2186,8 @@ module BoardUtils =
     let ret = ResizeArray<string>(allMoves.Length)
     for move in allMoves do
       let mutable index = 0
-      generateCaptures &(moveList) &index &position      
-      generateQuiets &(moveList) &index &position isFRC
+      generateCaptures (moveList.AsSpan()) &index &position      
+      generateQuiets (moveList.AsSpan()) &index &position isFRC
       let moves = moveList[0..index-1]
       match tryGetTMoveFromCoordinateNotationSimple moves &position move with
       | Some tmove ->

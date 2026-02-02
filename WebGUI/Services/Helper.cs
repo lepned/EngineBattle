@@ -1,4 +1,4 @@
-﻿using static ChessLibrary.TypesDef.PGNTypes;
+﻿using static ChessLibrary.PGNTypes;
 
 namespace WebGUI.Services
 {

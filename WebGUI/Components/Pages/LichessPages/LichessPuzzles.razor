@@ -4,8 +4,8 @@
 @using System.Collections.Concurrent;
 @using WebGUI.Services;
 @using WebGUI.Components.Layout.VisualizationLayout
-@using static ChessLibrary.TypesDef.Puzzle
-@using static ChessLibrary.Utilities.JSONParser
+@using static ChessLibrary.PuzzleTypes
+@using static ChessLibrary.Configuration.JSONParser
 
 @implements IAsyncDisposable
 
@@ -61,17 +61,17 @@
         {
             <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Policy head tests  </MudText>
             <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@PolicyScores" T="Puzzle.Score" SortLabel="Sort By">
+                <MudTable FixedHeader=true Dense=true Items="@PolicyScores" T="Score" SortLabel="Sort By">
                     <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
@@ -91,17 +91,17 @@
         {
             <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Value head tests </MudText>
             <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@ValueScores" T="Puzzle.Score" SortLabel="Sort By">
+                <MudTable FixedHeader=true Dense=true Items="@ValueScores" T="Score" SortLabel="Sort By">
                     <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
@@ -122,17 +122,17 @@
         {
             <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Search tests </MudText>
             <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@SearchScores" T="Puzzle.Score" SortLabel="Sort By">
+                <MudTable FixedHeader=true Dense=true Items="@SearchScores" T="Score" SortLabel="Sort By">
                     <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Puzzle.Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
+                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
@@ -228,10 +228,10 @@
     IBrowserFile browserFile;
     private string fileName;
     private string puzzleFileName = string.Empty;
-    private Puzzle.CsvPuzzleData[] puzzles = Array.Empty<Puzzle.CsvPuzzleData>();
-    private List<Puzzle.Score> PolicyScores = new();
-    private List<Puzzle.Score> ValueScores = new();
-    private List<Puzzle.Score> SearchScores = new();
+    private CsvPuzzleData[] puzzles = Array.Empty<CsvPuzzleData>();
+    private List<Score> PolicyScores = new();
+    private List<Score> ValueScores = new();
+    private List<Score> SearchScores = new();
     private string Filter { get; set; } = ""; // "sacrifice, mate, endgame, defensive"; // "sacrifice, deflection, attraction, attack, fork, defensive";
     int failedNumber = 5;
     int solvedNumber = 5;
@@ -319,7 +319,7 @@
 
     private void Draw()
     {
-        Filter = Puzzle.drawPuzzleCategories(5);
+        Filter = drawPuzzleCategories(5);
         // var test = Puzzle.getPuzzleCategories().ToList();
         // foreach (var item in test)
         // {
@@ -331,10 +331,10 @@
         StateHasChanged();
     }
 
-    private Puzzle.CsvPuzzleData[] ParseCsv(string filePath, bool random)
+    private CsvPuzzleData[] ParseCsv(string filePath, bool random)
     {
         // Create an empty list of records
-        var records = new List<Puzzle.CsvPuzzleData>();
+        var records = new List<CsvPuzzleData>();
 
         // Read the input file
         var lines = File.ReadAllLines(filePath);
@@ -357,8 +357,8 @@
             var gameUrl = fields[8];
             var openingTags = fields[9];
             var fens = new List<string>(); //GetAllFens(fen,ms);
-            var posList = new List<Puzzle.Position>();
-            var record = Puzzle.CsvPuzzleData.Create(puzzleId, fen, moves, rating, ratingDeviation, popularity, nbPlays, themes, gameUrl, openingTags, line, posList, fens, 0);
+            var posList = new List<PuzzleTypes.Position>();
+            var record = CsvPuzzleData.Create(puzzleId, fen, moves, rating, ratingDeviation, popularity, nbPlays, themes, gameUrl, openingTags, line, posList, fens, 0);
             records.Add(record);
         }
 
@@ -390,9 +390,9 @@
             ValueScores?.Clear();
             SearchScores?.Clear();
 
-            PolicyScores = new List<Puzzle.Score>();
-            ValueScores = new List<Puzzle.Score>();
-            SearchScores = new List<Puzzle.Score>();
+            PolicyScores = new List<Score>();
+            ValueScores = new List<Score>();
+            SearchScores = new List<Score>();
 
             // Collapse any expanded UI content
             expandedScoreIds.Clear();
@@ -621,7 +621,7 @@
                 logger.LogInformation($"Loaded {formattedLength} puzzles from {normalizedPath}");
 
                 // Create the puzzle input
-                var puzzleInput = Puzzle.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
+                var puzzleInput = TypesDef.PuzzleInput.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
                                   engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, data.Concurrency);
 
 
@@ -642,7 +642,7 @@
                 {
                     case 0:
                         logger.LogInformation("No puzzle types specified, defaulting to policy and value test");
-                        scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
                         break;
 
                     case 1:
@@ -652,17 +652,17 @@
                             switch (a)
                             {
                                 case "policy":
-                                    scores = Analysis.PuzzleRunners.runPolicyHeadTest(puzzleInput, Update);
+                                    scores = PuzzleRunners.runPolicyHeadTest(puzzleInput, Update);
                                     break;
                                 case "value":
-                                    scores = Analysis.PuzzleRunners.runValueHeadTest(puzzleInput, Update);
+                                    scores = PuzzleRunners.runValueHeadTest(puzzleInput, Update);
                                     break;
                                 case "search":
-                                    scores = Analysis.PuzzleRunners.runSearchTests(puzzleInput, Update);
+                                    scores = PuzzleRunners.runSearchTests(puzzleInput, Update);
                                     break;
                                 default:
                                     logger.LogInformation($"Invalid puzzle type specified: {a} - defaulting to policy and value test");
-                                    scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                    scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
                                     break;
                             }
                         }
@@ -674,20 +674,20 @@
                             var set = new HashSet<string>(types);
                             if (set.SetEquals(new[] { "policy", "search" }))
                             {
-                                scores = Analysis.PuzzleRunners.runPolicyAndSearchTests(puzzleInput, Update);
+                                scores = PuzzleRunners.runPolicyAndSearchTests(puzzleInput, Update);
                             }
                             else if (set.SetEquals(new[] { "policy", "value" }))
                             {
-                                scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
                             }
                             else if (set.SetEquals(new[] { "search", "value" }))
                             {
-                                scores = Analysis.PuzzleRunners.runValueAndSearchTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndSearchTest(puzzleInput, Update);
                             }
                             else
                             {
                                 logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
-                                scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
                             }
                         }
                         break;
@@ -699,19 +699,19 @@
                             if (set.SetEquals(new[] { "policy", "value", "search" }))
                             {
                                 logger.LogInformation($"All three puzzle types specified: {data.Type} - running all tests, including search");
-                                scores = Analysis.PuzzleRunners.runAllTests(puzzleInput, Update);
+                                scores = PuzzleRunners.runAllTests(puzzleInput, Update);
                             }
                             else
                             {
                                 logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
-                                scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
                             }
                         }
                         break;
 
                     default:
                         logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
-                        scores = Analysis.PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
                         break;
                 }
 
@@ -745,14 +745,14 @@
                   .ToList();
                 }
 
-                var normalized = Utilities.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
+                var normalized = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
                 var table = CreateCombinedScoresTable(data.PuzzleFile);
                 logger.LogInformation(table);
                 //check if folder exists here
                 if (Directory.Exists(normalized))
                 {
                     //combine all scores into one list
-                    var allScores = new List<Puzzle.Score>();
+                    var allScores = new List<Score>();
                     allScores.AddRange(PolicyScores);
                     allScores.AddRange(ValueScores);
                     allScores.AddRange(SearchScores);

@@ -1,7 +1,7 @@
 ﻿module ChessLibrary.Perft
 
 open System.Diagnostics
-open TypesDef
+open PositionTypes
 open Chess
 open LowLevelUtilities
 open System
@@ -96,23 +96,48 @@ let timeIt f depth =
   printfn $"Nodes: {result:N0} - NPS: {nps:N0}"
   result
 
-let perft (board:Board) depth = 
+let perft (board:Board) depth =
   let rec perft depth =
-    if depth = 0 then 
+    if depth = 0 then
       1L
-    else      
+    else
       let mutable nodes = 0L
       //let mutable index = 0
       let mutable pos = board.Position
       let moves = board.GenerateMoves ()
       for move in moves do
-        if not ( BoardHelper.Illegal &move &pos) then        
+        if not ( BoardHelper.Illegal &move &pos) then
           board.MakeMove (&move)
           nodes <- nodes + perft (depth - 1)
           board.UnMakeMove () //position move undo
       nodes
   perft depth
 
+// Fast perft for testing only (skips hash tracking - not for real games)
+let perftFast (board:Board) depth =
+  let maxDepth = max depth 10
+  let buffer = Array.zeroCreate<MoveTypes.TMove> (256 * maxDepth)
+
+  let rec search depth offset =
+    if depth = 0 then 1L
+    else
+      let mutable nodes = 0L
+      let pos = board.Position
+      let bufferSpan = buffer.AsSpan(offset, 256)
+      let count = board.GenerateMovesToBuffer(bufferSpan)
+
+      for i = 0 to count - 1 do
+        let mutable move = buffer.[offset + i]
+        if not (BoardHelper.Illegal &move &pos) then
+          if depth = 1 then
+            // Bulk leaf counting - no make/unmake needed
+            nodes <- nodes + 1L
+          else
+            board.MakeMoveNoHash(&move)
+            nodes <- nodes + search (depth - 1) (offset + 256)
+            board.UnMakeMove()
+      nodes
+  search depth 0
 
 let perftOpt depth fen = 
   let board = Board()
@@ -171,6 +196,20 @@ let perftOptChecked (record:Chess960Record) depth =
   else
     board.PrintPosition "Error"
     printfn $"Captures: {board.Captures:N0} Castles: {board.Castles:N0} EP: {board.EP:N0}"
+    let diff = if res > correct then sprintf "%d too many" (res-correct) else sprintf "%d too few" (res-correct)
+    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red
+      $"\nPosition {record.PositionNumber} depth {depth}: ERROR FEN: {record.FEN}\n\tcorrect number of positions are {correct:N0}, you got {res:N0} ({diff})"
+
+let perftOptCheckedFast (record:Chess960Record) depth =
+  let board = Board()
+  board.LoadFen(record.FEN)
+  let res = perftFast board depth
+  let correct = getNumberFromRecord depth record
+  if res = correct then
+    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green
+      $"{record.PositionNumber} - TEST PASSED - Correct: {correct:N0} = {res:N0} nodes"
+  else
+    board.PrintPosition "Error"
     let diff = if res > correct then sprintf "%d too many" (res-correct) else sprintf "%d too few" (res-correct)
     LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red
       $"\nPosition {record.PositionNumber} depth {depth}: ERROR FEN: {record.FEN}\n\tcorrect number of positions are {correct:N0}, you got {res:N0} ({diff})"
@@ -235,7 +274,7 @@ let divide depth fen =
         board.MakeMove &move
         nodes <- perft board (depth - 1)
         board.UnMakeMove()
-        printfn $"  {TMove.TMoveOps.moveToStr &move position.STM}:   {nodes:N0}"
+        printfn $"  {MoveTypes.TMoveOps.moveToStr &move position.STM}:   {nodes:N0}"
       total <- total + nodes
   printfn $"\nTotalt: {total:N0}"
 

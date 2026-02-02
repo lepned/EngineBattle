@@ -115,7 +115,7 @@
 
 		var opening = OpeningSansForDeviation is null ? Array.Empty<string>() : OpeningSansForDeviation.ToArray();
 		var reference = ReferenceSansForDeviation is null ? Array.Empty<string>() : ReferenceSansForDeviation.ToArray();
-		var deviationIndex = ChessLibrary.Utilities.MoveHistoryDeviation.FirstDeviationIndex(moveHistory, opening, reference);
+		var deviationIndex = ChessLibrary.GameAnalysis.MoveHistoryDeviation.FirstDeviationIndex(moveHistory, opening, reference);
 		if (deviationIndex.HasValue)
 			firstDeviationSanIndex = deviationIndex.Value;
 	}
@@ -164,7 +164,7 @@
 		}
 	}
 
-	private async Task SetArrowHighlighting(CoreTypes.MoveAndFen input)
+	private async Task SetArrowHighlighting(MoveAndFen input)
 	{
 		if (chessJSmodule is not null)
 		{
@@ -172,7 +172,7 @@
 		}
 	}
 
-	private async Task SetPositionAndMove(CoreTypes.MoveAndFen input)
+	private async Task SetPositionAndMove(MoveAndFen input)
 	{
 		if (chessJSmodule is null || input is null || input.Move is null || input.Move.LongSan.Length < 4)
 		{

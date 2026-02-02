@@ -227,7 +227,7 @@ else
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
 
-        var games = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
+        var games = FullPGNParser.parsePgnFile(fullPath).ToList();
     var comparList = ConvertCsvStringToList(comparePlayers);
     var deviations = 
       isFindMoveAllDifferencesEnabled ?

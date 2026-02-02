@@ -4,11 +4,14 @@ open System
 open System.IO
 open System.Threading.Tasks
 open Xunit
-open ChessLibrary.Parser
-open ChessLibrary.TypesDef.PGNTypes
+open ChessLibrary.PGNTypes
 open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.Parser.MoveParser
+module MoveParser = ChessLibrary.MoveParser
+module FullPGNParser = ChessLibrary.FullPGNParser
+module PGNHelper = ChessLibrary.PGNHelper
+module EPDExtractor = ChessLibrary.EPDExtractor
+module PGNWriter = ChessLibrary.PGNWriter
 
 [<Fact>]
 let ``getOpeningInfo returns correct string for opening/variation/eco`` () =
@@ -108,12 +111,12 @@ let ``legacy PGN opening hash recompute matches book`` () =
         let bookGames = FullPGNParser.parsePgnFile bookPath |> Seq.toList
         let bookHashes =
             bookGames
-            |> Seq.map ChessLibrary.Utilities.Hash.computeOpeningHashFromGame
+            |> Seq.map ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame
             |> Set.ofSeq
         let games = FullPGNParser.parsePgnFile gamesPath |> Seq.toList
         Assert.True(games.Length >= 25, $"Expected at least 25 games, found {games.Length}")
         for g in games do
-            let computed = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame g
+            let computed = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame g
             Assert.True(
                 bookHashes.Contains computed,
                 $"Missing opening hash for game {g.GameMetaData.White} vs {g.GameMetaData.Black}")
@@ -128,7 +131,7 @@ let ``legacy PGN next unused opening index matches first unused book entry`` () 
         let bookGames = FullPGNParser.parsePgnFile bookPath |> Seq.toList
         let usedOpeningHashes =
             FullPGNParser.parsePgnFile gamesPath
-            |> Seq.map ChessLibrary.Utilities.Hash.computeOpeningHashFromGame
+            |> Seq.map ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame
             |> Set.ofSeq
         let startIndex = 0
         let expectedIndex =
@@ -141,17 +144,17 @@ let ``legacy PGN next unused opening index matches first unused book entry`` () 
                         startIndex % total
                     else
                         let idx = (startIndex + offset) % total
-                        let hash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame bookGames.[idx]
+                        let hash = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame bookGames.[idx]
                         if usedOpeningHashes.Contains hash then
                             loop (offset + 1)
                         else
                             idx
                 loop 0
         let actualIndex =
-            ChessLibrary.Utilities.PairingHelper.nextUnusedOpeningIndex usedOpeningHashes bookGames startIndex
+            ChessLibrary.TournamentPairing.PairingHelper.nextUnusedOpeningIndex usedOpeningHashes bookGames startIndex
         Assert.Equal(expectedIndex, actualIndex)
         if bookGames.IsEmpty |> not then
-            let nextHash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame bookGames.[actualIndex]
+            let nextHash = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame bookGames.[actualIndex]
             Assert.True(usedOpeningHashes.Contains nextHash |> not)
     else
         ()
@@ -165,7 +168,7 @@ let ``legacy PGN round-robin resume ends on opening 25`` () =
         let games = FullPGNParser.parsePgnFile gamesPath |> Seq.toList
         games
             |> List.iter (fun g ->
-                let hash = ChessLibrary.Utilities.Hash.computeOpeningHashFromGame g
+                let hash = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame g
                 g.GameMetaData.OpeningHash <- hash )
         let engines =
             games
@@ -173,11 +176,11 @@ let ``legacy PGN round-robin resume ends on opening 25`` () =
             |> Seq.distinct
             |> Seq.map (fun name -> { EngineConfig.Empty with Name = name })
             |> Seq.toList
-        let pairings = ChessLibrary.Utilities.PairingHelper.generateAllRoundRobinDoubleRounds engines bookGames
-        let playedSet = ChessLibrary.Utilities.PairingHelper.playedSet (games |> Seq.toArray)
+        let pairings = ChessLibrary.TournamentPairing.PairingHelper.generateAllRoundRobinDoubleRounds engines bookGames
+        let playedSet = ChessLibrary.TournamentPairing.PairingHelper.playedSet (games |> Seq.toArray)
         let usedOpeningNumbers =
             pairings
-            |> Seq.filter (fun p -> ChessLibrary.Utilities.PairingHelper.hasPlayedBefore p playedSet)
+            |> Seq.filter (fun p -> ChessLibrary.TournamentPairing.PairingHelper.hasPlayedBefore p playedSet)
             |> Seq.map (fun p -> p.Opening.GameNumber)
             |> Seq.distinct
             |> Seq.toList
@@ -196,38 +199,38 @@ let ``legacy PGN round-robin resume ends on opening 25`` () =
 
 [<Fact>]
 let ``calculateMedianNodes returns 0.0 for empty array`` () =
-    let moves : ChessLibrary.TypesDef.Engine.EngineMoveStat array = [||]
-    let result = ChessLibrary.Parser.PGNStatistics.calculateMedianNodes moves
+    let moves : ChessLibrary.EngineTypes.EngineMoveStat array = [||]
+    let result = ChessLibrary.PGNStatistics.calculateMedianNodes moves
     Assert.Equal(0.0, result)
 
 [<Fact>]
 let ``calculateMedianNodes returns correct median for odd count`` () =
     let moves =
-        [| { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 10L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 30L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 20L } |]
-    let result = ChessLibrary.Parser.PGNStatistics.calculateMedianNodes moves
+        [| { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 10L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 30L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 20L } |]
+    let result = ChessLibrary.PGNStatistics.calculateMedianNodes moves
     Assert.Equal(20.0, result)
 
 [<Fact>]
 let ``calculateMedianNodes returns correct median for even count`` () =
     let moves =
-        [| { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 10L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 30L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 20L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 40L } |]
-    let result = ChessLibrary.Parser.PGNStatistics.calculateMedianNodes moves
+        [| { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 10L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 30L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 20L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 40L } |]
+    let result = ChessLibrary.PGNStatistics.calculateMedianNodes moves
     Assert.Equal(25.0, result)
 
 [<Fact>]
 let ``calculateMedianNodes ignores zero and negative nodes`` () =
     let moves =
-        [| { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 0L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = -5L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 10L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 20L }
-           { ChessLibrary.TypesDef.Engine.EngineMoveStat.Empty with n = 30L } |]
-    let result = ChessLibrary.Parser.PGNStatistics.calculateMedianNodes moves
+        [| { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 0L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = -5L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 10L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 20L }
+           { ChessLibrary.EngineTypes.EngineMoveStat.Empty with n = 30L } |]
+    let result = ChessLibrary.PGNStatistics.calculateMedianNodes moves
     Assert.Equal(20.0, result)
 
 [<Fact>]
@@ -433,7 +436,7 @@ let ``parseFullPgnGame parses lichess odds game with variations`` () : Task = ta
 // ============================================================================
 
 module FullSpanParserTests =
-    open ChessLibrary.Parser.FullPGNParser
+    open ChessLibrary.FullPGNParser // functions become available directly
 
     [<Fact>]
     let ``FullSpanParser parses simple PGN string`` () =
@@ -1137,8 +1140,8 @@ module PGNWriterTests =
     open System
     open System.IO
     open Xunit
-    open ChessLibrary.Parser
-    open ChessLibrary.Parser.FullPGNParser
+    open ChessLibrary.FullPGNParser // functions become available directly
+    open ChessLibrary.PGNWriter // functions become available directly
 
     [<Fact>]
     let ``PGNWriter.removePlayerFromPGN filters games and writes output`` () =

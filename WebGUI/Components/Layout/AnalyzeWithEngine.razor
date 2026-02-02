@@ -5,9 +5,9 @@
 @using System.Text
 @using Toolbelt.Blazor.HotKeys2
 @using System.Globalization
-@using static ChessLibrary.TypesDef.Engine
+@using static ChessLibrary.EngineTypes
 @using static ChessLibrary.TypesDef.CoreTypes
-@using static ChessLibrary.Analysis
+
 
 @inject IJSRuntime JS
 @inject JavaScriptInteropService JsInteropService
@@ -234,7 +234,7 @@
     [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
     [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
     [Parameter] public string Player { get; set; }
-    [Parameter] public TypesDef.Puzzle.AnalyzeConfig Config { get; set; }
+    [Parameter] public PuzzleTypes.AnalyzeConfig Config { get; set; }
 
     private int Nodes = 0;
     private int ChartLines = 3;
@@ -285,7 +285,7 @@
     private string backend = "";
     private bool searchInProgress = false;
     private bool waitingForEngine = false;
-    private ChessLibrary.Analysis.Manager.SimpleEngineAnalyzer analyzer;
+    private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
     private List<NNValues> NNInfoList = new();
     public List<string> InfoLineList = new();
     string baseline0 = """backend=cuda-fp16,(gpu=0,value_head=winner)""";
@@ -716,7 +716,7 @@
         {
             analyzer = await Task.Factory.StartNew(() =>
             {
-                return new Analysis.Manager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
             });
             analyzer.Board = ChessBoard;
         }
@@ -1277,7 +1277,7 @@
         return $"W: {win:P0} D: {draw:P0} L: {loss:P0}";
     }
 
-    private async Task Update(CoreTypes.EngineStatus status)
+    private async Task Update(EngineStatus status)
     {
         var nodes = FormatNodes(status.Nodes);
         var nps = FormatNPS(status.NPS);

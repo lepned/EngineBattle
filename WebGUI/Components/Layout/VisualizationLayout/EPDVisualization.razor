@@ -14,14 +14,14 @@
 
 @code {
 
-	[Parameter] public EPD.EPDEntry EPD { get; set; }
+	[Parameter] public EPDTypes.EPDEntry EPD { get; set; }
 
 	private string subHeader = string.Empty;
 	private string header = string.Empty;	
 	private IJSObjectReference chessJSmodule; //my own chessinterop.js
 	private ElementReference boardElement;
 
-	string GetHeader(EPD.EPDEntry epd)
+	string GetHeader(EPDTypes.EPDEntry epd)
 	{
 		StringBuilder msgBuilder = new StringBuilder();
 
@@ -44,7 +44,7 @@
 		return msgBuilder.ToString();
 	}
 
-	string GetSubHeader(EPD.EPDEntry epd)
+	string GetSubHeader(EPDTypes.EPDEntry epd)
 	{
 		StringBuilder msgBuilder = new StringBuilder();
 

@@ -16,7 +16,7 @@ let ``FirstDeviationIndex ignores move numbers and opening and finds mismatch`` 
 
   // Second game moveHistory starts after opening, includes move numbers.
   let moveHistory = "9. h3 a6 10. a3"
-  let idx = Utilities.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
   Assert.True(idx.HasValue)
   Assert.Equal(0, idx.Value)
 
@@ -25,7 +25,7 @@ let ``FirstDeviationIndex finds later deviation`` () =
   let opening = [| "e4"; "e5"; "Nf3"; "Nc6" |]
   let referenceSans = Array.append opening [| "Bb5"; "a6"; "Ba4" |]
   let moveHistory = "3. Bb5 a6 4. Bc4"
-  let idx = Utilities.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
   Assert.True(idx.HasValue)
   Assert.Equal(2, idx.Value)
 
@@ -35,7 +35,7 @@ let ``FirstDeviationIndex treats 9... as move number token`` () =
   let opening = [| "d4" |]
   let referenceSans = Array.append opening [| "d5"; "c4"; "e6" |]
   let moveHistory = "1... d5 2. Nf3"
-  let idx = Utilities.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
   Assert.True(idx.HasValue)
   Assert.Equal(1, idx.Value)
 
@@ -43,7 +43,7 @@ let ``FirstDeviationIndex treats 9... as move number token`` () =
 let ``FirstDeviationIndex returns null when reference missing`` () =
   let opening = [| |]
   let moveHistory = "1. e4 e5 2. Nf3"
-  let idx = Utilities.MoveHistoryDeviation.firstDeviationIndex moveHistory opening Array.empty
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening Array.empty
   Assert.False(idx.HasValue)
 
 [<Fact>]
@@ -51,6 +51,6 @@ let ``FirstDeviationIndex returns next-move index when current is longer but pre
   let opening = [| "e4"; "e5" |]
   let referenceSans = Array.append opening [| "Nf3"; "Nc6" |]
   let moveHistory = "2. Nf3 Nc6 3. Bb5"
-  let idx = Utilities.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
+  let idx = GameAnalysis.MoveHistoryDeviation.firstDeviationIndex moveHistory opening referenceSans
   Assert.True(idx.HasValue)
   Assert.Equal(2, idx.Value)

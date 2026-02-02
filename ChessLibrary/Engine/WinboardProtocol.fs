@@ -4,8 +4,8 @@ open System
 open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
 open Microsoft.FSharp.Core.Operators.Unchecked
-open TypesDef.TMove
-open TypesDef.Position
+open MoveTypes
+open PositionTypes
 open TypesDef.CoreTypes
 open Chess
 open Chess.BoardUtils

@@ -1,18 +1,16 @@
 ﻿module ChessLibrary.Test
 
 open System
-open System.Text.RegularExpressions
 open System.Collections.Generic
-open Microsoft.FSharp.Core.Operators.Unchecked
 open System.IO
-open TypesDef.Position
-open TypesDef.TMove
-open TypesDef
-open Utilities
+open PositionTypes
+open MoveTypes
+open GameAnalysis
+open EngineProtocol
+open ChessUtilities
 open LowLevelUtilities
 open Chess
 open Chess.BoardUtils
-open Parser
 open Perft
 open System.Diagnostics
 
@@ -187,6 +185,7 @@ let timeAndReportPerft (records: seq<Chess960Record>) depth =
     printfn "\nOverall: Total Nodes = %d, Total Time = %.2f seconds, NPS = %s" totalNodes totalTime (String.Format("{0:N0}", overallNps))
 
 
+
 let repeatPerft fen depth n =
   for _ = 1 to n do
     Perft.perftOpt depth fen |> ignore
@@ -221,14 +220,40 @@ let smallFRCPerftVerificationTest upto =
 
 let completeFRCPerftVerificationTest depth upto =
   let orgColor = Console.ForegroundColor
-  let records = 
-    TestPositions.CHESS960PERFT_POS.Split(Environment.NewLine) 
-    |> Seq.skip(1) 
-    |> Seq.map parseChess960Record 
-    |> Seq.truncate upto 
+  let records =
+    TestPositions.CHESS960PERFT_POS.Split(Environment.NewLine)
+    |> Seq.skip(1)
+    |> Seq.map parseChess960Record
+    |> Seq.truncate upto
     |> Seq.toArray
-  printfn $"\nStarting Chess960 Chess perft test"  
-  timeAndReportPerft records depth 
+  printfn $"\nStarting Chess960 Chess perft test"
+  timeAndReportPerft records depth
+  Console.ForegroundColor <- orgColor
+
+let completeFRCPerftVerificationTestFast depth upto =
+  let orgColor = Console.ForegroundColor
+  let records =
+    TestPositions.CHESS960PERFT_POS.Split(Environment.NewLine)
+    |> Seq.skip(1)
+    |> Seq.map parseChess960Record
+    |> Seq.truncate upto
+    |> Seq.toArray
+  printfn $"\nStarting Chess960 Chess perft test (FAST - for testing only)"
+  let mutable totalNodes = 0L
+  let mutable totalTime = 0.0
+  let stopwatch = Stopwatch.StartNew()
+  for r in records do
+    stopwatch.Restart()
+    Perft.perftOptCheckedFast r depth
+    let nodes = getNumberFromRecord depth r
+    stopwatch.Stop()
+    let elapsedSeconds = stopwatch.Elapsed.TotalSeconds
+    let nps = float nodes / elapsedSeconds
+    totalNodes <- totalNodes + nodes
+    totalTime <- totalTime + elapsedSeconds
+    printfn "\tTime = %.2f seconds, NPS = %s" elapsedSeconds (String.Format("{0:N0}", nps))
+  let overallNps = float totalNodes / totalTime
+  printfn "\nOverall: Total Nodes = %d, Total Time = %.2f seconds, NPS = %s" totalNodes totalTime (String.Format("{0:N0}", overallNps))
   Console.ForegroundColor <- orgColor
 
 let bigPerftTestSample depth =
@@ -257,10 +282,10 @@ let fen2 = "8/p1r1Nb2/1p1R1P1k/7p/P1p1N1p1/8/1bB2P1P/6K1 w - - 5 41"
 
 let mutable posToUse = board.Position
 BoardHelper.loadFen(Some fen1, &posToUse)
-let h1 = Utilities.Hash.hashBoard posToUse
+let h1 = Hash.hashBoard posToUse
 posToUse <- board.Position
 BoardHelper.loadFen(Some fen2, &posToUse)
-let h2 = Utilities.Hash.hashBoard posToUse
+let h2 = Hash.hashBoard posToUse
 //printfn "%d vs %d" h1 h2
 
 let testMovegenerator() =  
@@ -345,7 +370,7 @@ module ParsingTests =
         for m in pgn.Mainline do
             board.PlaySimpleShortSan m.San
             if printToConsole then
-              match Utilities.Regex.parseEvalRegexOption m.Comment false with
+              match Regex.parseEvalRegexOption m.Comment false with
               | Some eval -> 
                     if m.Color = "w" then
                       printfn "White move %s, move number: %d Eval: %f" m.San m.MoveNumber eval
@@ -378,7 +403,7 @@ module ParsingTests =
       for m in pgn.Mainline do        
           board.PlaySimpleShortSan m.San          
           if printToConsole then
-            match Utilities.Regex.parseEvalRegexOption m.Comment false with
+            match Regex.parseEvalRegexOption m.Comment false with
             | Some eval -> 
                 if m.Color = "b" then
                   printfn "Black move %s, move number: %d Eval: %f" m.San m.MoveNumber eval
@@ -404,10 +429,10 @@ module ParsingTests =
           for m in pgn.Mainline do            
             ply <- ply + 1
             board.PlaySimpleShortSan m.San
-            match Utilities.Regex.parseEvalRegexOption m.Comment false with
+            match Regex.parseEvalRegexOption m.Comment false with
             | Some eval ->
                 let pd =
-                    match Utilities.Regex.parsePonderMove m.Comment with
+                    match Regex.parsePonderMove m.Comment with
                     | Some ponder -> ponder
                     | None -> ""
                 let comment = sprintf "{%s}" m.Comment
@@ -447,10 +472,10 @@ module ParsingTests =
       [
           for m in pgn.Mainline do
                 board.PlaySimpleShortSan m.San
-                match Utilities.Regex.parseEvalRegexOption m.Comment false with
+                match Regex.parseEvalRegexOption m.Comment false with
                 | Some eval ->
                     let pd =
-                      match Utilities.Regex.parsePonderMove m.Comment with
+                      match Regex.parsePonderMove m.Comment with
                       | Some ponder -> ponder
                       | None -> ""
                     let comment = sprintf "{%s}" m.Comment
@@ -965,7 +990,7 @@ module ParsingTests =
           let lastEval = abs (lastSixMoves |> Seq.last).EvalDetail.Eval
           let fiftyMove = board.Position.Count50 >= 100uy
           let rep = board.RepetitionNr()
-          let insufficientMaterial = board.InsufficentMaterial()         
+          let insufficientMaterial = board.InsufficientMaterial()         
           let stalemate = board.AnyLegalMove() |> not && board.IsMate() |> not          
           let result = createResult player true threshold mEval lastEval (rep = 2) (rep = 3) fiftyMove stalemate insufficientMaterial
           results.Add(result)
@@ -999,8 +1024,8 @@ module ParsingTests =
               appendLine (sprintf "\tGame ends in high eval with two-fold = %b" (rep = 2))
               appendLineToPlayer player (sprintf "\tGame ends in high eval with two-fold = %b" (rep = 2))
             if insufficientMaterial then 
-              appendLine (sprintf "\tGame ends in high eval with InsufficentMaterial = %b" insufficientMaterial)            
-              appendLineToPlayer player (sprintf "\tGame ends in high eval with InsufficentMaterial = %b" insufficientMaterial)
+              appendLine (sprintf "\tGame ends in high eval with InsufficientMaterial = %b" insufficientMaterial)            
+              appendLineToPlayer player (sprintf "\tGame ends in high eval with InsufficientMaterial = %b" insufficientMaterial)
             
           else            
             appendLine "\tGame ends in low eval"
@@ -1013,7 +1038,7 @@ module ParsingTests =
         let maxEval = (evals |> List.maxBy (fun e -> e.EvalDetail.Eval)).EvalDetail.Eval        
         let fiftyMove = board.Position.Count50 >= 100uy
         let rep = board.RepetitionNr()
-        let insufficientMaterial = board.InsufficentMaterial()         
+        let insufficientMaterial = board.InsufficientMaterial()         
         let stalemate = board.AnyLegalMove() |> not && board.IsMate() |> not 
         let whoWon = if pgn.GameMetaData.Result = "1-0" then pgn.GameMetaData.White else pgn.GameMetaData.Black
         let result = createResult whoWon false threshold maxEval lastEval (rep = 2) (rep = 3) fiftyMove stalemate insufficientMaterial

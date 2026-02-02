@@ -7,10 +7,11 @@ open System.Text.Json
 open System.Collections.Generic
 open System.Linq
 open ChessLibrary.Engine
-open ChessLibrary.Utilities.Formatting
-open ChessLibrary.Utilities.Regex
+open ChessLibrary.GameAnalysis.Formatting
+open ChessLibrary.EngineProtocol.Regex
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.TypesDef.Misc
+open ChessLibrary.MiscTypes
+open ChessLibrary.EngineTypes
 
 module BenchmarkRunner =
 
@@ -298,7 +299,7 @@ module BenchmarkRunner =
     let combos = buildCombinations optionSets
     let totalCombos = combos.Length
     let engineConfigPath = resolvePath config.EngineConfigPath "Engine config"
-    let baselineConfig = ChessLibrary.Utilities.JSON.readSingleEngineConfig engineConfigPath    
+    let baselineConfig = ChessLibrary.Configuration.JSON.readSingleEngineConfig engineConfigPath    
     let syzygyKey = 
         baselineConfig.Options.Keys 
         |> Seq.tryFind (fun key -> key.Equals("syzygypath", StringComparison.OrdinalIgnoreCase))

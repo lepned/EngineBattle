@@ -6,7 +6,7 @@
 	if (Score.FailedPuzzles.Count > 0)
 	{
 		<MudPaper Elevation="2">			
-			<MudTable Class="mt-4 pl-3" Items="@FailedPuzzles" FixedHeader=true T="(Puzzle.CsvPuzzleData,string)">
+			<MudTable Class="mt-4 pl-3" Items="@FailedPuzzles" FixedHeader=true T="(CsvPuzzleData,string)">
 				<RowTemplate>
 					<MudTd>
 						<PuzzleVisualSolution Size="240" Puzzle="context.Item1" PolicyData="@context.Item2" NeuralNet="@Score.NeuralNet" Solved=false />
@@ -18,7 +18,7 @@
 	if (Score.CorrectPuzzles.Count > 0)
 	{
 		<MudPaper Elevation="2">	
-			<MudTable Class="mt-4 pl-3" Items="@SolvedPuzzles" FixedHeader=true T="Puzzle.CsvPuzzleData">
+			<MudTable Class="mt-4 pl-3" Items="@SolvedPuzzles" FixedHeader=true T="CsvPuzzleData">
 				<RowTemplate>
 					<MudTd>
 						<PuzzleVisualSolution Size="240" Puzzle="context" NeuralNet="@Score.NeuralNet" Solved=true />
@@ -32,7 +32,7 @@
 @code {
 
 	[Parameter]
-	public Puzzle.Score Score { get; set; }
+	public Score Score { get; set; }
 
 	[Parameter]
 	public int NumberOfFailedPussles { get; set; }
@@ -40,7 +40,7 @@
 	[Parameter]
 	public int NumberOfSolvedPussles { get; set; }
 
-	private List<(Puzzle.CsvPuzzleData, string)> FailedPuzzles => Score.FailedPuzzles
+	private List<(CsvPuzzleData, string)> FailedPuzzles => Score.FailedPuzzles
 		.Select(tuple => (tuple.Item1, tuple.Item2))
 		.OrderBy(tuple =>
 		{
@@ -57,5 +57,5 @@
 		.ToList();
 	
 
-	private List<Puzzle.CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.OrderByDescending(e => e.Rating).Take(NumberOfSolvedPussles).ToList();
+	private List<CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.OrderByDescending(e => e.Rating).Take(NumberOfSolvedPussles).ToList();
 }

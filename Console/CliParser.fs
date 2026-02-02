@@ -1,12 +1,12 @@
 ﻿module CliParser
 
 open System
-open System.IO
 open System.Text
 
 // --- CLI definition using a discriminated union ---
 type VerbResult =
     | Perft of depth:int * sampleSize:int
+    | PerftFast of depth:int * sampleSize:int
     | Analyze of fenOrFile:string
     | PuzzleJson of path:string
     | Tournament of configFile:string
@@ -24,9 +24,9 @@ type CLIArguments =
 
 let createCombinedScoresTable
     (fileName: string)
-    (policyScores: ChessLibrary.TypesDef.Puzzle.Score list)
-    (valueScores: ChessLibrary.TypesDef.Puzzle.Score list) 
-    (searchScores: ChessLibrary.TypesDef.Puzzle.Score list)=
+    (policyScores: ChessLibrary.PuzzleTypes.Score list)
+    (valueScores: ChessLibrary.PuzzleTypes.Score list)
+    (searchScores: ChessLibrary.PuzzleTypes.Score list)=
     
     let sb = StringBuilder()
     sb.AppendLine("\n```\n") |> ignore
@@ -216,6 +216,19 @@ module CustomParser =
                             10
                     parseArgs args (nextIndex) (Verb (Perft (depth, sampleSize)) :: acc)
                 else failwith "Missing parameter for PERFT"
+            | "perftfast" -> // Handle the PERFT FAST verb (optimized version)
+                if index + 1 < args.Length then
+                    let mutable nextIndex = index + 2
+                    let depth = parseInt args.[index + 1]
+                    let sampleSize =
+                        if index + 2 < args.Length then
+                            nextIndex <- index + 3
+                            parseInt args.[index + 2]
+                        else
+                            printfn "Missing sample size for PERFTFAST. Using default value of 10."
+                            10
+                    parseArgs args (nextIndex) (Verb (PerftFast (depth, sampleSize)) :: acc)
+                else failwith "Missing parameter for PERFTFAST"
             | "analyze" -> // Handle the Analyze verb
                 if index + 1 < args.Length then
                     let fenOrFile = args.[index + 1]

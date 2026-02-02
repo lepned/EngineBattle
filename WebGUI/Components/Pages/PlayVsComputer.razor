@@ -4,7 +4,7 @@
 @using WebGUI.Components.Layout.ChessboardLayout
 @using WebGUI.Services
 @using System.Timers
-@using static ChessLibrary.TypesDef.Engine
+@using static ChessLibrary.EngineTypes
 @inject ILogger<PlayVsComputer> logger
 @inject NotifierService Notifier
 @inject OverlaySetting overlaySettings
@@ -241,7 +241,7 @@
     private string WhitePlayerLabel => humanIsWhite ? "You" : Engine?.Name ?? "Computer";
     private string BlackPlayerLabel => humanIsWhite ? Engine?.Name ?? "Computer" : "You";
 
-    private ChessLibrary.Analysis.Manager.SimpleEngineAnalyzer analyzer;
+    private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
     IBrowserFile browserFile;
 
     protected override void OnInitialized()
@@ -534,7 +534,7 @@
 
         try
         {
-            var parsedGames = Parser.FullPGNParser.parsePgnFile(gamesPath).ToList();
+            var parsedGames = FullPGNParser.parsePgnFile(gamesPath).ToList();
             var loaded = new List<GameResult>();
             foreach (var game in parsedGames)
             {
@@ -602,7 +602,7 @@
         };
     }
 
-    private static string GetTerminationTag(ChessLibrary.TypesDef.PGNTypes.GameMetadata meta)
+    private static string GetTerminationTag(ChessLibrary.PGNTypes.GameMetadata meta)
     {
         if (meta.OtherTags == null || meta.OtherTags.IsEmpty)
         {
@@ -743,7 +743,7 @@
             return true;
         }
         // Draw by insufficient material
-        if (board.InsufficentMaterial())
+        if (board.InsufficientMaterial())
         {
             EndGame("Draw", "Insufficient material", "Draw by insufficient material.");
             return true;
@@ -840,7 +840,7 @@
 
         if (analyzer == null)
         {
-            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false);
+            analyzer = new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false);
             try
             {
                 analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
@@ -854,7 +854,7 @@
 
         else
         {
-            var nodeLimitCommand = TypesDef.TimeControl.TimeControlCommands.createNodes(numberOfNodes);
+            var nodeLimitCommand = TimeControlTypes.TimeControlCommands.createNodes(numberOfNodes);
             if (IsCustomTimeControl && customLimitMode == "Nodes")
             {
                 analyzer.Play(nodeLimitCommand);
@@ -863,7 +863,7 @@
             {
                 var big = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(300));
                 var zero = TimeOnly.FromTimeSpan(TimeSpan.Zero);
-                var incrCommand = TypesDef.TimeControl.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
+                var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
                 analyzer.Play(incrCommand);
             }
             else
@@ -872,7 +872,7 @@
                 var timeOnlyBlack = new TimeOnly(blackTime.Ticks);
                 var incWhite = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(whiteIncrementSeconds));
                 var incBlack = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(blackIncrementSeconds));
-                var incrCommand = TypesDef.TimeControl.TimeControlCommands.createTimeControlWithIncrement(timeOnlyWhite, timeOnlyBlack, incWhite, incBlack);
+                var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(timeOnlyWhite, timeOnlyBlack, incWhite, incBlack);
                 Console.WriteLine(incrCommand);
                 analyzer.Play(incrCommand);
             }
@@ -948,7 +948,7 @@
             logger.LogInformation("New engine.json file loaded {jsonFile}", e.File.Name);
             var engineConfig = JSON.readSingleEngineConfig(fullPath);
             Engine = engineConfig;
-            analyzer = new Analysis.Manager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false);
+            analyzer = new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false);
             engineReady = true;
             
             try

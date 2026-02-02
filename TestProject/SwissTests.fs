@@ -4,9 +4,9 @@ open System.Collections.Generic
 open System.Text.Json
 open Xunit
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.TypesDef
-open ChessLibrary.TypesDef.Swiss
-open ChessLibrary.Utilities.PairingHelper
+open ChessLibrary.PGNTypes
+open ChessLibrary.SwissTypes
+open ChessLibrary.TournamentPairing.PairingHelper
 
 // Set to true to enable verbose test output for debugging
 let private verboseOutput = false
@@ -18,7 +18,7 @@ let private mkRatedPlayer name rating =
     { EngineConfig.Empty with Name = name; Rating = rating }
 
 let private mkOpening gameNr =
-    { PGNTypes.PgnGame.Empty gameNr with Raw = $"opening-{gameNr}" }
+    { PgnGame.Empty gameNr with Raw = $"opening-{gameNr}" }
 
 let private seedOrderNames players groupCount =
     tcecSeedOrder players groupCount |> List.map (fun p -> p.Name)
@@ -1411,7 +1411,7 @@ let ``swiss state regenerates global opening order after loading trimmed data`` 
               UniqueOpeningsGlobal = true
               NextOpeningIndex = 0
               GlobalOpeningOrder = largeOrder
-              Rounds = ResizeArray<Swiss.SwissRound>()
+              Rounds = ResizeArray<SwissRound>()
               UpdatedUtc = System.DateTime.UtcNow }
 
         // Simulate writeSwissState trimming
@@ -1429,7 +1429,7 @@ let ``swiss state regenerates global opening order after loading trimmed data`` 
         let json = System.Text.Json.JsonSerializer.Serialize(trimmedState, opts)
         System.IO.File.WriteAllText(tempPath, json)
         let readOpts = System.Text.Json.JsonSerializerOptions(PropertyNameCaseInsensitive = true)
-        let loaded = System.Text.Json.JsonSerializer.Deserialize<Swiss.SwissState>(System.IO.File.ReadAllText(tempPath), readOpts)
+        let loaded = System.Text.Json.JsonSerializer.Deserialize<SwissState>(System.IO.File.ReadAllText(tempPath), readOpts)
 
         // Verify it was trimmed
         Assert.Equal(50, loaded.GlobalOpeningOrder.Count)
@@ -1456,9 +1456,9 @@ let ``swiss pairing regenerates opening order after loading trimmed data`` () =
               PlayerARating = 3000; PlayerBRating = 2900
               ScoreA = 0.0; ScoreB = 0.0
               IsDecided = false
-              Games = ResizeArray<Swiss.SwissGame>()
+              Games = ResizeArray<SwissGame>()
               OpeningOrder = largeOrder }
-        let round = { RoundNumber = 1; Pairings = ResizeArray<Swiss.SwissPairing>([ pairing ]) }
+        let round = { RoundNumber = 1; Pairings = ResizeArray<SwissPairing>([ pairing ]) }
         let state =
             { TournamentName = "SwissPairingRegenerateTest"
               SeedGroupCount = 1
@@ -1466,7 +1466,7 @@ let ``swiss pairing regenerates opening order after loading trimmed data`` () =
               UniqueOpeningsGlobal = false
               NextOpeningIndex = 0
               GlobalOpeningOrder = ResizeArray<int>()
-              Rounds = ResizeArray<Swiss.SwissRound>([ round ])
+              Rounds = ResizeArray<SwissRound>([ round ])
               UpdatedUtc = System.DateTime.UtcNow }
 
         // Simulate trimming
@@ -1493,7 +1493,7 @@ let ``swiss pairing regenerates opening order after loading trimmed data`` () =
         let json = System.Text.Json.JsonSerializer.Serialize(trimmedState, opts)
         System.IO.File.WriteAllText(tempPath, json)
         let readOpts = System.Text.Json.JsonSerializerOptions(PropertyNameCaseInsensitive = true)
-        let loaded = System.Text.Json.JsonSerializer.Deserialize<Swiss.SwissState>(System.IO.File.ReadAllText(tempPath), readOpts)
+        let loaded = System.Text.Json.JsonSerializer.Deserialize<SwissState>(System.IO.File.ReadAllText(tempPath), readOpts)
 
         let loadedPairing = loaded.Rounds.[0].Pairings.[0]
         Assert.Equal(50, loadedPairing.OpeningOrder.Count)
@@ -2026,7 +2026,7 @@ let ``round 7 from actual swiss_state json shows pairing order bug`` () =
         Assert.Fail("swiss_state.json not found. Please provide the file to reproduce the bug.")
 
     let json = System.IO.File.ReadAllText(jsonPath)
-    let state = JsonSerializer.Deserialize<ChessLibrary.TypesDef.Swiss.SwissState>(json)
+    let state = JsonSerializer.Deserialize<ChessLibrary.SwissTypes.SwissState>(json)
 
     debugPrint "Loaded Swiss state: %d rounds" state.Rounds.Count
 

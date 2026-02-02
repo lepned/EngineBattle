@@ -1,8 +1,9 @@
 module PentanomialTests
 
 open Xunit
-open ChessLibrary.TypesDef.PGNTypes
-open ChessLibrary.Utilities
+open ChessLibrary.PGNTypes
+open ChessLibrary.Configuration
+open ChessLibrary.Statistics
 
 let private mkGame gameNumber openingHash white black result =
     let meta =

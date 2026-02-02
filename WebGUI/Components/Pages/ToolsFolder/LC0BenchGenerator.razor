@@ -28,7 +28,7 @@
     }
 
     var selectedConfig = JSON.readSingleEngineConfig(fullPath);
-    var res = Utilities.Engine.createLC0BenchmarkString(selectedConfig);
+    var res = EngineProtocol.Engine.createLC0BenchmarkString(selectedConfig);
     var msg = $"File selected: {pgnName} \nEngine name: {selectedConfig.Name}\n\n{res}";
     benchmark = msg;
     logger.LogCritical(msg);

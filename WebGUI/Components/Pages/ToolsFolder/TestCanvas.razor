@@ -20,8 +20,8 @@
 
 @code {
 
-  private List<EPD.EPDEntry> EPDList = new();
-  private List<EPD.TablebaseEPDEntry> TBEPDList = new();
+  private List<EPDTypes.EPDEntry> EPDList = new();
+  private List<EPDTypes.TablebaseEPDEntry> TBEPDList = new();
   private List<PGNTypes.PgnGame> PGNgames = new();
   IBrowserFile browserFile;
   private string result;
@@ -38,8 +38,8 @@
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);    
     }
     
-    var netFile = Tests.records(fullPath).OrderByDescending(e => e.QDn).Take(250);
-    var epds = netFile.Select((e, id) => Parser.EPDExtractor.mapChessRecordToEPD(e, id));
+    var netFile = TestsTypes.records(fullPath).OrderByDescending(e => e.QDn).Take(250);
+    var epds = netFile.Select((e, id) => EPDExtractor.mapChessRecordToEPD(e, id));
     EPDList.Clear();
     TBEPDList.Clear();    
     EPDList.AddRange(epds);
@@ -59,12 +59,12 @@
       browserFile = e.File;
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
-    var testList = Parser.PGNHelper.readTableBaseResults(fullPath).ToList();
+    var testList = PGNHelper.readTableBaseResults(fullPath).ToList();
     File.Delete(fullPath);
     var tourny = ChessLibrary.Tournament.Manager.loadTournament();
     var configs = tourny.EngineSetup.Engines.ToList();
     var head = configs.First();
-    var results = await Analysis.PuzzleEngineAnalysis.performQValueTestOnTB(1, head, testList);
+    var results = await PuzzleEngineAnalysis.performQValueTestOnTB(1, head, testList);
     EPDList.Clear();
     TBEPDList.Clear();
     var ordered = results.CorrectPuzzles.OrderBy(e => e.EPD.FEN).ToList();
@@ -87,7 +87,7 @@
       browserFile = e.File;
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
-    var epds = Parser.EPDExtractor.readEPDs(fullPath).Take(1500).ToList();
+    var epds = EPDExtractor.readEPDs(fullPath).Take(1500).ToList();
     if (epds.Count == 0)
     {
       logger.LogInformation("No EPDs found in file");
@@ -112,7 +112,7 @@
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
 
-    PGNgames = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
+    PGNgames = FullPGNParser.parsePgnFile(fullPath).ToList();
     File.Delete(fullPath);    
     StateHasChanged();    
   }
@@ -134,7 +134,7 @@
       if (File.Exists(fullPath))
       {
         StripText(fullPath, savedTo);
-        TBEPDList = Parser.PGNHelper.readTableBaseResults(savedTo).ToList();
+        TBEPDList = PGNHelper.readTableBaseResults(savedTo).ToList();
         StateHasChanged();
       }
     }

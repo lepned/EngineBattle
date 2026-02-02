@@ -3,11 +3,10 @@
 open System
 open System.IO
 open Xunit
-open ChessLibrary.LowLevelUtilities
 open ChessLibrary.LowLevelUtilities.Agents
 open ChessLibrary.LowLevelUtilities.ConsoleUtils
 open ChessLibrary.LowLevelUtilities.BoardHelper
-open ChessLibrary.TypesDef.Position
+open ChessLibrary.PositionTypes
 
 // Test for parseUciResponse
 [<Fact>]
@@ -54,14 +53,6 @@ let ``handleUciResponse should handle UCI responses correctly`` () =
         Assert.Contains("Unknown response: unknown command", output)
     finally
         Console.SetOut(originalOut)
-
-// Test for flipVertical
-[<Fact>]
-let ``flipVertical should flip the bitboard vertically`` () =
-    let input = 0x00000000000000FFUL
-    let expected = 0xFF00000000000000UL
-    let result = flipVertical input
-    Assert.Equal(expected, result)
 
 // Test for posToFen
 [<Fact>]

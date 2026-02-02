@@ -2,8 +2,9 @@
 
 
 using static ChessLibrary.TypesDef.CoreTypes;
-using static ChessLibrary.TypesDef.PGNTypes;
-using static ChessLibrary.TypesDef.Puzzle;
+using static ChessLibrary.PGNTypes;
+using static ChessLibrary.PuzzleTypes;
+using static ChessLibrary.EngineTypes;
 
 
 namespace WebGUI.Services

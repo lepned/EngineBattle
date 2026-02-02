@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Components;
 using static ChessLibrary.Chess;
 using static ChessLibrary.TypesDef.CoreTypes;
+using static ChessLibrary.EngineTypes;
 using static MudBlazor.CategoryTypes;
 
 namespace WebGUI.Services

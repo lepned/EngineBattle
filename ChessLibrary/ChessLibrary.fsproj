@@ -1,33 +1,117 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>  
-    <OutputType>Library</OutputType>  
+    <PropertyGroup>
+    <OutputType>Library</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     </PropertyGroup>
 
 	<ItemGroup>
-		<Compile Include="Exception.fs" />
-		<Compile Include="UciOption.fs" />
-		<Compile Include="ConsoleHandler.fs" />
-		<Compile Include="QBBOperations.fs" />
-		<Compile Include="CoreTypes.fs" />
-		<Compile Include="MoveGeneration.fs" />
-		<Compile Include="LowLevelUtilities.fs" />
-		<Compile Include="Parser.fs" />
-		<Compile Include="Utilities.fs" />
-		<Compile Include="Board.fs" />
-		<Compile Include="ArgsParser.fs" />
-		<Compile Include="WinboardProtocol.fs" />
-		<Compile Include="WinboardIntegration.fs" />
-		<Compile Include="Engine.fs" />
-		<Compile Include="Analysis.fs" />		
+		<!-- Base utilities (no dependencies) -->
+		<Compile Include="Utilities\Exception.fs" />
+		<Compile Include="Engine\UciOption.fs" />
+
+		<!-- Chess bitboard operations (no type dependencies) -->
+		<Compile Include="Chess\QBBOperations.fs" />
+
+		<!-- Types (depend on utilities) -->
+		<Compile Include="Types\TestsTypes.fs" />
+		<Compile Include="Types\LayoutTypes.fs" />
+		<Compile Include="Types\EPDTypes.fs" />
+		<Compile Include="Types\CupTypes.fs" />
+		<Compile Include="Types\SwissTypes.fs" />
+		<Compile Include="Types\TimeControlTypes.fs" />
+		<Compile Include="Types\MiscTypes.fs" />
+		<Compile Include="Types\PGNTypes.fs" />
+		<Compile Include="Types\PositionTypes.fs" />
+		<Compile Include="Types\MoveTypes.fs" />
+		<Compile Include="Types\EngineTypes.fs" />
+		<Compile Include="Types\PuzzleTypes.fs" />
+		<Compile Include="Types\CoreTypes.fs" />
+
+		<!-- Tournament formatting (depends on types) -->
+		<Compile Include="Tournament\TournamentFormatting.fs" />
+
+		<!-- Move generation (depends on QBBOperations, types) -->
+		<Compile Include="Chess\MoveGeneration.fs" />
+
+		<!-- Low-level utilities (depends on QBBOperations, types, MoveGeneration) -->
+		<Compile Include="Utilities\LowLevelUtilities.fs" />
+
+		<!-- Parser modules (depend on types) -->
+		<Compile Include="Configuration\PGNHelper.fs" />
+		<Compile Include="Configuration\PGNExtractor.fs" />
+		<Compile Include="Configuration\PGNStatistics.fs" />
+		<Compile Include="Configuration\MoveParser.fs" />
+		<Compile Include="Configuration\EPDExtractor.fs" />
+		<Compile Include="Configuration\PGNWriter.fs" />
+		<Compile Include="Configuration\FullPGNParser.fs" />
+
+		<!-- Chess utilities (depends on types, LowLevelUtilities) -->
+		<Compile Include="Utilities\ChessUtilities.fs" />
+
+		<!-- Analysis - Statistics (depends on types) -->
+		<Compile Include="Analysis\Statistics.fs" />
+
+		<!-- Engine protocol (depends on types) -->
+		<Compile Include="Engine\EngineProtocol.fs" />
+
+		<!-- Tournament pairing (depends on types, parser) -->
+		<Compile Include="Tournament\TournamentPairing.fs" />
+
+		<!-- Analysis - GameAnalysis (depends on types, statistics, protocol) -->
+		<Compile Include="Analysis\GameAnalysis.fs" />
+
+		<!-- Configuration (depends on types, GameAnalysis) -->
+		<Compile Include="Configuration\Configuration.fs" />
+
+		<!-- Board (depends on types, MoveGeneration, LowLevelUtilities) -->
+		<Compile Include="Chess\Board.fs" />
+
+		<!-- Args parser (depends on types) -->
+		<Compile Include="Configuration\ArgsParser.fs" />
+
+		<!-- Winboard protocol (depends on types) -->
+		<Compile Include="Engine\WinboardProtocol.fs" />
+		<Compile Include="Engine\WinboardIntegration.fs" />
+
+		<!-- Engine (depends on protocol, configuration, LowLevelUtilities) -->
+		<Compile Include="Engine\Engine.fs" />
+
+		<!-- Analysis support modules (depend on engine, parser, configuration, GameAnalysis) -->
+		<Compile Include="Analysis\AnalysisHelper.fs" />
+		<Compile Include="Analysis\AnalysisManager.fs" />
+		<Compile Include="Analysis\PuzzleDataUtils.fs" />
+		<Compile Include="Analysis\PuzzleEngineAnalysis.fs" />
+		<Compile Include="Analysis\PuzzleEngineAgent.fs" />
+		<Compile Include="Analysis\PuzzleRunners.fs" />
+		<Compile Include="Analysis\PuzzleExperiments.fs" />
+
+		<!-- Analysis main (depends on extracted modules) -->
+
+		<!-- Tests folder -->
 		<None Include="Tests\cccDownloader.fsx" />
 		<Compile Include="Tests\Chess960TestPositions.fs" />
 		<None Include="Tests\Script1.fsx" />
-		<None Include="Tests\testOfCliWrap.fsx" />		
+		<None Include="Tests\testOfCliWrap.fsx" />
 		<Compile Include="Tests\Perft.fs" />
 		<Compile Include="Tests\Test.fs" />
-		<Compile Include="Tournament.fs" />
+
+		<!-- Tournament support modules (depend on engine, parser, etc.) -->
+		<Compile Include="Tournament\TournamentTypes.fs" />
+		<Compile Include="Tournament\TournamentState.fs" />
+		<Compile Include="Tournament\TablebaseProbe.fs" />
+		<Compile Include="Tournament\GameReplay.fs" />
+		<Compile Include="Tournament\GameAdjudication.fs" />
+		<Compile Include="Tournament\GameInitialization.fs" />
+		<Compile Include="Tournament\GameHelpers.fs" />
+		<Compile Include="Tournament\GameExecution.fs" />
+		<Compile Include="Tournament\GamePersistence.fs" />
+		<Compile Include="Tournament\GameSetup.fs" />
+		<Compile Include="Tournament\TournamentRunners.fs" />
+		<Compile Include="Tournament\ParallelExecution.fs" />
+
+		<!-- Tournament runner (depends on everything) -->
+		<Compile Include="Tournament\Tournament.fs" />
 	</ItemGroup>
 
 	<ItemGroup>

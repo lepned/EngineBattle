@@ -66,8 +66,8 @@
 	private string executablePath = @"C:/Dev/Chess/Ordo/ordo-win64.exe";
 	private readonly Dictionary<string, double> epsByPlayer = new(StringComparer.OrdinalIgnoreCase);
 
-	string FormatNps(double nps) => Formatting.formatNPS(nps);
-	string FormatEps(double eps) => Formatting.formatEPS(eps);
+	string FormatNps(double nps) => GameAnalysis.Formatting.formatNPS(nps);
+	string FormatEps(double eps) => GameAnalysis.Formatting.formatEPS(eps);
 	string FormatSpeedWithEps(double nps, string player)
 	{
 		var baseSpeed = FormatNps(nps);
@@ -120,8 +120,8 @@
 			browserFile = e.File;
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
-		var games = Parser.FullPGNParser.parsePgnFile(fullPath).ToList();
-		var speedStats = Parser.PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
+		var games = FullPGNParser.parsePgnFile(fullPath).ToList();
+		var speedStats = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
 		foreach (var stat in speedStats)
 		{
 			if (stat.Median && stat.EPS > 0.0)
@@ -130,8 +130,8 @@
 			}
 		}
 		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = Chess.Deviation.analyzeDeviations(games);
-		Utilities.PGNCalculator.idealizedEloPrint(cross);
-		var pentaDefault = Utilities.Pentanomial.formatPerEngineDefault(games);
+		GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
+		var pentaDefault = Statistics.Pentanomial.formatPerEngineDefault(games);
 		//var pentaAlt = Utilities.Pentanomial.formatAllMatchups(games, 200);
 		//var both = pentaAlt + "\n\n" + pentaDefault;
 		logger.LogInformation("Pentanomial results:\n{Penta}", pentaDefault);
@@ -154,16 +154,16 @@
 		if (!string.IsNullOrEmpty(executablePath))
 		{
 			// Or the appropriate path on macOS/Linux
-			var cmd = Utilities.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine);
+			var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine);
 			var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
 			Console.WriteLine(ordoCommandString);
-			var ordo = await Utilities.OrdoHelper.runCommandAsync(cmd, engineLineData);
+			var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData);
 			Console.WriteLine(ordo);
 		}
 
 		if (cross.Count > 2)
 		{
-			var crossTableConsole = Utilities.OrdoHelper.printStatsMatrix(cross);
+			var crossTableConsole = GameAnalysis.OrdoHelper.printStatsMatrix(cross);
 			logger.LogInformation(crossTableConsole);
 		}
 		logger.LogInformation("Done with calculation");

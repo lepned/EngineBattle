@@ -4,7 +4,7 @@ open Xunit
 open System
 open System.IO
 open ChessLibrary.Chess
-open ChessLibrary.Parser
+open ChessLibrary
 
 [<Fact>]
 let ``ResetBoardState should reset board to initial state`` () =

@@ -142,12 +142,12 @@
   //private string whiteUnicode = "&#x2654";
   //private string blackUnicode = "&#x265A";
 
-  private string GetWDLString(CoreTypes.WDLType wdlValue)
+  private string GetWDLString(WDLType wdlValue)
   {
     string msg = "[0.0%|0.0%|0.0%]";
     switch (wdlValue)
     {
-      case CoreTypes.WDLType.HasValue wdlinput:
+      case WDLType.HasValue wdlinput:
         var wdl = wdlinput.Values;
         msg = $"[{(wdl.Win / 1000):P1}|{(wdl.Draw / 1000):P1}|{(wdl.Loss / 1000):P1}]";
         break;
