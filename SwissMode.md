@@ -1,13 +1,19 @@
 # Swiss Mode
 
-Swiss mode runs a fixed number of rounds and supports byes for odd player counts. Each pairing is played as a two-game pair (colors swapped).
+Swiss mode runs a fixed number of rounds where players with similar scores are paired together. Each pairing is played as a two-game match (same opening, colors swapped).
+
+## Quick Start
+
+1. Set `TournamentMode` to `Swiss`
+2. Ensure the number of rounds is less than the number of players (to avoid forced rematches)
+3. Configure `SwissOptions` as needed
 
 ## Configuration (tournament.json)
 
-```
+```json
 "SwissOptions": {
   "GamesPerMatch": 2,
-  "Rounds": 0,
+  "Rounds": 5,
   "SeedGroupCount": 1,
   "UniquePerMatchOnly": true,
   "RandomOpenings": true,
@@ -16,97 +22,107 @@ Swiss mode runs a fixed number of rounds and supports byes for odd player counts
 }
 ```
 
-Notes:
+### Field Summary
 
-- `Rounds` uses the global tournament `Rounds` value when set to `0`. Repeat pairings are not allowed, so rounds must be less than the number of players.
-- If there is an odd number of players, one player receives a bye each round (worth 1 point); byes are not repeated when possible.
-- `GamesPerMatch` should be even; each pair is two games (white/black).
-- `SeedGroupCount` controls TCEC-style seeding groups (A/B/C/...).
-
-SwissOptions field summary:
-
-- `GamesPerMatch`: Number of games per pairing (use even numbers; each pair is two games).
-- `Rounds`: Total number of swiss rounds to play (must be less than number of players).
-- `SeedGroupCount`: Number of seeding groups for TCEC-style interleaving.
-- `UniquePerMatchOnly`: Allow reusing openings across matches; still unique within a match.
-- `RandomOpenings`: Randomize opening order; persisted for resume.
-- `AllowExtraPairsOnTie`: If the top score is tied after scheduled rounds, play extra pairs until resolved.
-- `StatePath`: JSON state file used for resume and GUI updates.
-
-## SeedGroupCount examples
-
-These examples assume engines are sorted by rating and then split into groups.
-
-- 8 players (recommend `SeedGroupCount = 1`):
-  - Order: A1, A2, A3, A4, A5, A6, A7, A8.
-  - Round 1 pairings (top-half vs bottom-half): A1–A5, A2–A6, A3–A7, A4–A8.
-- 12 players (recommend `SeedGroupCount = 2`):
-  - Groups of 6 (A1..A6, B1..B6), seeding order: A1, B1, A2, B2, A3, B3, A4, B4, A5, B5, A6, B6.
-- 24 players (recommend `SeedGroupCount = 4`):
-  - Groups of 6 (A1..A6, B1..B6, C1..C6, D1..D6), seeding order: A1, B1, C1, D1, A2, B2, C2, D2, A3, B3, C3, D3, A4, B4, C4, D4, A5, B5, C5, D5, A6, B6, C6, D6.
-
-### Recommended SeedGroupCount
-
-Use fewer groups for more conservative seeding, more groups to spread top seeds further.
-
-- Fewer than 12 players: recommend `SeedGroupCount = 1`.
-- Fewer than 24 players: recommend `SeedGroupCount = 2`.
-- 24 players or more: recommend `SeedGroupCount = 4`.
+| Field | Description |
+|-------|-------------|
+| `GamesPerMatch` | Games per pairing (must be even; each pair is two games with colors swapped). |
+| `Rounds` | Total Swiss rounds. Uses global `Rounds` when set to 0. Must be less than player count to avoid forced rematches. |
+| `SeedGroupCount` | Number of seeding groups for TCEC-style interleaving (see below). |
+| `UniquePerMatchOnly` | When true, openings can repeat across matches but not within a match. |
+| `RandomOpenings` | Randomize opening order; the shuffled order is persisted for resume. |
+| `AllowExtraPairsOnTie` | Play extra pairs to break ties at the top after scheduled rounds. |
+| `StatePath` | JSON file for state persistence and GUI updates. |
 
 ## Seeding
 
 Default seeding uses TCEC-style grouping and interleaving:
 
-- Sort engines by rating (desc).
-- Split into N groups of roughly equal size.
-- Interleave by rank: A1, B1, C1, ... then A2, B2, C2, ...
+1. Sort engines by rating (descending).
+2. Split into N groups of roughly equal size.
+3. Interleave by rank: A1, B1, C1, ... then A2, B2, C2, ...
 
-## Pairing rules
+### SeedGroupCount Examples
 
-- Group players by score (highest to lowest).
-- Sort within each group by rating (desc).
-- Pair top-half vs bottom-half within the same score group.
-- If a group has an odd count, float one player down (lowest-rated in the group).
-- No repeat pairings. If a repeat occurs, swap within the group; if unresolved, float a different player.
-- If repeats cannot be resolved inside a group, allow a single cross-group pairing.
-- Generate the full round pairing list at round start and publish it to the GUI.
-- Each round starts with the weakest pairs first.
+| Players | Recommended | Result |
+|---------|-------------|--------|
+| 8 | 1 | A1, A2, A3, A4, A5, A6, A7, A8 |
+| 12 | 2 | A1, B1, A2, B2, A3, B3, ... |
+| 24 | 4 | A1, B1, C1, D1, A2, B2, C2, D2, ... |
 
-## Color in pair (game 1)
+Use fewer groups for conservative seeding, more groups to spread top seeds further apart.
 
-Follow TCEC: higher seed gets White in game 1 of the pair, then colors flip for game 2.
+## Pairing Algorithm
 
-## Openings
+The pairing algorithm follows standard Swiss principles with two code paths:
 
-Same opening strategy as cup mode:
+### Main Path (Grouped Pairing)
 
-- Each pair uses one opening twice (colors swapped).
-- Unique-per-match behavior matches cup rules.
-- Randomization controlled by `RandomOpenings`.
+1. Group players by current score (highest to lowest).
+2. Sort within each group by seed (strongest first).
+3. Split each group into top-half and bottom-half.
+4. Pair top-half vs bottom-half (1st vs middle, 2nd vs middle+1, etc.).
+5. If a group has odd count, float one player down to the next score group.
+6. Backtrack if a pairing would cause a rematch.
 
-## Tie-breakers (TCEC-style)
+### Fallback Path
 
-- Winner is decided by points only. If needed, play extra pairs.
-- Controlled by `SwissOptions.AllowExtraPairsOnTie`.
-- If two engines are tied, play additional pairs until a decisive pair occurs.
-- If three or more are tied, tiebreaks are used to resolve the winner.
-- For non-winner placements, use tie-break order:
-  1) Sonneborn-Berger
-  2) Number of wins
-  3) Direct encounter
-  4) If still tied, share places unless it affects promotion/relegation.
+When the main path fails due to complex prior-pairing constraints (common in later rounds), a fallback algorithm attempts global pairing:
 
-## State persistence
+1. Order all players by score (descending), then by seed.
+2. Greedily pair each player with the closest-scoring available opponent.
+3. Backtrack if needed to avoid rematches.
 
-Swiss state is persisted in a JSON file (`StatePath`), including:
+Both paths produce pairings sorted so that **weakest score groups play first** and strongest last.
 
-- Current round number
-- Pairings per round
-- Results per game
+## Bye Selection
+
+When there is an odd number of players, one player receives a bye (worth 1 point). The bye recipient is selected as follows:
+
+1. **Lowest score first**: Players with fewer points are prioritized.
+2. **Weakest among ties**: If multiple players share the lowest score, the one with the highest seed number (lowest rating) receives the bye.
+3. **No repeat byes**: Players who have already received a bye are skipped when possible.
+
+This ensures byes go to trailing engines, and among equals, to the lower-rated one.
+
+## Game Execution Order
+
+Each round executes pairings from weakest to strongest score groups. This follows standard Swiss convention:
+- Weaker matchups typically finish faster
+- Top games are saved for last (more exciting for spectators)
+- Reduces overall round duration
+
+## Opening Selection
+
+- Each match uses one opening played twice (colors swapped for the second game).
+- When `RandomOpenings` is true, the opening order is shuffled once and persisted.
+- When `UniquePerMatchOnly` is true, openings can repeat across different matches but not within a single match.
+
+## Tie-Breakers (TCEC-style)
+
+Winner determination:
+- Points only. If tied after scheduled rounds, play extra pairs (if `AllowExtraPairsOnTie` is true).
+- For two tied engines: play additional pairs until one wins a pair.
+- For three or more tied: use tie-break criteria.
+
+Tie-break order for non-winner placements:
+1. Sonneborn-Berger score
+2. Number of wins
+3. Direct encounter result
+4. If still tied, share places (unless it affects promotion/relegation)
+
+## State Persistence
+
+Swiss state is saved to `StatePath` (JSON) after each game, including:
+- Current round number and global opening index
+- All pairings per round with results
 - Standings snapshot per round
+- Opening order (for resume consistency)
 
-## UI
+To resume a tournament, ensure the state file exists at the configured path.
 
-- Standings table similar to round-robin standings.
-- Pairings list for the current round.
-- Swiss overview dialog between games.
+## UI Integration
+
+- Standings table with live score updates
+- Current round pairings list
+- Swiss overview dialog between games

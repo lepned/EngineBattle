@@ -286,20 +286,20 @@ module Engine =
         else
             match winboardHandler with
             | Some handler ->
-                // Translate UCI to Winboard
-                let winboardCmds = handler.UciToWinboard(s)
+                // Translate UCI to Winboard (analysis mode)
+                let winboardCmds = handler.UciToWinboard(s, analysisMode = true)
                 let hasGo = winboardCmds |> List.exists ((=) "go")
                 let hasTimeCommands = winboardCmds |> List.exists (fun c -> c.StartsWith("time ") || c.StartsWith("otim "))
 
                 for cmd in winboardCmds do
                     logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" s cmd name)
-                    engineProcess.StandardInput.WriteLine(cmd)
-
                     // For engines without ping support: add delay after time/otim and before go
                     // to ensure time commands are processed before engine starts searching
-                    if hasGo && hasTimeCommands && not handler.Features.Ping then
-                        if cmd.StartsWith("time ") || cmd.StartsWith("otim ") then
-                            System.Threading.Thread.Sleep(100)  // Small delay to avoid race condition
+                    if cmd.StartsWith "go" then
+                        let preGoDelay = config.WinboardConfig |> Option.map (fun wbc -> wbc.PreGoDelayMs) |> Option.defaultValue 100
+                        if preGoDelay > 0 then
+                            System.Threading.Thread.Sleep(preGoDelay)
+                    engineProcess.StandardInput.WriteLine(cmd)
             | None ->
                 // Normal UCI
                 engineProcess.StandardInput.WriteLine(s)
@@ -461,7 +461,8 @@ module Engine =
               // Wait for initialization (2 second timeout for V1 engine detection)
               logDebug $"[{name}] Waiting for Winboard initialization to complete..."
               let startWait = System.DateTime.UtcNow
-              let initSuccess = initializeWinboardEventBased handler (Some logger) name 2000 |> Async.RunSynchronously
+              let forceV1 = config.WinboardConfig |> Option.map (fun wbc -> wbc.ForceV1Mode) |> Option.defaultValue false
+              let initSuccess = initializeWinboardEventBased handler (Some logger) name 2000 forceV1 |> Async.RunSynchronously
               let waitTime = (System.DateTime.UtcNow - startWait).TotalMilliseconds
               logInformation $"[{name}] Winboard init wait completed in {waitTime}ms, success={initSuccess}"
               if not initSuccess then
@@ -872,8 +873,6 @@ module Engine =
                       | Some handler ->
                           // Translate UCI to Winboard
                           let winboardCmds = handler.UciToWinboard(s)
-                          let hasGo = winboardCmds |> List.exists ((=) "go")
-                          let hasTimeCommands = winboardCmds |> List.exists (fun c -> c.StartsWith("time ") || c.StartsWith("otim "))
 
                           // Create a shorter log message for position commands
                           let logMsg =
@@ -890,13 +889,14 @@ module Engine =
 
                           for cmd in winboardCmds do
                               logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
-                              proc.StandardInput.WriteLine(cmd)
 
                               // For engines without ping support: add delay after time/otim and before go
                               // to ensure time commands are processed before engine starts searching
-                              if hasGo && hasTimeCommands && not handler.Features.Ping then
-                                  if cmd.StartsWith("time ") || cmd.StartsWith("otim ") then
-                                      System.Threading.Thread.Sleep(100)  // Small delay to avoid race condition
+                              if cmd.StartsWith "go" then
+                                  let preGoDelay = config.WinboardConfig |> Option.map (fun wbc -> wbc.PreGoDelayMs) |> Option.defaultValue 100
+                                  if preGoDelay > 0 then
+                                      System.Threading.Thread.Sleep(preGoDelay)
+                              proc.StandardInput.WriteLine(cmd)                              
                       | None ->
                           // Normal UCI
                           logDebug (sprintf "Writing to %s: %s" name s)
@@ -945,7 +945,8 @@ module Engine =
             match winboardHandler with
             | Some handler ->
                 // Winboard initialization - use the helper function with v1 detection
-                initializeWinboard proc handler logger name 30000 |> Async.RunSynchronously
+                let forceV1 = config.WinboardConfig |> Option.map (fun wbc -> wbc.ForceV1Mode) |> Option.defaultValue false
+                initializeWinboard proc handler logger name 30000 forceV1 |> Async.RunSynchronously
     
             | None ->
                 // Original UCI initialization
@@ -1228,6 +1229,7 @@ module Engine =
             true
         | Some handler ->
             // Winboard v2 with ping support - wait for pong/readyok
+            let cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.0))
             write "isready"
             let rec readUntilReady() = async {
               try

@@ -5075,7 +5075,9 @@ module Manager =
                   let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
                   let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
                   { baseOptions with Rounds = rounds }
-                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode }
+                // Challengers is only used for Gauntlet mode; reset to 0 for other modes
+                let challengers = if isGauntlet then tourny.Challengers else 0
+                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode; Challengers = challengers }
                 Utilities.Validation.validateTournamentInput updatedTourny
                 updatedTourny
               else 
@@ -5095,8 +5097,11 @@ module Manager =
                   let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
                   let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
                   { baseOptions with Rounds = rounds }
-                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode }
-        
+                // Challengers is only used for Gauntlet mode; reset to 0 for other modes
+                let isGauntlet = tournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
+                let challengers = if isGauntlet then tourny.Challengers else 0
+                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode; Challengers = challengers }
+
             let openingPath = 
               match tourny.Opening.OpeningsPath with
               |Some path -> 

@@ -1265,7 +1265,7 @@ type Board() =
           { Text = edge.San
             DisplayText = formatTokenText ply edge.San isLineStart inVariation
             Fen = moveGraph.NodesById[edge.To].Fen
-            MoveCoord = if edge.Lan.Length >= 4 then edge.Lan.Substring(0,4) else String.Empty
+            MoveCoord = edge.Lan //if edge.Lan.Length >= 4 then edge.Lan.Substring(0,4) else String.Empty
             IsBracket = false
             Hash = moveGraph.NodesById[edge.To].Hash
             FromVariation = inVariation
@@ -1292,7 +1292,7 @@ type Board() =
                 { Text = mainChild.San
                   DisplayText = formatTokenText (ply + 1) mainChild.San mainChildIsLineStart inVariation
                   Fen = moveGraph.NodesById[mainChild.To].Fen
-                  MoveCoord = if mainChild.Lan.Length >= 4 then mainChild.Lan.Substring(0,4) else String.Empty
+                  MoveCoord = mainChild.Lan
                   IsBracket = false
                   Hash = moveGraph.NodesById[mainChild.To].Hash
                   FromVariation = inVariation
@@ -1323,7 +1323,7 @@ type Board() =
                 { Text = mainChild.San
                   DisplayText = formatTokenText (ply + 1) mainChild.San isLineStart inVariation
                   Fen = moveGraph.NodesById[mainChild.To].Fen
-                  MoveCoord = if mainChild.Lan.Length >= 4 then mainChild.Lan.Substring(0,4) else String.Empty
+                  MoveCoord = mainChild.Lan
                   IsBracket = false
                   Hash = moveGraph.NodesById[mainChild.To].Hash
                   FromVariation = inVariation

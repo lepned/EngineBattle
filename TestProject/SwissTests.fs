@@ -8,6 +8,12 @@ open ChessLibrary.TypesDef
 open ChessLibrary.TypesDef.Swiss
 open ChessLibrary.Utilities.PairingHelper
 
+// Set to true to enable verbose test output for debugging
+let private verboseOutput = false
+
+let private debugPrint fmt =
+    Printf.kprintf (fun s -> if verboseOutput then printfn "%s" s) fmt
+
 let private mkRatedPlayer name rating =
     { EngineConfig.Empty with Name = name; Rating = rating }
 
@@ -241,7 +247,8 @@ let ``swissRoundPairings 5 rounds 6 players no repeats and complete round robin`
     let round5Pairs = swissRoundPairings players seedOrder round5Scores priorPairs Set.empty
     Assert.Equal(3, round5Pairs.Length)
     let round5Names = round5Pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
-    Assert.Equal<string list>([ "A-F"; "B-C"; "D-E" ], round5Names)
+    // Correct order: weakest score groups first (D-E, then B-C, then A-F)
+    Assert.Equal<string list>([ "D-E"; "B-C"; "A-F" ], round5Names)
     for (a, b) in round5Pairs do
         let key = swissPairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
@@ -280,7 +287,8 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds`` (
     let round5Pairs = swissRoundPairings players seedOrder round5Scores priorPairs Set.empty
     Assert.Equal(3, round5Pairs.Length)
     let round5Names = round5Pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
-    Assert.Equal<string list>([ "A-F"; "B-C"; "D-E" ], round5Names)
+    // Correct order: weakest score groups first (D-E, then B-C, then A-F)
+    Assert.Equal<string list>([ "D-E"; "B-C"; "A-F" ], round5Names)
     for (a, b) in round5Pairs do
         let key = swissPairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
@@ -314,7 +322,8 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds gro
     let round5Pairs = swissRoundPairings players seedOrder round5Scores priorPairs Set.empty
     Assert.Equal(3, round5Pairs.Length)
     let round5Names = round5Pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
-    Assert.Equal<string list>([ "A-F"; "B-D"; "C-E" ], round5Names)
+    // Correct order: weakest score groups first (C-E, then B-D, then A-F)
+    Assert.Equal<string list>([ "C-E"; "B-D"; "A-F" ], round5Names)
     for (a, b) in round5Pairs do
         let key = swissPairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
@@ -348,7 +357,8 @@ let ``swissRoundPairings 5th round works with distinct scores after 4 rounds gro
     let round5Pairs = swissRoundPairings players seedOrder round5Scores priorPairs Set.empty
     Assert.Equal(3, round5Pairs.Length)
     let round5Names = round5Pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
-    Assert.Equal<string list>([ "A-D"; "B-F"; "C-E" ], round5Names)
+    // Correct order: weakest score groups first (C-E, then B-F, then A-D)
+    Assert.Equal<string list>([ "C-E"; "B-F"; "A-D" ], round5Names)
     for (a, b) in round5Pairs do
         let key = swissPairKey a.Name b.Name
         Assert.False(priorPairs.Contains key)
@@ -416,7 +426,8 @@ let ``swissRoundPairings fallback pairing order is deterministic`` () =
         |> Map.ofList
     let round5Pairs = swissRoundPairings players seedOrder round5Scores priorPairs Set.empty
     let round5Names = round5Pairs |> List.map (fun (a, b) -> $"{a.Name}-{b.Name}")
-    Assert.Equal<string list>([ "A-F"; "B-C"; "D-E" ], round5Names)
+    // Correct order: weakest score groups first (D-E, then B-C, then A-F)
+    Assert.Equal<string list>([ "D-E"; "B-C"; "A-F" ], round5Names)
 
 [<Fact>]
 let ``swissRoundPairings 5 players 5 rounds each player gets at most one bye`` () =
@@ -1496,3 +1507,710 @@ let ``swiss pairing regenerates opening order after loading trimmed data`` () =
 
     finally
         if System.IO.File.Exists tempPath then System.IO.File.Delete tempPath
+
+[<Fact>]
+let ``swiss pairing orders weakest engines first and strongest last`` () =
+    // This test verifies that pairings are ordered correctly:
+    // 1. Lower score groups come before higher score groups
+    // 2. Within each score group, weaker pairings (higher minSeed) come before stronger pairings (lower minSeed)
+    // This ensures weak engines play first in the round and top engines play last
+    let players =
+        [ mkRatedPlayer "Stockfish" 3500      // Will be seed 1 (strongest)
+          mkRatedPlayer "Leela" 3450           // Will be seed 2
+          mkRatedPlayer "Komodo" 3400          // Will be seed 3
+          mkRatedPlayer "RubiChess" 3350       // Will be seed 4
+          mkRatedPlayer "Berserk" 3300         // Will be seed 5
+          mkRatedPlayer "Ethereal" 3250        // Will be seed 6
+          mkRatedPlayer "Obsidian" 3200        // Will be seed 7
+          mkRatedPlayer "Caissa" 3150 ]        // Will be seed 8 (weakest)
+
+    let seedOrder = tcecSeedOrder players 2
+    let seedMap =
+        seedOrder
+        |> List.mapi (fun idx p -> p.Name, idx + 1)
+        |> Map.ofList
+
+    // Scenario: Mixed scores after a few rounds
+    let scores =
+        [ "Stockfish", 3.0   // Top score group
+          "Leela", 3.0
+          "Komodo", 2.0       // Middle score group
+          "RubiChess", 2.0
+          "Berserk", 2.0
+          "Ethereal", 2.0
+          "Obsidian", 1.0     // Bottom score group
+          "Caissa", 1.0 ]
+        |> Map.ofList
+
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+
+    // Get the minimum seed for each pairing
+    let getMinSeed (a: EngineConfig, b: EngineConfig) =
+        let seedA = seedMap.[a.Name]
+        let seedB = seedMap.[b.Name]
+        min seedA seedB
+
+    let pairSeeds = pairs |> List.map getMinSeed
+
+    // CRITICAL: Weakest pairings (highest minSeed) should come first,
+    // strongest pairings (lowest minSeed) should come last
+    // So pairSeeds should be in DESCENDING order
+    let isSortedDescending =
+        pairSeeds
+        |> List.pairwise
+        |> List.forall (fun (a, b) -> a >= b)
+
+    Assert.True(isSortedDescending,
+        $"Pairings should be ordered weakest first, strongest last. Got seeds: {pairSeeds}")
+
+    // Verify specific expectations:
+    // First pairing should include the weakest players (highest seeds)
+    let firstPair = pairs |> List.head
+    let firstPairSeeds = Set.ofList [ seedMap.[fst(firstPair).Name]; seedMap.[snd(firstPair).Name] ]
+    // Should include seeds 7 and/or 8 (Obsidian/Caissa in 1.0 group)
+    Assert.True(firstPairSeeds.Contains(7) || firstPairSeeds.Contains(8),
+        $"First pairing should include weakest players. Got seeds: {firstPairSeeds}")
+
+    // Last pairing should include the strongest players (lowest seeds)
+    let lastPair = pairs |> List.last
+    let lastPairSeeds = Set.ofList [ seedMap.[fst(lastPair).Name]; seedMap.[snd(lastPair).Name] ]
+    // Should include seeds 1 and/or 2 (Stockfish/Leela in 3.0 group)
+    Assert.True(lastPairSeeds.Contains(1) || lastPairSeeds.Contains(2),
+        $"Last pairing should include strongest players. Got seeds: {lastPairSeeds}")
+
+    // Verify that the top engines (Stockfish vs Leela) are in the LAST pairing
+    let topPairIndex =
+        pairs
+        |> List.findIndex (fun (a, b) ->
+            Set.ofList [a.Name; b.Name] = Set.ofList ["Stockfish"; "Leela"])
+    Assert.Equal(pairs.Length - 1, topPairIndex)
+
+[<Fact>]
+let ``swiss realistic tournament scenario from screenshot`` () =
+    // Recreate the tournament state from the swissPairingBug.png screenshot
+    // This represents a real tournament mid-way through with 16 engines
+    let players =
+        [ mkRatedPlayer "Stockfish" 3574
+          mkRatedPlayer "LeelaChessZero" 3531
+          mkRatedPlayer "KomodoMCTS" 3478
+          mkRatedPlayer "Berserk" 3463
+          mkRatedPlayer "RubiChess" 3441
+          mkRatedPlayer "Obsidian" 3397
+          mkRatedPlayer "Ethereal" 3392
+          mkRatedPlayer "Caissa" 3386
+          mkRatedPlayer "Seer" 3328
+          mkRatedPlayer "Clover" 3318
+          mkRatedPlayer "Stormphrax" 3303
+          mkRatedPlayer "Viridithas" 3288
+          mkRatedPlayer "Lizard" 3251
+          mkRatedPlayer "Arasan" 3238
+          mkRatedPlayer "Igel" 3201
+          mkRatedPlayer "Velvet" 3189 ]
+
+    // Typical mid-tournament scores (after several rounds)
+    // Top engines have higher scores, bottom engines have lower scores
+    let scores =
+        [ "Stockfish", 5.5
+          "LeelaChessZero", 5.0
+          "KomodoMCTS", 4.5
+          "Berserk", 4.5
+          "RubiChess", 4.0
+          "Obsidian", 4.0
+          "Ethereal", 3.5
+          "Caissa", 3.5
+          "Seer", 3.0
+          "Clover", 3.0
+          "Stormphrax", 2.5
+          "Viridithas", 2.5
+          "Lizard", 2.0
+          "Arasan", 2.0
+          "Igel", 1.5
+          "Velvet", 1.0 ]
+        |> Map.ofList
+
+    let seedOrder = tcecSeedOrder players 4
+    let seedMap =
+        seedOrder
+        |> List.mapi (fun idx p -> p.Name, idx + 1)
+        |> Map.ofList
+
+    // Prior pairings (simulate some games already played)
+    let priorPairs =
+        Set.ofList [
+            swissPairKey "Stockfish" "Seer"
+            swissPairKey "LeelaChessZero" "Clover"
+            swissPairKey "KomodoMCTS" "Stormphrax"
+            swissPairKey "Berserk" "Viridithas"
+        ]
+
+    let pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    // Get pairing details for debugging
+    let pairDetails =
+        pairs
+        |> List.mapi (fun i (a, b) ->
+            let scoreA = scores.[a.Name]
+            let scoreB = scores.[b.Name]
+            let seedA = seedMap.[a.Name]
+            let seedB = seedMap.[b.Name]
+            let minSeed = min seedA seedB
+            let avgScore = (scoreA + scoreB) / 2.0
+            i + 1, $"{a.Name} vs {b.Name}", avgScore, minSeed)
+
+    // Print pairing order for inspection
+    debugPrint "Pairing order (should be weakest first, strongest last):"
+    for (num, matchup, avgScore, minSeed) in pairDetails do
+        debugPrint "  %d. %s (avg score: %.1f, min seed: %d)" num matchup avgScore minSeed
+
+    // CRITICAL CHECKS:
+    // 1. First pairing should be from the LOWEST score group (weakest engines)
+    let firstPair = pairs |> List.head
+    let firstPairAvgScore = (scores.[fst(firstPair).Name] + scores.[snd(firstPair).Name]) / 2.0
+
+    // 2. Last pairing should be from the HIGHEST score group (strongest engines)
+    let lastPair = pairs |> List.last
+    let lastPairAvgScore = (scores.[fst(lastPair).Name] + scores.[snd(lastPair).Name]) / 2.0
+
+    Assert.True(firstPairAvgScore < lastPairAvgScore,
+        $"First pairing avg score ({firstPairAvgScore}) should be less than last pairing ({lastPairAvgScore})")
+
+    // 3. Stockfish (top seed, highest score) should NOT be in the first few pairings
+    let stockfishPairIndex =
+        pairs
+        |> List.findIndex (fun (a, b) -> a.Name = "Stockfish" || b.Name = "Stockfish")
+
+    Assert.True(stockfishPairIndex > pairs.Length / 2,
+        $"Stockfish should be in the latter half of pairings. Found at position {stockfishPairIndex + 1} of {pairs.Length}")
+
+    // 4. Within same score groups, lower seeds should be paired later
+    // Get pairings sorted by their minimum seed
+    let getMinSeed (a: EngineConfig, b: EngineConfig) =
+        min seedMap.[a.Name] seedMap.[b.Name]
+
+    // Check that within each score group, minSeeds are in descending order
+    let scoreGroups =
+        pairs
+        |> List.groupBy (fun (a, b) ->
+            let scoreA = scores.[a.Name]
+            let scoreB = scores.[b.Name]
+            (scoreA + scoreB) / 2.0)
+        |> List.sortBy fst
+
+    for (groupScore, groupPairs) in scoreGroups do
+        if groupPairs.Length > 1 then
+            let minSeeds = groupPairs |> List.map getMinSeed
+            let isDescending =
+                minSeeds
+                |> List.pairwise
+                |> List.forall (fun (a, b) -> a >= b)
+
+            Assert.True(isDescending,
+                $"Within score group {groupScore}, pairings should be ordered by descending minSeed. Got: {minSeeds}")
+
+[<Fact>]
+let ``debug seed order and pairing order with different group counts`` () =
+    let players =
+        [ mkRatedPlayer "Stockfish" 3574
+          mkRatedPlayer "Leela" 3531
+          mkRatedPlayer "Komodo" 3478
+          mkRatedPlayer "Berserk" 3463
+          mkRatedPlayer "RubiChess" 3441
+          mkRatedPlayer "Obsidian" 3397
+          mkRatedPlayer "Ethereal" 3392
+          mkRatedPlayer "Caissa" 3386 ]
+
+    let scores = players |> List.map (fun p -> p.Name, 3.0) |> Map.ofList
+
+    for groupCount in [1; 2; 4] do
+        debugPrint "\n=== Seed Group Count: %d ===" groupCount
+        let seedOrder = tcecSeedOrder players groupCount
+        debugPrint "Seed order:"
+        seedOrder |> List.iteri (fun i p -> debugPrint "  Seed %d: %s (rating %d)" (i+1) p.Name p.Rating)
+
+        let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+        debugPrint "Pairing order:"
+        pairs |> List.iteri (fun i (a, b) ->
+            let seedMap = seedOrder |> List.mapi (fun idx p -> p.Name, idx + 1) |> Map.ofList
+            let seedA = seedMap.[a.Name]
+            let seedB = seedMap.[b.Name]
+            let minSeed = min seedA seedB
+            debugPrint "  %d. %s (seed %d) vs %s (seed %d) [minSeed=%d]" (i+1) a.Name seedA b.Name seedB minSeed)
+
+    Assert.True(true) // This is just a debug test
+
+[<Fact>]
+let ``swiss game execution order weakest boards first`` () =
+    // This test simulates the actual game numbering to verify execution order
+    let players =
+        [ mkRatedPlayer "Stockfish" 3574
+          mkRatedPlayer "Leela" 3531
+          mkRatedPlayer "Komodo" 3478
+          mkRatedPlayer "Berserk" 3463 ]
+
+    let scores = [ "Stockfish", 2.0; "Leela", 2.0; "Komodo", 1.0; "Berserk", 1.0 ] |> Map.ofList
+    let seedOrder = tcecSeedOrder players 2
+    let seedMap = seedOrder |> List.mapi (fun idx p -> p.Name, idx + 1) |> Map.ofList
+
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+
+    // Simulate game numbering as done in Tournament.fs line 4256:
+    // let roundGameNumber = (pairIndex * gamesPerMatch) + pairing.Games.Count + 1
+    let gamesPerMatch = 2
+    let gameNumbers =
+        pairs
+        |> List.mapi (fun pairIndex (a, b) ->
+            let firstGameNr = (pairIndex * gamesPerMatch) + 1
+            let lastGameNr = firstGameNr + gamesPerMatch - 1
+            (a.Name, b.Name), (firstGameNr, lastGameNr))
+
+    debugPrint "Game execution order:"
+    for ((playerA, playerB), (firstGame, lastGame)) in gameNumbers do
+        let seedA = seedMap.[playerA]
+        let seedB = seedMap.[playerB]
+        let minSeed = min seedA seedB
+        debugPrint "  Games %d-%d: %s vs %s (minSeed=%d)" firstGame lastGame playerA playerB minSeed
+
+    // Find which pairing includes Stockfish (strongest, should be LAST)
+    let stockfishGames =
+        gameNumbers
+        |> List.find (fun ((a, b), _) -> a = "Stockfish" || b = "Stockfish")
+        |> snd
+        |> fst
+
+    // Find which pairing is weakest (Komodo vs Berserk, both score 1.0)
+    let weakestGames =
+        gameNumbers
+        |> List.head
+        |> snd
+        |> fst
+
+    debugPrint "\nStockfish pairing starts at game #%d" stockfishGames
+    debugPrint "Weakest pairing starts at game #%d" weakestGames
+
+    // CRITICAL: Weakest pairing should have LOWER game numbers than Stockfish
+    Assert.True(weakestGames < stockfishGames,
+        $"Weakest pairing (game #{weakestGames}) should start before Stockfish (game #{stockfishGames})")
+
+[<Fact>]
+let ``reproduce bug from screenshot - extract standings and test pairing order`` () =
+    // Recreating the tournament from swissPairingBug.png
+    // Reading from the standings table (left panel) - approximately 16 engines
+    // This is seed group count 1 (as user confirmed)
+
+    // Based on visible standings in the image, creating engines in approximate rating order
+    // I'll use placeholder names for ones I can't read clearly - user can help correct them
+    let players =
+        [ mkRatedPlayer "Stockfish" 3600          // Top engines
+          mkRatedPlayer "LeelaChessZero" 3580
+          mkRatedPlayer "KomodoMCTS" 3550
+          mkRatedPlayer "Berserk" 3530
+          mkRatedPlayer "RubiChess" 3510
+          mkRatedPlayer "Obsidian" 3490
+          mkRatedPlayer "Ethereal" 3470
+          mkRatedPlayer "Caissa" 3450
+          mkRatedPlayer "Seer" 3430
+          mkRatedPlayer "Clover" 3410
+          mkRatedPlayer "Stormphrax" 3390         // Weaker engines
+          mkRatedPlayer "Viridithas" 3370
+          mkRatedPlayer "Lizard" 3350
+          mkRatedPlayer "Arasan" 3330
+          mkRatedPlayer "Igel" 3310
+          mkRatedPlayer "Velvet" 3290 ]
+
+    // Seed group count 1 means straight rating order for seeds
+    let seedOrder = tcecSeedOrder players 1
+
+    // From the standings, extract the scores before this round
+    // (This is approximate - user should verify and correct these)
+    let scores =
+        [ "Stockfish", 4.0
+          "LeelaChessZero", 3.5
+          "KomodoMCTS", 3.5
+          "Berserk", 3.0
+          "RubiChess", 3.0
+          "Obsidian", 3.0
+          "Ethereal", 2.5
+          "Caissa", 2.5
+          "Seer", 2.5
+          "Clover", 2.0
+          "Stormphrax", 2.0
+          "Viridithas", 1.5
+          "Lizard", 1.5
+          "Arasan", 1.0
+          "Igel", 1.0
+          "Velvet", 0.5 ]
+        |> Map.ofList
+
+    let pairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+
+    let seedMap = seedOrder |> List.mapi (fun idx p -> p.Name, idx + 1) |> Map.ofList
+
+    // Simulate game numbering
+    let gamesPerMatch = 2
+    let gameAssignments =
+        pairs
+        |> List.mapi (fun pairIndex (a, b) ->
+            let firstGameNr = (pairIndex * gamesPerMatch) + 1
+            let seedA = seedMap.[a.Name]
+            let seedB = seedMap.[b.Name]
+            let minSeed = min seedA seedB
+            (pairIndex, a.Name, b.Name, firstGameNr, minSeed))
+
+    debugPrint "\nGame assignments (from screenshot bug scenario):"
+    for (idx, nameA, nameB, gameNr, minSeed) in gameAssignments do
+        debugPrint "  Pairing %d: Games %d-%d: %s vs %s (minSeed=%d)"
+            idx gameNr (gameNr + gamesPerMatch - 1) nameA nameB minSeed
+
+    // Find Stockfish and Stormphrax pairings
+    let stockfishPairing =
+        gameAssignments
+        |> List.find (fun (_, a, b, _, _) -> a = "Stockfish" || b = "Stockfish")
+    let stormphrasxPairing =
+        gameAssignments
+        |> List.find (fun (_, a, b, _, _) -> a = "Stormphrax" || b = "Stormphrax")
+
+    let (_, _, _, stockfishGameNr, _) = stockfishPairing
+    let (_, _, _, stormphraxGameNr, _) = stormphrasxPairing
+
+    debugPrint "\nStockfish pairing starts at game #%d" stockfishGameNr
+    debugPrint "Stormphrax pairing starts at game #%d" stormphraxGameNr
+
+    // Stockfish (seed 1, strongest) should have HIGHER game number than Stormphrax (seed 11, weaker)
+    Assert.True(stockfishGameNr > stormphraxGameNr,
+        $"BUG: Stockfish (strongest, seed 1) at game #{stockfishGameNr} should play AFTER Stormphrax (weaker, seed 11) at game #{stormphraxGameNr}")
+
+[<Fact>]
+let ``round 7 with full 6-round history shows correct pairing order`` () =
+    // Setup 16 players matching the real tournament
+    let players =
+        [ mkRatedPlayer "Stockfish" 3600
+          mkRatedPlayer "Lc0-BT5" 3550
+          mkRatedPlayer "Reckless" 3500
+          mkRatedPlayer "Integral" 3450
+          mkRatedPlayer "Berserk" 3400
+          mkRatedPlayer "Lc0-BT4" 3350
+          mkRatedPlayer "Caissa" 3300
+          mkRatedPlayer "Ceres" 3250
+          mkRatedPlayer "Obsidian" 3200
+          mkRatedPlayer "PlentyChess" 3150
+          mkRatedPlayer "Viridithas" 3100
+          mkRatedPlayer "Dragon" 3050
+          mkRatedPlayer "RubiChess" 3000
+          mkRatedPlayer "Pawnocchio" 2950
+          mkRatedPlayer "stormphrax" 2900
+          mkRatedPlayer "Halogen" 2850 ]
+
+    let seedOrder = tcecSeedOrder players 1
+
+    // Simulate 6 rounds of pairings to build realistic prior pairs
+    let mutable priorPairs = Set.empty
+    let mutable currentScores =
+        players
+        |> List.map (fun p -> p.Name, 0.0)
+        |> Map.ofList
+
+    // Helper to simulate a round and update scores
+    let simulateRound roundNum expectedResults =
+        debugPrint "\n--- Simulating Round %d ---" roundNum
+        let roundPairs = swissRoundPairings players seedOrder currentScores priorPairs Set.empty
+
+        debugPrint "Pairings:"
+        for (w, b) in roundPairs do
+            let result = expectedResults |> Map.tryFind (w.Name, b.Name)
+            let resultStr =
+                match result with
+                | Some 1.0 -> "1-0"
+                | Some 0.5 -> "½-½"
+                | Some 0.0 -> "0-1"
+                | _ -> "?"
+            debugPrint "  %s vs %s -> %s" w.Name b.Name resultStr
+
+            // Update prior pairs
+            priorPairs <- priorPairs.Add(swissPairKey w.Name b.Name)
+
+            // Update scores based on results
+            match result with
+            | Some wScore ->
+                currentScores <- currentScores |> Map.add w.Name (currentScores.[w.Name] + wScore)
+                currentScores <- currentScores |> Map.add b.Name (currentScores.[b.Name] + (1.0 - wScore))
+            | None -> ()
+
+        debugPrint "Scores after round %d:" roundNum
+        currentScores
+        |> Map.toSeq
+        |> Seq.sortByDescending snd
+        |> Seq.iteri (fun i (name, score) -> debugPrint "  %2d. %-30s %.1f" (i+1) name score)
+
+    // Simulate rounds 1-6 with realistic results leading to the desired scores
+    // This is a simplified simulation - you'll provide the actual swiss_state.json
+    // For now, we'll use placeholder results
+    simulateRound 1 Map.empty |> ignore
+    simulateRound 2 Map.empty |> ignore
+    simulateRound 3 Map.empty |> ignore
+    simulateRound 4 Map.empty |> ignore
+    simulateRound 5 Map.empty |> ignore
+    simulateRound 6 Map.empty |> ignore
+
+    // Manually set the scores to match your real tournament before round 7
+    currentScores <-
+        [ "Stockfish", 8.0
+          "Lc0-BT5", 7.5
+          "Reckless", 6.5
+          "Integral", 6.0
+          "Berserk", 6.5
+          "Lc0-BT4", 6.5
+          "Caissa", 6.5
+          "Ceres", 6.0
+          "Obsidian", 6.5
+          "PlentyChess", 6.5
+          "Viridithas", 5.5
+          "Dragon", 5.0
+          "RubiChess", 5.5
+          "Pawnocchio", 5.5
+          "stormphrax", 4.5
+          "Halogen", 3.5 ]
+        |> Map.ofList
+
+    debugPrint "\n=== ROUND 7 PAIRINGS ==="
+    debugPrint "Scores before round 7:"
+    currentScores
+    |> Map.toSeq
+    |> Seq.sortByDescending snd
+    |> Seq.iteri (fun i (name, score) -> debugPrint "  %2d. %-30s %.1f" (i+1) name score)
+
+    // Get round 7 pairings
+    let round7Pairs = swissRoundPairings players seedOrder currentScores priorPairs Set.empty
+
+    debugPrint "\nRound 7 Game Order (SHOULD be weakest groups first, strongest last):"
+    debugPrint "%-8s | %-20s | %-20s | %5s | %5s" "Game #" "White" "Black" "W Sc" "B Sc"
+    debugPrint "%s" (String.replicate 70 "-")
+
+    for idx, (white, black) in List.indexed round7Pairs do
+        let whiteScore = currentScores.[white.Name]
+        let blackScore = currentScores.[black.Name]
+        let avgScore = (whiteScore + blackScore) / 2.0
+        debugPrint "%-8d | %-20s | %-20s | %5.1f | %5.1f  (avg: %.1f)"
+            (idx + 1) white.Name black.Name whiteScore blackScore avgScore
+
+    // Verify we have 8 pairings
+    Assert.Equal(8, round7Pairs.Length)
+
+    // Check ordering: first pairing should be from weakest score group
+    let (firstW, firstB) = round7Pairs.Head
+    let firstAvg = (currentScores.[firstW.Name] + currentScores.[firstB.Name]) / 2.0
+
+    let (lastW, lastB) = round7Pairs |> List.last
+    let lastAvg = (currentScores.[lastW.Name] + currentScores.[lastB.Name]) / 2.0
+
+    debugPrint "\nORDERING CHECK:"
+    debugPrint "First game average score: %.1f" firstAvg
+    debugPrint "Last game average score: %.1f" lastAvg
+
+    // BUG CHECK: Last game should have higher average score than first game
+    // If this fails, it means strongest groups are playing first (BUG!)
+    Assert.True(lastAvg > firstAvg,
+        $"BUG DETECTED: First game has average score {firstAvg}, last game has {lastAvg}. Strongest should play last!")
+
+    debugPrint "\nPrior pairs count: %d" priorPairs.Count
+
+[<Fact>]
+let ``round 7 from actual swiss_state json shows pairing order bug`` () =
+    // To use this test:
+    // 1. Get the swiss_state.json file from the user
+    // 2. Place it in TestProject folder
+    // 3. Remove the Skip attribute above
+    // 4. Run the test
+
+    let jsonPath = System.IO.Path.Combine(__SOURCE_DIRECTORY__, "swiss_state.json")
+    if not (System.IO.File.Exists jsonPath) then
+        Assert.Fail("swiss_state.json not found. Please provide the file to reproduce the bug.")
+
+    let json = System.IO.File.ReadAllText(jsonPath)
+    let state = JsonSerializer.Deserialize<ChessLibrary.TypesDef.Swiss.SwissState>(json)
+
+    debugPrint "Loaded Swiss state: %d rounds" state.Rounds.Count
+
+    // Extract player list from all pairings
+    let playerDict = System.Collections.Generic.Dictionary<string, int>()
+    for round in state.Rounds do
+        for pairing in round.Pairings do
+            if not (playerDict.ContainsKey pairing.PlayerA) then
+                playerDict.[pairing.PlayerA] <- pairing.PlayerARating
+            if not (playerDict.ContainsKey pairing.PlayerB) && pairing.PlayerB <> "BYE" then
+                playerDict.[pairing.PlayerB] <- pairing.PlayerBRating
+
+    let players =
+        playerDict
+        |> Seq.map (fun kvp -> { EngineConfig.Empty with Name = kvp.Key; Rating = kvp.Value })
+        |> Seq.toList
+
+    debugPrint "Found %d players" players.Length
+
+    // Build seed order
+    let seedOrder = tcecSeedOrder players state.SeedGroupCount
+
+    // Calculate current scores
+    let scores =
+        let scoreDict = System.Collections.Generic.Dictionary<string, float>()
+        for p in players do
+            scoreDict.[p.Name] <- 0.0
+
+        for round in state.Rounds do
+            for pairing in round.Pairings do
+                if scoreDict.ContainsKey pairing.PlayerA then
+                    scoreDict.[pairing.PlayerA] <- scoreDict.[pairing.PlayerA] + pairing.ScoreA
+                if scoreDict.ContainsKey pairing.PlayerB then
+                    scoreDict.[pairing.PlayerB] <- scoreDict.[pairing.PlayerB] + pairing.ScoreB
+
+        scoreDict
+        |> Seq.map (fun kvp -> kvp.Key, kvp.Value)
+        |> Map.ofSeq
+
+    // Build prior pairs
+    let priorPairs =
+        state.Rounds
+        |> Seq.collect (fun r -> r.Pairings)
+        |> Seq.filter (fun p -> p.PlayerB <> "BYE")
+        |> Seq.map (fun p -> swissPairKey p.PlayerA p.PlayerB)
+        |> Set.ofSeq
+
+    debugPrint "\nStandings before round %d:" (state.Rounds.Count + 1)
+    scores
+    |> Map.toSeq
+    |> Seq.sortByDescending snd
+    |> Seq.iteri (fun i (name, score) -> debugPrint "  %2d. %-30s %.1f" (i+1) name score)
+
+    // Generate next round pairings
+    let nextRound = state.Rounds.Count + 1
+    let byeSet = state.Rounds |> Seq.collect (fun r -> r.Pairings) |> Seq.filter (fun p -> p.PlayerB = "BYE") |> Seq.map (fun p -> p.PlayerA) |> Set.ofSeq
+    let roundPairs = swissRoundPairings players seedOrder scores priorPairs byeSet
+
+    debugPrint "\n=== Round %d Pairing Order ===" nextRound
+    debugPrint "%-8s | %-25s | %-25s | %6s | %6s | %8s" "Position" "White" "Black" "W Sc" "B Sc" "Avg Sc"
+    debugPrint "%s" (String.replicate 90 "-")
+
+    let pairScores = ResizeArray<float>()
+    for idx, (white, black) in List.indexed roundPairs do
+        let whiteScore = scores.[white.Name]
+        let blackScore = scores.[black.Name]
+        let avgScore = (whiteScore + blackScore) / 2.0
+        pairScores.Add avgScore
+        debugPrint "%-8d | %-25s | %-25s | %6.1f | %6.1f | %8.1f"
+            (idx + 1) white.Name black.Name whiteScore blackScore avgScore
+
+    // Check if scores are increasing (correct) or decreasing (bug)
+    debugPrint "\n=== Ordering Analysis ==="
+    debugPrint "First pairing avg score: %.1f" pairScores.[0]
+    debugPrint "Last pairing avg score: %.1f" pairScores.[pairScores.Count - 1]
+
+    let isIncreasing = pairScores |> Seq.pairwise |> Seq.forall (fun (a, b) -> b >= a)
+    let isDecreasing = pairScores |> Seq.pairwise |> Seq.forall (fun (a, b) -> b <= a)
+
+    if isIncreasing then
+        debugPrint "✓ CORRECT: Pairings are ordered weakest to strongest"
+    elif isDecreasing then
+        debugPrint "✗ BUG: Pairings are REVERSED - strongest playing first!"
+        Assert.Fail("BUG: Pairing order is inverted. Strongest groups are playing first instead of last!")
+    else
+        debugPrint "? MIXED: Pairing order is not strictly monotonic (but this is expected due to pairing constraints)"
+        // Verify at least that first < last (general trend is correct)
+        if pairScores.[0] <= pairScores.[pairScores.Count - 1] then
+            debugPrint "✓ General trend is CORRECT: First game (%.1f) <= Last game (%.1f)" pairScores.[0] pairScores.[pairScores.Count - 1]
+        else
+            Assert.Fail($"BUG: First game ({pairScores.[0]}) has higher score than last game ({pairScores.[pairScores.Count - 1]})")
+
+    debugPrint "\nPrior pairs: %d" priorPairs.Count
+
+[<Fact>]
+let ``round 7 pairings with 16 players shows correct order from weakest to strongest`` () =
+    // Setup 16 players with standings before round 7
+    let players =
+        [ mkRatedPlayer "Stockfish" 3600
+          mkRatedPlayer "Lc0-BT5" 3550
+          mkRatedPlayer "Reckless" 3500
+          mkRatedPlayer "Integral" 3450
+          mkRatedPlayer "Berserk" 3400
+          mkRatedPlayer "Lc0-BT4" 3350
+          mkRatedPlayer "Caissa" 3300
+          mkRatedPlayer "Ceres" 3250
+          mkRatedPlayer "Obsidian" 3200
+          mkRatedPlayer "PlentyChess" 3150
+          mkRatedPlayer "Viridithas" 3100
+          mkRatedPlayer "Dragon" 3050
+          mkRatedPlayer "RubiChess" 3000
+          mkRatedPlayer "Pawnocchio" 2950
+          mkRatedPlayer "stormphrax" 2900
+          mkRatedPlayer "Halogen" 2850 ]
+
+    let seedOrder = tcecSeedOrder players 1
+
+    // Scores before round 7 (after 6 rounds)
+    let scores =
+        [ "Stockfish", 8.0
+          "Lc0-BT5", 7.5
+          "Reckless", 6.5
+          "Integral", 6.0
+          "Berserk", 6.5
+          "Lc0-BT4", 6.5
+          "Caissa", 6.5
+          "Ceres", 6.0
+          "Obsidian", 6.5
+          "PlentyChess", 6.5
+          "Viridithas", 5.5
+          "Dragon", 5.0
+          "RubiChess", 5.5
+          "Pawnocchio", 5.5
+          "stormphrax", 4.5
+          "Halogen", 3.5 ]
+        |> Map.ofList
+
+    // For simplicity, assume no prior pairings (or you could build them up through rounds 1-6)
+    let priorPairs = Set.empty
+
+    // Get round 7 pairings
+    let round7Pairs = swissRoundPairings players seedOrder scores priorPairs Set.empty
+
+    // Print the pairings in play order (first to last)
+    debugPrint "\n=== Round 7 Pairings (Play Order) ==="
+    debugPrint "Position | White          | Black          | White Score | Black Score"
+    debugPrint "---------|----------------|----------------|-------------|------------"
+
+    for idx, (white, black) in List.indexed round7Pairs do
+        let whiteScore = scores.[white.Name]
+        let blackScore = scores.[black.Name]
+        debugPrint "%-8d | %-14s | %-14s | %-11.1f | %.1f"
+            (idx + 1) white.Name black.Name whiteScore blackScore
+
+    // Verify we have 8 pairings (16 players / 2)
+    Assert.Equal(8, round7Pairs.Length)
+
+    // Verify weakest score groups play first
+    // Get the first and last pairing scores
+    let (firstWhite, firstBlack) = round7Pairs.Head
+    let firstPairMaxScore = max scores.[firstWhite.Name] scores.[firstBlack.Name]
+
+    let (lastWhite, lastBlack) = round7Pairs |> List.last
+    let lastPairMinScore = min scores.[lastWhite.Name] scores.[lastBlack.Name]
+
+    debugPrint "\nFirst pairing max score: %.1f" firstPairMaxScore
+    debugPrint "Last pairing min score: %.1f" lastPairMinScore
+
+    // The last pairing should involve higher-scoring players than the first pairing
+    // (weakest groups play first, strongest groups play last)
+    Assert.True(lastPairMinScore >= firstPairMaxScore,
+        $"Last pairing (min score {lastPairMinScore}) should have higher scores than first pairing (max score {firstPairMaxScore})")
+
+    // Verify Stockfish (highest score: 8.0) is in the last pairing
+    let stockfishInLastPair =
+        lastWhite.Name = "Stockfish" || lastBlack.Name = "Stockfish"
+    Assert.True(stockfishInLastPair, "Stockfish (8.0 points) should play in the last game of the round")
+
+    // Verify Halogen (lowest score: 3.5) is in one of the first pairings
+    let haloGenPairIndex =
+        round7Pairs
+        |> List.findIndex (fun (w, b) -> w.Name = "Halogen" || b.Name = "Halogen")
+    debugPrint "Halogen plays in pairing #%d" (haloGenPairIndex + 1)
+
+    // Halogen should play in the first half of the round
+    Assert.True(haloGenPairIndex < round7Pairs.Length / 2,
+        $"Halogen (3.5 points) should play in first half, but plays in pairing {haloGenPairIndex + 1} of {round7Pairs.Length}")

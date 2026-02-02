@@ -1759,37 +1759,43 @@ module Pentanomial =
     formatPerEngine games 200
 
 module JSON =
-    
+
+  /// Create JsonSerializerOptions with custom converters for F# discriminated unions
+  let private createJsonOptions() =
+      let options = JsonSerializerOptions(AllowTrailingCommas = true)
+      options.Converters.Add(TypesDef.CoreTypes.TimeControlStrategyConverter())
+      options
+
   let readEngineConfig path =
       let json = File.ReadAllText(path)
-      JsonSerializer.Deserialize<EngineConfig[]>(json, JsonSerializerOptions(AllowTrailingCommas = true))
+      JsonSerializer.Deserialize<EngineConfig[]>(json, createJsonOptions())
 
   let readSingleEngineConfig path =
     try
         let json = File.ReadAllText(path)
         let fileName = Path.GetFileName(path)
         match Validation.readAndValidateEngineConfigJson json fileName with
-        | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, JsonSerializerOptions(AllowTrailingCommas = true))
-        | Validation.Invalid msgs -> 
+        | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, createJsonOptions())
+        | Validation.Invalid msgs ->
           msgs |> List.iter (fun m -> ConsoleUtils.printInColor ConsoleColor.Red m)
           failwith "Invalid engine definition"
     with
-    | ex -> 
+    | ex ->
       printfn "Error in reading engine config from file: %s" path
       sprintf "Complete error message: %s" ex.Message |> failwith
 
-  let readEngineDef folder fileName = 
+  let readEngineDef folder fileName =
     try
       let path = Path.Combine(folder,fileName)
       let json = File.ReadAllText(path)
       match Validation.readAndValidateEngineConfigJson json fileName with
-      | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, JsonSerializerOptions(AllowTrailingCommas = true))
-      | Validation.Invalid msgs -> 
+      | Validation.Valid -> JsonSerializer.Deserialize<EngineConfig>(json, createJsonOptions())
+      | Validation.Invalid msgs ->
           msgs |> List.iter (fun m -> ConsoleUtils.printInColor ConsoleColor.Red m)
           failwith "Invalid engine definition"
       //JsonSerializer.Deserialize<EngineConfig>(json)
     with
-    | ex -> 
+    | ex ->
       printfn "Error in reading engine definition in JSON format from this file: %s/%s" folder fileName
       sprintf "Complete error message: %s" ex.Message |> failwith
 
@@ -1830,7 +1836,7 @@ module JSON =
   
   let loadBaseConfig (jsonPath: string) =
       let json = File.ReadAllText(jsonPath)
-      let options = new JsonSerializerOptions(AllowTrailingCommas = true)      
+      let options = createJsonOptions()
       options.PropertyNameCaseInsensitive <- true
       JsonSerializer.Deserialize<EngineConfig>(json, options)
 
@@ -2639,6 +2645,10 @@ module PairingHelper =
         |> Map.ofList
       let scoreFor name =
         scores |> Map.tryFind name |> Option.defaultValue 0.0
+      // Bye selection: Choose the player who should receive the bye this round.
+      // Priority: (1) Lowest score first, (2) Among ties, weakest player (highest seed number).
+      // This ensures the bye goes to a trailing engine, and among equals, the lower-rated one.
+      // Players who have already received a bye are skipped when possible.
       let byeCandidate =
         if players.Length % 2 = 0 then
           None
@@ -2647,7 +2657,7 @@ module PairingHelper =
             players
             |> List.sortBy (fun p ->
                 let seed = seedMap.[p.Name]
-                scoreFor p.Name, -seed)
+                scoreFor p.Name, -seed)  // -seed: higher seed number (weaker) sorts first
           let preferred =
             ordered |> List.tryFind (fun p -> byeSet.Contains p.Name |> not)
           preferred |> Option.orElse (ordered |> List.tryHead)
@@ -2762,6 +2772,8 @@ module PairingHelper =
           |> Map.ofList
         let scoreFor name =
           scores |> Map.tryFind name |> Option.defaultValue 0.0
+        // Bye selection (fallback path): same logic as main path.
+        // Priority: (1) Lowest score, (2) Weakest player (highest seed number) among ties.
         let byeCandidate =
           if players.Length % 2 = 0 then
             None
@@ -2770,7 +2782,7 @@ module PairingHelper =
               players
               |> List.sortBy (fun p ->
                   let seed = seedMap.[p.Name]
-                  scoreFor p.Name, -seed)
+                  scoreFor p.Name, -seed)  // -seed: higher seed number (weaker) sorts first
             let preferred =
               ordered |> List.tryFind (fun p -> byeSet.Contains p.Name |> not)
             preferred |> Option.orElse (ordered |> List.tryHead)
@@ -2804,7 +2816,17 @@ module PairingHelper =
                 tryCandidate candidates
         let gamePairs =
           match findPairs orderedPlayers [] with
-          | Some pairs -> pairs |> List.map (fun (a, b, _) -> (a, b))
+          | Some pairs ->
+              // Sort pairs by score (lowest first) to ensure weakest groups play first
+              let seedFor name =
+                seedMap |> Map.tryFind name |> Option.defaultValue System.Int32.MaxValue
+              pairs
+              |> List.sortBy (fun (a, b, score) ->
+                  let seedA = seedFor a.Name
+                  let seedB = seedFor b.Name
+                  let minSeed = if seedA < seedB then seedA else seedB
+                  score, -minSeed)
+              |> List.map (fun (a, b, _) -> (a, b))
           | None -> failwith "Swiss pairing failed: no valid non-repeat pairings found for this round."
         match byePlayer with
         | Some bye ->

@@ -10,6 +10,7 @@ open Xunit
 open ChessLibrary.WinboardIntegration
 open ChessLibrary.WinboardProtocol
 open ChessLibrary.Chess
+open ChessLibrary.TypesDef.CoreTypes
 
 type TestLogger() =
     interface ILogger with
@@ -110,19 +111,26 @@ let ``parseFeatureLine accumulates across calls`` () =
 [<Fact>]
 let ``positionToWinboard with setboard sends setboard for FEN`` () =
     let features = { defaultFeatures with SetBoard = true }
-    let cmds = positionToWinboard "position fen r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2" features
-    Assert.Contains("setboard r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2", cmds)
+    let board = Board()
+    let fen = "r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2"
+    board.LoadFen(fen)
+    let cmds = positionToWinboard $"position fen {fen}" features false &board
+    Assert.Contains($"setboard {fen}", cmds)
 
 [<Fact>]
 let ``positionToWinboard without setboard sends moves`` () =
     let features = { defaultFeatures with SetBoard = false }
-    let cmds = positionToWinboard "position startpos moves e2e4 e7e5" features
+    let board = Board()
+    board.PlayLongSanMove("e2e4")
+    board.PlayLongSanMove("e7e5")
+    let cmds = positionToWinboard "position startpos moves e2e4 e7e5" features false &board
     Assert.Equal<string list>(["e2e4"; "e7e5"], cmds)
 
 [<Fact>]
 let ``positionToWinboard startpos no moves gives empty`` () =
     let features = defaultFeatures
-    let cmds = positionToWinboard "position startpos" features
+    let board = Board()
+    let cmds = positionToWinboard "position startpos" features false &board
     Assert.Empty(cmds)
 
 // ===== goToWinboard tests =====
@@ -130,10 +138,11 @@ let ``positionToWinboard startpos no moves gives empty`` () =
 [<Fact>]
 let ``goToWinboard V1 with time control sends time and otim`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Test", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Test", wbConfig)
     handler.ForceV1Init() // Force V1 mode
     handler.UciToWinboard("position startpos") |> ignore
-    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000" true
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000" true false
     Assert.Contains("time 30000", cmds)
     Assert.Contains("otim 30000", cmds)
     Assert.Contains("go", cmds)
@@ -141,9 +150,10 @@ let ``goToWinboard V1 with time control sends time and otim`` () =
 [<Fact>]
 let ``goToWinboard V2 with time control sends level`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Test", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Test", wbConfig)
     handler.ProcessFeatureLine("feature done=1") |> ignore
-    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000" true
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000" true false
     // V2 engines should get level command: 300000ms = 5 minutes, no increment
     // Should be "level 0 5 0" (no seconds when 0, no decimal when 0)
     Assert.Contains("level 0 5 0", cmds)
@@ -154,40 +164,44 @@ let ``goToWinboard V2 with time control sends level`` () =
 [<Fact>]
 let ``goToWinboard with movetime sends st`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Test", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Test", wbConfig)
     handler.ProcessFeatureLine("feature done=1") |> ignore
     handler.UciToWinboard("position startpos") |> ignore
-    let cmds = handler.GoToWinboard "go movetime 5000" true
+    let cmds = handler.GoToWinboard "go movetime 5000" true false
     Assert.Contains("st 5", cmds)
     Assert.Contains("go", cmds)
 
 [<Fact>]
 let ``goToWinboard infinite with analyze sends analyze`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Test", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Test", wbConfig)
     handler.ProcessFeatureLine("feature analyze=1 done=1") |> ignore
     handler.UciToWinboard("position startpos") |> ignore
-    let cmds = handler.GoToWinboard "go infinite" true
+    let cmds = handler.GoToWinboard "go infinite" true true
     Assert.Contains("analyze", cmds)
     Assert.DoesNotContain("go", cmds)
 
 [<Fact>]
 let ``goToWinboard infinite without analyze sends go`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Test", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Test", wbConfig)
     handler.ProcessFeatureLine("feature done=1") |> ignore
     handler.UciToWinboard("position startpos") |> ignore
-    let cmds = handler.GoToWinboard "go infinite" true
+    let cmds = handler.GoToWinboard "go infinite" true true
     Assert.Contains("go", cmds)
     Assert.DoesNotContain("analyze", cmds)
 
 [<Fact>]
 let ``goToWinboard V1 black to move swaps time and otim`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Test", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Test", wbConfig)
     handler.ForceV1Init() // Force V1 mode
     handler.UciToWinboard("position startpos moves e2e4") |> ignore // Black to move
-    let cmds = handler.GoToWinboard "go wtime 100000 btime 200000" false
+    let cmds = handler.GoToWinboard "go wtime 100000 btime 200000" false false
     // Black to move: time = btime, otim = wtime
     Assert.Contains("time 20000", cmds)
     Assert.Contains("otim 10000", cmds)
@@ -221,19 +235,20 @@ let ``parseThinkingOutput handles tab-indented Crafty output`` () =
     Assert.Contains("depth 11", result.Value)
 
 [<Fact>]
-let ``parseThinkingOutput flipped score not negated for black`` () =
+let ``parseThinkingOutput score not negated for White perspective engines`` () =
     let board = Board()
     board.LoadFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
-    // flipped=true means engine reports from White's perspective
-    let result = parseThinkingOutput true board "TheKing" "5 30 10 5000 e7e5"
+    // sideToMovePOV=false means engine reports from White's perspective (most engines)
+    let result = parseThinkingOutput false board "TheKing" "5 30 10 5000 e7e5"
     Assert.True(result.IsSome)
     Assert.Contains("score cp 30", result.Value) // Not negated
 
 [<Fact>]
-let ``parseThinkingOutput negates score for black when not flipped`` () =
+let ``parseThinkingOutput negates score for side-to-move engines`` () =
     let board = Board()
     board.LoadFen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
-    let result = parseThinkingOutput false board "TestEngine" "5 30 10 5000 e7e5"
+    // sideToMovePOV=true means engine reports from side-to-move's perspective (like Crafty)
+    let result = parseThinkingOutput true board "TestEngine" "5 30 10 5000 e7e5"
     Assert.True(result.IsSome)
     Assert.Contains("score cp -30", result.Value) // Negated for black
 
@@ -315,7 +330,8 @@ let ``Winboard PV formats normalize`` () =
 [<Fact>]
 let ``Handler ProcessFeatureLine marks initialized on done`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TestEngine", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
     Assert.False(handler.IsInitialized)
     let done1 = handler.ProcessFeatureLine("feature ping=1 setboard=1")
     Assert.False(done1)
@@ -330,7 +346,8 @@ let ``Handler ProcessFeatureLine marks initialized on done`` () =
 [<Fact>]
 let ``Handler ForceV1Init sets v1 defaults`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TestEngine", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
     handler.ForceV1Init()
     Assert.True(handler.IsInitialized)
     Assert.True(handler.IsV1Fallback)
@@ -340,7 +357,8 @@ let ``Handler ForceV1Init sets v1 defaults`` () =
 [<Fact>]
 let ``Handler UciToWinboard translates position with setboard`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TestEngine", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
     handler.ProcessFeatureLine("feature setboard=1 done=1") |> ignore
     let cmds = handler.UciToWinboard("position fen r1bqkbnr/pppppppp/2n5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 1 2")
     Assert.True(cmds.Length > 0)
@@ -352,7 +370,8 @@ let ``Handler UciToWinboard translates position with setboard`` () =
 [<Fact>]
 let ``Handler UciToWinboard translates go infinite to analyze`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TestEngine", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
     handler.ProcessFeatureLine("feature analyze=1 done=1") |> ignore
     let cmds = handler.UciToWinboard("position startpos")
     let goCmds = handler.UciToWinboard("go infinite")
@@ -361,7 +380,8 @@ let ``Handler UciToWinboard translates go infinite to analyze`` () =
 [<Fact>]
 let ``Handler ProcessOutput translates pong to readyok`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TestEngine", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
     handler.ProcessFeatureLine("feature ping=1 done=1") |> ignore
     // Send isready which sets pendingPing
     let _ = handler.UciToWinboard("isready")
@@ -374,7 +394,8 @@ let ``Handler ProcessOutput translates pong to readyok`` () =
 [<Fact>]
 let ``Handler stop in analyze mode sends exit`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TestEngine", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
     handler.ProcessFeatureLine("feature analyze=1 done=1") |> ignore
     handler.UciToWinboard("position startpos") |> ignore
     handler.UciToWinboard("go infinite") |> ignore
@@ -386,7 +407,8 @@ let ``Handler stop in analyze mode sends exit`` () =
 [<Fact>]
 let ``V1 handler ForceV1Init produces correct defaults`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     // Simulate: no feature lines received, force V1
     handler.ForceV1Init()
     Assert.True(handler.IsInitialized)
@@ -401,8 +423,9 @@ let ``V1 handler ForceV1Init produces correct defaults`` () =
 let ``V1 handler processes TheKing thinking output with depth x 1000`` () =
     // TheKing raw output: " 3001   -42      0       971 Bh7 Nc3 e6"
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
-    handler.ForceV1Init()
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
+    handler.ForceV1Init()    
     // Set board to the test FEN (black to move)
     handler.UciToWinboard("position fen rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7") |> ignore
     let result = handler.ProcessOutput("3001   -42      0       971 Bh7 Nc3 e6")
@@ -415,7 +438,8 @@ let ``V1 handler processes TheKing thinking output with depth x 1000`` () =
 [<Fact>]
 let ``V1 handler processes TheKing move output`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     handler.UciToWinboard("position fen rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7") |> ignore
     let result = handler.ProcessOutput("move g6h7")
@@ -426,7 +450,8 @@ let ``V1 handler processes TheKing move output`` () =
 let ``V1 handler ProcessOutput ignores error lines from TheKing`` () =
     // TheKing sends: "Error (unknown command): protover"
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     let result = handler.ProcessOutput("Error (unknown command): protover")
     Assert.True(result.IsNone, "Error lines should not produce UCI output")
@@ -434,7 +459,8 @@ let ``V1 handler ProcessOutput ignores error lines from TheKing`` () =
 [<Fact>]
 let ``V1 handler UciToWinboard sends new for ucinewgame`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     let cmds = handler.UciToWinboard("ucinewgame")
     Assert.Contains("new", cmds)
@@ -442,7 +468,8 @@ let ``V1 handler UciToWinboard sends new for ucinewgame`` () =
 [<Fact>]
 let ``V1 handler UciToWinboard sends moves for position without setboard`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     Assert.False(handler.Features.SetBoard)
     let cmds = handler.UciToWinboard("position startpos moves e2e4 e7e5 g1f3")
@@ -453,7 +480,8 @@ let ``V1 handler UciToWinboard sends moves for position without setboard`` () =
 [<Fact>]
 let ``V1 handler isready returns empty for no ping`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     Assert.False(handler.Features.Ping)
     let cmds = handler.UciToWinboard("isready")
@@ -462,7 +490,8 @@ let ``V1 handler isready returns empty for no ping`` () =
 [<Fact>]
 let ``V1 handler go with movetime sends st and go`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     handler.UciToWinboard("position startpos") |> ignore
     let cmds = handler.UciToWinboard("go movetime 3000")
@@ -472,7 +501,8 @@ let ``V1 handler go with movetime sends st and go`` () =
 [<Fact>]
 let ``V1 handler stop without analyze sends question mark`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
     Assert.False(handler.Features.Analyze)
     handler.UciToWinboard("position startpos") |> ignore
@@ -484,7 +514,8 @@ let ``V1 handler stop without analyze sends question mark`` () =
 let ``V1 handler full TheKing game simulation`` () =
     // Simulate a full game cycle with TheKing-style V1 engine
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "TheKing", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TheKing", wbConfig)
     handler.ForceV1Init()
 
     // isready → empty (no ping)
@@ -496,6 +527,7 @@ let ``V1 handler full TheKing game simulation`` () =
     Assert.Contains("new", newCmds)
 
     // position startpos moves e2e4 → new + force + e2e4
+    // (V1 engines lack setboard, so "new" is required to reset before moves)
     let posCmds = handler.UciToWinboard("position startpos moves e2e4")
     Assert.Equal<string list>(["new"; "force"; "e2e4"], posCmds)
 
@@ -520,7 +552,8 @@ let ``Jonny partial V2 features parsed without done`` () =
     // "feature myname="Jonny 4.00" sigint=0"
     // "feature variants="normal,fischerandom""
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Jonny", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Jonny", wbConfig)
     let done1 = handler.ProcessFeatureLine("feature myname=\"Jonny 4.00\" sigint=0")
     Assert.False(done1)
     Assert.False(handler.IsInitialized)
@@ -539,7 +572,8 @@ let ``Jonny partial V2 features parsed without done`` () =
 let ``Jonny without setboard sends moves not setboard for FEN position`` () =
     // Jonny silently ignores setboard — our handler must not use it
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Jonny", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Jonny", wbConfig)
     handler.ProcessFeatureLine("feature myname=\"Jonny 4.00\" sigint=0") |> ignore
     handler.ProcessFeatureLine("feature variants=\"normal,fischerandom\"") |> ignore
     handler.MarkInitialized()
@@ -554,7 +588,8 @@ let ``Jonny without setboard sends moves not setboard for FEN position`` () =
 [<Fact>]
 let ``Jonny thinking output with tb suffix parses`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Jonny", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Jonny", wbConfig)
     handler.MarkInitialized()
     handler.UciToWinboard("position startpos") |> ignore
     let result = handler.ProcessOutput("10 28 3 110752 e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 c6d4 d1d4 g8f6 tb=0/0")
@@ -565,7 +600,8 @@ let ``Jonny thinking output with tb suffix parses`` () =
 [<Fact>]
 let ``Jonny coordinate move output parses`` () =
     let logger = TestLogger() :> ILogger
-    let handler = WinboardHandler(logger, "Jonny", false)
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "Jonny", wbConfig)
     handler.MarkInitialized()
     handler.UciToWinboard("position startpos") |> ignore
     let result = handler.ProcessOutput("move e2e4")
@@ -615,7 +651,8 @@ let ``Crafty 25.2 is recognized as protover 2 engine after feature negotiation``
     else
         use proc = startEngine path
         let logger = TestLogger() :> ILogger
-        let handler = WinboardHandler(logger, "Crafty", false)
+        let wbConfig = WinboardConfig.Default
+        let handler = WinboardHandler(logger, "Crafty", wbConfig)
         let outQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
         let _outTask =
             Task.Run(fun () ->
@@ -641,7 +678,8 @@ let ``Crafty setboard feature is detected`` () =
     else
         use proc = startEngine path
         let logger = TestLogger() :> ILogger
-        let handler = WinboardHandler(logger, "Crafty", false)
+        let wbConfig = WinboardConfig.Default
+        let handler = WinboardHandler(logger, "Crafty", wbConfig)
         let outQueue = System.Collections.Concurrent.ConcurrentQueue<string>()
         let _outTask =
             Task.Run(fun () ->
@@ -656,3 +694,211 @@ let ``Crafty setboard feature is detected`` () =
         Assert.True(handler.Features.SetBoard, "Crafty should advertise setboard=1 in features")
         proc.StandardInput.WriteLine("quit")
         proc.WaitForExit(1000) |> ignore
+
+// ===== WinboardConfig tests =====
+
+[<Fact>]
+let ``TimeControlStrategy LevelWithTime uses level and time commands`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with TimeControlStrategy = TimeControlStrategy.LevelWithTime }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // First go command should include level + time/otim
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000 winc 2000 binc 2000" true false
+
+    // Should contain level command (first time)
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("level "))
+    // Should also contain time/otim
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("time "))
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("otim "))
+    // Should NOT contain st
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("st "))
+
+[<Fact>]
+let ``TimeControlStrategy TimeOtimOnly uses time otim only`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with TimeControlStrategy = TimeControlStrategy.TimeOtimOnly }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // Should only send time/otim, no level or st
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000 winc 2000 binc 2000" true false
+
+    // Should contain time/otim
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("time "))
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("otim "))
+    // Should NOT contain level or st
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("level "))
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("st "))
+
+[<Fact>]
+let ``TimeControlStrategy StWithTime uses st and time commands`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with TimeControlStrategy = TimeControlStrategy.StWithTime }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // Should send both st and time/otim for better time management
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000 winc 2000 binc 2000" true false
+
+    // Should contain st
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("st "))
+    // Should also contain time/otim (this is the bug fix!)
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("time "))
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("otim "))
+    // Should NOT contain level
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("level "))
+
+[<Fact>]
+let ``TimeControlStrategy StOnly uses st only`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with TimeControlStrategy = TimeControlStrategy.StOnly }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // Legacy mode: only st, no time/otim (may cause poor time management)
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000 winc 2000 binc 2000" true false
+
+    // Should contain st
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("st "))
+    // Should NOT contain level, time, or otim
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("level "))
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("time "))
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("otim "))
+
+[<Fact>]
+let ``TimeControlStrategy AutoDetect falls back to TimeOtimOnly`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with TimeControlStrategy = TimeControlStrategy.AutoDetect }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // AutoDetect without resolved strategy should fallback to TimeOtimOnly
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000 winc 2000 binc 2000" true false
+
+    // Should fallback to time/otim only
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("time "))
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("otim "))
+    // Should NOT contain level or st
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("level "))
+    Assert.DoesNotContain(cmds, fun cmd -> cmd.StartsWith("st "))
+
+[<Fact>]
+let ``TimeControlStrategy AutoDetect resolved to LevelWithTime works`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with TimeControlStrategy = TimeControlStrategy.AutoDetect }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // Simulate level probing success
+    handler.SetResolvedStrategy(TimeControlStrategy.LevelWithTime)
+
+    // Should now use level + time/otim
+    let cmds = handler.GoToWinboard "go wtime 300000 btime 300000 winc 2000 binc 2000" true false
+
+    // Should contain level and time/otim
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("level "))
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("time "))
+    Assert.Contains(cmds, fun cmd -> cmd.StartsWith("otim "))
+
+[<Fact>]
+let ``WinboardConfig StartupCommands are included in post-init`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = {
+        WinboardConfig.Default with
+            StartupCommands = ["level 16"; "option Hash=256"]
+    }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+
+    let postInitCmds = handler.GetPostInitCommands()
+
+    // Should contain standard commands
+    Assert.Contains("post", postInitCmds)
+    Assert.Contains("easy", postInitCmds)
+    // Should contain custom startup commands
+    Assert.Contains("level 16", postInitCmds)
+    Assert.Contains("option Hash=256", postInitCmds)
+
+[<Fact>]
+let ``WinboardConfig Flipped affects score perspective`` () =
+    let logger = TestLogger() :> ILogger
+
+    // Test with SideToMovePOV=false (scores from White's perspective always - most engines)
+    let wbConfigWhitePerspective = { WinboardConfig.Default with SideToMovePOV = false }
+    let handlerWhitePerspective = WinboardHandler(logger, "WhitePerspectiveEngine", wbConfigWhitePerspective)
+    handlerWhitePerspective.ProcessFeatureLine("feature done=1") |> ignore
+    // Set up position: after 1. e4 (Black to move)
+    handlerWhitePerspective.UciToWinboard("position startpos moves e2e4") |> ignore
+
+    // Simulate thinking output: depth=10, score=50 (from White's perspective)
+    let outputWhitePerspective = handlerWhitePerspective.ProcessOutput("10 50 100 1000 e7e5")
+    Assert.True(outputWhitePerspective.IsSome)
+    Assert.Contains("score cp 50", outputWhitePerspective.Value)  // No negation needed
+
+    // Test with SideToMovePOV=true (scores from side-to-move - rare engines like Crafty)
+    let wbConfigSideToMove = { WinboardConfig.Default with SideToMovePOV = true }
+    let handlerSideToMove = WinboardHandler(logger, "SideToMoveEngine", wbConfigSideToMove)
+    handlerSideToMove.ProcessFeatureLine("feature done=1") |> ignore
+    // Set up position: after 1. e4 (Black to move)
+    handlerSideToMove.UciToWinboard("position startpos moves e2e4") |> ignore
+
+    // Simulate thinking output: depth=10, score=50 (from Black's perspective - good for Black)
+    let outputSideToMove = handlerSideToMove.ProcessOutput("10 50 100 1000 e7e5")
+    Assert.True(outputSideToMove.IsSome)
+    // Should negate score for Black to move (convert to White's perspective)
+    Assert.Contains("score cp -50", outputSideToMove.Value)
+
+[<Fact>]
+let ``WinboardConfig ForceV1Mode can be configured`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = { WinboardConfig.Default with ForceV1Mode = true }
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+
+    // ForceV1Mode is set in config and will be used during initialization
+    // The handler itself doesn't auto-initialize, but we can manually trigger V1 mode
+    handler.ForceV1Init()
+
+    // After ForceV1Init, handler should be in V1 mode
+    Assert.True(handler.IsV1Fallback)
+    Assert.True(handler.IsInitialized)
+    Assert.False(handler.Features.SetBoard)  // V1 defaults to no setboard
+    Assert.False(handler.Features.Ping)      // V1 defaults to no ping
+
+[<Fact>]
+let ``Thread safety concurrent access to handler state`` () =
+    let logger = TestLogger() :> ILogger
+    let wbConfig = WinboardConfig.Default
+    let handler = WinboardHandler(logger, "TestEngine", wbConfig)
+    handler.ProcessFeatureLine("feature done=1") |> ignore
+
+    // Simulate concurrent access from multiple threads
+    let tasks =
+        [1..10]
+        |> List.map (fun i ->
+            async {
+                for j in 1..100 do
+                    // Concurrent reads and writes
+                    if j % 3 = 0 then
+                        handler.UciToWinboard("isready") |> ignore
+                    elif j % 3 = 1 then
+                        handler.UciToWinboard("position startpos moves e2e4") |> ignore
+                    else
+                        handler.ProcessOutput("10 50 100 1000 e7e5") |> ignore
+            }
+        )
+
+    // Should not throw or deadlock
+    tasks |> Async.Parallel |> Async.RunSynchronously |> ignore
+
+    // Verify handler is still in a consistent state after concurrent access
+    Assert.True(handler.IsInitialized)
+    Assert.False(handler.IsV1Fallback)
+
+    // Verify we can still process commands after concurrent access
+    let cmds = handler.UciToWinboard("position startpos")
+    Assert.NotEmpty(cmds)
+
+    // Verify ProcessOutput still works
+    let output = handler.ProcessOutput("10 50 100 1000 e2e4")
+    Assert.True(output.IsSome)  // Should parse thinking output correctly

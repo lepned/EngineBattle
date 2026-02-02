@@ -240,9 +240,77 @@ module TypesDef =
 
   // -----------------------------------------------------------------------------
 // CORE TYPES
-// -----------------------------------------------------------------------------  
-  module CoreTypes =     
+// -----------------------------------------------------------------------------
+  module CoreTypes =
     open Misc
+    open System.Text.Json
+
+    /// Time control strategy for Winboard engines
+    /// - LevelWithTime: Standard V2 approach (send level + time/otim)
+    /// - TimeOtimOnly: For V1 engines or those with broken level command (send time/otim only)
+    /// - StWithTime: Safety mode (send st + time/otim for better time management)
+    /// - StOnly: Legacy mode (send st only, may cause poor time management)
+    /// - AutoDetect: Probe level command at runtime, fallback to TimeOtimOnly on error
+    type TimeControlStrategy =
+        | LevelWithTime
+        | TimeOtimOnly
+        | StWithTime
+        | StOnly
+        | AutoDetect
+
+    /// JSON converter for TimeControlStrategy discriminated union
+    type TimeControlStrategyConverter() =
+        inherit JsonConverter<TimeControlStrategy>()
+
+        override _.Read(reader: byref<Utf8JsonReader>, typeToConvert: Type, options: JsonSerializerOptions) =
+            let value = reader.GetString()
+            match value with
+            | "LevelWithTime" -> TimeControlStrategy.LevelWithTime
+            | "TimeOtimOnly" -> TimeControlStrategy.TimeOtimOnly
+            | "StWithTime" -> TimeControlStrategy.StWithTime
+            | "StOnly" -> TimeControlStrategy.StOnly
+            | "AutoDetect" -> TimeControlStrategy.AutoDetect
+            | _ -> failwith $"Unknown TimeControlStrategy: {value}"
+
+        override _.Write(writer: Utf8JsonWriter, value: TimeControlStrategy, options: JsonSerializerOptions) =
+            let str =
+                match value with
+                | TimeControlStrategy.LevelWithTime -> "LevelWithTime"
+                | TimeControlStrategy.TimeOtimOnly -> "TimeOtimOnly"
+                | TimeControlStrategy.StWithTime -> "StWithTime"
+                | TimeControlStrategy.StOnly -> "StOnly"
+                | TimeControlStrategy.AutoDetect -> "AutoDetect"
+            writer.WriteStringValue(str)
+
+    /// Winboard-specific configuration options
+    type WinboardConfig = {
+        /// If true, engine reports scores from side-to-move's perspective (requires negation for Black)
+        SideToMovePOV: bool
+        /// Time control strategy to use for this engine
+        TimeControlStrategy: TimeControlStrategy
+        /// Commands to send after 'post' and 'easy' during initialization (e.g., ["level 16"])
+        StartupCommands: string list
+        /// If true, force V1 mode (skip protover 2 negotiation, use conservative defaults)
+        ForceV1Mode: bool
+        /// If true, send a dummy 'level' command at startup to enable thinking output (for engines like Comet)
+        RequiresLevelForThinkingOutput: bool
+        /// If true, send 4-field FEN (omit halfmove clock and fullmove number) for old engines that crash/hang on 6-field FEN
+        Use4FieldFen: bool
+        /// Delay in milliseconds before sending 'go' command (workaround for time control race conditions)
+        /// Default is 100ms. Set to 0 for engines that don't need it.
+        PreGoDelayMs: int
+    }
+    with
+        static member Default = {
+            SideToMovePOV = false
+            TimeControlStrategy = LevelWithTime
+            StartupCommands = []
+            ForceV1Mode = false
+            RequiresLevelForThinkingOutput = false
+            Use4FieldFen = false
+            PreGoDelayMs = 100
+        }
+
     type EngineConfig =
         { mutable Name: string
           Alias: string
@@ -252,7 +320,6 @@ module TypesDef =
           Dev: string
           LogoPath: string
           mutable IsChallenger: bool
-          Flipped: bool
           ContemptEnabled: bool
           NegativeContemptAllowed: bool
           Protocol: string
@@ -260,7 +327,8 @@ module TypesDef =
           OptionsPath: string
           mutable NetworkPath: string
           Args: string
-          Options: System.Collections.Generic.Dictionary<string, obj> }
+          Options: System.Collections.Generic.Dictionary<string, obj>
+          WinboardConfig: WinboardConfig option }
         with 
             member x.Information moveOverhead =
               let sb = new StringBuilder()
@@ -278,7 +346,6 @@ module TypesDef =
                 Dev = ""
                 LogoPath = ""
                 IsChallenger = false
-                Flipped = false
                 ContemptEnabled = false
                 NegativeContemptAllowed = false
                 Protocol = "UCI"
@@ -286,7 +353,8 @@ module TypesDef =
                 OptionsPath = ""
                 NetworkPath = ""
                 Args = String.Empty
-                Options = new System.Collections.Generic.Dictionary<string, obj>() }
+                Options = new System.Collections.Generic.Dictionary<string, obj>()
+                WinboardConfig = None }
             static member EmptyWithPath (path:string) =
               let fileName = Path.GetFileNameWithoutExtension path
               let isLc0 = Regex.Match(fileName, "lc0", RegexOptions.IgnoreCase).Success
@@ -298,7 +366,6 @@ module TypesDef =
                 Dev = "from xxx"
                 LogoPath = "img/lc0.png"
                 IsChallenger = false
-                Flipped = false
                 ContemptEnabled = false
                 NegativeContemptAllowed = false
                 Protocol = "UCI"
@@ -306,7 +373,8 @@ module TypesDef =
                 OptionsPath = ""
                 NetworkPath = ""
                 Args = if isLc0 then "--show-hidden" else String.Empty
-                Options = new System.Collections.Generic.Dictionary<string, obj>() }
+                Options = new System.Collections.Generic.Dictionary<string, obj>()
+                WinboardConfig = None }
             static member AddOptions (config: EngineConfig) options =
               { config with Options = options }  
     

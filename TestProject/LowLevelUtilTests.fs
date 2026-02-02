@@ -33,23 +33,27 @@ let ``parseUciResponse should parse valid UCI responses`` () =
 // Test for handleUciResponse
 [<Fact>]
 let ``handleUciResponse should handle UCI responses correctly`` () =
+    let originalOut = Console.Out
     use sw = new StringWriter()
     Console.SetOut(sw)
 
-    handleUciResponse (Id("name", "Stockfish"))
-    handleUciResponse UciOk
-    handleUciResponse ReadyOk
-    handleUciResponse (BestMove("e2e4"))
-    handleUciResponse (Info("info depth 20"))
-    handleUciResponse (Unknown("unknown command"))
+    try
+        handleUciResponse (Id("name", "Stockfish"))
+        handleUciResponse UciOk
+        handleUciResponse ReadyOk
+        handleUciResponse (BestMove("e2e4"))
+        handleUciResponse (Info("info depth 20"))
+        handleUciResponse (Unknown("unknown command"))
 
-    let output = sw.ToString()
-    Assert.Contains("ID: name Stockfish", output)
-    Assert.Contains("UCI OK", output)
-    Assert.Contains("Ready OK", output)
-    Assert.Contains("Best Move: e2e4", output)
-    Assert.Contains("Info: info depth 20", output)
-    Assert.Contains("Unknown response: unknown command", output)
+        let output = sw.ToString()
+        Assert.Contains("ID: name Stockfish", output)
+        Assert.Contains("UCI OK", output)
+        Assert.Contains("Ready OK", output)
+        Assert.Contains("Best Move: e2e4", output)
+        Assert.Contains("Info: info depth 20", output)
+        Assert.Contains("Unknown response: unknown command", output)
+    finally
+        Console.SetOut(originalOut)
 
 // Test for flipVertical
 [<Fact>]
@@ -86,9 +90,13 @@ let ``createOutputAgent should process messages correctly`` () =
 // Test for printInColor
 [<Fact>]
 let ``printInColor should print text in specified color`` () =
+    let originalOut = Console.Out
     use sw = new StringWriter()
     Console.SetOut(sw)
 
-    printInColor ConsoleColor.Green "Test Message"
-    let output = sw.ToString()
-    Assert.Contains("Test Message", output)
+    try
+        printInColor ConsoleColor.Green "Test Message"
+        let output = sw.ToString()
+        Assert.Contains("Test Message", output)
+    finally
+        Console.SetOut(originalOut)
