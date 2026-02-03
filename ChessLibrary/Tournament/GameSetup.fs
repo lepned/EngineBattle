@@ -63,7 +63,7 @@ let logPosition (logger: ILogger) (board: Board) : unit =
     let posWithMoves =
         let fen = board.StartPosition
         let start = $"position fen {fen} moves"
-        board.LongSANMovesPlayed |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
+        board.UciMovesPlayed |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
     logger.LogInformation("{position}", posWithMoves)
 
 // ============================================================================
@@ -128,7 +128,7 @@ let executeGameWithSetup
 
     // Process completed game
     let gameData = buildGameMetadata tourny pair result roundTxt
-    addToReplayList replayList tourny result gameData board.LongSANMovesPlayed
+    addToReplayList replayList tourny result gameData board.UciMovesPlayed
     let moveSection = sb.ToString()
     writeGameToPgn pgnAgent tourny gameData moveSection result cts
 

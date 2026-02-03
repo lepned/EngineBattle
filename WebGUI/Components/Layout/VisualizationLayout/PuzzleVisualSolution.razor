@@ -104,14 +104,14 @@
 
       foreach (var move in allMovesButFirst)
       {
-        Board.PlayLongSanMove(move);
+        Board.PlayUciMove(move);
       }
-      moveSeq = Board.GetShortSanMoveHistory();
+      moveSeq = Board.GetSanMoveHistory();
       Board.PlayCommands(position.Command);
       var fenBeforeMovePlayed = Board.FEN();
-      Board.PlayLongSanMove(position.MovePlayed);
+      Board.PlayUciMove(position.MovePlayed);
       playedMove = position.MovePlayed;
-      var movePlayedInShortSan = Board.ShortSANMovesPlayed.Last();      
+      var movePlayedInShortSan = Board.SanMovesPlayed.Last();      
       theme = Puzzle.Themes;      
       var nr = (indexFailed + 1) / 2;
       (var correctMovePolicy, var movePlayedPolicy) = GetPolicyInfo(PolicyData);
@@ -122,8 +122,8 @@
       else
       {
         Board.LoadFen(fenBeforeMovePlayed);
-        Board.PlayLongSanMove(position.CorrectMove);
-        var correctMoveInShortSan = Board.ShortSANMovesPlayed.Last();
+        Board.PlayUciMove(position.CorrectMove);
+        var correctMoveInShortSan = Board.SanMovesPlayed.Last();
         if (correctMovePolicy == string.Empty)
         {
           // desc = $"Incorrect move {correctMoveInShortSan} on board {indexFailed + 1}, played {movePlayedInShortSan} | correct move sequence is: {moveSeq}";

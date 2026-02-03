@@ -784,11 +784,11 @@
                                     {
                                         boardBm.PlayCommands(cmd.Command);
                                         var fen = boardBm.FEN();
-                                        boardBm.PlayLongSanMove(cmd.CorrectMove);
-                                        var bm = boardBm.ShortSANMovesPlayed.LastOrDefault();
+                                        boardBm.PlayUciMove(cmd.CorrectMove);
+                                        var bm = boardBm.SanMovesPlayed.LastOrDefault();
                                         boardAm.PlayCommands(cmd.Command);
-                                        boardAm.PlayLongSanMove(cmd.MovePlayed);
-                                        var aM = boardAm.ShortSANMovesPlayed.LastOrDefault();
+                                        boardAm.PlayUciMove(cmd.MovePlayed);
+                                        var aM = boardAm.SanMovesPlayed.LastOrDefault();
                                         var policies = puzzle.Item3.Split(",");
                                         var (bmP, amP) = policies.Length > 1 ? (policies[0].Trim(), policies[1].Trim()) : ("", "");
                                         var msg = $"{fen} bm {bm}; am {aM}; id \"Lichess id {puzzle.Item1.PuzzleId}, policy value for bestmove {bm}={bmP} and move played {aM}={amP}\"; other \"{cmd.CorrectMove},{cmd.MovePlayed}\"";

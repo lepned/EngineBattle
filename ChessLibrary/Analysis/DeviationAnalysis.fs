@@ -186,7 +186,7 @@ let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string optio
                   let hash = replayBoard.DeviationHash()
                   let lastmove = m
                   let oldFen = replayBoard.FEN()
-                  replayBoard.PlaySimpleShortSan lastmove
+                  replayBoard.PlaySanMove lastmove
                   let newFen = replayBoard.FEN()
                   let moveCombo = lastmove, (replayBoard.MovesAndFenPlayed |> Seq.last).Move.LongSan
                   if iAmWhite && whiteToMove then
@@ -205,7 +205,7 @@ let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string optio
                       let (sSan,_) = replayData.Move
                       if sSan <> lastmove then
                         oppBoard.LoadFen replayData.Fen1
-                        oppBoard.PlaySimpleShortSan sSan
+                        oppBoard.PlaySanMove sSan
                         let oppFen = oppBoard.FEN()
                         let prevMoveCombo = sSan, (oppBoard.MovesAndFenPlayed |> Seq.last).Move.LongSan
                         cont <- false
@@ -252,7 +252,7 @@ let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string optio
                       let (sSan,_) = replayData.Move
                       if sSan <> lastmove then
                         oppBoard.LoadFen replayData.Fen1
-                        oppBoard.PlaySimpleShortSan sSan
+                        oppBoard.PlaySanMove sSan
                         let oppFen = oppBoard.FEN()
                         let prevMoveCombo = sSan, (oppBoard.MovesAndFenPlayed |> Seq.last).Move.LongSan
                         cont <- false
@@ -344,10 +344,10 @@ let findAllDeviationsForPlayersAlt (pgnGames: PgnGame seq) (refPlayer: string op
         let moves = movesFromPgn game
         for m in moves do
           idx <- idx + 1
-          replayBoard.PlaySimpleShortSan m
+          replayBoard.PlaySanMove m
           let hash = replayBoard.DeviationHash()
           let fen = replayBoard.FEN()
-          let longMove = replayBoard.LongSANMovesPlayed.[replayBoard.LongSANMovesPlayed.Count - 1]
+          let longMove = replayBoard.UciMovesPlayed.[replayBoard.UciMovesPlayed.Count - 1]
           let moveStore = createMoveStore longMove idx fen game.GameMetaData.White game.GameMetaData.Black hash
           gameMoveStore.Add moveStore
 

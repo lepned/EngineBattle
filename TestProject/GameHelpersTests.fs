@@ -299,9 +299,9 @@ let ``setupBoardForGame plays opening moves for PGN book`` () =
     setupBoardForGame board pair false 10 ignore |> ignore
 
     Assert.Equal(3, board.PlyCount)
-    Assert.Contains("e2e4", board.LongSANMovesPlayed)
-    Assert.Contains("e7e5", board.LongSANMovesPlayed)
-    Assert.Contains("g1f3", board.LongSANMovesPlayed)
+    Assert.Contains("e2e4", board.UciMovesPlayed)
+    Assert.Contains("e7e5", board.UciMovesPlayed)
+    Assert.Contains("g1f3", board.UciMovesPlayed)
 
 [<Fact>]
 let ``setupBoardForGame truncates moves to openingsPly`` () =
@@ -318,9 +318,9 @@ let ``setupBoardForGame truncates moves to openingsPly`` () =
     setupBoardForGame board pair false 2 ignore |> ignore // Only 2 plies
 
     Assert.Equal(2, board.PlyCount)
-    Assert.Contains("e2e4", board.LongSANMovesPlayed)
-    Assert.Contains("e7e5", board.LongSANMovesPlayed)
-    Assert.DoesNotContain("g1f3", board.LongSANMovesPlayed)
+    Assert.Contains("e2e4", board.UciMovesPlayed)
+    Assert.Contains("e7e5", board.UciMovesPlayed)
+    Assert.DoesNotContain("g1f3", board.UciMovesPlayed)
 
 [<Fact>]
 let ``setupBoardForGame for EPD book does not play moves`` () =
@@ -333,7 +333,7 @@ let ``setupBoardForGame for EPD book does not play moves`` () =
     setupBoardForGame board pair true 10 ignore |> ignore // epdBook = true
 
     Assert.Equal(customFen, board.StartPosition)
-    Assert.Equal(0, board.LongSANMovesPlayed.Count) // No moves played for EPD
+    Assert.Equal(0, board.UciMovesPlayed.Count) // No moves played for EPD
 
 [<Fact>]
 let ``setupBoardForGame returns truncated opening moves`` () =
@@ -366,8 +366,8 @@ let ``setupBoardForGame with FEN and PGN book plays moves from FEN`` () =
     setupBoardForGame board pair false 10 ignore |> ignore
 
     Assert.Equal(fenAfterE4, board.StartPosition)
-    Assert.Equal(1, board.LongSANMovesPlayed.Count) // e5 was played from the FEN position
-    Assert.Contains("e7e5", board.LongSANMovesPlayed)
+    Assert.Equal(1, board.UciMovesPlayed.Count) // e5 was played from the FEN position
+    Assert.Contains("e7e5", board.UciMovesPlayed)
 
 // ============================================================================
 // getPositionWithMoves tests (Medium Priority)
@@ -388,7 +388,7 @@ let ``getPositionWithMoves with one move played`` () =
     let board = Board()
     board.LoadFen startPosFen
     board.StartPosition <- startPosFen
-    board.PlayLongSanMove "e2e4"
+    board.PlayUciMove "e2e4"
 
     let result = getPositionWithMoves board
 
@@ -399,9 +399,9 @@ let ``getPositionWithMoves with multiple moves played`` () =
     let board = Board()
     board.LoadFen startPosFen
     board.StartPosition <- startPosFen
-    board.PlayLongSanMove "e2e4"
-    board.PlayLongSanMove "e7e5"
-    board.PlayLongSanMove "g1f3"
+    board.PlayUciMove "e2e4"
+    board.PlayUciMove "e7e5"
+    board.PlayUciMove "g1f3"
 
     let result = getPositionWithMoves board
 
@@ -413,7 +413,7 @@ let ``getPositionWithMoves with custom FEN start position`` () =
     let customFen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
     board.LoadFen customFen
     board.StartPosition <- customFen
-    board.PlayLongSanMove "f1b5"
+    board.PlayUciMove "f1b5"
 
     let result = getPositionWithMoves board
 

@@ -36,7 +36,7 @@ let getAllFens (fen: string) (moves: string seq) =
   fens.Add(fen)
   chess.LoadFen(fen)
   for move in moves do
-    chess.PlayLongSanMove(move)
+    chess.PlayUciMove(move)
     fens.Add(chess.FEN())
   fens
 
@@ -70,7 +70,7 @@ let getUpdatedRecord (record: CsvPuzzleData) =
             MovePlayed  = "" }
 
       // 5b) play the move and record its FEN
-      chess.PlayLongSanMove mv
+      chess.PlayUciMove mv
       fens.Add (chess.FEN())
 
       // 5c) update the SAN-string for the next iteration

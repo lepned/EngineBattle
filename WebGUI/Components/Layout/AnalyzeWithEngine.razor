@@ -533,7 +533,7 @@
             searchInProgress = true;
             await searchInfoPlot.ResetPlot(false);
             var move = moveInfo.Item.LANMove;
-            ChessBoard.PlayLongSanMove(move);
+            ChessBoard.PlayUciMove(move);
             fen = ChessBoard.FEN();
             await OnEngineMoveMade.InvokeAsync(move);
             await Notifier.UpdateFenToBoard(fen);
@@ -551,7 +551,7 @@
             if (longSan != null)
             {
                 await searchInfoPlot.ResetPlot(false);                
-                ChessBoard.PlayLongSanMove(longSan);
+                ChessBoard.PlayUciMove(longSan);
                 var moveFen = ChessBoard.MovesAndFenPlayed.Last();
                 fen = ChessBoard.FEN();
                 await OnEngineMoveMade.InvokeAsync(longSan);
@@ -1221,7 +1221,7 @@
         board.LoadFen(fenP);
         foreach (var ply in game.Mainline)
         {            
-            board.PlaySimpleShortSanWithComments(ply.San, ply.Comment);           
+            board.PlaySanMoveWithComments(ply.San, ply.Comment);           
         }
 
         fen = board.FEN();        

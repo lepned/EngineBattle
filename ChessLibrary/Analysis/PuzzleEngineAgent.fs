@@ -120,7 +120,7 @@ let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (pu
           failedMove <- cmd.CorrectMove
           policy <- p
           board.PlayCommands cmd.Command
-          board.PlayLongSanMove mv
+          board.PlayUciMove mv
           solved <- not (board.AnyLegalMove())
         correct <- solved
 

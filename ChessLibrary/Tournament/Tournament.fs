@@ -46,7 +46,7 @@ module TournamentUtils =
     let qList = ResizeArray<float*string*EvalType>()    
     tboard.ResetBoardState()
     tboard.PlayCommands fenWithMoves
-    let legalMoves = tboard.GetAllLegalMoves()    
+    let legalMoves = tboard.GetLegalMoves()    
     for (lSan,_) in legalMoves do
       let cmd = sprintf "%s %s" fenWithMoves lSan
       engine.Position cmd

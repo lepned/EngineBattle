@@ -375,7 +375,7 @@
 	[JSInvokable]
 	public bool isLegalMove(string moveStr)
 	{
-		var allMoves = ChessBoard.GetAllLegalMoves();
+		var allMoves = ChessBoard.GetLegalMoves();
 		var exists = allMoves.Any(e => e.Item1.Contains(moveStr));
 		return exists;
 	}
@@ -395,7 +395,7 @@
 	[JSInvokable]
 	public bool isLegalPieceMove(string startSq)
 	{
-		var allMoves = ChessBoard.GetAllLegalMoves();
+		var allMoves = ChessBoard.GetLegalMoves();
 		var legal = allMoves.Any(e => e.Item1.Contains(startSq));
 		return legal;
 	}
@@ -403,7 +403,7 @@
 	[JSInvokable]
 	public string GetMoveStr(string move)
 	{
-		var allMoves = ChessBoard.GetAllLegalMoves();
+		var allMoves = ChessBoard.GetLegalMoves();
 		var res = allMoves.Where(e => e.Item1.Contains(move));
 		var candidate = "";
 		if (res.Count() > 1)
@@ -428,7 +428,7 @@
 			var moveIsProvided = !string.IsNullOrEmpty(move);
 			if (moveIsProvided)
 			{
-				ChessBoard.PlayLongSanMove(move);
+				ChessBoard.PlayUciMove(move);
 				await OnMoveMadeOnBoard.InvokeAsync(move);
 			}
 

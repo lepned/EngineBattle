@@ -501,7 +501,7 @@
 				}
 				var move = ExtractMove(firstMove);
 				//firstMove = NormalizeMoveDots(firstMove);				
-				board.PlaySimpleShortSan(move);
+				board.PlaySanMove(move);
 				var comment = $"{{{cLine.Eval}/{cLine.SD}}}";
 				var oldComment = board.GetCurrentEdgeComment();
 				if (string.IsNullOrWhiteSpace(oldComment))
@@ -605,12 +605,12 @@
 		// {
 		//     if (row.WhiteSan != "")
 		//     {
-		//         board.PlaySimpleShortSanWithComments(row.WhiteSan, row.WhiteComment);
+		//         board.PlaySanMoveWithComments(row.WhiteSan, row.WhiteComment);
 		//     }
 
 		//     if (row.BlackSan != "")
 		//     {
-		//         board.PlaySimpleShortSanWithComments(row.BlackSan, row.BlackComment);
+		//         board.PlaySanMoveWithComments(row.BlackSan, row.BlackComment);
 		//     }
 
 		//     if (row.WhiteComment == check || row.BlackComment == check)

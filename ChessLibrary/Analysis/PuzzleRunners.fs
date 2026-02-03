@@ -89,7 +89,7 @@ let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (b
             let bestMoveInLsan =
               match puzzle.BestMove with
               | Some bm ->
-                boardBm.PlaySimpleShortSan(bm)
+                boardBm.PlaySanMove(bm)
                 match boardBm.MovesAndFenPlayed |> Seq.tryLast with
                 | Some m -> m.Move.LongSan
                 | None -> ""
@@ -98,7 +98,7 @@ let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (b
             let avoidMoveInLsan =
               match puzzle.AvoidMove with
               | Some am ->
-                boardAm.PlaySimpleShortSan(am)
+                boardAm.PlaySanMove(am)
                 match boardAm.MovesAndFenPlayed |> Seq.tryLast with
                 | Some m -> m.Move.LongSan
                 | None -> ""
@@ -159,9 +159,9 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
                   bestPolicyMove nodes puzzlePolicyEngine position
               else
                   bestMoveWithTime time puzzlePolicyEngine position
-          board.PlayLongSanMove move
+          board.PlayUciMove move
           let shortSanMove =
-              match board.ShortSANMovesPlayed |> Seq.tryLast with
+              match board.SanMovesPlayed |> Seq.tryLast with
               | Some move -> move
               | None ->
                   failwithf "No moves played for puzzle with FEN: %s" puzzle.FEN

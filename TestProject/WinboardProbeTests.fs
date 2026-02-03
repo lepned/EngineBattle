@@ -121,8 +121,8 @@ let ``positionToWinboard with setboard sends setboard for FEN`` () =
 let ``positionToWinboard without setboard sends moves`` () =
     let features = { defaultFeatures with SetBoard = false }
     let board = Board()
-    board.PlayLongSanMove("e2e4")
-    board.PlayLongSanMove("e7e5")
+    board.PlayUciMove("e2e4")
+    board.PlayUciMove("e7e5")
     let cmds = positionToWinboard "position startpos moves e2e4 e7e5" features false &board
     Assert.Equal<string list>(["e2e4"; "e7e5"], cmds)
 

@@ -6,7 +6,7 @@ open Microsoft.Extensions.Logging
 open PositionTypes
 open TypesDef.CoreTypes
 open Chess
-open Chess.BoardUtils
+open ChessLibrary.BoardUtils
 
 /// Winboard/XBoard protocol implementation for EngineBattle
 module WinboardProtocol =
@@ -272,7 +272,7 @@ module WinboardProtocol =
                         )
                     match sanCandidate with
                     | Some sanMove ->
-                        let longSan = BoardUtils.getLongSanPVFromShortSanPV moveList.Value &board [sanMove]
+                        let longSan = getLongSanPVFromShortSanPV moveList.Value &board [sanMove]
                         if String.IsNullOrWhiteSpace(longSan) then
                             None
                         else
@@ -457,7 +457,7 @@ module WinboardProtocol =
                             if not (String.IsNullOrWhiteSpace(movesStr)) then
                                 let moves = movesStr.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
                                 for moveStr in moves do
-                                    board.PlayLongSanMove(moveStr)
+                                    board.PlayUciMove(moveStr)
                     with ex ->
                         logger.LogError($"Error processing position command: {ex.Message}")
 

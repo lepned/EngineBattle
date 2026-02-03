@@ -74,7 +74,7 @@ let handleGameException
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let white, black = pair.White.Name, pair.Black.Name
     let shutdown = isAppShuttingDown cts
-    let moves = board.ShortSANMovesPlayed
+    let moves = board.SanMovesPlayed
 
     // Helper to create results
     let createCancelResult () =
@@ -394,7 +394,7 @@ let initBoardFromOpening
 let getPositionWithMoves (board: Board) : string =
     let fen = board.StartPosition
     let start = $"position fen {fen} moves"
-    board.LongSANMovesPlayed |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
+    board.UciMovesPlayed |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
 
 // ============================================================================
 // Replay List Helpers

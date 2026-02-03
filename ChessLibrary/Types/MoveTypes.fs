@@ -306,10 +306,10 @@ module MoveTypes =
 
 
       // get sanLong from Tmove
-      let getSanLong (move: TMove) side = moveToStr &move side
+      let getUciNotation (move: TMove) side = moveToStr &move side
 
       let getTmoveFromSanMove (moves : TMove array) (moveLong: string) stm =
-        moves |> Array.tryFind(fun m -> getSanLong m stm = moveLong)
+        moves |> Array.tryFind(fun m -> getUciNotation m stm = moveLong)
 
       let pieceOnSquare p sq = getPieceOnSquare &p sq
 

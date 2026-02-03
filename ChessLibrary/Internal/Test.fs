@@ -10,7 +10,7 @@ open EngineProtocol
 open ChessUtilities
 open RuntimeUtilities
 open Chess
-open Chess.BoardUtils
+open ChessLibrary.BoardUtils
 open Perft
 
 open System.Diagnostics
@@ -369,7 +369,7 @@ module ParsingTests =
           board.LoadFen(pgn.Fen)  
 
         for m in pgn.Mainline do
-            board.PlaySimpleShortSan m.San
+            board.PlaySanMove m.San
             if printToConsole then
               match Regex.parseEvalRegexOption m.Comment false with
               | Some eval -> 
@@ -402,7 +402,7 @@ module ParsingTests =
       board.ResetBoardState()
       board.LoadFen(pgn.Fen)
       for m in pgn.Mainline do        
-          board.PlaySimpleShortSan m.San          
+          board.PlaySanMove m.San          
           if printToConsole then
             match Regex.parseEvalRegexOption m.Comment false with
             | Some eval -> 
@@ -429,7 +429,7 @@ module ParsingTests =
       [
           for m in pgn.Mainline do            
             ply <- ply + 1
-            board.PlaySimpleShortSan m.San
+            board.PlaySanMove m.San
             match Regex.parseEvalRegexOption m.Comment false with
             | Some eval ->
                 let pd =
@@ -472,7 +472,7 @@ module ParsingTests =
       board.LoadFen(pgn.Fen)    
       [
           for m in pgn.Mainline do
-                board.PlaySimpleShortSan m.San
+                board.PlaySanMove m.San
                 match Regex.parseEvalRegexOption m.Comment false with
                 | Some eval ->
                     let pd =
@@ -981,7 +981,7 @@ module ParsingTests =
       board.ResetBoardState()
       board.LoadFen pgn.GameMetaData.Fen
       for m in pgn.Mainline do      
-          board.PlaySimpleShortSan m.San        
+          board.PlaySanMove m.San        
       let evals = collectAllChessEvaluations pgn        
       let mutable currentCollector = fun _ -> ()
       let w,b = pgn.GameMetaData.White, pgn.GameMetaData.Black
@@ -1158,7 +1158,7 @@ let removeEPOpeningsInPGNFile (pgnPath:string) =
       for m in pgn.Mainline do          
         if board.FindEpMove m.San then
             ok <- false                  
-        board.PlaySimpleShortSan m.San
+        board.PlaySanMove m.San
           
       if ok then
         yield pgn

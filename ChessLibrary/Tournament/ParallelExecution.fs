@@ -264,7 +264,7 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
                         let posWithMoves =
                           let fen = currentBoard.StartPosition
                           let start = $"position fen {fen} moves"
-                          currentBoard.LongSANMovesPlayed |> Seq.fold(fun state m ->
+                          currentBoard.UciMovesPlayed |> Seq.fold(fun state m ->
                             sprintf "%s %s" state m) start
                         if tourny.VerboseLogging then
                           logger.LogDebug("{position}", posWithMoves)
@@ -551,7 +551,7 @@ let parallelTournamentRun
                           let posWithMoves =
                               let fen = currentBoard.StartPosition
                               let start = $"position fen {fen} moves"
-                              currentBoard.LongSANMovesPlayed
+                              currentBoard.UciMovesPlayed
                               |> Seq.fold(fun state m -> sprintf "%s %s" state m) start
 
                           if tourny.VerboseLogging then

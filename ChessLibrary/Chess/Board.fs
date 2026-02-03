@@ -3,16 +3,17 @@
 open System
 open System.Threading
 open System.Collections.Generic
+open System.Text.RegularExpressions
 open QBBOperations
 open MiscTypes
 open PositionTypes
 open MoveTypes
 open EngineTypes
+open GameGraphTypes
 open RuntimeUtilities
 open ChessUtilities
 open MoveGeneration
-open ChessLibrary.MoveParser
-open System.Text.RegularExpressions
+open MoveParser
 
 let startPos = startPosition
 
@@ -20,40 +21,6 @@ let [<Literal>] MAX_PLY = 1000
 let [<Literal>] MAX_MOVES = 256
 
 let moveList = new ThreadLocal<TMove array> (fun () -> Array.zeroCreate<TMove>(MAX_MOVES))
-
-// DAG representation of game tree with shared positions (transpositions).
-type NodeId = int
-type EdgeId = int
-type PositionNode = { Id: NodeId; Hash: uint64; Fen: string; Parents: EdgeId list; Children: EdgeId list }
-type MoveEdge =
-  { Id: EdgeId
-    From: NodeId
-    To: NodeId
-    San: string
-    Lan: string
-    Comments: string
-    Color: string
-    IsCastling: bool
-    Order: int
-    IsMainline: bool }
-type MoveGraph =
-  { mutable Root: NodeId
-    NodesById: Dictionary<NodeId, PositionNode>
-    EdgesById: Dictionary<EdgeId, MoveEdge>
-    NodesByHash: Dictionary<uint64, ResizeArray<NodeId>> }
-
-[<CLIMutable>]
-type InlineMoveToken =
-  { Text:string
-    DisplayText:string
-    Fen:string
-    MoveCoord:string
-    IsBracket:bool
-    Hash:uint64
-    FromVariation:bool
-    Ply:int
-    Evaluation:string
-    IsLineStart:bool }
 
 type Board() =        
     let mutable isFRC = false
@@ -70,8 +37,8 @@ type Board() =
     let mutable lastHistoryTokens : string array option = None
     let sbPool = StringBuilderPool(10,20)
     let moves = ResizeArray<TMove>()
-    let longSanMoves = ResizeArray<string>()
-    let shortSanMoves = ResizeArray<string>()
+    let uciMoves = ResizeArray<string>()
+    let sanMoves = ResizeArray<string>()
     let shortSanOpeningMoves = ResizeArray<string>()
     let openingMoves = ResizeArray<string>()
     let moveAndFens = ResizeArray<MoveAndFen>()    
@@ -340,6 +307,12 @@ type Board() =
       | Some mc -> mc
       | None -> children |> List.maxBy (fun e -> (depthFromNode e.To, -e.Order))
 
+    /// Sets the board position to a node in the move graph
+    let setBoardToGraphNode (loadFen: string -> unit) (nodeId: NodeId) =
+      let fen = moveGraph.NodesById[nodeId].Fen
+      loadFen fen
+      currentGraphNodeId <- nodeId
+
     /// Ascends from a node to root, returning edges in root-to-node order
     let ascendToRoot startNodeId =
       let visited = HashSet<NodeId>()
@@ -357,12 +330,12 @@ type Board() =
 
     let updatePathFromCurrent () =
       moveAndFens.Clear()
-      longSanMoves.Clear()
+      uciMoves.Clear()
       let pathEdges = ascendToRoot currentGraphNodeId
       for e in pathEdges do
         let toNode = moveGraph.NodesById[e.To]
         moveAndFens.Add (moveAndFenFromEdge e toNode)
-        longSanMoves.Add e.Lan
+        uciMoves.Add e.Lan
 
     let endCurrentVariation () =
       moveAndFens.Clear()
@@ -384,8 +357,8 @@ type Board() =
     let resetWithFen (fenOpt:string option) =
       iPosition <- 0
       moves.Clear()
-      longSanMoves.Clear()
-      shortSanMoves.Clear()      
+      uciMoves.Clear()
+      sanMoves.Clear()      
       openingMoves.Clear()
       shortSanOpeningMoves.Clear()
       moveAndFens.Clear()
@@ -409,8 +382,8 @@ type Board() =
     let initBoard () =
       iPosition <- 0
       moves.Clear()
-      longSanMoves.Clear()
-      shortSanMoves.Clear()      
+      uciMoves.Clear()
+      sanMoves.Clear()      
       openingMoves.Clear()
       shortSanOpeningMoves.Clear()
       moveAndFens.Clear()
@@ -488,11 +461,11 @@ type Board() =
       and set(v) = mostCurrentFEN <- v
 
     member this.PositionWithMoves() =      
-      if longSanMoves.Count = 0 then
+      if uciMoves.Count = 0 then
         sprintf $"position fen {startPos}"
       else
         let start = sprintf $"position fen {startPos} moves"
-        longSanMoves |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
+        uciMoves |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
 
     member this.GetCurrentEdgeComment () =      
         // update the incoming edge to the current node
@@ -530,10 +503,10 @@ type Board() =
         this.PositionWithMoves()
 
     member this.PositionWithFenAndMoves (fen:string) =
-      if longSanMoves.Count = 0 then
+      if uciMoves.Count = 0 then
         sprintf $"position fen {fen}"
       else
-        longSanMoves
+        uciMoves
         |> Seq.fold (fun state m -> sprintf "%s %s" state m) (sprintf $"position fen {fen} moves")
 
     member this.SanMoveNumberString san =
@@ -716,9 +689,9 @@ type Board() =
 
     member val MovesPlayed = moves with set, get
 
-    member _.LongSANMovesPlayed = longSanMoves
+    member _.UciMovesPlayed = uciMoves
 
-    member val ShortSANMovesPlayed = shortSanMoves with get, set
+    member val SanMovesPlayed = sanMoves with get, set
 
     member val ShortSANOpeningMovesPlayed = shortSanOpeningMoves with get, set
 
@@ -857,42 +830,32 @@ type Board() =
             updatePathFromCurrent()
             true
 
-    member this.LoadMoveHistoryWithVariations (history:string) =
-      // Reset board and graph, then parse the provided PGN-style move string (with variations).
-      let originalStart = this.StartPosition
-      this.ResetBoardStateFromFen(originalStart)
-      createNodeIsVariation <- false
-  
+    /// Parses PGN history string, extracting tokens and a map of token->comments
+    member private this.ParseHistoryTokensAndComments (history: string) =
       // Extract comments and their positions BEFORE stripping them
       let commentPattern = @"\{([^}]*)\}"
       let commentMatches = Regex.Matches(history, commentPattern)
       let commentsMap = Dictionary<int, string>()
-  
+
       // Map each comment to its position in the original string
       for m in commentMatches do
         commentsMap[m.Index] <- m.Groups.[1].Value
 
-      // Strip PGN comments to avoid treating them as SAN tokens.
+      // Strip PGN comments to avoid treating them as SAN tokens
       let cleaned =
         history
         |> fun h -> Regex.Replace(h, @"\{[^}]*\}", " ")
         |> fun h -> h.Replace("\n", " ")
         |> fun h -> h.Replace("\r", " ")
 
-      // Tokenize with explicit parentheses.
+      // Tokenize with explicit parentheses
       let normalized =
         cleaned
           .Replace("(", " ( ")
           .Replace(")", " ) ")
           .Split([|' '; '\t'; '\r'; '\n'|], StringSplitOptions.RemoveEmptyEntries)
         |> Seq.toArray
-      lastHistoryTokens <- Some normalized
 
-      // Create a mapping from move tokens to their comments
-      // In PGN: "1. e4 {good move} e5 {also good}"
-      // Comments appear AFTER the move they describe
-      let moveToCommentMap = Dictionary<string, string>()
-  
       // Build a map of token positions in the original history string
       let tokenPositions = ResizeArray<int * string>()
       let mutable searchPos = 0
@@ -901,28 +864,39 @@ type Board() =
         if foundPos >= 0 then
           tokenPositions.Add(foundPos, token)
           searchPos <- foundPos + token.Length
-  
-      // Now map each token to comments that appear immediately after it
+
+      // Map each token to comments that appear immediately after it
+      // In PGN: "1. e4 {good move} e5 {also good}"
+      let moveToCommentMap = Dictionary<string, string>()
       for i = 0 to tokenPositions.Count - 1 do
         let (tokenPos, token) = tokenPositions.[i]
         let tokenEnd = tokenPos + token.Length
-    
-        // Find the position where the next token starts (or end of string)
-        let nextTokenStart = 
+
+        let nextTokenStart =
           if i + 1 < tokenPositions.Count then
             fst tokenPositions.[i + 1]
           else
             history.Length
-    
-        // Look for comments between this token's end and the next token's start
-        let relevantComments = 
+
+        let relevantComments =
           commentsMap
           |> Seq.filter (fun kvp -> kvp.Key >= tokenEnd && kvp.Key < nextTokenStart)
           |> Seq.map (fun kvp -> kvp.Value)
           |> String.concat "; "
-    
+
         if not (String.IsNullOrWhiteSpace relevantComments) then
           moveToCommentMap[token] <- relevantComments
+
+      normalized, moveToCommentMap
+
+    member this.LoadMoveHistoryWithVariations (history:string) =
+      // Reset board and graph, then parse the provided PGN-style move string (with variations).
+      let originalStart = this.StartPosition
+      this.ResetBoardStateFromFen(originalStart)
+      createNodeIsVariation <- false
+
+      let (normalized, moveToCommentMap) = this.ParseHistoryTokensAndComments(history)
+      lastHistoryTokens <- Some normalized
 
       let isMoveNumber (tok:string) =
         tok.EndsWith(".") || tok.EndsWith("...") || tok |> Seq.forall Char.IsDigit
@@ -932,10 +906,8 @@ type Board() =
       let stack = Stack<(NodeId * NodeId option * bool)>()
 
       let setBoardToNode (nodeId: NodeId) =
-        let fen = moveGraph.NodesById[nodeId].Fen
-        this.LoadFen(fen)
+        setBoardToGraphNode (fun fen -> this.LoadFen(fen)) nodeId
         currentNodeId <- nodeId
-        currentGraphNodeId <- nodeId
 
       let playSan (san:string) =
         setBoardToNode currentNodeId
@@ -948,7 +920,7 @@ type Board() =
           | _ -> ""
     
         // Use the comment-aware method
-        this.PlaySimpleShortSanWithComments san comment
+        this.PlaySanMoveWithComments san comment
         currentNodeId <- currentGraphNodeId
     
         if this.MovesAndFenPlayed.Count > before then
@@ -1051,9 +1023,7 @@ type Board() =
       createNodeIsVariation <- false
 
       let setBoardToNode (nodeId: NodeId) =
-        let fen = moveGraph.NodesById[nodeId].Fen
-        this.LoadFen(fen)
-        currentGraphNodeId <- nodeId
+        setBoardToGraphNode (fun fen -> this.LoadFen(fen)) nodeId
 
       let rec playLine (startNode: NodeId) (line: PGNTypes.PlyLine) (isMainline: bool) =
         let prevFlag = createNodeIsVariation
@@ -1064,7 +1034,7 @@ type Board() =
           let nodeBeforeMove = currentNode
           // Play the move
           let comment = if String.IsNullOrWhiteSpace ply.Comment then "" else ply.Comment
-          this.PlaySimpleShortSanWithComments ply.San comment
+          this.PlaySanMoveWithComments ply.San comment
           currentNode <- currentGraphNodeId
 
           // Recurse into any variations that branch from this node
@@ -1119,13 +1089,13 @@ type Board() =
       sbPool.Return(sb)
       sb.ToString().TrimStart()
 
-    member this.GetShortSanMoveHistory() =      
-      let sb = sbPool.Get()      
+    member this.GetSanMoveHistory() =
+      let sb = sbPool.Get()
       let ply = if openingMoves.Count = 0 then game.[0].Ply |> int else openingMoves.Count
       let mutable white = game.[0].STM = 0uy      
       let mutable nr = ply
       let mutable moveNr = (ply / 2) + 1
-      for moveStr in this.ShortSANMovesPlayed do
+      for moveStr in this.SanMovesPlayed do
         if nr % 2 = 1 && not white then                        
           sb.Append $" {moveNr}... {moveStr}" |> ignore
           white <- true
@@ -1155,18 +1125,19 @@ type Board() =
 
     member this.InlineTokensFromGraph () =
       let tokens = ResizeArray<InlineMoveToken>()
+
       let formatTokenText ply san isLineStart inVariation =
         let moveNr = (ply / 2) + 1
         if ply % 2 = 0 then sprintf "%d. %s" moveNr san
         elif inVariation && isLineStart then sprintf "%d... %s" moveNr san
         else san
 
-      let rec emitBranch (edge: MoveEdge) ply isLineStart inVariation =
+      let addMoveToken (edge: MoveEdge) ply isLineStart inVariation =
         tokens.Add
           { Text = edge.San
             DisplayText = formatTokenText ply edge.San isLineStart inVariation
             Fen = moveGraph.NodesById[edge.To].Fen
-            MoveCoord = edge.Lan //if edge.Lan.Length >= 4 then edge.Lan.Substring(0,4) else String.Empty
+            MoveCoord = edge.Lan
             IsBracket = false
             Hash = moveGraph.NodesById[edge.To].Hash
             FromVariation = inVariation
@@ -1174,6 +1145,24 @@ type Board() =
             Evaluation = edge.Comments
             IsLineStart = isLineStart }
 
+      let addVariationBracket text (edge: MoveEdge) ply =
+        tokens.Add
+          { Text = text
+            DisplayText = text
+            Fen = ""
+            MoveCoord = ""
+            IsBracket = true
+            Hash = moveGraph.NodesById[edge.To].Hash
+            FromVariation = true
+            Ply = ply
+            Evaluation = edge.Comments
+            IsLineStart = false }
+
+      let rec emitLine (edge: MoveEdge) ply isLineStart inVariation emitCurrentMove =
+        // Emit token for current move if requested
+        if emitCurrentMove && String.IsNullOrWhiteSpace edge.San |> not then
+          addMoveToken edge ply isLineStart inVariation
+
         let children = childEdgesOf edge.To
         match children with
         | [] -> ()
@@ -1181,57 +1170,28 @@ type Board() =
             let mainChild = selectMainChild children
             let variations = children |> List.filter (fun e -> e.Id <> mainChild.Id)
 
-            let firstMoveWasWhiteAtVariationStart = isLineStart && inVariation && (ply % 2 = 0)
+            // Calculate line start for main child continuation
             let mainChildIsLineStart =
-              if firstMoveWasWhiteAtVariationStart then false else (isLineStart && inVariation)
+              if emitCurrentMove then
+                // After emitBranch: special handling for white move at variation start
+                let firstMoveWasWhiteAtVariationStart = isLineStart && inVariation && (ply % 2 = 0)
+                if firstMoveWasWhiteAtVariationStart then false else (isLineStart && inVariation)
+              else
+                // After emitMainLine: pass through isLineStart
+                isLineStart
 
+            // Emit main child token
             if String.IsNullOrWhiteSpace mainChild.San |> not then
-              tokens.Add
-                { Text = mainChild.San
-                  DisplayText = formatTokenText (ply + 1) mainChild.San mainChildIsLineStart inVariation
-                  Fen = moveGraph.NodesById[mainChild.To].Fen
-                  MoveCoord = mainChild.Lan
-                  IsBracket = false
-                  Hash = moveGraph.NodesById[mainChild.To].Hash
-                  FromVariation = inVariation
-                  Ply = ply + 1
-                  Evaluation = mainChild.Comments
-                  IsLineStart = false }
+              addMoveToken mainChild (ply + 1) mainChildIsLineStart inVariation
 
+            // Emit variation brackets
             for variation in variations do
-              tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
-              emitBranch variation (ply + 1) true true
-              tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
+              addVariationBracket "(" variation (ply + 1)
+              emitLine variation (ply + 1) true true true
+              addVariationBracket ")" variation (ply + 1)
 
-            emitMainLine mainChild (ply + 1) inVariation (variations.Length > 0)
-
-      and emitMainLine (edge: MoveEdge) ply inVariation isLineStart =
-        let children = childEdgesOf edge.To
-        match children with
-        | [] -> ()
-        | _ ->
-            let mainChild = selectMainChild children
-            let variations = children |> List.filter (fun e -> e.Id <> mainChild.Id)
-
-            if String.IsNullOrWhiteSpace mainChild.San |> not then
-              tokens.Add
-                { Text = mainChild.San
-                  DisplayText = formatTokenText (ply + 1) mainChild.San isLineStart inVariation
-                  Fen = moveGraph.NodesById[mainChild.To].Fen
-                  MoveCoord = mainChild.Lan
-                  IsBracket = false
-                  Hash = moveGraph.NodesById[mainChild.To].Hash
-                  FromVariation = inVariation
-                  Ply = ply + 1
-                  Evaluation = mainChild.Comments
-                  IsLineStart = isLineStart }
-
-            for variation in variations do
-              tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
-              emitBranch variation (ply + 1) true true
-              tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = ply + 1; Evaluation = variation.Comments; IsLineStart = false }
-
-            emitMainLine mainChild (ply + 1) inVariation (variations.Length > 0)
+            // Continue with main line
+            emitLine mainChild (ply + 1) (variations.Length > 0) inVariation false
 
       let rootChildren = childEdgesOf moveGraph.Root
       match rootChildren with
@@ -1239,16 +1199,14 @@ type Board() =
       | _ ->
           let main = selectMainChild rootChildren
           let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
-          emitBranch main 0 true false
+          emitLine main 0 true false true
           for variation in rootVariations do
-            tokens.Add { Text = "("; DisplayText = "("; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = 0; IsLineStart = false; Evaluation = variation.Comments }
-            emitBranch variation 0 true true
-            tokens.Add { Text = ")"; DisplayText = ")"; Fen = ""; MoveCoord = ""; IsBracket = true; Hash = moveGraph.NodesById[variation.To].Hash; FromVariation = true; Ply = 0; IsLineStart = false; Evaluation = variation.Comments }
+            addVariationBracket "(" variation 0
+            emitLine variation 0 true true true
+            addVariationBracket ")" variation 0
           tokens |> Seq.toList
    
-    member this.GenerateMoves () = this.GenerateMovesFast()
-
-    member this.GenerateMovesFast () =
+    member this.GenerateMoves () =
       let mutable index = 0
       let span = moveList.Value.AsSpan()
       generateCaptures span &index &position
@@ -1261,10 +1219,11 @@ type Board() =
       generateQuiets buffer &index &position isFRC
       index
 
-    member this.SafeMoveGenerator() =
+    /// Thread-safe move generation that allocates a fresh buffer per call
+    member this.GenerateMovesThreadSafe() =
         let span = Span<TMove>(Array.zeroCreate<TMove>(256))
         let mutable index = 0
-        generateCaptures span &index &position      
+        generateCaptures span &index &position
         generateQuiets span &index &position this.IsFRC
         span.Slice(0, index).ToArray()
           
@@ -1315,7 +1274,7 @@ type Board() =
         else
           false
     
-    member this.UnMakeMove () =                
+    member this.UndoMove () =
       iPosition <- iPosition - 1
       position <- game.[iPosition]
 
@@ -1332,7 +1291,7 @@ type Board() =
       let key = this.PositionHash()
       hashKeys |> Seq.sumBy (fun e -> if e = key then 1 else 0)     
     
-    member this.GetAllLegalMoves() =      
+    member this.GetLegalMoves() =
       let moveList = this.GenerateMoves()
 
       seq {
@@ -1341,19 +1300,23 @@ type Board() =
           if legal then
             let longSan = TMoveOps.moveToStr &move position.STM
             if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
-              //since it could be a chess960 game we need to check if move to is to the same square as the short rook or the long rook
-              let toSq = int move.To
-              let rookM = PositionOps.rooksM &position
-              let rookShortSq = MSB(rookM) |> int
-              let rookLongSq = LSB(rookM) |> int
-              if rookShortSq = toSq then
-                longSan, "0-0"
-              elif rookLongSq = toSq then
+              //since it could be a chess960 game we need to check if move to is to the same square as the kingside rook or the queenside rook
+              let toSq = move.To
+              let kr, qr =
+                if position.STM = 0uy then
+                  position.RookInfo.WhiteKRInitPlacement,
+                  position.RookInfo.WhiteQRInitPlacement
+                else
+                  position.RookInfo.BlackKRInitPlacement,
+                  position.RookInfo.BlackQRInitPlacement
+              if toSq = 2uy then
                 longSan, "0-0-0"
-              elif toSq = 2 then
-                longSan, "0-0-0"
-              elif toSq = 6 then
+              elif toSq = 6uy then
                 longSan, "0-0"
+              elif kr = toSq then
+                longSan, "0-0"
+              elif qr = toSq then
+                longSan, "0-0-0"
             else
               let shortSan = ConvertTo.standardSAN (longSan, move, moveList, position.STM) 
               longSan,shortSan
@@ -1369,7 +1332,7 @@ type Board() =
     member this.IllegalMove (move: TMove inref) =
       BoardHelper.Illegal &move &position
     
-    member this.getSANFromEngineAN (move:string) = 
+    member this.GetSanFromUci (move:string) =
       let moveList = this.GenerateMoves ()
       let rec loop moves =
         match moves with
@@ -1403,14 +1366,14 @@ type Board() =
         |Some tmove -> (tmove.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY               
         |None -> false        
 
-    member this.PlayLongSanMove move =
+    member this.PlayUciMove move =
       let moveList = this.GenerateMoves()
-      
+
       match TMoveOps.getTmoveFromSanMove moveList move position.STM with
       |Some tmove ->
-        this.LongSANMovesPlayed.Add(move)
+        this.UciMovesPlayed.Add(move)
         let shortSan = TMoveOps.getShortSanMoveFromTmove moveList tmove position
-        this.ShortSANMovesPlayed.Add(shortSan)
+        this.SanMovesPlayed.Add(shortSan)
         this.MakeMove(&tmove)
         let color = colorOfPlayerWhoJustMoved position.STM
         let isCastling = (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
@@ -1470,10 +1433,10 @@ type Board() =
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
       | Some move ->
-        let moveStr = TMoveOps.getSanLong move position.STM
+        let moveStr = TMoveOps.getUciNotation move position.STM
         this.MakeMove(&move)
         openingMoves.Add fromSan
-        this.LongSANMovesPlayed.Add(moveStr.Trim())
+        this.UciMovesPlayed.Add(moveStr.Trim())
         let fenPos = BoardHelper.posToFen position
         let color = colorOfPlayerWhoJustMoved position.STM
         let isCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
@@ -1489,7 +1452,7 @@ type Board() =
       
       for m in pgn.Mainline do
         if m.Ply <= lastPly then
-          this.PlaySimpleShortSan m.San               
+          this.PlaySanMove m.San               
       let movesAndFen = this.MovesAndFenPlayed |> Seq.last
       movesAndFen
 
@@ -1502,30 +1465,30 @@ type Board() =
       this.LoadFen(fen)      
       for m in pgn.Mainline do        
         if m.Ply < lastMove then
-          this.PlaySimpleShortSan m.San          
+          this.PlaySanMove m.San          
         elif m.Ply = lastMove then          
-            this.PlaySimpleShortSan m.San
+            this.PlaySanMove m.San
 
       let movesAndFen = this.MovesAndFenPlayed |> Seq.last
       movesAndFen
         
-    member this.PlaySimpleShortSan (fromSan: string) =
-      this.PlaySimpleShortSanWithComments fromSan String.Empty
+    member this.PlaySanMove (san: string) =
+      this.PlaySanMoveWithComments san String.Empty
 
-    member this.PlaySimpleShortSanWithComments (fromSan: string) (comments: string) =
+    member this.PlaySanMoveWithComments (san: string) (comments: string) =
       let islegal move = this.IllegalMove &move |> not
       let moveList = this.GenerateMoves ()
-      match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
+      match TMoveOps.getTMoveFromShortSan san moveList position.STM islegal with
       | Some move ->
-        let moveStr = TMoveOps.getSanLong move position.STM
+        let moveStr = TMoveOps.getUciNotation move position.STM
         this.MakeMove(&move)
-        longSanMoves.Add (moveStr.Trim())
+        uciMoves.Add (moveStr.Trim())
         let fenPos = BoardHelper.posToFen position
         let hashPos = this.PositionHash()
         let colorAfterMove = colorOfPlayerWhoJustMoved position.STM
         let isCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
         let fenAndMoves = MoveDetail.Create(moveStr, moveStr[0..1], moveStr[2..3], colorAfterMove, isCastling, comments)
-        let maf = { Move = fenAndMoves; ShortSan = fromSan; FenAfterMove = fenPos }
+        let maf = { Move = fenAndMoves; ShortSan = san; FenAfterMove = fenPos }
         moveAndFens.Add maf
         let isMainlineOpt = if createNodeIsVariation then Some false else None
         let edgeId =
@@ -1533,7 +1496,7 @@ type Board() =
             currentGraphNodeId
             hashPos
             fenPos
-            fromSan
+            san
             moveStr
             colorAfterMove
             isCastling
@@ -1554,7 +1517,7 @@ type Board() =
       this.ResetBoardState()
       this.LoadFen fen
       for m in moves do
-        this.PlayLongSanMove m
+        this.PlayUciMove m
       if this.MovesAndFenPlayed.Count > 0 then
         let movesAndFen = this.MovesAndFenPlayed |> Seq.last
         movesAndFen
@@ -1571,158 +1534,15 @@ type Board() =
         this.StartPosition <- fen
         this.CurrentFEN <- fen
         for m in moves do
-          this.PlayLongSanMove m
+          this.PlayUciMove m
       |_ -> ()      
     
     member this.PlayFenWithMoves (fenMoves : string) =
       this.ResetBoardState()
       let (fen, moves) = FEN.parseFENandMoves fenMoves
-      this.LoadFen fen      
+      this.LoadFen fen
       this.CurrentFEN <- fen
       this.StartPosition <- fen
       for m in moves do
-        this.PlayLongSanMove m
+        this.PlayUciMove m
 
-module BoardUtils =
-  
-  let getSanNotationFromTMove (board:Board inref) (move:TMove) =    
-    let moveList = board.GenerateMoves ()
-    TMoveOps.getShortSanMoveFromTmove moveList move (board.Position)
-
-  let tryGetTMoveFromCoordinateNotation (board:Board inref) (moveLong:string) =
-    if moveLong.Length < 4 then
-      None
-    else      
-      let moveList = board.GenerateMoves ()
-      let stm = board.Position.STM 
-      let r =
-        moveList
-        |> Array.tryFind(fun m -> TMoveOps.getSanLong m stm = moveLong)
-      r
-
-  let getShortSanFromLongSan (board:Board inref) longSan =
-    match tryGetTMoveFromCoordinateNotation &board longSan with
-    |Some move -> getSanNotationFromTMove &board move      
-    |None -> ""
-
-  let tryGetTMoveFromCoordinateNotationSimple moveList (position:Position byref) (moveLong:string) =
-    if moveLong.Length < 4 then
-      None
-    else
-      let stm = position.STM 
-      moveList
-      |> Array.tryFind(fun m -> TMoveOps.getSanLong m stm = moveLong)
-
-  
-  let getLongSanPVFromShortSanPV  moveList (board:Board inref) (shortSanMoves : string seq) =
-        let isFRC = board.IsFRC
-        let mutable position = board.Position
-        let ret = ResizeArray<string>(shortSanMoves |> Seq.length)
-        for m in shortSanMoves do
-          let mutable index = 0
-          generateCaptures (moveList.AsSpan()) &index &position      
-          generateQuiets (moveList.AsSpan()) &index &position isFRC
-          let moves = moveList[0..index-1]
-          let islegal move = BoardHelper.Illegal &move &position |> not
-          
-          // Try SAN format first
-          let moveResult = 
-            match TMoveOps.getTMoveFromShortSan m moves position.STM islegal with
-            | Some tmove -> Some tmove
-            | None ->
-                // Try coordinate notation (some Winboard engines use this)
-                if m.Length >= 4 && m.Length <= 5 then
-                  // Create temporary board to test coordinate notation
-                  let tempBoard = Board()
-                  tempBoard.LoadFen(BoardHelper.posToFen position)
-                  tempBoard.IsFRC <- isFRC
-                  tryGetTMoveFromCoordinateNotation &tempBoard m
-                else
-                  None
-          
-          match moveResult with
-          | Some tmove -> 
-            let moveStr = TMoveOps.getSanLong tmove position.STM            
-            ret.Add(moveStr)
-            makeMove &tmove &position
-          | None -> 
-            // Stop processing PV on first error to avoid corrupted position
-            ()
-        //return the long san moves as a string
-        String.concat " " (ret |> Seq.toArray)
-  
-  let getShortSanPVFromLongSanPVFast moveList (board:Board inref) (pv:string) =    
-    let isFRC = board.IsFRC
-    let mutable position = board.Position
-    let mutable plyCount = board.PlyCount
-    let start = board.PlyCount
-    let allMoves = pv.Split(' ')
-    let ret = ResizeArray<string>(allMoves.Length)
-    for move in allMoves do
-      let mutable index = 0
-      generateCaptures (moveList.AsSpan()) &index &position      
-      generateQuiets (moveList.AsSpan()) &index &position isFRC
-      let moves = moveList[0..index-1]
-      match tryGetTMoveFromCoordinateNotationSimple moves &position move with
-      | Some tmove ->
-        let moveNr = plyCount / 2 + 1
-        let san = TMoveOps.getShortSanMoveFromTmove moves tmove position
-        if san <> "" then
-          if plyCount % 2 = 1 then
-            //black move
-            if plyCount = start then
-              ret.Add(sprintf "%d.... %s" moveNr san)
-            else
-              ret.Add(san)
-          else
-            let mStr = sprintf "%d.%s" moveNr san
-            ret.Add(mStr)
-          makeMove &tmove &position
-          plyCount <- plyCount + 1
-        
-      |_ -> () //printfn $"{nameof getSanNotationFromTMove}: failed to parse move {move}"
-    String.concat " " (ret |> Seq.toArray)
-
-  let makeShortSan (moves: NNValues seq) (board: Board inref) =
-    for nnMove in moves do
-      match tryGetTMoveFromCoordinateNotation &board nnMove.LANMove with
-      |Some tmove -> 
-        nnMove.SANMove <- getSanNotationFromTMove &board tmove
-      |None ->         
-        if nnMove.LANMove.Trim() = "e1a1" then nnMove.SANMove <- "0-0-0"
-        elif nnMove.LANMove.Trim() = "e8a8" then nnMove.SANMove <- "0-0-0"
-        elif nnMove.LANMove.Trim() = "e1h1" then nnMove.SANMove <- "0-0"
-        elif nnMove.LANMove.Trim() = "e8h8" then nnMove.SANMove <- "0-0"
-        //elif nnMove.LANMove.Trim() = "e8g8" then nnMove.SANMove <- "0-0" 
-        //elif nnMove.LANMove.Trim() = "e1g1" then nnMove.SANMove <- "0-0"
-        //elif nnMove.LANMove.Trim() = "e8c8" then nnMove.SANMove <- "0-0-0"
-        //elif nnMove.LANMove.Trim() = "e1c1" then nnMove.SANMove <- "0-0-0"
-        
-        let transformedLanMove = 
-            let trim = nnMove.LANMove.Trim().ToLower()
-            match trim with
-            | "e1a1" -> "e1c1"
-            | "e8a8" -> "e8c8"
-            | "e1h1" -> "e1g1"
-            | "e8h8" -> "e8g8"
-            |_ -> trim
-        match tryGetTMoveFromCoordinateNotation &board transformedLanMove with
-        |Some _ -> 
-            nnMove.LANMove <- transformedLanMove
-        |None -> ()    
-
-  let makeRandomMove (rnd:Random) (board: Board inref) =
-      let position = board.Position
-      let mutable index = 0      
-      let moveList = 
-        board.GenerateMoves ()
-        |> Array.filter(fun m -> BoardHelper.Illegal &m &position |> not)
-      let mutable move = moveList.[rnd.Next(0,index)]
-      if moveList.Length = 0 then
-        printfn "No legal moves available"
-      else
-        board.MakeMove &move
-      move
-  
-  
-    

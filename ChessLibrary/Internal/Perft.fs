@@ -109,7 +109,7 @@ let perft (board:Board) depth =
         if not ( BoardHelper.Illegal &move &pos) then
           board.MakeMove (&move)
           nodes <- nodes + perft (depth - 1)
-          board.UnMakeMove () //position move undo
+          board.UndoMove () //position move undo
       nodes
   perft depth
 
@@ -135,7 +135,7 @@ let perftFast (board:Board) depth =
           else
             board.MakeMoveNoHash(&move)
             nodes <- nodes + search (depth - 1) (offset + 256)
-            board.UnMakeMove()
+            board.UndoMove()
       nodes
   search depth 0
 
@@ -160,7 +160,7 @@ let perftOpt depth fen =
       elif depth > 1 then       
         board.MakeMove (&move)
         nodes <- nodes + perft (depth - 1)
-        board.UnMakeMove() //position move undo
+        board.UndoMove() //position move undo
       else              
           nodes <- nodes + 1L
           board.CollectStat &move
@@ -182,7 +182,7 @@ let perftOptChecked (record:Chess960Record) depth =
       elif depth > 1 then       
         board.MakeMove (&move)
         nodes <- nodes + perft (depth - 1)
-        board.UnMakeMove() //position move undo
+        board.UndoMove() //position move undo
       else              
           nodes <- nodes + 1L
           board.CollectStat &move
@@ -233,7 +233,7 @@ let runPerft0 depth fen =
         if not ( BoardHelper.Illegal &move &pos) then        
           board.MakeMove(&move)
           nodes <- nodes + perft (depth - 1)
-          board.UnMakeMove ()
+          board.UndoMove ()
       nodes
   timeIt (fun _ -> perft depth) depth |> ignore
   printfn $"Captures: {board.Captures:N0} Castles: {board.Castles:N0} EP: {board.EP:N0}" 
@@ -255,7 +255,7 @@ let runPerft1 depth fen =
         if not ( BoardHelper.Illegal &move &pos) then        
           board.MakeMove(&move)
           nodes <- nodes + perft (depth - 1)
-          board.UnMakeMove()
+          board.UndoMove()
       nodes
   timeIt (fun _ -> perft depth) depth
 
@@ -273,7 +273,7 @@ let divide depth fen =
       if depth > 0 then
         board.MakeMove &move
         nodes <- perft board (depth - 1)
-        board.UnMakeMove()
+        board.UndoMove()
         printfn $"  {MoveTypes.TMoveOps.moveToStr &move position.STM}:   {nodes:N0}"
       total <- total + nodes
   printfn $"\nTotalt: {total:N0}"

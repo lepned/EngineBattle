@@ -17,7 +17,7 @@ open EngineTypes
 open MoveTypes
 open PositionTypes
 open ChessLibrary.TimeControlTypes
-open Chess.BoardUtils
+open ChessLibrary.BoardUtils
 open Microsoft.Extensions.Logging
 open ChessLibrary.WinboardIntegration
 
@@ -131,7 +131,7 @@ module Engine =
       let bestLine callback (engineName:string) (line:string)  =        
         let move, ponder = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
         callback (Done engineName)
-        match tryGetTMoveFromCoordinateNotation &moveBoard move with
+        match tryGetTMoveFromUciNotation &moveBoard move with
         |Some tmove ->
           //let mutable moveAdj = tmove
           let shortSan = getSanNotationFromTMove &moveBoard tmove    
@@ -1559,11 +1559,11 @@ module EngineHelper =
           async {
               if moveCount > 0 then
                   let! bestMove1 = getBestMove engine1                
-                  match tryGetTMoveFromCoordinateNotation &board bestMove1 with
+                  match tryGetTMoveFromUciNotation &board bestMove1 with
                   |Some tmove ->
                     let shortSan = getSanNotationFromTMove &board tmove
-                    board.ShortSANMovesPlayed.Add(shortSan)
-                    board.LongSANMovesPlayed.Add(bestMove1)
+                    board.SanMovesPlayed.Add(shortSan)
+                    board.UciMovesPlayed.Add(bestMove1)
                     board.MakeMove &tmove
                     let pos = board.Position
                     let boardState = MoveGeneration.PositionOpsToString(($"Board after Engine {engine1.Name} move {bestMove1}:\n"), &pos)
@@ -1571,11 +1571,11 @@ module EngineHelper =
                   |_ -> ()
 
                   let! bestMove2 = getBestMove engine2
-                  match tryGetTMoveFromCoordinateNotation &board bestMove2 with
+                  match tryGetTMoveFromUciNotation &board bestMove2 with
                   |Some tmove ->
                     let shortSan = getSanNotationFromTMove &board tmove
-                    board.ShortSANMovesPlayed.Add(shortSan)
-                    board.LongSANMovesPlayed.Add(bestMove2)
+                    board.SanMovesPlayed.Add(shortSan)
+                    board.UciMovesPlayed.Add(bestMove2)
                     board.MakeMove &tmove
                     let pos = board.Position
                     let boardState = MoveGeneration.PositionOpsToString(($"Board after Engine {engine2.Name} move {bestMove2}:\n"), &pos)
@@ -1588,7 +1588,7 @@ module EngineHelper =
           }
 
       playMoves numberOfMoves |> Async.RunSynchronously
-      let moveHistory = board.GetShortSanMoveHistory()
+      let moveHistory = board.GetSanMoveHistory()
       printfn "\nMove history: %s\n" moveHistory
 
 module HardwareInfo =

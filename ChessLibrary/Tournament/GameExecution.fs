@@ -17,7 +17,7 @@ open ChessLibrary.PositionTypes
 open ChessLibrary.MoveTypes
 open ChessLibrary.TimeControlTypes
 open ChessLibrary.Chess
-open ChessLibrary.Chess.BoardUtils
+open ChessLibrary.BoardUtils
 open ChessLibrary.ChessUtilities
 open ChessLibrary.EngineProtocol
 open ChessLibrary.RuntimeUtilities
@@ -96,7 +96,7 @@ let playWithPondering
     lastEvalThisMove[engineName] <- eval
 
   let npsList = ResizeArray<float>()
-  let gameMoveList = board.ShortSANMovesPlayed
+  let gameMoveList = board.SanMovesPlayed
 
   let findTimeSetting (player : ChessEngine) =
     tourny.FindTimeControl (player.Config.TimeControlID)
@@ -216,11 +216,11 @@ let playWithPondering
       lastMovePlayed <- move
       let mutable shortSan = String.Empty
 
-      match tryGetTMoveFromCoordinateNotation &board move with
+      match tryGetTMoveFromUciNotation &board move with
       | Some tmove ->
           let mutable moveAdj = tmove
           shortSan <- getSanNotationFromTMove &board tmove
-          board.LongSANMovesPlayed.Add(move)
+          board.UciMovesPlayed.Add(move)
           gameMoveList.Add(shortSan)
           board.MakeMove(&moveAdj)
           let ponderSan = getShortSanFromLongSan &board ponderMove
@@ -278,7 +278,7 @@ let playWithPondering
             PV = pv
             LongPV = pvLong
             MoveAndFen = moveAndFen
-            MoveHistory = board.GetShortSanMoveHistory()
+            MoveHistory = board.GetSanMoveHistory()
             Move50 = board.Position.Count50 |> int
             R3 = board.RepetitionNr()
             PiecesLeft = piecesLeft
@@ -606,7 +606,7 @@ let playGeneric
     lastEvalByEngine[engineName] <- eval
     lastEvalThisMove[engineName] <- eval
   let npsList = ResizeArray<float>()
-  let gameMoveList = board.ShortSANMovesPlayed
+  let gameMoveList = board.SanMovesPlayed
   let findTimeSetting (player : ChessEngine) =
     tourny.FindTimeControl (player.Config.TimeControlID)
   let isNodeLimit player = (findTimeSetting player).NodeLimit
@@ -876,7 +876,7 @@ let playGeneric
                 moveInfoData.mt <- int64 duration.TotalMilliseconds
                 moveInfoData.pcs <- byte piecesLeft
 
-                match tryGetTMoveFromCoordinateNotation &board move with
+                match tryGetTMoveFromUciNotation &board move with
                 |Some tmove ->
                   let mutable moveAdj = tmove
                   let mutable shortSan = getSanNotationFromTMove &board tmove
@@ -900,12 +900,12 @@ let playGeneric
                       ConsoleUtils.printInColor
                           ConsoleColor.Green
                           $"Deviation detected at plycount {board.PlyCount} and was allowed because of contempt enabled\n  Prev move: {oldMove} by {engName}  Current move: {move} by {playing.Name}"
-                      board.LongSANMovesPlayed.Add(move)
+                      board.UciMovesPlayed.Add(move)
                       gameMoveList.Add(shortSan)
                       board.MakeMove &tmove
 
                   elif deviated then
-                    match tryGetTMoveFromCoordinateNotation &board oldMove with
+                    match tryGetTMoveFromUciNotation &board oldMove with
                     |Some orgMove ->
                       shortSan <- getSanNotationFromTMove &board orgMove
                       RuntimeUtilities.ConsoleUtils.printInColor
@@ -913,7 +913,7 @@ let playGeneric
                           $"Deviation detected at plycount {board.PlyCount} with time left in ms: {moveInfoData.tl}\n  Prev move: {oldMove} by {engName}  Current move: {move} by {playing.Name}"
                       tourny.DeviationCounter <- tourny.DeviationCounter + 1
                       move <- oldMove
-                      board.LongSANMovesPlayed.Add(move)
+                      board.UciMovesPlayed.Add(move)
                       gameMoveList.Add(shortSan)
                       board.MakeMove &orgMove
                     |_ -> // quick fix for FRC castling move or illegal previous move
@@ -925,7 +925,7 @@ let playGeneric
                         RuntimeUtilities.ConsoleUtils.printInColor
                           ConsoleColor.Red
                           $"Deviation detected but previous move illegal: {playing.Name} MoveNr: {moves} Prev move: {oldMove} Current move: {move}"
-                      board.LongSANMovesPlayed.Add(move)
+                      board.UciMovesPlayed.Add(move)
                       gameMoveList.Add(shortSan)
                       board.MakeMove &tmove
                   else
@@ -936,7 +936,7 @@ let playGeneric
                         let replay = if playing.Name = player1.Name then rw else rb
                         replay[devHash] <- {Engine=playing.Name; Move = move; TimeLeftInMs = moveInfoData.tl; Hash = pairing.OpeningHash }
                     | _ -> ()
-                    board.LongSANMovesPlayed.Add(move)
+                    board.UciMovesPlayed.Add(move)
                     gameMoveList.Add(shortSan)
                     board.MakeMove &tmove
 
@@ -998,7 +998,7 @@ let playGeneric
                       PV = pv
                       LongPV = pvLong
                       MoveAndFen = moveAndFen
-                      MoveHistory = board.GetShortSanMoveHistory()
+                      MoveHistory = board.GetSanMoveHistory()
                       Move50 = board.Position.Count50 |> int
                       R3 = board.RepetitionNr()
                       PiecesLeft = piecesLeft

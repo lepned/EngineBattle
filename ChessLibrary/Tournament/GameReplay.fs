@@ -105,17 +105,17 @@ let prepareGameReplay
             let mutable idx = 0
             for m in game.Mainline do
                 let hash = replayBoard.DeviationHash()
-                replayBoard.PlaySimpleShortSan m.San
+                replayBoard.PlaySanMove m.San
                 if m.Color = "w" then
-                    if replayBoard.LongSANMovesPlayed.Count > idx then
-                        let lastmove = replayBoard.LongSANMovesPlayed[idx]
+                    if replayBoard.UciMovesPlayed.Count > idx then
+                        let lastmove = replayBoard.UciMovesPlayed[idx]
                         let data : ReplayData = {Engine=game.GameMetaData.White; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}
                         if isWhite then
                             replayDictWhite[hash] <- data
                         idx <- idx + 1
                 elif m.Color = "b" then
-                    if replayBoard.LongSANMovesPlayed.Count > idx then
-                        let lastmove = replayBoard.LongSANMovesPlayed[idx]
+                    if replayBoard.UciMovesPlayed.Count > idx then
+                        let lastmove = replayBoard.UciMovesPlayed[idx]
                         let data : ReplayData = {Engine=game.GameMetaData.Black; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}
                         if not isWhite then
                             replayDictBlack[hash] <- data

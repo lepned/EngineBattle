@@ -68,7 +68,7 @@ let bestQ (nodes:int) (engine: ChessEngine) (pos: EPDEntry) (board:Board inref) 
   let qList = ResizeArray<float*string>()
   let fen = pos.FEN
   board.LoadFen fen
-  let legalMoves = board.GetAllLegalMoves()
+  let legalMoves = board.GetLegalMoves()
   for (lSan,_) in legalMoves do
     let cmd = sprintf "position fen %s moves %s" fen lSan
     engine.Position cmd
@@ -279,7 +279,7 @@ let onlyUniqueOpenings (pgns:seq<PgnGame>) =
           if String.IsNullOrWhiteSpace pgn.Fen |> not then
              board.LoadFen pgn.Fen
           for move in pgn.Mainline do
-            board.PlaySimpleShortSan move.San
+            board.PlaySanMove move.San
 
           let hash = board.DeviationHash()
           if hashSet.Add hash then
@@ -413,7 +413,7 @@ let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : R
                   board.LoadFen pgn.Fen
                   let moves = DeviationAnalysis.movesFromPgn pgn
                   for move in moves do
-                      board.PlaySimpleShortSan move
+                      board.PlaySanMove move
                   let fen = board.FEN()
                   //throttled parallelism of evaluation
                   let evals =

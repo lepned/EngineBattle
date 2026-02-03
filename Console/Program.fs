@@ -478,11 +478,11 @@ module Program =
                     if not (String.IsNullOrWhiteSpace(cmd.MovePlayed)) then
                         boardBm.PlayCommands(cmd.Command)
                         let fen = boardBm.FEN()
-                        boardBm.PlayLongSanMove(cmd.CorrectMove)
-                        let bm = boardBm.ShortSANMovesPlayed |> Seq.tryLast |> Option.defaultValue null
+                        boardBm.PlayUciMove(cmd.CorrectMove)
+                        let bm = boardBm.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue null
                         boardAm.PlayCommands(cmd.Command)
-                        boardAm.PlayLongSanMove(cmd.MovePlayed)
-                        let aM = boardAm.ShortSANMovesPlayed |> Seq.tryLast |> Option.defaultValue null
+                        boardAm.PlayUciMove(cmd.MovePlayed)
+                        let aM = boardAm.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue null
                         let policies = policyStr.Split(',')
                         let bmP, amP =
                             if policies.Length > 1 then

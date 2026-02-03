@@ -9,7 +9,7 @@ open ChessLibrary
 [<Fact>]
 let ``ResetBoardState should reset board to initial state`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     board.ResetBoardState()
     Assert.Equal(0, board.PlyCount)
     Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board.FEN())
@@ -22,18 +22,18 @@ let ``LoadFen should set position from FEN string`` () =
     Assert.Equal(fen, board.FEN())
 
 [<Fact>]
-let ``PlaySimpleShortSan should make a legal move and update FEN`` () =
+let ``PlaySanMove should make a legal move and update FEN`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     Assert.Equal(1, board.PlyCount)
-    Assert.Contains("e2e4", board.LongSANMovesPlayed)
+    Assert.Contains("e2e4", board.UciMovesPlayed)
 
 [<Fact>]
-let ``UnMakeMove should revert the last move`` () =
+let ``UndoMove should revert the last move`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     let fenAfterMove = board.FEN()
-    board.UnMakeMove()   
+    board.UndoMove()   
     Assert.Equal(0, board.PlyCount)
     Assert.NotEqual<string>(fenAfterMove, board.FEN())
 
@@ -54,11 +54,11 @@ let ``ClaimThreeFoldRep should return false for new game`` () =
     Assert.False(board.ClaimThreeFoldRep())
 
 [<Fact>]
-let ``PlayLongSanMove should add move to LongSANMovesPlayed and update PlyCount`` () =
+let ``PlayUciMove should add move to UciMovesPlayed and update PlyCount`` () =
     let board = Board()
-    board.PlayLongSanMove "e2e4"
+    board.PlayUciMove "e2e4"
     Assert.Equal(1, board.PlyCount)
-    Assert.Contains("e2e4", board.LongSANMovesPlayed)
+    Assert.Contains("e2e4", board.UciMovesPlayed)
 
 [<Fact>]
 let ``TryGetNextMoveAndFen returns None for empty move list`` () =
@@ -81,15 +81,15 @@ let ``TryGetPreviousMoveAndFen returns None for empty move list`` () =
 let ``GetMoveHistoryWithVariations returns PGN styled string with variations`` () =
     let board = Board()
     // Main line: 1. e4 e5 2. Nf3 Nc6
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     let fenAfterE4 = board.FEN()
-    board.PlaySimpleShortSan "e5"
-    board.PlaySimpleShortSan "Nf3"
-    board.PlaySimpleShortSan "Nc6"
+    board.PlaySanMove "e5"
+    board.PlaySanMove "Nf3"
+    board.PlaySanMove "Nc6"
 
     // Variation starting after 1. e4: 1... c5
     board.LoadFen(fenAfterE4)
-    board.PlaySimpleShortSan "c5"
+    board.PlaySanMove "c5"
 
     let history = board.GetMoveHistoryWithVariations()
     let expected = "1. e4 e5 (1... c5) 2. Nf3 Nc6"
@@ -119,22 +119,22 @@ let ``LoadMoveHistoryWithVariations supports nested variations`` () =
     let history = "1. e4 e5 2. Nf3 Nc6 (2... Nf6 3. Nxe5 (3. d4) 3... Nxe4)"
     let board = Board()
     //main line: 1. e4 e5 2. Nf3 Nc6
-    //board.PlaySimpleShortSan "e4"
-    //board.PlaySimpleShortSan "e5"
-    //board.PlaySimpleShortSan "Nf3"
+    //board.PlaySanMove "e4"
+    //board.PlaySanMove "e5"
+    //board.PlaySanMove "Nf3"
     //let fenAfterNf3 = board.FEN()
-    //board.PlaySimpleShortSan "Nc6"
+    //board.PlaySanMove "Nc6"
     
     //// variation after 2... : 2... Nf6
     //board.LoadFen(fenAfterNf3)
-    //board.PlaySimpleShortSan "Nf6"
+    //board.PlaySanMove "Nf6"
     //let fenAfterNf6 = board.FEN()
     //// continue main variation: 3. Nxe5 Nxe4    
-    //board.PlaySimpleShortSan "Nxe5"
-    //board.PlaySimpleShortSan "Nxe4"
+    //board.PlaySanMove "Nxe5"
+    //board.PlaySanMove "Nxe4"
     //// nested variation after 2... Nf6 : 3. d4
     //board.LoadFen(fenAfterNf6)
-    //board.PlaySimpleShortSan "d4"
+    //board.PlaySanMove "d4"
     //let formatted = board.GetMoveHistoryWithVariations()
     //Assert.Equal(history, formatted)
 
@@ -236,13 +236,13 @@ let ``Navigation advances past repeated positions without looping`` () =
 [<Fact>]
 let ``RemoveVariationNode removes only the targeted variation move`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     let fenAfterE4 = board.FEN()
-    board.PlaySimpleShortSan "e5"
+    board.PlaySanMove "e5"
 
     // Create a single-move side variation: 1... c5
     board.LoadFen(fenAfterE4)
-    board.PlaySimpleShortSan "c5"
+    board.PlaySanMove "c5"
     let fenAfterC5 = board.FEN()
 
     // Variation should exist alongside the mainline reply.
@@ -261,14 +261,14 @@ let ``RemoveVariationNode removes only the targeted variation move`` () =
 [<Fact>]
 let ``RemoveVariationNode with full branch pruning removes entire variation`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     let fenAfterE4 = board.FEN()
-    board.PlaySimpleShortSan "e5"
+    board.PlaySanMove "e5"
 
     // Build a two-ply variation: 1... c5 2. Nf3
     board.LoadFen(fenAfterE4)
-    board.PlaySimpleShortSan "c5"
-    board.PlaySimpleShortSan "Nf3"
+    board.PlaySanMove "c5"
+    board.PlaySanMove "Nf3"
     let fenAfterC5Nf3 = board.FEN()
 
     let rootChildren = board.MoveGraphChildren(board.MoveGraphRootId)
@@ -287,13 +287,13 @@ let ``RemoveVariationNode with full branch pruning removes entire variation`` ()
 [<Fact>]
 let ``PromoteVariationToMainline promotes side line to main`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
+    board.PlaySanMove "e4"
     let fenAfterE4 = board.FEN()
-    board.PlaySimpleShortSan "e5"
+    board.PlaySanMove "e5"
 
     // Variation after 1. e4: 1... c5
     board.LoadFen(fenAfterE4)
-    board.PlaySimpleShortSan "c5"
+    board.PlaySanMove "c5"
     let fenAfterC5 = board.FEN()
 
     let rootChildren = board.MoveGraphChildren(board.MoveGraphRootId)
@@ -322,20 +322,20 @@ let ``PromoteVariationToMainline from variation leaf promotes the branch`` () =
     let board = Board()
     // Main line up to 6...c6
     for san in [ "d4"; "d5"; "Nf3"; "Nf6"; "g3"; "e6"; "Bg2"; "Be7"; "O-O"; "O-O"; "c4"; "c6" ] do
-        board.PlaySimpleShortSan san
+        board.PlaySanMove san
     let fenAfter6c6 = board.FEN() // White to move on move 7
 
     // Main continues with 7. Qc2
-    board.PlaySimpleShortSan "Qc2"
+    board.PlaySanMove "Qc2"
     let fenAfterQc2 = board.FEN()
 
     // Create variation: 7. b3 Nbd7
     board.LoadFen(fenAfter6c6)
-    board.PlaySimpleShortSan "b3"
-    board.PlaySimpleShortSan "Nbd7"
+    board.PlaySanMove "b3"
+    board.PlaySanMove "Nbd7"
     let fenAfterNbd7 = board.FEN()
-    board.PlaySimpleShortSan "Bb2"
-    board.PlaySimpleShortSan "a5"
+    board.PlaySanMove "Bb2"
+    board.PlaySanMove "a5"
     let fenAftera5 = board.FEN()
     let oldMoveHistory = board.GetMoveHistoryWithVariations()
     // Promote by selecting the leaf move ("a5" in the variation)
@@ -366,17 +366,17 @@ let ``PromoteVariationToMainline from variation leaf promotes the branch`` () =
 let ``RemoveVariationTail trims only tail of variation`` () =
     let board = Board()
     // Main line: 1. e4 e5 2. Nf3 Nc6
-    ["e4"; "e5"; "Nf3"] |> List.iter board.PlaySimpleShortSan
+    ["e4"; "e5"; "Nf3"] |> List.iter board.PlaySanMove
     let fenAfterNf3 = board.FEN()
-    board.PlaySimpleShortSan "Nc6"
+    board.PlaySanMove "Nc6"
 
     // Variation: 2... Nf6 3. d4 d6 4. Nc3
     board.LoadFen(fenAfterNf3)
-    board.PlaySimpleShortSan "Nf6"
-    board.PlaySimpleShortSan "d4"
+    board.PlaySanMove "Nf6"
+    board.PlaySanMove "d4"
     let fenAfterD4 = board.FEN()
-    board.PlaySimpleShortSan "d6"
-    board.PlaySimpleShortSan "Nc3"
+    board.PlaySanMove "d6"
+    board.PlaySanMove "Nc3"
 
     // Delete from d4 onward in the variation
     let removed = board.RemoveVariationTail "d4" fenAfterD4
@@ -393,12 +393,12 @@ let ``RemoveVariationTail trims only tail of variation`` () =
 [<Fact>]
 let ``RemoveVariationTail trims mainline when no variations`` () =
     let board = Board()
-    board.PlaySimpleShortSan "e4"
-    board.PlaySimpleShortSan "e5"
-    board.PlaySimpleShortSan "Nf3"
+    board.PlaySanMove "e4"
+    board.PlaySanMove "e5"
+    board.PlaySanMove "Nf3"
     let fenAfterNf3 = board.FEN()
-    board.PlaySimpleShortSan "Nc6"
-    board.PlaySimpleShortSan "Bb5"
+    board.PlaySanMove "Nc6"
+    board.PlaySanMove "Bb5"
 
     let removed = board.RemoveVariationTail "Nf3" fenAfterNf3
     Assert.True(removed)
@@ -464,7 +464,7 @@ let ``InlineTokensFromGraph handles late variation comment game`` () =
             | t when isMoveNumber t -> ()
             | san ->
                 try
-                    board.PlaySimpleShortSan san
+                    board.PlaySanMove san
                     lastOk <- san
                 with ex ->
                     failed <- Some (san, idx, ex.Message)

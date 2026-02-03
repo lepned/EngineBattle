@@ -220,7 +220,7 @@ let processCompletedGame
     (logger: ILogger)
     : GameMetadata =
     let gameData = buildGameMetadata tourny pair result roundTxt
-    addToReplayList replayList tourny result gameData board.LongSANMovesPlayed
+    addToReplayList replayList tourny result gameData board.UciMovesPlayed
     let moveSection = sb.ToString()
     writeGameToPgn pgnAgent tourny gameData moveSection result cts
     if tourny.VerboseLogging then

@@ -8,6 +8,7 @@ open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.Chess
+open ChessLibrary.BoardUtils
 
 type Binary = | Cuda | ONNX | CPU
 
@@ -181,7 +182,7 @@ let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
               replayBoard.ResetBoardState()
               replayBoard.PlayCommands pos
               let newMove = item.LANMove
-              replayBoard.PlayLongSanMove newMove
+              replayBoard.PlayUciMove newMove
               let isMate = replayBoard.IsMate()
               if isMate then
                   item.Q <- if replayBoard.Position.STM = 0uy then -1.0 else 1.0
@@ -201,7 +202,7 @@ let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
       if test.IsNone then
           replayBoard.ResetBoardState()
           replayBoard.PlayCommands pos
-          BoardUtils.makeShortSan list &replayBoard
+          makeShortSan list &replayBoard
           loop()
 
       match list |> Seq.tryFind (fun x -> x.LANMove = move) with
@@ -267,7 +268,7 @@ let tryGetMovePolicyAndTop (move:string) (engine: ChessEngine) (pos:string)  =
       |None ->
           let board = Board()
           board.PlayCommands pos
-          BoardUtils.makeShortSan list &board
+          makeShortSan list &board
           match list |> Seq.tryFind (fun x -> x.LANMove = move) with
           |Some movePolicy ->
               let topPolicy =
@@ -309,11 +310,11 @@ let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player
               |Some (qRank, pRank, move, topMove) ->
                   let topQEval = abs topMove.Q
                   if topQEval <= qMax  && topQEval >= qMin then
-                      BoardUtils.makeShortSan [move;topMove] &playoutBoard
+                      makeShortSan [move;topMove] &playoutBoard
                       let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite)
                       policies.Add (policy)
               |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
-          playoutBoard.PlayLongSanMove move.Move.LongSan
+          playoutBoard.PlayUciMove move.Move.LongSan
       engine.Network, policies
 
 let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float)   =
@@ -342,9 +343,9 @@ let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (p
               |Some (qRank, pRank, move, topMove) ->
                   let topQEval = abs topMove.Q
                   if topQEval <= qMax  && topQEval >= qMin then
-                      BoardUtils.makeShortSan [move;topMove] &playoutBoard
+                      makeShortSan [move;topMove] &playoutBoard
                       let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite)
                       policies.Add (policy)
               |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
-          playoutBoard.PlayLongSanMove move.Move.LongSan
+          playoutBoard.PlayUciMove move.Move.LongSan
       engine.Network, policies

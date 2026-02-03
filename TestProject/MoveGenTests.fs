@@ -110,7 +110,7 @@ let private perftCount (board: Chess.Board) depth =
         if not (BoardHelper.Illegal &m &pos) then
           board.MakeMove(&m)
           nodes <- nodes + search (depth - 1)
-          board.UnMakeMove()
+          board.UndoMove()
       nodes
   search depth
 
