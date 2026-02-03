@@ -719,9 +719,6 @@ module Program =
                 match arg with
                 | Verb (Perft (depth, sampleSize)) ->
                     printfn "Running Chess960 PERFT with depth: %d and sample size: %d" depth sampleSize
-                    Test.completeFRCPerftVerificationTest depth sampleSize
-                | Verb (PerftFast (depth, sampleSize)) ->
-                    printfn "Running Chess960 PERFT (FAST) with depth: %d and sample size: %d" depth sampleSize
                     Test.completeFRCPerftVerificationTestFast depth sampleSize
                 | Verb (Analyze fenOrFile) ->
                     let board = Chess.Board()
@@ -781,11 +778,9 @@ module Program =
                 | Help ->
                     printfn "Help: Available commands are:"
                     printfn "  - Perft <depth> <sampleSize>"
-                    printfn "  - PerftFast <depth> <sampleSize> (for testing only, skips hash)"
                     printfn "  - PuzzleJson <path>"
                     printfn "  - Eret <path>"
                     printfn "  - Tournament <configFile>"
-                    printfn "  - Benchmark <optionsJson>"
                 | _ ->
                     printfn "Unhandled argument: %A" arg
         0

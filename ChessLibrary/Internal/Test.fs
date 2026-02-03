@@ -239,7 +239,7 @@ let completeFRCPerftVerificationTestFast depth upto =
     |> Seq.map parseChess960Record
     |> Seq.truncate upto
     |> Seq.toArray
-  printfn $"\nStarting Chess960 Chess perft test (FAST - for testing only)"
+  printfn $"\nStarting Chess960 Chess perft test"
   let mutable totalNodes = 0L
   let mutable totalTime = 0.0
   let stopwatch = Stopwatch.StartNew()
