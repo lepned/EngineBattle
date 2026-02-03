@@ -19,7 +19,7 @@ open ChessLibrary.GameAnalysis
 open ChessLibrary.ChessUtilities
 open ChessLibrary.EngineProtocol
 open ChessLibrary.TournamentPairing
-open ChessLibrary.LowLevelUtilities
+open ChessLibrary.RuntimeUtilities
 open ChessLibrary.TournamentTypes
 
 module TournamentUtils =
@@ -36,9 +36,9 @@ module TournamentUtils =
         engine.StopProcess()
         Async.Sleep(1000) |> ignore
       if valid then
-        LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green "\nTournament validation was successful"
+        RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green "\nTournament validation was successful"
       else
-        LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red "\nTournament validation failed"
+        RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red "\nTournament validation failed"
       return valid
     } |> Async.StartAsTask
   

@@ -4,7 +4,6 @@ open System
 open System.IO
 open System.Text
 open ChessLibrary.PGNTypes
-open ChessLibrary.MiscTypes
 open ChessLibrary.EngineTypes
 open TypesDef.CoreTypes
 

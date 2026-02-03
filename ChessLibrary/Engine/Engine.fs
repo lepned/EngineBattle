@@ -11,7 +11,7 @@ open System.Text.Json
 open Microsoft.FSharp.Core.Operators.Unchecked
 open Configuration
 open EngineProtocol
-open LowLevelUtilities
+open RuntimeUtilities
 open TypesDef.CoreTypes
 open EngineTypes
 open MoveTypes
@@ -90,13 +90,13 @@ module Engine =
       let printNonDefaultValues () =
         printfn "\nCustomized SetOptions for %s:\n" name
         let path = config.Path
-        LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Engine path: %s" path)
+        RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Engine path: %s" path)
         for opt in nonDefaultValues do
           let (def, value) = opt.Value
           if String.IsNullOrEmpty def then 
-            LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s" opt.Key value)
+            RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s" opt.Key value)
           else
-            LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s - default is: %s" opt.Key value def)
+            RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s - default is: %s" opt.Key value def)
         printfn ""
     
       let getAllDefaultOptions() =            
@@ -490,11 +490,11 @@ module Engine =
                     match UciOption.getNoneDefaultSetOption optionsMap (name, value) with
                     | Some (name, def,value) -> nonDefaultValues.[name] <- (def,value)
                     | None -> ()
-                    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "The option '%s' with value '%s' is valid." name value)
+                    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "The option '%s' with value '%s' is valid." name value)
                 else
-                    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
+                    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
             | None ->
-                LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
+                RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
 
             write cmd
             assignbackend cmd
@@ -747,13 +747,13 @@ module Engine =
       let printNonDefaultValues () =
         printfn "\nCustomized SetOptions for %s:\n" name
         let path = config.Path
-        LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Engine path: %s" path)
+        RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Engine path: %s" path)
         for opt in nonDefaultValues do
           let (def, value) = opt.Value
           if String.IsNullOrEmpty def then 
-            LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s" opt.Key value)
+            RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s" opt.Key value)
           else
-            LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s - default is: %s" opt.Key value def)
+            RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "%s: %s - default is: %s" opt.Key value def)
         printfn ""
 
       let getAllDefaultOptions() =
@@ -1005,10 +1005,10 @@ module Engine =
                     | None -> ()
                   if validate && UciOption.validateSetOption optionsMap (name, value) |> not then
                     passed <- false               
-                    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
+                    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." name value)
               | None ->
                   passed <- false
-                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
+                  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
               write cmd
               assignNetworkName cmd        
               commands.Add cmd      
@@ -1026,12 +1026,12 @@ module Engine =
             //write "ucinewgame"
             if validate then
                 if passed then
-                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
+                  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
                   let diagnostics = getDiagnostics()
                   if String.IsNullOrEmpty diagnostics |> not then
-                     LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
+                     RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
                 else
-                  LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
+                  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
                   raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
         with
         | :? OperationCanceledException -> logCritical "Engine initialization timed out."

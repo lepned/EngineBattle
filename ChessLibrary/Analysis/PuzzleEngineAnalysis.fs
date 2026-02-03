@@ -1,9 +1,7 @@
 module ChessLibrary.PuzzleEngineAnalysis
 
 open System
-open System.IO
 open System.Collections.Generic
-open System.Threading.Tasks
 open ChessLibrary.Engine
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.EngineTypes
@@ -13,9 +11,8 @@ open ChessLibrary.MiscTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.Chess
 open ChessLibrary.EngineProtocol
-open ChessLibrary.GameAnalysis
 open ChessLibrary.Statistics
-open ChessLibrary.LowLevelUtilities
+open ChessLibrary.RuntimeUtilities
 
 let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async {
    let cmd = sprintf "position fen %s" fen
@@ -414,7 +411,7 @@ let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : R
               for pgnIdx, pgn in openings |> Seq.indexed do
                   board.ResetBoardState()
                   board.LoadFen pgn.Fen
-                  let moves = Deviation.movesFromPgn pgn
+                  let moves = DeviationAnalysis.movesFromPgn pgn
                   for move in moves do
                       board.PlaySimpleShortSan move
                   let fen = board.FEN()

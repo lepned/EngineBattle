@@ -1,11 +1,11 @@
-﻿module LowLevelUtilitiesTests
+﻿module RuntimeUtilitiesTests
 
 open System
 open System.IO
 open Xunit
-open ChessLibrary.LowLevelUtilities.Agents
-open ChessLibrary.LowLevelUtilities.ConsoleUtils
-open ChessLibrary.LowLevelUtilities.BoardHelper
+open ChessLibrary.RuntimeUtilities.Agents
+open ChessLibrary.RuntimeUtilities.ConsoleUtils
+open ChessLibrary.RuntimeUtilities.BoardHelper
 open ChessLibrary.PositionTypes
 
 // Test for parseUciResponse

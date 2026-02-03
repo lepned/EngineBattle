@@ -127,12 +127,7 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
       [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
 
     let searchReplayList (pairing : Pairing) =
-      let nextGame = pairing
-      let lastGame = gamesAlreadyPlayed |> Seq.tryLast
-      let deviations = match lastGame with |Some g -> g.GameMetaData.Deviations |_ -> 0
-      if deviations > tourny.DeviationCounter then
-        tourny.DeviationCounter <- deviations
-      prepareGameReplay nextGame replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960 false
+      searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
 
     let allEngines =
       tourny.EngineSetup.Engines |> List.map(fun e -> EngineHelper.createEngine (e, Some logger))
@@ -435,12 +430,7 @@ let parallelTournamentRun
           [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
 
       let searchReplayList (pairing : Pairing) =
-          let nextGame = pairing
-          let lastGame = gamesAlreadyPlayed |> Seq.tryLast
-          let deviations = match lastGame with |Some g -> g.GameMetaData.Deviations |_ -> 0
-          if deviations > tourny.DeviationCounter then
-              tourny.DeviationCounter <- deviations
-          prepareGameReplay nextGame replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960 false
+          searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
 
       let concurrency =
           HardwareInfo.concurrencyLevel

@@ -1,4 +1,4 @@
-﻿module ChessLibrary.LowLevelUtilities
+﻿module ChessLibrary.RuntimeUtilities
 
 open System
 open System.IO

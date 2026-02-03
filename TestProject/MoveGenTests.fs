@@ -8,8 +8,8 @@ open ChessLibrary.MoveGeneration
 open ChessLibrary.MoveTypes
 open ChessLibrary.PositionTypes
 open ChessLibrary.QBBOperations
-open ChessLibrary.LowLevelUtilities.BoardHelper
-open ChessLibrary.LowLevelUtilities
+open ChessLibrary.RuntimeUtilities.BoardHelper
+open ChessLibrary.RuntimeUtilities
 
 // Test for getPosFromFen
 [<Fact>]

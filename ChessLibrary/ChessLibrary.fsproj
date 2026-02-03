@@ -34,17 +34,17 @@
 		<!-- Move generation (depends on QBBOperations, types) -->
 		<Compile Include="Chess\MoveGeneration.fs" />
 
-		<!-- Low-level utilities (depends on QBBOperations, types, MoveGeneration) -->
-		<Compile Include="Utilities\LowLevelUtilities.fs" />
+		<!-- Runtime utilities (depends on QBBOperations, types, MoveGeneration) -->
+		<Compile Include="Utilities\RuntimeUtilities.fs" />
 
-		<!-- Parser modules (depend on types) -->
-		<Compile Include="Configuration\PGNHelper.fs" />
-		<Compile Include="Configuration\PGNExtractor.fs" />
-		<Compile Include="Configuration\PGNStatistics.fs" />
-		<Compile Include="Configuration\MoveParser.fs" />
-		<Compile Include="Configuration\EPDExtractor.fs" />
-		<Compile Include="Configuration\PGNWriter.fs" />
-		<Compile Include="Configuration\FullPGNParser.fs" />
+		<!-- Parsing modules (depend on types) -->
+		<Compile Include="Parsing\PGNHelper.fs" />
+		<Compile Include="Parsing\PGNExtractor.fs" />
+		<Compile Include="Parsing\PGNStatistics.fs" />
+		<Compile Include="Parsing\MoveParser.fs" />
+		<Compile Include="Parsing\EPDExtractor.fs" />
+		<Compile Include="Parsing\PGNWriter.fs" />
+		<Compile Include="Parsing\FullPGNParser.fs" />
 
 		<!-- Chess utilities (depends on types, LowLevelUtilities) -->
 		<Compile Include="Utilities\ChessUtilities.fs" />
@@ -61,14 +61,14 @@
 		<!-- Analysis - GameAnalysis (depends on types, statistics, protocol) -->
 		<Compile Include="Analysis\GameAnalysis.fs" />
 
-		<!-- Configuration (depends on types, GameAnalysis) -->
-		<Compile Include="Configuration\Configuration.fs" />
+		<!-- Config (depends on types, GameAnalysis) -->
+		<Compile Include="Config\Configuration.fs" />
 
 		<!-- Board (depends on types, MoveGeneration, LowLevelUtilities) -->
 		<Compile Include="Chess\Board.fs" />
 
 		<!-- Args parser (depends on types) -->
-		<Compile Include="Configuration\ArgsParser.fs" />
+		<Compile Include="Config\ArgsParser.fs" />
 
 		<!-- Winboard protocol (depends on types) -->
 		<Compile Include="Engine\WinboardProtocol.fs" />
@@ -76,6 +76,9 @@
 
 		<!-- Engine (depends on protocol, configuration, LowLevelUtilities) -->
 		<Compile Include="Engine\Engine.fs" />
+
+		<!-- Deviation analysis (depends on Board, GameAnalysis) -->
+		<Compile Include="Analysis\DeviationAnalysis.fs" />
 
 		<!-- Analysis support modules (depend on engine, parser, configuration, GameAnalysis) -->
 		<Compile Include="Analysis\AnalysisHelper.fs" />
@@ -86,15 +89,12 @@
 		<Compile Include="Analysis\PuzzleRunners.fs" />
 		<Compile Include="Analysis\PuzzleExperiments.fs" />
 
-		<!-- Analysis main (depends on extracted modules) -->
-
-		<!-- Tests folder -->
-		<None Include="Tests\cccDownloader.fsx" />
-		<Compile Include="Tests\Chess960TestPositions.fs" />
-		<None Include="Tests\Script1.fsx" />
-		<None Include="Tests\testOfCliWrap.fsx" />
-		<Compile Include="Tests\Perft.fs" />
-		<Compile Include="Tests\Test.fs" />
+		<!-- Internal utilities (perft, test helpers) -->
+		<Compile Include="Internal\Chess960TestPositions.fs" />
+		<Compile Include="Internal\Perft.fs" />
+		<Compile Include="Internal\Test.fs" />
+		<None Include="Internal\Script1.fsx" />
+		<None Include="Internal\testOfCliWrap.fsx" />
 
 		<!-- Tournament support modules (depend on engine, parser, etc.) -->
 		<Compile Include="Tournament\TournamentTypes.fs" />

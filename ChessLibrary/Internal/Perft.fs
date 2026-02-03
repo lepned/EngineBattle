@@ -3,7 +3,7 @@
 open System.Diagnostics
 open PositionTypes
 open Chess
-open LowLevelUtilities
+open RuntimeUtilities
 open System
 
 type Chess960Record = {
@@ -191,13 +191,13 @@ let perftOptChecked (record:Chess960Record) depth =
   let res = perft depth
   let correct = getNumberFromRecord depth record
   if res = correct then
-    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green
+    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green
       $"{record.PositionNumber} - TEST PASSED - Correct: {correct:N0} = {res:N0} nodes"
   else
     board.PrintPosition "Error"
     printfn $"Captures: {board.Captures:N0} Castles: {board.Castles:N0} EP: {board.EP:N0}"
     let diff = if res > correct then sprintf "%d too many" (res-correct) else sprintf "%d too few" (res-correct)
-    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red
+    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
       $"\nPosition {record.PositionNumber} depth {depth}: ERROR FEN: {record.FEN}\n\tcorrect number of positions are {correct:N0}, you got {res:N0} ({diff})"
 
 let perftOptCheckedFast (record:Chess960Record) depth =
@@ -206,12 +206,12 @@ let perftOptCheckedFast (record:Chess960Record) depth =
   let res = perftFast board depth
   let correct = getNumberFromRecord depth record
   if res = correct then
-    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Green
+    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green
       $"{record.PositionNumber} - TEST PASSED - Correct: {correct:N0} = {res:N0} nodes"
   else
     board.PrintPosition "Error"
     let diff = if res > correct then sprintf "%d too many" (res-correct) else sprintf "%d too few" (res-correct)
-    LowLevelUtilities.ConsoleUtils.printInColor ConsoleColor.Red
+    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
       $"\nPosition {record.PositionNumber} depth {depth}: ERROR FEN: {record.FEN}\n\tcorrect number of positions are {correct:N0}, you got {res:N0} ({diff})"
 
 let runPerft0 depth fen =

@@ -46,28 +46,24 @@ type GameReplay =
         member this.copyGameReplay white black = {WhitePlayer = white; BlackPlayer = black; LongSanMoves = ResizeArray<string>(this.LongSanMoves); PGNMetaData = this.PGNMetaData}
 
 /// Prepares game replay data for deviation prevention
-/// When clearDictsOnNewOpening is true, all replay dictionaries are cleared if the current opening
-/// hasn't been played before (used by gauntlet mode when switching openings)
+/// Clears all replay dictionaries when encountering a new opening (memory optimization)
 let prepareGameReplay
     (pairing : Pairing)
     (replayDicts : Map<string, ReferenceGameReplay>)
     (replayList: ResizeArray<GameReplay>)
     (referencGamesPlayed: PgnGame array)
     (gamesAlreadyPlayed: PgnGame array)
-    (isChess960: bool)
-    (clearDictsOnNewOpening: bool)
     =
     let getReplayDictForPlayer (name:string) = replayDicts.[name]
     let nextGame = pairing
     let replayDictWhite = getReplayDictForPlayer pairing.White.Name
     let replayDictBlack = getReplayDictForPlayer pairing.Black.Name
 
-    // Gauntlet mode: clear all replay dicts when switching to a new opening
-    if clearDictsOnNewOpening then
-        let openingPlayedBefore = replayList |> Seq.exists(fun e -> e.PGNMetaData.OpeningHash = pairing.OpeningHash)
-        if not openingPlayedBefore then
-            for dict in replayDicts do
-                dict.Value.Clear()
+    // Clear all replay dicts when switching to a new opening (memory optimization)
+    let openingPlayedBefore = replayList |> Seq.exists(fun e -> e.PGNMetaData.OpeningHash = pairing.OpeningHash)
+    if not openingPlayedBefore then
+        for dict in replayDicts do
+            dict.Value.Clear()
 
     let lastRelevantLiveGame =
         replayList
@@ -95,7 +91,6 @@ let prepareGameReplay
             |> Seq.filter(fun e -> e.GameMetaData.OpeningHash = pairing.OpeningHash && (e.GameMetaData.White = pairing.White.Name || e.GameMetaData.Black = pairing.Black.Name ))
 
         let replayBoard = Board()
-        replayBoard.IsFRC <- isChess960
         let tryInitBoard () =
             if pairing.Opening.Fen <> "" then
                 replayBoard.LoadFen pairing.Opening.Fen

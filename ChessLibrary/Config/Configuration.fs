@@ -10,7 +10,7 @@ open System.Collections.Generic
 
 open TypesDef.CoreTypes
 open TypesDef.Tournament
-open LowLevelUtilities
+open RuntimeUtilities
 open GameAnalysis
 
 module ConsoleHelper =

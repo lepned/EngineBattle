@@ -8,7 +8,7 @@ open CliWrap.Buffered
 
 open TypesDef.CoreTypes
 open Statistics
-open LowLevelUtilities
+open RuntimeUtilities
 
 module Formatting =
 

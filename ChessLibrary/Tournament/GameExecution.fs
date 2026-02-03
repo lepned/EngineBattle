@@ -20,7 +20,7 @@ open ChessLibrary.Chess
 open ChessLibrary.Chess.BoardUtils
 open ChessLibrary.ChessUtilities
 open ChessLibrary.EngineProtocol
-open ChessLibrary.LowLevelUtilities
+open ChessLibrary.RuntimeUtilities
 open ChessLibrary.CustomException
 open ChessLibrary.TournamentTypes
 open ChessLibrary.GameHelpers
@@ -908,7 +908,7 @@ let playGeneric
                     match tryGetTMoveFromCoordinateNotation &board oldMove with
                     |Some orgMove ->
                       shortSan <- getSanNotationFromTMove &board orgMove
-                      LowLevelUtilities.ConsoleUtils.printInColor
+                      RuntimeUtilities.ConsoleUtils.printInColor
                           ConsoleColor.Yellow
                           $"Deviation detected at plycount {board.PlyCount} with time left in ms: {moveInfoData.tl}\n  Prev move: {oldMove} by {engName}  Current move: {move} by {playing.Name}"
                       tourny.DeviationCounter <- tourny.DeviationCounter + 1
@@ -918,11 +918,11 @@ let playGeneric
                       board.MakeMove &orgMove
                     |_ -> // quick fix for FRC castling move or illegal previous move
                       if TMoveOps.isCastlingMove tmove && board.IsFRC then
-                        LowLevelUtilities.ConsoleUtils.printInColor
+                        RuntimeUtilities.ConsoleUtils.printInColor
                           ConsoleColor.Red
                           $"Deviation bug corrected in FRC castling move with movetype: {tmove.MoveType} - {playing.Name} MoveNr: {moves} Prev move: {oldMove} Current move: {move}"
                       else
-                        LowLevelUtilities.ConsoleUtils.printInColor
+                        RuntimeUtilities.ConsoleUtils.printInColor
                           ConsoleColor.Red
                           $"Deviation detected but previous move illegal: {playing.Name} MoveNr: {moves} Prev move: {oldMove} Current move: {move}"
                       board.LongSANMovesPlayed.Add(move)

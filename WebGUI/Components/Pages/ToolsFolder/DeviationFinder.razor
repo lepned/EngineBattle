@@ -231,10 +231,10 @@ else
     var comparList = ConvertCsvStringToList(comparePlayers);
     var deviations = 
       isFindMoveAllDifferencesEnabled ?
-        Chess.Deviation.findMoveDifferencesInPGN(games, refPlayer, comparList) :
-        Chess.Deviation.findAllDeviationsForAllPlayers(games);
+        DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList) :
+        DeviationAnalysis.findAllDeviationsForAllPlayers(games);
 
-    Chess.Deviation.findMoveDifferencesInPGN(games, refPlayer, comparList);
+    DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList);
     deviationListAll.AddRange(deviations);
     var critical = deviations.Where(e => e.Result != e.DevRes);
     deviationListCritical.AddRange(critical);

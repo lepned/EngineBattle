@@ -8,7 +8,6 @@ open Microsoft.Extensions.Logging
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.MiscTypes
-open ChessLibrary.EngineTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.Chess
 open ChessLibrary.Engine

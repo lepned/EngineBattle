@@ -367,7 +367,7 @@ let runTest
           // load & log
           let puzzles = PuzzleDataUtils.sortPuzzleData theme rating input
           if puzzles.Length = 0 then
-              ChessLibrary.LowLevelUtilities.ConsoleUtils.yellowConsole $"\nSkipping tests: No puzzles found matching theme '{theme}' and rating {rating}"
+              ChessLibrary.RuntimeUtilities.ConsoleUtils.yellowConsole $"\nSkipping tests: No puzzles found matching theme '{theme}' and rating {rating}"
           else
             let avg = puzzles |> Array.averageBy (fun p -> p.Rating)
             printfn "\nRating group %d (avg %.0f), theme \"%s\"" rating avg themeLabel
@@ -407,6 +407,6 @@ let runTest
     // wrap up
     sendU (Done "Finished!")
     let totalPretty = System.Diagnostics.Stopwatch.GetElapsedTime start |> ChessLibrary.GameAnalysis.Time.prettyPrintTimeSpan
-    ChessLibrary.LowLevelUtilities.ConsoleUtils.greenConsole $"\nTotal time: {totalPretty}"
+    ChessLibrary.RuntimeUtilities.ConsoleUtils.greenConsole $"\nTotal time: {totalPretty}"
 
     results

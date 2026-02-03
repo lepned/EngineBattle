@@ -1,7 +1,6 @@
 module ChessLibrary.PuzzleDataUtils
 
 open System
-open ChessLibrary.Chess
 open ChessLibrary.PuzzleTypes
 open ChessLibrary.TypesDef.PuzzleInput
 

@@ -2,22 +2,16 @@ module ChessLibrary.GameSetup
 
 open System
 open System.Text
-open System.Diagnostics
 open System.Threading
 open Microsoft.Extensions.Logging
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
-open ChessLibrary.MiscTypes
-open ChessLibrary.EngineTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.Chess
 open ChessLibrary.Engine
 open ChessLibrary.TournamentTypes
-open ChessLibrary.GameHelpers
 open ChessLibrary.GameReplay
-open ChessLibrary.GameExecution
 open ChessLibrary.GamePersistence
-open ChessLibrary.CustomException
 
 // ============================================================================
 // Board Setup for Game

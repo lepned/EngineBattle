@@ -5,7 +5,6 @@ open System.Diagnostics
 open System.Threading
 open Microsoft.Extensions.Logging
 open ChessLibrary.WinboardProtocol
-open ChessLibrary.Chess
 
 /// Integration module for adding Winboard support to ChessEngine
 ///

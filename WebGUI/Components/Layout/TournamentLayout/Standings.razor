@@ -157,8 +157,8 @@
         }
 
         var elo = CheckForNanAndInfinity(res.Elo, false);
-        var pos = LowLevelUtilities.ConsoleUtils.positiveInfinitySymbol;
-        var neg = LowLevelUtilities.ConsoleUtils.negativeInfinitySymbol;
+        var pos = RuntimeUtilities.ConsoleUtils.positiveInfinitySymbol;
+        var neg = RuntimeUtilities.ConsoleUtils.negativeInfinitySymbol;
         if (elo == pos || elo == neg)
         {
             return elo;

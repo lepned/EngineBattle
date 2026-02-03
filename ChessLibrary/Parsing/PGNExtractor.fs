@@ -1,7 +1,6 @@
 module ChessLibrary.PGNExtractor
 
 open ChessLibrary.PGNTypes
-open ChessLibrary.MiscTypes
 open ChessLibrary.EngineTypes
 
 /// Extracts moves from a PGN game.

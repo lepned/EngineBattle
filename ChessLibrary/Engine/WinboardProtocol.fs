@@ -3,8 +3,6 @@ namespace ChessLibrary
 open System
 open System.Text.RegularExpressions
 open Microsoft.Extensions.Logging
-open Microsoft.FSharp.Core.Operators.Unchecked
-open MoveTypes
 open PositionTypes
 open TypesDef.CoreTypes
 open Chess

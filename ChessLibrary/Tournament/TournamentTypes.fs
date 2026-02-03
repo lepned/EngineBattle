@@ -4,7 +4,6 @@ open System
 open System.Collections.Generic
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.TypesDef.CoreTypes
-open ChessLibrary.PGNTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.MiscTypes
 open ChessLibrary.CupTypes

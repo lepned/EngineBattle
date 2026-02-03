@@ -8,10 +8,11 @@ open MoveTypes
 open GameAnalysis
 open EngineProtocol
 open ChessUtilities
-open LowLevelUtilities
+open RuntimeUtilities
 open Chess
 open Chess.BoardUtils
 open Perft
+
 open System.Diagnostics
 
 module Deviations =  
@@ -21,8 +22,8 @@ module Deviations =
     let games = FullPGNParser.parsePgnFile filePath |> Seq.truncate 100000 |> Seq.toList
     if games |> Seq.forall (fun e -> e.GameMetaData.Round <> "") then      
       printfn "Start of deviation test - number of games %d\n" games.Length
-      let _, consoleRes, devSummary, data, cross, fraction = Deviation.analyzeDeviations games
-      let consoleSummary = Deviation.printDeviationsToConsole devSummary
+      let _, consoleRes, devSummary, data, cross, fraction = DeviationAnalysis.analyzeDeviations games
+      let consoleSummary = DeviationAnalysis.printDeviationsToConsole devSummary
       PGNCalculator.idealizedEloPrint cross
       //printfn "Gauntlet player: %s" gauntletPlayer
       printfn "%s" consoleRes

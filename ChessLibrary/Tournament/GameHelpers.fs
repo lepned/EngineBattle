@@ -413,4 +413,4 @@ let searchAndPrepareReplay
     let deviations = match lastGame with | Some g -> g.GameMetaData.Deviations | _ -> 0
     if deviations > tourny.DeviationCounter then
         tourny.DeviationCounter <- deviations
-    prepareGameReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960 false
+    prepareGameReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed

@@ -5,7 +5,6 @@ open System.IO
 open System.Threading
 open System.Text
 open System.Collections.Generic
-open System.Diagnostics
 open Microsoft.Extensions.Logging
 open ChessLibrary.Engine
 open ChessLibrary.PGNTypes
@@ -18,11 +17,9 @@ open ChessLibrary.TimeControlTypes
 open ChessLibrary.Chess
 open ChessLibrary.ChessUtilities
 open ChessLibrary.TournamentPairing
-open ChessLibrary.CustomException
 open ChessLibrary.TournamentTypes
 open ChessLibrary.GameHelpers
 open ChessLibrary.GameReplay
-open ChessLibrary.GameExecution
 open ChessLibrary.GamePersistence
 open ChessLibrary.GameSetup
 
@@ -105,13 +102,8 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
     let replayList = ResizeArray<GameReplay>()
     let replayDicts = createReplayDicts tourny.EngineSetup.Engines
 
-    // Use shared prepareGameReplay with clearDictsOnNewOpening=true for gauntlet mode
     let searchReplayList (pairing : Pairing) =
-      let lastGame = gamesAlreadyPlayed |> Seq.tryLast
-      let deviations = match lastGame with |Some g -> g.GameMetaData.Deviations |_ -> 0
-      if deviations > tourny.DeviationCounter then
-        tourny.DeviationCounter <- deviations
-      prepareGameReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny.IsChess960 true
+      searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
 
     let sb = StringBuilder()
 
