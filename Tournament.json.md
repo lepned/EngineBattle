@@ -100,6 +100,7 @@ This document provides an overview of the `tournament.json` configuration file u
   - **LiveChartHeight**: Height of the live chart, which is MCTS charts (typically Lc0 and Ceres) for Top N visited moves and Top N Q-values (eval).
   - **MoveChartHeight**: Height of the move chart, which is regular Eval, NPS, NPM and Time charts.
   - **PVboardSize**: Size of the PV board.
+  - **LogoSize**: Maximum size for engine logos. Format: "WxH" (e.g., "150x100") for width x height, or "N" for square (e.g., "120" for 120x120). Empty string or omitted uses default sizing. These values act as upper bounds; logos still shrink on narrow screens.
 - **Charts**:
   - **ShowEval**: Show evaluation chart.
   - **ShowNPS**: Show nodes per second chart.
@@ -225,10 +226,11 @@ This document provides an overview of the `tournament.json` configuration file u
       "LatestGamesFont": 16
     },
 
-    "Sizes": {      
+    "Sizes": {
       "LiveChartHeight": 240,
       "MoveChartHeight": 250,
-      "PVboardSize": "medium"
+      "PVboardSize": "medium",
+      "LogoSize": ""
     },
 
     "Charts": {

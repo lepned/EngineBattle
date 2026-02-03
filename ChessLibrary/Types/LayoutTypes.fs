@@ -1,5 +1,7 @@
 namespace ChessLibrary
 
+open System
+
 module LayoutTypes =
   type Fonts =
     { StandingsFont: int
@@ -16,7 +18,24 @@ module LayoutTypes =
   type Sizes =
     { LiveChartHeight: int
       MoveChartHeight: int
-      PVboardSize: string }
+      PVboardSize: string
+      LogoSize: string }
+
+  /// Parses LogoSize string. Returns Some (width, height) or None if empty/invalid.
+  /// Formats: "WxH" (e.g., "150x100") or "N" for square (e.g., "150" -> 150x150)
+  let parseLogoSize (logoSize: string) : (int * int) option =
+    if String.IsNullOrWhiteSpace(logoSize) then None
+    elif logoSize.Contains("x") then
+      let parts = logoSize.Split('x')
+      if parts.Length = 2 then
+        match Int32.TryParse(parts.[0]), Int32.TryParse(parts.[1]) with
+        | (true, w), (true, h) when w > 0 && h > 0 -> Some (w, h)
+        | _ -> None
+      else None
+    else
+      match Int32.TryParse(logoSize) with
+      | true, size when size > 0 -> Some (size, size)
+      | _ -> None
   type Charts =
     { ShowNPS: bool
       ShowEval: bool
@@ -60,7 +79,8 @@ module LayoutTypes =
           Sizes =
             { LiveChartHeight = 200
               MoveChartHeight = 200
-              PVboardSize = "medium" }
+              PVboardSize = "medium"
+              LogoSize = "" }
           Charts = Charts.Default
           ShowPVBoard = false
           UseNPM = false

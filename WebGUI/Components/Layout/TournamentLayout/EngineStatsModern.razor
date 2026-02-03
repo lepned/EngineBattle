@@ -7,7 +7,7 @@
   <!-- Row 1: Engine Headers & Main Logo -->
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
-    <div class="engine-logo-wrapper">
+    <div class="engine-logo-wrapper" style="@LogoWrapperStyle">
       <img src="@Engine1Logo" alt="@Engine1Name" class="engine-logo" />
     </div>
     <h3 class="engine-name">@Engine1Name</h3>
@@ -20,7 +20,7 @@
   </div>
   <div class="engine-header-cell @(Engine1ToMove ? "" : "active")">
     <span class="side-label">Black</span>
-    <div class="engine-logo-wrapper">
+    <div class="engine-logo-wrapper" style="@LogoWrapperStyle">
       <img src="@Engine2Logo" alt="@Engine2Name" class="engine-logo" />
     </div>
     <h3 class="engine-name">@Engine2Name</h3>
@@ -140,9 +140,23 @@
   [Parameter]
   public string MainLogoFileName { get; set; }
 
+  [Parameter]
+  public string LogoSize { get; set; } = "";
+
   private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"Img/{MainLogoFileName}";
 
   private string LogoBackup = "Img/MainLogoEB.png";
+
+  private string LogoWrapperStyle
+  {
+    get
+    {
+      var parsed = ChessLibrary.LayoutTypes.parseLogoSize(LogoSize);
+      if (parsed == null) return "";
+      var (w, h) = parsed.Value;
+      return $"max-width: {w}px; max-height: {h}px;";
+    }
+  }
 
   private string GetWDLString(WDLType wdlValue)
   {
