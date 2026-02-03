@@ -21,8 +21,13 @@ open CliParser
 
 module BlazorInterop =
     let mutable blazorProcess: Process option = None
-    let startBlazorAppAsync() =
+    let mutable private targetPage = "/tournament"
+
+    let startBlazorAppAsync (page: string) (port: int option) =
         async {
+            // Store the page route for use when server starts
+            targetPage <- "/" + page.TrimStart('/')
+
             let currentDir = DirectoryInfo(Environment.CurrentDirectory)
             let endWithConsole = currentDir.FullName.EndsWith("Console")
             let parent =
@@ -34,7 +39,10 @@ module BlazorInterop =
             let blazorProjectPath = path
             let psi = ProcessStartInfo()
             psi.FileName <- "dotnet"
-            psi.Arguments <- "run"
+            psi.Arguments <-
+                match port with
+                | Some p -> $"run --urls http://localhost:{p}"
+                | None -> "run"
             psi.WorkingDirectory <- blazorProjectPath
             psi.UseShellExecute <- false
             psi.RedirectStandardOutput <- true
@@ -55,8 +63,7 @@ module BlazorInterop =
                                 parts.[1].Trim().TrimEnd('/')
                             else
                                 ""
-                        let pageRoute = "/tournament" // Change to desired page route
-                        let fullUrl = baseUrl + pageRoute
+                        let fullUrl = baseUrl + targetPage
                         Console.WriteLine($"Opening browser at {fullUrl}")
                         try
                             let psi = ProcessStartInfo()
@@ -93,7 +100,7 @@ module BlazorInterop =
         | Some proc when not proc.HasExited ->
             Console.WriteLine("Terminating Blazor app process...")
             try
-                proc.Kill()
+                proc.Kill(true) // Kill entire process tree (dotnet run + child WebGUI process)
             with _ -> ()
             proc.Dispose()
         | _ -> ()
@@ -775,12 +782,28 @@ module Program =
                         printfn "Tournamentjson config file not found..."                        
                 | Verb (Benchmark path) ->
                     BenchmarkRunner.runBenchmark path
+                | Verb (GUI (page, port)) ->
+                    let portStr = match port with Some p -> $" on port {p}" | None -> ""
+                    printfn "Starting WebGUI%s with page: /%s" portStr page
+                    printfn "Press Ctrl+C or Enter to stop the server..."
+                    // Handle Ctrl+C to properly shutdown WebGUI
+                    Console.CancelKeyPress.Add(fun args ->
+                        args.Cancel <- true // Prevent immediate termination
+                        BlazorInterop.stopBlazorApp()
+                        Environment.Exit(0)
+                    )
+                    Async.Start(BlazorInterop.startBlazorAppAsync page port)
+                    // Keep the console app running until terminated
+                    Console.ReadLine() |> ignore
+                    BlazorInterop.stopBlazorApp()
                 | Help ->
                     printfn "Help: Available commands are:"
-                    printfn "  - Perft <depth> <sampleSize>"
-                    printfn "  - PuzzleJson <path>"
-                    printfn "  - Eret <path>"
-                    printfn "  - Tournament <configFile>"
+                    printfn "  - perft <depth> <sampleSize>"
+                    printfn "  - puzzlejson <path>"
+                    printfn "  - eretjson <path>"
+                    printfn "  - tournamentjson <configFile>"
+                    printfn "  - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)"
+                    printfn "    Examples: gui, gui singleEngineAnalysis, gui 5020, gui help 5020"
                 | _ ->
                     printfn "Unhandled argument: %A" arg
         0

@@ -4,7 +4,7 @@ This document provides a comprehensive guide to using the EngineBattle Console C
 
 ## Overview
 
-The Console project is the command-line interface for EngineBattle. It provides tools for running tournaments, testing engines against puzzles, benchmarking UCI options, and verifying move generation.
+The Console project is the command-line interface for EngineBattle. It provides tools for running tournaments, testing engines against puzzles, benchmarking UCI options, verifying move generation, and launching the WebGUI.
 
 ### Building and Running
 
@@ -114,6 +114,68 @@ dotnet run -c Release -- eretjson C:/Dev/Chess/ERET/EretConfig.json
 
 ---
 
+### gui
+
+Launches the WebGUI (Blazor Server) from the console.
+
+**Syntax:**
+```bash
+dotnet run -c Release -- gui [page] [port]
+```
+
+**Examples:**
+```bash
+# Launch with default page (tournament) on default port (5018)
+dotnet run -c Release -- gui
+
+# Launch with specific page
+dotnet run -c Release -- gui singleEngineAnalysis
+
+# Launch on custom port
+dotnet run -c Release -- gui 5020
+
+# Launch with specific page and port
+dotnet run -c Release -- gui help 5020
+```
+
+**Arguments:**
+- `page` (optional): The page route to open in the browser. Default: `tournament`
+- `port` (optional): The port to run the server on. Default: `5018`
+
+**Available Pages:**
+- `/tournament` - Tournament runner and results
+- `/singleEngineAnalysis` - Single engine analysis
+- `/DualEngineAnalysis` - Dual engine comparison
+- `/EngineDef` - Engine definition overview
+- `/tournamentSetup` - Tournament setup
+- `/play-vs-computer` - Play against engine
+- `/LichessPuzzles` - Lichess puzzle tests
+- `/EretPuzzleTest` - ERET puzzle tests
+- `/help` - Help and documentation
+- `/speed` - Speed calculator
+- `/ordo` - Ordo rating results
+- `/deviationFinder` - Move deviation finder
+
+**Description:**
+- Starts the WebGUI Blazor Server application
+- Opens the default browser at the specified page
+- Press Ctrl+C or Enter to stop the server
+- The server and all child processes are properly terminated on exit
+
+**Running Multiple Instances:**
+
+When one instance is running, `dotnet run` will fail to build due to locked DLLs. Use one of these workarounds:
+
+```bash
+# Option 1: Run from the built executable (faster)
+.\bin\release\net10.0\EngineBattle.Console.exe gui singleEngineAnalysis 5021
+
+# Option 2: Skip the build step
+dotnet run -c Release --no-build -- gui singleEngineAnalysis 5021
+```
+
+---
+
 ### perft
 
 Verifies Chess960 move generation correctness using PERFT (performance test).
@@ -153,10 +215,12 @@ dotnet run -c Release -- help
 **Output:**
 ```
 Help: Available commands are:
-  - Perft <depth> <sampleSize>
-  - PuzzleJson <path>
-  - Eret <path>
-  - Tournament <configFile>
+  - perft <depth> <sampleSize>
+  - puzzlejson <path>
+  - eretjson <path>
+  - tournamentjson <configFile>
+  - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)
+    Examples: gui, gui singleEngineAnalysis, gui 5020, gui help 5020
 ```
 
 ---
