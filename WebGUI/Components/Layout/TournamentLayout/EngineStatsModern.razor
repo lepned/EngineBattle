@@ -152,7 +152,7 @@
     get
     {
       var parsed = ChessLibrary.LayoutTypes.parseLogoSize(LogoSize);
-      if (parsed == null) return "";
+      if (parsed == null) return "max-width:150px; max-height: 100px;";
       var (w, h) = parsed.Value;
       return $"max-width: {w}px; max-height: {h}px;";
     }

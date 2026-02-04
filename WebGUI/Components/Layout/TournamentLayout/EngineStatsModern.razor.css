@@ -66,8 +66,8 @@
   padding: 0.5em;
   overflow: hidden;
   flex-shrink: 0;
-  width: min(15em, 200px, 25cqw);
-  height: min(15em, 150px, 25cqw);
+  width: min(15em, 450px, 35cqw);
+  height: min(15em, 300px, 25cqw);
 }
 
 .engine-logo {
