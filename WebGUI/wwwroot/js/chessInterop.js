@@ -753,7 +753,7 @@ export function setLineChartData(chart, layout, config) {
 export function setSingleNodeChart(chart, layout, config) {
   try {
     var data = [config.trace1, config.trace2];
-    Plotly.newPlot(chart, data, layout, { displayModeBar: false });
+    Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
   } catch (error) {
     console.error(error);
   }
@@ -762,7 +762,7 @@ export function setSingleNodeChart(chart, layout, config) {
 export function setDoubleNodeChart(chart, layout, config) {
   try {
     var data = [config.trace1, config.trace2];
-    Plotly.newPlot(chart, data, layout, { displayModeBar: false });
+    Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
   } catch (error) {
     console.error(error);
   }
@@ -771,7 +771,7 @@ export function setDoubleNodeChart(chart, layout, config) {
 export function setLineEvalChartData(chart, layout, config) {
   try {
     var data = [config.trace1, config.trace2];
-    Plotly.newPlot(chart, data, layout, { displayModeBar: false });
+    Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
   } catch (error) {
     console.error(error);
   }
@@ -792,7 +792,7 @@ export function updateLineEvalChartData(chart, trace, index) {
 export function setTimeUsageChartData(chart, layout, config) {
   try {
     var data = [config.trace1, config.trace2];
-    Plotly.newPlot(chart, data, layout, { displayModeBar: false });
+    Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
   } catch (error) {
     console.error(error);
   }

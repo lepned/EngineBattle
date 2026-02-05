@@ -12,35 +12,35 @@
   <DialogContent>
     <MudTextField @bind-Value="SearchString" Placeholder="Search for player..."
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                  IconSize="Size.Medium" Class="mt-0 mb-3" Immediate="true" />
+                  IconSize="Size.Medium" Class="mt-0 mb-3" Immediate="true"
+                  TextChanged="OnSearchChanged" />
 
-    <MudTable Style="border: none; padding: 0; background-color: transparent;"
-              Items="@Games"
+    <MudTable @ref="tableRef"
+              Style="border: none; padding: 0; background-color: transparent;"
+              ServerData="ServerReload"
               T="PGNTypes.PgnGame"
               MultiSelection="true"
               @bind-SelectedItems="SelectedItems"
               OnRowClick="SelectGame"
-              Virtualize="true"
               FixedHeader="true"
               Height="calc(65vh)"
               Hover="true"
-              SortLabel="Sort By"
               Dense="true"
-              Filter="FilterFunc">
+              RowsPerPage="25">
       <HeaderContent>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.GameMetaData.Round">R#</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => x.Mainline.Count">Ply#</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.GetResultSummary(x)">Result</MudTableSortLabel></MudTh>
-                <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortBy="x => Helper.ShowPlayersSummary(x)">Players</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortLabel="Round">R#</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortLabel="Ply">Ply#</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortLabel="Result">Result</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel T="PGNTypes.PgnGame" SortLabel="Players">Players</MudTableSortLabel></MudTh>
       </HeaderContent>
-      <RowTemplate>        
+      <RowTemplate>
         <MudTd DataLabel="G#">@context.GameNumber</MudTd>
         <MudTd DataLabel="M#">@context.Mainline.Count</MudTd>
         <MudTd DataLabel="Result">@Helper.GetResultSummary(context)</MudTd>
         <MudTd Style="text-align: Left;" DataLabel="Players">@Helper.ShowPlayersSummary(context)</MudTd>
       </RowTemplate>
       <PagerContent>
-        <MudTablePager PageSizeOptions="new int[] { 20, 30, 50, 100, 250 }" />
+        <MudTablePager PageSizeOptions="new int[] { 25, 50, 100, 250 }" />
       </PagerContent>
     </MudTable>
   </DialogContent>
@@ -55,14 +55,56 @@
     [Parameter] public HashSet<PGNTypes.PgnGame> SelectedItems { get; set; } = new();
     [Parameter] public string SearchString { get; set; } = "";
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
-    
+
+    private MudTable<PGNTypes.PgnGame> tableRef;
+
     private void Cancel() => MudDialog.Cancel();
-    
+
     private void SelectGame(TableRowClickEventArgs<PGNTypes.PgnGame> args)
     {
         MudDialog.Close(DialogResult.Ok((args.Item, SearchString)));
     }
-    
+
+    private void OnSearchChanged(string text)
+    {
+        SearchString = text;
+        tableRef?.ReloadServerData();
+    }
+
+    private Task<TableData<PGNTypes.PgnGame>> ServerReload(TableState state, CancellationToken token)
+    {
+        // Filter
+        var filteredGames = Games.Where(FilterFunc).ToList();
+
+        // Sort
+        filteredGames = state.SortLabel switch
+        {
+            "Round" => state.SortDirection == SortDirection.Ascending
+                ? filteredGames.OrderBy(g => g.GameMetaData.Round).ToList()
+                : filteredGames.OrderByDescending(g => g.GameMetaData.Round).ToList(),
+            "Ply" => state.SortDirection == SortDirection.Ascending
+                ? filteredGames.OrderBy(g => g.Mainline.Count).ToList()
+                : filteredGames.OrderByDescending(g => g.Mainline.Count).ToList(),
+            "Result" => state.SortDirection == SortDirection.Ascending
+                ? filteredGames.OrderBy(g => Helper.GetResultSummary(g)).ToList()
+                : filteredGames.OrderByDescending(g => Helper.GetResultSummary(g)).ToList(),
+            "Players" => state.SortDirection == SortDirection.Ascending
+                ? filteredGames.OrderBy(g => Helper.ShowPlayersSummary(g)).ToList()
+                : filteredGames.OrderByDescending(g => Helper.ShowPlayersSummary(g)).ToList(),
+            _ => filteredGames
+        };
+
+        // Paginate
+        var totalItems = filteredGames.Count;
+        var pagedGames = filteredGames.Skip(state.Page * state.PageSize).Take(state.PageSize).ToList();
+
+        return Task.FromResult(new TableData<PGNTypes.PgnGame>
+        {
+            Items = pagedGames,
+            TotalItems = totalItems
+        });
+    }
+
     private bool FilterFunc(PGNTypes.PgnGame game)
     {
         if (string.IsNullOrWhiteSpace(SearchString))
@@ -77,15 +119,15 @@
         // Search in black player name
         if (game.GameMetaData.Black?.ToLower().Contains(searchTerm) == true)
             return true;
-        
+
         var eval = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Eval");
-        
+
         // Search in eval
         if (eval != null && eval.Value.ToLower().Contains(searchTerm) == true)
-            return true;        
-        
+            return true;
+
         var move = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Move");
-        
+
         // Search in Move
         if (move != null && move.Value.ToLower().Contains(searchTerm) == true)
             return true;

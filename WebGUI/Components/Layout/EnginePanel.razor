@@ -1,0 +1,1562 @@
+@using System.Text.RegularExpressions;
+@using WebGUI.Components
+@using WebGUI.Components.Layout.ChessboardLayout
+@using WebGUI.Plotting
+@using WebGUI.Services
+@using System.Text
+@using Toolbelt.Blazor.HotKeys2
+@using System.Globalization
+@using static ChessLibrary.EngineTypes
+@using static ChessLibrary.TypesDef.CoreTypes
+
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject NotifierService Notifier
+@inject HotKeys HotKeys
+@inject IDialogService DialogService
+@inject ILogger<EnginePanel> logger
+@inject OverlaySetting OverlaySetting
+@implements IAsyncDisposable
+
+<InputFile id="@Id" OnChange="@LoadNNFile" hidden />
+<InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
+
+<div class="engine-panel">
+    <header class="ep-header">
+        <h5>
+            @if (!string.IsNullOrEmpty(Engine?.LogoPath))
+            {
+                <img class="ep-logo" src="@Engine.LogoPath" alt="@EngineName" />
+            }
+            else
+            {
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+            }
+            <span class="ep-engine-name">@EngineName</span>
+        </h5>
+        <div class="ep-cmd-input">
+            <input type="text" @bind="text" placeholder="dump-uci" />
+            <button class="ep-btn secondary small" @onclick="DumpEngineStats">run</button>
+        </div>
+        <label class="ep-switch">
+            <span class="label-text @(searchMode == SearchMode.Nodes ? "active" : "")">Nodes</span>
+            <input type="checkbox" @bind="timeMode" />
+            <span class="slider"></span>
+            <span class="label-text @(searchMode == SearchMode.Time ? "active" : "")">Time</span>
+        </label>
+    </header>
+
+    <div class="ep-controls">
+        <button class="ep-btn" disabled="@(searchInProgress || waitingForEngine)" @onclick="Analyze">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            Start
+        </button>
+        <button class="ep-btn secondary" disabled="@(!searchInProgress || waitingForEngine)" @onclick="StopSearch">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+            Stop
+        </button>
+        <button class="ep-btn secondary" disabled="@(searchInProgress || waitingForEngine)" @onclick="ResetEngine">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+            </svg>
+            Reset
+        </button>
+        <button class="ep-btn secondary" disabled="@(searchInProgress || waitingForEngine)" @onclick="RunUCICommand">
+            UCI
+        </button>
+        <button class="ep-btn secondary" disabled="@(searchInProgress || waitingForEngine)" @onclick="OpenDialog">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            Settings
+        </button>
+    </div>
+
+    <div class="ep-limits">
+        <div class="ep-field">
+            <label>Search limit</label>
+            <input type="number"
+                   value="@(searchMode == SearchMode.Nodes ? numberOfNodes : numberOfTimeMs)"
+                   @onchange="@(e => OnLimitChanged(double.Parse(e.Value?.ToString() ?? "1")))" />
+            <span class="ep-limit-display">@FormatSearchLimit()</span>
+        </div>
+
+        <button class="ep-upload @(autoSearchSwitch ? "active" : "")" @onclick="ToggleAutoSearch" title="Auto search on position change">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Auto
+        </button>
+
+        <button class="ep-upload @(showCharts || showCpChart ? "active" : "")" @onclick="ToggleCharts" title="Toggle charts">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+            </svg>
+            Charts
+        </button>
+
+        <label class="ep-upload" for="@Id">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Weights
+        </label>
+
+        <label class="ep-upload" for="@engineJson">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            Engine
+        </label>
+    </div>
+
+    <div class="ep-nn-info">
+        @if (!string.IsNullOrEmpty(neuralNet) && neuralNet != "Not set" && neuralNet != "none")
+        {
+            <span>NN: @neuralNet</span>
+            @if (!string.IsNullOrEmpty(backend))
+            {
+                <span>@backend</span>
+            }
+        }
+        else if (Engine?.Options != null)
+        {
+            @if (Engine.Options.ContainsKey("Threads"))
+            {
+                <span>Threads: @Engine.Options["Threads"]</span>
+            }
+            @if (Engine.Options.ContainsKey("Hash"))
+            {
+                <span>Hash: @Engine.Options["Hash"] MB</span>
+            }
+        }
+        else
+        {
+            <span>NN: Not set</span>
+        }
+    </div>
+
+    <div class="ep-pv-label">
+        Principal Variation
+        @if (runLogLiveStats && currentPosition != null && currentPosition.Nodes > 0)
+        {
+            <span class="ep-qv-inline">Q: @currentPosition.Q.ToString("N2") (V: @currentPosition.V.ToString("N2"))</span>
+        }
+    </div>
+    <div class="ep-pv-wrapper">
+        <div class="ep-pv">@whitePV</div>
+        <button class="ep-copy-btn" @onclick="CopyPVToClipboard" title="Copy full PV to clipboard">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+        </button>
+        <button class="ep-copy-btn" @onclick="OpenPVBoardDialog"
+                disabled="@string.IsNullOrEmpty(whitePV)"
+                title="View PV on board">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
+        </button>
+    </div>
+
+    @if (currentPosition != null && currentPosition.Nodes > 0)
+    {
+        <div class="ep-analysis-info">
+            <div class="ep-analysis-header">
+                <span class="ep-analysis-stats">@tableHeader</span>
+                <span class="ep-elapsed" title="Elapsed time">
+                    <svg class="ep-clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    @elapsed.ToString(@"mm\:ss\.f")
+                </span>
+            </div>
+        </div>
+    }
+
+    @if (currentPosition != null && currentPosition.Nodes == 0)
+    {
+        <div class="ep-analysis-info">
+            <div class="ep-analysis-header">
+                <span class="ep-analysis-stats">@tableHeader</span>
+                <span class="ep-elapsed" title="Elapsed time">
+                    <svg class="ep-clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    @elapsed.ToString(@"mm\:ss\.f")
+                </span>
+            </div>
+        </div>
+    }
+
+    <div class="ep-charts" hidden="@(!showCharts)">
+        <div class="ep-charts-controls">
+            <div class="ep-slider" style="min-width:200px;">
+                <label>Chart lines: @numberOfLines</label>
+                <input type="range" min="1" max="9" step="1" @bind="numberOfLines" />
+            </div>
+
+            <label class="ep-switch">
+                <input type="checkbox" checked="@showNPlot" @onchange="OnChartToggleChanged" />
+                <span class="slider"></span>
+                @(showNPlot ? "N-plot" : "Q-plot")
+            </label>
+        </div>
+
+        <div class="ep-chart-container" hidden="@(!showNPlot)" style="height:@GetChartHeight();">
+            <div class="chart" @ref="nPlotReference" style="height:100%;"></div>
+        </div>
+        <div class="ep-chart-container" hidden="@showNPlot" style="height:@GetChartHeight();">
+            <div class="chart" @ref="qPlotReference" style="height:100%;"></div>
+        </div>
+    </div>
+
+    <div class="ep-charts" hidden="@(!showCpChart)">
+        <div class="ep-charts-controls">
+            <div class="ep-slider" style="min-width:200px;">
+                <label>Chart lines: @cpChartLines</label>
+                <input type="range" min="1" max="10" step="1" @bind="cpChartLines" />
+            </div>
+        </div>
+        <div class="ep-chart-container" style="height:@GetCpChartHeight();">
+            <div class="chart" @ref="cpChartReference" style="height:100%;"></div>
+        </div>
+    </div>
+
+    @if (showNNdata)
+    {
+        <div class="ep-table-container">
+            <table class="ep-table ep-nn-table">
+                <thead>
+                    <tr>
+                        <th class="ep-th-with-toggle">
+                            Log live move stats
+                            <button class="ep-raw-toggle @(showNNdata ? "active" : "")"
+                                    disabled="@(NNInfoList.Count == 0)"
+                                    @onclick="ShowSearchPlot"
+                                    title="Show analysis table">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                    <line x1="10" y1="9" x2="8" y2="9"/>
+                                </svg>
+                            </button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in NNInfoList)
+                    {
+                        <tr @onclick="@(() => PlayMoveFromNNTable(item))">
+                            <td>@item?.Raw</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (!showNNdata)
+    {
+        <div class="ep-table-container">
+            <table class="ep-table">
+                <thead>
+                    <tr>
+                        <th>Eval</th>
+                        <th>D</th>
+                        <th>SD</th>
+                        <th class="ep-th-with-toggle">
+                            PV
+                            @if (runLogLiveStats)
+                            {
+                                <button class="ep-raw-toggle @(showNNdata ? "active" : "")"
+                                        disabled="@(NNInfoList.Count == 0)"
+                                        @onclick="ShowSearchPlot"
+                                        title="Show raw output">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <polyline points="14 2 14 8 20 8"/>
+                                        <line x1="16" y1="13" x2="8" y2="13"/>
+                                        <line x1="16" y1="17" x2="8" y2="17"/>
+                                        <line x1="10" y1="9" x2="8" y2="9"/>
+                                    </svg>
+                                </button>
+                            }
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in dataList)
+                    {
+                        <tr @onclick="@(() => PlayMoveFromStatusTable(item))">
+                            <td>@item.Value.Eval</td>
+                            <td>@item.Value.Depth</td>
+                            <td>@item.Value.SD</td>
+                            <td class="pv-cell">@item.Value.PV</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (showPVBoard)
+{
+    <PVBoardLive State1="@pvState" OnClose="ClosePVBoardDialog" />
+}
+
+@code {
+    [Parameter] public ChessLibrary.Chess.Board ChessBoard { get; set; }
+    [Parameter] public EventCallback<List<string>> OnUCIReceived { get; set; }
+    [Parameter] public EventCallback<string> OnEngineMoveMade { get; set; }
+    [Parameter] public string Id { get; set; }
+    [Parameter] public string FEN { get; set; }
+    [Parameter] public EngineConfig Engine { get; set; }
+    [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
+    [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
+    [Parameter] public string Player { get; set; }
+    [Parameter] public PuzzleTypes.AnalyzeConfig Config { get; set; }
+
+    private int Nodes = 0;
+    private int ChartLines = 3;
+    private string zobristHash;
+    private bool overlayDropdownOpen = false;
+
+    public string ZobristHash
+    {
+        get { return ChessBoard.PositionHash().ToString(); }
+        set { zobristHash = value; }
+    }
+
+    private string text = "dump-uci";
+    private bool showNPlot = true;
+    private string currentName = string.Empty;
+    private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
+    private NNValues currentPosition = NNValues.Empty;
+    private string engineJson => "engineJson" + Id;
+    private bool runLogLiveStats;
+    private System.Text.RegularExpressions.Regex firstMoveInPV = new(@"(?:\d+\.\.\.\.|^\d+\.)\s*([^\s]+)", RegexOptions.Compiled);
+    private string whitePV;
+    private string fenUri = string.Empty;
+    private bool uciButtonPressed = false;
+    string EngineName => Engine == null ? "Engine not initialized" : Engine.Name;
+
+    private System.Text.Json.JsonSerializerOptions options =
+        new System.Text.Json.JsonSerializerOptions { WriteIndented = true, IncludeFields = true, AllowTrailingCommas = true };
+
+    private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private ElementReference nPlotReference;
+    private ElementReference qPlotReference;
+    private SearchInfoPlot searchInfoPlot;
+    private IJSObjectReference chessModule;
+    private string tableHeader = "";
+    private HashSet<PGNTypes.PgnGame> selectedItems = new();
+    public bool QChartSelected { get; set; } = false;
+    public CultureInfo currentCulture = CultureInfo.CurrentCulture;
+    private bool engine1 => Id.Contains("1") ? true : false;
+    private bool optimisticHead;
+    private int numberOfLines = 3;
+    private double numberOfNodes = 1;
+    private CancellationTokenSource cts = new();
+    private bool showNNdata = false;
+    private string moveHistory = string.Empty;
+    private bool keepNodesWhileSearching = true;
+    private double Qdiff = 2;
+    public bool autoSearchSwitch { get; set; } = false;
+    public bool showCharts { get; set; } = true;
+    private string neuralNet = "Not set";
+    private string backend = "";
+    private bool searchInProgress = false;
+    private bool showPVBoard = false;
+    private PVState pvState = new();
+    private bool showCpChart = false;
+    private ElementReference cpChartReference;
+    private CpEvalPlot cpEvalPlot;
+    private int cpChartLines = 4;
+
+    // Expose PVState for parent components (e.g., DualAnalysis for dual comparison)
+    public PVState PVState => pvState;
+    private bool waitingForEngine = false;
+    private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
+    private List<NNValues> NNInfoList = new();
+    public List<string> InfoLineList = new();
+    string baseline0 = """backend=cuda-fp16,(gpu=0,value_head=winner)""";
+    string baseline1 = """backend=cuda-fp16,(gpu=1,value_head=winner)""";
+    string opt0 = """backend=cuda-fp16,(gpu=0,policy_head=optimistic,value_head=winner)""";
+    string opt1 = """backend=cuda-fp16,(gpu=1,policy_head=optimistic,value_head=winner)""";
+    HotKeysContext keyContext;
+    IBrowserFile browserFile;
+    public List<KeyValuePair<int, EngineStatus>> dataList = new();
+    Dictionary<int, EngineStatus> data = new();
+    public bool IsOpt { get; set; } = false;
+    private IDialogReference dialogReference;
+    public double MinPolicyThreshold { get; set; }
+    private System.Diagnostics.Stopwatch searchWatch = new();
+    private System.Timers.Timer uiTimer;
+    private TimeSpan elapsed = TimeSpan.Zero;
+
+    private enum SearchMode { Nodes, Time }
+
+    private SearchMode searchMode = SearchMode.Nodes;
+    private double numberOfTimeMs = 3000;
+    private string GetLimitLabel() => searchMode == SearchMode.Nodes ? "Node limit" : "Time (ms)";
+    private bool timeMode
+    {
+        get => searchMode == SearchMode.Time;
+        set => OnSearchModeChanged(value ? SearchMode.Time : SearchMode.Nodes);
+    }
+
+    private void ToggleOverlayDropdown()
+    {
+        overlayDropdownOpen = !overlayDropdownOpen;
+    }
+
+    private void ToggleCharts()
+    {
+        if (runLogLiveStats)
+            showCharts = !showCharts;
+        else
+            showCpChart = !showCpChart;
+    }
+
+    private void ToggleAutoSearch()
+    {
+        autoSearchSwitch = !autoSearchSwitch;
+    }
+
+    private string FormatSearchLimit()
+    {
+        if (searchMode == SearchMode.Nodes)
+            return $"{numberOfNodes:N0} nodes";
+        else
+            return $"{numberOfTimeMs:N0} ms";
+    }
+
+    private void OnSearchModeChanged(SearchMode mode)
+    {
+        searchMode = mode;
+        StateHasChanged();
+    }
+
+    private void OnLimitChanged(double value)
+    {
+        if (searchMode == SearchMode.Nodes)
+            numberOfNodes = Math.Max(1, value);
+        else
+            numberOfTimeMs = Math.Max(1, value);
+    }
+
+    private void StartSearchWithMode()
+    {
+        if (analyzer == null)
+            return;
+
+        if (searchMode == SearchMode.Nodes)
+        {
+            analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
+            return;
+        }
+
+        var ms = (int)Math.Max(1, Math.Round(numberOfTimeMs));
+        var goCmd = $"go movetime {ms}";
+        analyzer.Play(goCmd);
+    }
+
+    private void StartSearchTimer()
+    {
+        searchWatch.Reset();
+        searchWatch.Start();
+        elapsed = TimeSpan.Zero;
+        uiTimer?.Dispose();
+        uiTimer = new System.Timers.Timer(100);
+        uiTimer.Elapsed += (s, e) =>
+        {
+            elapsed = searchWatch.Elapsed;
+            InvokeAsync(StateHasChanged);
+        };
+        uiTimer.Start();
+    }
+
+    private void StopSearchTimer()
+    {
+        searchWatch.Stop();
+        uiTimer?.Stop();
+        uiTimer?.Dispose();
+        uiTimer = null;
+    }
+
+    private async Task OnMinPolicyThresholdChanged(double value)
+    {
+        MinPolicyThreshold = value;
+        OverlaySetting.MinPolicyThreshold = value;
+        await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
+    }
+
+    private string GetOverlayLabel()
+    {
+        switch (selectedOverlaySetting)
+        {
+            case OverlaySettings.Policy:
+                return "Policy";
+            case OverlaySettings.QVDiff:
+                return "QVDiff";
+            case OverlaySettings.None:
+                return "None";
+            default:
+                return $"{selectedOverlaySetting}";
+        }
+    }
+
+    private async Task OnOverlaySettingChanged(OverlaySettings newSetting)
+    {
+        selectedOverlaySetting = newSetting;
+        OverlaySetting.SetOverlaySetting(Id, selectedOverlaySetting);
+        await Notifier.UpdateDisplaySettings(newSetting, Id);
+        overlayDropdownOpen = false;
+        StateHasChanged();
+    }
+
+    private string GetChartHeight()
+    {
+        return $"{200 + (numberOfLines - 1) * 15}px";
+    }
+
+    private string GetCpChartHeight()
+    {
+        return $"{200 + (cpChartLines - 1) * 15}px";
+    }
+
+    async Task OpenDialog()
+    {
+        if (analyzer == null)
+        {
+            logger.LogInformation("No engine loaded");
+            return;
+        }
+        var fontSize = 20;
+
+        var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = true };
+        if (analyzer == null)
+            return;
+
+        var parameters = new DialogParameters{
+            {"FontSize",  fontSize },
+            {"Engine", analyzer.Engine }};
+
+        var header = $"Current settings for {Engine.Name}";
+        dialogReference = await DialogService.ShowAsync<Pages.AnalysisPages.SetOptions>(header, parameters, options);
+    }
+
+    void CloseDialog() => dialogReference?.Close();
+
+    private void DumpEngineStats()
+    {
+        var command = text;
+        analyzer?.DumpStats(command);
+    }
+
+    private async Task CopyPVToClipboard()
+    {
+        if (!string.IsNullOrEmpty(whitePV))
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", whitePV);
+        }
+    }
+
+    private void OpenPVBoardDialog()
+    {
+        if (string.IsNullOrEmpty(whitePV)) return;
+
+        // Update PV state with current data before showing
+        UpdatePVState();
+        showPVBoard = true;
+        StateHasChanged();
+    }
+
+    private void ClosePVBoardDialog()
+    {
+        showPVBoard = false;
+        StateHasChanged();
+    }
+
+    private void UpdatePVState()
+    {
+        if (dataList.Count == 0) return;
+
+        var status = dataList[0].Value;
+        pvState.Update(
+            engineName: EngineName,
+            engineId: Id,
+            pvMoves: status.PVLongSAN,
+            startFen: ChessBoard.FEN(),  // Use current position, not game start
+            depth: status.Depth,
+            nodes: status.Nodes,
+            eval: status.Eval?.ToString() ?? "",
+            isSearching: searchInProgress
+        );
+    }
+
+    private async Task OnChartToggleChanged(ChangeEventArgs e)
+    {
+        showNPlot = (bool)(e.Value ?? false);
+        StateHasChanged();
+        // Small delay to allow DOM to update visibility
+        await Task.Delay(50);
+        // Resize the newly visible chart
+        if (chessModule is not null)
+        {
+            var chartRef = showNPlot ? nPlotReference : qPlotReference;
+            await chessModule.InvokeVoidAsync("resizePlot", chartRef);
+        }
+    }
+
+    private string FormatEPS(double eps)
+    {
+        if (eps > 1_000_000_000)
+            return (eps / 1_000_000_000).ToString("F1") + "Beps";
+        else if (eps > 1_000_000)
+            return (eps / 1_000_000).ToString("F1") + "Meps";
+        else if (eps > 1_000)
+            return (eps / 1000).ToString("F1") + "Keps";
+        else
+            return eps.ToString("F1") + " eps";
+    }
+
+    private string FormatNPS(double nps)
+    {
+        if (nps > 1_000_000_000)
+            return (nps / 1_000_000_000).ToString("F1") + "Bnps";
+        else if (nps > 1_000_000)
+            return (nps / 1_000_000).ToString("F1") + "Mnps";
+        else if (nps > 1_000)
+            return (nps / 1000).ToString("F1") + "Knps";
+        else
+            return nps.ToString("F1") + " nps";
+    }
+
+    private string FormatNodes(double nodes)
+    {
+        if (nodes > 1_000_000_000)
+            return (nodes / 1_000_000_000).ToString("F1") + "B nodes";
+        else if (nodes > 1_000_000)
+            return (nodes / 1_000_000).ToString("F1") + "M nodes";
+        else if (nodes > 1_000)
+            return (nodes / 1_000).ToString("F1") + "K nodes";
+        else
+            return nodes.ToString("F1") + " nodes";
+    }
+
+    private async Task PlayMoveFromNNTable(NNValues moveInfo)
+    {
+        InfoLineList.Clear();
+        if (autoSearchSwitch)
+        {
+            searchInProgress = true;
+            await searchInfoPlot.ResetPlot(false);
+            var move = moveInfo.LANMove;
+            ChessBoard.PlayUciMove(move);
+            fen = ChessBoard.FEN();
+            await OnEngineMoveMade.InvokeAsync(move);
+            await Notifier.UpdateFenToBoard(fen);
+        }
+        StateHasChanged();
+    }
+
+    private async Task PlayMoveFromStatusTable(KeyValuePair<int, EngineStatus> status)
+    {
+        InfoLineList.Clear();
+        if (autoSearchSwitch)
+        {
+            searchInProgress = true;
+            var longSan = status.Value.PVLongSAN.Split(' ').FirstOrDefault();
+            if (longSan != null)
+            {
+                await searchInfoPlot.ResetPlot(false);
+                ChessBoard.PlayUciMove(longSan);
+                var moveFen = ChessBoard.MovesAndFenPlayed.Last();
+                fen = ChessBoard.FEN();
+                await OnEngineMoveMade.InvokeAsync(longSan);
+                await Notifier.UpdateFenMoveToBoard(moveFen);
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task GoInfinite()
+    {
+        if (analyzer == null)
+        {
+            if (searchInfoPlot == null)
+            {
+                searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            }
+            else
+            {
+                await searchInfoPlot.ResetPlot(false);
+            }
+            await StartAnalyzer();
+            searchInfoPlot.EngineName = analyzer.GetEngineName();
+            var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
+            neuralNet = $"{analyzer.GetNetwork()}";
+            backend = analyzer.BackendInfo();
+            searchInfoPlot.NN = analyzer.GetNetwork();
+        }
+
+        searchInProgress = true;
+        StartSearchTimer();
+        analyzer?.GoInfinite();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleOptimisticAndBase()
+    {
+        if (analyzer == null)
+            return;
+
+        optimisticHead = !optimisticHead;
+        var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
+        neuralNet = $"{analyzer.GetNetwork()}";
+
+        if (optimisticHead)
+        {
+            if (Id.Contains("1"))
+            {
+                var option1 = EngineOption.Create("BackendOptions", opt0);
+                analyzer?.AddSetoption(option1);
+                backend = opt0;
+            }
+
+            if (Id.Contains("2"))
+            {
+                var option2 = EngineOption.Create("BackendOptions", opt1);
+                analyzer?.AddSetoption(option2);
+                backend = opt1;
+            }
+        }
+        else
+        {
+            if (Id.Contains("1"))
+            {
+                var option1 = EngineOption.Create("BackendOptions", baseline0);
+                analyzer?.AddSetoption(option1);
+                backend = baseline0;
+            }
+
+            if (Id.Contains("2"))
+            {
+                var option2 = EngineOption.Create("BackendOptions", baseline1);
+                analyzer?.AddSetoption(option2);
+                backend = baseline1;
+            }
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadNNFile(InputFileChangeEventArgs e)
+    {
+        var pgnName = e.File.Name;
+        logger.LogInformation("Loading network file {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, "NN", pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+        neuralNet = e.File.Name;
+        if (searchInfoPlot == null)
+        {
+            searchInfoPlot.NN = neuralNet;
+        }
+        logger.LogInformation("New Network loaded {Network}", neuralNet);
+
+        var engineToCheck = analyzer?.Engine;
+        if (engineToCheck == null)
+        {
+            logger.LogWarning("No engine loaded, cannot set weights file");
+            return;
+        }
+        else
+        {
+            logger.LogInformation("Engine loaded, setting weights file");
+        }
+        var option = EngineOption.Create("WeightsFile", fullPath);
+        analyzer?.AddSetoption(option);
+    }
+
+    private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
+    {
+        waitingForEngine = true;
+        searchInProgress = false;
+        StateHasChanged();
+        analyzer?.Engine?.ShutDownEngine();
+        var name = e.File.Name;
+        logger.LogInformation("Engine.json file opened {File}", name);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, "NN", name);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+        var jsonFile = e.File.Name;
+        logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
+        var engineConfig = JSON.readSingleEngineConfig(fullPath);
+        var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
+        await OnNewEngineLoaded.InvokeAsync(args);
+        Engine = engineConfig;
+        NNInfoList.Clear();
+        analyzer = null;
+        await StartAnalyzer();
+        neuralNet = analyzer.GetNetwork();
+        backend = analyzer.BackendInfo();
+        File.Delete(fullPath);
+        StateHasChanged();
+    }
+
+    private void SetDefaultContempt()
+    {
+        var options = ChessLibrary.EngineHelper.contemptPlaySettings.ToArray();
+        var opts = ChessLibrary.EngineHelper.createContemptSetoptions(options);
+        if (analyzer == null)
+            return;
+        foreach (var item in opts)
+        {
+            analyzer.AddSetoption(item);
+        }
+    }
+
+    private async Task StartAnalyzer()
+    {
+        if (analyzer == null)
+        {
+            analyzer = await Task.Factory.StartNew(() =>
+            {
+                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+            });
+            analyzer.Board = ChessBoard;
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task Analyze()
+    {
+        if (Engine == null)
+        {
+            return;
+        }
+        if (analyzer != null && analyzer.Engine.HasExited)
+        {
+            analyzer = null;
+            await StartAnalyzer();
+        }
+        InfoLineList.Clear();
+        if (searchInfoPlot == null)
+        {
+            searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+        }
+        else
+        {
+            await searchInfoPlot?.ResetPlot(false);
+        }
+        cpEvalPlot?.Clear();
+        searchInProgress = true;
+        StartSearchTimer();
+        await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
+        await InvokeAsync(StateHasChanged);
+        if (analyzer == null)
+        {
+            waitingForEngine = true;
+            StateHasChanged();
+            await StartAnalyzer();
+            backend = analyzer.BackendInfo();
+            searchInfoPlot.EngineName = analyzer.GetEngineName();
+            var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
+            neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
+            searchInfoPlot.NN = neuralNet;
+            try
+            {
+                StartSearchWithMode();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex.Message);
+                throw;
+            }
+        }
+        else
+        {
+            StartSearchWithMode();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StopSearch()
+    {
+        if (analyzer != null)
+            analyzer.Stop();
+        searchInProgress = false;
+        StopSearchTimer();
+        await Task.CompletedTask;
+    }
+
+    private async void UpdateMe(EngineUpdate update)
+    {
+        switch (update)
+        {
+            case EngineUpdate.Done player:
+                break;
+
+            case EngineUpdate.Ready ready:
+                showCharts = ready.HasLiveStat;
+                showCpChart = !ready.HasLiveStat;
+                showNNdata = false;
+                searchInProgress = false;
+                waitingForEngine = false;
+                break;
+
+            case EngineUpdate.Info i:
+                InfoLineList.Insert(0, (i.Info));
+                break;
+
+            case EngineUpdate.Eval e:
+                break;
+
+            case EngineUpdate.BestMove b:
+                whitePV = b.Item.PV;
+                searchInProgress = false;
+                waitingForEngine = false;
+                var evalComment = $"{{{b.Item.Eval}/{b.Item.Nodes.ToString("N0")}}}";
+                ChessBoard.SetCommentOnCurrentEdge(evalComment);
+                StopSearchTimer();
+                // Always update PV state for any subscriber
+                pvState.SetSearching(false);
+                await InvokeAsync(() => StateHasChanged());
+                break;
+
+            case EngineUpdate.UCIInfo info:
+                if (uciButtonPressed)
+                {
+                    await InvokeAsync(() => OnUCIReceived.InvokeAsync(info.Data));
+                }
+                break;
+
+            case EngineUpdate.Status s:
+                var status = s.Item;
+                await Update(status);
+                if (!runLogLiveStats && showCpChart && cpEvalPlot != null)
+                {
+                    cpEvalPlot.AddDataPoint(status.MultiPV, status.Depth, status.Eval, status.PV);
+                    await cpEvalPlot.UpdateChart(EngineName, cpChartLines);
+                }
+                break;
+
+            case EngineUpdate.PolicyDistributionOutCome ds:
+                var list = ds.Item;
+                break;
+
+            case EngineUpdate.NNSeq n:
+                if (n.NNSeq.Count > 0)
+                {
+                    NNInfoList.Clear();
+                    n.NNSeq.Reverse();
+                    currentPosition = n.NNSeq.FirstOrDefault();
+                    NNInfoList.AddRange(n.NNSeq);
+                    var skipTopNode = NNInfoList.Skip(1).ToList();
+                    searchInfoPlot.AddData(skipTopNode);
+                    if (NNInfoList.Count > 0)
+                        await Notifier.MovesWithId(NNInfoList, Id);
+                    var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
+                    await searchInfoPlot?.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff);
+                }
+                break;
+        }
+    }
+
+    private void ShowSearchPlot()
+    {
+        showNNdata = !showNNdata;
+    }
+
+    private async Task DoQAnalysis()
+    {
+        try
+        {
+            var fen = ChessBoard.FEN();
+            var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
+            var fenWithAllMoves = ChessBoard.PositionWithMoves();
+            var history = ChessBoard.GetMoveHistory();
+            logger.LogInformation($"Starting analysis with {fen} and moves {history}");
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                await StartAnalyzer();
+            }
+            var engineName = "all";
+
+            var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            float minVal = 0f, maxVal = 1f;
+
+            var ok =
+                parts.Length == 2 &&
+                float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+            var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+
+            var (neuralNet, res) = analyzer?.TryGetMoveQAndTopForPosSequence(engineName, min, max);
+            analyzer?.StopDistributionEngine();
+            foreach (var item in res)
+            {
+                var player = item.IsWhite ? "White" : "Black";
+                logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
+                    player, item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
+            }
+            _ = searchInfoPlot?.SetRankSequence(res, neuralNet);
+
+            var whiteRank1s = res.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = res.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = res.Count(t => t.IsWhite);
+            var blackTotal = res.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = res.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = res.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var distribution = res.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / res.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / res.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, res.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10);
+            }
+            else
+            {
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+        }
+    }
+
+    private async Task CheckAnalysis()
+    {
+        try
+        {
+            await Task.Delay(100);
+            var fen = ChessBoard.FEN();
+            var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
+            var fenWithAllMoves = ChessBoard.PositionWithMoves();
+            var history = ChessBoard.GetMoveHistory();
+            logger.LogInformation($"Starting analysis with {fen} and moves {history}");
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                await StartAnalyzer();
+            }
+            var engineName = "all";
+
+            var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            float minVal = 0f, maxVal = 1f;
+
+            var ok =
+                parts.Length == 2 &&
+                float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+            var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+
+            var (neuralNet, res) = analyzer?.TryGetMovePolicyAndTopForPosSequence(engineName, min, max);
+            analyzer?.StopDistributionEngine();
+            foreach (var item in res)
+            {
+                var player = item.IsWhite ? "White" : "Black";
+                logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
+                    player, item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
+            }
+            _ = searchInfoPlot?.SetRankSequence(res, neuralNet);
+
+            var whiteRank1s = res.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = res.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = res.Count(t => t.IsWhite);
+            var blackTotal = res.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = res.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = res.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var distribution = res.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / res.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / res.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, res.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10);
+            }
+            else
+            {
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+            throw;
+        }
+    }
+
+    private async Task CheckAllGamesAnalysis()
+    {
+        try
+        {
+            StateHasChanged();
+            var results = new List<PolicyRankInfo>();
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                await StartAnalyzer();
+            }
+
+            var playerInSearch = Player.Trim();
+
+            foreach (var game in PGNgames)
+            {
+                logger.LogInformation("Analyzing game {White} - {Black} result {Result} round {Round}",
+                    game.GameMetaData.White, game.GameMetaData.Black, game.GameMetaData.Result, game.GameMetaData.Round);
+                LoadAndOpenPGNGame(game);
+                var fen = ChessBoard.FEN();
+                var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
+                var playerIsWhite = game.GameMetaData.White.Trim() == playerInSearch;
+                var player = String.Empty;
+                if (game.GameMetaData.White.Trim() == playerInSearch)
+                {
+                    player = "w";
+                }
+                else if (game.GameMetaData.Black.Trim() == playerInSearch)
+                {
+                    player = "b";
+                }
+                else
+                {
+                    player = "all";
+                }
+
+                var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                float minVal = 0f, maxVal = 1f;
+
+                var ok =
+                    parts.Length == 2 &&
+                    float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                    float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                    minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+                var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+                var (neuralNetUsed, res) = analyzer?.TryGetMovePolicyAndTopForPosSequence(player, min, max);
+                results.AddRange(res);
+                neuralNet = neuralNetUsed;
+            }
+
+            analyzer?.StopDistributionEngine();
+
+            var whiteRank1s = results.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = results.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = results.Count(t => t.IsWhite);
+            var blackTotal = results.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = results.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = results.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var distribution = results.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var numberOfRanks = Math.Min(distribution.Max(e => e.Rank), 12);
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / results.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / results.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, results.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10);
+            }
+            else
+            {
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+            throw;
+        }
+    }
+
+    private void LoadAndOpenPGNGame(PGNTypes.PgnGame game)
+    {
+        var board = ChessBoard;
+        var gameIndex = PGNgames.IndexOf(game);
+        var currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
+        var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
+        board.ResetBoardState();
+        board.StartPosition = fenP;
+        board.LoadFen(fenP);
+        foreach (var ply in game.Mainline)
+        {
+            board.PlaySanMoveWithComments(ply.San, ply.Comment);
+        }
+
+        fen = board.FEN();
+    }
+
+    private async Task ResetEngine()
+    {
+        if (analyzer == null)
+        {
+            logger.LogInformation("No engine loaded");
+            return;
+        }
+        if (analyzer.Engine.HasExited)
+        {
+            analyzer = null;
+            await StartAnalyzer();
+            searchInProgress = false;
+        }
+
+        tableHeader = "";
+
+        analyzer?.Reset();
+        if (searchInfoPlot != null)
+        {
+            await searchInfoPlot.ResetPlot(true);
+        }
+        if (cpEvalPlot != null)
+        {
+            await cpEvalPlot.ClearChart();
+        }
+        NNInfoList.Clear();
+        InfoLineList.Clear();
+        data.Clear();
+        dataList.Clear();
+        StateHasChanged();
+    }
+
+    private void RunUCICommand()
+    {
+        if (analyzer == null)
+        {
+            logger.LogInformation("No engine loaded");
+            return;
+        }
+        uciButtonPressed = true;
+        analyzer?.UCI();
+        StateHasChanged();
+    }
+
+    private string CalcWDL(WDLType wdlType)
+    {
+        var wdl = wdlType.Value();
+        var total = wdl.Win + wdl.Draw + wdl.Loss;
+        var (win, draw, loss) = (wdl.Win / total, wdl.Draw / total, wdl.Loss / total);
+        return $"W: {win:P0} D: {draw:P0} L: {loss:P0}";
+    }
+
+    private async Task Update(EngineStatus status)
+    {
+        var nodes = FormatNodes(status.Nodes);
+        var nps = FormatNPS(status.NPS);
+        var k = status.MultiPV;
+        data[k] = status;
+        var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
+        var wdlString = status.WDL != null ? CalcWDL(ordered[0].Value.WDL) : "W: N/A D: N/A L: N/A";
+        if (status.EPS == 0)
+        {
+            tableHeader = $"{nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+        }
+        else
+        {
+            var eps = FormatEPS(status.EPS);
+            tableHeader = $"{nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+        }
+        dataList = ordered;
+        whitePV = ordered[0].Value.PV;
+
+        // Always update PV state for any subscriber (individual or dual dialog)
+        UpdatePVState();
+
+        await InvokeAsync(StateHasChanged);
+        await Task.CompletedTask;
+    }
+
+    public async Task OnNotifyFen(string newPos)
+    {
+        fen = newPos;
+        if (autoSearchSwitch)
+        {
+            if (searchInProgress)
+            {
+                analyzer?.Stop();
+                searchInProgress = false;
+                if (searchInfoPlot != null)
+                {
+                    await searchInfoPlot?.ResetPlot(false);
+                }
+                cpEvalPlot?.Clear();
+                if (analyzer != null)
+                {
+                    StartSearchWithMode();
+                    searchInProgress = true;
+                }
+                else
+                {
+                    searchInProgress = false;
+                }
+            }
+            else
+            {
+                if (searchInfoPlot != null)
+                {
+                    await searchInfoPlot?.ResetPlot(false);
+                }
+                cpEvalPlot?.Clear();
+                if (analyzer != null)
+                {
+                    StartSearchWithMode();
+                    searchInProgress = true;
+                }
+            }
+        }
+        else
+        {
+            searchInProgress = false;
+        }
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
+        Notifier.NotifyFen += OnNotifyFen;
+
+        this.keyContext = this.HotKeys.CreateContext()
+            .Add(Key.Escape, (Func<Task>)(async () => await ResetEngine()), "reset engine")
+            .Add(ModKey.Ctrl, Key.s, (() => ToggleOptimisticAndBase()), "toggle optimistic and baseline")
+            .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await InvokeAsync(GoInfinite)), "go search")
+            .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => { analyzer.Stop(); await InvokeAsync(StateHasChanged); }), "stop search")
+            .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
+            .Add(ModKey.Ctrl, Key.q, (Func<Task>)(async () => await DoQAnalysis()), "check Q-rank")
+            .Add(ModKey.Ctrl, Key.a, (() => CheckAllGamesAnalysis()), "check all games policy")
+            .Add(Key.F1, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1; await Analyze(); })), "Analyze 1 node")
+            .Add(Key.F2, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000; await Analyze(); })), "Analyze 1_000 nodes")
+            .Add(Key.F3, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 10_000; await Analyze(); })), "Analyze 10_000 nodes")
+            .Add(Key.F4, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 100_000; await Analyze(); })), "Analyze 100_000 nodes")
+            .Add(Key.F5, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000_000; await Analyze(); })), "Analyze 1_000_000 nodes")
+            .Add(Key.F6, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 10_000_000; await Analyze(); })), "Analyze 10_000_000 nodes")
+            .Add(Key.F7, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 100_000_000; await Analyze(); })), "Analyze 100_000_000 nodes")
+            .Add(Key.F8, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000_000_000; await Analyze(); })), "Analyze 1_000_000_000 nodes");
+
+        return base.OnInitializedAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
+        {
+            logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
+            currentName = Engine.Name;
+            await searchInfoPlot?.ResetNPlot();
+            await InvokeAsync(NNInfoList.Clear);
+            neuralNet = string.Empty;
+            OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);
+            selectedOverlaySetting = OverlaySettings.None;
+            await Task.CompletedTask;
+        }
+
+        var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
+        if (OverlaySetting.IsOverlaySettingsEnabled)
+        {
+            if (overlaySettings != selectedOverlaySetting)
+            {
+                selectedOverlaySetting = overlaySettings;
+            }
+        }
+        if (Engine != null)
+        {
+            runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
+            showCharts = runLogLiveStats;
+            showCpChart = !runLogLiveStats;
+            if (runLogLiveStats && overlaySettings == OverlaySettings.None)
+            {
+                if (!OverlaySetting.IsOverlaySettingsEnabled)
+                {
+                    OverlaySetting.SetOverlaySetting(Id, OverlaySettings.Policy);
+                    selectedOverlaySetting = OverlaySettings.Policy;
+                }
+            }
+        }
+        numberOfLines = Math.Max(1, ChartLines);
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessModule = await JsInteropService.ImportModuleAsync(JS);
+            optimisticHead = engine1;
+            var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
+            if (overlaySettings != OverlaySettings.None)
+            {
+                selectedOverlaySetting = overlaySettings;
+                await OnOverlaySettingChanged(selectedOverlaySetting);
+            }
+            if (Engine != null)
+            {
+                runLogLiveStats = Engine.Options.Keys.Contains("LogLiveStats");
+                showCharts = runLogLiveStats;
+                showCpChart = !runLogLiveStats;
+                currentName = Engine.Name;
+            }
+            searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            cpEvalPlot = new CpEvalPlot(chessModule, cpChartReference);
+            if (string.IsNullOrEmpty(FEN) == false)
+            {
+                fen = FEN;
+            }
+            searchInProgress = false;
+            ChessBoard.inAnalysisMode = true;
+            ChartLines = Config == null ? ChartLines : Config.ChartLines;
+            numberOfLines = Math.Max(1, ChartLines);
+            numberOfNodes = Math.Max(1, Nodes);
+            Qdiff = 2;
+            StateHasChanged();
+        }
+
+        await Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Notifier.NotifyFen -= OnNotifyFen;
+        analyzer?.Quit();
+        logger.LogInformation("Disposing {page}", "EnginePanel");
+        this.keyContext?.DisposeAsync();
+        await ValueTask.CompletedTask;
+    }
+}

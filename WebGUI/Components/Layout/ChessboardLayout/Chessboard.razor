@@ -65,29 +65,30 @@
 
 	@if (ShowChessNavButtons)
 	{
-		<MudItem lg=12 Class="justify-content-center d-flex">
+		<MudItem lg="12">
+			<div style="display: flex; justify-content: center; width: 100%;">
+				<MudFab Class="ml-4" OnClick="StartOfGame" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
+				<MudFab Class="ml-2" OnClick="PreviousMove" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
+				<MudFab Class="ml-2" OnClick="PlayMoves" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
+				<MudFab Class="ml-2" OnClick="NextMove" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+				<MudFab Class="ml-2" OnClick="EndOfGame" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
 
-			<MudFab Class="ml-4 " OnClick=StartOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
-			<MudFab Class="ml-2 " OnClick=PreviousMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
-			<MudFab Class="ml-2 " OnClick=PlayMoves HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
-			<MudFab Class="ml-2 " OnClick=NextMove HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
-			<MudFab Class="ml-2 " OnClick=EndOfGame HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
+				<MudTooltip Text="Flip board">
+					<MudFab Class="ml-2" OnClick="RotateBoard" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
+				</MudTooltip>
 
-			<MudTooltip Text="Flip board">
-				<MudFab Class="ml-2" OnClick=RotateBoard HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
-			</MudTooltip>
+				<MudTooltip Text="Copy fen">
+					<MudFab Class="ml-2" OnClick="WriteTextAsync" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
+				</MudTooltip>
 
-			<MudTooltip Text="Copy fen">
-				<MudFab Class="ml-2" OnClick=WriteTextAsync HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
-			</MudTooltip>
+				<MudTooltip Text="Load fen">
+					<MudFab Class="ml-2" OnClick="UpdateFenWithMovesInput" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
+				</MudTooltip>
 
-			<MudTooltip Text="Load fen">
-				<MudFab Class="ml-2" OnClick=UpdateFenWithMovesInput HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
-			</MudTooltip>
-
-			<MudTooltip Text="Reset board state">
-				<MudFab Class="ml-2 mr-2" OnClick=ResetGameState HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
-			</MudTooltip>
+				<MudTooltip Text="Reset board state">
+					<MudFab Class="ml-2 mr-2" OnClick="ResetGameState" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
+				</MudTooltip>
+			</div>
 		</MudItem>
 	}
 
@@ -769,12 +770,8 @@
 
 	public async Task OnReceivedFen(string newPos)
 	{
-		var fen = ChessBoard.FEN();
-		if (fen != newPos)
-		{
-			fen = newPos;
-			await SetPosition(newPos, false);
-		}
+		fen = newPos;
+		await SetPosition(newPos, false);
 		UpdateVariationsDisplay();
 		StateHasChanged();
 	}

@@ -1,0 +1,604 @@
+@using MudBlazor
+@using Toolbelt.Blazor.HotKeys2
+@using WebGUI.Services
+@using static ChessLibrary.Chess
+
+@inject HotKeys HotKeys
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@implements IAsyncDisposable
+
+<div class="pv-live-overlay" @onclick="OnOverlayClick">
+    <div class="pv-live-dialog @(IsDualMode ? "dual-mode" : "single-mode")" @onclick:stopPropagation="true">
+        <header class="pv-live-header">
+            <h2>@DialogTitle</h2>
+            <div class="pv-live-header-actions">
+                @if (IsDualMode)
+                {
+                    <button class="pv-live-btn @(showDeviation ? "active" : "")"
+                            @onclick="ToggleCompare"
+                            disabled="@(deviationIndex < 0)"
+                            title="Show first deviation">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+                        </svg>
+                        Compare
+                    </button>
+                }
+                <button class="pv-live-close" @onclick="Close" title="Close (Esc)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="pv-live-content">
+            @* Engine 1 Board *@
+            <div class="pv-board-panel">
+                <div class="pv-board-header">
+                    <span class="pv-engine-name">@state1.EngineName</span>
+                    <span class="pv-engine-stats">
+                        @if (state1.IsSearching)
+                        {
+                            <span class="pv-searching">Searching...</span>
+                        }
+                        D: @state1.Depth | @state1.Eval
+                    </span>
+                </div>
+
+                <div class="pv-board-wrapper">
+                    <div @ref="boardRef1" class="pv-board-element"></div>
+                </div>
+
+                <div class="pv-nav-row">
+                    <div class="pv-nav-controls">
+                        <button class="pv-nav-btn" @onclick="async () => await GoToStart(1)" disabled="@(currentIndex1 <= 0)" title="Start (Home)">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.41 16.59L13.82 12l4.59-4.59L17 6l-6 6 6 6 1.41-1.41zM6 6h2v12H6V6z"/></svg>
+                        </button>
+                        <button class="pv-nav-btn" @onclick="async () => await PrevMove(1)" disabled="@(currentIndex1 <= 0)" title="Previous (Left)">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                        </button>
+                        <span class="pv-move-counter">@currentIndex1 / @totalMoves1</span>
+                        <button class="pv-nav-btn" @onclick="async () => await NextMove(1)" disabled="@(currentIndex1 >= totalMoves1)" title="Next (Right)">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                        </button>
+                        <button class="pv-nav-btn" @onclick="async () => await GoToEnd(1)" disabled="@(currentIndex1 >= totalMoves1)" title="End (End)">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6-1.41 1.41zM16 6h2v12h-2V6z"/></svg>
+                        </button>
+                    </div>
+                    <button class="pv-follow-btn @(followMode1 ? "active" : "")" @onclick="async () => await ToggleFollow(1)" title="Follow live updates">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        @(followMode1 ? "Following" : "Paused")
+                    </button>
+                </div>
+
+                @if (showDeviation && deviationIndex >= 0 && IsDualMode)
+                {
+                    <div class="pv-deviation-info">
+                        @if (deviationIndex == 0)
+                        {
+                            <span>Engines disagree from move 1</span>
+                        }
+                        else
+                        {
+                            <span>First deviation at move @(deviationIndex + 1)</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (IsDualMode)
+            {
+                @* Engine 2 Board *@
+                <div class="pv-board-panel">
+                    <div class="pv-board-header">
+                        <span class="pv-engine-name">@state2.EngineName</span>
+                        <span class="pv-engine-stats">
+                            @if (state2.IsSearching)
+                            {
+                                <span class="pv-searching">Searching...</span>
+                            }
+                            D: @state2.Depth | @state2.Eval
+                        </span>
+                    </div>
+
+                    <div class="pv-board-wrapper">
+                        <div @ref="boardRef2" class="pv-board-element"></div>
+                    </div>
+
+                    <div class="pv-nav-row">
+                        <div class="pv-nav-controls">
+                            <button class="pv-nav-btn" @onclick="async () => await GoToStart(2)" disabled="@(currentIndex2 <= 0)" title="Start">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.41 16.59L13.82 12l4.59-4.59L17 6l-6 6 6 6 1.41-1.41zM6 6h2v12H6V6z"/></svg>
+                            </button>
+                            <button class="pv-nav-btn" @onclick="async () => await PrevMove(2)" disabled="@(currentIndex2 <= 0)" title="Previous">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                            </button>
+                            <span class="pv-move-counter">@currentIndex2 / @totalMoves2</span>
+                            <button class="pv-nav-btn" @onclick="async () => await NextMove(2)" disabled="@(currentIndex2 >= totalMoves2)" title="Next">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                            </button>
+                            <button class="pv-nav-btn" @onclick="async () => await GoToEnd(2)" disabled="@(currentIndex2 >= totalMoves2)" title="End">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6-1.41 1.41zM16 6h2v12h-2V6z"/></svg>
+                            </button>
+                        </div>
+                        <button class="pv-follow-btn @(followMode2 ? "active" : "")" @onclick="async () => await ToggleFollow(2)" title="Follow live updates">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            @(followMode2 ? "Following" : "Paused")
+                        </button>
+                    </div>
+
+                    @if (showDeviation && deviationIndex >= 0)
+                    {
+                        <div class="pv-deviation-info">
+                            @if (deviationIndex == 0)
+                            {
+                                <span>Engines disagree from move 1</span>
+                            }
+                            else
+                            {
+                                <span>First deviation at move @(deviationIndex + 1)</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public PVState State1 { get; set; }
+    [Parameter] public PVState State2 { get; set; }
+    [Parameter] public DualPVState DualState { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool IsDualMode => State2 != null || DualState != null;
+    private string DialogTitle => IsDualMode ? "Principal Variation - Compare" : "Principal Variation";
+
+    // Internal state references
+    private PVState state1 = new();
+    private PVState state2 = new();
+
+    // Board references - direct JS approach like PVboardDuo
+    private ElementReference boardRef1;
+    private ElementReference boardRef2;
+    private IJSObjectReference chessJSmodule;
+    private bool boardsCreated = false;
+
+    // Chess boards for move parsing
+    private Board chessBoard1 = new();
+    private Board chessBoard2 = new();
+
+    // Navigation state for board 1
+    private List<string> fenPositions1 = new();
+    private List<string> uciMoves1 = new();
+    private int currentIndex1 = 0;
+    private int totalMoves1 = 0;
+    private bool followMode1 = true;
+
+    // Navigation state for board 2
+    private List<string> fenPositions2 = new();
+    private List<string> uciMoves2 = new();
+    private int currentIndex2 = 0;
+    private int totalMoves2 = 0;
+    private bool followMode2 = true;
+
+    // Compare state
+    private bool showDeviation = false;
+    private int deviationIndex = -1;
+
+    // Throttling
+    private System.Timers.Timer updateTimer;
+    private bool pendingUpdate1 = false;
+    private bool pendingUpdate2 = false;
+    private const int UpdateIntervalMs = 1000;
+
+    private HotKeysContext keyContext;
+
+    protected override void OnInitialized()
+    {
+        // Set up state references
+        if (DualState != null)
+        {
+            state1 = DualState.Engine1;
+            state2 = DualState.Engine2;
+        }
+        else
+        {
+            state1 = State1 ?? new PVState();
+            state2 = State2 ?? new PVState();
+        }
+
+        // Initial parse (just data, don't update board yet)
+        ParsePV(1);
+        if (IsDualMode)
+        {
+            ParsePV(2);
+            UpdateDeviationIndex();
+        }
+
+        // Set up throttled update timer
+        updateTimer = new System.Timers.Timer(UpdateIntervalMs);
+        updateTimer.Elapsed += OnUpdateTimerElapsed;
+        updateTimer.AutoReset = true;
+        updateTimer.Start();
+
+        // Keyboard shortcuts
+        keyContext = HotKeys.CreateContext()
+            .Add(Key.Escape, () => Close(), "Close")
+            .Add(Key.ArrowLeft, (Func<Task>)(async () => await PrevMove(1)), "Previous move")
+            .Add(Key.ArrowRight, (Func<Task>)(async () => await NextMove(1)), "Next move")
+            .Add(Key.Home, (Func<Task>)(async () => await GoToStart(1)), "Go to start")
+            .Add(Key.End, (Func<Task>)(async () => await GoToEnd(1)), "Go to end");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Import JS module and create boards
+            chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+
+            // Create the chessboards using the same JS function as PVboardDuo
+            var startFen1 = fenPositions1.Count > 0 ? fenPositions1[0] : startPos;
+            await chessJSmodule.InvokeVoidAsync("createChessboard", boardRef1, startFen1);
+
+            if (IsDualMode)
+            {
+                var startFen2 = fenPositions2.Count > 0 ? fenPositions2[0] : startPos;
+                await chessJSmodule.InvokeVoidAsync("createChessboard", boardRef2, startFen2);
+            }
+
+            boardsCreated = true;
+
+            // Subscribe to updates after boards are ready
+            state1.OnUpdate += OnState1Updated;
+            if (IsDualMode)
+            {
+                state2.OnUpdate += OnState2Updated;
+            }
+
+            // Show initial position (end of PV if follow mode)
+            if (fenPositions1.Count > 0)
+            {
+                currentIndex1 = followMode1 ? fenPositions1.Count - 1 : 0;
+                await UpdateBoardPosition(1);
+            }
+            if (IsDualMode && fenPositions2.Count > 0)
+            {
+                currentIndex2 = followMode2 ? fenPositions2.Count - 1 : 0;
+                await UpdateBoardPosition(2);
+            }
+        }
+    }
+
+    private void OnState1Updated()
+    {
+        pendingUpdate1 = true;
+    }
+
+    private void OnState2Updated()
+    {
+        pendingUpdate2 = true;
+    }
+
+    private void OnUpdateTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
+    {
+        if (!boardsCreated) return;
+
+        InvokeAsync(async () =>
+        {
+            bool needsRefresh = false;
+
+            if (pendingUpdate1 && followMode1)
+            {
+                pendingUpdate1 = false;
+                ParsePV(1);
+                if (fenPositions1.Count > 0)
+                {
+                    currentIndex1 = fenPositions1.Count - 1;
+                    await UpdateBoardPosition(1);
+                }
+                needsRefresh = true;
+            }
+            else if (pendingUpdate1)
+            {
+                // Not following - just clear the pending flag, don't update
+                pendingUpdate1 = false;
+            }
+
+            if (pendingUpdate2 && followMode2 && IsDualMode)
+            {
+                pendingUpdate2 = false;
+                ParsePV(2);
+                if (fenPositions2.Count > 0)
+                {
+                    currentIndex2 = fenPositions2.Count - 1;
+                    await UpdateBoardPosition(2);
+                }
+                needsRefresh = true;
+            }
+            else if (pendingUpdate2 && IsDualMode)
+            {
+                // Not following - just clear the pending flag, don't update
+                pendingUpdate2 = false;
+            }
+
+            if (needsRefresh)
+            {
+                if (IsDualMode)
+                {
+                    UpdateDeviationIndex();
+                }
+                StateHasChanged();
+            }
+        });
+    }
+
+    private void ParsePV(int boardNum)
+    {
+        var state = boardNum == 1 ? state1 : state2;
+        var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
+        var moveList = boardNum == 1 ? uciMoves1 : uciMoves2;
+        var board = boardNum == 1 ? chessBoard1 : chessBoard2;
+
+        fenList.Clear();
+        moveList.Clear();
+
+        var startFen = string.IsNullOrWhiteSpace(state.StartFEN) ? startPos : state.StartFEN;
+        board.ResetBoardState();
+        board.LoadFen(startFen);
+        fenList.Add(startFen);
+
+        if (!string.IsNullOrWhiteSpace(state.PVMoves))
+        {
+            var moves = state.PVMoves.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var move in moves)
+            {
+                if (move.Length < 4 || move.Length > 5)
+                    continue;
+
+                try
+                {
+                    board.PlayUciMove(move);
+                    moveList.Add(move);
+                    fenList.Add(board.FEN());
+                }
+                catch
+                {
+                    break;
+                }
+            }
+        }
+
+        if (boardNum == 1)
+        {
+            totalMoves1 = fenList.Count - 1;
+        }
+        else
+        {
+            totalMoves2 = fenList.Count - 1;
+        }
+    }
+
+    private async Task UpdateBoardPosition(int boardNum)
+    {
+        if (chessJSmodule == null || !boardsCreated) return;
+
+        var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
+        var moveList = boardNum == 1 ? uciMoves1 : uciMoves2;
+        var index = boardNum == 1 ? currentIndex1 : currentIndex2;
+        var boardRef = boardNum == 1 ? boardRef1 : boardRef2;
+
+        if (index < 0 || index >= fenList.Count) return;
+
+        var fen = fenList[index];
+
+        // Get move info for highlighting (if not at start position)
+        if (index > 0 && index - 1 < moveList.Count)
+        {
+            var move = moveList[index - 1];
+            var fromSq = move.Substring(0, 2);
+            var toSq = move.Substring(2, 2);
+            // Determine color from whose turn it was before the move
+            var fenParts = fenList[index - 1].Split(' ');
+            var color = fenParts.Length > 1 && fenParts[1] == "w" ? "w" : "b";
+            await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardRef, fen, color, fromSq, toSq, true);
+        }
+        else
+        {
+            // At starting position - use setPVBoardWithSquareHighlighting without highlighting
+            // (createChessboard has a bug where it doesn't set position when board already exists)
+            await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardRef, fen, "", "", "", false);
+        }
+    }
+
+    private void UpdateDeviationIndex()
+    {
+        if (DualState != null)
+        {
+            deviationIndex = DualState.FindFirstDeviation();
+        }
+        else if (State1 != null && State2 != null)
+        {
+            var moves1 = state1.PVMoves?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+            var moves2 = state2.PVMoves?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+
+            deviationIndex = -1;
+            var minLen = Math.Min(moves1.Length, moves2.Length);
+            for (int i = 0; i < minLen; i++)
+            {
+                if (!string.Equals(moves1[i], moves2[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    deviationIndex = i;
+                    break;
+                }
+            }
+            if (deviationIndex < 0 && moves1.Length != moves2.Length)
+            {
+                deviationIndex = minLen;
+            }
+        }
+    }
+
+    private async Task GoToPosition(int boardNum, int index)
+    {
+        var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
+
+        // Clamp index to valid range
+        if (fenList.Count == 0) return;
+        index = Math.Max(0, Math.Min(index, fenList.Count - 1));
+
+        if (boardNum == 1)
+        {
+            currentIndex1 = index;
+            totalMoves1 = fenList.Count - 1;
+        }
+        else
+        {
+            currentIndex2 = index;
+            totalMoves2 = fenList.Count - 1;
+        }
+
+        await UpdateBoardPosition(boardNum);
+        StateHasChanged();
+    }
+
+    private async Task GoToStart(int boardNum)
+    {
+        // Manual navigation turns off follow mode
+        SetFollowMode(boardNum, false);
+        await GoToPosition(boardNum, 0);
+    }
+
+    private async Task GoToEnd(int boardNum)
+    {
+        var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
+        if (fenList.Count == 0) return;
+        // Going to end can optionally keep follow mode on
+        await GoToPosition(boardNum, fenList.Count - 1);
+    }
+
+    private async Task NextMove(int boardNum)
+    {
+        // Manual navigation turns off follow mode
+        SetFollowMode(boardNum, false);
+        var idx = boardNum == 1 ? currentIndex1 : currentIndex2;
+        var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
+        if (idx < fenList.Count - 1)
+        {
+            await GoToPosition(boardNum, idx + 1);
+        }
+    }
+
+    private async Task PrevMove(int boardNum)
+    {
+        // Manual navigation turns off follow mode
+        SetFollowMode(boardNum, false);
+        var idx = boardNum == 1 ? currentIndex1 : currentIndex2;
+        if (idx > 0)
+        {
+            await GoToPosition(boardNum, idx - 1);
+        }
+    }
+
+    private void SetFollowMode(int boardNum, bool value)
+    {
+        if (boardNum == 1)
+            followMode1 = value;
+        else
+            followMode2 = value;
+    }
+
+    private async Task ToggleFollow(int boardNum)
+    {
+        if (boardNum == 1)
+        {
+            followMode1 = !followMode1;
+            if (followMode1)
+            {
+                // Re-enabling follow mode - refresh PV and go to end
+                ParsePV(1);
+                if (fenPositions1.Count > 0)
+                {
+                    currentIndex1 = fenPositions1.Count - 1;
+                    await UpdateBoardPosition(1);
+                }
+            }
+        }
+        else
+        {
+            followMode2 = !followMode2;
+            if (followMode2)
+            {
+                // Re-enabling follow mode - refresh PV and go to end
+                ParsePV(2);
+                if (fenPositions2.Count > 0)
+                {
+                    currentIndex2 = fenPositions2.Count - 1;
+                    await UpdateBoardPosition(2);
+                }
+            }
+        }
+        if (IsDualMode)
+        {
+            UpdateDeviationIndex();
+        }
+        StateHasChanged();
+    }
+
+    private async Task ToggleCompare()
+    {
+        showDeviation = !showDeviation;
+
+        if (showDeviation && deviationIndex >= 0)
+        {
+            followMode1 = false;
+            followMode2 = false;
+            // deviationIndex is the move index in the PV array
+            // fenPositions[0] = start position, fenPositions[1] = after move 0, etc.
+            // So to show the position AFTER the deviating move, go to deviationIndex + 1
+            var targetPos = deviationIndex + 1;
+            await GoToPosition(1, Math.Min(targetPos, fenPositions1.Count - 1));
+            await GoToPosition(2, Math.Min(targetPos, fenPositions2.Count - 1));
+        }
+    }
+
+    private void OnOverlayClick()
+    {
+        Close();
+    }
+
+    private async void Close()
+    {
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Stop and dispose timer
+        if (updateTimer != null)
+        {
+            updateTimer.Stop();
+            updateTimer.Elapsed -= OnUpdateTimerElapsed;
+            updateTimer.Dispose();
+        }
+
+        // Unsubscribe from state updates
+        state1.OnUpdate -= OnState1Updated;
+        if (IsDualMode)
+        {
+            state2.OnUpdate -= OnState2Updated;
+        }
+
+        if (keyContext != null)
+            await keyContext.DisposeAsync();
+    }
+}

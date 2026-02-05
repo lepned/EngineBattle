@@ -1,0 +1,961 @@
+@page "/analysis/single"
+
+@using WebGUI.Components.Layout
+@using WebGUI.Plotting
+@using WebGUI.Services
+@using System.Text;
+@using System.Globalization
+@using WebGUI.Components.Layout.ChessboardLayout
+@using Toolbelt.Blazor.HotKeys2
+@using System.Linq
+@using Microsoft.FSharp.Core
+
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NotifierService Notifier
+@inject IDialogService DialogService
+@inject NavigationManager navManager
+@inject ILogger<SingleAnalysis> logger
+@inject HotKeys HotKeys
+@inject ClipboardService ClipboardService
+@inject JavaScriptInteropService JsInteropService
+@inject OverlaySetting overlaySettings
+
+<PageTitle>Modern Analysis - Single Engine</PageTitle>
+<InputFile id="configFile" OnChange="@OpenConfigFile" hidden />
+<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+<InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
+
+<div class="single-analysis">
+    <div class="sa-toolbar">
+        <label class="sa-toolbar-btn" for="configFile" title="Load config">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            Config
+        </label>
+        <label class="sa-toolbar-btn" for="fileInput" title="Load PGN">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            PGN
+        </label>
+        <label class="sa-toolbar-btn" for="epdInput" title="Load EPD">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="9" y1="21" x2="9" y2="9"/>
+            </svg>
+            EPD
+        </label>
+        <div class="sa-toolbar-frc">
+            <label class="sa-toolbar-btn">FRC</label>
+            <input type="number" min="0" max="959" @bind="frcInput"
+                   @onkeydown="OnFrcKeyDown" placeholder="0-959" title="Enter FRC position ID (0-959)" />
+            <label class="sa-toolbar-btn" @onclick="LoadFrcPosition" title="Load FRC position">Load</label>
+        </div>
+    </div>
+
+    <div class="sa-main">
+        <!-- Left Panel: Engine + Chart -->
+        <div class="sa-left">
+            <EnginePanel @ref="analysisWithEngine" FEN="@fen" OnUCIReceived="OnUCIReceived"
+                         ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
+                         Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
+                         PGNgames="games" Player=@searchString Config="@config" />
+        </div>
+
+        <!-- Center Panel: Chessboard + Save -->
+        <div class="sa-center">
+            <div class="sa-overlay-controls" hidden="@(!showOverlayControls)">
+                <div class="sa-overlay-field">
+                    <label>Overlay</label>
+                    <select class="sa-select" @bind="selectedOverlay" @bind:after="OnOverlayChanged">
+                        @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
+                        {
+                            <option value="@setting">@setting</option>
+                        }
+                    </select>
+                </div>
+                <div class="sa-overlay-field">
+                    <label>Min Policy</label>
+                    <input type="range" min="0" max="0.10" step="0.005"
+                           value="@overlaySettings.MinPolicyThreshold"
+                           @onchange="@(e => OnMinPolicyChanged(double.Parse(e.Value?.ToString() ?? "0.03")))" />
+                    <span class="sa-slider-value">@overlaySettings.MinPolicyThreshold.ToString("P1")</span>
+                </div>
+            </div>
+            <div class="sa-board-wrapper">
+                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
+                            MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
+            </div>
+
+            <div class="sa-save-section">
+                <div class="sa-save-group">
+                    <input type="text" @bind="gamesPath" placeholder="C:/dev/chess/mygames.pgn" />
+                    <span class="sa-helper">Path to file - game will be appended</span>
+                    <div class="sa-btn-group">
+                        <button class="sa-btn" @onclick="SaveGameToPGN">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                                <polyline points="7 3 7 8 15 8"/>
+                            </svg>
+                            Save game
+                        </button>
+                        <button class="sa-btn secondary" @onclick="SaveAnalysis">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                            </svg>
+                            Save analysis
+                        </button>
+                    </div>
+                </div>
+                <div class="sa-save-group">
+                    <input type="text" @bind="openingAndVariation" placeholder="Sicilian; Sveshnikov" />
+                    <span class="sa-helper">Opening name; Variation name</span>
+                    <button class="sa-btn secondary" @onclick="OpeningBook">
+                        Create Opening book
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Chart + Game List -->
+        <div class="sa-right">
+            @if (!string.IsNullOrEmpty(currentGame))
+            {
+                <div class="sa-game-info">@currentGame</div>
+            }
+
+            <div class="sa-chart-section">
+                <div class="sa-chart-controls">
+                    <select class="sa-select" @bind="selectedChart" @bind:after="OnChartTypeChangedAsync">
+                        <option value="@CustomChartType.Evaluation">Evaluation</option>
+                        <option value="@CustomChartType.Nodes">Nodes</option>
+                        <option value="@CustomChartType.TimeUsage">Time Usage</option>
+                        <option value="@CustomChartType.NPS">NPS</option>
+                        <option value="@CustomChartType.EPS">EPS</option>
+                    </select>
+                    <div class="sa-field sa-field-inline">
+                        <input type="number" @bind="minMoveTimeInSecs" />
+                        <label>Min move time (sec)</label>
+                    </div>
+                    <span class="sa-chart-label">PGN Chart</span>
+                </div>
+                <div class="sa-chart-container">
+                    <div class="chart" @ref="pgnChart" style="height:100%;"></div>
+                </div>
+            </div>
+
+            @if (pgnFileLoaded)
+            {
+                <div class="sa-panel-header">@pgnName</div>
+
+                <div class="sa-search">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="text" @bind="searchString" @bind:event="oninput" placeholder="Search for player..." />
+                </div>
+
+                <div class="sa-table-container">
+                    <table class="sa-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable @(sortColumn == "GameNumber" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("GameNumber"))">G#</th>
+                                <th class="sortable @(sortColumn == "Ply" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("Ply"))">Ply</th>
+                                <th class="sortable @(sortColumn == "Result" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("Result"))">Result</th>
+                                <th class="sortable @(sortColumn == "Players" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("Players"))">Players</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var game in FilteredGames.Skip(currentPage * pageSize).Take(pageSize))
+                            {
+                                <tr class="@(selectedItems.Contains(game) ? "selected" : "")" @onclick="@(() => OpenPGNGame(game))">
+                                    <td>@game.GameNumber</td>
+                                    <td>@game.Mainline.Count</td>
+                                    <td>@Helper.GetResultSummary(game)</td>
+                                    <td>@Helper.ShowPlayersSummary(game)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div class="sa-pagination">
+                        <div class="sa-nav-buttons">
+                            <button class="sa-nav-btn" @onclick="FirstPage" disabled="@(currentPage == 0)" title="First page">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="11 17 6 12 11 7"/>
+                                    <polyline points="18 17 13 12 18 7"/>
+                                </svg>
+                            </button>
+                            <button class="sa-nav-btn" @onclick="PreviousPage" disabled="@(currentPage == 0)" title="Previous page">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15 18 9 12 15 6"/>
+                                </svg>
+                            </button>
+                            <button class="sa-nav-btn" @onclick="NextPage" disabled="@(currentPage >= TotalPages - 1)" title="Next page">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="9 18 15 12 9 6"/>
+                                </svg>
+                            </button>
+                            <button class="sa-nav-btn" @onclick="LastPage" disabled="@(currentPage >= TotalPages - 1)" title="Last page">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="13 17 18 12 13 7"/>
+                                    <polyline points="6 17 11 12 6 7"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <select @bind="pageSize" @bind:after="OnPageSizeChanged">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="250">250</option>
+                        </select>
+                        <span class="sa-pagination-info">
+                            Page @(currentPage + 1) of @TotalPages (@FilteredGames.Count() games)
+                        </span>
+                    </div>
+                </div>
+            }
+
+            @if (epdFileLoaded)
+            {
+                <div class="sa-panel-header">EPD: @pgnName</div>
+
+                <div class="sa-table-container">
+                    <table class="sa-table sa-epd-table">
+                        <thead>
+                            <tr>
+                                <th>Nr</th>
+                                <th>AM</th>
+                                <th>BM</th>
+                                <th>ID</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ var idx = 0; }
+                            @foreach (var epd in epdGames)
+                            {
+                                idx++;
+                                var localIdx = idx;
+                                <tr @onclick="@(() => OpenEPDGame(epd))">
+                                    <td>@localIdx</td>
+                                    <td>@epd.AvoidMove?.Value.ToString()</td>
+                                    <td>@epd.BestMove?.Value.ToString()</td>
+                                    <td>@epd.Id?.Value.ToString()</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @if (!pgnFileLoaded && !epdFileLoaded)
+            {
+                <div class="sa-card sa-empty">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    <p>Load a PGN or EPD file to see games here</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private int minMoveTimeInSecs = 0;
+    private string currentGame = "";
+    private int gameIndex = 0;
+    private string gamesPath = "C:/dev/chess/mygames.pgn";
+    private string openingAndVariation = "Sicilian; Sveshnikov";
+    bool pgnFileLoaded = false;
+    bool epdFileLoaded = false;
+    EngineConfig Engine;
+    private int? frcPositionId = null;
+    private int? frcInput = null;
+    private List<string> uciInfo = new();
+    private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private EnginePanel analysisWithEngine;
+    private bool showOverlayControls = false;
+    private OverlaySettings selectedOverlay = OverlaySettings.None;
+    private Chessboard chessBoardRazor;
+
+    private ElementReference pgnChart;
+    private IJSObjectReference chessModule;
+    private DotNetObjectReference<SingleAnalysis> _pgnPasteDotNetRef;
+    private bool _pgnPasteRegistered = false;
+    private HashSet<PGNTypes.PgnGame> selectedItems = new();
+    public CultureInfo currentCulture = CultureInfo.CurrentCulture;
+    private string moveHistory = string.Empty;
+    private string pgnName = "";
+    private List<PGNTypes.PgnGame> games = new();
+    private List<EPDTypes.EPDEntry> epdGames = new();
+    private Chess.Board board = new();
+    HotKeysContext keyContext;
+    IBrowserFile browserFile;
+    private string fullPath = string.Empty;
+    private int chartLines = 4;
+    private AnalyzeConfig config = AnalyzeConfig.empty;
+    private int nodes = 1;
+    private string searchString = "";
+    private GamePgnChart chart;
+    private CustomChartType selectedChart = CustomChartType.Evaluation;
+    private readonly object _pgnPasteLock = new();
+    private readonly Dictionary<string, PgnPasteBuffer> _pgnPasteBuffers = new();
+
+    // Pagination
+    private int currentPage = 0;
+    private int pageSize = 30;
+    private string sortColumn = "GameNumber";
+    private bool sortAscending = true;
+
+    private sealed class PgnPasteBuffer
+    {
+        public StringBuilder Sb { get; } = new StringBuilder();
+        public int ExpectedChunks { get; init; }
+        public int ReceivedChunks { get; set; }
+    }
+
+    private IEnumerable<PGNTypes.PgnGame> FilteredGames
+    {
+        get
+        {
+            var filtered = games.Where(FilterFunc);
+
+            filtered = sortColumn switch
+            {
+                "GameNumber" => sortAscending ? filtered.OrderBy(g => g.GameNumber) : filtered.OrderByDescending(g => g.GameNumber),
+                "Ply" => sortAscending ? filtered.OrderBy(g => g.Mainline.Count) : filtered.OrderByDescending(g => g.Mainline.Count),
+                "Result" => sortAscending ? filtered.OrderBy(g => Helper.GetResultSummary(g)) : filtered.OrderByDescending(g => Helper.GetResultSummary(g)),
+                "Players" => sortAscending ? filtered.OrderBy(g => Helper.ShowPlayersSummary(g)) : filtered.OrderByDescending(g => Helper.ShowPlayersSummary(g)),
+                _ => filtered
+            };
+
+            return filtered;
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+            sortAscending = !sortAscending;
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        currentPage = 0; // Reset to first page when sorting changes
+    }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredGames.Count() / (double)pageSize));
+
+    private void FirstPage() => currentPage = 0;
+    private void PreviousPage() { if (currentPage > 0) currentPage--; }
+    private void NextPage() { if (currentPage < TotalPages - 1) currentPage++; }
+    private void LastPage() => currentPage = TotalPages - 1;
+    private void OnPageSizeChanged() => currentPage = 0;
+
+    private async Task OnChartTypeChangedAsync()
+    {
+        if (chart != null)
+        {
+            await chart.SwitchChartTypeAsync(selectedChart, minMoveTimeInSecs);
+        }
+        StateHasChanged();
+    }
+
+    private bool FilterFunc(PGNTypes.PgnGame game)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+
+        string searchTerm = searchString.Trim().ToLower();
+
+        if (game.GameMetaData.White?.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        if (game.GameMetaData.Black?.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        var eval = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Eval");
+        if (eval != null && eval.Value.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        var move = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Move");
+        if (move != null && move.Value.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        return false;
+    }
+
+    private async Task OpenConfigFile(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var pgnName = e.File.Name;
+            logger.LogInformation("Config file '{File}' loaded", pgnName);
+            var env = Environment.CurrentDirectory;
+            fullPath = Path.Combine(env, "wwwroot", pgnName);
+
+            await using (FileStream fs = new(fullPath, FileMode.Create))
+            {
+                browserFile = e.File;
+                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+            }
+
+            config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
+            var folder = config.EngineFolder;
+
+            var engineConfigs =
+                    config.Engines
+                    .SelectMany(e => Configuration.JSONParser.mapToEngConfig(folder, e))
+                    .ToList();
+
+            if (engineConfigs.Count > 0)
+            {
+                Engine = engineConfigs[0];
+                if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
+                {
+                    showOverlayControls = true;
+                    selectedOverlay = OverlaySettings.Policy;
+                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                }
+                nodes = config.Engines[0] switch
+                {
+                    PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                    PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                    _ => Math.Max(1, config.Nodes)
+                };
+            }
+            chartLines = config.ChartLines;
+        }
+        catch (System.IO.FileNotFoundException)
+        {
+            logger.LogError("Config file not found at '{Path}'", fullPath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load analyzeConfig.json file");
+            File.Delete(fullPath);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasted(string pastedText)
+    {
+        if (string.IsNullOrWhiteSpace(pastedText))
+            return Task.CompletedTask;
+
+        return InvokeAsync(async () =>
+        {
+            await LoadPGNGame(pastedText);
+            StateHasChanged();
+        });
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasteBegin(string id, int totalChunks)
+    {
+        if (string.IsNullOrWhiteSpace(id) || totalChunks <= 0)
+            return Task.CompletedTask;
+
+        lock (_pgnPasteLock)
+        {
+            _pgnPasteBuffers[id] = new PgnPasteBuffer { ExpectedChunks = totalChunks, ReceivedChunks = 0 };
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasteChunk(string id, int index, string chunk)
+    {
+        if (string.IsNullOrWhiteSpace(id) || chunk is null)
+            return Task.CompletedTask;
+
+        lock (_pgnPasteLock)
+        {
+            if (_pgnPasteBuffers.TryGetValue(id, out var buf))
+            {
+                buf.Sb.Append(chunk);
+                buf.ReceivedChunks++;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasteEnd(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return Task.CompletedTask;
+
+        string pastedText = null;
+
+        lock (_pgnPasteLock)
+        {
+            if (_pgnPasteBuffers.TryGetValue(id, out var buf))
+            {
+                _pgnPasteBuffers.Remove(id);
+                pastedText = buf.Sb.ToString();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(pastedText))
+            return Task.CompletedTask;
+
+        return InvokeAsync(async () =>
+        {
+            await LoadPGNGame(pastedText);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadPGNGame(string pastedText)
+    {
+        var parsedPgnGame = FullPGNParser.parseFullPgnGame(pastedText);
+        await LoadPgnGameWithVariations(parsedPgnGame);
+    }
+
+    private async Task LoadPgnGameWithVariations(PGNTypes.PgnGame game)
+    {
+        board.ResetBoardState();
+        var startFen = string.IsNullOrWhiteSpace(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
+        board.LoadFen(startFen);
+        board.StartPosition = startFen;
+        board.LoadPGNGameWithVariations(game);
+        fen = board.FEN();
+        UpdateFrcId(board.StartPosition);
+        moveHistory = board.GetMoveHistoryWithVariations();
+        var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
+        StateHasChanged();
+    }
+
+    private async Task SaveGameToPGN(MouseEventArgs args)
+    {
+        logger.LogInformation("File saved to {path}", gamesPath);
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine($"[Event \"Single Engine Analysis\"]");
+        sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+        sb.AppendLine($"[FEN \"{board.StartPosition}\"]");
+        sb.AppendLine();
+        var moveHistory = board.GetMoveHistoryWithVariations();
+        sb.AppendLine(moveHistory);
+        File.AppendAllText(gamesPath, sb.ToString());
+        await Task.CompletedTask;
+    }
+
+    private static string ExtractMove(string input)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(input, @"^\d+\.*\s*(\S+)");
+        return match.Success ? match.Groups[1].Value : input;
+    }
+
+    private void WriteAnalysisToFile(string path, EnginePanel page)
+    {
+        var variations = page.dataList;
+        var sbVariations = new StringBuilder();
+        var engineName = page?.Engine?.Name ?? "Unknown Engine";
+        var first = page.dataList.FirstOrDefault();
+        var nodes = first.Value == null ? 0 : page.dataList.FirstOrDefault().Value.Nodes;
+        var formatNodes = nodes.ToString("N0");
+        if (variations.Count == 0)
+        {
+            logger.LogWarning("No data to save, please run the analysis first");
+            return;
+        }
+        else
+        {
+            var fen = board.FEN();
+            sbVariations.AppendLine($"\n\n## {engineName} (nodes:{formatNodes}) - Analysis from FEN: {fen}");
+            foreach (var line in variations)
+            {
+                board.LoadFen(fen);
+                EngineStatus cLine = line.Value;
+                string pv = cLine.PV;
+                var firstMove = string.Empty;
+                if (!string.IsNullOrWhiteSpace(pv) && pv.Contains("..."))
+                {
+                    firstMove = string.Join(" ", pv.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2));
+                }
+                else if (!string.IsNullOrWhiteSpace(pv))
+                {
+                    firstMove = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+                }
+                var move = ExtractMove(firstMove);
+                board.PlaySanMove(move);
+                var comment = $"{{{cLine.Eval}/{cLine.SD}}}";
+                var oldComment = board.GetCurrentEdgeComment();
+                if (string.IsNullOrWhiteSpace(oldComment))
+                {
+                    board.SetCommentOnCurrentEdge(comment);
+                }
+            }
+            board.LoadFen(fen);
+            var pgnHeader = $"\n[Event \"Single Engine Analysis\"]\n[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]\n[Engine \"{engineName}\"]\n[FEN \"{board.StartPosition}\"]\n";
+            sbVariations.AppendLine(pgnHeader);
+            var history = board.GetMoveHistoryWithVariations();
+            sbVariations.AppendLine(history);
+            logger.LogInformation("File saved to {path}", path);
+        }
+        File.AppendAllText(path, sbVariations.ToString());
+    }
+
+    private async Task SaveAnalysis(MouseEventArgs args)
+    {
+        var directory = Path.GetDirectoryName(gamesPath);
+        var filenameWithoutExt = Path.GetFileNameWithoutExtension(gamesPath);
+        var path = Path.Combine(directory, filenameWithoutExt + "_analysis.pgn");
+        WriteAnalysisToFile(path, analysisWithEngine);
+        await Task.CompletedTask;
+    }
+
+    private async Task OpeningBook(MouseEventArgs args)
+    {
+        var directory = Path.GetDirectoryName(gamesPath);
+        var filenameWithoutExt = Path.GetFileNameWithoutExtension(gamesPath);
+        var path = Path.Combine(directory, filenameWithoutExt + "_book.pgn");
+        var text = openingAndVariation.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var openingName = text.Length > 0 ? text[0].Trim() : "Opening";
+        var variationName = text.Length > 1 ? text[1].Trim() : "";
+        board.WriteGraphLinesToPgn(path, openingName, variationName);
+        logger.LogInformation("Opening book file saved to {path}", path);
+        await Task.CompletedTask;
+    }
+
+    private async Task OpenEPDGame(EPDTypes.EPDEntry epd)
+    {
+        board.ResetBoardState();
+        board.StartPosition = epd.FEN;
+        board.LoadFen(epd.FEN);
+        fen = board.FEN();
+        UpdateFrcId(board.StartPosition);
+        await Notifier.UpdateFen(fen);
+        StateHasChanged();
+    }
+
+    private async Task LoadAndOpenPGNGame(PGNTypes.PgnGame game)
+    {
+        gameIndex = games.IndexOf(game);
+        currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
+
+        chart = new GamePgnChart(chessModule, pgnChart, game, "Evaluation", "Score");
+
+        switch (selectedChart)
+        {
+            case CustomChartType.Evaluation:
+                await chart.AssignEvalsFromPGNAsync();
+                break;
+            case CustomChartType.Nodes:
+                await chart.AssignNodesFromPGNAsync();
+                break;
+            case CustomChartType.TimeUsage:
+                await chart.AssignTimeUsageFromPGNAsync();
+                break;
+            case CustomChartType.NPS:
+                await chart.AssignNPSFromPGNAsync(minMoveTimeInSecs);
+                break;
+            case CustomChartType.EPS:
+                await chart.AssignEPSFromPGNAsync(minMoveTimeInSecs);
+                break;
+            default:
+                await chart.AssignEvalsFromPGNAsync();
+                break;
+        }
+
+        await LoadPgnGameWithVariations(game);
+    }
+
+    private async Task OpenPGNGame(PGNTypes.PgnGame game)
+    {
+        selectedItems.Clear();
+        selectedItems.Add(game);
+        await LoadAndOpenPGNGame(game);
+    }
+
+    private async Task NextPGNGame()
+    {
+        var filteredGames = games.Where(FilterFunc).ToList();
+        if (filteredGames.Count == 0)
+            return;
+
+        var currentGame = games.ElementAtOrDefault(gameIndex);
+        var currentIndexInFiltered = currentGame != null ? filteredGames.IndexOf(currentGame) : -1;
+
+        if (currentIndexInFiltered >= 0 && currentIndexInFiltered < filteredGames.Count - 1)
+        {
+            var nextGame = filteredGames[currentIndexInFiltered + 1];
+            gameIndex = games.IndexOf(nextGame);
+            selectedItems.Clear();
+            selectedItems.Add(nextGame);
+            await LoadAndOpenPGNGame(nextGame);
+        }
+    }
+
+    private async Task PreviousPGNGame()
+    {
+        var filteredGames = games.Where(FilterFunc).ToList();
+        if (filteredGames.Count == 0)
+            return;
+
+        var currentGame = games.ElementAtOrDefault(gameIndex);
+        var currentIndexInFiltered = currentGame != null ? filteredGames.IndexOf(currentGame) : -1;
+
+        if (currentIndexInFiltered > 0)
+        {
+            var previousGame = filteredGames[currentIndexInFiltered - 1];
+            gameIndex = games.IndexOf(previousGame);
+            selectedItems.Clear();
+            selectedItems.Add(previousGame);
+            await LoadAndOpenPGNGame(previousGame);
+        }
+    }
+
+    private async Task OpenEPDFile(InputFileChangeEventArgs e)
+    {
+        epdFileLoaded = true;
+        pgnFileLoaded = false;
+        pgnName = e.File.Name;
+        if (!pgnName.EndsWith(".epd"))
+        {
+            logger.LogError("Not an EPD file {File}", pgnName);
+            return;
+        }
+        logger.LogInformation("EPD file opened {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+
+        epdGames = EPDExtractor.readEPDs(fullPath).Take(5000).ToList();
+        gameIndex = 0;
+        File.Delete(fullPath);
+        StateHasChanged();
+    }
+
+    private async Task OpenPGNFile(InputFileChangeEventArgs e)
+    {
+        epdFileLoaded = false;
+        pgnFileLoaded = true;
+        pgnName = e.File.Name;
+        if (!pgnName.EndsWith(".pgn"))
+        {
+            logger.LogError("Not a PGN file {File}", pgnName);
+            return;
+        }
+
+        logger.LogInformation("PGN file opened {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+
+        games = FullPGNParser.parsePgnFile(fullPath).Take(4000).ToList();
+        gameIndex = 0;
+        File.Delete(fullPath);
+        StateHasChanged();
+    }
+
+    public async void OnUCIReceived(List<string> config)
+    {
+        uciInfo = config;
+        var content = string.Join("\n", uciInfo);
+        await chessModule.InvokeVoidAsync("openNewWindowAndWriteContent", content);
+    }
+
+    public async void OnNewFENOnBoard(string newFen)
+    {
+        moveHistory = board.GetMoveHistory();
+        fen = board.FEN();
+        UpdateFrcId(board.StartPosition);
+        await Notifier.UpdateFen(fen);
+        if (chart != null)
+            await chart.UpdateMoveIndicatorAsync(board.MoveNumber());
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async void OnMoveMadeOnBoard(string move)
+    {
+        moveHistory = board.GetMoveHistory();
+        fen = board.FEN();
+        await Notifier.UpdateFen(fen);
+        if (chart != null)
+            await chart.UpdateMoveIndicatorAsync(board.MoveNumber());
+    }
+
+    public async void OnEngineMoveMade(string move)
+    {
+        chessBoardRazor.UpdateVariationsDisplay();
+        moveHistory = board.GetMoveHistory();
+        fen = board.FEN();
+        await Notifier.UpdateFen(fen);
+    }
+
+    public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
+    {
+        if (engineConf.Id.Contains("Input1"))
+        {
+            Engine = engineConf.EngineConfig;
+            showOverlayControls = Engine?.Options?.Keys.Contains("LogLiveStats") ?? false;
+            if (showOverlayControls)
+            {
+                selectedOverlay = OverlaySettings.Policy;
+                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+            }
+            else
+            {
+                selectedOverlay = OverlaySettings.None;
+                overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
+                await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnOverlayChanged()
+    {
+        overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+        await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+    }
+
+    private async Task OnMinPolicyChanged(double value)
+    {
+        overlaySettings.MinPolicyThreshold = value;
+        await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+    }
+
+    private void UpdateFrcId(string currentFen)
+    {
+        var result = ChessLibrary.ChessUtilities.Chess960.tryGetPositionIdFromFen(currentFen);
+        frcPositionId = FSharpOption<int>.get_IsSome(result) ? result.Value : null;
+        frcInput = frcPositionId;
+    }
+
+    private async Task LoadFrcPosition()
+    {
+        if (frcInput.HasValue && frcInput >= 0 && frcInput <= 959)
+        {
+            var fenOpt = ChessLibrary.ChessUtilities.Chess960.tryGetFenFromPositionId(frcInput.Value);
+            if (FSharpOption<string>.get_IsSome(fenOpt))
+            {
+                board.ResetBoardState();
+                board.LoadFen(fenOpt.Value);
+                board.StartPosition = fenOpt.Value;
+                fen = board.FEN();
+                frcPositionId = frcInput;
+                await Notifier.UpdateFenToBoard(fen);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task OnFrcKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadFrcPosition();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessModule = await JsInteropService.ImportModuleAsync(JS);
+            keyContext = HotKeys.CreateContext()
+                .Add(ModKey.Ctrl, Key.ArrowRight, (() => NextPGNGame()), "Next game")
+                .Add(ModKey.Ctrl, Key.ArrowLeft, (() => PreviousPGNGame()), "Previous game");
+
+            if (!_pgnPasteRegistered)
+            {
+                _pgnPasteDotNetRef = DotNetObjectReference.Create(this);
+                _pgnPasteRegistered = true;
+            }
+            await chessModule.InvokeVoidAsync("registerGlobalPgnPaste", _pgnPasteDotNetRef);
+
+            board.LoadFen(fen);
+            board.StartPosition = fen;
+            UpdateFrcId(board.StartPosition);
+            try
+            {
+                var env = Environment.CurrentDirectory;
+                fullPath = Path.Combine(env, "wwwroot", "AnalyzeConfig.json");
+                config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
+                var folder = config.EngineFolder;
+
+                var engineConfigs =
+                  config.Engines
+                  .SelectMany(e => Configuration.JSONParser.mapToEngConfig(folder, e))
+                  .ToList();
+
+                if (engineConfigs.Count > 0)
+                {
+                    Engine = engineConfigs[0];
+                    if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
+                    {
+                        showOverlayControls = true;
+                        selectedOverlay = OverlaySettings.Policy;
+                        overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                    }
+                    nodes = config.Engines[0] switch
+                    {
+                        PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                        PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                        _ => Math.Max(1, config.Nodes)
+                    };
+                }
+                chartLines = config.ChartLines;
+                logger.LogInformation("Analyze config loaded from {path}", fullPath);
+            }
+            catch (Exception)
+            {
+                logger.LogError("Failed to load analyzeConfig.json file, please load it manually");
+            }
+            finally
+            {
+                StateHasChanged();
+            }
+        }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        logger.LogInformation("Disposing {page}", "SingleAnalysis page");
+        try
+        {
+            if (chessModule is not null)
+            {
+                await chessModule.InvokeVoidAsync("unregisterGlobalPgnPaste");
+            }
+        }
+        catch { }
+
+        if (_pgnPasteRegistered)
+        {
+            _pgnPasteDotNetRef.Dispose();
+            _pgnPasteRegistered = false;
+        }
+
+        keyContext?.DisposeAsync();
+        await ValueTask.CompletedTask;
+    }
+}

@@ -1,0 +1,1180 @@
+@page "/analysis/dual"
+
+@using WebGUI.Components.Layout
+@using WebGUI.Components.Layout.ExperimentalLayout
+@using WebGUI.Components.Layout.ChessboardLayout
+@using WebGUI.Plotting
+@using WebGUI.Services
+@using System.Text;
+@using System.Globalization
+@using Toolbelt.Blazor.HotKeys2
+@using Microsoft.FSharp.Core
+
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NotifierService Notifier
+@inject IDialogService DialogService
+@inject NavigationManager navManager
+@inject ILogger<DualAnalysis> logger
+@inject HotKeys HotKeys
+@inject ClipboardService ClipboardService
+@inject JavaScriptInteropService JsInteropService
+@inject OverlaySetting overlaySettings
+
+<PageTitle>Modern Analysis - Dual Engine</PageTitle>
+<InputFile id="configFile" OnChange="@OpenConfigFile" hidden />
+<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+<InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
+
+<div class="dual-analysis">
+    <div class="da-toolbar">
+        <label class="da-toolbar-btn" for="configFile" title="Load config">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            Config
+        </label>
+        <label class="da-toolbar-btn" for="fileInput" title="Load PGN">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            PGN
+        </label>
+        <label class="da-toolbar-btn" for="epdInput" title="Load EPD">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="9" y1="21" x2="9" y2="9"/>
+            </svg>
+            EPD
+        </label>
+        <div class="da-toolbar-frc">
+            <label class="da-toolbar-btn">FRC</label>
+            <input type="number" min="0" max="959" @bind="frcInput"
+                   @onkeydown="OnFrcKeyDown" placeholder="0-959" title="Enter FRC position ID (0-959)" />
+            <label class="da-toolbar-btn" @onclick="LoadFrcPosition" title="Load FRC position">Load</label>
+        </div>
+        <button class="da-toolbar-btn" @onclick="OpenDualPVComparison" title="Compare engine PV lines">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
+            </svg>
+            Compare PV
+        </button>
+        @if (!string.IsNullOrEmpty(pgnName))
+        {
+            <span class="da-toolbar-info" title="@pgnName">@pgnName</span>
+        }
+    </div>
+
+    <div class="da-main">
+        <!-- Left Panel: Engine 1 + Chart -->
+        <div class="da-left">
+            <EnginePanel @ref="analysisWithEngine1" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
+                         OnEngineMoveMade="OnEngineMoveMade" Id="nnInput1" Engine="Engine1"
+                         OnNewEngineLoaded="OnNewEngineLoaded" Config="@config" />
+        </div>
+
+        <!-- Center Panel: Chessboard -->
+        <div class="da-center">
+            <div class="da-overlay-controls" hidden="@(!showOverlayControls)">
+                <div class="da-overlay-field">
+                    <label>Overlay</label>
+                    <select class="da-select" @bind="selectedOverlay" @bind:after="OnOverlayChanged">
+                        @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
+                        {
+                            <option value="@setting">@setting</option>
+                        }
+                    </select>
+                </div>
+                @if (engine1SupportsOverlay && engine2SupportsOverlay)
+                {
+                    <div class="da-engine-toggle">
+                        <button class="da-toggle-btn @(overlayEngineSource == 1 ? "active" : "")"
+                                @onclick="@(() => SetOverlaySource(1))">E1</button>
+                        <button class="da-toggle-btn @(overlayEngineSource == 2 ? "active" : "")"
+                                @onclick="@(() => SetOverlaySource(2))">E2</button>
+                    </div>
+                }
+                <div class="da-overlay-field">
+                    <label>Min Policy</label>
+                    <input type="range" min="0" max="0.10" step="0.005"
+                           value="@overlaySettings.MinPolicyThreshold"
+                           @onchange="@(e => OnMinPolicyChanged(double.Parse(e.Value?.ToString() ?? "0.03")))" />
+                    <span class="da-slider-value">@overlaySettings.MinPolicyThreshold.ToString("P1")</span>
+                </div>
+            </div>
+
+            @if ((epdFileLoaded || tbFilesLoaded) && !string.IsNullOrEmpty(epdDesc))
+            {
+                <div class="da-epd-desc">@epdDesc</div>
+            }
+
+            <div class="da-board-wrapper">                
+                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
+                            MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
+            </div>
+
+            <div class="da-save-section">
+                <div class="da-save-group">
+                    <input type="text" @bind="gamesPath" placeholder="C:/dev/chess/mygames.pgn" />
+                    <span class="da-helper">Path to file - game will be appended</span>
+                    <div class="da-btn-group">
+                        <button class="da-btn" @onclick="SaveGameToPGN">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                                <polyline points="7 3 7 8 15 8"/>
+                            </svg>
+                            Save game
+                        </button>
+                        <button class="da-btn secondary" @onclick="SaveAnalysis">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                <polyline points="17 21 17 13 7 13 7 21"/>
+                            </svg>
+                            Save analysis
+                        </button>
+                    </div>
+                </div>
+                <div class="da-save-group">
+                    <input type="text" @bind="openingAndVariation" placeholder="Sicilian; Sveshnikov" />
+                    <span class="da-helper">Opening name; Variation name</span>
+                    <button class="da-btn secondary" @onclick="OpeningBook">
+                        Create Opening book
+                    </button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(currentGame))
+            {
+                <div class="da-game-info">@currentGame</div>
+            }
+
+            <div class="da-chart-section">
+                <div class="da-chart-controls">
+                    <select class="da-select" @bind="selectedChart" @bind:after="OnChartTypeChangedAsync">
+                        <option value="@CustomChartType.Evaluation">Evaluation</option>
+                        <option value="@CustomChartType.Nodes">Nodes</option>
+                        <option value="@CustomChartType.TimeUsage">Time Usage</option>
+                        <option value="@CustomChartType.NPS">NPS</option>
+                        <option value="@CustomChartType.EPS">EPS</option>
+                    </select>
+                    <div class="da-field da-field-inline">
+                        <input type="number" @bind="minMoveTimeInSecs" />
+                        <label>Min move time (sec)</label>
+                    </div>
+                    <span class="da-chart-label">PGN Chart</span>
+                </div>
+                <div class="da-chart-container">
+                    <div class="chart" @ref="pgnChart" style="height:100%;"></div>
+                </div>
+            </div>
+
+            @if (pgnFileLoaded)
+            {
+                <button class="da-dialog-btn" @onclick="OpenPGNDialog">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6"/>
+                        <line x1="8" y1="12" x2="21" y2="12"/>
+                        <line x1="8" y1="18" x2="21" y2="18"/>
+                        <line x1="3" y1="6" x2="3.01" y2="6"/>
+                        <line x1="3" y1="12" x2="3.01" y2="12"/>
+                        <line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                    View PGN Games (@games.Count)
+                </button>
+            }
+
+            @if (epdFileLoaded)
+            {
+                <button class="da-dialog-btn" @onclick="OpenEPDDialog">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6"/>
+                        <line x1="8" y1="12" x2="21" y2="12"/>
+                        <line x1="8" y1="18" x2="21" y2="18"/>
+                        <line x1="3" y1="6" x2="3.01" y2="6"/>
+                        <line x1="3" y1="12" x2="3.01" y2="12"/>
+                        <line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                    View EPD List (@epdGames.Count)
+                </button>
+            }
+
+            @if (tbFilesLoaded)
+            {
+                <div class="da-table-container">
+                    <table class="da-table">
+                        <thead>
+                            <tr>
+                                <th>FEN</th>
+                                <th>Info</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var epd in epdGames)
+                            {
+                                <tr @onclick="@(() => OpenEPDGame(epd))">
+                                    <td>@epd.FEN</td>
+                                    <td>@epd.Other?.Value.ToString()</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- Right Panel: Engine 2 -->
+        <div class="da-right">
+            <EnginePanel @ref="analysisWithEngine2" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
+                         OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2"
+                         OnNewEngineLoaded="OnNewEngineLoaded" Config="@config" />
+        </div>
+    </div>
+</div>
+
+@if (showDualPVBoard)
+{
+    <PVBoardLive State1="@analysisWithEngine1?.PVState"
+                 State2="@analysisWithEngine2?.PVState"
+                 OnClose="CloseDualPVComparison" />
+}
+
+@code {
+    private EnginePanel analysisWithEngine1;
+    private EnginePanel analysisWithEngine2;
+    private bool showOverlayControls = false;
+    private bool showDualPVBoard = false;
+    private OverlaySettings selectedOverlay = OverlaySettings.None;
+    private int overlayEngineSource = 1;
+    private bool engine1SupportsOverlay = false;
+    private bool engine2SupportsOverlay = false;
+    private string currentGame = "";
+    private int gameIndex = 0;
+    private int? frcPositionId = null;
+    private int? frcInput = null;
+    private string gamesPath = "C:/dev/chess/mygames.pgn";
+    private string openingAndVariation = "Sicilian; Sveshnikov";
+    private string epdDesc = "";
+    bool pgnFileLoaded = false;
+    bool epdFileLoaded = false;
+    bool tbFilesLoaded = false;
+    CoreTypes.EngineConfig Engine1;
+    CoreTypes.EngineConfig Engine2;
+    private List<string> uciInfo = new();
+    private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private IJSObjectReference chessModule;
+    private HashSet<PGNTypes.PgnGame> selectedItems = new();
+    private HashSet<EPDTypes.EPDEntry> selectedEPDItems = new();
+    public CultureInfo currentCulture = CultureInfo.CurrentCulture;
+    private string moveHistory = string.Empty;
+    private string pgnName = "";
+    private List<PGNTypes.PgnGame> games = new();
+    private List<EPDTypes.EPDEntry> epdGames = new();
+    private Chess.Board board = new();
+    private ElementReference pgnChart;
+    HotKeysContext keyContext;
+    IBrowserFile browserFile;
+    private string fullPath = string.Empty;
+    private int chartLines = 4;
+    private AnalyzeConfig config = AnalyzeConfig.empty;
+    private int minMoveTimeInSecs = 0;
+    private int nodes1 = 1;
+    private int nodes2 = 1;
+    private string searchString = "";
+    private GamePgnChart chart;
+    private Chessboard chessBoardRazor;
+    private readonly object _pgnPasteLock = new();
+    private readonly Dictionary<string, PgnPasteBuffer> _pgnPasteBuffers = new();
+    private DotNetObjectReference<DualAnalysis> _pgnPasteDotNetRef;
+    private bool _pgnPasteRegistered = false;
+
+    private sealed class PgnPasteBuffer
+    {
+        public StringBuilder Sb { get; } = new StringBuilder();
+        public int ExpectedChunks { get; init; }
+        public int ReceivedChunks { get; set; }
+    }
+
+    private CustomChartType selectedChart = CustomChartType.Evaluation;
+
+    private async Task OnChartTypeChangedAsync()
+    {
+        if (chart != null)
+        {
+            await chart.SwitchChartTypeAsync(selectedChart, minMoveTimeInSecs);
+        }
+        StateHasChanged();
+    }
+
+    private Task UpdateChartMoveIndicatorAsync()
+        => chart is null ? Task.CompletedTask : chart.UpdateMoveIndicatorAsync(board.MoveNumber());
+
+    private bool FilterFunc(PGNTypes.PgnGame game)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+
+        string searchTerm = searchString.Trim().ToLower();
+
+        if (game.GameMetaData.White?.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        if (game.GameMetaData.Black?.ToLower().Contains(searchTerm) == true)
+            return true;
+
+        return false;
+    }
+
+    private async Task LoadAndOpenPGNGame(PGNTypes.PgnGame game)
+    {
+        gameIndex = games.IndexOf(game);
+        currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
+        chart = new GamePgnChart(chessModule, pgnChart, game, "Evaluation", "Score");
+
+        switch (selectedChart)
+        {
+            case CustomChartType.Evaluation:
+                await chart.AssignEvalsFromPGNAsync();
+                break;
+            case CustomChartType.Nodes:
+                await chart.AssignNodesFromPGNAsync();
+                break;
+            case CustomChartType.TimeUsage:
+                await chart.AssignTimeUsageFromPGNAsync();
+                break;
+            case CustomChartType.NPS:
+                await chart.AssignNPSFromPGNAsync(minMoveTimeInSecs);
+                break;
+            case CustomChartType.EPS:
+                await chart.AssignEPSFromPGNAsync(minMoveTimeInSecs);
+                break;
+            default:
+                await chart.AssignEvalsFromPGNAsync();
+                break;
+        }
+
+        await LoadPgnGameWithVariations(game);
+    }
+
+    private async Task OpenPGNDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["Games"] = games,
+            ["SelectedItems"] = selectedItems,
+            ["SearchString"] = searchString
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraLarge,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            Position = DialogPosition.CenterRight
+        };
+        var dialog = await DialogService.ShowAsync<PGNGameListDialog>("Select PGN Game", parameters, options);
+        var result = await dialog.Result;
+        if (result.Data is null)
+        {
+            logger.LogWarning("Dialog result data is null.");
+            return;
+        }
+        var (pgnGame, search) = ((PGNTypes.PgnGame, string))result.Data;
+        searchString = search;
+
+        if (!result.Canceled && pgnGame is PGNTypes.PgnGame game)
+        {
+            await LoadAndOpenPGNGame(game);
+        }
+    }
+
+    private async Task OpenEPDDialog()
+    {
+        var parameters = new DialogParameters
+        {
+            ["EPDs"] = epdGames,
+            ["SelectedItems"] = selectedEPDItems,
+            ["SearchString"] = searchString
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraLarge,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            Position = DialogPosition.CenterRight
+        };
+        var dialog = await DialogService.ShowAsync<EPDListDialog>("Select EPD item", parameters, options);
+        var result = await dialog.Result;
+        if (result.Data is null)
+        {
+            logger.LogWarning("Dialog result data is null.");
+            return;
+        }
+        var (epdData, search) = ((EPDTypes.EPDEntry, string))result.Data;
+        searchString = search;
+
+        if (!result.Canceled && epdData is EPDTypes.EPDEntry epd)
+        {
+            await OpenEPDGame(epdData);
+        }
+    }
+
+    private async Task OpenConfigFile(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var pgnName = e.File.Name;
+            logger.LogInformation("Config file '{File}' loaded", pgnName);
+            var env = Environment.CurrentDirectory;
+            fullPath = Path.Combine(env, "wwwroot", pgnName);
+
+            await using (FileStream fs = new(fullPath, FileMode.Create))
+            {
+                browserFile = e.File;
+                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+            }
+
+            config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
+            var folder = config.EngineFolder;
+
+            var engineConfigs =
+              config.Engines
+              .SelectMany(e => Configuration.JSONParser.mapToEngConfig(folder, e))
+              .ToList();
+
+            if (engineConfigs.Count > 1)
+            {
+                Engine1 = engineConfigs[0];
+                Engine2 = engineConfigs[1];
+                nodes1 = config.Engines[0] switch
+                {
+                    PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                    PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                    _ => Math.Max(1, config.Nodes)
+                };
+
+                nodes2 = config.Engines[1] switch
+                {
+                    PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                    PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                    _ => Math.Max(1, config.Nodes)
+                };
+
+                engine1SupportsOverlay = Engine1 != null && Engine1.Options.Keys.Contains("LogLiveStats");
+                engine2SupportsOverlay = Engine2 != null && Engine2.Options.Keys.Contains("LogLiveStats");
+
+                if (engine1SupportsOverlay || engine2SupportsOverlay)
+                {
+                    showOverlayControls = true;
+                    selectedOverlay = OverlaySettings.Policy;
+                    if (engine1SupportsOverlay && engine2SupportsOverlay)
+                    {
+                        overlayEngineSource = 1;
+                        overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                        overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                    }
+                    else if (engine1SupportsOverlay)
+                    {
+                        overlayEngineSource = 1;
+                        overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                    }
+                    else
+                    {
+                        overlayEngineSource = 2;
+                        overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
+                    }
+                }
+                chartLines = config.ChartLines;
+            }
+            else if (engineConfigs.Count > 0)
+            {
+                Engine1 = engineConfigs[0];
+                nodes1 = config.Engines[0] switch
+                {
+                    PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                    PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                    _ => Math.Max(1, config.Nodes)
+                };
+
+                engine1SupportsOverlay = Engine1 != null && Engine1.Options.Keys.Contains("LogLiveStats");
+                if (engine1SupportsOverlay)
+                {
+                    showOverlayControls = true;
+                    selectedOverlay = OverlaySettings.Policy;
+                    overlayEngineSource = 1;
+                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                }
+            }
+            chartLines = config.ChartLines;
+        }
+        catch (System.IO.FileNotFoundException)
+        {
+            logger.LogError("Config file not found at '{Path}'", fullPath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load analyzeConfig.json from '{Path}'", fullPath);
+            File.Delete(fullPath);
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasted(string pastedText)
+    {
+        if (string.IsNullOrWhiteSpace(pastedText))
+            return Task.CompletedTask;
+
+        return InvokeAsync(async () =>
+        {
+            await LoadPGNGame(pastedText);
+            StateHasChanged();
+        });
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasteBegin(string id, int totalChunks)
+    {
+        if (string.IsNullOrWhiteSpace(id) || totalChunks <= 0)
+            return Task.CompletedTask;
+
+        lock (_pgnPasteLock)
+        {
+            _pgnPasteBuffers[id] = new PgnPasteBuffer { ExpectedChunks = totalChunks, ReceivedChunks = 0 };
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasteChunk(string id, int index, string chunk)
+    {
+        if (string.IsNullOrWhiteSpace(id) || chunk is null)
+            return Task.CompletedTask;
+
+        lock (_pgnPasteLock)
+        {
+            if (_pgnPasteBuffers.TryGetValue(id, out var buf))
+            {
+                buf.Sb.Append(chunk);
+                buf.ReceivedChunks++;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnPgnPasteEnd(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return Task.CompletedTask;
+
+        string pastedText = null;
+
+        lock (_pgnPasteLock)
+        {
+            if (_pgnPasteBuffers.TryGetValue(id, out var buf))
+            {
+                _pgnPasteBuffers.Remove(id);
+                pastedText = buf.Sb.ToString();
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(pastedText))
+            return Task.CompletedTask;
+
+        return InvokeAsync(async () =>
+        {
+            await LoadPGNGame(pastedText);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadPGNGame(string pastedText)
+    {
+        var parsedPgnGame = FullPGNParser.parseFullPgnGame(pastedText);
+        await LoadPgnGameWithVariations(parsedPgnGame);
+    }
+
+    private async Task LoadPgnGameWithVariations(PGNTypes.PgnGame game)
+    {
+        board.ResetBoardState();
+        var startFen = string.IsNullOrWhiteSpace(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
+        board.LoadFen(startFen);
+        board.StartPosition = startFen;
+        board.LoadPGNGameWithVariations(game);
+        fen = board.FEN();
+        UpdateFrcId(board.StartPosition);
+        moveHistory = board.GetMoveHistoryWithVariations();
+        var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
+        await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
+        StateHasChanged();
+    }
+
+    private async Task SaveGameToPGN(MouseEventArgs args)
+    {
+        logger.LogInformation("File saved to {path}", gamesPath);
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine($"[Event \"Dual Engine Analysis\"]");
+        sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+        sb.AppendLine($"[FEN \"{board.StartPosition}\"]");
+        sb.AppendLine();
+        var moveHistory = board.GetMoveHistory();
+        sb.AppendLine(moveHistory);
+        File.AppendAllText(gamesPath, sb.ToString());
+        await Task.CompletedTask;
+    }
+
+    private static string NormalizeMoveDots(string move)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(move, @"(\d+)\.{3,} ", "$1... ");
+    }
+
+    private static string ExtractMove(string input)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(input, @"^\d+\.*\s*(\S+)");
+        return match.Success ? match.Groups[1].Value : input;
+    }
+
+    private void WriteAnalysisToFile(string path, EnginePanel page)
+    {
+        var variations = page.dataList;
+        var sbVariations = new StringBuilder();
+        var engineName = page?.Engine?.Name ?? "Unknown Engine";
+        var first = page.dataList.FirstOrDefault();
+        var nodes = first.Value == null ? 0 : page.dataList.FirstOrDefault().Value.Nodes;
+        var formatNodes = nodes.ToString("N0");
+        if (variations.Count == 0)
+        {
+            logger.LogWarning("No data to save, please run the analysis first");
+            return;
+        }
+        else
+        {
+            var moveHistory = board.GetMoveHistoryToCurrentFen(fen);
+            sbVariations.AppendLine($"\n\n## {engineName} (nodes:{formatNodes}) - Analysis from FEN: {fen}");
+
+            foreach (var line in variations)
+            {
+                EngineStatus cLine = line.Value;
+                string pv = cLine.PV;
+                var firstMove = string.Empty;
+                if (!string.IsNullOrWhiteSpace(pv) && pv.Contains("..."))
+                {
+                    firstMove = string.Join(" ", pv.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2));
+                }
+                else if (!string.IsNullOrWhiteSpace(pv))
+                {
+                    firstMove = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+                }
+
+                firstMove = NormalizeMoveDots(firstMove);
+
+                if (pv == null || pv.Length == 0)
+                {
+                    continue;
+                }
+                else
+                {
+                    if (pv.Contains("..."))
+                    {
+                        var parts = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        pv = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : string.Empty;
+                    }
+                }
+                string analysisLine = string.Empty;
+                var eval = $"Eval={cLine.Eval.ValueStr}, Depth={cLine.Depth}, SD={cLine.SD}";
+                var pgnHeader = $"\n[Event \"Dual Engine Analysis\"]\n[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]\n[Engine \"{engineName}\"]\n[FEN \"{board.StartPosition}\"]\n[Eval \"{engineName}: {eval}\"]\n[Move \"{firstMove}\"]\n";
+                if (moveHistory.Length > 0)
+                {
+                    analysisLine = $"\n{moveHistory} {{variation starts here}} {pv}";
+                }
+                else
+                {
+                    analysisLine = $"\n{pv}";
+                }
+                analysisLine = pgnHeader + analysisLine;
+                sbVariations.AppendLine(analysisLine);
+            }
+            logger.LogInformation("File saved to {path}", path);
+        }
+        File.AppendAllText(path, sbVariations.ToString());
+    }
+
+    private async Task SaveAnalysis(MouseEventArgs args)
+    {
+        var directory = Path.GetDirectoryName(gamesPath);
+        var filenameWithoutExt = Path.GetFileNameWithoutExtension(gamesPath);
+        var path = Path.Combine(directory, filenameWithoutExt + "_analysis.pgn");
+        WriteAnalysisToFile(path, analysisWithEngine1);
+        WriteAnalysisToFile(path, analysisWithEngine2);
+        await Task.CompletedTask;
+    }
+
+    private async Task OpeningBook(MouseEventArgs args)
+    {
+        var directory = Path.GetDirectoryName(gamesPath);
+        var filenameWithoutExt = Path.GetFileNameWithoutExtension(gamesPath);
+        var path = Path.Combine(directory, filenameWithoutExt + "_book.pgn");
+        var text = openingAndVariation.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var openingName = text.Length > 0 ? text[0].Trim() : "Opening";
+        var variationName = text.Length > 1 ? text[1].Trim() : "";
+        board.WriteGraphLinesToPgn(path, openingName, variationName);
+        await Task.CompletedTask;
+    }
+
+    private async Task OpenEPDGame(EPDTypes.EPDEntry epd)
+    {
+        epdDesc = $"{epd.ToString()} {epd.Other?.Value}";
+        board.ResetBoardState();
+        board.StartPosition = epd.FEN;
+        board.LoadFen(epd.FEN);
+        fen = board.FEN();
+        UpdateFrcId(board.StartPosition);
+        await Notifier.UpdateFen(fen);
+        await Notifier.UpdateFenToBoard(fen);
+        StateHasChanged();
+    }
+
+    private async Task NextPGNGame()
+    {
+        var filteredGames = games.Where(FilterFunc).ToList();
+        if (filteredGames.Count == 0)
+            return;
+
+        var currentGame = games.ElementAtOrDefault(gameIndex);
+        var currentIndexInFiltered = currentGame != null ? filteredGames.IndexOf(currentGame) : -1;
+
+        if (currentIndexInFiltered >= 0 && currentIndexInFiltered < filteredGames.Count - 1)
+        {
+            var nextGame = filteredGames[currentIndexInFiltered + 1];
+            gameIndex = games.IndexOf(nextGame);
+            selectedItems.Clear();
+            selectedItems.Add(nextGame);
+            await LoadAndOpenPGNGame(nextGame);
+        }
+    }
+
+    private async Task PreviousPGNGame()
+    {
+        var filteredGames = games.Where(FilterFunc).ToList();
+        if (filteredGames.Count == 0)
+            return;
+
+        var currentGame = games.ElementAtOrDefault(gameIndex);
+        var currentIndexInFiltered = currentGame != null ? filteredGames.IndexOf(currentGame) : -1;
+
+        if (currentIndexInFiltered > 0)
+        {
+            var previousGame = filteredGames[currentIndexInFiltered - 1];
+            gameIndex = games.IndexOf(previousGame);
+            selectedItems.Clear();
+            selectedItems.Add(previousGame);
+            await LoadAndOpenPGNGame(previousGame);
+        }
+    }
+
+    private async Task OpenTBTestFile(InputFileChangeEventArgs e)
+    {
+        epdFileLoaded = false;
+        pgnFileLoaded = false;
+        tbFilesLoaded = true;
+        pgnName = e.File.Name;
+        logger.LogInformation("Tablebase result file opened {File}", pgnName);
+
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+
+        epdGames = PGNHelper.readTableBaseResults(fullPath).Select(e => e.EPD).ToList();
+        File.Delete(fullPath);
+        StateHasChanged();
+    }
+
+    private async Task OpenEPDFile(InputFileChangeEventArgs e)
+    {
+        epdFileLoaded = true;
+        pgnFileLoaded = false;
+        tbFilesLoaded = false;
+        pgnName = e.File.Name;
+        if (!pgnName.EndsWith(".epd"))
+        {
+            logger.LogError("Not an EPD file {File}", pgnName);
+            return;
+        }
+
+        logger.LogInformation("EPD file opened {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+
+        epdGames = EPDExtractor.readEPDs(fullPath).Take(5000).ToList();
+        gameIndex = 0;
+        File.Delete(fullPath);
+        await OpenEPDDialog();
+        StateHasChanged();
+    }
+
+    private async Task OpenPGNFile(InputFileChangeEventArgs e)
+    {
+        epdFileLoaded = false;
+        tbFilesLoaded = false;
+        pgnFileLoaded = true;
+        pgnName = e.File.Name;
+        if (!pgnName.EndsWith(".pgn"))
+        {
+            logger.LogError("Not a PGN file {File}", pgnName);
+            return;
+        }
+
+        logger.LogInformation("PGN file opened {File}", pgnName);
+        var env = Environment.CurrentDirectory;
+        var fullPath = Path.Combine(env, pgnName);
+        await using (FileStream fs = new(fullPath, FileMode.Create))
+        {
+            browserFile = e.File;
+            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+        }
+
+        games = FullPGNParser.parsePgnFile(fullPath).Take(4000).ToList();
+        gameIndex = 0;
+        File.Delete(fullPath);
+        await OpenPGNDialog();
+        StateHasChanged();
+    }
+
+    public async void OnUCIReceived(List<string> config)
+    {
+        uciInfo = config;
+        var content = string.Join("\n", uciInfo);
+        await chessModule.InvokeVoidAsync("openNewWindowAndWriteContent", content);
+    }
+
+    public async void OnNewFENOnBoard(string newFen)
+    {
+        moveHistory = board.GetMoveHistory();
+        fen = board.FEN();
+        UpdateFrcId(board.StartPosition);
+        await Notifier.UpdateFen(fen);
+        await UpdateChartMoveIndicatorAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async void OnMoveMadeOnBoard(string move)
+    {
+        moveHistory = board.GetMoveHistory();
+        fen = board.FEN();
+        await Notifier.UpdateFen(fen);
+        await UpdateChartMoveIndicatorAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async void OnEngineMoveMade(string move)
+    {
+        chessBoardRazor.UpdateVariationsDisplay();
+        moveHistory = board.GetMoveHistory();
+        fen = board.FEN();
+        await Notifier.UpdateFen(fen);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
+    {
+        if (engineConf.Id.Contains("Input1"))
+        {
+            Engine1 = engineConf.EngineConfig;
+        }
+        else
+        {
+            Engine2 = engineConf.EngineConfig;
+        }
+
+        // Track which engines support overlay
+        engine1SupportsOverlay = Engine1?.Options?.Keys.Contains("LogLiveStats") ?? false;
+        engine2SupportsOverlay = Engine2?.Options?.Keys.Contains("LogLiveStats") ?? false;
+        showOverlayControls = engine1SupportsOverlay || engine2SupportsOverlay;
+
+        if (showOverlayControls && selectedOverlay == OverlaySettings.None)
+        {
+            selectedOverlay = OverlaySettings.Policy;
+            // Set overlay for the active source only (or the only one that supports it)
+            if (engine1SupportsOverlay && engine2SupportsOverlay)
+            {
+                // Both support - use selected source
+                var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+                overlaySettings.SetOverlaySetting(activeId, selectedOverlay);
+                overlaySettings.SetOverlaySetting(overlayEngineSource == 1 ? "nnInput2" : "nnInput1", OverlaySettings.None);
+            }
+            else if (engine1SupportsOverlay)
+            {
+                overlayEngineSource = 1;
+                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+            }
+            else if (engine2SupportsOverlay)
+            {
+                overlayEngineSource = 2;
+                overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
+            }
+        }
+        else if (!showOverlayControls)
+        {
+            selectedOverlay = OverlaySettings.None;
+            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
+            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput2");
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SetOverlaySource(int source)
+    {
+        overlayEngineSource = source;
+        // Disable overlay on the other engine, enable on the selected one
+        if (source == 1)
+        {
+            overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput2");
+        }
+        else
+        {
+            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
+            overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+            await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput2");
+        }
+    }
+
+    private async Task OnOverlayChanged()
+    {
+        if (engine1SupportsOverlay && engine2SupportsOverlay)
+        {
+            // Both support - only update the selected source
+            var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+            overlaySettings.SetOverlaySetting(activeId, selectedOverlay);
+            await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
+        }
+        else
+        {
+            // Only one supports - update whichever does
+            if (engine1SupportsOverlay)
+            {
+                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+                await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+            }
+            if (engine2SupportsOverlay)
+            {
+                overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
+                await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput2");
+            }
+        }
+    }
+
+    private async Task OnMinPolicyChanged(double value)
+    {
+        overlaySettings.MinPolicyThreshold = value;
+        if (engine1SupportsOverlay && engine2SupportsOverlay)
+        {
+            // Both support - only update the selected source
+            var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+            await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
+        }
+        else
+        {
+            if (engine1SupportsOverlay) await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+            if (engine2SupportsOverlay) await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput2");
+        }
+    }
+
+    private void OpenDualPVComparison()
+    {
+        showDualPVBoard = true;
+        StateHasChanged();
+    }
+
+    private void CloseDualPVComparison()
+    {
+        showDualPVBoard = false;
+        StateHasChanged();
+    }
+
+    private void UpdateFrcId(string currentFen)
+    {
+        var result = ChessLibrary.ChessUtilities.Chess960.tryGetPositionIdFromFen(currentFen);
+        frcPositionId = FSharpOption<int>.get_IsSome(result) ? result.Value : null;
+        frcInput = frcPositionId;
+    }
+
+    private async Task LoadFrcPosition()
+    {
+        if (frcInput.HasValue && frcInput >= 0 && frcInput <= 959)
+        {
+            var fenOpt = ChessLibrary.ChessUtilities.Chess960.tryGetFenFromPositionId(frcInput.Value);
+            if (FSharpOption<string>.get_IsSome(fenOpt))
+            {
+                board.ResetBoardState();
+                board.LoadFen(fenOpt.Value);
+                board.StartPosition = fenOpt.Value;
+                fen = board.FEN();
+                frcPositionId = frcInput;
+                await Notifier.UpdateFenToBoard(fen);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task OnFrcKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await LoadFrcPosition();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessModule = await JsInteropService.ImportModuleAsync(JS);
+            keyContext = HotKeys.CreateContext()
+                .Add(ModKey.Ctrl, Key.ArrowRight, (() => NextPGNGame()), "Next game")
+                .Add(ModKey.Ctrl, Key.ArrowLeft, (() => PreviousPGNGame()), "Previous game");
+
+            if (!_pgnPasteRegistered)
+            {
+                _pgnPasteDotNetRef = DotNetObjectReference.Create(this);
+                _pgnPasteRegistered = true;
+            }
+            await chessModule.InvokeVoidAsync("registerGlobalPgnPaste", _pgnPasteDotNetRef);
+
+            board.LoadFen(fen);
+            board.StartPosition = fen;
+            UpdateFrcId(board.StartPosition);
+            try
+            {
+                var env = Environment.CurrentDirectory;
+                fullPath = Path.Combine(env, "wwwroot", "AnalyzeConfig.json");
+                config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
+                var folder = config.EngineFolder;
+
+                var engineConfigs =
+                  config.Engines
+                  .SelectMany(e => Configuration.JSONParser.mapToEngConfig(folder, e))
+                  .ToList();
+
+                if (engineConfigs.Count > 1)
+                {
+                    Engine1 = engineConfigs[0];
+                    Engine2 = engineConfigs[1];
+                    nodes1 = config.Engines[0] switch
+                    {
+                        PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                        PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                        _ => Math.Max(1, config.Nodes)
+                    };
+
+                    nodes2 = config.Engines[1] switch
+                    {
+                        PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                        PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                        _ => Math.Max(1, config.Nodes)
+                    };
+
+                    engine1SupportsOverlay = Engine1 != null && Engine1.Options.Keys.Contains("LogLiveStats");
+                    engine2SupportsOverlay = Engine2 != null && Engine2.Options.Keys.Contains("LogLiveStats");
+
+                    if (engine1SupportsOverlay || engine2SupportsOverlay)
+                    {
+                        showOverlayControls = true;
+                        selectedOverlay = OverlaySettings.Policy;
+                        if (engine1SupportsOverlay && engine2SupportsOverlay)
+                        {
+                            // Both support - only enable for source 1 by default
+                            overlayEngineSource = 1;
+                            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                        }
+                        else if (engine1SupportsOverlay)
+                        {
+                            overlayEngineSource = 1;
+                            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                        }
+                        else
+                        {
+                            overlayEngineSource = 2;
+                            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
+                        }
+                    }
+                }
+                else if (engineConfigs.Count > 0)
+                {
+                    Engine1 = engineConfigs[0];
+                    nodes1 = config.Engines[0] switch
+                    {
+                        PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
+                        PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
+                        _ => Math.Max(1, config.Nodes)
+                    };
+
+                    engine1SupportsOverlay = Engine1 != null && Engine1.Options.Keys.Contains("LogLiveStats");
+                    if (engine1SupportsOverlay)
+                    {
+                        showOverlayControls = true;
+                        selectedOverlay = OverlaySettings.Policy;
+                        overlayEngineSource = 1;
+                        overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                    }
+                }
+                chartLines = config.ChartLines;
+                logger.LogInformation("Analyze config loaded from {path}", fullPath);
+            }
+            catch (Exception)
+            {
+                logger.LogError("Failed to load analyzeConfig.json file, please load it manually");
+            }
+            finally
+            {
+                StateHasChanged();
+            }
+        }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        logger.LogInformation("Disposing {page}", "DualAnalysis page");
+        try
+        {
+            if (chessModule is not null)
+            {
+                await chessModule.InvokeVoidAsync("unregisterGlobalPgnPaste");
+            }
+        }
+        catch { }
+
+        if (_pgnPasteRegistered)
+        {
+            _pgnPasteDotNetRef.Dispose();
+            _pgnPasteRegistered = false;
+        }
+        keyContext?.DisposeAsync();
+        await ValueTask.CompletedTask;
+    }
+}

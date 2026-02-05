@@ -1,0 +1,354 @@
+/* PVBoardLive - Custom Dialog Styles */
+/* Matches EnginePanel aesthetic */
+
+.pv-live-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.pv-live-dialog {
+    --pv-bg: radial-gradient(circle at 15% 20%, #2f313b 0%, #2b2e38 45%, #262933 100%);
+    --pv-card: rgba(30, 33, 44, 0.98);
+    --pv-accent: #5ee4c3;
+    --pv-accent-2: #7fb1ff;
+    --pv-text: #e9eef7;
+    --pv-muted: #a7b0c3;
+    --pv-border: rgba(125, 132, 156, 0.18);
+    --pv-shadow: 0 25px 60px rgba(8, 10, 18, 0.5);
+
+    font-family: "Space Grotesk", "Karla", "Segoe UI", sans-serif;
+    color: var(--pv-text);
+    background: var(--pv-card);
+    border: 1px solid var(--pv-border);
+    border-radius: 20px;
+    box-shadow: var(--pv-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    max-height: 90vh;
+    overflow: hidden;
+    animation: slideIn 0.2s ease-out;
+}
+
+.pv-live-dialog.single-mode {
+    width: 400px;
+    max-width: 95vw;
+}
+
+.pv-live-dialog.dual-mode {
+    width: 820px;
+    max-width: 95vw;
+}
+
+/* Header */
+.pv-live-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--pv-border);
+    background: linear-gradient(135deg, rgba(37, 40, 53, 0.6), rgba(22, 24, 34, 0.7));
+}
+
+.pv-live-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--pv-text);
+}
+
+.pv-live-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pv-live-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--pv-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.pv-live-close:hover {
+    background: rgba(255, 107, 107, 0.15);
+    color: #ff6b6b;
+}
+
+.pv-live-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Content */
+.pv-live-content {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+    overflow-x: auto;
+}
+
+.single-mode .pv-live-content {
+    justify-content: center;
+}
+
+/* Board Panel */
+.pv-board-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.dual-mode .pv-board-panel {
+    flex: 0 0 370px;
+}
+
+.pv-board-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(37, 40, 53, 0.7), rgba(22, 24, 34, 0.8));
+    border-radius: 12px;
+    border: 1px solid var(--pv-border);
+}
+
+.pv-engine-name {
+    font-weight: 600;
+    color: var(--pv-accent);
+    font-size: 0.95rem;
+}
+
+.pv-engine-stats {
+    font-size: 0.82rem;
+    color: var(--pv-muted);
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+.pv-searching {
+    color: var(--pv-accent-2);
+    animation: pulse 1.5s infinite;
+    margin-right: 8px;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Board Wrapper */
+.pv-board-wrapper {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--pv-border);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 4px;
+}
+
+/* The actual board element - let chessboard.js size it */
+.pv-board-element {
+    width: 320px;
+}
+
+/* Navigation Row */
+.pv-nav-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.pv-nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(19, 22, 31, 0.6);
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--pv-border);
+}
+
+.pv-nav-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--pv-text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.pv-nav-btn:hover:not(:disabled) {
+    background: rgba(94, 228, 195, 0.15);
+    color: var(--pv-accent);
+}
+
+.pv-nav-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.pv-nav-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.pv-nav-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.pv-move-counter {
+    min-width: 55px;
+    text-align: center;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 0.85rem;
+    color: var(--pv-muted);
+    padding: 0 8px;
+}
+
+/* Follow Button */
+.pv-follow-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px solid var(--pv-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--pv-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.pv-follow-btn:hover {
+    border-color: var(--pv-accent);
+    color: var(--pv-accent);
+}
+
+.pv-follow-btn.active {
+    background: rgba(94, 228, 195, 0.15);
+    border-color: var(--pv-accent);
+    color: var(--pv-accent);
+}
+
+.pv-follow-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Compare/Action Button */
+.pv-live-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--pv-border);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--pv-text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.pv-live-btn:hover:not(:disabled) {
+    background: rgba(127, 177, 255, 0.15);
+    border-color: var(--pv-accent-2);
+    color: var(--pv-accent-2);
+}
+
+.pv-live-btn.active {
+    background: rgba(127, 177, 255, 0.2);
+    border-color: var(--pv-accent-2);
+    color: var(--pv-accent-2);
+}
+
+.pv-live-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pv-live-btn .icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* Deviation Info */
+.pv-deviation-info {
+    padding: 8px 12px;
+    background: rgba(127, 177, 255, 0.1);
+    border: 1px solid rgba(127, 177, 255, 0.25);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: var(--pv-accent-2);
+    text-align: center;
+}
+
+/* Responsive */
+@media (max-width: 850px) {
+    .pv-live-dialog.dual-mode {
+        width: 95vw;
+    }
+
+    .dual-mode .pv-live-content {
+        flex-direction: column;
+    }
+
+    .dual-mode .pv-board-panel {
+        flex: 1 1 auto;
+    }
+}
+
+@media (max-width: 450px) {
+    .pv-live-dialog {
+        border-radius: 16px;
+    }
+
+    .pv-live-header {
+        padding: 12px 16px;
+    }
+
+    .pv-live-content {
+        padding: 16px;
+    }
+
+    .pv-nav-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .pv-follow-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}

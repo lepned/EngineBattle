@@ -1,0 +1,619 @@
+/* DualAnalysis - Modern Dual Engine Analysis Page Styles */
+/* Self-contained CSS with CSS variables for theming */
+
+.dual-analysis {
+    --da-bg: radial-gradient(circle at 10% 15%, #2f313b 0%, #2b2e38 40%, #23262e 100%);
+    --da-card: rgba(30, 33, 44, 0.92);
+    --da-card-strong: rgba(22, 24, 33, 0.98);
+    --da-accent: #5ee4c3;
+    --da-accent-2: #7fb1ff;
+    --da-accent-gradient: linear-gradient(135deg, #5d7bff, #8ad5ff);
+    --da-text: #e9eef7;
+    --da-muted: #a7b0c3;
+    --da-border: rgba(125, 132, 156, 0.18);
+    --da-shadow: 0 20px 40px rgba(8, 10, 18, 0.35);
+    --da-input-bg: rgba(19, 22, 31, 0.75);
+
+    font-family: "Space Grotesk", "Karla", "Segoe UI", sans-serif;
+    color: var(--da-text);
+    min-height: 100vh;
+    background: var(--da-bg);
+    padding: 12px 20px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Top Toolbar - blends with app bar */
+.dual-analysis .da-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: -12px -20px 0 -20px;
+    padding: 6px 20px;
+    background: #333333;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Toolbar Buttons */
+.dual-analysis .da-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.15s ease;
+}
+
+.dual-analysis .da-toolbar-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.dual-analysis .da-toolbar-btn .icon {
+    width: 18px;
+    height: 18px;
+}
+
+.dual-analysis .da-toolbar-info {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 4px 10px;
+}
+
+/* Main Grid Layout - 3 columns for dual engines */
+.dual-analysis .da-main {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(380px, 1.1fr) minmax(320px, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+/* Card Styles */
+.dual-analysis .da-card {
+    background: var(--da-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--da-border);
+    border-radius: 20px;
+    padding: 18px;
+    box-shadow: var(--da-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Left Panel - Engine 1 + Chart */
+.dual-analysis .da-left {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Right Panel - Engine 2 */
+.dual-analysis .da-right {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.dual-analysis .da-game-info {
+    font-size: 0.9rem;
+    color: var(--da-text);
+    padding: 10px 14px;
+    background: rgba(127, 177, 255, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(127, 177, 255, 0.2);
+}
+
+/* Chart Section */
+.dual-analysis .da-chart-section {
+    background: var(--da-card);
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid var(--da-border);
+}
+
+.dual-analysis .da-chart-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.dual-analysis .da-select {
+    background: var(--da-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 10px;
+    color: var(--da-text);
+    padding: 10px 14px;
+    font-size: 0.88rem;
+    outline: none;
+    min-width: 140px;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.dual-analysis .da-select:focus {
+    border-color: var(--da-accent);
+    box-shadow: 0 0 0 3px rgba(94, 228, 195, 0.2);
+}
+
+.dual-analysis .da-field {
+    display: grid;
+    gap: 6px;
+}
+
+.dual-analysis .da-field label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--da-muted);
+}
+
+.dual-analysis .da-field input {
+    background: var(--da-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 10px;
+    color: var(--da-text);
+    padding: 10px 12px;
+    font-size: 0.88rem;
+    outline: none;
+    width: 65px;
+}
+
+.dual-analysis .da-field input:focus {
+    border-color: var(--da-accent);
+    box-shadow: 0 0 0 3px rgba(94, 228, 195, 0.2);
+}
+
+.dual-analysis .da-field-inline {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.dual-analysis .da-chart-label {
+    margin-left: auto;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--da-muted);
+    opacity: 0.5;
+}
+
+.dual-analysis .da-chart-container {
+    height: 250px;
+    background: rgba(38, 42, 55, 0.7);
+    border-radius: 12px;
+    border: 1px solid var(--da-border);
+}
+
+/* Override global .chart class to use transparent background */
+.dual-analysis .chart {
+    background-color: transparent;
+    margin: 0;
+}
+
+/* Center Panel - Chessboard */
+.dual-analysis .da-center {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Overlay Controls above chessboard */
+.dual-analysis .da-overlay-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, rgba(37, 40, 53, 0.8), rgba(22, 24, 34, 0.85));
+    border-radius: 12px;
+    border: 1px solid var(--da-border);
+}
+
+.dual-analysis .da-overlay-field {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.dual-analysis .da-overlay-field label {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--da-muted);
+}
+
+.dual-analysis .da-overlay-field select {
+    background: var(--da-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 8px;
+    color: var(--da-text);
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    outline: none;
+    min-width: 100px;
+}
+
+.dual-analysis .da-overlay-field input[type="range"] {
+    width: 140px;
+    height: 6px;
+    -webkit-appearance: none;
+    background: rgba(100, 108, 130, 0.4);
+    border-radius: 3px;
+    outline: none;
+}
+
+.dual-analysis .da-overlay-field input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--da-accent);
+    cursor: pointer;
+}
+
+.dual-analysis .da-slider-value {
+    font-size: 0.8rem;
+    color: var(--da-accent);
+    min-width: 42px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+/* Engine Toggle Buttons */
+.dual-analysis .da-engine-toggle {
+    display: flex;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.dual-analysis .da-toggle-btn {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--da-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.dual-analysis .da-toggle-btn:hover:not(:disabled) {
+    color: var(--da-text);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dual-analysis .da-toggle-btn.active {
+    background: var(--da-accent);
+    color: #0c1122;
+}
+
+.dual-analysis .da-toggle-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.dual-analysis .da-epd-desc {
+    font-size: 0.85rem;
+    color: var(--da-muted);
+    padding: 8px 12px;
+    background: rgba(94, 228, 195, 0.08);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+.dual-analysis .da-board-wrapper {
+    background: var(--da-card);
+    border-radius: 20px;
+    padding: 16px;
+    border: 1px solid var(--da-border);
+}
+
+/* Save Section */
+.dual-analysis .da-save-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: var(--da-card);
+    border-radius: 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--da-border);
+}
+
+.dual-analysis .da-save-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.dual-analysis .da-save-group input[type="text"] {
+    background: var(--da-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 10px;
+    color: var(--da-text);
+    padding: 7px 10px;
+    font-size: 0.88rem;
+    outline: none;
+    width: 100%;
+}
+
+.dual-analysis .da-save-group input[type="text"]:focus {
+    border-color: var(--da-accent);
+    box-shadow: 0 0 0 3px rgba(94, 228, 195, 0.2);
+}
+
+.dual-analysis .da-helper {
+    font-size: 0.72rem;
+    color: var(--da-muted);
+    margin-top: 4px;
+}
+
+.dual-analysis .da-btn {
+    background: var(--da-accent-gradient);
+    color: #0c1122;
+    border: none;
+    border-radius: 10px;
+    padding: 7px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dual-analysis .da-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(93, 123, 255, 0.3);
+}
+
+.dual-analysis .da-btn.secondary {
+    background: transparent;
+    color: var(--da-text);
+    border: 1px solid rgba(125, 132, 156, 0.35);
+}
+
+.dual-analysis .da-btn.secondary:hover {
+    background: rgba(125, 132, 156, 0.1);
+    border-color: var(--da-accent);
+}
+
+.dual-analysis .da-btn .icon {
+    width: 16px;
+    height: 16px;
+}
+
+.dual-analysis .da-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Dialog Buttons */
+.dual-analysis .da-dialog-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(125, 132, 156, 0.35);
+    background: rgba(93, 123, 255, 0.1);
+    color: var(--da-accent-2);
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-top: 12px;
+}
+
+.dual-analysis .da-dialog-btn:hover {
+    background: rgba(93, 123, 255, 0.2);
+    border-color: var(--da-accent-2);
+    transform: translateY(-1px);
+}
+
+.dual-analysis .da-dialog-btn .icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* TB Files Table (inline, not dialog) */
+.dual-analysis .da-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border-radius: 14px;
+    border: 1px solid var(--da-border);
+    background: var(--da-card);
+    margin-top: 12px;
+}
+
+.dual-analysis .da-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.dual-analysis .da-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.dual-analysis .da-table th {
+    background: linear-gradient(180deg, rgba(60, 65, 80, 0.95), rgba(45, 50, 65, 0.95));
+    backdrop-filter: blur(8px);
+    padding: 12px 10px;
+    text-align: left;
+    font-weight: 500;
+    color: var(--da-muted);
+    border-bottom: 1px solid var(--da-border);
+    white-space: nowrap;
+}
+
+.dual-analysis .da-table td {
+    padding: 10px;
+    border-bottom: 1px solid rgba(125, 132, 156, 0.1);
+    color: var(--da-text);
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 0.8rem;
+}
+
+.dual-analysis .da-table tbody tr {
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.dual-analysis .da-table tbody tr:hover {
+    background: rgba(94, 228, 195, 0.1);
+}
+
+.dual-analysis .da-table tbody tr:nth-child(even) {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.dual-analysis .da-table tbody tr:nth-child(even):hover {
+    background: rgba(94, 228, 195, 0.12);
+}
+
+/* Custom Scrollbar */
+.dual-analysis .da-table-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.dual-analysis .da-table-container::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.dual-analysis .da-table-container::-webkit-scrollbar-thumb {
+    background: rgba(125, 132, 156, 0.4);
+    border-radius: 4px;
+}
+
+.dual-analysis .da-table-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(125, 132, 156, 0.6);
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+    .dual-analysis .da-main {
+        grid-template-columns: minmax(280px, 1fr) minmax(350px, 1.1fr) minmax(280px, 1fr);
+        gap: 16px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .dual-analysis .da-main {
+        grid-template-columns: 1fr;
+    }
+
+    .dual-analysis .da-left,
+    .dual-analysis .da-right {
+        order: 2;
+    }
+
+    .dual-analysis .da-center {
+        order: 1;
+    }
+}
+
+@media (max-width: 900px) {
+    .dual-analysis .da-save-section {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .dual-analysis {
+        padding: 12px;
+    }
+
+    .dual-analysis .da-topbar {
+        padding: 12px 14px;
+    }
+
+    .dual-analysis .da-upload {
+        padding: 8px 14px;
+        font-size: 0.82rem;
+    }
+}
+
+/* FRC ID Display - positioned in board wrapper */
+.dual-analysis .da-board-wrapper {
+    position: relative;
+}
+
+.dual-analysis .da-frc-id {
+    position: absolute;
+    top: 8px;
+    right: 16px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--da-accent);
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    padding: 2px 8px;
+    background: rgba(94, 228, 195, 0.15);
+    border-radius: 4px;
+    z-index: 5;
+}
+
+/* FRC Load in Toolbar */
+.dual-analysis .da-toolbar-frc {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.dual-analysis .da-toolbar-frc input {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: #fff;
+    padding: 6px 8px;
+    font-size: 0.82rem;
+    outline: none;
+    width: 75px;
+    text-align: center;
+}
+
+.dual-analysis .da-toolbar-frc input:focus {
+    border-color: var(--da-accent);
+}
+
+.dual-analysis .da-toolbar-frc input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* Chessboard styling override for dark theme */
+.dual-analysis ::deep .chessboard-root {
+    width: 100%;
+    max-width: 480px;
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+}
+
+.dual-analysis ::deep .board-container-41a68,
+.dual-analysis ::deep .chessboard-21da3 {
+    width: 100%;
+    height: 100%;
+}
+
+/* Engine panel badge styling for differentiation */
+.dual-analysis .da-left .engine-panel {
+    border-left: 3px solid var(--da-accent);
+}
+
+.dual-analysis .da-right .engine-panel {
+    border-left: 3px solid var(--da-accent-2);
+}

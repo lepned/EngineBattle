@@ -1,55 +1,62 @@
 ﻿@inject NotifierService Notifier
-<MudNavMenu>
-	<MudNavGroup Title="Configuration and setup" Expanded="(setupVisible)">
-		<MudNavLink Href="/">Overview</MudNavLink>
-		<MudNavLink Href="/tournamentSetup">Tournament setup</MudNavLink>
-		<MudNavLink Href="/EngineDef">Engine setup</MudNavLink>
-
+<MudNavMenu Bordered="true" Rounded="true" Color="Color.Primary">
+	<MudNavGroup Title="Setup" Icon="@Icons.Material.Filled.Settings" Expanded="(setupVisible)">
+		<MudNavLink Href="/" Icon="@Icons.Material.Filled.Dashboard">Overview</MudNavLink>
+		<MudNavLink Href="/tournamentSetup" Icon="@Icons.Material.Filled.EmojiEvents">Tournament setup</MudNavLink>
+		<MudNavLink Href="/EngineDef" Icon="@Icons.Material.Filled.Memory">Engine setup</MudNavLink>
 	</MudNavGroup>
-	@if (shouldBeVisible)
-	{
-		<MudNavGroup Title="Tournament setting" Expanded="true">
-			<MudNavLink Href="/tournyShortcuts">Shortcuts</MudNavLink>
-			<MudNavLink Href="/tournament">Run tournament</MudNavLink>
-			<MudNavLink Href="/cupBracket">Cup bracket</MudNavLink>
-		</MudNavGroup>
-	}
-	@if (shouldBeVisible)
-	{
-		<MudNavGroup Title="Puzzles" Expanded="true">
-			<MudNavLink Href="/tutorialPuzzles">Tutorial puzzle</MudNavLink>
-			<MudNavLink Href="/downloadPuzzles">Download puzzle data</MudNavLink>
-			<MudNavLink Href="/LichessPuzzles">Run Lichess puzzles</MudNavLink>
-			<MudNavLink Href="/EretPuzzleTest">ERET puzzle test</MudNavLink>
 
+	<MudDivider Class="my-1" />
+
+	@if (shouldBeVisible)
+	{
+		<MudNavGroup Title="Tournament" Icon="@Icons.Material.Filled.EmojiEvents" Expanded="true">
+			<MudNavLink Href="/tournyShortcuts" Icon="@Icons.Material.Filled.Bolt">Shortcuts</MudNavLink>
+			<MudNavLink Href="/tournament" Icon="@Icons.Material.Filled.PlayArrow">Run tournament</MudNavLink>
 		</MudNavGroup>
+
+		<MudDivider Class="my-1" />
 	}
 
-	<MudNavGroup Title="Tools" Expanded="false">
-		<MudNavLink Href="/testCanvas">Test canvas</MudNavLink>
-		@* <MudNavLink Href="/engineJSONCreator">Engine.json creator</MudNavLink> *@
-		<MudNavLink Href="/createOpeningBook">Create opening book</MudNavLink>
-		@* <MudNavLink Href="/benchGenerator">LC0 Benchmark generator</MudNavLink> *@
-		<MudNavLink Href="/deviationFinder">Move deviation finder</MudNavLink>
-		<MudNavLink Href="/play-vs-computer">Play vs Comp</MudNavLink>
+	@if (shouldBeVisible)
+	{
+		<MudNavGroup Title="Puzzles" Icon="@Icons.Material.Filled.Extension" Expanded="false">
+			<MudNavLink Href="/tutorialPuzzles" Icon="@Icons.Material.Filled.School">Tutorial</MudNavLink>
+			<MudNavLink Href="/downloadPuzzles" Icon="@Icons.Material.Filled.Download">Download data</MudNavLink>
+			<MudNavLink Href="/LichessPuzzles" Icon="@Icons.Material.Filled.Psychology">Lichess puzzles</MudNavLink>
+			<MudNavLink Href="/EretPuzzleTest" Icon="@Icons.Material.Filled.Science">ERET test</MudNavLink>
+		</MudNavGroup>
+
+		<MudDivider Class="my-1" />
+	}
+
+	<MudNavGroup Title="Tools" Icon="@Icons.Material.Filled.Build" Expanded="false">
+		<MudNavLink Href="/testCanvas" Icon="@Icons.Material.Filled.Brush">Test canvas</MudNavLink>
+		<MudNavLink Href="/createOpeningBook" Icon="@Icons.Material.Filled.MenuBook">Opening book</MudNavLink>
+		<MudNavLink Href="/deviationFinder" Icon="@Icons.Material.Filled.Compare">Move deviation</MudNavLink>
+		<MudNavLink Href="/play-vs-computer" Icon="@Icons.Material.Filled.SportsEsports">Play vs Computer</MudNavLink>
 	</MudNavGroup>
-	
-	<MudNavGroup Title="PGN tools" Expanded="true">
-		<MudNavLink Href="/ordo">Create Ordo table</MudNavLink>
-		<MudNavLink Href="/speedBookExit">Book exit speed from PGN</MudNavLink>
-		<MudNavLink Href="/speed">Engine speed from PGN</MudNavLink>
-		<MudNavLink Href="/backendSpeed">Backend metrics (EPS)</MudNavLink>
-		<MudNavLink Href="/searchCalc">Search metric from PGN</MudNavLink>
-		<MudNavLink Href="/pgnUtilities">PGN utilities</MudNavLink>
+
+	<MudDivider Class="my-1" />
+
+	<MudNavGroup Title="PGN Analysis" Icon="@Icons.Material.Filled.Description" Expanded="true">
+		<MudNavLink Href="/ordo" Icon="@Icons.Material.Filled.Leaderboard">Ordo table</MudNavLink>
+		<MudNavLink Href="/speedBookExit" Icon="@Icons.Material.Filled.Speed">Book exit speed</MudNavLink>
+		<MudNavLink Href="/speed" Icon="@Icons.Material.Filled.Timer">Engine speed</MudNavLink>
+		<MudNavLink Href="/backendSpeed" Icon="@Icons.Material.Filled.Analytics">Backend metrics</MudNavLink>
+		<MudNavLink Href="/searchCalc" Icon="@Icons.Material.Filled.Search">Search metrics</MudNavLink>
+		<MudNavLink Href="/pgnUtilities" Icon="@Icons.Material.Filled.Handyman">Utilities</MudNavLink>
 	</MudNavGroup>
+
+	<MudDivider Class="my-1" />
 
 	@if (shouldBeVisible)
 	{
-		<MudNavGroup Title="Analysis" Expanded="true">
-			<MudNavLink Href="/analysisMode">Configuration</MudNavLink>			
-			<MudNavLink Href="/help">Shortcuts</MudNavLink>
-			<MudNavLink Href="/DualEngineAnalysis">Dual Engine analysis</MudNavLink>
-			<MudNavLink Href="/singleEngineAnalysis">Single Engine analysis</MudNavLink>
+		<MudNavGroup Title="Engine Analysis" Icon="@Icons.Material.Filled.Insights" Expanded="true">
+			<MudNavLink Href="/analysisMode" Icon="@Icons.Material.Filled.Tune">Configuration</MudNavLink>
+			<MudNavLink Href="/help" Icon="@Icons.Material.Filled.Keyboard">Shortcuts</MudNavLink>
+			<MudNavLink Href="/analysis/single" Icon="@Icons.Material.Outlined.TrendingUp">Single Engine analysis</MudNavLink>
+			<MudNavLink Href="/analysis/dual" Icon="@Icons.Material.Outlined.CompareArrows">Dual Engine analysis</MudNavLink>
 		</MudNavGroup>
 	}
 
@@ -63,7 +70,7 @@
 	{
 		var relativePath = "wwwroot/tournament.json"; // Specify the relative path to the file
 		var currentDirectory = Directory.GetCurrentDirectory();
-		var fullPath = Path.Combine(currentDirectory, relativePath);		
+		var fullPath = Path.Combine(currentDirectory, relativePath);
 		shouldBeVisible = File.Exists(fullPath);
 		setupVisible = !shouldBeVisible;
 	}

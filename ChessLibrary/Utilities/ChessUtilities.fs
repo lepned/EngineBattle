@@ -383,3 +383,55 @@ module Chess960 =
     for (wid, bid, pos) in positions do
       file.WriteLine(sprintf "%s ; %s;" pos (sprintf "id \"DFRC - Position nr: %d vs %d\"" wid bid))
     printfn "File %s written to path" fileName
+
+  /// Checks if a FEN represents a Chess960 starting position and returns the position ID (0-959)
+  let tryGetPositionIdFromFen (fen: string) : int option =
+    if String.IsNullOrWhiteSpace(fen) then None
+    else
+      let parts = fen.Split(' ')
+      if parts.Length < 1 then None
+      else
+        let boardPart = parts.[0]
+        let ranks = boardPart.Split('/')
+        if ranks.Length <> 8 then None
+        else
+          // Check that it's a starting position:
+          // - Rank 8 (index 0): black pieces (lowercase)
+          // - Rank 7 (index 1): 8 black pawns "pppppppp"
+          // - Ranks 6-3 (indices 2-5): empty "8"
+          // - Rank 2 (index 6): 8 white pawns "PPPPPPPP"
+          // - Rank 1 (index 7): white pieces (uppercase)
+          let isValidStarting =
+            ranks.[1] = "pppppppp" &&
+            ranks.[2] = "8" &&
+            ranks.[3] = "8" &&
+            ranks.[4] = "8" &&
+            ranks.[5] = "8" &&
+            ranks.[6] = "PPPPPPPP"
+          if not isValidStarting then None
+          else
+            // Extract white back rank (rank 1, index 7 in array)
+            let whiteBackRank = ranks.[7].ToUpper()
+            // Verify it's 8 characters (all pieces, no digits)
+            if whiteBackRank.Length <> 8 then None
+            elif whiteBackRank |> Seq.exists System.Char.IsDigit then None
+            else
+              try
+                let posId = calcPositionId whiteBackRank
+                Some posId
+              with _ -> None
+
+  /// Gets the FEN for a Chess960 position ID (0-959)
+  let tryGetFenFromPositionId (positionId: int) : string option =
+    if positionId < 0 || positionId > 959 then None
+    else
+      // Generate all positions sorted by their calculated position ID
+      let positions =
+        generateAllChess960Positions()
+        |> List.map (fun pos -> calcPositionId pos, pos)
+        |> List.sortBy fst
+        |> List.distinctBy fst
+      // Find the position with matching ID
+      positions
+      |> List.tryFind (fun (id, _) -> id = positionId)
+      |> Option.map (fun (_, pos) -> chess960ToFen pos)

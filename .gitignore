@@ -376,3 +376,7 @@ FodyWeavers.xsd
 /Console/log.txt
 /copilot-instructions.md
 /WebGUI/wwwroot/AnalyzeConfig.json
+/WebGUI/wwwroot/cup_bracket.json
+/WebGUI/wwwroot/cup_bracket.json.bak
+/WebGUI/wwwroot/swiss_state.json
+/WebGUI/wwwroot/swiss_state.json.bak
