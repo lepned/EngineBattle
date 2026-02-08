@@ -1594,15 +1594,31 @@ module EngineHelper =
 module HardwareInfo =
   open Engine
   open EngineHelper
-  
+  open System.Collections.Concurrent
+
+  let private footprintCache = ConcurrentDictionary<string, uint64>()
+
+  let private footprintCacheKey (config: EngineConfig) =
+        let hash =
+            match config.Options.TryGetValue("Hash") with
+            | true, v -> string v
+            | _ -> ""
+        let threads =
+            match config.Options.TryGetValue("Threads") with
+            | true, v -> string v
+            | _ -> ""
+        sprintf "%s|H=%s|T=%s" config.Path hash threads
+
   let estimateEngineRam (config: EngineConfig) : uint64 =
-        let engine = createEngine (config, None)
-        initEngine 0 engine        
-        // snapshot working‐set
-        let ws = uint64 engine.Process.WorkingSet64
-        // clean up
-        engine.StopProcess()
-        ws
+        let key = footprintCacheKey config
+        footprintCache.GetOrAdd(key, fun _ ->
+            let engine = createEngine (config, None)
+            initEngine 0 engine
+            // snapshot working‐set
+            let ws = uint64 engine.Process.WorkingSet64
+            // clean up
+            engine.StopProcess()
+            ws)
 
   /// Sequentially walk your configs, measuring memory usage one at a time, after each measurement we GC to reclaim EVERYTHING.
   let footPrints (configs: EngineConfig seq) : (string * uint64)[] =

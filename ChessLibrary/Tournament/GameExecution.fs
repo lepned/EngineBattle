@@ -562,6 +562,7 @@ let playWithPondering
 
 /// Unified play implementation: use optional replay dicts to enable "do not deviate" mode.
 let playGeneric
+  (skipEngineInit: bool)
   (replayOptWhite: ReferenceGameReplay option)
   (replayOptBlack: ReferenceGameReplay option)
   (sb : StringBuilder)
@@ -641,24 +642,27 @@ let playGeneric
   let mutable moveInfoData = ChessMoveInfo.Empty
 
   callback(StartOfGame gameStartInfo)
-  try
-      let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
-      player1.AddSetOption engineOption
-      player2.AddSetOption engineOption
-      if tourny.MoveOverhead.Ticks > 0 then
-          let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
-          player1.SetMoveOverhead("overhead", ms)
-          player2.SetMoveOverhead("overhead", ms)
+  if not skipEngineInit then
+    try
+        let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+        player1.AddSetOption engineOption
+        player2.AddSetOption engineOption
+        if tourny.MoveOverhead.Ticks > 0 then
+            let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
+            player1.SetMoveOverhead("overhead", ms)
+            player2.SetMoveOverhead("overhead", ms)
 
-      if not tourny.ConsoleOnly then
-        let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
-        let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
-        let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
-        GameInitialization.initEngines openingDelayMs tourny player1 player2 logger
-      else
-        if player1.HasExited() || player2.HasExited() then
-          GameInitialization.initEngines 0 tourny player1 player2 logger
-  with ex -> raise (CustomException.EngineStartupException (ex.Message))
+        if not tourny.ConsoleOnly then
+          let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
+          let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
+          let openingDelayMs : int = int (TimeSpan.FromSeconds(timeCalc + 2.0)).TotalMilliseconds
+          GameInitialization.initEngines openingDelayMs tourny player1 player2 logger
+          logger.LogInformation($"Initialization done for GUI play: {player1.Name}, {player2.Name}")
+        else
+          if player1.HasExited() || player2.HasExited() then
+            GameInitialization.initEngines 0 tourny player1 player2 logger
+            logger.LogInformation($"Initialization done for console play: {player1.Name}, {player2.Name}")
+    with ex -> raise (CustomException.EngineStartupException (ex.Message))
 
   // preserve existing logging/description behavior
   logEngineInitCommands logger player1 player2
@@ -721,7 +725,6 @@ let playGeneric
             else
               return! readLineOrAdjudication playing ct
     }
-
   let rec playEngine (playing: ChessEngine) (opponent: ChessEngine) (position:uint64) = async {
 
     match tryConsumeUserAdjudication() with
@@ -1190,7 +1193,22 @@ let play
   (pairing: Pairing)
   (tryGetUserAdjudication: unit -> UserAdjudication option)
   callback  =
-  playGeneric None None sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
+  playGeneric false None None sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
+
+/// Play a game without engine initialization (engines must already be running).
+/// Used by parallel/console execution where engines are pre-initialized.
+let playConsole
+  (sb : StringBuilder)
+  (cts : CancellationTokenSource)
+  (logger : ILogger)
+  (tourny : Tournament)
+  (board : Board)
+  (player1 : ChessEngine)
+  (player2 : ChessEngine)
+  (pairing: Pairing)
+  (tryGetUserAdjudication: unit -> UserAdjudication option)
+  callback  =
+  playGeneric true None None sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
 
 /// Play a game with deviation prevention enabled
 let playDoNotDeviate
@@ -1206,4 +1224,21 @@ let playDoNotDeviate
   (pairing : Pairing)
   (tryGetUserAdjudication: unit -> UserAdjudication option)
   callback  =
-  playGeneric (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
+  playGeneric false (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
+
+/// Play a game with deviation prevention, without engine initialization.
+/// Used by parallel/console execution where engines are pre-initialized.
+let playConsoleDoNotDeviate
+  (replayWhite: ReferenceGameReplay)
+  (replayBlack: ReferenceGameReplay)
+  (sb : StringBuilder)
+  (cts : CancellationTokenSource)
+  (logger : ILogger)
+  (tourny : Tournament)
+  (board : Board)
+  (player1 : ChessEngine)
+  (player2 : ChessEngine)
+  (pairing : Pairing)
+  (tryGetUserAdjudication: unit -> UserAdjudication option)
+  callback  =
+  playGeneric true (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback

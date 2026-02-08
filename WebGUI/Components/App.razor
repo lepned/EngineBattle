@@ -13,11 +13,11 @@
   <link href="css/site_v1.17.css" rel="stylesheet" />
   <link href="EngineBattle.WebGUI.styles.css" rel="stylesheet" />
   <link rel="icon" type="image/x-icon" href="chessIcon.png" />
-  <HeadOutlet @rendermode="InteractiveServer" />
+  <HeadOutlet @rendermode="@(new InteractiveServerRenderMode(prerender: false))" />
 
 </head>
 <body>
-  <Routes @rendermode="InteractiveServer" />
+  <Routes @rendermode="@(new InteractiveServerRenderMode(prerender: false))" />
    
   <script src="_content/MudBlazor/MudBlazor.min.js"></script>
   <script src="/js/chessboard2.min.js"></script>

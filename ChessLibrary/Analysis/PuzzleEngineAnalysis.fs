@@ -1,6 +1,7 @@
 module ChessLibrary.PuzzleEngineAnalysis
 
 open System
+open System.Collections.Concurrent
 open System.Collections.Generic
 open ChessLibrary.Engine
 open ChessLibrary.TypesDef.CoreTypes
@@ -95,17 +96,26 @@ let getPuzzlePolicyEngine config =
       failwith "Engine did not respond to isready command."
   engine
 
+/// Cache of default UCI option names per engine binary.
+/// Key: "Path|Args"; Value: set of option names reported during uci handshake.
+let private defaultOptionNamesCache = ConcurrentDictionary<string, HashSet<string>>()
+
+let private probeDefaultOptionNames (config: EngineConfig) =
+    let key = sprintf "%s|%s" config.Path config.Args
+    defaultOptionNamesCache.GetOrAdd(key, fun _ ->
+        let engine = EngineHelper.createEngineWithoutValidation(config, None)
+        let options = engine.GetDefaultOptions()
+        engine.StopProcess()
+        HashSet<string>(options.Keys, StringComparer.OrdinalIgnoreCase))
+
 let getPuzzleValueEngine config =
   let isLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
   let isCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
 
   try
-      let engine = EngineHelper.createEngineWithoutValidation(config, None)
-
-      let options = engine.GetDefaultOptions()
       if isLc0 then
-          engine.StopProcess()
-          if options.ContainsKey "ValueOnly" then
+          let optionNames = probeDefaultOptionNames config
+          if optionNames.Contains "ValueOnly" then
               let dict = Dictionary<string, obj>(config.Options)
               //for some unknow reason we need to remove the backend options in some older lc0 version for valuehead to work
               for item in dict do
@@ -116,7 +126,7 @@ let getPuzzleValueEngine config =
                   dict.Add("MinibatchSize", 256)
               if not (dict.ContainsKey "ValueOnly") then
                   dict.Add("ValueOnly", true)
-              let config = if isLc0 then {config with Options = dict} else config
+              let config = {config with Options = dict}
               let engine = EngineHelper.createEngineWithoutValidation(config, None)
               let ok = engine.WaitForReadyOk() // wait for readyok
               if not ok then
@@ -131,13 +141,14 @@ let getPuzzleValueEngine config =
               else
                 ConsoleUtils.yellowConsole redMsg
               //for Lc0 rewrite
-              let config = if isLc0 then {config with Args = "valuehead"} else config
+              let config = {config with Args = "valuehead"}
               let engine = EngineHelper.createEngineWithoutValidation(config, None)
               let ok = engine.WaitForReadyOk() // wait for readyok
               if not ok then
                   failwith "Engine did not respond to isready command."
               Some engine
       elif isCeres then
+          let engine = EngineHelper.createEngineWithoutValidation(config, None)
           let ok = engine.WaitForReadyOk() // wait for readyok
           if not ok then
               failwith "Engine did not respond to isready command."

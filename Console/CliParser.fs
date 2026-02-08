@@ -11,6 +11,7 @@ type VerbResult =
     | Tournament of configFile:string
     | Eret of configFile: string
     | Benchmark of configFile:string
+    | Tune of configFile:string
     | GUI of page: string * port: int option
 
 
@@ -240,6 +241,11 @@ module CustomParser =
                     let configFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (Benchmark configFile) :: acc)
                 else failwith "Missing parameter for Benchmark"
+            | "tune" -> // Handle the Tune verb
+                if index + 1 < args.Length then
+                    let configFile = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (Tune configFile) :: acc)
+                else failwith "Missing parameter for Tune"
             | "gui" ->
                 // Accept: gui <page> <port> | gui <port> | gui <page>
                 let nextArg idx = if idx < args.Length then Some args.[idx] else None

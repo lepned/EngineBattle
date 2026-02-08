@@ -282,9 +282,9 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
                                           searchReplayList pair
                                           let whiteReplayDict = replayDicts.[pair.White.Name]
                                           let blackReplayDict = replayDicts.[pair.Black.Name]
-                                          return! playDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
+                                          return! playConsoleDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
                                       else
-                                          return! play sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
+                                          return! playConsole sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
 
                                     with
                                     | ex -> return handleGameException logger ex cts gametimer board engine1 engine2 pair  }
@@ -570,9 +570,9 @@ let parallelTournamentRun
                                           searchReplayList pair
                                           let whiteReplayDict = replayDicts.[pair.White.Name]
                                           let blackReplayDict = replayDicts.[pair.Black.Name]
-                                          return! playDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
+                                          return! playConsoleDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
                                       else
-                                          return! play sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
+                                          return! playConsole sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
 
                                   with
                                   | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }

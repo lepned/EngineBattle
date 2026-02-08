@@ -248,6 +248,28 @@ module Manager =
     let mutable consoleMode = consoleOnly
     let executablePath() = tournament.OrdoExePath
 
+    // Serializes Ordo calls on a background thread with "latest wins" draining
+    let ordoAgent = MailboxProcessor<EngineLineData[] * string * string>.Start(fun inbox ->
+        let rec loop () = async {
+            let! msg = inbox.Receive()
+            // Drain queue to only process the latest request
+            let mutable latest = msg
+            while inbox.CurrentQueueLength > 0 do
+                let! next = inbox.Receive()
+                latest <- next
+            let (capturedData, ordoPath, pgnPath) = latest
+            try
+                let cmd = OrdoHelper.createOrdoCommand ordoPath pgnPath ""
+                Console.WriteLine($"\n Ordo command: {cmd.Arguments} \n")
+                let! ordo = OrdoHelper.runCommandAsync cmd capturedData cts.Token |> Async.AwaitTask
+                callback.Invoke (Update.GameSummary ordo)
+            with e ->
+                Console.WriteLine($"Ordo error: {e.Message}")
+            return! loop()
+        }
+        loop()
+    , cts.Token)
+
     let tryDequeueUserAdjudication () =
       let reader = userAdjudicationChannel.Reader
       let mutable last = None
@@ -270,19 +292,16 @@ module Manager =
     member x.SendResponse (update: Update) =       
       // Raise the callback with a proper Update response
       match update with
-      | PeriodicResults results -> 
-          try 
+      | PeriodicResults results ->
+          try
+              callback.Invoke update
               let pgnGames = x.GetPGNGames()
               if pgnGames.Count > 0 then
                   let consoleResString, data, _, _= PGNCalculator.getEngineDataResults pgnGames
                   let ordoPath = executablePath()
-                  if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then                
-                      let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath ""
-                      let ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n"
-                      Console.WriteLine(ordoCommandString)
-                      let ordo = OrdoHelper.runCommandAsync cmd data |> Async.AwaitTask |> Async.RunSynchronously
-                      let gameUpdate = Update.GameSummary ordo
-                      callback.Invoke gameUpdate
+                  if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then
+                      let capturedData = data |> Seq.toArray
+                      ordoAgent.Post (capturedData, ordoPath, tournament.PgnOutPath)
                   else
                       let gameUpdate = Update.GameSummary consoleResString                  
                       callback.Invoke gameUpdate

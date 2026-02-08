@@ -782,6 +782,8 @@ module Program =
                         printfn "Tournamentjson config file not found..."                        
                 | Verb (Benchmark path) ->
                     BenchmarkRunner.runBenchmark path
+                | Verb (Tune path) ->
+                    BayesianOptimizer.runTuneWithDispatch path
                 | Verb (GUI (page, port)) ->
                     let portStr = match port with Some p -> $" on port {p}" | None -> ""
                     printfn "Starting WebGUI%s with page: /%s" portStr page
@@ -802,10 +804,11 @@ module Program =
                     printfn "  - puzzlejson <path>"
                     printfn "  - eretjson <path>"
                     printfn "  - tournamentjson <configFile>"
+                    printfn "  - benchmark <configFile>"
+                    printfn "  - tune <configFile>"
                     printfn "  - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)"
                     printfn "    Examples: gui, gui singleEngineAnalysis, gui 5020, gui help 5020"
                 | _ ->
                     printfn "Unhandled argument: %A" arg
         0
-
 

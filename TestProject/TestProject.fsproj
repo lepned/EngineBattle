@@ -20,6 +20,9 @@
 		<Compile Include="RuntimeUtilitiesTests.fs" />
 		<Compile Include="WinboardProbeTests.fs" />
 		<Compile Include="GameHelpersTests.fs" />
+		<Compile Include="EngineProtocolTests.fs" />
+		<Compile Include="TunerRunnerTests.fs" />
+		<Compile Include="BayesianOptimizerTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
@@ -32,6 +35,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\ChessLibrary\ChessLibrary.fsproj" />
+		<ProjectReference Include="..\Console\Console.fsproj" />
 	</ItemGroup>
 
 	<ItemGroup>

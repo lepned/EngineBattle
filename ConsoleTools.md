@@ -129,7 +129,7 @@ dotnet run -c Release -- gui [page] [port]
 dotnet run -c Release -- gui
 
 # Launch with specific page
-dotnet run -c Release -- gui singleEngineAnalysis
+dotnet run -c Release -- gui analysis/single
 
 # Launch on custom port
 dotnet run -c Release -- gui 5020
@@ -144,8 +144,8 @@ dotnet run -c Release -- gui help 5020
 
 **Available Pages:**
 - `/tournament` - Tournament runner and results
-- `/singleEngineAnalysis` - Single engine analysis
-- `/DualEngineAnalysis` - Dual engine comparison
+- `/analysis/single` - Single engine analysis
+- `/analysis/dual` - Dual engine comparison
 - `/EngineDef` - Engine definition overview
 - `/tournamentSetup` - Tournament setup
 - `/play-vs-computer` - Play against engine
@@ -168,10 +168,10 @@ When one instance is running, `dotnet run` will fail to build due to locked DLLs
 
 ```bash
 # Option 1: Run from the built executable (faster)
-.\bin\release\net10.0\EngineBattle.Console.exe gui singleEngineAnalysis 5021
+.\bin\release\net10.0\EngineBattle.Console.exe gui analysis/single 5021
 
 # Option 2: Skip the build step
-dotnet run -c Release --no-build -- gui singleEngineAnalysis 5021
+dotnet run -c Release --no-build -- gui analysis/single 5021
 ```
 
 ---
@@ -220,7 +220,7 @@ Help: Available commands are:
   - eretjson <path>
   - tournamentjson <configFile>
   - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)
-    Examples: gui, gui singleEngineAnalysis, gui 5020, gui help 5020
+    Examples: gui, gui analysis/single, gui 5020, gui help 5020
 ```
 
 ---

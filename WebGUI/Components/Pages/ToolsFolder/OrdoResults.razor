@@ -157,7 +157,7 @@
 			var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine);
 			var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
 			Console.WriteLine(ordoCommandString);
-			var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData);
+			var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, System.Threading.CancellationToken.None);
 			Console.WriteLine(ordo);
 		}
 

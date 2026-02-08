@@ -144,10 +144,11 @@ module OrdoHelper =
 
 
     // Execute the command asynchronously and capture the output
-  let runCommandAsync (cmd:Command) (engineData : EngineLineData seq) =
+  let runCommandAsync (cmd:Command) (engineData : EngineLineData seq) (cancellationToken: System.Threading.CancellationToken) =
       task {
           try
-              let cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10.0))
+              use cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+              cts.CancelAfter(TimeSpan.FromSeconds(10.0))
               let sb = new StringBuilder()
               let! result = cmd.ExecuteBufferedAsync(cts.Token)
               //let msg = removeTopThreeLines (result.StandardOutput.Trim())

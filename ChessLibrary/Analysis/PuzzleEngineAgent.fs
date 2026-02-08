@@ -49,6 +49,8 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
             | Ok reply ->
                 reply.Reply(false)
                 return! loop()
+            | Quit reply ->
+                reply.Reply()
             | _ ->
                 return! loop()
           }
@@ -178,6 +180,11 @@ let performValueNetworkTest
 
     let ok = agents |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Ok ch)) |> Async.Parallel |> Async.RunSynchronously
     if ok |> Array.exists (fun x -> not x) then
+          agents
+          |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Quit ch))
+          |> Async.Parallel
+          |> Async.RunSynchronously
+          |> ignore
           Score.empty
     else
         printfn "Starting value network test with %d concurrent agents..." concurrencyLevel

@@ -77,7 +77,7 @@
                         <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
                         <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
                         <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
                         <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
                         <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
                         <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
@@ -107,7 +107,7 @@
                         <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
                         <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
                         <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
                         <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
                         <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
                         <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
@@ -138,7 +138,7 @@
                         <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
                         <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
                         <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
                         <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
                         <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
                         <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
@@ -193,7 +193,7 @@
             <MudTd DataLabel="Theme">@(string.IsNullOrEmpty(context.Filter) ? "None" : context.Filter)</MudTd>
             <MudTd DataLabel="Nodes">@context.Nodes.ToString()</MudTd>
             <MudTd DataLabel="Rating">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-            <MudTd DataLabel="Accuracy">@(((decimal)context.Correct / context.TotalNumber).ToString("P1"))</MudTd>
+            <MudTd DataLabel="Accuracy">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
             <MudTd>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
@@ -498,7 +498,7 @@
                 }
                 currentGroup = score.RatingAvg;
 
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{((decimal)score.Correct / score.TotalNumber).ToString("P1").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
 
             sb.AppendLine();
@@ -521,7 +521,7 @@
                 }
                 currentGroup = score.RatingAvg;
 
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{((decimal)score.Correct / score.TotalNumber).ToString("P1").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
         }
@@ -544,7 +544,7 @@
                 }
                 currentGroup = score.RatingAvg;
 
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{((decimal)score.Correct / score.TotalNumber).ToString("P1").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
         }

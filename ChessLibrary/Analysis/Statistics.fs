@@ -17,7 +17,8 @@ module EloCalculator =
   let log10 = log 10.0
 
   let inline eloDifferenceFromScore score =
-    -log (1.0 / (score + 0.000001) - 1.0) * 400.0 / log10
+    let s = max 0.000001 (min 0.999999 score)
+    -log (1.0 / s - 1.0) * 400.0 / log10
 
   let calculateEloConfidenceInterval wins draws losses confidenceMultiplier =
       let totalGames = float (wins + draws + losses)
