@@ -245,6 +245,9 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
   "perturbationSize": 0.1,
   "initialDesignSize": 0,
   "hypUpdateInterval": 5,
+  "preventOpponentDeviation": false,
+  "maxReferencePgnGames": 0,
+  "useOpponentForValidation": false,
   "evalMode": "sprt",
   "evalConfigPath": "",
   "sprt": {
@@ -285,8 +288,11 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
 - `perturbationSize` (optional, default `0.1`) controls the SPSA `c` constant — the initial perturbation magnitude in normalized space. Larger values create bigger differences between `[+]` and `[-]` candidates, giving SPRT more signal to reach a decision. Smaller values improve convergence precision but may produce more undecided matches.
 - `optimizer` (optional, default `"spsa"`) selects the optimization backend. Use `"bayesian"` or `"bo"` for Gaussian Process optimization. SPSA-only fields (`perturbationSize`) are ignored when using Bayesian; Bayesian-only fields (`initialDesignSize`, `hypUpdateInterval`) are ignored when using SPSA.
 - The Bayesian optimizer uses no external dependencies beyond MathNet.Numerics (already in ChessLibrary).
-- `opponentConfigPath` (optional) — path to a separate engine JSON to use as the baseline opponent during Bayesian optimization main evaluations. When set, BO candidates play against this fixed reference engine instead of the initial parameters of the tuned engine. SPSA mode, phase confirmations, best-of comparisons, and final validation are unaffected (they always use self-play). Omit or set to `""` to use the default behavior (candidate vs initial self-play).
+- `opponentConfigPath` (optional) — path to a separate engine JSON to use as the baseline opponent during Bayesian optimization main evaluations. When set, BO candidates play against this fixed reference engine instead of the initial parameters of the tuned engine. SPSA iterations are unaffected (they always use self-play). Phase confirmations, best-of comparisons, and final validation use self-play by default but can be switched to use the opponent via `useOpponentForValidation`. Omit or set to `""` to use the default behavior (candidate vs initial self-play).
 - `opponentTargetNodes` (optional, default `0`) — node limit for the opponent engine when `opponentConfigPath` is set. When `0`, uses the same `targetNodes` as the candidate engine. When set to a positive value, the opponent searches at `opponentTargetNodes` while the candidate searches at `targetNodes`.
+- `preventOpponentDeviation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, constrains the opponent engine to replay its previous moves via a cumulative reference PGN. Only applies to Bayesian optimizer main evaluations; SPSA and self-play matches are unaffected. Forces sequential play (`parallelGames` = 1) when active.
+- `maxReferencePgnGames` (optional, default `0`) — maximum number of games stored in the cumulative reference PGN used by `preventOpponentDeviation`. Once the cap is reached, no more games are appended. This prevents the reference PGN from growing indefinitely during long tuning runs, avoiding increasing parse times per iteration. `0` means no cap.
+- `useOpponentForValidation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, phase confirmations, best-of comparisons, and final validation run each candidate against the opponent engine instead of self-play. Each comparison runs two matches (candidate A vs opponent, candidate B vs opponent) and compares score fractions. Only applies to SPRT eval mode; puzzle/ERET comparisons are unchanged. When `false` or when no opponent is configured, validation falls back to the default self-play SPRT match.
 
 ## Embedded Parameters (pipe-delimited option sub-values)
 

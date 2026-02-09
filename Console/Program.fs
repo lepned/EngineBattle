@@ -784,6 +784,8 @@ module Program =
                     BenchmarkRunner.runBenchmark path
                 | Verb (Tune path) ->
                     BayesianOptimizer.runTuneWithDispatch path
+                | Verb (Redash path) ->
+                    BayesianOptimizer.regenerateDashboard path
                 | Verb (GUI (page, port)) ->
                     let portStr = match port with Some p -> $" on port {p}" | None -> ""
                     printfn "Starting WebGUI%s with page: /%s" portStr page
@@ -806,6 +808,7 @@ module Program =
                     printfn "  - tournamentjson <configFile>"
                     printfn "  - benchmark <configFile>"
                     printfn "  - tune <configFile>"
+                    printfn "  - redash <configFile>  - Regenerate BO dashboard from saved state"
                     printfn "  - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)"
                     printfn "    Examples: gui, gui singleEngineAnalysis, gui 5020, gui help 5020"
                 | _ ->

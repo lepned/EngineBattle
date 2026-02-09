@@ -21,7 +21,17 @@ open ChessLibrary.TournamentTypes
 open ChessLibrary.GameHelpers
 open ChessLibrary.GameReplay
 open ChessLibrary.GameExecution
+open ChessLibrary.GamePersistence
 open ChessLibrary.TournamentRunners.TournamentUtils
+
+let assignDeviceToConfig (config: EngineConfig) (gpu: int) =
+    if String.IsNullOrEmpty config.DeviceOption || String.IsNullOrEmpty config.DeviceTemplate then
+        config
+    else
+        let newOptions = Dictionary<string, obj>(config.Options, StringComparer.OrdinalIgnoreCase)
+        let value = config.DeviceTemplate.Replace("{0}", string gpu)
+        newOptions.[config.DeviceOption] <- box value
+        { config with Options = newOptions }
 
 let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback (cts: CancellationTokenSource) = async {
   let mutable counter = 0
@@ -125,6 +135,7 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
     let replayList = ResizeArray<GameReplay>()
     let replayDicts =
       [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
+    let replayLock = obj()
 
     let searchReplayList (pairing : Pairing) =
       searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
@@ -151,11 +162,18 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
                 yield engine1, engine2, pairs
       ] |> List.filter(fun (_,_,p) -> p.Length > 0)
 
+    let gpus = tourny.TestOptions.GPUs
     let initializePairForParalellRun (e1:ChessEngine, e2:ChessEngine) (n:int) =
       [
-        for _ = 1 to n do
-          let eng1 = EngineHelper.createEngine (e1.Config, Some logger)
-          let eng2 = EngineHelper.createEngine (e2.Config, Some logger)
+        for i = 0 to n - 1 do
+          let cfg1, cfg2 =
+            if gpus <> null && gpus.Length > 0 then
+              let gpu = gpus.[i % gpus.Length]
+              logger.LogInformation($"Parallel instance {i}: assigning GPU {gpu} to engines")
+              assignDeviceToConfig e1.Config gpu, assignDeviceToConfig e2.Config gpu
+            else e1.Config, e2.Config
+          let eng1 = EngineHelper.createEngine (cfg1, Some logger)
+          let eng2 = EngineHelper.createEngine (cfg2, Some logger)
           GameInitialization.initEngines 0 tourny eng1 eng2 logger
           yield eng1, eng2
       ]
@@ -273,16 +291,22 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
                             let sb = StringBuilder()
                             Interlocked.Increment(&gameNr) |> ignore
                             Update.RoundNr pair.RoundNr |> callback
-                            let moreThanTwoPlayers = tourny.EngineSetup.EngineDefList.Length > 2
+                            let localWhiteDict = ReferenceGameReplay()
+                            let localBlackDict = ReferenceGameReplay()
+
                             let! result =
                                 let gametimer = Stopwatch.GetTimestamp()
                                 async {
                                     try
-                                      if tourny.PreventMoveDeviation && tourny.TestOptions.NumberOfGamesInParallelConsoleOnly = 1 && moreThanTwoPlayers then
-                                          searchReplayList pair
-                                          let whiteReplayDict = replayDicts.[pair.White.Name]
-                                          let blackReplayDict = replayDicts.[pair.Black.Name]
-                                          return! playConsoleDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
+                                      if tourny.PreventMoveDeviation then
+                                          lock replayLock (fun () ->
+                                              let localDicts = [ pair.White.Name, localWhiteDict; pair.Black.Name, localBlackDict ] |> Map.ofList
+                                              prepareGameReplay pair localDicts replayList referencGamesPlayed gamesAlreadyPlayed
+                                              for kvp in replayDicts.[pair.White.Name] do
+                                                  if not (localWhiteDict.ContainsKey kvp.Key) then localWhiteDict[kvp.Key] <- kvp.Value
+                                              for kvp in replayDicts.[pair.Black.Name] do
+                                                  if not (localBlackDict.ContainsKey kvp.Key) then localBlackDict[kvp.Key] <- kvp.Value)
+                                          return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
                                       else
                                           return! playConsole sb cts logger tourny currentBoard engine1 engine2 pair (fun () -> None) callback
 
@@ -308,6 +332,12 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
                                 StartEvals = result.OutOfOpeningEvals
                                 OtherTags = pair.Opening.GameMetaData.OtherTags
                               }
+
+                            if tourny.PreventMoveDeviation then
+                                lock replayLock (fun () ->
+                                    for kvp in localWhiteDict do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value
+                                    for kvp in localBlackDict do replayDicts.[pair.Black.Name].[kvp.Key] <- kvp.Value
+                                    addToReplayList replayList tourny result gameData (ResizeArray(currentBoard.UciMovesPlayed)))
 
                             let moveSection = sb.ToString()
                             if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
@@ -338,8 +368,7 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
     let res = ResizeArray<Result>(results)
     callback (Update.PeriodicResults res)
     let games = pgnGameWriterAgent.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply))
-    pgnGameWriterAgent.Post(ChessLibrary.FullPGNParser.Dispose)
-    pgnGameWriterAgent.Dispose()
+    pgnGameWriterAgent.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.DisposeReply(reply))
     if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then
         let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
         let path = Path.GetFileNameWithoutExtension(tourny.PgnOutPath) + "_ordered" + ".pgn"
@@ -428,6 +457,7 @@ let parallelTournamentRun
       let replayList = ResizeArray<GameReplay>()
       let replayDicts =
           [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
+      let replayLock = obj()
 
       let searchReplayList (pairing : Pairing) =
           searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
@@ -449,6 +479,7 @@ let parallelTournamentRun
           pairingCh.Writer.Complete()
 
           // 2) build one engine‐pool channel per engine‐name, capacity = parallelism
+          let gpus = tourny.TestOptions.GPUs
           let enginePools =
               tourny.EngineSetup.Engines
               |> List.toArray
@@ -456,9 +487,15 @@ let parallelTournamentRun
                   let ch = Channel.CreateBounded<ChessEngine>(concurrency)
                   // pre-spawn p instances
                   let engines =
-                      [| 1..concurrency |]
-                      |> Array.Parallel.map (fun _ ->
-                          let eng = EngineHelper.createEngine (e, Some logger)
+                      [| 0..concurrency - 1 |]
+                      |> Array.Parallel.map (fun i ->
+                          let cfg =
+                            if gpus <> null && gpus.Length > 0 then
+                              let gpu = gpus.[i % gpus.Length]
+                              logger.LogInformation($"Engine pool {e.Name} instance {i}: assigning GPU {gpu}")
+                              assignDeviceToConfig e gpu
+                            else e
+                          let eng = EngineHelper.createEngine (cfg, Some logger)
                           EngineHelper.initEngine 0 eng
                           ch.Writer.TryWrite(eng) |> ignore
                           eng.Name, ch )
@@ -560,17 +597,23 @@ let parallelTournamentRun
 
                           let sb = StringBuilder()
                           Update.RoundNr pair.RoundNr |> callback
-                          let moreThanTwoPlayers = tourny.EngineSetup.EngineDefList.Length > 2
+
+                          let localWhiteDict = ReferenceGameReplay()
+                          let localBlackDict = ReferenceGameReplay()
 
                           let! result =
                               let gametimer = Stopwatch.GetTimestamp()
                               async {
                                   try
-                                      if tourny.PreventMoveDeviation && tourny.TestOptions.NumberOfGamesInParallelConsoleOnly = 1 && moreThanTwoPlayers then
-                                          searchReplayList pair
-                                          let whiteReplayDict = replayDicts.[pair.White.Name]
-                                          let blackReplayDict = replayDicts.[pair.Black.Name]
-                                          return! playConsoleDoNotDeviate whiteReplayDict blackReplayDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
+                                      if tourny.PreventMoveDeviation then
+                                          lock replayLock (fun () ->
+                                              let localDicts = [ pair.White.Name, localWhiteDict; pair.Black.Name, localBlackDict ] |> Map.ofList
+                                              prepareGameReplay pair localDicts replayList referencGamesPlayed gamesAlreadyPlayed
+                                              for kvp in replayDicts.[pair.White.Name] do
+                                                  if not (localWhiteDict.ContainsKey kvp.Key) then localWhiteDict[kvp.Key] <- kvp.Value
+                                              for kvp in replayDicts.[pair.Black.Name] do
+                                                  if not (localBlackDict.ContainsKey kvp.Key) then localBlackDict[kvp.Key] <- kvp.Value)
+                                          return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
                                       else
                                           return! playConsole sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
 
@@ -596,6 +639,12 @@ let parallelTournamentRun
                                   StartEvals = result.OutOfOpeningEvals
                                   OtherTags = pair.Opening.GameMetaData.OtherTags
                               }
+
+                          if tourny.PreventMoveDeviation then
+                              lock replayLock (fun () ->
+                                  for kvp in localWhiteDict do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value
+                                  for kvp in localBlackDict do replayDicts.[pair.Black.Name].[kvp.Key] <- kvp.Value
+                                  addToReplayList replayList tourny result gameData (ResizeArray(currentBoard.UciMovesPlayed)))
 
                           let moveSection = sb.ToString()
                           if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then

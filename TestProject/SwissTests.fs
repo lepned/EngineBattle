@@ -2106,3 +2106,111 @@ let ``round 7 pairings with 16 players shows correct order from weakest to stron
     // Halogen should play in the first half of the round
     Assert.True(haloGenPairIndex < round7Pairs.Length / 2,
         $"Halogen (3.5 points) should play in first half, but plays in pairing {haloGenPairIndex + 1} of {round7Pairs.Length}")
+
+[<Fact>]
+let ``swiss planned pairings skip decided matches on resume`` () =
+    // Simulates a resume scenario: some pairings in the round are already decided.
+    // The production code (TournamentRunners.fs runRound) skips IsDecided pairings
+    // when building plannedPairings, so only undecided matches appear in "Upcoming Pairings".
+    let players =
+        [ mkRatedPlayer "A" 4000
+          mkRatedPlayer "B" 3900
+          mkRatedPlayer "C" 3800
+          mkRatedPlayer "D" 3700 ]
+    let seedOrder = tcecSeedOrder players 2
+    let seedMap =
+        seedOrder
+        |> List.mapi (fun idx p -> p.Name, idx + 1)
+        |> Map.ofList
+    let scores = players |> List.map (fun p -> p.Name, 0.0) |> Map.ofList
+    let roundPairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+    let openings = [ mkOpening 1; mkOpening 2 ]
+
+    // Create SwissPairings — mark the first one as decided (simulates resume)
+    let swissPairings =
+        roundPairs
+        |> List.mapi (fun i (a, b) ->
+            { PairId = i + 1
+              RoundNumber = 1
+              PlayerA = a.Name
+              PlayerB = b.Name
+              PlayerARating = a.Rating
+              PlayerBRating = b.Rating
+              ScoreA = if i = 0 then 1.5 else 0.0
+              ScoreB = if i = 0 then 0.5 else 0.0
+              IsDecided = (i = 0) // first pairing already decided
+              Games = ResizeArray()
+              OpeningOrder = ResizeArray() })
+
+    // Build planned pairings the same way runRound does, but skip decided
+    let planned = ResizeArray<Pairing>()
+    let mutable previewIndex = 0
+    for i in 0 .. swissPairings.Length - 1 do
+        let sp = swissPairings.[i]
+        let (a, b) = roundPairs.[i]
+        if sp.IsDecided || sp.PlayerB = "BYE" then
+            ()
+        else
+            let seedA = seedMap.[a.Name]
+            let seedB = seedMap.[b.Name]
+            let whiteFirst, blackFirst = if seedA <= seedB then a, b else b, a
+            previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex
+
+    // Only undecided pairings should be in the planned list (1 of 2 pairings is decided)
+    let undecidedCount = swissPairings |> List.filter (fun sp -> not sp.IsDecided) |> List.length
+    Assert.Equal(undecidedCount * 2, planned.Count)
+    // The decided pairing's players should NOT appear in planned pairings
+    let decidedPairing = swissPairings |> List.find (fun sp -> sp.IsDecided)
+    let hasDecidedPlayers =
+        planned |> Seq.exists (fun p ->
+            (p.White.Name = decidedPairing.PlayerA || p.White.Name = decidedPairing.PlayerB) &&
+            (p.Black.Name = decidedPairing.PlayerA || p.Black.Name = decidedPairing.PlayerB))
+    Assert.False(hasDecidedPlayers,
+        $"Planned pairings should not include decided match {decidedPairing.PlayerA} vs {decidedPairing.PlayerB}")
+
+[<Fact>]
+let ``swiss planned pairings shrink when match completes`` () =
+    // Verifies the RemoveAll logic used in TournamentRunners.fs to remove a completed
+    // pairing's games from plannedPairings and re-emit an updated list.
+    let players =
+        [ mkRatedPlayer "A" 4000
+          mkRatedPlayer "B" 3900
+          mkRatedPlayer "C" 3800
+          mkRatedPlayer "D" 3700 ]
+    let seedOrder = tcecSeedOrder players 2
+    let seedMap =
+        seedOrder
+        |> List.mapi (fun idx p -> p.Name, idx + 1)
+        |> Map.ofList
+    let scores = players |> List.map (fun p -> p.Name, 0.0) |> Map.ofList
+    let roundPairs = swissRoundPairings players seedOrder scores Set.empty Set.empty
+    let openings = [ mkOpening 1; mkOpening 2 ]
+
+    // Build full planned pairings (all undecided)
+    let planned = ResizeArray<Pairing>()
+    let mutable previewIndex = 0
+    for (a, b) in roundPairs do
+        let seedA = seedMap.[a.Name]
+        let seedB = seedMap.[b.Name]
+        let whiteFirst, blackFirst = if seedA <= seedB then a, b else b, a
+        previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex
+
+    let totalBefore = planned.Count
+    Assert.Equal(roundPairs.Length * 2, totalBefore)
+
+    // Simulate first pairing completing — apply same RemoveAll as production code
+    let completedA = fst roundPairs.[0]
+    let completedB = snd roundPairs.[0]
+    planned.RemoveAll(fun p ->
+        (p.White.Name = completedA.Name || p.White.Name = completedB.Name) &&
+        (p.Black.Name = completedA.Name || p.Black.Name = completedB.Name)) |> ignore
+
+    // Should have removed exactly 2 games (one per color for the completed pairing)
+    Assert.Equal(totalBefore - 2, planned.Count)
+    // Remaining games should not include the completed pair
+    let hasCompletedPair =
+        planned |> Seq.exists (fun p ->
+            (p.White.Name = completedA.Name || p.White.Name = completedB.Name) &&
+            (p.Black.Name = completedA.Name || p.Black.Name = completedB.Name))
+    Assert.False(hasCompletedPair,
+        $"After completion, planned pairings should not include {completedA.Name} vs {completedB.Name}")

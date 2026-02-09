@@ -297,18 +297,18 @@ let playWithPondering
                 let bm = { bestMove with MoveHistory = bestMove.MoveHistory + "#" }
                 let status = { lastEngineStatus with Eval = EvalType.Mate 0 }
                 let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
-                annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                annotation tourny.MoveAnnotation board numberAndMove moveInfoData |> append
                 callback(BestMove (bm, status))
               else
                 let numberAndMove = board.SanMoveNumberString shortSan
-                annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                annotation tourny.MoveAnnotation board numberAndMove moveInfoData |> append
                 callback(BestMove (bestMove, lastEngineStatus))
                 moveInfoData <- ChessMoveInfo.Empty
               result <- res
               continueGame <- false
           | None ->
               let numberAndMove = board.SanMoveNumberString shortSan
-              annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+              annotation tourny.MoveAnnotation board numberAndMove moveInfoData |> append
               moveInfoData <- ChessMoveInfo.Empty
               callback(BestMove (bestMove, lastEngineStatus))
               //check ponder move status
@@ -884,9 +884,13 @@ let playGeneric
                   let mutable moveAdj = tmove
                   let mutable shortSan = getSanNotationFromTMove &board tmove
                   // Deviation logic only when replay dictionaries provided
+                  let shouldPreventForPlayer =
+                    tourny.PreventMoveDeviationFor |> isNull ||
+                    tourny.PreventMoveDeviationFor.Length = 0 ||
+                    tourny.PreventMoveDeviationFor |> Array.contains playing.Name
                   let deviated, oldMove, engName =
                     match replayOptWhite, replayOptBlack with
-                    | Some rw, Some rb ->
+                    | Some rw, Some rb when shouldPreventForPlayer ->
                         let hash = board.DeviationHash()
                         let replay = if playing.Name = player1.Name then rw else rb
                         match replay.TryGet(hash) with
@@ -1031,11 +1035,11 @@ let playGeneric
                       let bm = {bestMove with MoveHistory=bestMove.MoveHistory + "#"}
                       let status = {lastEngineStatus with Eval = EvalType.Mate 0}
                       let numberAndMove = (board.SanMoveNumberString shortSan) + "#"
-                      annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                      annotation tourny.MoveAnnotation board numberAndMove moveInfoData |> append
                       callback(BestMove (bm, status))
                     else
                       let numberAndMove = board.SanMoveNumberString shortSan
-                      annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                      annotation tourny.MoveAnnotation board numberAndMove moveInfoData |> append
                       callback(BestMove (bestMove, lastEngineStatus))
 
                     moveInfoData <- ChessMoveInfo.Empty
@@ -1046,7 +1050,7 @@ let playGeneric
                     return res
                   |None ->
                     let numberAndMove = board.SanMoveNumberString shortSan
-                    annotation tourny.VerboseMoveAnnotation board numberAndMove moveInfoData |> append
+                    annotation tourny.MoveAnnotation board numberAndMove moveInfoData |> append
                     moveInfoData <- ChessMoveInfo.Empty
                     callback(BestMove (bestMove, lastEngineStatus))
                     return! playEngine opponent playing (board.PositionHash())

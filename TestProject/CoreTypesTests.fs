@@ -2,6 +2,7 @@
 
 open Xunit
 open System
+open System.Text.Json
 open ChessLibrary.TimeControlTypes
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.MiscTypes
@@ -112,3 +113,128 @@ let ``TimeControl ToString formats correctly`` () =
 let ``Tournament Empty cup options default to non-random openings`` () =
     let tourny = Tournament.Empty
     Assert.False(tourny.CupOptions.RandomOpenings)
+
+// ============================================================================
+// MoveAnnotation tests
+// ============================================================================
+
+let private roundTripMoveAnnotation (level: MoveAnnotation) =
+    let opts = JsonSerializerOptions()
+    opts.Converters.Add(MoveAnnotationConverter())
+    let json = JsonSerializer.Serialize(level, opts)
+    let result = JsonSerializer.Deserialize<MoveAnnotation>(json, opts)
+    result
+
+[<Fact>]
+let ``MoveAnnotation JSON round-trip None`` () =
+    Assert.Equal(MoveAnnotation.Off, roundTripMoveAnnotation MoveAnnotation.Off)
+
+[<Fact>]
+let ``MoveAnnotation JSON round-trip Minimal`` () =
+    Assert.Equal(MoveAnnotation.Minimal, roundTripMoveAnnotation MoveAnnotation.Minimal)
+
+[<Fact>]
+let ``MoveAnnotation JSON round-trip Standard`` () =
+    Assert.Equal(MoveAnnotation.Standard, roundTripMoveAnnotation MoveAnnotation.Standard)
+
+[<Fact>]
+let ``MoveAnnotation JSON round-trip Full`` () =
+    Assert.Equal(MoveAnnotation.Full, roundTripMoveAnnotation MoveAnnotation.Full)
+
+[<Fact>]
+let ``MoveAnnotation backward compat true parses as Full`` () =
+    let opts = JsonSerializerOptions()
+    opts.Converters.Add(MoveAnnotationConverter())
+    let result = JsonSerializer.Deserialize<MoveAnnotation>("true", opts)
+    Assert.Equal(MoveAnnotation.Full, result)
+
+[<Fact>]
+let ``MoveAnnotation backward compat false parses as Standard`` () =
+    let opts = JsonSerializerOptions()
+    opts.Converters.Add(MoveAnnotationConverter())
+    let result = JsonSerializer.Deserialize<MoveAnnotation>("false", opts)
+    Assert.Equal(MoveAnnotation.Standard, result)
+
+[<Fact>]
+let ``Tournament with MoveAnnotation string deserializes correctly`` () =
+    let json = """{"MoveAnnotation": "Minimal"}"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    let tourny = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.Equal(MoveAnnotation.Minimal, tourny.MoveAnnotation)
+
+[<Fact>]
+let ``Tournament with old VerboseMoveAnnotation field name is ignored gracefully`` () =
+    // Old field name doesn't match new field name, so the value is not set.
+    // Users must rename VerboseMoveAnnotation -> MoveAnnotation in their JSON.
+    let json = """{"VerboseMoveAnnotation": true, "MoveAnnotation": "Full"}"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    let tourny = JsonSerializer.Deserialize<Tournament>(json, opts)
+    // The new MoveAnnotation field is read; old VerboseMoveAnnotation is silently ignored
+    Assert.Equal(MoveAnnotation.Full, tourny.MoveAnnotation)
+
+[<Fact>]
+let ``Tournament with MoveAnnotation bool true deserializes as Full`` () =
+    let json = """{"MoveAnnotation": true}"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    let tourny = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.Equal(MoveAnnotation.Full, tourny.MoveAnnotation)
+
+[<Fact>]
+let ``Tournament with MoveAnnotation bool false deserializes as Standard`` () =
+    let json = """{"MoveAnnotation": false}"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    let tourny = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.Equal(MoveAnnotation.Standard, tourny.MoveAnnotation)
+
+[<Fact>]
+let ``Tournament Empty defaults to Standard MoveAnnotation`` () =
+    let tourny = Tournament.Empty
+    Assert.Equal(MoveAnnotation.Standard, tourny.MoveAnnotation)
+
+// ============================================================================
+// ChessMoveInfo annotation output tests
+// ============================================================================
+
+let private testMoveInfo =
+    { ChessMoveInfo.Empty with wv = CP 1.23; d = 15; sd = 12; mt = 500L; tl = 59500L;
+                                s = 1000000L; eps = 50000L; n = 500000L; pcs = 28uy;
+                                pd = ""; pv = "e2e4"; n1 = 100L; n2 = 50L;
+                                q1 = 0.55; q2 = 0.45; p1 = 30.0; pt = 25.0; tb = 0L }
+
+[<Fact>]
+let ``CompactAnnotation includes only wv d mt`` () =
+    let result = testMoveInfo.CompactAnnotation
+    Assert.Contains("wv=", result)
+    Assert.Contains("d=15", result)
+    Assert.Contains("mt=500", result)
+    Assert.DoesNotContain("s=", result)
+    Assert.DoesNotContain("pv=", result)
+    Assert.DoesNotContain("n=", result)
+
+[<Fact>]
+let ``MinimalAnnotation includes 11 fields`` () =
+    let result = testMoveInfo.MinimalAnnotation
+    Assert.Contains("wv=", result)
+    Assert.Contains("mt=", result)
+    Assert.Contains("s=", result)
+    Assert.Contains("eps=", result)
+    Assert.Contains("n=", result)
+    Assert.Contains("d=", result)
+    Assert.Contains("pcs=", result)
+    Assert.Contains("sd=", result)
+    Assert.Contains("tl=", result)
+    Assert.Contains("tb=", result)
+    Assert.DoesNotContain("pv=", result)
+    Assert.DoesNotContain("n1=", result)
+
+[<Fact>]
+let ``Annotation includes all 22 fields`` () =
+    let result = testMoveInfo.Annotation
+    Assert.Contains("wv=", result)
+    Assert.Contains("pv=", result)
+    Assert.Contains("n1=", result)
+    Assert.Contains("n2=", result)
+    Assert.Contains("q1=", result)
+    Assert.Contains("q2=", result)
+    Assert.Contains("p1=", result)
+    Assert.Contains("pt=", result)

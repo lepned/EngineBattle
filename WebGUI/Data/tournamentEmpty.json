@@ -7,7 +7,7 @@
   "GPU": "1x RTX 3080",
   "MainLogoFileName": "MainLogoEB.png",
   "VerboseLogging": false,
-  "VerboseMoveAnnotation": false,
+  "MoveAnnotation": "Standard",
   "MinMoveTimeInMS": 400,
   "TournamentMode": "Gauntlet",
   "PreventMoveDeviation": false,

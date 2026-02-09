@@ -1102,7 +1102,7 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
     let plannedPairings = ResizeArray<Pairing>()
     let mutable previewIndex = openingIndex
     for pairing in round.Pairings do
-      if pairing.PlayerB = "BYE" then
+      if pairing.IsDecided || pairing.PlayerB = "BYE" then
         ()
       else
       ensurePairingOpeningOrder pairing
@@ -1259,6 +1259,10 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
                 gamesRemaining <- gamesRemaining - 1
                 if pairing.Games.Count >= gamesPerMatch then
                   pairing.IsDecided <- true
+                  plannedPairings.RemoveAll(fun p ->
+                    (p.White.Name = pairing.PlayerA || p.White.Name = pairing.PlayerB) &&
+                    (p.Black.Name = pairing.PlayerA || p.Black.Name = pairing.PlayerB)) |> ignore
+                  callback (Update.PairingList plannedPairings)
                 writeSwissState swissAgent state
           if hasOddGame && tourny.SwissOptions.UniquePerMatchOnly then
             localOpeningIndex := !localOpeningIndex + 1

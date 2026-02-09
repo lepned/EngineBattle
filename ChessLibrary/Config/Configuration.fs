@@ -41,6 +41,9 @@ module ConsoleHelper =
     printfn $"Policy head test: {tournament.TestOptions.PolicyTest}"
     printfn $"Value head test: {tournament.TestOptions.ValueTest}"
     printfn $"Number of games in parallel: {tournament.TestOptions.NumberOfGamesInParallelConsoleOnly}"
+    if tournament.TestOptions.GPUs <> null && tournament.TestOptions.GPUs.Length > 0 then
+      let gpuList = String.Join(", ", tournament.TestOptions.GPUs)
+      printfn $"GPUs: {gpuList}"
 
     printfn "Engines in tournament:\n"
     let engines = tournament.EngineSetup.Engines
@@ -517,19 +520,22 @@ module JSON =
     [ for def in engineDefList -> readEngineDef folder def ]
 
   let readTournamentJson (path: string) : Tournament option =
-      try
-          use reader = new StreamReader(path)
-          let json = reader.ReadToEnd()
-          let tournament = JsonSerializer.Deserialize<Tournament>(json, JsonSerializerOptions(AllowTrailingCommas = true))
-          if tournament.EngineSetup.EngineDefList.Length = 0 then
-             Some {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}
-          else
-              Some tournament
-      with
-      | ex ->
-          ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Note: Tournament.json file %s was not found in working directory" path)
+      if not (File.Exists path) then
+          ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Note: Tournament.json file %s was not found" path)
           ConsoleUtils.printInColor ConsoleColor.White "\nA new (empty) tournament.json will be created with default settings\n"
           None
+      else
+          try
+              use reader = new StreamReader(path)
+              let json = reader.ReadToEnd()
+              let tournament = JsonSerializer.Deserialize<Tournament>(json, JsonSerializerOptions(AllowTrailingCommas = true))
+              if tournament.EngineSetup.EngineDefList.Length = 0 then
+                 Some {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}
+              else
+                  Some tournament
+          with ex ->
+              ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Error deserializing %s: %s" path ex.Message)
+              None
 
   let writeTournamentJson (tournament: Tournament) (path: string) : unit =
       try

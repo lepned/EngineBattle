@@ -12,6 +12,7 @@ type VerbResult =
     | Eret of configFile: string
     | Benchmark of configFile:string
     | Tune of configFile:string
+    | Redash of configFile:string
     | GUI of page: string * port: int option
 
 
@@ -246,6 +247,11 @@ module CustomParser =
                     let configFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (Tune configFile) :: acc)
                 else failwith "Missing parameter for Tune"
+            | "redash" -> // Handle the Redash verb
+                if index + 1 < args.Length then
+                    let configFile = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (Redash configFile) :: acc)
+                else failwith "Missing parameter for Redash"
             | "gui" ->
                 // Accept: gui <page> <port> | gui <port> | gui <page>
                 let nextArg idx = if idx < args.Length then Some args.[idx] else None

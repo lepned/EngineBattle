@@ -53,6 +53,40 @@ module TypesDef =
                 | TimeControlStrategy.AutoDetect -> "AutoDetect"
             writer.WriteStringValue(str)
 
+    /// Move annotation detail level for PGN output
+    [<RequireQualifiedAccess>]
+    type MoveAnnotation =
+        | Off
+        | Minimal
+        | Standard
+        | Full
+
+    /// JSON converter for MoveAnnotation with backward-compat bool reading (true→Full, false→Standard)
+    type MoveAnnotationConverter() =
+        inherit JsonConverter<MoveAnnotation>()
+
+        override _.Read(reader: byref<Utf8JsonReader>, typeToConvert: Type, options: JsonSerializerOptions) =
+            match reader.TokenType with
+            | JsonTokenType.True -> MoveAnnotation.Full
+            | JsonTokenType.False -> MoveAnnotation.Standard
+            | JsonTokenType.String ->
+                match reader.GetString().ToLowerInvariant() with
+                | "none" | "off" -> MoveAnnotation.Off
+                | "minimal" -> MoveAnnotation.Minimal
+                | "standard" -> MoveAnnotation.Standard
+                | "full" -> MoveAnnotation.Full
+                | v -> failwith $"Unknown MoveAnnotation: {v}"
+            | t -> failwith $"Unexpected token for MoveAnnotation: {t}"
+
+        override _.Write(writer: Utf8JsonWriter, value: MoveAnnotation, options: JsonSerializerOptions) =
+            let str =
+                match value with
+                | MoveAnnotation.Off -> "None"
+                | MoveAnnotation.Minimal -> "Minimal"
+                | MoveAnnotation.Standard -> "Standard"
+                | MoveAnnotation.Full -> "Full"
+            writer.WriteStringValue(str)
+
     /// Winboard-specific configuration options
     type WinboardConfig = {
         /// If true, engine reports scores from side-to-move's perspective (requires negation for Black)
@@ -99,7 +133,9 @@ module TypesDef =
           mutable NetworkPath: string
           Args: string
           Options: System.Collections.Generic.Dictionary<string, obj>
-          WinboardConfig: WinboardConfig option }
+          WinboardConfig: WinboardConfig option
+          DeviceOption: string
+          DeviceTemplate: string }
         with
             member x.Information moveOverhead =
               let sb = new StringBuilder()
@@ -125,7 +161,9 @@ module TypesDef =
                 NetworkPath = ""
                 Args = String.Empty
                 Options = new System.Collections.Generic.Dictionary<string, obj>()
-                WinboardConfig = None }
+                WinboardConfig = None
+                DeviceOption = ""
+                DeviceTemplate = "" }
             static member EmptyWithPath (path:string) =
               let fileName = Path.GetFileNameWithoutExtension path
               let isLc0 = Regex.Match(fileName, "lc0", RegexOptions.IgnoreCase).Success
@@ -145,7 +183,9 @@ module TypesDef =
                 NetworkPath = ""
                 Args = if isLc0 then "--show-hidden" else String.Empty
                 Options = new System.Collections.Generic.Dictionary<string, obj>()
-                WinboardConfig = None }
+                WinboardConfig = None
+                DeviceOption = ""
+                DeviceTemplate = "" }
             static member AddOptions (config: EngineConfig) options =
               { config with Options = options }
 
@@ -460,7 +500,7 @@ module TypesDef =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
         EngineDefList: string list }
-    type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallelConsoleOnly: int }
+    type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallelConsoleOnly: int; GPUs: int[] }
 
     type Tournament =
       { Name: string
@@ -472,7 +512,8 @@ module TypesDef =
         MainLogoFileName: string
         ConsoleOnly: bool
         VerboseLogging: bool
-        VerboseMoveAnnotation : bool
+        [<JsonConverter(typeof<CoreTypes.MoveAnnotationConverter>)>]
+        MoveAnnotation : CoreTypes.MoveAnnotation
         MinMoveTimeInMS: int
         TournamentMode: string
         PreventMoveDeviation: bool
@@ -481,6 +522,7 @@ module TypesDef =
         Challengers: int
         [<JsonIgnore>] mutable IsChess960: bool
         [<JsonIgnore>] mutable DeviationCounter: int
+        [<JsonIgnore>] mutable PreventMoveDeviationFor: string[]
         mutable Rounds: int
         PauseAfterRound: int
         DelayBetweenGames: TimeOnly
@@ -823,7 +865,7 @@ module TypesDef =
           MainLogoFileName = ""
           ConsoleOnly = false
           VerboseLogging = false
-          VerboseMoveAnnotation = false
+          MoveAnnotation = CoreTypes.MoveAnnotation.Standard
           MinMoveTimeInMS  = 0
           TournamentMode = "RR"
           PgnOutPath = ""
@@ -833,6 +875,7 @@ module TypesDef =
           AllowPondering = false
           EngineStartupTimeoutInSec = 180
           DeviationCounter = 0
+          PreventMoveDeviationFor = null
           Challengers = 0
           Rounds = 0
           PauseAfterRound = 0
@@ -842,7 +885,7 @@ module TypesDef =
           Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0 }
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
-          TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1 }
+          TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1; GPUs = null }
           Adjudication =
             {
               DrawOption = {MinDrawMove = 0; MaxDrawScore = 0.0; DrawMoveLength = 0 }

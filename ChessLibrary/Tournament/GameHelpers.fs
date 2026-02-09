@@ -273,17 +273,23 @@ let startEngineChannelWriter
     cts
 
 /// Annotation helper for move output
-let annotation verboseAnnotation (board: Board) (numberMove : string) (chessMoveInfo : ChessMoveInfo) =
-    if verboseAnnotation then
-        if board.PlyCount > 1 then
-            sprintf " %s {%s}" numberMove chessMoveInfo.Annotation
-        else
-            sprintf "%s {%s}" numberMove chessMoveInfo.Annotation
-    else
-        if board.PlyCount > 1 then
-            sprintf " %s {%s}" numberMove chessMoveInfo.MinimalAnnotation
-        else
-            sprintf "%s {%s}" numberMove chessMoveInfo.MinimalAnnotation
+let annotation (moveAnnotation: MoveAnnotation) (board: Board) (numberMove : string) (chessMoveInfo : ChessMoveInfo) =
+    match moveAnnotation with
+    | MoveAnnotation.Off ->
+        if board.PlyCount > 1 then sprintf " %s" numberMove
+        else numberMove
+    | MoveAnnotation.Minimal ->
+        let fmt = chessMoveInfo.CompactAnnotation
+        if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
+        else sprintf "%s {%s}" numberMove fmt
+    | MoveAnnotation.Standard ->
+        let fmt = chessMoveInfo.MinimalAnnotation
+        if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
+        else sprintf "%s {%s}" numberMove fmt
+    | MoveAnnotation.Full ->
+        let fmt = chessMoveInfo.Annotation
+        if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
+        else sprintf "%s {%s}" numberMove fmt
 
 /// Log the init commands for both engines
 let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: ChessEngine) =

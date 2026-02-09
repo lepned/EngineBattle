@@ -23,6 +23,7 @@
 		<Compile Include="EngineProtocolTests.fs" />
 		<Compile Include="TunerRunnerTests.fs" />
 		<Compile Include="BayesianOptimizerTests.fs" />
+		<Compile Include="GpuAssignmentTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

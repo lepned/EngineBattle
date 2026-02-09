@@ -727,6 +727,7 @@ type PgnGameMessage =
     | GetResults of reply:AsyncReplyChannel<ResizeArray<Result>>
     | GetPGNGames of reply:AsyncReplyChannel<ResizeArray<PgnGame>>
     | Dispose
+    | DisposeReply of reply:AsyncReplyChannel<unit>
 
 let startPgnGameReaderWriter (filePath: string) =
   MailboxProcessor<PgnGameMessage>.Start(fun inbox ->
@@ -743,10 +744,19 @@ let startPgnGameReaderWriter (filePath: string) =
             else
                 PGNWriter.createPGNReader filePath
           writer.AutoFlush <- true
-          while true do
+          let mutable running = true
+          while running do
               let! message = inbox.Receive()
               match message with
-              | Dispose -> writer.Dispose() // Exit the loop and dispose the writer
+              | Dispose ->
+                  writer.Dispose()
+                  reader.Dispose()
+                  running <- false
+              | DisposeReply reply ->
+                  writer.Dispose()
+                  reader.Dispose()
+                  reply.Reply(())
+                  running <- false
               | WriteGame(_, header, moveSection, result) ->
                   // Write the PGN game to the file
                   PGNWriter.writePGNHeaderSection writer header

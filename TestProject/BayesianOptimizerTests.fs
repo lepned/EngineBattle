@@ -233,3 +233,44 @@ let ``BO converges closer than SPSA with same evaluation budget`` () =
     // BO should be at least as good (usually much better) for this smooth problem
     Assert.True(boDist < spsaDist + 0.15,
         sprintf "BO dist=%.4f should be competitive with SPSA dist=%.4f" boDist spsaDist)
+
+// ── Centered Latin Hypercube Sampling Tests ──
+
+[<Fact>]
+let ``Centered LHS respects radius bounds`` () =
+    let rng = System.Random(42)
+    let active = [| true; true |]
+    let center = [| 0.5; -0.3 |]
+    let radius = 0.3
+    let samples = centeredLatinHypercubeSample 20 2 active center radius rng
+    for sample in samples do
+        Assert.InRange(sample.[0], max -1.0 (0.5 - 0.3), min 1.0 (0.5 + 0.3))
+        Assert.InRange(sample.[1], max -1.0 (-0.3 - 0.3), min 1.0 (-0.3 + 0.3))
+
+[<Fact>]
+let ``Centered LHS preserves stratification`` () =
+    let rng = System.Random(42)
+    let active = [| true |]
+    let center = [| 0.0 |]
+    let radius = 0.5
+    let n = 10
+    let samples = centeredLatinHypercubeSample n 1 active center radius rng
+    // Map back to [0, 1] relative to center-radius..center+radius
+    let bins =
+        samples
+        |> Array.map (fun s ->
+            let u = (s.[0] - (center.[0] - radius)) / (2.0 * radius)
+            int (u * float n) |> max 0 |> min (n - 1))
+        |> Array.sort
+    let distinctBins = bins |> Array.distinct |> Array.length
+    Assert.Equal(n, distinctBins)
+
+[<Fact>]
+let ``Centered LHS clamps to valid range at boundary`` () =
+    let rng = System.Random(42)
+    let active = [| true |]
+    let center = [| 0.9 |]
+    let radius = 0.5
+    let samples = centeredLatinHypercubeSample 20 1 active center radius rng
+    for sample in samples do
+        Assert.InRange(sample.[0], -1.0, 1.0)

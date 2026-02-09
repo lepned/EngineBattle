@@ -14,7 +14,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **GPU**: The GPU specifications.
 - **MainLogoFileName**: The filename of the tournament logo.
 - **VerboseLogging**: Enable or disable verbose logging.
-- **VerboseMoveAnnotation**: Enable or disable detailed move annotations in the output (such as extra engine analysis for each move).
+- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, depth, move time), `"Standard"` (11 fields), `"Full"` (all 22 fields). Backward compatible: `true` → Full, `false` → Standard.
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
 - **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
 - **AllowPondering**: Allow engines to ponder during the opponent’s time.
@@ -140,7 +140,7 @@ This document provides an overview of the `tournament.json` configuration file u
   "GPU": "1x RTX 3080",
   "MainLogoFileName": "MainLogoEB.png",
   "VerboseLogging": false,
-  "VerboseMoveAnnotation": false,
+  "MoveAnnotation": "Standard",
   "MinMoveTimeInMS": 400,
   "TournamentMode": "RR",
   "AllowPondering": false,

@@ -69,6 +69,11 @@ module TunerRunner =
       mutable EvalMode: string
       mutable EvalConfigPath: string
       mutable Sprt: SprtConfig
+      mutable GPUs: int[]
+      mutable InitialDesignRadius: float
+      mutable PreventOpponentDeviation: bool
+      mutable MaxReferencePgnGames: int
+      mutable UseOpponentForValidation: bool
       mutable Phases: TunePhase[]
       mutable Parameters: TuneParameterDef[] }
 
@@ -84,7 +89,8 @@ module TunerRunner =
       mutable StartedUtc: string
       mutable LastUpdatedUtc: string
       mutable ObservationsX: float[][]
-      mutable ObservationsY: float[] }
+      mutable ObservationsY: float[]
+      mutable FinalValidationCompleted: bool }
 
   [<CLIMutable>]
   type MatchStats =
@@ -315,7 +321,11 @@ module TunerRunner =
 
   let private quantize (step: float) (value: float) =
     let n = Math.Round(value / step)
-    n * step
+    let result = n * step
+    // Round to step-implied decimal places to avoid IEEE 754 noise
+    // e.g. step=0.05 → 2 decimals, step=0.1 → 1, step=1.0 → 0
+    let decimals = max 0 (int (ceil (-log10 step)))
+    Math.Round(result, decimals)
 
   let internal fromNorm (p: ResolvedParameter) n =
     let clamped = clamp -1.0 1.0 n
@@ -450,14 +460,15 @@ module TunerRunner =
       clamp -1000.0 1000.0 llr
 
   let private pentanomialForMatchup (left: string) (right: string) (games: ResizeArray<PgnGame>) =
+    let swapped = StringComparer.OrdinalIgnoreCase.Compare(left, right) > 0
     let a, b =
-      if StringComparer.OrdinalIgnoreCase.Compare(left, right) <= 0 then left, right
+      if not swapped then left, right
       else right, left
     games
     |> ChessLibrary.Statistics.Pentanomial.calculateAllMatchups
     |> List.tryPick (fun ((e1, e2), c) ->
       if String.Equals(e1, a, StringComparison.OrdinalIgnoreCase) && String.Equals(e2, b, StringComparison.OrdinalIgnoreCase) then
-        Some c
+        Some (if swapped then { c with W2 = c.L2; L2 = c.W2; W15 = c.L15; L15 = c.W15 } else c)
       else
         None)
 
@@ -506,6 +517,29 @@ module TunerRunner =
     else
       requestedPath
 
+  let private appendMatchPgnToCumulative (matchPgnPath: string) (cumulativePgnPath: string) (maxGames: int) =
+    if not (String.IsNullOrWhiteSpace cumulativePgnPath) && File.Exists matchPgnPath then
+      // Skip appending if cumulative PGN already has enough reference games
+      let alreadyCapped =
+        if maxGames > 0 && File.Exists cumulativePgnPath then
+          use countFs = new FileStream(cumulativePgnPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+          use countSr = new StreamReader(countFs)
+          let mutable count = 0
+          let mutable line = countSr.ReadLine()
+          while line <> null && count < maxGames do
+            if line.StartsWith("[Result ") then count <- count + 1
+            line <- countSr.ReadLine()
+          count >= maxGames
+        else false
+      if not alreadyCapped then
+        use readFs = new FileStream(matchPgnPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+        use sr = new StreamReader(readFs)
+        let content = sr.ReadToEnd()
+        if not (String.IsNullOrWhiteSpace content) then
+          use writeFs = new FileStream(cumulativePgnPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite)
+          use sw = new StreamWriter(writeFs)
+          sw.Write(content)
+
   let private buildNodeTimeControl targetNodes (tc: TimeControl) =
     let configs =
       if tc.TimeConfigs |> List.isEmpty then
@@ -515,7 +549,7 @@ module TunerRunner =
         |> List.map (fun c -> { c with NodeLimit = true; Nodes = targetNodes; Fixed = TimeOnly(0,0,1); Increment = TimeOnly.MinValue })
     { tc with TimeConfigs = configs; WmovesToGo = 0; BmovesToGo = 0 }
 
-  let internal buildMatchTournament (cfg: TuneConfig) (baseTournament: Tournament) (engineA: EngineConfig) (engineB: EngineConfig) (opponentNodes: int) pgnPath =
+  let internal buildMatchTournament (cfg: TuneConfig) (baseTournament: Tournament) (engineA: EngineConfig) (engineB: EngineConfig) (opponentNodes: int) pgnPath (referencePgnPath: string) (preventDeviationFor: string[]) =
     let oppNodes = if opponentNodes > 0 then opponentNodes else cfg.TargetNodes
     let tc, tcIdA, tcIdB =
       if oppNodes = cfg.TargetNodes then
@@ -541,12 +575,14 @@ module TunerRunner =
           OpeningsPly = cfg.OpeningsPly
           OpeningsTwice = cfg.OpeningsTwice }
 
+    let hasDeviation = preventDeviationFor <> null && preventDeviationFor.Length > 0
     let testOptions =
       { baseTournament.TestOptions with
           PolicyTest = false
           ValueTest = false
           WriteToConsole = false
-          NumberOfGamesInParallelConsoleOnly = cfg.ParallelGames }
+          NumberOfGamesInParallelConsoleOnly = cfg.ParallelGames
+          GPUs = if cfg.GPUs <> null then cfg.GPUs else baseTournament.TestOptions.GPUs }
 
     let eA = { engineA with TimeControlID = tcIdA }
     let eB = { engineB with TimeControlID = tcIdB }
@@ -560,14 +596,15 @@ module TunerRunner =
         Description = "EngineBattle tuner SPRT match"
         TournamentMode = "RR"
         ConsoleOnly = true
-        PreventMoveDeviation = false
+        PreventMoveDeviation = hasDeviation
+        PreventMoveDeviationFor = if preventDeviationFor <> null then preventDeviationFor else [||]
         Rounds = roundsNeeded
         Challengers = 0
         DelayBetweenGames = TimeOnly.MinValue
         MinMoveTimeInMS = 0
         OrdoExePath = ""
         PgnOutPath = pgnPath
-        ReferencePGNPath = ""
+        ReferencePGNPath = if String.IsNullOrWhiteSpace referencePgnPath then "" else referencePgnPath
         TestOptions = testOptions
         Opening = opening
         TimeControl = tc
@@ -625,14 +662,17 @@ module TunerRunner =
       (engineA: EngineConfig)
       (engineB: EngineConfig)
       (opponentNodes: int)
-      (pgnPath: string) : MatchStats =
+      (pgnPath: string)
+      (referencePgnPath: string)
+      (preventDeviationFor: string[]) : MatchStats =
 
     let candidateName = engineA.Name
     let baselineName = engineB.Name
     let matchPgnPath = prepareWritablePgnPath pgnPath
-    let tournament = buildMatchTournament cfg baseTournament engineA engineB opponentNodes matchPgnPath
+    let tournament = buildMatchTournament cfg baseTournament engineA engineB opponentNodes matchPgnPath referencePgnPath preventDeviationFor
 
     let results, pgnGames = runTournamentDirect tournament candidateName baselineName cfg.Sprt
+    appendMatchPgnToCumulative matchPgnPath referencePgnPath cfg.MaxReferencePgnGames
 
     let completedResults =
       results
@@ -683,11 +723,13 @@ module TunerRunner =
       (candidateOptions: IDictionary<string,obj>)
       (baselineName: string)
       (baselineOptions: IDictionary<string,obj>)
-      (pgnPath: string) =
+      (pgnPath: string)
+      (referencePgnPath: string)
+      (preventDeviationFor: string[]) =
 
     let candidateEngine = cloneEngineWithOptions candidateName baseEngine 1 candidateOptions
     let baselineEngine = cloneEngineWithOptions baselineName baseEngine 1 baselineOptions
-    runMatchBetween cfg baseTournament candidateEngine baselineEngine 0 pgnPath
+    runMatchBetween cfg baseTournament candidateEngine baselineEngine 0 pgnPath referencePgnPath preventDeviationFor
 
   let internal saveState (path: string) (state: TuneState) =
     let json = JsonSerializer.Serialize(state, jsonOptionsIndented)
@@ -870,7 +912,8 @@ module TunerRunner =
       EvalMode: string
       PuzzleData: CsvPuzzleData[] option
       PuzzleConfig: PuzzleConfig option
-      EretConfig: EretConfig option }
+      EretConfig: EretConfig option
+      CumulativePgnPath: string }
 
   let internal prepareTune path : TuneSetupData =
     let configPath, cfg = readTuneConfig path
@@ -923,7 +966,8 @@ module TunerRunner =
           StartedUtc = nowUtc()
           LastUpdatedUtc = nowUtc()
           ObservationsX = null
-          ObservationsY = null }
+          ObservationsY = null
+          FinalValidationCompleted = false }
 
     let startedUtc =
       match DateTime.TryParse(state.StartedUtc) with
@@ -951,6 +995,11 @@ module TunerRunner =
 
     let makeMatchPgnPath prefix number =
       Path.Combine(pgnDir, sprintf "%s_%s_%06d%s" pgnBaseName prefix number pgnExt)
+
+    let cumulativePgnPath =
+      if cfg.PreventOpponentDeviation then
+        Path.Combine(pgnDir, sprintf "%s_cumulative%s" pgnBaseName pgnExt)
+      else ""
 
     let optimizer =
       if String.IsNullOrWhiteSpace cfg.Optimizer then "spsa"
@@ -994,7 +1043,8 @@ module TunerRunner =
       EvalMode = evalMode
       PuzzleData = puzzleData
       PuzzleConfig = puzzleConfig
-      EretConfig = eretConfig }
+      EretConfig = eretConfig
+      CumulativePgnPath = cumulativePgnPath }
 
   let private runPuzzlesByType (puzzleType: string) (input: PuzzleInput) : ResizeArray<Score> =
     let noop = Action<Lichess>(fun _ -> ())
@@ -1049,6 +1099,33 @@ module TunerRunner =
     printfn "  %s=%.4f vs %s=%.4f → winner: %s" nameA accA nameB accB (if aBeatB then nameA else nameB)
     (aBeatB, accA, accB)
 
+  let internal runOpponentComparison
+      (setup: TuneSetupData)
+      (nameA: string) (optionsA: IDictionary<string,obj>)
+      (nameB: string) (optionsB: IDictionary<string,obj>)
+      (pgnPathA: string) (pgnPathB: string) : bool =
+    let cfg = setup.Config
+    let baseEngine = setup.BaseEngine
+    let opponent = setup.OpponentEngine.Value
+    let oppNodes = if cfg.OpponentTargetNodes > 0 then cfg.OpponentTargetNodes else cfg.TargetNodes
+    let opponentDeviationFor =
+      if cfg.PreventOpponentDeviation then [| opponent.Name |]
+      else null
+    let cumulativePgnPath = setup.CumulativePgnPath
+
+    let engineA = cloneEngineWithOptions nameA baseEngine 1 optionsA
+    let statsA = runMatchBetween cfg setup.BaseTournament engineA opponent oppNodes pgnPathA cumulativePgnPath opponentDeviationFor
+    let scoreA = (float statsA.Wins + 0.5 * float statsA.Draws) / float (max 1 statsA.Games)
+
+    let engineB = cloneEngineWithOptions nameB baseEngine 1 optionsB
+    let statsB = runMatchBetween cfg setup.BaseTournament engineB opponent oppNodes pgnPathB cumulativePgnPath opponentDeviationFor
+    let scoreB = (float statsB.Wins + 0.5 * float statsB.Draws) / float (max 1 statsB.Games)
+
+    printfn "  %s vs %s: scoreA=%.4f (%d/%d/%d) scoreB=%.4f (%d/%d/%d) → winner: %s"
+      nameA nameB scoreA statsA.Wins statsA.Draws statsA.Losses scoreB statsB.Wins statsB.Draws statsB.Losses
+      (if scoreA >= scoreB then nameA else nameB)
+    scoreA >= scoreB
+
   let internal printTuneHeader (setup: TuneSetupData) =
     let cfg = setup.Config
     let resolved = setup.Resolved
@@ -1066,6 +1143,8 @@ module TunerRunner =
         printfn "Opponent:        %s" opp.Name
         let oppNodes = if cfg.OpponentTargetNodes > 0 then cfg.OpponentTargetNodes else cfg.TargetNodes
         printfn "Opponent nodes:  %d" oppNodes
+        if cfg.UseOpponentForValidation then
+          printfn "Opp validation:  true"
     | None -> ()
     printfn "Optimizer:       %s" setup.Optimizer
     printfn "Eval mode:       %s" setup.EvalMode
@@ -1216,7 +1295,7 @@ module TunerRunner =
             sf, syntheticStats, w, (accPlus + accMinus) / 2.0
           | _ ->
             let pgnPath = makeMatchPgnPath "cmp" candidateCount
-            let s = runSprtMatch cfg baseTournament baseEngine plusName plusOptions minusName minusOptions pgnPath
+            let s = runSprtMatch cfg baseTournament baseEngine plusName plusOptions minusName minusOptions pgnPath "" null
             let w =
               match s.Decision with
               | "accept_h1" | "fallback_h1" -> plusName
@@ -1274,7 +1353,8 @@ module TunerRunner =
             StartedUtc = state.StartedUtc
             LastUpdatedUtc = nowUtc()
             ObservationsX = null
-            ObservationsY = null }
+            ObservationsY = null
+            FinalValidationCompleted = false }
         saveState statePath checkpoint
 
         ()
@@ -1292,9 +1372,13 @@ module TunerRunner =
           | "puzzle" | "eret" ->
             let (aBeatB, _, _) = runComparisonByAccuracy setup curName curOptions phaseStartName startOptions
             aBeatB
+          | _ when cfg.UseOpponentForValidation && setup.OpponentEngine.IsSome ->
+            let pgnA = makeMatchPgnPath "phase_a" candidateCount
+            let pgnB = makeMatchPgnPath "phase_b" candidateCount
+            runOpponentComparison setup curName curOptions phaseStartName startOptions pgnA pgnB
           | _ ->
             let pgnPath = makeMatchPgnPath "phase" candidateCount
-            let confirm = runSprtMatch cfg baseTournament baseEngine curName curOptions phaseStartName startOptions pgnPath
+            let confirm = runSprtMatch cfg baseTournament baseEngine curName curOptions phaseStartName startOptions pgnPath "" null
             match confirm.Decision with
             | "accept_h1" | "fallback_h1" -> true
             | _ -> false
@@ -1317,9 +1401,13 @@ module TunerRunner =
           | "puzzle" | "eret" ->
             let (aBeatB, _, _) = runComparisonByAccuracy setup curName2 curOptions2 bestName bestOptions
             aBeatB
+          | _ when cfg.UseOpponentForValidation && setup.OpponentEngine.IsSome ->
+            let pgnA = makeMatchPgnPath "best_a" candidateCount
+            let pgnB = makeMatchPgnPath "best_b" candidateCount
+            runOpponentComparison setup curName2 curOptions2 bestName bestOptions pgnA pgnB
           | _ ->
             let pgnPath2 = makeMatchPgnPath "best" candidateCount
-            let cmpBest = runSprtMatch cfg baseTournament baseEngine curName2 curOptions2 bestName bestOptions pgnPath2
+            let cmpBest = runSprtMatch cfg baseTournament baseEngine curName2 curOptions2 bestName bestOptions pgnPath2 "" null
             match cmpBest.Decision with
             | "accept_h1" | "fallback_h1" -> true
             | _ -> false
@@ -1345,48 +1433,60 @@ module TunerRunner =
           StartedUtc = state.StartedUtc
           LastUpdatedUtc = nowUtc()
           ObservationsX = null
-          ObservationsY = null }
+          ObservationsY = null
+          FinalValidationCompleted = false }
       saveState statePath checkpoint
 
     // Final validation: best vs initial.
-    printfn "\n--- Final validation: %s[tuned] vs %s[initial] ---" baseEngine.Name baseEngine.Name
-    let tunedName = sprintf "%s[tuned]" baseEngine.Name
-    let initialName = sprintf "%s[initial]" baseEngine.Name
-    let finalCandidateOptions = optionsFromVector baseEngine.Options resolved bestX
-    let initialOptions = optionsFromVector baseEngine.Options resolved startX
+    if not state.FinalValidationCompleted then
+      printfn "\n--- Final validation: %s[tuned] vs %s[initial] ---" baseEngine.Name baseEngine.Name
+      let tunedName = sprintf "%s[tuned]" baseEngine.Name
+      let initialName = sprintf "%s[initial]" baseEngine.Name
+      let finalCandidateOptions = optionsFromVector baseEngine.Options resolved bestX
+      let initialOptions = optionsFromVector baseEngine.Options resolved startX
 
-    let finalStats, finalAccTuned, finalAccInitial =
-      match setup.EvalMode with
-      | "puzzle" | "eret" ->
-        let (_, accT, accI) = runComparisonByAccuracy setup tunedName finalCandidateOptions initialName initialOptions
-        let synth = { Wins = 0; Draws = 0; Losses = 0; Games = 0; Llr = 0.0; Elo = 0.0
-                      Decision = (if accT >= accI then "tuned_wins" else "initial_wins"); StoppedEarly = false }
-        synth, Some accT, Some accI
-      | _ ->
-        let finalPgnPath = Path.Combine(pgnDir, sprintf "%s_final_validation%s" pgnBaseName pgnExt)
-        let s = runSprtMatch cfg baseTournament baseEngine tunedName finalCandidateOptions initialName initialOptions finalPgnPath
-        s, None, None
+      let finalStats, finalAccTuned, finalAccInitial =
+        match setup.EvalMode with
+        | "puzzle" | "eret" ->
+          let (_, accT, accI) = runComparisonByAccuracy setup tunedName finalCandidateOptions initialName initialOptions
+          let synth = { Wins = 0; Draws = 0; Losses = 0; Games = 0; Llr = 0.0; Elo = 0.0
+                        Decision = (if accT >= accI then "tuned_wins" else "initial_wins"); StoppedEarly = false }
+          synth, Some accT, Some accI
+        | _ when cfg.UseOpponentForValidation && setup.OpponentEngine.IsSome ->
+          let pgnA = Path.Combine(pgnDir, sprintf "%s_final_validation_tuned%s" pgnBaseName pgnExt)
+          let pgnB = Path.Combine(pgnDir, sprintf "%s_final_validation_initial%s" pgnBaseName pgnExt)
+          let tunedWins = runOpponentComparison setup tunedName finalCandidateOptions initialName initialOptions pgnA pgnB
+          let synth = { Wins = 0; Draws = 0; Losses = 0; Games = 0; Llr = 0.0; Elo = 0.0
+                        Decision = (if tunedWins then "tuned_wins" else "initial_wins"); StoppedEarly = false }
+          synth, None, None
+        | _ ->
+          let finalPgnPath = Path.Combine(pgnDir, sprintf "%s_final_validation%s" pgnBaseName pgnExt)
+          let s = runSprtMatch cfg baseTournament baseEngine tunedName finalCandidateOptions initialName initialOptions finalPgnPath "" null
+          s, None, None
 
-    let tunedPairs = tunedValuesFromVector baseEngine.Options resolved bestX
-    writeBestOptions bestOptionsPath tunedPairs
+      let tunedPairs = tunedValuesFromVector baseEngine.Options resolved bestX
+      writeBestOptions bestOptionsPath tunedPairs
 
-    let elapsed = DateTime.UtcNow - startedUtc
-    let summary = summaryText cfg resolved bestX finalStats candidateCount elapsed setup.EvalMode finalAccTuned finalAccInitial
-    File.WriteAllText(summaryPath, summary)
+      let elapsed = DateTime.UtcNow - startedUtc
+      let summary = summaryText cfg resolved bestX finalStats candidateCount elapsed setup.EvalMode finalAccTuned finalAccInitial
+      File.WriteAllText(summaryPath, summary)
 
-    let finalState =
-      { PhaseIndex = phaseIndex
-        IterationInPhase = iterationInPhase
-        GlobalIteration = globalIteration
-        CandidateCount = candidateCount
-        RandomCallsConsumed = randomCalls
-        X = Array.copy bestX
-        BestX = Array.copy bestX
-        StartedUtc = state.StartedUtc
-        LastUpdatedUtc = nowUtc()
-        ObservationsX = null
-        ObservationsY = null }
-    saveState statePath finalState
+      let finalState =
+        { PhaseIndex = phaseIndex
+          IterationInPhase = iterationInPhase
+          GlobalIteration = globalIteration
+          CandidateCount = candidateCount
+          RandomCallsConsumed = randomCalls
+          X = Array.copy bestX
+          BestX = Array.copy bestX
+          StartedUtc = state.StartedUtc
+          LastUpdatedUtc = nowUtc()
+          ObservationsX = null
+          ObservationsY = null
+          FinalValidationCompleted = true }
+      saveState statePath finalState
+    else
+      printfn "\n--- Skipping final validation (already completed on previous run) ---"
 
     printfn "\nTuning completed."
     printfn "- state: %s" statePath
