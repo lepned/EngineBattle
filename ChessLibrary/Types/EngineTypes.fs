@@ -238,7 +238,7 @@ module EngineTypes =
           sprintf "wv=%O, mt=%d, s=%d, eps=%d, n=%d, d=%d, pcs=%d, sd=%d, pd=%s, tl=%d, tb=%d"
             x.wv x.mt x.s x.eps x.n x.d x.pcs x.sd x.pd x.tl x.tb
         member x.CompactAnnotation =
-          sprintf "wv=%O, d=%d, mt=%d" x.wv x.d x.mt
+          sprintf "wv=%O, n=%d, s=%d, mt=%d" x.wv x.n x.s x.mt
 
     module Annotation =
 

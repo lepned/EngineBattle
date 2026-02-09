@@ -95,11 +95,7 @@ let prepareGameReplay
             if pairing.Opening.Fen <> "" then
                 replayBoard.LoadFen pairing.Opening.Fen
         for game in lastRelevantGames do
-            printfn "Relevant saved game found %s, %s for pairing: %s, %s" game.GameMetaData.White game.GameMetaData.Black pairing.White.Name pairing.Black.Name
             let isWhite = game.GameMetaData.White = pairing.White.Name
-            let rematch = game.GameMetaData.White = pairing.White.Name && game.GameMetaData.Black = pairing.Black.Name
-            if rematch then
-                printfn "Rematch found for %s, %s - so games should be identical" game.GameMetaData.White game.GameMetaData.Black
             replayBoard.ResetBoardState()
             tryInitBoard()
             let mutable idx = 0
@@ -136,10 +132,7 @@ let prepareGameReplay
         |None ->
 
         match lastRelevantGame with
-        |Some game ->
-            let sumGames = lastRelevantGames |> Seq.length
-            let log = sprintf "First saved game (no live game yet): %s vs %s in round %s, number of games are: %d, tot moves: %d" game.GameMetaData.White game.GameMetaData.Black game.GameMetaData.Round sumGames moves
-            printfn "%s" log
+        |Some _ -> ()
         |None ->
             let whiteMoves = replayDictWhite |> Seq.length
             let blackMoves = replayDictBlack |> Seq.length

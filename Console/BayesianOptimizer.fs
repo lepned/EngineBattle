@@ -1,6 +1,7 @@
 namespace ConsoleApp
 
 open System
+open System.Globalization
 open System.IO
 open System.Text.Json
 open System.Text.Json.Nodes
@@ -1015,7 +1016,7 @@ module BayesianOptimizer =
         None, { SignalVariance = 1.0; LengthScales = Array.create d 0.5; NoiseVariance = 0.05 }
 
     let startedUtc =
-      match DateTime.TryParse(state.StartedUtc) with
+      match DateTime.TryParse(state.StartedUtc, null, DateTimeStyles.RoundtripKind) with
       | true, dt -> dt
       | _ -> DateTime.UtcNow
 

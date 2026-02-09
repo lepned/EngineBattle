@@ -1,6 +1,7 @@
 namespace ConsoleApp
 
 open System
+open System.Globalization
 open System.IO
 open System.Text
 open System.Text.Json
@@ -970,7 +971,7 @@ module TunerRunner =
           FinalValidationCompleted = false }
 
     let startedUtc =
-      match DateTime.TryParse(state.StartedUtc) with
+      match DateTime.TryParse(state.StartedUtc, null, DateTimeStyles.RoundtripKind) with
       | true, dt -> dt
       | _ -> DateTime.UtcNow
 

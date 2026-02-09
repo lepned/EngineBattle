@@ -915,9 +915,6 @@ let playGeneric
                     match tryGetTMoveFromUciNotation &board oldMove with
                     |Some orgMove ->
                       shortSan <- getSanNotationFromTMove &board orgMove
-                      RuntimeUtilities.ConsoleUtils.printInColor
-                          ConsoleColor.Yellow
-                          $"Deviation detected at plycount {board.PlyCount} with time left in ms: {moveInfoData.tl}\n  Prev move: {oldMove} by {engName}  Current move: {move} by {playing.Name}"
                       tourny.DeviationCounter <- tourny.DeviationCounter + 1
                       move <- oldMove
                       board.UciMovesPlayed.Add(move)
