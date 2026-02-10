@@ -783,6 +783,11 @@ module Program =
                 | Verb (Benchmark path) ->
                     BenchmarkRunner.runBenchmark path
                 | Verb (Tune path) ->
+                    Console.CancelKeyPress.Add(fun args ->
+                        args.Cancel <- true
+                        printfn "\nTuner cancelled by user. Exiting..."
+                        Environment.Exit(0)
+                    )
                     BayesianOptimizer.runTuneWithDispatch path
                 | Verb (Redash path) ->
                     BayesianOptimizer.regenerateDashboard path

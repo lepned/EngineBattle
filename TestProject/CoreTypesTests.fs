@@ -202,29 +202,26 @@ let private testMoveInfo =
                                 q1 = 0.55; q2 = 0.45; p1 = 30.0; pt = 25.0; tb = 0L }
 
 [<Fact>]
-let ``CompactAnnotation includes only wv d mt`` () =
+let ``CompactAnnotation includes only wv n s mt`` () =
     let result = testMoveInfo.CompactAnnotation
     Assert.Contains("wv=", result)
-    Assert.Contains("d=15", result)
+    Assert.Contains("n=500000", result)
+    Assert.Contains("s=1000000", result)
     Assert.Contains("mt=500", result)
-    Assert.DoesNotContain("s=", result)
+    Assert.DoesNotContain("d=", result)
     Assert.DoesNotContain("pv=", result)
-    Assert.DoesNotContain("n=", result)
+    Assert.DoesNotContain("eps=", result)
 
 [<Fact>]
-let ``MinimalAnnotation includes 11 fields`` () =
+let ``MinimalAnnotation includes only wv n s mt`` () =
     let result = testMoveInfo.MinimalAnnotation
     Assert.Contains("wv=", result)
-    Assert.Contains("mt=", result)
-    Assert.Contains("s=", result)
-    Assert.Contains("eps=", result)
-    Assert.Contains("n=", result)
-    Assert.Contains("d=", result)
-    Assert.Contains("pcs=", result)
-    Assert.Contains("sd=", result)
-    Assert.Contains("tl=", result)
-    Assert.Contains("tb=", result)
+    Assert.Contains("n=500000", result)
+    Assert.Contains("s=1000000", result)
+    Assert.Contains("mt=500", result)
+    Assert.DoesNotContain("d=", result)
     Assert.DoesNotContain("pv=", result)
+    Assert.DoesNotContain("eps=", result)
     Assert.DoesNotContain("n1=", result)
 
 [<Fact>]

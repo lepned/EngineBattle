@@ -53,6 +53,59 @@ let ``assignDeviceToConfig preserves other options`` () =
     Assert.Equal(4, result.Options.["Threads"] :?> int)
 
 [<Fact>]
+let ``assignDeviceToConfig replaces gpu inside Lc0 BackendOptions`` () =
+    let config = makeConfig "BackendOptions" "gpu={0}"
+                    ["BackendOptions", box "backend=cuda-fp16,(gpu=0,policy_head=optimistic, value_head=winner)"]
+    let result = assignDeviceToConfig config 2
+    Assert.Equal("backend=cuda-fp16,(gpu=2,policy_head=optimistic, value_head=winner)",
+                 result.Options.["BackendOptions"] :?> string)
+
+[<Fact>]
+let ``assignDeviceToConfig Lc0 BackendOptions does not mutate original`` () =
+    let config = makeConfig "BackendOptions" "gpu={0}"
+                    ["BackendOptions", box "backend=cuda-fp16,(gpu=0)"]
+    let _ = assignDeviceToConfig config 3
+    Assert.Equal("backend=cuda-fp16,(gpu=0)", config.Options.["BackendOptions"] :?> string)
+
+[<Fact>]
+let ``assignDeviceToConfig demux two GPUs increments indices`` () =
+    let config = makeConfig "BackendOptions" "gpu={0}"
+                    ["BackendOptions", box "backend=onnx-trt,(gpu=0),(gpu=1)"]
+    let result = assignDeviceToConfig config 2
+    Assert.Equal("backend=onnx-trt,(gpu=2),(gpu=3)",
+                 result.Options.["BackendOptions"] :?> string)
+
+[<Fact>]
+let ``assignDeviceToConfig demux two GPUs with extra options`` () =
+    let config = makeConfig "BackendOptions" "gpu={0}"
+                    ["BackendOptions", box "backend=onnx-trt,(gpu=0,batch=8,steps=8,optimize_batch=128),(gpu=1,batch=8,steps=8,optimize_batch=128)"]
+    let result = assignDeviceToConfig config 4
+    Assert.Equal("backend=onnx-trt,(gpu=4,batch=8,steps=8,optimize_batch=128),(gpu=5,batch=8,steps=8,optimize_batch=128)",
+                 result.Options.["BackendOptions"] :?> string)
+
+[<Fact>]
+let ``assignDeviceToConfig demux with multi_stream and threads unchanged`` () =
+    let config = makeConfig "BackendOptions" "gpu={0}"
+                    ["BackendOptions", box "backend=cuda-fp16,(gpu=0,policy_head=vanilla,value_head=winner),(gpu=1,policy_head=vanilla,value_head=winner),multi_stream=true,threads=2"]
+    let result = assignDeviceToConfig config 2
+    Assert.Equal("backend=cuda-fp16,(gpu=2,policy_head=vanilla,value_head=winner),(gpu=3,policy_head=vanilla,value_head=winner),multi_stream=true,threads=2",
+                 result.Options.["BackendOptions"] :?> string)
+
+[<Fact>]
+let ``assignDeviceToConfig demux eight GPUs increments all`` () =
+    let config = makeConfig "BackendOptions" "gpu={0}"
+                    ["BackendOptions", box "backend=onnx-trt,(gpu=0),(gpu=1),(gpu=2),(gpu=3),(gpu=4),(gpu=5),(gpu=6),(gpu=7)"]
+    let result = assignDeviceToConfig config 8
+    Assert.Equal("backend=onnx-trt,(gpu=8),(gpu=9),(gpu=10),(gpu=11),(gpu=12),(gpu=13),(gpu=14),(gpu=15)",
+                 result.Options.["BackendOptions"] :?> string)
+
+[<Fact>]
+let ``assignDeviceToConfig sets full value when option not present`` () =
+    let config = makeConfig "Device" "GPU:{0}#TensorRT" []
+    let result = assignDeviceToConfig config 1
+    Assert.Equal("GPU:1#TensorRT", result.Options.["Device"] :?> string)
+
+[<Fact>]
 let ``round-robin assigns GPUs correctly with wrapping`` () =
     let gpus = [| 0; 1; 2 |]
     let assignments = [| for i in 0..5 -> gpus.[i % gpus.Length] |]

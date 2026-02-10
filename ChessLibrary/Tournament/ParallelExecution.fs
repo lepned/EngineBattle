@@ -23,13 +23,25 @@ open ChessLibrary.GameReplay
 open ChessLibrary.GameExecution
 open ChessLibrary.GamePersistence
 open ChessLibrary.TournamentRunners.TournamentUtils
+open System.Text.RegularExpressions
 
 let assignDeviceToConfig (config: EngineConfig) (gpu: int) =
     if String.IsNullOrEmpty config.DeviceOption || String.IsNullOrEmpty config.DeviceTemplate then
         config
     else
         let newOptions = Dictionary<string, obj>(config.Options, StringComparer.OrdinalIgnoreCase)
-        let value = config.DeviceTemplate.Replace("{0}", string gpu)
+        let parts = config.DeviceTemplate.Split([|"{0}"|], StringSplitOptions.None)
+        let pattern = String.Join(@"\d+", parts |> Array.map Regex.Escape)
+        let value =
+            match newOptions.TryGetValue(config.DeviceOption) with
+            | true, existing ->
+                let existingStr = string existing
+                let mutable offset = 0
+                Regex.Replace(existingStr, pattern, fun _ ->
+                    let result = config.DeviceTemplate.Replace("{0}", string (gpu + offset))
+                    offset <- offset + 1
+                    result)
+            | false, _ -> config.DeviceTemplate.Replace("{0}", string gpu)
         newOptions.[config.DeviceOption] <- box value
         { config with Options = newOptions }
 
@@ -542,12 +554,12 @@ let parallelTournamentRun
               // borrow
               let! wEng = enginePools.[pair.White.Name].Reader.ReadAsync()
               let! bEng = enginePools.[pair.Black.Name].Reader.ReadAsync()
-              let! wOk = wEng |> engineHealthy
-              let! bOk = bEng |> engineHealthy
-              if wOk |> not || bOk |> not then
-                  logger.LogCritical($"One of the engines is unhealthy, skipping game between {pair.White.Name} and {pair.Black.Name}")
-                  Exception("Unhealthy engine detected, potentially skipping game") |> raise
               try
+                  let! wOk = wEng |> engineHealthy
+                  let! bOk = bEng |> engineHealthy
+                  if wOk |> not || bOk |> not then
+                      logger.LogCritical($"One of the engines is unhealthy, skipping game between {pair.White.Name} and {pair.Black.Name}")
+                      Exception("Unhealthy engine detected, potentially skipping game") |> raise
                   let! (res, pairing) =
                       async {
                           let currentBoard = Board()
@@ -656,8 +668,10 @@ let parallelTournamentRun
                   results.Add res
 
               finally
-                  enginePools.[pair.White.Name].Writer.WriteAsync(wEng) |> ignore
-                  enginePools.[pair.Black.Name].Writer.WriteAsync(bEng) |> ignore
+                  if not (enginePools.[pair.White.Name].Writer.TryWrite(wEng)) then
+                      logger.LogError("Failed to return engine {Engine} to pool", wEng.Name)
+                  if not (enginePools.[pair.Black.Name].Writer.TryWrite(bEng)) then
+                      logger.LogError("Failed to return engine {Engine} to pool", bEng.Name)
               }
 
           // 5) worker loop: pull pairings until done
@@ -666,12 +680,17 @@ let parallelTournamentRun
               while pairingCh.Reader.WaitToReadAsync().Result do
                   match pairingCh.Reader.TryRead() with
                   | true, pair ->
-                      logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
-                      do! playOne pair |> Async.AwaitTask
-                      Interlocked.Increment(&gameCounter) |> ignore // Increment the counter atomically
-                      if gameCounter % 10 = 0 then
-                          let res = ResizeArray<Result>(results) // Collect results
-                          callback (Update.PeriodicResults res) // Call the callback every 10 gam
+                      try
+                          logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
+                          do! playOne pair |> Async.AwaitTask
+                          Interlocked.Increment(&gameCounter) |> ignore
+                          if gameCounter % 10 = 0 then
+                              let res = ResizeArray<Result>(results)
+                              callback (Update.PeriodicResults res)
+                      with ex ->
+                          logger.LogError(ex, "Worker {Worker} failed game {White} vs {Black}, continuing",
+                              i, pair.White.Name, pair.Black.Name)
+                          Interlocked.Increment(&gameCounter) |> ignore
                   | _ -> ()
               }
 

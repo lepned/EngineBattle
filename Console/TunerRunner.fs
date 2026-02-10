@@ -643,6 +643,7 @@ module TunerRunner =
               | None -> ()
         | _ -> ())
     let runner = Manager.Runner(logger, callback, false, true)
+    runner.SuppressDashboard <- true
     runnerOpt <- Some runner
     runner.AddTournament tournament
     let results = runner.Run() |> Seq.toArray
@@ -1151,6 +1152,8 @@ module TunerRunner =
     printfn "Eval mode:       %s" setup.EvalMode
     printfn "Target nodes:    %d" cfg.TargetNodes
     printfn "Parallel games:  %d" cfg.ParallelGames
+    if cfg.GPUs <> null && cfg.GPUs.Length > 0 then
+      printfn "GPUs:            [%s]" (String.Join(", ", cfg.GPUs))
     printfn "Max wall hours:  %.1f" cfg.MaxWallHours
     printfn "Max candidates:  %d" cfg.MaxCandidates
     if setup.Optimizer = "spsa" then
@@ -1278,6 +1281,8 @@ module TunerRunner =
             let vMinus = fromNorm p xMinus.[i]
             let label = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
             printfn "  %-20s  [+] = %-8g  [-] = %g" label vPlus vMinus
+        if cfg.GPUs <> null && cfg.GPUs.Length > 0 then
+          printfn "  GPUs: [%s]" (String.Join(", ", cfg.GPUs))
 
         candidateCount <- candidateCount + 1
 

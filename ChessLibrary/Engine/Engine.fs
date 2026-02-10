@@ -696,6 +696,8 @@ module Engine =
               | None -> printfn "Option not found: %s value: %d" optionName ms
   
   
+  let printedEngines = System.Collections.Generic.HashSet<string>()
+
   type ChessEngine(config : EngineConfig, initCommands: string seq, logger: ILogger option) =
       let printToConsole txt = printfn "%s" txt
       let logCritical text =
@@ -1027,6 +1029,8 @@ module Engine =
             if validate then
                 if passed then
                   RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
+                  if printedEngines.Add(name) then
+                    printNonDefaultValues()
                   let diagnostics = getDiagnostics()
                   if String.IsNullOrEmpty diagnostics |> not then
                      RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)

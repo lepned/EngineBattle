@@ -1134,6 +1134,8 @@ module BayesianOptimizer =
         let v = TunerRunner.fromNorm p xCandidate.[i]
         let label = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
         printfn "    %-20s = %g" label v
+      if cfg.GPUs <> null && cfg.GPUs.Length > 0 then
+        printfn "    GPUs: [%s]" (String.Join(", ", cfg.GPUs))
 
       let scoreFrac, stats, accuracy, opponentName =
         match setup.EvalMode with

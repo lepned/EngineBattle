@@ -279,13 +279,16 @@ module Manager =
       last
     
     member val TotalGames = 0 with get, set
+    member val SuppressDashboard = false with get, set
     member x.PgnReader
         with get() = 
           if String.IsNullOrWhiteSpace tournament.PgnOutPath then
             failwith "PgnOutPath is not set in tournament.json"
           match pgnReader with
-          |None -> 
-            ChessLibrary.FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
+          |None ->
+            let reader = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
+            pgnReader <- Some reader
+            reader
           |Some pgnReader -> pgnReader
         and set(value) = pgnReader <- Some value     
 
@@ -295,21 +298,22 @@ module Manager =
       | PeriodicResults results ->
           try
               callback.Invoke update
-              let pgnGames = x.GetPGNGames()
-              if pgnGames.Count > 0 then
-                  let consoleResString, data, _, _= PGNCalculator.getEngineDataResults pgnGames
-                  let ordoPath = executablePath()
-                  if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then
-                      let capturedData = data |> Seq.toArray
-                      ordoAgent.Post (capturedData, ordoPath, tournament.PgnOutPath)
+              if not x.SuppressDashboard then
+                  let pgnGames = x.GetPGNGames()
+                  if pgnGames.Count > 0 then
+                      let consoleResString, data, _, _= PGNCalculator.getEngineDataResults pgnGames
+                      let ordoPath = executablePath()
+                      if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then
+                          let capturedData = data |> Seq.toArray
+                          ordoAgent.Post (capturedData, ordoPath, tournament.PgnOutPath)
+                      else
+                          let gameUpdate = Update.GameSummary consoleResString
+                          callback.Invoke gameUpdate
                   else
-                      let gameUpdate = Update.GameSummary consoleResString                  
-                      callback.Invoke gameUpdate
-              else
-                let pRes = x.GetPlayerResults results
-                let cross = x.GenerateStatsCrosstable results            
-                let table = OrdoHelper.getResultsAndPairsInConsoleFormat pRes cross            
-                callback.Invoke (Update.GameSummary table)
+                    let pRes = x.GetPlayerResults results
+                    let cross = x.GenerateStatsCrosstable results
+                    let table = OrdoHelper.getResultsAndPairsInConsoleFormat pRes cross
+                    callback.Invoke (Update.GameSummary table)
           with e ->
               let msg = $"Error generating periodic results: {e.Message}"
               printfn "%s" msg
