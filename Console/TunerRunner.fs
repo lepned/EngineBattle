@@ -73,6 +73,8 @@ module TunerRunner =
       mutable GPUs: int[]
       mutable DeviceOption: string
       mutable DeviceTemplate: string
+      mutable OpponentDeviceOption: string
+      mutable OpponentDeviceTemplate: string
       mutable InitialDesignRadius: float
       mutable PreventOpponentDeviation: bool
       mutable MaxReferencePgnGames: int
@@ -675,6 +677,7 @@ module TunerRunner =
     runner.AddTournament tournament
     let results = runner.Run() |> Seq.toArray
     let pgnGames = runner.GetPGNGames()
+    runner.DisposePgnReader()
     results, pgnGames
 
   let private scoreFromResult (candidateName: string) (result: Result) =
@@ -954,21 +957,21 @@ module TunerRunner =
     if not (String.IsNullOrWhiteSpace cfg.OpeningsPath) then
       ignore (resolvePath cfg.OpeningsPath "openingsPath")
 
-    let applyDeviceConfig (eng: EngineConfig) =
-      let devOpt =
-        if String.IsNullOrWhiteSpace eng.DeviceOption && not (String.IsNullOrWhiteSpace cfg.DeviceOption)
-        then cfg.DeviceOption else eng.DeviceOption
-      let devTpl =
-        if String.IsNullOrWhiteSpace eng.DeviceTemplate && not (String.IsNullOrWhiteSpace cfg.DeviceTemplate)
-        then cfg.DeviceTemplate else eng.DeviceTemplate
-      { eng with DeviceOption = devOpt; DeviceTemplate = devTpl }
+    let applyDeviceConfig (devOpt: string) (devTpl: string) (eng: EngineConfig) =
+      let finalOpt =
+        if String.IsNullOrWhiteSpace eng.DeviceOption && not (String.IsNullOrWhiteSpace devOpt)
+        then devOpt else eng.DeviceOption
+      let finalTpl =
+        if String.IsNullOrWhiteSpace eng.DeviceTemplate && not (String.IsNullOrWhiteSpace devTpl)
+        then devTpl else eng.DeviceTemplate
+      { eng with DeviceOption = finalOpt; DeviceTemplate = finalTpl }
 
-    let baseEngine = applyDeviceConfig (JSON.readSingleEngineConfig enginePath)
+    let baseEngine = applyDeviceConfig cfg.DeviceOption cfg.DeviceTemplate (JSON.readSingleEngineConfig enginePath)
 
     let opponentEngine =
       if not (String.IsNullOrWhiteSpace cfg.OpponentConfigPath) then
         let oppPath = resolvePath cfg.OpponentConfigPath "opponentConfigPath"
-        Some (applyDeviceConfig (JSON.readSingleEngineConfig oppPath))
+        Some (applyDeviceConfig cfg.OpponentDeviceOption cfg.OpponentDeviceTemplate (JSON.readSingleEngineConfig oppPath))
       else
         None
 

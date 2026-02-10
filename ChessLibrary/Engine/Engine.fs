@@ -808,7 +808,7 @@ module Engine =
       let mutable lastExitCode : int option = None
       let stderrBuffer = ResizeArray<string>()
 
-      let assignThread () = 
+      let assignThread () =         
         let task = Task.Factory.StartNew(fun () -> 
             let engine = new Process()
             proc <- engine

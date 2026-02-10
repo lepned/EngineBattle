@@ -248,6 +248,11 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
   "preventOpponentDeviation": false,
   "maxReferencePgnGames": 0,
   "useOpponentForValidation": false,
+  "gpus": [0, 1],
+  "deviceOption": "Device",
+  "deviceTemplate": "GPU:{0}#TensorRTNative",
+  "opponentDeviceOption": "",
+  "opponentDeviceTemplate": "",
   "evalMode": "sprt",
   "evalConfigPath": "",
   "sprt": {
@@ -293,6 +298,11 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
 - `preventOpponentDeviation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, constrains the opponent engine to replay its previous moves via a cumulative reference PGN. Only applies to Bayesian optimizer main evaluations; SPSA and self-play matches are unaffected. Forces sequential play (`parallelGames` = 1) when active.
 - `maxReferencePgnGames` (optional, default `0`) — maximum number of games stored in the cumulative reference PGN used by `preventOpponentDeviation`. Once the cap is reached, no more games are appended. This prevents the reference PGN from growing indefinitely during long tuning runs, avoiding increasing parse times per iteration. `0` means no cap.
 - `useOpponentForValidation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, phase confirmations, best-of comparisons, and final validation run each candidate against the opponent engine instead of self-play. Each comparison runs two matches (candidate A vs opponent, candidate B vs opponent) and compares score fractions. Only applies to SPRT eval mode; puzzle/ERET comparisons are unchanged. When `false` or when no opponent is configured, validation falls back to the default self-play SPRT match.
+- `gpus` (optional) — array of GPU indices to assign across parallel games (e.g., `[0, 1]`). Requires `deviceOption` and `deviceTemplate` to be set.
+- `deviceOption` (optional) — UCI option name used for GPU device assignment on the **tuned engine** (e.g., `"Device"`). Combined with `deviceTemplate` to set the device per game.
+- `deviceTemplate` (optional) — template string for the device value on the **tuned engine** (e.g., `"GPU:{0}#TensorRTNative"`). `{0}` is replaced with the GPU index.
+- `opponentDeviceOption` (optional) — UCI option name for GPU device assignment on the **opponent engine**. Only needed when the opponent also requires GPU assignment (e.g., another Ceres instance). Leave empty or omit when the opponent doesn't support a device option (e.g., Stockfish).
+- `opponentDeviceTemplate` (optional) — template string for the device value on the **opponent engine**. Same format as `deviceTemplate`. Leave empty or omit when not needed.
 
 ## Embedded Parameters (pipe-delimited option sub-values)
 

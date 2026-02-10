@@ -290,9 +290,16 @@ module Manager =
             pgnReader <- Some reader
             reader
           |Some pgnReader -> pgnReader
-        and set(value) = pgnReader <- Some value     
+        and set(value) = pgnReader <- Some value
 
-    member x.SendResponse (update: Update) =       
+    member _.DisposePgnReader() =
+        match pgnReader with
+        | Some reader ->
+            reader.Post(ChessLibrary.FullPGNParser.Dispose)
+            pgnReader <- None
+        | None -> ()
+
+    member x.SendResponse (update: Update) =
       // Raise the callback with a proper Update response
       match update with
       | PeriodicResults results ->

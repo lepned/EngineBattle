@@ -362,6 +362,8 @@ let parallelTournamentRunBackup (logger: ILogger) (tourny: Tournament) callback 
 
                 try
                   for (e1,e2) in engines do
+                    try e1.Quit() with _ -> ()
+                    try e2.Quit() with _ -> ()
                     e1.StopProcess()
                     e2.StopProcess()
                 with e ->
@@ -556,9 +558,18 @@ let parallelTournamentRun
 
           // 4) helper to play one pairing using borrowed engines
           let playOne (pair: Pairing) = task {
-              // borrow
-              let! wEng = enginePools.[pair.White.Name].Reader.ReadAsync()
-              let! bEng = enginePools.[pair.Black.Name].Reader.ReadAsync()
+              // Borrow engines in sorted name order to prevent ABBA deadlock.
+              // With openingsTwice, consecutive pairings swap colors (A-white/B-black then B-white/A-black).
+              // Two workers borrowing in white-then-black order can deadlock when they cross.
+              let firstName, secondName =
+                  if String.Compare(pair.White.Name, pair.Black.Name, StringComparison.Ordinal) <= 0
+                  then pair.White.Name, pair.Black.Name
+                  else pair.Black.Name, pair.White.Name
+              let! firstEng = enginePools.[firstName].Reader.ReadAsync()
+              let! secondEng = enginePools.[secondName].Reader.ReadAsync()
+              let wEng, bEng =
+                  if firstName = pair.White.Name then firstEng, secondEng
+                  else secondEng, firstEng
               try
                   let! wOk = wEng |> engineHealthy
                   let! bOk = bEng |> engineHealthy
@@ -712,7 +723,7 @@ let parallelTournamentRun
                   [|1.. ch.Reader.Count|]
                   |> Array.Parallel.map (fun _ ->
                       let eng = enginePools.[e].Reader.ReadAsync().AsTask().Result
-                      //let! eng = enginePools.[e].Reader.ReadAsync().AsTask() |> Async.AwaitTask
+                      try eng.Quit() with _ -> ()
                       eng.StopProcess())
               printfn $"Engine {e} stopped"
 
