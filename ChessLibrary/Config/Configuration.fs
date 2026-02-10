@@ -529,6 +529,11 @@ module JSON =
               use reader = new StreamReader(path)
               let json = reader.ReadToEnd()
               let tournament = JsonSerializer.Deserialize<Tournament>(json, JsonSerializerOptions(AllowTrailingCommas = true))
+              let tournament =
+                  if obj.ReferenceEquals(box tournament.MoveAnnotation, null) then
+                      { tournament with MoveAnnotation = MoveAnnotation.Standard }
+                  else
+                      tournament
               if tournament.EngineSetup.EngineDefList.Length = 0 then
                  Some {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}
               else

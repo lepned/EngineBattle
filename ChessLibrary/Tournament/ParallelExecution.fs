@@ -474,10 +474,16 @@ let parallelTournamentRun
       let searchReplayList (pairing : Pairing) =
           searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
 
+      let gpus = tourny.TestOptions.GPUs
       let concurrency =
-          HardwareInfo.concurrencyLevel
-              tourny.EngineSetup.Engines
-              tourny.TestOptions.NumberOfGamesInParallelConsoleOnly
+          let memBased =
+              HardwareInfo.concurrencyLevel
+                  tourny.EngineSetup.Engines
+                  tourny.TestOptions.NumberOfGamesInParallelConsoleOnly
+          if gpus <> null && gpus.Length > 1 then
+              max memBased gpus.Length
+          else
+              memBased
 
       if concurrency < 1 then
           printfn "Concurrency level is less than 1, using backup plan"
@@ -491,7 +497,6 @@ let parallelTournamentRun
           pairingCh.Writer.Complete()
 
           // 2) build one engine‐pool channel per engine‐name, capacity = parallelism
-          let gpus = tourny.TestOptions.GPUs
           let enginePools =
               tourny.EngineSetup.Engines
               |> List.toArray

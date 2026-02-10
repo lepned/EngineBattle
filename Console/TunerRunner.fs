@@ -71,6 +71,8 @@ module TunerRunner =
       mutable EvalConfigPath: string
       mutable Sprt: SprtConfig
       mutable GPUs: int[]
+      mutable DeviceOption: string
+      mutable DeviceTemplate: string
       mutable InitialDesignRadius: float
       mutable PreventOpponentDeviation: bool
       mutable MaxReferencePgnGames: int
@@ -382,6 +384,31 @@ module TunerRunner =
             let v = fromNorm p x.[i]
             yield KeyValuePair<string,obj>(p.OptionKey, boxValue p v)
     |]
+
+  let internal printNonTunedOptions (label: string) (allOptions: IDictionary<string,obj>) (directTunedKeys: HashSet<string>) =
+    let nonTuned =
+      allOptions
+      |> Seq.filter (fun kv -> not (directTunedKeys.Contains kv.Key))
+      |> Seq.sortBy (fun kv -> kv.Key)
+      |> Seq.toArray
+    if nonTuned.Length > 0 then
+      printfn "    %s:" label
+      for kv in nonTuned do
+        printfn "      %-20s = %O" kv.Key kv.Value
+
+  let internal printAllOptions (label: string) (options: IDictionary<string,obj>) =
+    if options.Count > 0 then
+      printfn "    %s:" label
+      for kv in options |> Seq.sortBy (fun kv -> kv.Key) do
+        printfn "      %-20s = %O" kv.Key kv.Value
+
+  let internal printGpuAssignment (gpus: int[]) (parallelGames: int) =
+    if gpus <> null && gpus.Length > 0 then
+      if parallelGames > 1 then
+        let pairs = [| for i in 0 .. parallelGames - 1 -> sprintf "instance %d → GPU %d" i gpus.[i % gpus.Length] |]
+        printfn "    GPU assignment: %s" (String.Join(", ", pairs))
+      else
+        printfn "    GPU: %d" gpus.[0]
 
   let private pFromElo elo =
     1.0 / (1.0 + Math.Pow(10.0, -elo / 400.0))
@@ -927,14 +954,29 @@ module TunerRunner =
     if not (String.IsNullOrWhiteSpace cfg.OpeningsPath) then
       ignore (resolvePath cfg.OpeningsPath "openingsPath")
 
-    let baseEngine = JSON.readSingleEngineConfig enginePath
+    let applyDeviceConfig (eng: EngineConfig) =
+      let devOpt =
+        if String.IsNullOrWhiteSpace eng.DeviceOption && not (String.IsNullOrWhiteSpace cfg.DeviceOption)
+        then cfg.DeviceOption else eng.DeviceOption
+      let devTpl =
+        if String.IsNullOrWhiteSpace eng.DeviceTemplate && not (String.IsNullOrWhiteSpace cfg.DeviceTemplate)
+        then cfg.DeviceTemplate else eng.DeviceTemplate
+      { eng with DeviceOption = devOpt; DeviceTemplate = devTpl }
+
+    let baseEngine = applyDeviceConfig (JSON.readSingleEngineConfig enginePath)
 
     let opponentEngine =
       if not (String.IsNullOrWhiteSpace cfg.OpponentConfigPath) then
         let oppPath = resolvePath cfg.OpponentConfigPath "opponentConfigPath"
-        Some (JSON.readSingleEngineConfig oppPath)
+        Some (applyDeviceConfig (JSON.readSingleEngineConfig oppPath))
       else
         None
+
+    // Warn if GPUs configured but no device config
+    if cfg.GPUs <> null && cfg.GPUs.Length > 0 then
+      if String.IsNullOrWhiteSpace baseEngine.DeviceOption || String.IsNullOrWhiteSpace baseEngine.DeviceTemplate then
+        printfn "WARNING: GPUs configured but no DeviceOption/DeviceTemplate set. GPU assignment will be skipped."
+        printfn "  Set DeviceOption and DeviceTemplate in tuner config (e.g., \"DeviceOption\": \"Device\", \"DeviceTemplate\": \"GPU:{0}#TensorRTNative\")"
 
     validateConfig cfg baseEngine
     let resolved = resolveParameters cfg baseEngine
@@ -1281,8 +1323,9 @@ module TunerRunner =
             let vMinus = fromNorm p xMinus.[i]
             let label = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
             printfn "  %-20s  [+] = %-8g  [-] = %g" label vPlus vMinus
-        if cfg.GPUs <> null && cfg.GPUs.Length > 0 then
-          printfn "  GPUs: [%s]" (String.Join(", ", cfg.GPUs))
+        let directTunedKeys = HashSet<string>(resolved |> Array.choose (fun p -> if p.EmbeddedKey.IsNone then Some p.OptionKey else None), StringComparer.OrdinalIgnoreCase)
+        printNonTunedOptions "Non-tuned options" plusOptions directTunedKeys
+        printGpuAssignment cfg.GPUs cfg.ParallelGames
 
         candidateCount <- candidateCount + 1
 
