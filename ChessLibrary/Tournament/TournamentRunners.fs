@@ -55,7 +55,7 @@ module TournamentUtils =
 
 open TournamentUtils
 
-let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {
+let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
   let mutable gameNr = 0
   let sbDev = new StringBuilder()
   logger.LogInformation($"Gauntlet tournament about to start")
@@ -94,7 +94,10 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
   else
     callback (Update.TotalNumberOfPairs pairings.Length)
     callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
-    let pgnGameWriterAgent = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+    let pgnGameWriterAgent, ownsAgent =
+      match pgnAgent with
+      | Some a -> a, false
+      | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
     tourny.CurrentGameNr <- numberOfGamesPlayed
     let (tTime, gTime) = estimateTournamentAndGameTime (gamesLeftToPlay.Length) tourny gamesLeftToPlay
     let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
@@ -132,12 +135,13 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
 
     let res = ResizeArray<Result>(results)
     callback (Update.PeriodicResults res)
-    pgnGameWriterAgent.Post(ChessLibrary.FullPGNParser.Dispose)
-    pgnGameWriterAgent.Dispose()
+    if ownsAgent then
+      pgnGameWriterAgent.Post(FullPGNParser.Dispose)
+      pgnGameWriterAgent.Dispose()
     return results
 }
 
-let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {
+let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
   let mutable gameNr = 0
   logger.LogInformation($"Round robin tournament about to start")
   let numberOfPlayers = tourny.EngineSetup.Engines.Length
@@ -174,7 +178,10 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
   if gamesLeftToPlay.Length = 0 then
     return results
   else
-    let pgnGameWriterAgent = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+    let pgnGameWriterAgent, ownsAgent =
+      match pgnAgent with
+      | Some a -> a, false
+      | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
     callback (Update.TotalNumberOfPairs pairings.Length)
     callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
     tourny.CurrentGameNr <- numberOfGamesPlayed
@@ -249,12 +256,13 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
 
     let res = ResizeArray<Result>(results)
     callback (Update.PeriodicResults res)
-    pgnGameWriterAgent.Post(ChessLibrary.FullPGNParser.Dispose)
-    pgnGameWriterAgent.Dispose()
+    if ownsAgent then
+      pgnGameWriterAgent.Post(FullPGNParser.Dispose)
+      pgnGameWriterAgent.Dispose()
     return results
 }
 
-let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {
+let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
   let isPowerOfTwo (n: int) = n > 0 && (n &&& (n - 1) = 0)
   let resolveCupBracketPath () =
     let configuredPath =
@@ -332,7 +340,10 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
   let randomOpenings = if obj.ReferenceEquals(tourny.CupOptions, null) then false else tourny.CupOptions.RandomOpenings
 
   let liveGamesByOpening = Dictionary<string,int>()
-  let pgnGameWriterAgent = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+  let pgnGameWriterAgent, ownsAgent =
+    match pgnAgent with
+    | Some a -> a, false
+    | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
   let replayList = ResizeArray<GameReplay>()
   let replayDicts = createReplayDicts tourny.EngineSetup.Engines
   let getReplayDictForPlayer (name:string) = replayDicts.[name]
@@ -829,13 +840,14 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
 
   let res = ResizeArray<Result>(results)
   callback (Update.PeriodicResults res)
-  pgnGameWriterAgent.Post(ChessLibrary.FullPGNParser.Dispose)
-  pgnGameWriterAgent.Dispose()
+  if ownsAgent then
+    pgnGameWriterAgent.Post(FullPGNParser.Dispose)
+    pgnGameWriterAgent.Dispose()
   cupBracketAgent.Post DisposeCupBracket
   return results
 }
 
-let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) = async {
+let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
   let resolveSwissPath () =
     let configuredPath =
       if obj.ReferenceEquals(tourny.SwissOptions, null) then "" else tourny.SwissOptions.StatePath
@@ -907,7 +919,10 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
 
-  let pgnGameWriterAgent = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath
+  let pgnGameWriterAgent, ownsAgent =
+    match pgnAgent with
+    | Some a -> a, false
+    | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
   let replayList = ResizeArray<GameReplay>()
   let replayDicts = createReplayDicts tourny.EngineSetup.Engines
   let getReplayDictForPlayer (name:string) = replayDicts.[name]
@@ -1342,8 +1357,9 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
 
   let res = ResizeArray<Result>(results)
   callback (Update.PeriodicResults res)
-  pgnGameWriterAgent.Post(ChessLibrary.FullPGNParser.Dispose)
-  pgnGameWriterAgent.Dispose()
+  if ownsAgent then
+    pgnGameWriterAgent.Post(FullPGNParser.Dispose)
+    pgnGameWriterAgent.Dispose()
   swissAgent.Post DisposeSwissState
   return results
 }

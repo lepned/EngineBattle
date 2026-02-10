@@ -197,14 +197,14 @@ module Manager =
             | _ -> PairingHelper.CupSeedingStrategy.ByRating
           match modeNormalized with
           | "gauntlet" ->
-              TournamentRunners.gauntlet logger tournament sendResponse cts tryGetUserAdjudication
+              TournamentRunners.gauntlet logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "cup" ->
               let resumeRequested = consumeCupResumeRequested ()
-              TournamentRunners.cup seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication
+              TournamentRunners.cup seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "swiss" ->
-              TournamentRunners.swiss logger tournament sendResponse cts tryGetUserAdjudication
+              TournamentRunners.swiss logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "rr" | "roundrobin" | "round-robin" | _ ->
-              TournamentRunners.roundRobin logger tournament sendResponse cts tryGetUserAdjudication            
+              TournamentRunners.roundRobin logger tournament sendResponse cts tryGetUserAdjudication pgnAgent            
       
       let mutable validationPassed = true
       //check for value head tests
@@ -350,15 +350,17 @@ module Manager =
         AppDomain.CurrentDomain.ProcessExit.Add(fun _ ->
             try cts.Cancel() with _ -> ()
         )
-        resultsFromPGN <- x.GetResults() //x.GetFinalResults()
         // Create shared PGN agent for the tournament so the callback's
         // GetPGNGames() uses the same agent workers write to.
+        // Must be created BEFORE GetResults() so PgnReader returns this
+        // agent instead of lazily creating a separate one that gets leaked.
         let agent =
             if String.IsNullOrWhiteSpace tournament.PgnOutPath |> not then
-                let a = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
+                let a = FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
                 pgnReader <- Some a
                 Some a
             else None
+        resultsFromPGN <- x.GetResults()
         startTournament cts tournament logger x.SendResponse consoleMode tryDequeueUserAdjudication agent
       with e ->
         printfn "Error: %A" e
