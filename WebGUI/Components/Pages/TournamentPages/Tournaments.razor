@@ -2291,7 +2291,7 @@
 			if (string.IsNullOrWhiteSpace(json))
 				return CupBracketSummary.Invalid;
 
-			var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+			var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
 			var bracket = JsonSerializer.Deserialize<CupBracketState>(json, options);
 			if (bracket?.Rounds is null)
 				return CupBracketSummary.Invalid;

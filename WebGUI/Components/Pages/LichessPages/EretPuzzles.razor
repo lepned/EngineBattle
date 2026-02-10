@@ -1,5 +1,6 @@
 ﻿@page "/EretPuzzleTest"
 @using System.Text
+@using System.Threading
 @using WebGUI.Components.Layout
 @using System.Collections.Concurrent
 @using WebGUI.Services
@@ -239,11 +240,11 @@
                   var nodesConfig = TimeControlTypes.TimeControlCommands.getNodeTime(data.Nodes);
                   if (data.RunWithNodeLimit)
                   {
-                      results = PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update);
+                      results = PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update, CancellationToken.None);
                   }
                   else
                   {
-                      results = PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update);
+                      results = PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update, CancellationToken.None);
                   }
               }
               catch (Exception ex)

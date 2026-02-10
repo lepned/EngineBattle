@@ -337,6 +337,7 @@ let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList
           if not ok then
               failwith "Engine did not respond to isready command."
       let filtered =
+        try
           [
             for id, epd in epds |> Seq.indexed do
               let fen = epd.FEN
@@ -381,8 +382,9 @@ let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList
                 printfn "Position %d with fen %s passed:\n %s" (id + 1) epd.FEN summary
                 let posEvaluation = EPDTypes.EpdEvaluationResult.Create(epd, maxEval, evalDiff, maxMove, maxEng, summary)
                 yield posEvaluation  ]
-      for engine in engines do
-          engine.StopProcess()
+        finally
+          for engine in engines do
+              try engine.StopProcess() with _ -> ()
       filtered
       |> List.sortByDescending(fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
       |> ResizeArray
@@ -418,6 +420,7 @@ let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : R
           if not ok then
               failwith "Engine did not respond to isready command."
       let filtered =
+        try
           [
               for pgnIdx, pgn in openings |> Seq.indexed do
                   board.ResetBoardState()
@@ -467,8 +470,9 @@ let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : R
                       printfn "Position %d with fen %s passed:\n %s" (pgnIdx + 1) fen summary
                       let posEvaluation = PgnEvaluationResult.Create(pgn, maxEval,evalDiff, maxMove, maxEng, summary)
                       yield posEvaluation ]
-      for engine in engines do
-          engine.StopProcess()
+        finally
+          for engine in engines do
+              try engine.StopProcess() with _ -> ()
       filtered
       |> List.sortByDescending (fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
       |> ResizeArray

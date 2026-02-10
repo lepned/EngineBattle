@@ -342,11 +342,12 @@ module Program =
         |> Seq.collect (mapToEngPuzzleConfig data.EngineFolder)
         |> ResizeArray   
     let timeControl = if data.RunWithNodeLimit then nodes else time
-    PuzzleRunners.runEretTests 
-      timeControl 
+    PuzzleRunners.runEretTests
+      timeControl
       engineConfigs
       data
-      (Eret.processEret data) |> ignore
+      (Eret.processEret data)
+      CancellationToken.None |> ignore
 
   let runPuzzles (path:string) =    
     let data = loadPuzzleConfig (normalizePath path)
@@ -394,44 +395,45 @@ module Program =
             |> Seq.map (fun e -> e.Trim()) 
             |> Seq.toList
     
+    let ct = CancellationToken.None
     let scores =
         match types with
-        | [] -> 
+        | [] ->
             printfn "No puzzle types specified, defaulting to both policy and value test"
-            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput,  update)
-        | [a] -> 
+            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+        | [a] ->
             printfn "Puzzle type specified: %s" a
             match a with
-            | "policy" -> PuzzleRunners.runPolicyHeadTest(puzzleInput, update)
-            | "value" -> PuzzleRunners.runValueHeadTest(puzzleInput, update)
-            | "search" -> PuzzleRunners.runSearchTests(puzzleInput, update)
-            | _ -> 
-                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
-        | [a;b] ->            
-            printfn "Puzzle type specified: %s" data.Type
-            match Set.ofList [a; b] with
-            | set when set = Set.ofList ["policy"; "search"] -> 
-                PuzzleRunners.runPolicyAndSearchTests(puzzleInput, update)
-            | set when set = Set.ofList ["policy"; "value"] -> 
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)                
-            | set when set = Set.ofList ["search"; "value"] -> 
-                PuzzleRunners.runValueAndSearchTest(puzzleInput, update) 
-            | _ -> 
-                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
-        | [a;b;c] ->            
-            printfn "Puzzle type specified: %s" data.Type
-            match Set.ofList [a; b; c] with
-            | set when set = Set.ofList ["policy"; "value"; "search"] -> 
-                printfn "All three puzzle types specified: %s - running all tests, including search" data.Type
-                PuzzleRunners.runAllTests(puzzleInput, update)
+            | "policy" -> PuzzleRunners.runPolicyHeadTest(puzzleInput, update, ct)
+            | "value" -> PuzzleRunners.runValueHeadTest(puzzleInput, update, ct)
+            | "search" -> PuzzleRunners.runSearchTests(puzzleInput, update, ct)
             | _ ->
                 printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
-        | _ -> 
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+        | [a;b] ->
+            printfn "Puzzle type specified: %s" data.Type
+            match Set.ofList [a; b] with
+            | set when set = Set.ofList ["policy"; "search"] ->
+                PuzzleRunners.runPolicyAndSearchTests(puzzleInput, update, ct)
+            | set when set = Set.ofList ["policy"; "value"] ->
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+            | set when set = Set.ofList ["search"; "value"] ->
+                PuzzleRunners.runValueAndSearchTest(puzzleInput, update, ct)
+            | _ ->
+                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+        | [a;b;c] ->
+            printfn "Puzzle type specified: %s" data.Type
+            match Set.ofList [a; b; c] with
+            | set when set = Set.ofList ["policy"; "value"; "search"] ->
+                printfn "All three puzzle types specified: %s - running all tests, including search" data.Type
+                PuzzleRunners.runAllTests(puzzleInput, update, ct)
+            | _ ->
+                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+        | _ ->
             printfn "Invalid puzzle type specified: %s - max three options are allowed, defaulting to policy and value test" data.Type
-            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update)
+            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
 
     let valueScores = 
         scores 

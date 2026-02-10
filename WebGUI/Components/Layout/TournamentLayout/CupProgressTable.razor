@@ -121,7 +121,7 @@
         try
         {
             var json = NormalizeBracketJson(await ReadFileWithRetry(bracketPath));
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
             var bracket = JsonSerializer.Deserialize<CupBracketModel>(json, options);
             currentMatch = GetCurrentMatch(bracket);
             progressEntries = BuildProgress(bracket);

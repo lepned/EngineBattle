@@ -163,7 +163,7 @@ else
         {
             logoMap = await LoadLogoMap();
             var json = NormalizeBracketJson(await ReadFileWithRetry(bracketPath));
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
             bracket = JsonSerializer.Deserialize<CupBracketModel>(json, options);
             firstRoundMatches = bracket?.Rounds.FirstOrDefault()?.Matches.Count ?? 0;
             viewRounds = BuildViewRounds(bracket);

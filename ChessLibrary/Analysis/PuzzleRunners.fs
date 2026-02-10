@@ -3,6 +3,7 @@ module ChessLibrary.PuzzleRunners
 open System
 open System.IO
 open System.Text
+open System.Threading
 open System.Diagnostics
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.EPDTypes
@@ -17,68 +18,75 @@ open ChessLibrary.PuzzleDataUtils
 /// Only value-head (LC0/Ceres only)
 let runValueHeadTest
     (input    : PuzzleInput,
-     callback : Action<Lichess>)
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
   =
-  runTest input callback [ Value ]
+  runTest input callback [ Value ] ct
 
 /// Only policy-head
 let runPolicyHeadTest
     (input    : PuzzleInput,
-     callback : Action<Lichess>)
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
   =
-  runTest input callback [ Policy ]
+  runTest input callback [ Policy ] ct
 
 /// Only "search" runs at each node setting
 let runSearchTests
     (input    : PuzzleInput,
-     callback : Action<Lichess>)
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
   =
   let searches =
     parseNodes input.nodes
     |> Array.toList
     |> List.map Search
-  runTest input callback searches
+  runTest input callback searches ct
 
 /// Value + Policy
 let runValueAndPolicyHeadTest
     (input      : PuzzleInput,
-     callback   : Action<Lichess>)
+     callback   : Action<Lichess>,
+     ct         : CancellationToken)
   =
   let testTypes = [ Value; Policy ]
-  runTest input callback testTypes
+  runTest input callback testTypes ct
 
 /// Value + Search
 let runValueAndSearchTest
     (input    : PuzzleInput,
-     callback : Action<Lichess>)
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
   =
   let searches =
     parseNodes input.nodes
     |> Array.toList
     |> List.map Search
-  runTest input callback (Value :: searches)
+  runTest input callback (Value :: searches) ct
 
 /// Policy + Search
 let runPolicyAndSearchTests
     (input    : PuzzleInput,
-     callback : Action<Lichess>)
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
   =
   let searches =
     parseNodes input.nodes
     |> Array.toList
     |> List.map Search
-  runTest input callback (Policy :: searches)
+  runTest input callback (Policy :: searches) ct
 
 /// All three: Value, Policy, and (if requested) Search
 let runAllTests
     (input      : PuzzleInput,
-     callback   : Action<Lichess>)
+     callback   : Action<Lichess>,
+     ct         : CancellationToken)
   =
   let baseTests = [ Value; Policy ]
   let allTests =
       baseTests @
       (parseNodes input.nodes |> Array.toList |> List.map Search)
-  runTest input callback allTests
+  runTest input callback allTests ct
 
 let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (boardBm: Chess.Board) (boardAm: Chess.Board) =
     for item in scores do
@@ -113,7 +121,7 @@ let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (b
                   $"{puzzle.FEN} am {puzzle.AvoidMove.Value}; id \"{puzzleId}, player {item.PlayerName} - No best move or avoid move found\""
             sw.WriteLine(msg)
 
-let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) seq) (data: EretConfig) (callback: Action<ERET>) =
+let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) seq) (data: EretConfig) (callback: Action<ERET>) (ct: CancellationToken) =
   let sampleSize = data.SampleSize
   let epdPath = data.PuzzleFile
   let isnodes, nodes, time =
@@ -136,57 +144,60 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
       let board = Board()
       let engineConfigOnly, _ = engineConfig
       let puzzlePolicyEngine = getPuzzlePolicyEngine (engineConfigOnly, None)
-      puzzlePolicyEngine.Name <- puzzlePolicyEngine.Name
-      let failedPuzzles = ResizeArray<EPDEntry * string>()
-      let correctPuzzles = ResizeArray<EPDEntry>()
-      let sbPuzzle = StringBuilder()
-      sbPuzzle.AppendLine(sprintf "\nRun Date: %s" (DateTime.Now.ToLongDateString())) |> ignore
-      sbPuzzle.AppendLine(sprintf "\tEngine: %s" puzzlePolicyEngine.Name) |> ignore
-      sbPuzzle.AppendLine(sprintf "\t\tNetwork: %s" puzzlePolicyEngine.Network) |> ignore
-      sbPuzzle.AppendLine(sprintf "\t\tExecPath: %s" puzzlePolicyEngine.Path) |> ignore
-      for opt in puzzlePolicyEngine.Commands do
-          sbPuzzle.AppendLine(sprintf "\t\t%s" opt) |> ignore
-      let mutable puzzleNr = 1
+      try
+          puzzlePolicyEngine.Name <- puzzlePolicyEngine.Name
+          let failedPuzzles = ResizeArray<EPDEntry * string>()
+          let correctPuzzles = ResizeArray<EPDEntry>()
+          let sbPuzzle = StringBuilder()
+          sbPuzzle.AppendLine(sprintf "\nRun Date: %s" (DateTime.Now.ToLongDateString())) |> ignore
+          sbPuzzle.AppendLine(sprintf "\tEngine: %s" puzzlePolicyEngine.Name) |> ignore
+          sbPuzzle.AppendLine(sprintf "\t\tNetwork: %s" puzzlePolicyEngine.Network) |> ignore
+          sbPuzzle.AppendLine(sprintf "\t\tExecPath: %s" puzzlePolicyEngine.Path) |> ignore
+          for opt in puzzlePolicyEngine.Commands do
+              sbPuzzle.AppendLine(sprintf "\t\t%s" opt) |> ignore
+          let mutable puzzleNr = 1
 
-      for puzzle : EPDEntry in puzzles do
-          board.ResetBoardState()
-          board.LoadFen puzzle.FEN
-          let fen = board.FEN()
-          let position = "position fen " + fen
-          puzzleNr <- puzzleNr + 1
-          let move, nnValue =
-              if isnodes then
-                  bestPolicyMove nodes puzzlePolicyEngine position
-              else
-                  bestMoveWithTime time puzzlePolicyEngine position
-          board.PlayUciMove move
-          let shortSanMove =
-              match board.SanMovesPlayed |> Seq.tryLast with
-              | Some move -> move
-              | None ->
-                  failwithf "No moves played for puzzle with FEN: %s" puzzle.FEN
+          for puzzle : EPDEntry in puzzles do
+              if not ct.IsCancellationRequested then
+                  board.ResetBoardState()
+                  board.LoadFen puzzle.FEN
+                  let fen = board.FEN()
+                  let position = "position fen " + fen
+                  puzzleNr <- puzzleNr + 1
+                  let move, nnValue =
+                      if isnodes then
+                          bestPolicyMove nodes puzzlePolicyEngine position
+                      else
+                          bestMoveWithTime time puzzlePolicyEngine position
+                  board.PlayUciMove move
+                  let shortSanMove =
+                      match board.SanMovesPlayed |> Seq.tryLast with
+                      | Some move -> move
+                      | None ->
+                          failwithf "No moves played for puzzle with FEN: %s" puzzle.FEN
 
-          let correct =
-              match puzzle.BestMove with
-              | Some bm -> bm.Contains shortSanMove
-              | None ->
-                  match puzzle.AvoidMove with
-                  | Some am -> am.Contains shortSanMove |> not
-                  | None -> false
+                  let correct =
+                      match puzzle.BestMove with
+                      | Some bm -> bm.Contains shortSanMove
+                      | None ->
+                          match puzzle.AvoidMove with
+                          | Some am -> am.Contains shortSanMove |> not
+                          | None -> false
 
-          puzzlePolicyEngine.UciNewGame()
-          if correct then
-              correctPuzzles.Add puzzle
-          else
-              failedPuzzles.Add (puzzle,move)
-          Puzzle(puzzle, correct) |> sendUpdate
+                  puzzlePolicyEngine.UciNewGame()
+                  if correct then
+                      correctPuzzles.Add puzzle
+                  else
+                      failedPuzzles.Add (puzzle,move)
+                  Puzzle(puzzle, correct) |> sendUpdate
 
-      puzzlePolicyEngine.Quit()
-      let accuracy = (float)correctPuzzles.Count / (float)(correctPuzzles.Count + failedPuzzles.Count)
-      let desc = if isnodes then sprintf "Nodes: %d" nodes else sprintf "Time: %d ms" time
-      let eretResult = { PlayerName = puzzlePolicyEngine.Name; CorrectPuzzles = correctPuzzles; FailedPuzzles = failedPuzzles; Accuracy = accuracy; Desc=desc }
-      PlayerResult(eretResult) |> sendUpdate
-      eretResult
+          let accuracy = (float)correctPuzzles.Count / (float)(max 1 (correctPuzzles.Count + failedPuzzles.Count))
+          let desc = if isnodes then sprintf "Nodes: %d" nodes else sprintf "Time: %d ms" time
+          let eretResult = { PlayerName = puzzlePolicyEngine.Name; CorrectPuzzles = correctPuzzles; FailedPuzzles = failedPuzzles; Accuracy = accuracy; Desc=desc }
+          PlayerResult(eretResult) |> sendUpdate
+          eretResult
+      finally
+          try puzzlePolicyEngine.Quit() with _ -> ()
 
   let engineConfigsOnly = engineConfigs |> Seq.map fst
   let concurrency =

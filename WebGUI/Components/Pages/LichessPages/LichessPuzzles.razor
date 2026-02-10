@@ -1,5 +1,6 @@
 ﻿@page "/LichessPuzzles"
 @using System.Text
+@using System.Threading
 @using WebGUI.Components.Layout
 @using System.Collections.Concurrent;
 @using WebGUI.Services;
@@ -642,7 +643,7 @@
                 {
                     case 0:
                         logger.LogInformation("No puzzle types specified, defaulting to policy and value test");
-                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                         break;
 
                     case 1:
@@ -652,17 +653,17 @@
                             switch (a)
                             {
                                 case "policy":
-                                    scores = PuzzleRunners.runPolicyHeadTest(puzzleInput, Update);
+                                    scores = PuzzleRunners.runPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                                     break;
                                 case "value":
-                                    scores = PuzzleRunners.runValueHeadTest(puzzleInput, Update);
+                                    scores = PuzzleRunners.runValueHeadTest(puzzleInput, Update, CancellationToken.None);
                                     break;
                                 case "search":
-                                    scores = PuzzleRunners.runSearchTests(puzzleInput, Update);
+                                    scores = PuzzleRunners.runSearchTests(puzzleInput, Update, CancellationToken.None);
                                     break;
                                 default:
                                     logger.LogInformation($"Invalid puzzle type specified: {a} - defaulting to policy and value test");
-                                    scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                    scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                                     break;
                             }
                         }
@@ -674,20 +675,20 @@
                             var set = new HashSet<string>(types);
                             if (set.SetEquals(new[] { "policy", "search" }))
                             {
-                                scores = PuzzleRunners.runPolicyAndSearchTests(puzzleInput, Update);
+                                scores = PuzzleRunners.runPolicyAndSearchTests(puzzleInput, Update, CancellationToken.None);
                             }
                             else if (set.SetEquals(new[] { "policy", "value" }))
                             {
-                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                             }
                             else if (set.SetEquals(new[] { "search", "value" }))
                             {
-                                scores = PuzzleRunners.runValueAndSearchTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndSearchTest(puzzleInput, Update, CancellationToken.None);
                             }
                             else
                             {
                                 logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
-                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                             }
                         }
                         break;
@@ -699,19 +700,19 @@
                             if (set.SetEquals(new[] { "policy", "value", "search" }))
                             {
                                 logger.LogInformation($"All three puzzle types specified: {data.Type} - running all tests, including search");
-                                scores = PuzzleRunners.runAllTests(puzzleInput, Update);
+                                scores = PuzzleRunners.runAllTests(puzzleInput, Update, CancellationToken.None);
                             }
                             else
                             {
                                 logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
-                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                             }
                         }
                         break;
 
                     default:
                         logger.LogInformation($"Invalid puzzle types specified: {data.Type} - defaulting to policy and value test");
-                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update);
+                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
                         break;
                 }
 

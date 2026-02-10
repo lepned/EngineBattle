@@ -2,6 +2,7 @@ module ChessLibrary.PuzzleExperiments
 
 open System
 open System.Diagnostics
+open System.Threading
 open System.Text.RegularExpressions
 open ChessLibrary.PuzzleTypes
 open ChessLibrary.TypesDef.PuzzleInput
@@ -119,7 +120,7 @@ let rec coordinateDescent (config: string) (step: float) (scoreFunc: string -> f
 let policyNodeScore (input: PuzzleInput) (callback: Action<Lichess>) (config: string)  : float =
     let engine = fst (Seq.head input.engines)
     engine.Options.["Network"] <- box config
-    let res = runPolicyHeadTest (input, callback)
+    let res = runPolicyHeadTest (input, callback, CancellationToken.None)
     let score = res.[0]
     float score.Correct / float score.TotalNumber
 
@@ -127,7 +128,7 @@ let policyNodeScore (input: PuzzleInput) (callback: Action<Lichess>) (config: st
 let valueScore (input: PuzzleInput) (callback: Action<Lichess>) (config: string)  : float =
     let engine = fst (Seq.head input.engines)
     engine.Options.["Network"] <- box config
-    let res = runPolicyHeadTest (input, callback)
+    let res = runPolicyHeadTest (input, callback, CancellationToken.None)
     let score = res.[0]
     float score.Correct / float score.TotalNumber
 

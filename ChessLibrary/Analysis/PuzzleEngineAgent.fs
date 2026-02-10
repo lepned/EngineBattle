@@ -2,6 +2,8 @@ module ChessLibrary.PuzzleEngineAgent
 
 open System
 open System.Threading
+open System.Threading.Channels
+open System.Collections.Concurrent
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.PuzzleTypes
 open ChessLibrary.Chess
@@ -140,28 +142,13 @@ let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (pu
       }
   }
 
-/// A little wrapper around MailboxProcessor<'Msg> that
-/// blocks PostAndAsyncReply once you've got 250 in flight.
-type BoundedAgent<'Msg>(inner: MailboxProcessor<'Msg>, capacity: int) =
-    let sem = new SemaphoreSlim(capacity, capacity)
-
-    /// Expose the underlying MailboxProcessor
-    member _.Inner = inner
-
-    /// Exactly the same signature as MailboxProcessor.PostAndAsyncReply
-    member _.PostAndAsyncReply(build: AsyncReplyChannel<'T> -> 'Msg) : Async<'T> =
-      async {
-        // wait until one "slot" is free
-        do! Async.AwaitTask (sem.WaitAsync())
+/// Shutdown agents safely, swallowing any exceptions
+let private shutdownAgents (agents: MailboxProcessor<EngineMsg>[]) =
+    for agent in agents do
         try
-          // send the message and await reply
-          let! res = inner.PostAndAsyncReply(build)
-          return res
-        finally
-          // release the slot once the reply comes back
-          sem.Release() |> ignore
-      }
-
+            agent.PostAndAsyncReply(fun ch -> Quit ch)
+            |> fun a -> Async.RunSynchronously(a, timeout = 10000)
+        with _ -> ()
 
 //Main test runner
 let performValueNetworkTest
@@ -169,73 +156,64 @@ let performValueNetworkTest
   (engineCfg:EngineConfig)
   (puzzles:CsvPuzzleData[])
   (theme:string)
-  (concurrency: int)  =
+  (concurrency: int)
+  (ct: CancellationToken) =
 
     let concurrencyLevel = max 1 concurrency
 
     let agents =
-        [| for i in 1 .. concurrencyLevel do
-            let mb = startValueEngineAgent engineCfg
-            yield BoundedAgent<EngineMsg>(mb,250)|]
+        [| for _ in 1 .. concurrencyLevel do
+            startValueEngineAgent engineCfg |]
 
-    let ok = agents |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Ok ch)) |> Async.Parallel |> Async.RunSynchronously
-    if ok |> Array.exists (fun x -> not x) then
-          agents
-          |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Quit ch))
-          |> Async.Parallel
-          |> Async.RunSynchronously
-          |> ignore
-          Score.empty
-    else
-        printfn "Starting value network test with %d concurrent agents..." concurrencyLevel
-        // Partition the puzzles among agents
-        let puzzleChunks =
-            puzzles
-            |> Array.indexed
-            |> Array.groupBy (fun (idx, _) -> idx % concurrencyLevel)
-            |> Array.map (fun (_, items) -> items |> Array.map snd)
+    try
+        let ok = agents |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Ok ch)) |> Async.Parallel |> Async.RunSynchronously
+        if ok |> Array.exists (fun x -> not x) then
+            Score.empty
+        else
+            printfn "Starting value network test with %d concurrent agents..." concurrencyLevel
 
-      // Map each agent to its workload and collect async work items
-        let agentJobs =
-            Array.zip agents puzzleChunks
-            |> Array.map (fun (agent, agentPuzzles) ->
-                agentPuzzles |> Array.map (runPuzzleViaAgent agent.Inner true))
+            // Channel-based work distribution for natural load balancing
+            let puzzleCh = Channel.CreateUnbounded<CsvPuzzleData>()
+            for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
+            puzzleCh.Writer.Complete()
 
-      // Execute all jobs in parallel and collect results
-        let results =
-            agentJobs
-            |> Array.map Async.Parallel
+            let resultsBag = ConcurrentBag<PuzzleResult>()
+            let worker (agent: MailboxProcessor<EngineMsg>) = async {
+                let mutable keepGoing = true
+                while keepGoing && not ct.IsCancellationRequested do
+                    let ok, puzzle = puzzleCh.Reader.TryRead()
+                    if ok then
+                        let! result = runPuzzleViaAgent agent true puzzle
+                        resultsBag.Add(result)
+                    else
+                        keepGoing <- false
+            }
+
+            [| for agent in agents -> worker agent |]
             |> Async.Parallel
-            |> Async.RunSynchronously
-            |> Array.collect id
+            |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
+            |> ignore
 
-        let firstAgent = agents.[0]
-        let networkName = firstAgent.PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let results = resultsBag.ToArray()
 
-        //Shutdown the engines
-        let _ =
-            agents
-            |> Array.map (fun agent -> agent.PostAndAsyncReply(fun ch -> Quit ch))
-            |> Async.Parallel
-            |> Async.RunSynchronously
+            let networkName = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
 
-        //Aggregate results
-        let correct = results |> Array.filter (fun r -> r.WasCorrect)
-        let failed  = results |> Array.filter (fun r -> not r.WasCorrect)
-        let w, d, l = correct.Length, 0, failed.Length
+            //Aggregate results
+            let correct = results |> Array.filter (fun r -> r.WasCorrect)
+            let failed  = results |> Array.filter (fun r -> not r.WasCorrect)
+            let w, d, l = correct.Length, 0, failed.Length
 
-        let diffElo = EloCalculator.eloDiffWDL w d l
-        let error   = EloCalculator.calculateEloError w d l
-        let avg     =
-          if results.Length = 0 then 0.0
-          else results |> Array.averageBy (fun r -> r.PuzzleData.Rating)
-        let perf    = avg + diffElo
-        let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
-        printfn "\nValue network rating performance: %.0f (avg %.0f + Δ%.0f) Theme: %s" perf avg diffElo theme
-        let pRating = {Rating = perf; Deviation = error; Volatility = 0.0}
+            let diffElo = EloCalculator.eloDiffWDL w d l
+            let error   = EloCalculator.calculateEloError w d l
+            let avg     =
+              if results.Length = 0 then 0.0
+              else results |> Array.averageBy (fun r -> r.PuzzleData.Rating)
+            let perf    = avg + diffElo
+            let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
+            printfn "\nValue network rating performance: %.0f (avg %.0f + Δ%.0f) Theme: %s" perf avg diffElo theme
+            let pRating = {Rating = perf; Deviation = error; Volatility = 0.0}
 
-        //Build and return the final score record
-        let score =
+            //Build and return the final score record
             {
               Engine = engineCfg.Name
               NeuralNet = networkName
@@ -251,75 +229,70 @@ let performValueNetworkTest
               WithHistory = false
               Type = "Value"
             }
-
-        score
+    finally
+        shutdownAgents agents
 
 let performPolicyOrSearchTest
   (nodes:int)
   (engineCfg:EngineConfig)
   (puzzles:CsvPuzzleData[])
   (theme:string)
-  (concurrency : int)  =
+  (concurrency : int)
+  (ct: CancellationToken) =
 
     let concurrency = max 1 concurrency
     let agents =
-        [| for i in 1 .. concurrency do
-            let mb = startPolicyEngineAgent engineCfg nodes
-            yield BoundedAgent<EngineMsg>(mb,250)
-        |]
+        [| for _ in 1 .. concurrency do
+            startPolicyEngineAgent engineCfg nodes |]
 
-     // Partition the puzzles among agents
-    let puzzleChunks =
-        puzzles
-        |> Array.indexed
-        |> Array.groupBy (fun (idx, _) -> idx % concurrency)
-        |> Array.map (fun (_, items) -> items |> Array.map snd)
+    try
+        printfn "Starting policy/search test with %d concurrent agents..." concurrency
 
-    printfn "Starting policy/search test with %d concurrent agents..." concurrency
-    // Map each agent to its workload and collect async work items
-    let agentJobs =
-        Array.zip agents puzzleChunks
-        |> Array.map (fun (agent, agentPuzzles) ->
-            agentPuzzles |> Array.map (runPuzzleViaAgent agent.Inner false))
+        // Channel-based work distribution for natural load balancing
+        let puzzleCh = Channel.CreateUnbounded<CsvPuzzleData>()
+        for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
+        puzzleCh.Writer.Complete()
 
-  // Execute all jobs in parallel and collect results
-    let results =
-        agentJobs
-        |> Array.map Async.Parallel
+        let resultsBag = ConcurrentBag<PuzzleResult>()
+        let worker (agent: MailboxProcessor<EngineMsg>) = async {
+            let mutable keepGoing = true
+            while keepGoing && not ct.IsCancellationRequested do
+                let ok, puzzle = puzzleCh.Reader.TryRead()
+                if ok then
+                    let! result = runPuzzleViaAgent agent false puzzle
+                    resultsBag.Add(result)
+                else
+                    keepGoing <- false
+        }
+
+        [| for agent in agents -> worker agent |]
         |> Async.Parallel
-        |> Async.RunSynchronously
-        |> Array.collect id
+        |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
+        |> ignore
 
-    let firstAgent = agents.[0]
-    let networkName = firstAgent.PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+        let results = resultsBag.ToArray()
 
-    //Shutdown the engine
-    let _ =
-        agents
-        |> Array.map (fun agent -> agent.PostAndAsyncReply(fun ch -> Quit ch))
-        |> Async.Parallel
-        |> Async.RunSynchronously
+        let networkName = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
 
-    //Aggregate results
-    let correct = results |> Array.filter (fun r -> r.WasCorrect)
-    let failed  = results |> Array.filter (fun r -> not r.WasCorrect)
-    let w, d, l = correct.Length, 0, failed.Length
+        //Aggregate results
+        let correct = results |> Array.filter (fun r -> r.WasCorrect)
+        let failed  = results |> Array.filter (fun r -> not r.WasCorrect)
+        let w, d, l = correct.Length, 0, failed.Length
 
-    let diffElo = EloCalculator.eloDiffWDL w d l
-    let error   = EloCalculator.calculateEloError w d l
-    let avg     =
-      if results.Length = 0 then 0.0
-      else results |> Array.averageBy (fun r -> r.PuzzleData.Rating)
-    let perf    = avg + diffElo
-    let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
-    if nodes > 1 then
-      printfn "\nSearch rating performance: %.0f (avg %.0f + Δ%.0f) Nodes %d Theme: %s" perf avg diffElo nodes theme
-    else
-      printfn "\nPolicy network rating performance: %.0f (avg %.0f + Δ%.0f) Nodes %d Theme: %s" perf avg diffElo nodes theme
-    let pRating = {Rating = perf; Deviation = error; Volatility = 0.0}
+        let diffElo = EloCalculator.eloDiffWDL w d l
+        let error   = EloCalculator.calculateEloError w d l
+        let avg     =
+          if results.Length = 0 then 0.0
+          else results |> Array.averageBy (fun r -> r.PuzzleData.Rating)
+        let perf    = avg + diffElo
+        let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
+        if nodes > 1 then
+          printfn "\nSearch rating performance: %.0f (avg %.0f + Δ%.0f) Nodes %d Theme: %s" perf avg diffElo nodes theme
+        else
+          printfn "\nPolicy network rating performance: %.0f (avg %.0f + Δ%.0f) Nodes %d Theme: %s" perf avg diffElo nodes theme
+        let pRating = {Rating = perf; Deviation = error; Volatility = 0.0}
 
-    // Build and return the final score record
-    let score =
+        // Build and return the final score record
         {
           Engine = engineCfg.Name
           NeuralNet = networkName
@@ -335,8 +308,8 @@ let performPolicyOrSearchTest
           WithHistory = false
           Type = if nodes > 1 then "Search" else "Policy"
         }
-
-    score
+    finally
+        shutdownAgents agents
 
 
 type SubTest =
@@ -348,6 +321,7 @@ let runTest
       (input     : PuzzleInput)
       (callback  : Action<Lichess>)
       (toRun     : SubTest list)
+      (ct        : CancellationToken)
     : ResizeArray<Score> =
 
     // common setup
@@ -363,14 +337,17 @@ let runTest
     let hasSearch = toRun |> List.exists (function Search _ -> true | _ -> false)
 
     for engine, nodes in input.engines do
+      if ct.IsCancellationRequested then () else
       let isCeresOrLc0 =
         engine.Path.ToLower().Contains("lc0")
         || engine.Name.ToLower().Contains("ceres")
 
       for theme in themes do
+        if ct.IsCancellationRequested then () else
         let themeLabel = if System.String.IsNullOrWhiteSpace theme then "none" else theme
 
         for rating in ratings do
+          if ct.IsCancellationRequested then () else
           // load & log
           let puzzles = PuzzleDataUtils.sortPuzzleData theme rating input
           if puzzles.Length = 0 then
@@ -380,24 +357,25 @@ let runTest
             printfn "\nRating group %d (avg %.0f), theme \"%s\"" rating avg themeLabel
 
             if hasSearch && nodes > 0 then
-              let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel
+              let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel ct
               sendU (PuzzleResult score)
               results.Add score
             // run each requested sub-test
             for test in toRun do
+              if ct.IsCancellationRequested then () else
               match test with
               | Value when isCeresOrLc0 ->
-                  let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel
+                  let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel ct
                   sendU (PuzzleResult score)
                   results.Add score
 
               | Policy ->
-                  let score = performPolicyOrSearchTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel
+                  let score = performPolicyOrSearchTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel ct
                   sendU (PuzzleResult score)
                   results.Add score
 
               | Search node when node > 1 ->
-                  let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel
+                  let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel ct
                   sendU (PuzzleResult score)
                   results.Add score
 

@@ -1108,12 +1108,13 @@ module TunerRunner =
 
   let private runPuzzlesByType (puzzleType: string) (input: PuzzleInput) : ResizeArray<Score> =
     let noop = Action<Lichess>(fun _ -> ())
+    let ct = CancellationToken.None
     let t = if String.IsNullOrWhiteSpace puzzleType then "" else puzzleType.ToLower().Trim()
     match t with
-    | "policy" -> runPolicyHeadTest(input, noop)
-    | "value"  -> runValueHeadTest(input, noop)
-    | "search" -> runSearchTests(input, noop)
-    | _        -> runValueAndPolicyHeadTest(input, noop)
+    | "policy" -> runPolicyHeadTest(input, noop, ct)
+    | "value"  -> runValueHeadTest(input, noop, ct)
+    | "search" -> runSearchTests(input, noop, ct)
+    | _        -> runValueAndPolicyHeadTest(input, noop, ct)
 
   let internal evaluateAccuracy
       (setup: TuneSetupData)
@@ -1142,7 +1143,7 @@ module TunerRunner =
         let nodes = UnionType.Nodes eretCfg.Nodes
         let timeControl = if eretCfg.RunWithNodeLimit then nodes else time
         let engines = seq { (engineCfg, 0) }
-        let results = runEretTests timeControl engines eretCfg (Action<_>(ignore))
+        let results = runEretTests timeControl engines eretCfg (Action<_>(ignore)) CancellationToken.None
         let acc = if results.Count > 0 then results.[0].Accuracy else 0.0
         printfn "  %s accuracy: %.4f" label acc
         acc

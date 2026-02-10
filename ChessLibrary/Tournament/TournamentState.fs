@@ -24,7 +24,7 @@ let startCupBracketReaderWriter (filePath: string) =
     MailboxProcessor<CupBracketMessage>.Start(fun inbox ->
         async {
             let optionsWrite = JsonSerializerOptions(WriteIndented = true)
-            let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+            let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true, AllowTrailingCommas = true)
             let mutable inMemory = ""
             while true do
                 let! message = inbox.Receive()
@@ -37,11 +37,9 @@ let startCupBracketReaderWriter (filePath: string) =
                     if String.IsNullOrWhiteSpace filePath then
                         inMemory <- json
                     else
-                        use stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None)
-                        use writer = new StreamWriter(stream, Encoding.UTF8)
-                        writer.Write(json)
-                        writer.Flush()
-                        stream.Flush()
+                        let tmpPath = filePath + ".tmp"
+                        File.WriteAllText(tmpPath, json, Encoding.UTF8)
+                        File.Move(tmpPath, filePath, true)
                     reply.Reply()
                 | ReadCupBracket reply ->
                     try
@@ -70,7 +68,7 @@ let startSwissStateReaderWriter (filePath: string) =
     MailboxProcessor<SwissStateMessage>.Start(fun inbox ->
         async {
             let optionsWrite = JsonSerializerOptions(WriteIndented = true)
-            let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true)
+            let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true, AllowTrailingCommas = true)
             let mutable inMemory = ""
             while true do
                 let! message = inbox.Receive()
@@ -83,11 +81,9 @@ let startSwissStateReaderWriter (filePath: string) =
                     if String.IsNullOrWhiteSpace filePath then
                         inMemory <- json
                     else
-                        use stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None)
-                        use writer = new StreamWriter(stream, Encoding.UTF8)
-                        writer.Write(json)
-                        writer.Flush()
-                        stream.Flush()
+                        let tmpPath = filePath + ".tmp"
+                        File.WriteAllText(tmpPath, json, Encoding.UTF8)
+                        File.Move(tmpPath, filePath, true)
                     reply.Reply()
                 | ReadSwissState reply ->
                     try
