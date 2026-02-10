@@ -1134,7 +1134,7 @@ module BayesianOptimizer =
         let v = TunerRunner.fromNorm p xCandidate.[i]
         let label = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
         printfn "    %-20s = %g" label v
-      let directTunedKeys = HashSet<string>(resolved |> Array.choose (fun p -> if p.EmbeddedKey.IsNone then Some p.OptionKey else None), StringComparer.OrdinalIgnoreCase)
+      let directTunedKeys = HashSet<string>(resolved |> Array.map (fun p -> p.OptionKey), StringComparer.OrdinalIgnoreCase)
       TunerRunner.printNonTunedOptions "Non-tuned options" candidateOptions directTunedKeys
       TunerRunner.printGpuAssignment cfg.GPUs cfg.ParallelGames
 

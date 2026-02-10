@@ -758,26 +758,34 @@ let startPgnGameReaderWriter (filePath: string) =
                   reply.Reply(())
                   running <- false
               | WriteGame(_, header, moveSection, result) ->
-                  // Write the PGN game to the file
-                  PGNWriter.writePGNHeaderSection writer header
-                  writer.Write moveSection
-                  PGNWriter.writeEndOfGameSection writer result
+                  try
+                      PGNWriter.writePGNHeaderSection writer header
+                      writer.Write moveSection
+                      PGNWriter.writeEndOfGameSection writer result
+                  with ex ->
+                      System.Diagnostics.Debug.WriteLine($"PGN WriteGame error: {ex.Message}")
               | GetPGNGames reply ->
-                  //first set reader to the beginning of the file
-                  reader.BaseStream.Seek(0L, SeekOrigin.Begin) |> ignore
-                  let games = parsePgnStream reader
-                  // Reply with the games
-                  reply.Reply (ResizeArray<PgnGame>(games))
+                  try
+                      reader.BaseStream.Seek(0L, SeekOrigin.Begin) |> ignore
+                      reader.DiscardBufferedData()
+                      let games = parsePgnStream reader
+                      reply.Reply (ResizeArray<PgnGame>(games))
+                  with ex ->
+                      System.Diagnostics.Debug.WriteLine($"PGN GetPGNGames error: {ex.Message}")
+                      reply.Reply(ResizeArray<PgnGame>())
               | GetResults reply ->
-                  //first set reader to the beginning of the file
-                  reader.BaseStream.Seek(0L, SeekOrigin.Begin) |> ignore
-                  let games =
-                    let allResults = parsePgnStream reader
-                    allResults
-                    |> Seq.map PGNWriter.getResultsFromPGNGame
-                    |> Seq.toArray
-                  games |> Array.Reverse
-                  // Reply with the results
-                  reply.Reply (ResizeArray<Result>(games))
+                  try
+                      reader.BaseStream.Seek(0L, SeekOrigin.Begin) |> ignore
+                      reader.DiscardBufferedData()
+                      let games =
+                        let allResults = parsePgnStream reader
+                        allResults
+                        |> Seq.map PGNWriter.getResultsFromPGNGame
+                        |> Seq.toArray
+                      games |> Array.Reverse
+                      reply.Reply (ResizeArray<Result>(games))
+                  with ex ->
+                      System.Diagnostics.Debug.WriteLine($"PGN GetResults error: {ex.Message}")
+                      reply.Reply(ResizeArray<Result>())
       }
   )

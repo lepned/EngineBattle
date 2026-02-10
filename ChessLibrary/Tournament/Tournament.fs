@@ -176,14 +176,15 @@ module Manager =
     (logger:ILogger)
     sendResponse
     consoleMode
-    (tryGetUserAdjudication: unit -> UserAdjudication option) =
+    (tryGetUserAdjudication: unit -> UserAdjudication option)
+    (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()
-      let tourny = 
+      let tourny =
         //let nodeLimit = tournament.EngineSetup.Engines |> List.map(fun e -> tournament.FindTimeControl e.TimeControlID) |> List.forall(fun e -> e.NodeLimit)
         if consoleMode then
-          ParallelExecution.parallelTournamentRun logger tournament sendResponse cts
+          ParallelExecution.parallelTournamentRun logger tournament sendResponse cts pgnAgent
         else
           let mode =
             if String.IsNullOrWhiteSpace tournament.TournamentMode then "RR"
@@ -339,8 +340,8 @@ module Manager =
       else
         logger.LogWarning("Invalid user adjudication result string: {Result}", result)
 
-    member x.Run() = 
-      try 
+    member x.Run() =
+      try
         // Ensure external shutdowns are translated to our CTS cancellation
         Console.CancelKeyPress.Add(fun args ->
             cts.Cancel()
@@ -350,8 +351,16 @@ module Manager =
             try cts.Cancel() with _ -> ()
         )
         resultsFromPGN <- x.GetResults() //x.GetFinalResults()
-        startTournament cts tournament logger x.SendResponse consoleMode tryDequeueUserAdjudication
-      with e -> 
+        // Create shared PGN agent for the tournament so the callback's
+        // GetPGNGames() uses the same agent workers write to.
+        let agent =
+            if String.IsNullOrWhiteSpace tournament.PgnOutPath |> not then
+                let a = ChessLibrary.FullPGNParser.startPgnGameReaderWriter tournament.PgnOutPath
+                pgnReader <- Some a
+                Some a
+            else None
+        startTournament cts tournament logger x.SendResponse consoleMode tryDequeueUserAdjudication agent
+      with e ->
         printfn "Error: %A" e
         logger.LogCritical ("failed to run tournament" + tournament.MinSummary())
         resultsFromPGN |> Seq.toList
@@ -410,22 +419,29 @@ module Manager =
         x.TotalGames <- gamesLeftToPlay.Length + tournament.CurrentGameNr
         gamesLeftToPlay |> Seq.skip 1 |> Seq.truncate 20 |> ResizeArray
 
-    member x.GetResults() : ResizeArray<Result> = 
+    member x.GetResults() : ResizeArray<Result> =
       let fileExists = File.Exists tournament.PgnOutPath
       if fileExists then
-        let results = x.PgnReader.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetResults reply )
-        results        
-      else              
+        match x.PgnReader.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetResults reply), timeout = 30000) with
+        | Some results -> results
+        | None ->
+            printfn "WARNING: GetResults timed out after 30s"
+            ResizeArray<Result>()
+      else
         ResizeArray<Result>()
 
-    member x.GetPGNGames() : ResizeArray<PgnGame> = 
+    member x.GetPGNGames() : ResizeArray<PgnGame> =
       let fileExists = File.Exists tournament.PgnOutPath
       if fileExists then
-        let results = x.PgnReader.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetPGNGames reply )
-        // Always recompute opening hashes to keep resume logic compatible across versions.
-        results |> Seq.iter Hash.writeOpeningHashToPgnGame
-        results
-      else              
+        match x.PgnReader.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetPGNGames reply), timeout = 30000) with
+        | Some results ->
+            // Always recompute opening hashes to keep resume logic compatible across versions.
+            results |> Seq.iter Hash.writeOpeningHashToPgnGame
+            results
+        | None ->
+            printfn "WARNING: GetPGNGames timed out after 30s"
+            ResizeArray<PgnGame>()
+      else
         ResizeArray<PgnGame>()
  
     member _.GenerateCrosstableEntries (results: ResizeArray<Result>) =

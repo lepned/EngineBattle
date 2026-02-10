@@ -697,6 +697,8 @@ module Engine =
   
   
   let printedEngines = System.Collections.Generic.HashSet<string>()
+  let printLock = obj()
+  let resetPrintedEngines () = printedEngines.Clear()
 
   type ChessEngine(config : EngineConfig, initCommands: string seq, logger: ILogger option) =
       let printToConsole txt = printfn "%s" txt
@@ -1028,12 +1030,18 @@ module Engine =
             //write "ucinewgame"
             if validate then
                 if passed then
-                  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
-                  if printedEngines.Add(name) then
-                    printNonDefaultValues()
-                  let diagnostics = getDiagnostics()
-                  if String.IsNullOrEmpty diagnostics |> not then
-                     RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics)
+                  lock printLock (fun () ->
+                    RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green (sprintf "All setoptions passed validation for %s" name)
+                    if printedEngines.Add(name) then
+                      printNonDefaultValues()
+                    elif not (String.IsNullOrEmpty config.DeviceOption) then
+                      match nonDefaultValues.TryGetValue(config.DeviceOption) with
+                      | true, (_, value) ->
+                          printfn "  %s: %s = %s" name config.DeviceOption value
+                      | _ -> ()
+                    let diagnostics = getDiagnostics()
+                    if String.IsNullOrEmpty diagnostics |> not then
+                       RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics))
                 else
                   RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
                   raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))

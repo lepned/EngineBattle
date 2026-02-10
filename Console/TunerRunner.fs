@@ -5,6 +5,7 @@ open System.Globalization
 open System.IO
 open System.Text
 open System.Text.Json
+open System.Threading
 open System.Collections.Generic
 open Microsoft.Extensions.Logging
 open ChessLibrary.Configuration
@@ -651,24 +652,36 @@ module TunerRunner =
     let logger = logFactory.CreateLogger("EngineBattle.Tuner")
     let mutable runnerOpt : Manager.Runner option = None
     let mutable lastReportedGames = 0
+    let mutable sprtCheckRunning = 0
     let callback =
       Action<Update>(fun update ->
         match update with
         | PeriodicResults results ->
             let gamesNow = results.Count
             if gamesNow >= max 2 sprt.MinGames && gamesNow > lastReportedGames then
-              lastReportedGames <- gamesNow
               match runnerOpt with
               | Some runner ->
-                  let pgnGames = runner.GetPGNGames()
-                  match pentanomialForMatchup candidateName baselineName pgnGames with
-                  | Some c ->
-                      let decision, llr, elo, usedGames = statsDecisionFromPentanomial sprt c
-                      printfn "  SPRT(penta) g=%d pairs=%d [L2=%d L1.5=%d D=%d W1.5=%d W2=%d] llr=%.3f elo=%.2f %s"
-                        usedGames c.CompletedPairs c.L2 c.L15 c.D c.W15 c.W2 llr elo decision
-                      if decision = "accept_h1" || decision = "accept_h0" then
-                        runner.Cancel()
-                  | None -> ()
+                  // Non-blocking: CAS guard ensures only one SPRT check runs at a time.
+                  // Task.Run offloads the GetPGNGames call so the worker thread is never blocked.
+                  if Interlocked.CompareExchange(&sprtCheckRunning, 1, 0) = 0 then
+                    Tasks.Task.Run(fun () ->
+                      try
+                        try
+                          lastReportedGames <- gamesNow
+                          let pgnGames = runner.GetPGNGames()
+                          match pentanomialForMatchup candidateName baselineName pgnGames with
+                          | Some c ->
+                              let decision, llr, elo, usedGames = statsDecisionFromPentanomial sprt c
+                              printfn "  SPRT(penta) g=%d pairs=%d [L2=%d L1.5=%d D=%d W1.5=%d W2=%d] llr=%.3f elo=%.2f %s"
+                                usedGames c.CompletedPairs c.L2 c.L15 c.D c.W15 c.W2 llr elo decision
+                              if decision = "accept_h1" || decision = "accept_h0" then
+                                runner.Cancel()
+                          | None -> ()
+                        with ex ->
+                          printfn "  SPRT check error: %s" ex.Message
+                      finally
+                        Interlocked.Exchange(&sprtCheckRunning, 0) |> ignore
+                    ) |> ignore
               | None -> ()
         | _ -> ())
     let runner = Manager.Runner(logger, callback, false, true)
@@ -1326,7 +1339,7 @@ module TunerRunner =
             let vMinus = fromNorm p xMinus.[i]
             let label = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
             printfn "  %-20s  [+] = %-8g  [-] = %g" label vPlus vMinus
-        let directTunedKeys = HashSet<string>(resolved |> Array.choose (fun p -> if p.EmbeddedKey.IsNone then Some p.OptionKey else None), StringComparer.OrdinalIgnoreCase)
+        let directTunedKeys = HashSet<string>(resolved |> Array.map (fun p -> p.OptionKey), StringComparer.OrdinalIgnoreCase)
         printNonTunedOptions "Non-tuned options" plusOptions directTunedKeys
         printGpuAssignment cfg.GPUs cfg.ParallelGames
 
