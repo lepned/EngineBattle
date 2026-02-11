@@ -502,7 +502,7 @@ let performQValueTestOnTB nodes (engineConf:EngineConfig) (puzzles:ResizeArray<T
       else
         failedPuzzles.Add puzzleWithQ
 
-  let diffElo = EloCalculator.eloDiffWDL correctPuzzles.Count failedPuzzles.Count 0
+  let diffElo = EloCalculator.eloDiffWDL correctPuzzles.Count 0 failedPuzzles.Count
   let samplefailed = failedPuzzles |> Seq.toArray |> Array.sortBy(fun e -> e.TBAnswer)
   let sampleCorrect = correctPuzzles |> Seq.toArray |> Array.sortByDescending(fun e -> e.TBAnswer)
   let test =

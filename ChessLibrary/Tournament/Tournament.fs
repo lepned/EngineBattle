@@ -232,8 +232,12 @@ module Manager =
           
       if validationPassed then
         //run tournament
+        // Do NOT pass cts.Token to RunSynchronously — the tuner's SPRT callback
+        // uses cts.Cancel() to stop remaining games, but RunSynchronously must
+        // still return normally with the completed results. Passing the token here
+        // would throw OperationCanceledException and discard all results.
         let res = tourny |> Async.RunSynchronously
-        sendResponse (EndOfTournament tournament)      
+        sendResponse (EndOfTournament tournament)
         logger.LogInformation($"Elapsed tournament time in seconds: {(timer.ElapsedMilliseconds/1000L)}")
         res
       else
@@ -362,7 +366,11 @@ module Manager =
             else None
         resultsFromPGN <- x.GetResults()
         startTournament cts tournament logger x.SendResponse consoleMode tryDequeueUserAdjudication agent
-      with e ->
+      with
+      | :? OperationCanceledException ->
+        logger.LogInformation("Tournament cancelled.")
+        resultsFromPGN |> Seq.toList
+      | e ->
         printfn "Error: %A" e
         logger.LogCritical ("failed to run tournament" + tournament.MinSummary())
         resultsFromPGN |> Seq.toList

@@ -155,6 +155,8 @@ let parallelTournamentRun
           pairingCh.Writer.Complete()
 
           // 2) build one engine‐pool channel per engine‐name, capacity = parallelism
+          // Track all spawned engines for cleanup safety net
+          let allEngines = ResizeArray<ChessEngine>()
           let enginePools =
               tourny.EngineSetup.Engines
               |> List.toArray
@@ -172,11 +174,14 @@ let parallelTournamentRun
                             else e
                           let eng = EngineHelper.createEngine (cfg, Some logger)
                           EngineHelper.initEngine 0 eng
+                          lock allEngines (fun () -> allEngines.Add(eng))
                           ch.Writer.TryWrite(eng) |> ignore
                           eng.Name, ch )
                   engines )
               |> Array.concat
               |> Map.ofArray
+
+          try // safety net: ensure engine processes are killed even if async fails before teardown
 
           // 3) PGN agent: use external if provided, else create local
           let pgnAgent, ownsAgent =
@@ -393,7 +398,7 @@ let parallelTournamentRun
                   |> Array.Parallel.map (fun _ ->
                       let eng = enginePools.[e].Reader.ReadAsync().AsTask().Result
                       try eng.Quit() with _ -> ()
-                      eng.StopProcess())
+                      try eng.StopProcess() with _ -> ())
               printfn $"Engine {e} stopped"
 
           // 8) collect results
@@ -408,4 +413,12 @@ let parallelTournamentRun
               let combined = Path.Combine(directory,path)
               ChessLibrary.PGNWriter.writeRawPgnGamesAdjustedToFile combined games
           return results |> Seq.toList
+          finally
+              // Safety net: stop any engine processes still running (no-op if teardown already stopped them)
+              for eng in allEngines do
+                  try
+                      if not (eng.HasExited()) then
+                          try eng.Quit() with _ -> ()
+                          try eng.StopProcess() with _ -> ()
+                  with _ -> ()
   }

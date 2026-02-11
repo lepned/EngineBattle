@@ -957,11 +957,15 @@ module Engine =
                 // Original UCI initialization
                 use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
                 write("uci")          
-                let rec readUci() = async {          
+                let rec readUci() = async {
                     let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
+                    if isNull line then
+                        logCritical (sprintf "Engine %s: read returned null while waiting for UCI options" name)
+                        return false
+                    else
                     printfn "%s" line
                     let mutable ret = line
-                    while ret <> "uciok" && not proc.HasExited  do
+                    while ret <> "uciok" && not (isNull ret) && not proc.HasExited do
                         UciOption.addOptionToMap optionsMap ret
                         let! resp = readAsyncWithTimeout cts.Token |> Async.AwaitTask
                         ret <- resp
@@ -1254,11 +1258,14 @@ module Engine =
                   return false
                 else
                   let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-              
-                  if line = "readyok" then 
+
+                  if isNull line then
+                    logCritical (sprintf "Engine %s (Winboard): read returned null while waiting for readyok" name)
+                    return false
+                  elif line = "readyok" then
                     logInformation (sprintf "Engine %s responded with readyok" name)
                     return true
-                  else 
+                  else
                     return! readUntilReady()
               with
               | :? OperationCanceledException -> 
@@ -1288,11 +1295,14 @@ module Engine =
                   return false
                 else
                   let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-              
-                  if line = "readyok" then 
+
+                  if isNull line then
+                    logCritical (sprintf "Engine %s: read returned null while waiting for readyok" name)
+                    return false
+                  elif line = "readyok" then
                     logInformation (sprintf "Engine %s responded with readyok" name)
                     return true
-                  else 
+                  else
                     return! readUntilReady()
               with
               | :? OperationCanceledException -> 

@@ -734,8 +734,13 @@ module TunerRunner =
 
     let games = wins + draws + losses
     if games = 0 then
-      failwithf "No completed games in SPRT match (%s vs %s). All %d games were cancelled. Check engine startup/options. Match PGN: %s"
-        candidateName baselineName results.Length matchPgnPath
+      let msg = sprintf "No completed games in SPRT match (%s vs %s). All %d games were cancelled. Check engine startup/options. Match PGN: %s"
+                  candidateName baselineName results.Length matchPgnPath
+      printfn "WARNING: %s" msg
+      printfn "Returning total loss for this candidate so the tuner can continue."
+      { Wins = 0; Draws = 0; Losses = 1; Games = 1; Llr = 0.0; Elo = -1000.0
+        Decision = "no_games"; StoppedEarly = true }
+    else
 
     let decision, llr, elo =
       match pentanomialForMatchup candidateName baselineName pgnGames with

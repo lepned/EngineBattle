@@ -197,69 +197,73 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
 
     let sb = StringBuilder()
 
-    for pair in gamesLeftToPlay do
-      if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
-        searchReplayList pair
-      tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
-      if cts.IsCancellationRequested then
-        sb.Clear() |> ignore
-      else
-        // Setup board and log opening info
-        let openingMoves = setupBoardForGame board pair epdBook tourny.Opening.OpeningsPly (fun v -> tourny.IsChess960 <- v)
-        logOpeningInfo logger pair openingMoves
-        logPosition logger board
+    try
+      for pair in gamesLeftToPlay do
+        if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
+          searchReplayList pair
+        tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
+        if cts.IsCancellationRequested then
+          sb.Clear() |> ignore
+        else
+          // Setup board and log opening info
+          let openingMoves = setupBoardForGame board pair epdBook tourny.Opening.OpeningsPly (fun v -> tourny.IsChess960 <- v)
+          logOpeningInfo logger pair openingMoves
+          logPosition logger board
 
-        // Engine creation with reuse logic
-        if numberOfPlayers > 2 then
-          engine1 <- EngineHelper.createEngine (pair.White, Some logger)
-          engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
-        if engine1 = Unchecked.defaultof<ChessEngine> || engine2 = Unchecked.defaultof<ChessEngine> then
-          engine1 <- EngineHelper.createEngine (pair.White, Some logger)
-          engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
-        if engine1.Name = pair.Black.Name || engine2.Name = pair.White.Name then
-          let (eng1,eng2) = engine2, engine1
-          engine1 <- eng1
-          engine2 <- eng2
+          // Engine creation with reuse logic
+          if numberOfPlayers > 2 then
+            engine1 <- EngineHelper.createEngine (pair.White, Some logger)
+            engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
+          if engine1 = Unchecked.defaultof<ChessEngine> || engine2 = Unchecked.defaultof<ChessEngine> then
+            engine1 <- EngineHelper.createEngine (pair.White, Some logger)
+            engine2 <- EngineHelper.createEngine (pair.Black, Some logger)
+          if engine1.Name = pair.Black.Name || engine2.Name = pair.White.Name then
+            let (eng1,eng2) = engine2, engine1
+            engine1 <- eng1
+            engine2 <- eng2
 
-        // Compute round text
-        let openingsAlreadyPlayed = countOpeningsAlreadyPlayed gamesAlreadyPlayed pair.OpeningHash
-        let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
-        let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
-        callback (Update.RoundNr roundTxt)
+          // Compute round text
+          let openingsAlreadyPlayed = countOpeningsAlreadyPlayed gamesAlreadyPlayed pair.OpeningHash
+          let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
+          let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+          callback (Update.RoundNr roundTxt)
 
-        // Execute game with exception handling
-        let replayDictWhite = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.White.Name) else None
-        let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
-        let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
+          // Execute game with exception handling
+          let replayDictWhite = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.White.Name) else None
+          let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
+          let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
 
-        let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
-        results <- result :: results
+          let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
+          results <- result :: results
 
-        // Process completed game: build metadata, add to replay, write PGN
-        let gameData = buildGameMetadata tourny pair result roundTxt
-        addToReplayList replayList tourny result gameData board.UciMovesPlayed
-        let moveSection = sb.ToString()
-        writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts
-        if tourny.VerboseLogging then
-          logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+          // Process completed game: build metadata, add to replay, write PGN
+          let gameData = buildGameMetadata tourny pair result roundTxt
+          addToReplayList replayList tourny result gameData board.UciMovesPlayed
+          let moveSection = sb.ToString()
+          writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts
+          if tourny.VerboseLogging then
+            logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
 
-        // Small delay to let pumps finish their cleanup
-        do! Async.Sleep 200
+          // Small delay to let pumps finish their cleanup
+          do! Async.Sleep 200
 
-        cleanupEnginesConditional engine1 engine2 forceStopEngines numberOfPlayers cts
-        do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
-        board.ResetBoardState()
-        gameNr <- gameNr + 1
-        if gameNr % 2 = 0 then
-          let res = ResizeArray<Result>(results)
-          callback (Update.PeriodicResults res)
+          cleanupEnginesConditional engine1 engine2 forceStopEngines numberOfPlayers cts
+          do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+          board.ResetBoardState()
+          gameNr <- gameNr + 1
+          if gameNr % 2 = 0 then
+            let res = ResizeArray<Result>(results)
+            callback (Update.PeriodicResults res)
 
-    let res = ResizeArray<Result>(results)
-    callback (Update.PeriodicResults res)
-    if ownsAgent then
-      pgnGameWriterAgent.Post(FullPGNParser.Dispose)
-      pgnGameWriterAgent.Dispose()
-    return results
+      let res = ResizeArray<Result>(results)
+      callback (Update.PeriodicResults res)
+      if ownsAgent then
+        pgnGameWriterAgent.Post(FullPGNParser.Dispose)
+        pgnGameWriterAgent.Dispose()
+      return results
+    finally
+      if engine1 <> Unchecked.defaultof<ChessEngine> then
+        cleanupEngines engine1 engine2
 }
 
 let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
@@ -623,6 +627,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
 
   let mutable currentPlayers = currentPlayersFromNames currentRoundPlayers
   let mutable roundNumber = initialRound.RoundNumber
+  try
   while currentPlayers.Length > 1 && not cts.IsCancellationRequested do
     let pairs =
       currentPlayers
@@ -674,14 +679,11 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
             globalOpenings
         let tryGetOpeningByHash (hash: string) =
           match matchOpenings |> List.tryFind (fun o ->
-            let openingHash =
-              if String.IsNullOrWhiteSpace o.Raw then
-                Hash.computeOpeningHash (o.GameNumber.ToString())
-              else
-                Hash.computeOpeningHash o.Raw
-            openingHash = hash) with
+            Hash.computeOpeningHashFromGame o = hash) with
           | Some opening -> opening
-          | None -> getNextOpening matchOpenings localOpeningIndex
+          | None ->
+              logger.LogWarning("Cup resume: opening hash {Hash} not found in opening book — using next available opening.", hash)
+              getNextOpening matchOpenings localOpeningIndex
 
         if not matchInfo.IsDecided then
           if matchInfo.ScoreA > matchInfo.ScoreB + float gamesRemaining then
@@ -845,6 +847,9 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
     pgnGameWriterAgent.Dispose()
   cupBracketAgent.Post DisposeCupBracket
   return results
+  finally
+    if engine1 <> Unchecked.defaultof<ChessEngine> then
+      cleanupEngines engine1 engine2
 }
 
 let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
@@ -1195,6 +1200,7 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
           match matchOpenings |> List.tryFind (fun o -> getOpeningHash o = hash) with
           | Some opening -> opening
           | None ->
+              logger.LogWarning("Swiss resume: opening hash {Hash} not found in opening book — using next available opening.", hash)
               if tourny.SwissOptions.UniquePerMatchOnly then
                 matchOpenings.[(pairing.Games.Count / 2) % matchOpenings.Length]
               else

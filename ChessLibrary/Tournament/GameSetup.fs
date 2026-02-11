@@ -116,29 +116,29 @@ let executeGameWithSetup
     let engine1 = EngineHelper.createEngine (pair.White, Some logger)
     let engine2 = EngineHelper.createEngine (pair.Black, Some logger)
 
-    // Notify round
-    callback (Update.RoundNr roundTxt)
+    try
+        // Notify round
+        callback (Update.RoundNr roundTxt)
 
-    // Execute game with exception handling
-    let getReplayDictForPlayer name = replayDicts.[name]
-    let replayDictWhite = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.White.Name) else None
-    let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
+        // Execute game with exception handling
+        let getReplayDictForPlayer name = replayDicts.[name]
+        let replayDictWhite = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.White.Name) else None
+        let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
 
-    let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
+        let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
 
-    // Process completed game
-    let gameData = buildGameMetadata tourny pair result roundTxt
-    addToReplayList replayList tourny result gameData board.UciMovesPlayed
-    let moveSection = sb.ToString()
-    writeGameToPgn pgnAgent tourny gameData moveSection result cts
+        // Process completed game
+        let gameData = buildGameMetadata tourny pair result roundTxt
+        addToReplayList replayList tourny result gameData board.UciMovesPlayed
+        let moveSection = sb.ToString()
+        writeGameToPgn pgnAgent tourny gameData moveSection result cts
 
-    if tourny.VerboseLogging then
-        logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+        if tourny.VerboseLogging then
+            logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
 
-    // Cleanup engines
-    cleanupEngines engine1 engine2
-
-    result
+        result
+    finally
+        cleanupEngines engine1 engine2
 
 /// Execute a game for cup/swiss with mutable engine variables and conditional cleanup
 let executeGameWithEngineReuse

@@ -51,9 +51,12 @@ module EloCalculator =
       eloDifferenceFromScore winPercentage
 
   let calculateIdealized_UHO_EloAndError wins losses ebFactor =
-    let elo = Math.Round(100.0 * Math.Log10(wins / losses))
-    let error = Math.Round(ebFactor * 100.0 / Math.Log(10.0) * Math.Sqrt(1.0 / wins + 1.0 / losses))
-    elo, error
+    if wins = 0.0 || losses = 0.0 then
+        (0.0, 0.0)
+    else
+        let elo = Math.Round(100.0 * Math.Log10(wins / losses))
+        let error = Math.Round(ebFactor * 100.0 / Math.Log(10.0) * Math.Sqrt(1.0 / wins + 1.0 / losses))
+        elo, error
 
 
 module Glicko2 =

@@ -32,14 +32,17 @@ let startCupBracketReaderWriter (filePath: string) =
                 | DisposeCupBracket ->
                     return ()
                 | WriteCupBracket (bracket, reply) ->
-                    bracket.UpdatedUtc <- DateTime.UtcNow
-                    let json = JsonSerializer.Serialize(bracket, optionsWrite)
-                    if String.IsNullOrWhiteSpace filePath then
-                        inMemory <- json
-                    else
-                        let tmpPath = filePath + ".tmp"
-                        File.WriteAllText(tmpPath, json, Encoding.UTF8)
-                        File.Move(tmpPath, filePath, true)
+                    try
+                        bracket.UpdatedUtc <- DateTime.UtcNow
+                        let json = JsonSerializer.Serialize(bracket, optionsWrite)
+                        if String.IsNullOrWhiteSpace filePath then
+                            inMemory <- json
+                        else
+                            let tmpPath = filePath + ".tmp"
+                            File.WriteAllText(tmpPath, json, Encoding.UTF8)
+                            File.Move(tmpPath, filePath, true)
+                    with ex ->
+                        eprintfn "WriteCupBracket error: %s" ex.Message
                     reply.Reply()
                 | ReadCupBracket reply ->
                     try
@@ -76,14 +79,17 @@ let startSwissStateReaderWriter (filePath: string) =
                 | DisposeSwissState ->
                     return ()
                 | WriteSwissState (state, reply) ->
-                    state.UpdatedUtc <- DateTime.UtcNow
-                    let json = JsonSerializer.Serialize(state, optionsWrite)
-                    if String.IsNullOrWhiteSpace filePath then
-                        inMemory <- json
-                    else
-                        let tmpPath = filePath + ".tmp"
-                        File.WriteAllText(tmpPath, json, Encoding.UTF8)
-                        File.Move(tmpPath, filePath, true)
+                    try
+                        state.UpdatedUtc <- DateTime.UtcNow
+                        let json = JsonSerializer.Serialize(state, optionsWrite)
+                        if String.IsNullOrWhiteSpace filePath then
+                            inMemory <- json
+                        else
+                            let tmpPath = filePath + ".tmp"
+                            File.WriteAllText(tmpPath, json, Encoding.UTF8)
+                            File.Move(tmpPath, filePath, true)
+                    with ex ->
+                        eprintfn "WriteSwissState error: %s" ex.Message
                     reply.Reply()
                 | ReadSwissState reply ->
                     try

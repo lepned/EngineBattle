@@ -100,10 +100,16 @@ let writeGameToPgnSimple
 
 /// Stop engines if not already exited
 let cleanupEngines (engine1: ChessEngine) (engine2: ChessEngine) : unit =
-    if not (engine1.HasExited()) then
-        engine1.StopProcess()
-    if not (engine2.HasExited()) then
-        engine2.StopProcess()
+    try
+        if not (engine1.HasExited()) then
+            try engine1.Quit() with _ -> ()
+            try engine1.StopProcess() with _ -> ()
+    with _ -> ()
+    try
+        if not (engine2.HasExited()) then
+            try engine2.Quit() with _ -> ()
+            try engine2.StopProcess() with _ -> ()
+    with _ -> ()
 
 /// Stop engines conditionally based on reason or player count
 let cleanupEnginesConditional

@@ -22,25 +22,32 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
           let rec loop() = async {
             let! msg = inbox.Receive()
             match msg with
-            | Ok reply ->
-                reply.Reply(true)
-                return! loop()
-            | BestMove (cmd, reply) ->
-                let mv = bestQPuzzleValueOnly engine cmd
-                reply.Reply (mv,0.0)
-                return! loop()
-            | BestMoveWithPolicy (cmd, correctMove, reply) ->
-                let mv = bestQPuzzleValueOnly engine cmd
-                reply.Reply (mv,String.Empty)
-                return! loop()
-
             | Quit reply ->
                 engine.Quit()
                 do! Async.Sleep 1000
                 reply.Reply()
-                // exit loop
-            | Network reply ->
-                reply.Reply engine.Network
+            | _ ->
+                try
+                    match msg with
+                    | Ok reply ->
+                        reply.Reply(true)
+                    | BestMove (cmd, reply) ->
+                        let mv = bestQPuzzleValueOnly engine cmd
+                        reply.Reply (mv,0.0)
+                    | BestMoveWithPolicy (cmd, correctMove, reply) ->
+                        let mv = bestQPuzzleValueOnly engine cmd
+                        reply.Reply (mv,String.Empty)
+                    | Network reply ->
+                        reply.Reply engine.Network
+                    | Quit _ -> ()
+                with ex ->
+                    eprintfn "PuzzleEngineAgent (value) error: %s" ex.Message
+                    match msg with
+                    | BestMove (_, reply) -> reply.Reply ("", 0.0)
+                    | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
+                    | Ok reply -> reply.Reply(false)
+                    | Network reply -> reply.Reply ""
+                    | Quit _ -> ()
                 return! loop()
           }
           loop()
@@ -70,30 +77,37 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
       let rec loop() = async {
         let! msg = inbox.Receive()
         match msg with
-        | Ok reply ->
-             reply.Reply(true)
-             return! loop()
-        | BestMove (cmd, reply) ->
-            let mv, nnValue = bestPolicyMove nodes engine cmd.Command
-            reply.Reply (mv,(if nnValue.IsSome then 0.0 else 0.0))
-            return! loop()
-        | BestMoveWithPolicy (cmd, correctMove, reply) ->
-            let mv, nnValue = bestPolicyMoveWithPolicy correctMove nodes engine cmd.Command
-            if nnValue.Length = 0 then
-              reply.Reply (mv, String.Empty)
-            elif nnValue.Length = 1 then
-              reply.Reply (mv, sprintf "%.2f" nnValue.Head.P)
-            else
-              let nnValueString = nnValue |> List.map (fun v -> sprintf "%.2f" v.P) |> String.concat ", "
-              reply.Reply (mv, nnValueString)
-            return! loop()
-
         | Quit reply ->
             engine.StopProcess()
             reply.Reply()
-            // exit loop
-        | Network reply ->
-            reply.Reply engine.Network
+        | _ ->
+            try
+                match msg with
+                | Ok reply ->
+                     reply.Reply(true)
+                | BestMove (cmd, reply) ->
+                    let mv, nnValue = bestPolicyMove nodes engine cmd.Command
+                    reply.Reply (mv,(if nnValue.IsSome then 0.0 else 0.0))
+                | BestMoveWithPolicy (cmd, correctMove, reply) ->
+                    let mv, nnValue = bestPolicyMoveWithPolicy correctMove nodes engine cmd.Command
+                    if nnValue.Length = 0 then
+                      reply.Reply (mv, String.Empty)
+                    elif nnValue.Length = 1 then
+                      reply.Reply (mv, sprintf "%.2f" nnValue.Head.P)
+                    else
+                      let nnValueString = nnValue |> List.map (fun v -> sprintf "%.2f" v.P) |> String.concat ", "
+                      reply.Reply (mv, nnValueString)
+                | Network reply ->
+                    reply.Reply engine.Network
+                | Quit _ -> ()
+            with ex ->
+                eprintfn "PuzzleEngineAgent (policy) error: %s" ex.Message
+                match msg with
+                | BestMove (_, reply) -> reply.Reply ("", 0.0)
+                | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
+                | Ok reply -> reply.Reply(false)
+                | Network reply -> reply.Reply ""
+                | Quit _ -> ()
             return! loop()
       }
       loop()

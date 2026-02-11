@@ -1057,7 +1057,6 @@ module BayesianOptimizer =
     let cumulativePgnPath = setup.CumulativePgnPath
 
     let d = resolved.Length
-    let rng = Random(cfg.Seed + 7919)  // different seed from SPSA
 
     let mutable candidateCount = state.CandidateCount
     let mutable phaseIndex = state.PhaseIndex
@@ -1232,6 +1231,9 @@ module BayesianOptimizer =
         let idx = paramIndex.[pname]
         active.[idx] <- true
 
+      // Per-phase RNG — deterministic from seed + phase index, so resume is reproducible
+      let phaseRng = Random(cfg.Seed + 7919 + phaseIndex * 100003)
+
       let activeCount = active |> Array.filter id |> Array.length
       let initialDesignSize =
         if cfg.InitialDesignSize > 0 then cfg.InitialDesignSize
@@ -1239,10 +1241,6 @@ module BayesianOptimizer =
 
       printfn ""
       printfn "=== BO Phase: %s (design=%d, iterations=%d) ===" phase.Name initialDesignSize phase.Iterations
-
-      // Clear observations only when entering a new phase (not resuming mid-phase)
-      if iterationInPhase = 0 then
-        observations.Clear()
 
       // Phase 1: initial design via LHS (skip if resuming with existing observations)
       if observations.Count = 0 then
@@ -1252,8 +1250,8 @@ module BayesianOptimizer =
           else 0.5
         printfn "\n--- Initial design (%d points, radius=%.2f) ---" initialDesignSize designRadius
         let lhsSamples =
-          if designRadius >= 1.0 then latinHypercubeSample initialDesignSize d active rng
-          else centeredLatinHypercubeSample initialDesignSize d active bestX designRadius rng
+          if designRadius >= 1.0 then latinHypercubeSample initialDesignSize d active phaseRng
+          else centeredLatinHypercubeSample initialDesignSize d active bestX designRadius phaseRng
         // Initial design uses minimum budget (iteration 0 of phase)
         let restoreDesign = scaleGameBudget 0 phase.Iterations
         for sample in lhsSamples do
@@ -1274,16 +1272,17 @@ module BayesianOptimizer =
 
         restoreDesign()
 
-        // Write dashboard after initial design (no GP model yet)
-        writeDashboard dashboardPath None currentHyp observations bestX 0.5
-          resolved active setup phase phaseIndex iterationInPhase
-          candidateCount startedUtc historyPath
-        printfn "  Dashboard: %s" dashboardPath
-
-      // Find current best from observations
+      // Find current best from observations and sync bestX
       let mutable bestObs =
         if observations.Count > 0 then observations |> Seq.maxBy (fun o -> o.Y)
         else { X = Array.copy bestX; Y = 0.5 }
+      bestX <- Array.copy bestObs.X
+
+      // Write dashboard (no GP model yet for fresh initial design)
+      writeDashboard dashboardPath None currentHyp observations bestX bestObs.Y
+        resolved active setup phase phaseIndex iterationInPhase
+        candidateCount startedUtc historyPath
+      printfn "  Dashboard: %s" dashboardPath
 
       // Phase 2: BO iterations
       printfn "\n--- BO iterations (%d) ---" phase.Iterations
@@ -1298,7 +1297,9 @@ module BayesianOptimizer =
         let gp = fitGP currentHyp xs ys
         let fBest = bestObs.Y
 
-        let xNew = optimizeAcquisition gp fBest d active rng
+        // Per-iteration RNG — deterministic from seed + phase + iteration, so resume is reproducible
+        let iterRng = Random(cfg.Seed + 7919 + phaseIndex * 100003 + (iterationInPhase + 1) * 997)
+        let xNew = optimizeAcquisition gp fBest d active iterRng
         // Copy inactive dims
         for i in 0 .. d - 1 do
           if not active.[i] then xNew.[i] <- bestX.[i]
@@ -1307,38 +1308,44 @@ module BayesianOptimizer =
         snapToGrid xNew
 
         // If this quantized point was already evaluated, sample a random replacement
+        let mutable skipEval = false
         if isDuplicate xNew then
           printfn "  Duplicate detected after quantization — sampling random candidate"
           let mutable found = false
           for _ in 1 .. 100 do
             if not found then
               for i in 0 .. d - 1 do
-                if active.[i] then xNew.[i] <- rng.NextDouble() * 2.0 - 1.0
+                if active.[i] then xNew.[i] <- iterRng.NextDouble() * 2.0 - 1.0
                 else xNew.[i] <- bestX.[i]
               snapToGrid xNew
               if not (isDuplicate xNew) then found <- true
           if not found then
-            printfn "  Warning: could not find non-duplicate after 100 random attempts"
+            printfn "  Warning: could not find non-duplicate after 100 random attempts — skipping evaluation"
+            skipEval <- true
 
-        // Log GP prediction for the new point and store for history
-        let predMu, predVar = predict gp xNew
-        let predStd = sqrt predVar
-        let eiVal = expectedImprovement gp fBest xNew
-        lastPredMu <- predMu
-        lastPredStd <- predStd
-        lastEI <- eiVal
-        printfn "\n--- BO iteration %d/%d (candidate #%d) predMu=%.4f predStd=%.4f EI=%.6f ---"
-          (iterationInPhase + 1) phase.Iterations (candidateCount + 1) predMu predStd eiVal
+        if not skipEval then
+          // Log GP prediction for the new point and store for history
+          let predMu, predVar = predict gp xNew
+          let predStd = sqrt predVar
+          let eiVal = expectedImprovement gp fBest xNew
+          lastPredMu <- predMu
+          lastPredStd <- predStd
+          lastEI <- eiVal
+          printfn "\n--- BO iteration %d/%d (candidate #%d) predMu=%.4f predStd=%.4f EI=%.6f ---"
+            (iterationInPhase + 1) phase.Iterations (candidateCount + 1) predMu predStd eiVal
 
-        let restoreIter = scaleGameBudget iterationInPhase phase.Iterations
-        let yNew = evaluateCandidate xNew
-        restoreIter()
-        observations.Add({ X = Array.copy xNew; Y = yNew })
+          let restoreIter = scaleGameBudget iterationInPhase phase.Iterations
+          let yNew = evaluateCandidate xNew
+          restoreIter()
+          observations.Add({ X = Array.copy xNew; Y = yNew })
 
-        if yNew > bestObs.Y then
-          bestObs <- { X = Array.copy xNew; Y = yNew }
-          bestX <- Array.copy xNew
-          printfn "  New best found! scoreFrac=%.4f" yNew
+          if yNew > bestObs.Y then
+            bestObs <- { X = Array.copy xNew; Y = yNew }
+            bestX <- Array.copy xNew
+            printfn "  New best found! scoreFrac=%.4f" yNew
+        else
+          printfn "\n--- BO iteration %d/%d — skipping (parameter space exhausted at grid resolution) ---"
+            (iterationInPhase + 1) phase.Iterations
 
         iterationInPhase <- iterationInPhase + 1
         globalIteration <- globalIteration + 1
@@ -1383,6 +1390,7 @@ module BayesianOptimizer =
 
       phaseIndex <- phaseIndex + 1
       iterationInPhase <- 0
+      observations.Clear()  // clear before checkpoint so next phase starts fresh on resume
       saveCheckpoint()
 
     // Final validation: best vs initial
