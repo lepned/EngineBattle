@@ -64,7 +64,6 @@ module TunerRunner =
       mutable Resume: bool
       mutable MaxWallHours: float
       mutable MaxCandidates: int
-      mutable PerturbationSize: float
       mutable Optimizer: string
       mutable InitialDesignSize: int
       mutable HypUpdateInterval: int
@@ -89,13 +88,13 @@ module TunerRunner =
       mutable IterationInPhase: int
       mutable GlobalIteration: int
       mutable CandidateCount: int
-      mutable RandomCallsConsumed: int
       mutable X: float[]
       mutable BestX: float[]
       mutable StartedUtc: string
       mutable LastUpdatedUtc: string
       mutable ObservationsX: float[][]
       mutable ObservationsY: float[]
+      mutable ObservationsN: int[]
       mutable FinalValidationCompleted: bool }
 
   [<CLIMutable>]
@@ -115,8 +114,6 @@ module TunerRunner =
       mutable Phase: string
       mutable Iteration: int
       mutable Candidate: int
-      mutable Ak: float
-      mutable Ck: float
       mutable Winner: string
       mutable MatchDecision: string
       mutable Games: int
@@ -169,6 +166,7 @@ module TunerRunner =
     | :? int64 as i -> Some (float i)
     | :? uint32 as i -> Some (float i)
     | :? uint64 as i -> Some (float i)
+    | :? bool as b -> Some (if b then 1.0 else 0.0)
     | :? string as s ->
         match Double.TryParse(s, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
         | true, n -> Some n
@@ -184,6 +182,8 @@ module TunerRunner =
             match Double.TryParse(s, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
             | true, n -> Some n
             | _ -> None
+        | JsonValueKind.True -> Some 1.0
+        | JsonValueKind.False -> Some 0.0
         | _ -> None
     | _ -> None
 
@@ -269,8 +269,7 @@ module TunerRunner =
             if parseEmbeddedValue v p.Name |> Option.isNone then
               failf "parameter %s: option '%s' does not contain embedded key '%s='" p.Name p.Option p.Name
       else
-        if tryFindOptionKey engineCfg.Options p.Name |> Option.isNone then
-          failf "parameter %s is missing in engine options" p.Name
+        () // direct params are optional in engine config; setoption is always sent
 
     for ph in cfg.Phases do
       if String.IsNullOrWhiteSpace ph.Name then failwith "phase name is required"
@@ -278,6 +277,16 @@ module TunerRunner =
       if isNull ph.Parameters || ph.Parameters.Length = 0 then failf "phase %s: parameters must not be empty" ph.Name
       for n in ph.Parameters do
         if not (nameSet.Contains n) then failf "phase %s references unknown parameter %s" ph.Name n
+
+  let internal clamp lo hi x = max lo (min hi x)
+
+  let private quantize (step: float) (value: float) =
+    let n = Math.Round(value / step)
+    let result = n * step
+    // Round to step-implied decimal places to avoid IEEE 754 noise
+    // e.g. step=0.05 → 2 decimals, step=0.1 → 1, step=1.0 → 0
+    let decimals = max 0 (int (ceil (-log10 step)))
+    Math.Round(result, decimals)
 
   let internal resolveParameters (cfg: TuneConfig) (engineCfg: EngineConfig) =
     cfg.Parameters
@@ -298,21 +307,24 @@ module TunerRunner =
           ScaleIsLog = normalizeScale p.Scale = "log"
           EmbeddedKey = Some p.Name }
       else
-        let key =
-          match tryFindOptionKey engineCfg.Options p.Name with
-          | Some k -> k
-          | None -> failf "Missing option key for %s" p.Name
-        let init =
-          match tryToFloat engineCfg.Options.[key] with
-          | Some v -> v
-          | None -> failf "Option %s is not numeric and cannot be tuned" key
-        { Def = p
-          OptionKey = key
-          InitialValue = init
-          ScaleIsLog = normalizeScale p.Scale = "log"
-          EmbeddedKey = None })
-
-  let internal clamp lo hi x = max lo (min hi x)
+        let isLog = normalizeScale p.Scale = "log"
+        match tryFindOptionKey engineCfg.Options p.Name with
+        | Some key ->
+          let init =
+            match tryToFloat engineCfg.Options.[key] with
+            | Some v -> v
+            | None -> failf "Option %s is not numeric and cannot be tuned" key
+          { Def = p
+            OptionKey = key
+            InitialValue = init
+            ScaleIsLog = isLog
+            EmbeddedKey = None }
+        | None ->
+          { Def = p
+            OptionKey = p.Name
+            InitialValue = (p.Min + p.Max) / 2.0
+            ScaleIsLog = isLog
+            EmbeddedKey = None })
 
   let internal toNorm (p: ResolvedParameter) value =
     let v = clamp p.Def.Min p.Def.Max value
@@ -324,14 +336,6 @@ module TunerRunner =
     else
       let t = (v - p.Def.Min) / (p.Def.Max - p.Def.Min)
       clamp -1.0 1.0 (2.0 * t - 1.0)
-
-  let private quantize (step: float) (value: float) =
-    let n = Math.Round(value / step)
-    let result = n * step
-    // Round to step-implied decimal places to avoid IEEE 754 noise
-    // e.g. step=0.05 → 2 decimals, step=0.1 → 1, step=1.0 → 0
-    let decimals = max 0 (int (ceil (-log10 step)))
-    Math.Round(result, decimals)
 
   let internal fromNorm (p: ResolvedParameter) n =
     let clamped = clamp -1.0 1.0 n
@@ -347,10 +351,15 @@ module TunerRunner =
     let fixedV = clamp p.Def.Min p.Def.Max q
     if Double.IsFinite fixedV then fixedV else p.InitialValue
 
+  let internal isBoolParam (p: ResolvedParameter) =
+    p.Def.Min = 0.0 && p.Def.Max = 1.0 && p.Def.Step = 1.0
+
   let private boxValue (p: ResolvedParameter) (value: float) : obj =
-    let rounded = Math.Round(value)
-    if p.Def.Step >= 1.0 && abs (value - rounded) < 1e-9 then box (int rounded)
-    else box value
+    if isBoolParam p then box (value >= 0.5)
+    else
+      let rounded = Math.Round(value)
+      if p.Def.Step >= 1.0 && abs (value - rounded) < 1e-9 then box (int rounded)
+      else box value
 
   let internal optionsFromVector (baseOptions: IDictionary<string,obj>) (parameters: ResolvedParameter[]) (x: float[]) =
     let options = Dictionary<string,obj>(baseOptions, StringComparer.OrdinalIgnoreCase)
@@ -834,32 +843,15 @@ module TunerRunner =
     for i in 0 .. parameters.Length - 1 do
       let p = parameters.[i]
       let v = fromNorm p bestX.[i]
+      let display = if isBoolParam p then (if v >= 0.5 then "true" else "false") else sprintf "%g" v
       match p.EmbeddedKey with
-      | Some key -> sb.AppendLine(sprintf "- %s|%s = %g" p.OptionKey key v) |> ignore
-      | None -> sb.AppendLine(sprintf "- %s = %g" p.OptionKey v) |> ignore
+      | Some key -> sb.AppendLine(sprintf "- %s|%s = %s" p.OptionKey key display) |> ignore
+      | None -> sb.AppendLine(sprintf "- %s = %s" p.OptionKey display) |> ignore
     sb.ToString()
-
-  let private sampleRademacher (rng: Random) (active: bool[]) =
-    let mutable calls = 0
-    let delta =
-      [|
-        for i in 0 .. active.Length - 1 do
-          if active.[i] then
-            calls <- calls + 1
-            if rng.Next(0, 2) = 0 then -1.0 else 1.0
-          else 0.0
-      |]
-    delta, calls
 
   let internal shouldStop (started: DateTime) (cfg: TuneConfig) (candidateCount: int) =
     let wallExceeded = DateTime.UtcNow - started > TimeSpan.FromHours(cfg.MaxWallHours)
     wallExceeded || candidateCount >= cfg.MaxCandidates
-
-  let private restoreRandomState seed callsConsumed =
-    let rng = Random(seed)
-    for _ in 1 .. callsConsumed do
-      rng.Next(0, 2) |> ignore
-    rng
 
   let normalizeParameterValue (parameter: TuneParameterDef) (value: float) =
     let p =
@@ -879,66 +871,11 @@ module TunerRunner =
         EmbeddedKey = None }
     fromNorm p normValue
 
-  let internal defaultPerturbation (v: float) = if v > 0.0 then v else 0.1
-
-  let spsaGains phaseIterations globalIteration =
-    let alpha = 0.602
-    let gamma = 0.167
-    let a = 0.5
-    let c = 0.1
-    let A = max 1.0 (0.1 * float phaseIterations)
-    let k = globalIteration + 1
-    let ak = a / Math.Pow(A + float k, alpha)
-    let ck = c / Math.Pow(float k, gamma)
-    ak, ck
-
   let sprtDecisionFromWdl (sprt: SprtConfig) wins draws losses =
     statsDecision sprt wins draws losses
 
   let pentanomialLlr (elo0: float) (elo1: float) (l2: int) (l15: int) (d: int) (w15: int) (w2: int) =
     pentanomialLlrInternal elo0 elo1 [| float l2; float l15; float d; float w15; float w2 |]
-
-  /// Standalone SPSA optimization loop for testing convergence without engine dependencies.
-  /// The core arithmetic mirrors runTune with identical constants.
-  /// `compare` receives (xPlus, xMinus) normalized vectors and returns a score fraction
-  /// (0.0 to 1.0) representing the score of xPlus. 0.5 = equal, >0.5 = xPlus is better.
-  let runSpsaLoop
-      (startX: float[])
-      (active: bool[])
-      (iterations: int)
-      (seed: int)
-      (compare: float[] -> float[] -> float)
-      : float[] =
-    let n = startX.Length
-    let x = Array.copy startX
-    let rng = Random(seed)
-    let alpha = 0.602
-    let gamma = 0.167
-    let a = 0.5
-    let c = 0.1
-    let bigA = max 1.0 (0.1 * float iterations)
-    for iter in 0 .. iterations - 1 do
-      let k = iter + 1
-      let ak = a / Math.Pow(bigA + float k, alpha)
-      let ck = c / Math.Pow(float k, gamma)
-      let delta = [| for i in 0 .. n - 1 do if active.[i] then (if rng.Next(0, 2) = 0 then -1.0 else 1.0) else 0.0 |]
-      let xPlus = Array.copy x
-      let xMinus = Array.copy x
-      for i in 0 .. n - 1 do
-        if active.[i] then
-          xPlus.[i] <- x.[i] + ck * delta.[i]
-          xMinus.[i] <- x.[i] - ck * delta.[i]
-      for i in 0 .. n - 1 do xPlus.[i] <- clamp -1.0 1.0 xPlus.[i]
-      for i in 0 .. n - 1 do xMinus.[i] <- clamp -1.0 1.0 xMinus.[i]
-      let scoreFrac = compare xPlus xMinus
-      let yDiff = 2.0 * (scoreFrac - 0.5)
-      for i in 0 .. n - 1 do
-        if active.[i] then
-          let g = yDiff / (2.0 * ck * delta.[i])
-          let step = clamp -0.25 0.25 (ak * g)
-          x.[i] <- x.[i] + step
-      for i in 0 .. n - 1 do x.[i] <- clamp -1.0 1.0 x.[i]
-    x
 
   type internal TuneSetupData =
     { Config: TuneConfig
@@ -1025,13 +962,13 @@ module TunerRunner =
           IterationInPhase = 0
           GlobalIteration = 0
           CandidateCount = 0
-          RandomCallsConsumed = 0
           X = Array.copy startX
           BestX = Array.copy startX
           StartedUtc = nowUtc()
           LastUpdatedUtc = nowUtc()
           ObservationsX = null
           ObservationsY = null
+          ObservationsN = null
           FinalValidationCompleted = false }
 
     let startedUtc =
@@ -1067,7 +1004,7 @@ module TunerRunner =
       else ""
 
     let optimizer =
-      if String.IsNullOrWhiteSpace cfg.Optimizer then "spsa"
+      if String.IsNullOrWhiteSpace cfg.Optimizer then "bayesian"
       else cfg.Optimizer.Trim().ToLowerInvariant()
 
     let evalMode = normalizeEvalMode cfg.EvalMode
@@ -1220,8 +1157,6 @@ module TunerRunner =
       printfn "GPUs:            [%s]" (String.Join(", ", cfg.GPUs))
     printfn "Max wall hours:  %.1f" cfg.MaxWallHours
     printfn "Max candidates:  %d" cfg.MaxCandidates
-    if setup.Optimizer = "spsa" then
-      printfn "Perturbation c:  %.3f" (defaultPerturbation cfg.PerturbationSize)
     if setup.EvalMode <> "sprt" then
       printfn "Eval config:     %s" cfg.EvalConfigPath
       match setup.PuzzleData with
@@ -1253,319 +1188,3 @@ module TunerRunner =
     printfn "Output: %s" setup.OutputDir
     printfn ""
 
-  let internal runSpsaTune (setup: TuneSetupData) =
-    let cfg = setup.Config
-    let baseEngine = setup.BaseEngine
-    let resolved = setup.Resolved
-    let baseTournament = setup.BaseTournament
-    let startX = setup.StartX
-    let state = setup.State
-    let outputDir = setup.OutputDir
-    let statePath = setup.StatePath
-    let historyPath = setup.HistoryPath
-    let bestOptionsPath = setup.BestOptionsPath
-    let summaryPath = setup.SummaryPath
-    let pgnDir = setup.PgnDir
-    let pgnBaseName = setup.PgnBaseName
-    let pgnExt = setup.PgnExt
-    let startedUtc = setup.StartedUtc
-    let makeMatchPgnPath = setup.MakeMatchPgnPath
-
-    let rng = restoreRandomState cfg.Seed state.RandomCallsConsumed
-
-    let paramIndex =
-      let d = Dictionary<string,int>(StringComparer.OrdinalIgnoreCase)
-      resolved |> Array.iteri (fun i p -> d.[p.Def.Name] <- i)
-      d
-
-    let mutable x = Array.copy state.X
-    let mutable bestX = Array.copy state.BestX
-    let mutable phaseIndex = state.PhaseIndex
-    let mutable iterationInPhase = state.IterationInPhase
-    let mutable globalIteration = state.GlobalIteration
-    let mutable candidateCount = state.CandidateCount
-    let mutable randomCalls = state.RandomCallsConsumed
-
-    let clampNormVector (v: float[]) =
-      for i in 0 .. v.Length - 1 do
-        v.[i] <- clamp -1.0 1.0 v.[i]
-
-    let printCurrentValues label (vec: float[]) =
-      printfn "  %s:" label
-      for i in 0 .. resolved.Length - 1 do
-        let p = resolved.[i]
-        let v = fromNorm p vec.[i]
-        let name = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
-        printfn "    %-20s = %g" name v
-
-    while phaseIndex < cfg.Phases.Length && not (shouldStop startedUtc cfg candidateCount) do
-      let phase = cfg.Phases.[phaseIndex]
-      let phaseStartX = Array.copy x
-      let active = Array.create resolved.Length false
-      for pname in phase.Parameters do
-        let idx = paramIndex.[pname]
-        active.[idx] <- true
-
-      let alpha = 0.602
-      let gamma = 0.167
-      let a = 0.5
-      let c = defaultPerturbation cfg.PerturbationSize
-      let A = max 1.0 (0.1 * float phase.Iterations)
-
-      while iterationInPhase < phase.Iterations && not (shouldStop startedUtc cfg candidateCount) do
-        let k = globalIteration + 1
-        let ak = a / Math.Pow(A + float k, alpha)
-        let ck = c / Math.Pow(float k, gamma)
-
-        let delta, calls = sampleRademacher rng active
-        randomCalls <- randomCalls + calls
-
-        let xPlus = Array.copy x
-        let xMinus = Array.copy x
-        for i in 0 .. x.Length - 1 do
-          if active.[i] then
-            xPlus.[i] <- x.[i] + ck * delta.[i]
-            xMinus.[i] <- x.[i] - ck * delta.[i]
-        clampNormVector xPlus
-        clampNormVector xMinus
-
-        let plusOptions = optionsFromVector baseEngine.Options resolved xPlus
-        let minusOptions = optionsFromVector baseEngine.Options resolved xMinus
-
-        let plusName = sprintf "%s[+]" baseEngine.Name
-        let minusName = sprintf "%s[-]" baseEngine.Name
-
-        printfn ""
-        printfn "--- SPSA iteration %d/%d (phase: %s, candidate #%d)  ak=%.4f  ck=%.4f ---"
-          (iterationInPhase + 1) phase.Iterations phase.Name (candidateCount + 1) ak ck
-        for i in 0 .. resolved.Length - 1 do
-          if active.[i] then
-            let p = resolved.[i]
-            let vPlus = fromNorm p xPlus.[i]
-            let vMinus = fromNorm p xMinus.[i]
-            let label = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
-            printfn "  %-20s  [+] = %-8g  [-] = %g" label vPlus vMinus
-        let directTunedKeys = HashSet<string>(resolved |> Array.map (fun p -> p.OptionKey), StringComparer.OrdinalIgnoreCase)
-        printNonTunedOptions "Non-tuned options" plusOptions directTunedKeys
-        printGpuAssignment cfg.GPUs cfg.ParallelGames
-
-        candidateCount <- candidateCount + 1
-
-        let scoreFrac, stats, winner, accuracy =
-          match setup.EvalMode with
-          | "puzzle" | "eret" ->
-            let accPlus = evaluateAccuracy setup plusOptions plusName
-            let accMinus = evaluateAccuracy setup minusOptions minusName
-            let sf = 0.5 + (accPlus - accMinus) / 2.0
-            let w = if accPlus >= accMinus then plusName else minusName
-            let syntheticStats =
-              { Wins = 0; Draws = 0; Losses = 0; Games = 0
-                Llr = 0.0; Elo = 0.0
-                Decision = sprintf "%s_wins" (if accPlus >= accMinus then "plus" else "minus")
-                StoppedEarly = false }
-            sf, syntheticStats, w, (accPlus + accMinus) / 2.0
-          | _ ->
-            let pgnPath = makeMatchPgnPath "cmp" candidateCount
-            let s = runSprtMatch cfg baseTournament baseEngine plusName plusOptions minusName minusOptions pgnPath "" null
-            let w =
-              match s.Decision with
-              | "accept_h1" | "fallback_h1" -> plusName
-              | _ -> minusName
-            let sf = (float s.Wins + 0.5 * float s.Draws) / float s.Games
-            sf, s, w, 0.0
-
-        let yDiff = 2.0 * (scoreFrac - 0.5) // continuous signal in [-1, 1]
-        for i in 0 .. x.Length - 1 do
-          if active.[i] then
-            let g = yDiff / (2.0 * ck * delta.[i])
-            let step = clamp -0.25 0.25 (ak * g)
-            x.[i] <- x.[i] + step
-        clampNormVector x
-
-        match setup.EvalMode with
-        | "puzzle" | "eret" ->
-          printfn "  Winner: %s (accuracy mode, scoreFrac=%.4f)" winner scoreFrac
-        | _ ->
-          printfn "  Winner: %s (%s, %d/%d/%d, elo=%.2f)" winner stats.Decision stats.Wins stats.Draws stats.Losses stats.Elo
-        printCurrentValues "Current x" x
-
-        globalIteration <- globalIteration + 1
-        iterationInPhase <- iterationInPhase + 1
-
-        let history =
-          { TimestampUtc = nowUtc()
-            Phase = phase.Name
-            Iteration = iterationInPhase
-            Candidate = candidateCount
-            Ak = ak
-            Ck = ck
-            Winner = winner
-            MatchDecision = stats.Decision
-            Games = stats.Games
-            Wins = stats.Wins
-            Draws = stats.Draws
-            Losses = stats.Losses
-            Llr = stats.Llr
-            Elo = stats.Elo
-            PredictedMean = 0.0
-            PredictedStd = 0.0
-            AcquisitionValue = 0.0
-            Accuracy = accuracy }
-        appendHistory historyPath history
-
-        let checkpoint =
-          { PhaseIndex = phaseIndex
-            IterationInPhase = iterationInPhase
-            GlobalIteration = globalIteration
-            CandidateCount = candidateCount
-            RandomCallsConsumed = randomCalls
-            X = Array.copy x
-            BestX = Array.copy bestX
-            StartedUtc = state.StartedUtc
-            LastUpdatedUtc = nowUtc()
-            ObservationsX = null
-            ObservationsY = null
-            FinalValidationCompleted = false }
-        saveState statePath checkpoint
-
-        ()
-
-      // Phase confirmation: current phase result must beat the phase start.
-      if not (shouldStop startedUtc cfg candidateCount) then
-        printfn "\n--- Phase confirmation: %s[current] vs %s[phase-start] ---" baseEngine.Name baseEngine.Name
-        candidateCount <- candidateCount + 1
-        let curName = sprintf "%s[current]" baseEngine.Name
-        let phaseStartName = sprintf "%s[phase-start]" baseEngine.Name
-        let curOptions = optionsFromVector baseEngine.Options resolved x
-        let startOptions = optionsFromVector baseEngine.Options resolved phaseStartX
-        let keepCurrent =
-          match setup.EvalMode with
-          | "puzzle" | "eret" ->
-            let (aBeatB, _, _) = runComparisonByAccuracy setup curName curOptions phaseStartName startOptions
-            aBeatB
-          | _ when cfg.UseOpponentForValidation && setup.OpponentEngine.IsSome ->
-            let pgnA = makeMatchPgnPath "phase_a" candidateCount
-            let pgnB = makeMatchPgnPath "phase_b" candidateCount
-            runOpponentComparison setup curName curOptions phaseStartName startOptions pgnA pgnB
-          | _ ->
-            let pgnPath = makeMatchPgnPath "phase" candidateCount
-            let confirm = runSprtMatch cfg baseTournament baseEngine curName curOptions phaseStartName startOptions pgnPath "" null
-            match confirm.Decision with
-            | "accept_h1" | "fallback_h1" -> true
-            | _ -> false
-        if not keepCurrent then
-          printfn "  Phase confirmation failed — reverting to phase start"
-          x <- Array.copy phaseStartX
-        else
-          printfn "  Phase confirmation passed"
-        printCurrentValues "Current x" x
-
-        // Compare against incumbent best and keep best.
-        printfn "\n--- Best comparison: %s[current] vs %s[best] ---" baseEngine.Name baseEngine.Name
-        candidateCount <- candidateCount + 1
-        let curName2 = sprintf "%s[current]" baseEngine.Name
-        let bestName = sprintf "%s[best]" baseEngine.Name
-        let curOptions2 = optionsFromVector baseEngine.Options resolved x
-        let bestOptions = optionsFromVector baseEngine.Options resolved bestX
-        let currentBeatsBest =
-          match setup.EvalMode with
-          | "puzzle" | "eret" ->
-            let (aBeatB, _, _) = runComparisonByAccuracy setup curName2 curOptions2 bestName bestOptions
-            aBeatB
-          | _ when cfg.UseOpponentForValidation && setup.OpponentEngine.IsSome ->
-            let pgnA = makeMatchPgnPath "best_a" candidateCount
-            let pgnB = makeMatchPgnPath "best_b" candidateCount
-            runOpponentComparison setup curName2 curOptions2 bestName bestOptions pgnA pgnB
-          | _ ->
-            let pgnPath2 = makeMatchPgnPath "best" candidateCount
-            let cmpBest = runSprtMatch cfg baseTournament baseEngine curName2 curOptions2 bestName bestOptions pgnPath2 "" null
-            match cmpBest.Decision with
-            | "accept_h1" | "fallback_h1" -> true
-            | _ -> false
-        if currentBeatsBest then
-          printfn "  New best found"
-          bestX <- Array.copy x
-        else
-          printfn "  Keeping previous best"
-          x <- Array.copy bestX
-        printCurrentValues "Best x" bestX
-
-      phaseIndex <- phaseIndex + 1
-      iterationInPhase <- 0
-
-      let checkpoint =
-        { PhaseIndex = phaseIndex
-          IterationInPhase = iterationInPhase
-          GlobalIteration = globalIteration
-          CandidateCount = candidateCount
-          RandomCallsConsumed = randomCalls
-          X = Array.copy x
-          BestX = Array.copy bestX
-          StartedUtc = state.StartedUtc
-          LastUpdatedUtc = nowUtc()
-          ObservationsX = null
-          ObservationsY = null
-          FinalValidationCompleted = false }
-      saveState statePath checkpoint
-
-    // Final validation: best vs initial.
-    if not state.FinalValidationCompleted then
-      printfn "\n--- Final validation: %s[tuned] vs %s[initial] ---" baseEngine.Name baseEngine.Name
-      let tunedName = sprintf "%s[tuned]" baseEngine.Name
-      let initialName = sprintf "%s[initial]" baseEngine.Name
-      let finalCandidateOptions = optionsFromVector baseEngine.Options resolved bestX
-      let initialOptions = optionsFromVector baseEngine.Options resolved startX
-
-      let finalStats, finalAccTuned, finalAccInitial =
-        match setup.EvalMode with
-        | "puzzle" | "eret" ->
-          let (_, accT, accI) = runComparisonByAccuracy setup tunedName finalCandidateOptions initialName initialOptions
-          let synth = { Wins = 0; Draws = 0; Losses = 0; Games = 0; Llr = 0.0; Elo = 0.0
-                        Decision = (if accT >= accI then "tuned_wins" else "initial_wins"); StoppedEarly = false }
-          synth, Some accT, Some accI
-        | _ when cfg.UseOpponentForValidation && setup.OpponentEngine.IsSome ->
-          let pgnA = Path.Combine(pgnDir, sprintf "%s_final_validation_tuned%s" pgnBaseName pgnExt)
-          let pgnB = Path.Combine(pgnDir, sprintf "%s_final_validation_initial%s" pgnBaseName pgnExt)
-          let tunedWins = runOpponentComparison setup tunedName finalCandidateOptions initialName initialOptions pgnA pgnB
-          let synth = { Wins = 0; Draws = 0; Losses = 0; Games = 0; Llr = 0.0; Elo = 0.0
-                        Decision = (if tunedWins then "tuned_wins" else "initial_wins"); StoppedEarly = false }
-          synth, None, None
-        | _ ->
-          let finalPgnPath = Path.Combine(pgnDir, sprintf "%s_final_validation%s" pgnBaseName pgnExt)
-          let s = runSprtMatch cfg baseTournament baseEngine tunedName finalCandidateOptions initialName initialOptions finalPgnPath "" null
-          s, None, None
-
-      let tunedPairs = tunedValuesFromVector baseEngine.Options resolved bestX
-      writeBestOptions bestOptionsPath tunedPairs
-
-      let elapsed = DateTime.UtcNow - startedUtc
-      let summary = summaryText cfg resolved bestX finalStats candidateCount elapsed setup.EvalMode finalAccTuned finalAccInitial
-      File.WriteAllText(summaryPath, summary)
-
-      let finalState =
-        { PhaseIndex = phaseIndex
-          IterationInPhase = iterationInPhase
-          GlobalIteration = globalIteration
-          CandidateCount = candidateCount
-          RandomCallsConsumed = randomCalls
-          X = Array.copy bestX
-          BestX = Array.copy bestX
-          StartedUtc = state.StartedUtc
-          LastUpdatedUtc = nowUtc()
-          ObservationsX = null
-          ObservationsY = null
-          FinalValidationCompleted = true }
-      saveState statePath finalState
-    else
-      printfn "\n--- Skipping final validation (already completed on previous run) ---"
-
-    printfn "\nTuning completed."
-    printfn "- state: %s" statePath
-    printfn "- history: %s" historyPath
-    printfn "- best options: %s" bestOptionsPath
-    printfn "- summary: %s" summaryPath
-
-  let runTune path =
-    let setup = prepareTune path
-    printTuneHeader setup
-    runSpsaTune setup

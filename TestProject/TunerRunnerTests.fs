@@ -38,14 +38,6 @@ let ``denormalize and normalize are stable for log scale`` () =
     Assert.Equal(v, roundTrip, 0)
 
 [<Fact>]
-let ``spsa gains decay with iteration`` () =
-    let ak1, ck1 = TunerRunner.spsaGains 120 0
-    let ak2, ck2 = TunerRunner.spsaGains 120 100
-
-    Assert.True(ak2 < ak1)
-    Assert.True(ck2 < ck1)
-
-[<Fact>]
 let ``sprt accepts h1 for strong positive score`` () =
     let sprt: TunerRunner.SprtConfig =
         { Elo0 = -3.0
@@ -118,118 +110,6 @@ let ``pentanomial llr has larger magnitude than binomial for skewed data`` () =
 
     Assert.True(llr < -0.259, sprintf "Pentanomial LLR (%.4f) should exceed binomial magnitude (-0.259)" llr)
 
-// --- SPSA convergence tests ---
-
-let private euclideanDist (a: float[]) (b: float[]) =
-    Array.map2 (fun x y -> (x - y) ** 2.0) a b |> Array.sum |> sqrt
-
-[<Fact>]
-let ``spsa converges with deterministic comparator`` () =
-    let optimum = [| 0.4; -0.3; 0.7 |]
-    let startX = [| 0.0; 0.0; 0.0 |]
-    let active = [| true; true; true |]
-    let compare (xPlus: float[]) (xMinus: float[]) =
-        let dPlus = euclideanDist xPlus optimum
-        let dMinus = euclideanDist xMinus optimum
-        let diff = dMinus - dPlus  // positive if xPlus is closer
-        0.5 + 0.3 * (tanh (diff * 5.0))  // sigmoid-mapped to [0.2, 0.8] range
-    let result = TunerRunner.runSpsaLoop startX active 200 42 compare
-    for i in 0 .. optimum.Length - 1 do
-        Assert.InRange(result.[i], optimum.[i] - 0.10, optimum.[i] + 0.10)
-
-[<Fact>]
-let ``spsa converges with noisy comparator`` () =
-    let optimum = [| 0.4; -0.3; 0.7 |]
-    let startX = [| 0.0; 0.0; 0.0 |]
-    let active = [| true; true; true |]
-    let noiseRng = System.Random(123)
-    let compare (xPlus: float[]) (xMinus: float[]) =
-        let dPlus = euclideanDist xPlus optimum
-        let dMinus = euclideanDist xMinus optimum
-        let diff = dMinus - dPlus
-        let signal = 0.5 + 0.3 * (tanh (diff * 5.0))
-        let noise = noiseRng.NextDouble() * 0.1 - 0.05  // +/-5% noise
-        max 0.0 (min 1.0 (signal + noise))
-    let result = TunerRunner.runSpsaLoop startX active 500 42 compare
-    for i in 0 .. optimum.Length - 1 do
-        Assert.InRange(result.[i], optimum.[i] - 0.25, optimum.[i] + 0.25)
-
-[<Fact>]
-let ``spsa respects active mask`` () =
-    let optimum = [| 0.5; -0.5; 0.5; -0.5 |]
-    let startX = [| 0.0; 0.2; 0.0; -0.8 |]
-    let active = [| true; false; true; false |]
-    let compare (xPlus: float[]) (xMinus: float[]) =
-        let dPlus = euclideanDist xPlus optimum
-        let dMinus = euclideanDist xMinus optimum
-        let diff = dMinus - dPlus
-        0.5 + 0.3 * (tanh (diff * 5.0))
-    let result = TunerRunner.runSpsaLoop startX active 200 42 compare
-    // Active params should converge toward optimum
-    Assert.InRange(result.[0], optimum.[0] - 0.10, optimum.[0] + 0.10)
-    Assert.InRange(result.[2], optimum.[2] - 0.10, optimum.[2] + 0.10)
-    // Inactive params must remain exactly at initial values
-    Assert.Equal(0.2, result.[1])
-    Assert.Equal(-0.8, result.[3])
-
-/// Old binary SPSA loop (pre-continuous gradient) for comparison testing.
-let private runBinarySpsaLoop (startX: float[]) (active: bool[]) (iterations: int) (seed: int)
-    (compare: float[] -> float[] -> float) : float[] =
-    let clamp lo hi x = max lo (min hi x)
-    let n = startX.Length
-    let x = Array.copy startX
-    let rng = System.Random(seed)
-    let alpha = 0.602
-    let gamma = 0.101
-    let a = 0.15
-    let c = 0.1
-    let bigA = max 1.0 (0.1 * float iterations)
-    for iter in 0 .. iterations - 1 do
-      let k = iter + 1
-      let ak = a / System.Math.Pow(bigA + float k, alpha)
-      let ck = c / System.Math.Pow(float k, gamma)
-      let delta = [| for i in 0 .. n - 1 do if active.[i] then (if rng.Next(0, 2) = 0 then -1.0 else 1.0) else 0.0 |]
-      let xPlus = Array.copy x
-      let xMinus = Array.copy x
-      for i in 0 .. n - 1 do
-        if active.[i] then
-          xPlus.[i] <- x.[i] + ck * delta.[i]
-          xMinus.[i] <- x.[i] - ck * delta.[i]
-      for i in 0 .. n - 1 do xPlus.[i] <- clamp -1.0 1.0 xPlus.[i]
-      for i in 0 .. n - 1 do xMinus.[i] <- clamp -1.0 1.0 xMinus.[i]
-      let scoreFrac = compare xPlus xMinus
-      let winSign = if scoreFrac > 0.5 then 1.0 else -1.0
-      for i in 0 .. n - 1 do
-        if active.[i] then
-          let g = winSign * (1.0 / (2.0 * ck * delta.[i]))
-          let step = clamp -0.25 0.25 (ak * g)
-          x.[i] <- x.[i] + step
-      for i in 0 .. n - 1 do x.[i] <- clamp -1.0 1.0 x.[i]
-    x
-
-[<Fact>]
-let ``continuous gradient converges closer than binary`` () =
-    let optimum = [| 0.4; -0.3; 0.7 |]
-    let startX = [| 0.0; 0.0; 0.0 |]
-    let active = [| true; true; true |]
-    let iterations = 200
-    let seed = 42
-
-    let compare (xPlus: float[]) (xMinus: float[]) =
-        let dPlus = euclideanDist xPlus optimum
-        let dMinus = euclideanDist xMinus optimum
-        let diff = dMinus - dPlus
-        0.5 + 0.3 * (tanh (diff * 5.0))
-
-    let binaryResult = runBinarySpsaLoop startX active iterations seed compare
-    let continuousResult = TunerRunner.runSpsaLoop startX active iterations seed compare
-
-    let binaryDist = euclideanDist binaryResult optimum
-    let continuousDist = euclideanDist continuousResult optimum
-
-    Assert.True(continuousDist < binaryDist,
-        sprintf "Continuous (dist=%.4f) should be closer to optimum than binary (dist=%.4f)" continuousDist binaryDist)
-
 // --- Embedded parameter helpers ---
 
 [<Fact>]
@@ -293,28 +173,6 @@ let ``normalizeEvalMode lowercases and trims`` () =
     Assert.Equal("puzzle", TunerRunner.normalizeEvalMode "Puzzle")
     Assert.Equal("eret", TunerRunner.normalizeEvalMode " ERET ")
     Assert.Equal("sprt", TunerRunner.normalizeEvalMode "SPRT")
-
-[<Fact>]
-let ``SPSA accuracy scoreFrac maps correctly`` () =
-    // When both accuracies are equal, scoreFrac = 0.5
-    let sf1 = 0.5 + (0.7 - 0.7) / 2.0
-    Assert.Equal(0.5, sf1, 6)
-
-    // When plus is better by 0.1, scoreFrac = 0.55
-    let sf2 = 0.5 + (0.8 - 0.7) / 2.0
-    Assert.Equal(0.55, sf2, 6)
-
-    // When minus is better by 0.1, scoreFrac = 0.45
-    let sf3 = 0.5 + (0.7 - 0.8) / 2.0
-    Assert.Equal(0.45, sf3, 6)
-
-    // When plus gets 100% and minus gets 0%, scoreFrac = 1.0
-    let sf4 = 0.5 + (1.0 - 0.0) / 2.0
-    Assert.Equal(1.0, sf4, 6)
-
-    // When plus gets 0% and minus gets 100%, scoreFrac = 0.0
-    let sf5 = 0.5 + (0.0 - 1.0) / 2.0
-    Assert.Equal(0.0, sf5, 6)
 
 [<Fact>]
 let ``accuracy comparison logic selects correct winner`` () =

@@ -9,7 +9,7 @@ This document provides an overview of the `EretConfig.json` configuration file u
 - **EngineFolder**: The file system path to the folder containing engine definition JSON files.
 - **Engines**: A list of engines to use for the test. Each entry can be:
   - **Engine**: Uses a single engine definition file (`ConfigName`).
-  - **EngineWithNets**: Uses an engine definition file with a list of neural network files (`ListOfNetsWithPaths`).
+  - **EngineWithNets**: Uses an engine definition file with a list of neural network files (`ListOfNetsWithPaths`). Each path replaces only the network path portion of the engine's `Network` (or `WeightsFile`) option — any backend prefix (e.g., `ONNX_TRT:`) and embedded parameters (e.g., `|cudagraphs=true;V1TEMP=0.55`) from the engine definition are preserved automatically.
 - **PuzzleFile**: The file path to the EPD or puzzle file to be used for testing.
 
 ### Test Parameters

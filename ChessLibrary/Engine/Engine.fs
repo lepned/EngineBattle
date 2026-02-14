@@ -716,7 +716,7 @@ module Engine =
         | None -> () // printfn "%s" text
 
       let initialCommands = initCommands |> ResizeArray
-      let defaultTimeoutMs = 180000
+      let defaultTimeoutMs = 180000 * 4 // 12 minutes - some engines take a long time to respond to isready after setting options
       let mutable passed = true
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
@@ -1238,54 +1238,7 @@ module Engine =
         let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
         let timeoutInMs = if timeoutInMs < 60000 then defaultTimeoutMs else timeoutInMs
         let cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutInMs))
-        
-        match winboardHandler with
-        | Some handler when not handler.Features.Ping ->
-            // Winboard v1 engine without ping support - assume ready after initialization
-            logInformation (sprintf "Engine %s is using Winboard protocol without ping support, assuming ready" name)
-            true
-        | Some handler ->
-            // Winboard v2 with ping support - wait for pong/readyok
-            let cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.0))
-            write "isready"
-            let rec readUntilReady() = async {
-              try
-                if this.HasExited() then
-                  logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
-                  return false
-                elif cts.Token.IsCancellationRequested then
-                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
-                  return false
-                else
-                  let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-
-                  if isNull line then
-                    logCritical (sprintf "Engine %s (Winboard): read returned null while waiting for readyok" name)
-                    return false
-                  elif line = "readyok" then
-                    logInformation (sprintf "Engine %s responded with readyok" name)
-                    return true
-                  else
-                    return! readUntilReady()
-              with
-              | :? OperationCanceledException -> 
-                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
-                  return false
-              | ex ->
-                  logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
-                  return false
-            }
-            let res = readUntilReady() |> Async.RunSynchronously
-            cts.Dispose()
-            if res then res
-            else
-                // If ping/readied failed for Winboard engine, assume ready to avoid blocking game start
-                logDebug (sprintf "Engine %s did not respond to ping/isready; assuming ready" name)
-                true
-        | None ->
-            // Normal UCI engine
-            write "isready"
-            let rec readUntilReady() = async {
+        let rec readUntilReady() = async {
               try
                 if this.HasExited() then
                   logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
@@ -1303,6 +1256,7 @@ module Engine =
                     logInformation (sprintf "Engine %s responded with readyok" name)
                     return true
                   else
+                    do! Async.Sleep 100
                     return! readUntilReady()
               with
               | :? OperationCanceledException -> 
@@ -1312,7 +1266,25 @@ module Engine =
                   logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
                   return false
             }
-        
+        match winboardHandler with
+        | Some handler when not handler.Features.Ping ->
+            // Winboard v1 engine without ping support - assume ready after initialization
+            logInformation (sprintf "Engine %s is using Winboard protocol without ping support, assuming ready" name)
+            true
+        | Some handler ->
+            // Winboard v2 with ping support - wait for pong/readyok
+            let cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.0))
+            write "isready"            
+            let res = readUntilReady() |> Async.RunSynchronously
+            cts.Dispose()
+            if res then res
+            else
+                // If ping/readied failed for Winboard engine, assume ready to avoid blocking game start
+                logDebug (sprintf "Engine %s did not respond to ping/isready; assuming ready" name)
+                true
+        | None ->
+            // Normal UCI engine
+            write "isready"
             let res = readUntilReady() |> Async.RunSynchronously
             cts.Dispose()
             res

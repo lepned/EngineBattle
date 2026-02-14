@@ -372,6 +372,7 @@
     public bool autoSearchSwitch { get; set; } = false;
     public bool showCharts { get; set; } = true;
     private string neuralNet = "Not set";
+    private string loadedNNFilePath;
     private string backend = "";
     private bool searchInProgress = false;
     private bool showPVBoard = false;
@@ -759,10 +760,21 @@
         StateHasChanged();
     }
 
+    private void DeleteLoadedNNFile()
+    {
+        if (!string.IsNullOrEmpty(loadedNNFilePath) && File.Exists(loadedNNFilePath))
+        {
+            try { File.Delete(loadedNNFilePath); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to delete uploaded NN file {Path}", loadedNNFilePath); }
+            loadedNNFilePath = null;
+        }
+    }
+
     private async Task LoadNNFile(InputFileChangeEventArgs e)
     {
         var pgnName = e.File.Name;
         logger.LogInformation("Loading network file {File}", pgnName);
+        DeleteLoadedNNFile();
         var env = Environment.CurrentDirectory;
         var fullPath = Path.Combine(env, "NN", pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))
@@ -770,6 +782,7 @@
             browserFile = e.File;
             await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
         }
+        loadedNNFilePath = fullPath;
         neuralNet = e.File.Name;
         if (searchInfoPlot == null)
         {
@@ -1555,6 +1568,7 @@
     {
         Notifier.NotifyFen -= OnNotifyFen;
         analyzer?.Quit();
+        DeleteLoadedNNFile();
         logger.LogInformation("Disposing {page}", "EnginePanel");
         this.keyContext?.DisposeAsync();
         await ValueTask.CompletedTask;

@@ -20,7 +20,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   - **EngineWithNets**: Uses an engine definition file with multiple neural networks
     - `ConfigName`: Name of the engine definition file (e.g., "CeresDef.json")
     - `Nodes`: Number of nodes to search per puzzle position (optional, 0 means this engine will use the global settings only) and can be specified differently for each engine.
-    - `ListOfNetsWithPaths`: Array of full paths to different neural network files to test
+    - `ListOfNetsWithPaths`: Array of full paths to different neural network files to test. Each path replaces only the network path portion of the engine's `Network` (or `WeightsFile`) option — any backend prefix (e.g., `ONNX_TRT:`) and embedded parameters (e.g., `|cudagraphs=true;V1TEMP=0.55`) from the engine definition are preserved automatically.
 
 ### Test Parameters
 

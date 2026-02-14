@@ -29,12 +29,16 @@ module BayesianOptimizer =
     { Hyp: GPHyperparameters
       X: float[][]             // training inputs (n×d)
       Y: float[]               // training targets (n)
-      L: Matrix<float>         // Cholesky factor of K + σ_n²I
-      Alpha: Vector<float> }   // K⁻¹ y
+      L: Matrix<float>         // Cholesky factor of K + noise
+      Alpha: Vector<float>     // K⁻¹ y
+      YMean: float             // pre-standardization mean
+      YStd: float              // pre-standardization std dev
+      NoiseVector: float[] option }  // per-point noise (None → use Hyp.NoiseVariance)
 
   type BOObservation =
     { X: float[]
-      Y: float }
+      Y: float
+      Games: int }
 
   type BOResult =
     { BestX: float[]
@@ -42,30 +46,74 @@ module BayesianOptimizer =
       Observations: BOObservation[] }
 
   // ──────────────────────────────────────────────────────────────────
+  // Transforms & Helpers
+  // ──────────────────────────────────────────────────────────────────
+
+  let private logitClampMin = 0.005
+  let private logitClampMax = 0.995
+
+  let private logit (y: float) =
+    let c = max logitClampMin (min logitClampMax y)
+    log(c / (1.0 - c))
+
+  let private sigmoid (z: float) =
+    1.0 / (1.0 + exp(-z))
+
+  let private standardize (ys: float[]) : float[] * float * float =
+    let mean = Array.average ys
+    let variance = ys |> Array.sumBy (fun y -> (y - mean) ** 2.0) |> fun s -> s / float (max 1 (ys.Length - 1))
+    let std = max 0.01 (sqrt variance)
+    let ysStd = ys |> Array.map (fun y -> (y - mean) / std)
+    ysStd, mean, std
+
+  /// Compute per-point noise variance vector from game counts (delta method on logit).
+  /// Returns None when any observation lacks game count info (Games <= 0).
+  let private computeNoiseVector (observations: ResizeArray<BOObservation>) (yStd: float) : float[] option =
+    if observations.Count = 0 then None
+    elif observations |> Seq.exists (fun o -> o.Games <= 0) then None
+    else
+      observations |> Seq.map (fun o ->
+        let p = max logitClampMin (min logitClampMax o.Y)
+        let varLogit = 1.0 / (float o.Games * p * (1.0 - p))
+        max 1e-6 (varLogit / (yStd * yStd)))
+      |> Seq.toArray |> Some
+
+  // ──────────────────────────────────────────────────────────────────
   // GP Kernel
   // ──────────────────────────────────────────────────────────────────
 
-  /// Squared Exponential kernel with Automatic Relevance Determination:
-  /// k(x,x') = σ_f² * exp(-0.5 * Σ((x_i - x'_i)² / l_i²))
-  let seArdKernel (hyp: GPHyperparameters) (x: float[]) (x': float[]) =
+  let private sqrt5 = sqrt 5.0
+
+  /// Matern 5/2 kernel with Automatic Relevance Determination:
+  /// k(x,x') = σ_f² * (1 + √5·r + 5/3·r²) * exp(-√5·r)
+  /// where r = √(Σ((x_i - x'_i)² / l_i²))
+  let matern52ArdKernel (hyp: GPHyperparameters) (x: float[]) (x': float[]) =
     let mutable sum = 0.0
     for i in 0 .. x.Length - 1 do
       let d = x.[i] - x'.[i]
       let l = hyp.LengthScales.[i]
       sum <- sum + d * d / (l * l)
-    hyp.SignalVariance * exp(-0.5 * sum)
+    let r = sqrt sum
+    let sqrt5r = sqrt5 * r
+    hyp.SignalVariance * (1.0 + sqrt5r + 5.0 / 3.0 * r * r) * exp(-sqrt5r)
 
-  /// Build the covariance matrix K + σ_n²I
-  let buildCovarianceMatrix (hyp: GPHyperparameters) (xs: float[][]) =
+  /// Build the covariance matrix K + noise.
+  /// When noiseVector is Some, per-point noise nv.[i] is added to diagonal.
+  /// When None, scalar hyp.NoiseVariance is used uniformly.
+  let buildCovarianceMatrix (hyp: GPHyperparameters) (xs: float[][]) (noiseVector: float[] option) =
     let n = xs.Length
     let k = DenseMatrix.create n n 0.0
     for i in 0 .. n - 1 do
       for j in i .. n - 1 do
-        let v = seArdKernel hyp xs.[i] xs.[j]
+        let v = matern52ArdKernel hyp xs.[i] xs.[j]
         k.[i, j] <- v
         k.[j, i] <- v
       // Add noise to diagonal
-      k.[i, i] <- k.[i, i] + hyp.NoiseVariance
+      let noise =
+        match noiseVector with
+        | Some nv -> nv.[i]
+        | None -> hyp.NoiseVariance
+      k.[i, i] <- k.[i, i] + noise
     k
 
   // ──────────────────────────────────────────────────────────────────
@@ -94,24 +142,25 @@ module BayesianOptimizer =
     | Some l -> l
     | None -> failwith "Cholesky decomposition failed even with jitter 1e-3"
 
-  /// Fit a GP model to training data
-  let fitGP (hyp: GPHyperparameters) (xs: float[][]) (ys: float[]) : GPModel =
+  /// Fit a GP model to training data (ys should already be transformed/standardized)
+  let fitGP (hyp: GPHyperparameters) (xs: float[][]) (ys: float[]) (yMean: float) (yStd: float) (noiseVector: float[] option) : GPModel =
     let n = xs.Length
-    let k = buildCovarianceMatrix hyp xs
+    let k = buildCovarianceMatrix hyp xs noiseVector
     let l = choleskyWithJitter k
     let yVec = DenseVector.ofArray ys
     // Solve L * z = y, then L^T * alpha = z  =>  alpha = K⁻¹ y
     let z = l.Solve(yVec)
     let alpha = l.Transpose().Solve(z)
-    { Hyp = hyp; X = xs; Y = ys; L = l; Alpha = alpha }
+    { Hyp = hyp; X = xs; Y = ys; L = l; Alpha = alpha; YMean = yMean; YStd = yStd; NoiseVector = noiseVector }
 
   /// Predict posterior mean and variance at a new point
   let predict (gp: GPModel) (xStar: float[]) : float * float =
     let n = gp.X.Length
-    let kStar = DenseVector.init n (fun i -> seArdKernel gp.Hyp gp.X.[i] xStar)
+    let kStar = DenseVector.init n (fun i -> matern52ArdKernel gp.Hyp gp.X.[i] xStar)
     let mu = kStar.DotProduct(gp.Alpha)
     let v = gp.L.Solve(kStar)
-    let kss = seArdKernel gp.Hyp xStar xStar + gp.Hyp.NoiseVariance
+    // When per-point noise is used, NoiseVariance is 0 — predict latent function variance
+    let kss = matern52ArdKernel gp.Hyp xStar xStar + gp.Hyp.NoiseVariance
     let variance = max 1e-10 (kss - v.DotProduct(v))
     mu, variance
 
@@ -120,10 +169,10 @@ module BayesianOptimizer =
   // ──────────────────────────────────────────────────────────────────
 
   /// Log marginal likelihood: -0.5 * y^T α - Σ log(diag(L)) - n/2 * log(2π)
-  let logMarginalLikelihood (xs: float[][]) (ys: float[]) (hyp: GPHyperparameters) =
+  let logMarginalLikelihood (xs: float[][]) (ys: float[]) (hyp: GPHyperparameters) (noiseVector: float[] option) =
     try
       let n = xs.Length
-      let k = buildCovarianceMatrix hyp xs
+      let k = buildCovarianceMatrix hyp xs noiseVector
       let l = choleskyWithJitter k
       let yVec = DenseVector.ofArray ys
       let z = l.Solve(yVec)
@@ -137,20 +186,22 @@ module BayesianOptimizer =
       dataFit + complexity + constant
     with _ -> -infinity
 
-  /// Grid search over hyperparameter candidates
-  let optimizeHyperparameters (xs: float[][]) (ys: float[]) (d: int) : GPHyperparameters =
-    let yStd =
-      let mean = Array.average ys
-      let variance = ys |> Array.sumBy (fun y -> (y - mean) ** 2.0) |> fun s -> s / float (max 1 (ys.Length - 1))
-      max 0.01 (sqrt variance)
-
-    let sigFCandidates = [| 0.1 * yStd * yStd; 0.5 * yStd * yStd; yStd * yStd; 2.0 * yStd * yStd |]
+  /// Grid search over hyperparameter candidates.
+  /// ys should already be standardized (zero mean, unit variance).
+  /// noiseVector: per-point noise variances (Some → noise is fixed, grid is [0.0]).
+  /// When None, searches over a fixed noise grid.
+  let optimizeHyperparameters (xs: float[][]) (ys: float[]) (d: int) (noiseVector: float[] option) : GPHyperparameters =
+    let sigFCandidates = [| 0.1; 0.5; 1.0; 2.0 |]
     let lenCandidates = [| 0.1; 0.3; 0.5; 1.0; 2.0 |]
-    let noiseCandidates = [| 0.001; 0.01; 0.05; 0.1 |]
+    // When per-point noise is provided, NoiseVariance=0 (all noise is in the vector)
+    let noiseCandidates =
+      match noiseVector with
+      | Some _ -> [| 0.0 |]
+      | None -> [| 0.001; 0.01; 0.05; 0.1 |]
 
     let mutable bestLml = -infinity
     let mutable bestHyp =
-      { SignalVariance = yStd * yStd
+      { SignalVariance = 1.0
         LengthScales = Array.create d 0.5
         NoiseVariance = 0.05 }
 
@@ -161,15 +212,12 @@ module BayesianOptimizer =
             { SignalVariance = sf
               LengthScales = Array.create d len
               NoiseVariance = noise }
-          let lml = logMarginalLikelihood xs ys hyp
+          let lml = logMarginalLikelihood xs ys hyp noiseVector
           if lml > bestLml then
             bestLml <- lml
             bestHyp <- hyp
 
     // ── Phase 2: coordinate-descent ARD refinement ──
-    // Sweep each dimension's length scale independently to produce true per-dimension ARD.
-    // Finer grid than the isotropic search to distinguish per-dimension sensitivity.
-    // Only refine when we have enough data to distinguish dimensions.
     if xs.Length >= d + 2 then
       let ardCandidates = [| 0.05; 0.1; 0.15; 0.2; 0.3; 0.4; 0.5; 0.7; 1.0; 1.5; 2.0; 3.0 |]
       let ls = Array.copy bestHyp.LengthScales
@@ -184,7 +232,7 @@ module BayesianOptimizer =
             if candidate <> origLen then
               ls.[dim] <- candidate
               let hyp = { bestHyp with LengthScales = Array.copy ls }
-              let lml = logMarginalLikelihood xs ys hyp
+              let lml = logMarginalLikelihood xs ys hyp noiseVector
               if lml > bestLml then
                 bestLml <- lml
                 bestHyp <- hyp
@@ -320,11 +368,11 @@ module BayesianOptimizer =
       for i in 0 .. d - 1 do
         if not active.[i] then sample.[i] <- startX.[i]
       let y = evaluate sample
-      observations.Add({ X = Array.copy sample; Y = y })
+      observations.Add({ X = Array.copy sample; Y = y; Games = 0 })
 
     // Also evaluate start point
     let y0 = evaluate startX
-    observations.Add({ X = Array.copy startX; Y = y0 })
+    observations.Add({ X = Array.copy startX; Y = y0; Games = 0 })
 
     let mutable bestObs = observations |> Seq.maxBy (fun o -> o.Y)
     let mutable currentHyp =
@@ -335,14 +383,17 @@ module BayesianOptimizer =
     // Phase 2: BO iterations
     for iter in 0 .. iterations - 1 do
       let xs = observations |> Seq.map (fun o -> o.X) |> Seq.toArray
-      let ys = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+      let ysRaw = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+
+      // Standardize Y before GP fitting (no logit — arbitrary objective)
+      let ysStd, yMean, yStd = standardize ysRaw
 
       // Re-optimize hyperparameters periodically
       if iter % hypUpdateInterval = 0 then
-        currentHyp <- optimizeHyperparameters xs ys d
+        currentHyp <- optimizeHyperparameters xs ysStd d None
 
-      let gp = fitGP currentHyp xs ys
-      let fBest = bestObs.Y
+      let gp = fitGP currentHyp xs ysStd yMean yStd None
+      let fBest = (bestObs.Y - yMean) / yStd
 
       let xNew = optimizeAcquisition gp fBest d active rng
       // Copy inactive dims from startX
@@ -350,10 +401,10 @@ module BayesianOptimizer =
         if not active.[i] then xNew.[i] <- startX.[i]
 
       let yNew = evaluate xNew
-      observations.Add({ X = Array.copy xNew; Y = yNew })
+      observations.Add({ X = Array.copy xNew; Y = yNew; Games = 0 })
 
       if yNew > bestObs.Y then
-        bestObs <- { X = Array.copy xNew; Y = yNew }
+        bestObs <- { X = Array.copy xNew; Y = yNew; Games = 0 }
 
     { BestX = bestObs.X
       BestY = bestObs.Y
@@ -460,13 +511,18 @@ module BayesianOptimizer =
       let xProbe = Array.copy bestX
       xProbe.[paramIdx] <- gridNorm.[i]
       let m, v = predict gp xProbe
-      mu.[i] <- sanitizeFloat m
-      sigma.[i] <- sanitizeFloat (sqrt (max 1e-10 v))
+      // Inverse-transform from standardized space to score fraction for display
+      let mLogit = m * gp.YStd + gp.YMean
+      mu.[i] <- sanitizeFloat (sigmoid mLogit)
+      let sigLogit = sqrt (max 1e-10 v) * gp.YStd
+      sigma.[i] <- sanitizeFloat ((sigmoid(mLogit + sigLogit) - sigmoid(mLogit - sigLogit)) / 2.0)
       ei.[i] <- sanitizeFloat (expectedImprovement gp fBest xProbe)
     // Project observations onto this axis
     let obs = gp.X
     let obsReal = Array.init obs.Length (fun i -> TunerRunner.fromNorm p obs.[i].[paramIdx])
-    let obsY = Array.init obs.Length (fun i -> sanitizeFloat gp.Y.[i])
+    let obsY = Array.init obs.Length (fun i ->
+      let yLogit = gp.Y.[i] * gp.YStd + gp.YMean
+      sanitizeFloat (sigmoid yLogit))
     let bestReal = TunerRunner.fromNorm p bestX.[paramIdx]
     { ParamName = paramDisplayName p
       GridReal = gridReal; Mu = mu; Sigma = sigma; Ei = ei
@@ -489,7 +545,8 @@ module BayesianOptimizer =
         xProbe.[idxI] <- gridNormI.[i]
         xProbe.[idxJ] <- gridNormJ.[j]
         let m, _ = predict gp xProbe
-        sanitizeFloat m))
+        let mLogit = m * gp.YStd + gp.YMean
+        sanitizeFloat (sigmoid mLogit)))
     let obs = gp.X
     let obsI = Array.init obs.Length (fun k -> TunerRunner.fromNorm pI obs.[k].[idxI])
     let obsJ = Array.init obs.Length (fun k -> TunerRunner.fromNorm pJ obs.[k].[idxJ])
@@ -521,7 +578,7 @@ module BayesianOptimizer =
               let actualScoreFrac =
                 if games > 0 then (float entry.Wins + 0.5 * float entry.Draws) / float games
                 else 0.5
-              Some [| sanitizeFloat entry.PredictedMean; sanitizeFloat actualScoreFrac |]
+              Some [| sanitizeFloat (sigmoid entry.PredictedMean); sanitizeFloat actualScoreFrac |]
             else None
           with _ -> None)
     with _ -> [||]
@@ -573,7 +630,8 @@ module BayesianOptimizer =
       match gp with
       | None -> [||]
       | Some g ->
-        let fBest = bestY
+        // fBest in standardized logit space for EI computation
+        let fBest = (logit bestY - g.YMean) / g.YStd
         resolved |> Array.mapi (fun i _ -> compute1DSlice g fBest bestX resolved i)
 
     let contours =
@@ -987,7 +1045,10 @@ module BayesianOptimizer =
     let observations = ResizeArray<BOObservation>()
     if not (isNull state.ObservationsX) && not (isNull state.ObservationsY) then
       for i in 0 .. state.ObservationsY.Length - 1 do
-        observations.Add({ X = state.ObservationsX.[i]; Y = state.ObservationsY.[i] })
+        let games =
+          if not (isNull state.ObservationsN) && i < state.ObservationsN.Length then state.ObservationsN.[i]
+          else 100
+        observations.Add({ X = state.ObservationsX.[i]; Y = state.ObservationsY.[i]; Games = games })
 
     let bestX = Array.copy state.BestX
     let bestY =
@@ -1009,9 +1070,12 @@ module BayesianOptimizer =
     let gpModel, hyp =
       if observations.Count >= 2 then
         let xs = observations |> Seq.map (fun o -> o.X) |> Seq.toArray
-        let ys = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
-        let h = optimizeHyperparameters xs ys d
-        Some (fitGP h xs ys), h
+        let ysRaw = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+        let ysLogit = ysRaw |> Array.map logit
+        let ysStd, yMean, yStd = standardize ysLogit
+        let noiseVec = computeNoiseVector observations yStd
+        let h = optimizeHyperparameters xs ysStd d noiseVec
+        Some (fitGP h xs ysStd yMean yStd noiseVec), h
       else
         None, { SignalVariance = 1.0; LengthScales = Array.create d 0.5; NoiseVariance = 0.05 }
 
@@ -1032,7 +1096,6 @@ module BayesianOptimizer =
   // ──────────────────────────────────────────────────────────────────
 
   /// Run Bayesian optimization tuning with engine matches.
-  /// Called from runTuneWithDispatch when optimizer = "bayesian".
   let internal runBayesianTune (setup: TunerRunner.TuneSetupData) =
     let cfg = setup.Config
     let baseEngine = setup.BaseEngine
@@ -1068,7 +1131,10 @@ module BayesianOptimizer =
     let observations = ResizeArray<BOObservation>()
     if not (isNull state.ObservationsX) && not (isNull state.ObservationsY) then
       for i in 0 .. state.ObservationsY.Length - 1 do
-        observations.Add({ X = state.ObservationsX.[i]; Y = state.ObservationsY.[i] })
+        let games =
+          if not (isNull state.ObservationsN) && i < state.ObservationsN.Length then state.ObservationsN.[i]
+          else 100
+        observations.Add({ X = state.ObservationsX.[i]; Y = state.ObservationsY.[i]; Games = games })
 
     let paramIndex =
       let d = Dictionary<string,int>(StringComparer.OrdinalIgnoreCase)
@@ -1095,13 +1161,13 @@ module BayesianOptimizer =
           IterationInPhase = iterationInPhase
           GlobalIteration = globalIteration
           CandidateCount = candidateCount
-          RandomCallsConsumed = 0
           X = Array.copy bestX
           BestX = Array.copy bestX
           StartedUtc = state.StartedUtc
           LastUpdatedUtc = DateTime.UtcNow.ToString("O")
           ObservationsX = observations |> Seq.map (fun o -> o.X) |> Seq.toArray
           ObservationsY = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+          ObservationsN = observations |> Seq.map (fun o -> o.Games) |> Seq.toArray
           FinalValidationCompleted = false }
       TunerRunner.saveState statePath checkpoint
 
@@ -1114,15 +1180,17 @@ module BayesianOptimizer =
         let p = resolved.[i]
         let v = TunerRunner.fromNorm p vec.[i]
         let name = match p.EmbeddedKey with Some key -> sprintf "%s|%s" p.OptionKey key | None -> p.OptionKey
-        printfn "    %-20s = %g" name v
+        let display = if TunerRunner.isBoolParam p then (if v >= 0.5 then "true" else "false") else sprintf "%g" v
+        printfn "    %-20s = %s" name display
 
     // GP prediction context — set before each BO iteration call, read in evaluateCandidate
     let mutable lastPredMu = 0.0
     let mutable lastPredStd = 0.0
     let mutable lastEI = 0.0
 
-    /// Evaluate a candidate vector via SPRT match against baseline or accuracy test
-    let evaluateCandidate (xCandidate: float[]) : float =
+    /// Evaluate a candidate vector via SPRT match against baseline or accuracy test.
+    /// Returns (scoreFraction, gameCount).
+    let evaluateCandidate (xCandidate: float[]) : float * int =
       candidateCount <- candidateCount + 1
       let candidateName = sprintf "%s[bo-%d]" baseEngine.Name candidateCount
       let candidateOptions = TunerRunner.optionsFromVector baseEngine.Options resolved xCandidate
@@ -1160,6 +1228,12 @@ module BayesianOptimizer =
           let sf = (float s.Wins + 0.5 * float s.Draws) / float (max 1 s.Games)
           sf, s, 0.0, baselineName
 
+      let gameCount =
+        match setup.EvalMode with
+        | "puzzle" | "eret" -> 10000  // deterministic — treat as high-precision
+        | _ when cfg.PreventOpponentDeviation -> 0  // correlated games — let GP learn noise from data
+        | _ -> max 1 stats.Games
+
       match setup.EvalMode with
       | "puzzle" | "eret" ->
         printfn "  Result: accuracy=%.4f" accuracy
@@ -1178,8 +1252,6 @@ module BayesianOptimizer =
           Phase = if phaseIndex < cfg.Phases.Length then cfg.Phases.[phaseIndex].Name else "final"
           Iteration = iterationInPhase
           Candidate = candidateCount
-          Ak = 0.0
-          Ck = 0.0
           Winner = actualWinner
           MatchDecision = stats.Decision
           Games = stats.Games
@@ -1194,7 +1266,7 @@ module BayesianOptimizer =
           Accuracy = accuracy }
       TunerRunner.appendHistory historyPath history
 
-      scoreFrac
+      scoreFrac, gameCount
 
     let mutable currentHyp =
       { SignalVariance = 1.0
@@ -1260,14 +1332,14 @@ module BayesianOptimizer =
           for i in 0 .. d - 1 do
             if not active.[i] then sample.[i] <- bestX.[i]
           snapToGrid sample
-          let y = evaluateCandidate sample
-          observations.Add({ X = Array.copy sample; Y = y })
+          let y, games = evaluateCandidate sample
+          observations.Add({ X = Array.copy sample; Y = y; Games = games })
           saveCheckpoint()
 
         // Also evaluate current best
         if not (shouldStop()) then
-          let y0 = evaluateCandidate bestX
-          observations.Add({ X = Array.copy bestX; Y = y0 })
+          let y0, games0 = evaluateCandidate bestX
+          observations.Add({ X = Array.copy bestX; Y = y0; Games = games0 })
           saveCheckpoint()
 
         restoreDesign()
@@ -1275,7 +1347,7 @@ module BayesianOptimizer =
       // Find current best from observations and sync bestX
       let mutable bestObs =
         if observations.Count > 0 then observations |> Seq.maxBy (fun o -> o.Y)
-        else { X = Array.copy bestX; Y = 0.5 }
+        else { X = Array.copy bestX; Y = 0.5; Games = 0 }
       bestX <- Array.copy bestObs.X
 
       // Write dashboard (no GP model yet for fresh initial design)
@@ -1288,14 +1360,19 @@ module BayesianOptimizer =
       printfn "\n--- BO iterations (%d) ---" phase.Iterations
       while iterationInPhase < phase.Iterations && not (shouldStop()) do
         let xs = observations |> Seq.map (fun o -> o.X) |> Seq.toArray
-        let ys = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+        let ysRaw = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+
+        // Logit + standardize before GP fitting
+        let ysLogit = ysRaw |> Array.map logit
+        let ysStd, yMean, yStd = standardize ysLogit
+        let noiseVec = computeNoiseVector observations yStd
 
         // Re-optimize hyperparameters periodically
         if iterationInPhase % hypUpdateInterval = 0 then
-          currentHyp <- optimizeHyperparameters xs ys d
+          currentHyp <- optimizeHyperparameters xs ysStd d noiseVec
 
-        let gp = fitGP currentHyp xs ys
-        let fBest = bestObs.Y
+        let gp = fitGP currentHyp xs ysStd yMean yStd noiseVec
+        let fBest = (logit bestObs.Y - yMean) / yStd
 
         // Per-iteration RNG — deterministic from seed + phase + iteration, so resume is reproducible
         let iterRng = Random(cfg.Seed + 7919 + phaseIndex * 100003 + (iterationInPhase + 1) * 997)
@@ -1328,19 +1405,22 @@ module BayesianOptimizer =
           let predMu, predVar = predict gp xNew
           let predStd = sqrt predVar
           let eiVal = expectedImprovement gp fBest xNew
-          lastPredMu <- predMu
-          lastPredStd <- predStd
+          // Store in logit space (unstandardized) for history
+          let predMuLogit = predMu * yStd + yMean
+          let predStdLogit = predStd * yStd
+          lastPredMu <- predMuLogit
+          lastPredStd <- predStdLogit
           lastEI <- eiVal
-          printfn "\n--- BO iteration %d/%d (candidate #%d) predMu=%.4f predStd=%.4f EI=%.6f ---"
-            (iterationInPhase + 1) phase.Iterations (candidateCount + 1) predMu predStd eiVal
+          printfn "\n--- BO iteration %d/%d (candidate #%d) predMu=%.4f (score=%.4f) predStd=%.4f EI=%.6f ---"
+            (iterationInPhase + 1) phase.Iterations (candidateCount + 1) predMuLogit (sigmoid predMuLogit) predStdLogit eiVal
 
           let restoreIter = scaleGameBudget iterationInPhase phase.Iterations
-          let yNew = evaluateCandidate xNew
+          let yNew, games = evaluateCandidate xNew
           restoreIter()
-          observations.Add({ X = Array.copy xNew; Y = yNew })
+          observations.Add({ X = Array.copy xNew; Y = yNew; Games = games })
 
           if yNew > bestObs.Y then
-            bestObs <- { X = Array.copy xNew; Y = yNew }
+            bestObs <- { X = Array.copy xNew; Y = yNew; Games = games }
             bestX <- Array.copy xNew
             printfn "  New best found! scoreFrac=%.4f" yNew
         else
@@ -1422,6 +1502,23 @@ module BayesianOptimizer =
           let s = TunerRunner.runSprtMatch cfg baseTournament baseEngine tunedName finalCandidateOptions initialName initialOptions finalPgnPath "" null
           s, None, None
 
+      // Print final validation result to console
+      let winnerLabel =
+        match finalStats.Decision with
+        | d when d.Contains("h1") || d = "tuned_wins" -> tunedName
+        | _ -> initialName
+      match setup.EvalMode with
+      | "puzzle" | "eret" ->
+        match finalAccTuned, finalAccInitial with
+        | Some tunedAcc, Some initAcc ->
+          printfn "\n--- Final validation result: %s wins ---" winnerLabel
+          printfn "  Accuracy: tuned=%.4f vs initial=%.4f (delta=%+.4f)" tunedAcc initAcc (tunedAcc - initAcc)
+        | _ -> ()
+      | _ ->
+        printfn "\n--- Final validation result: %s wins ---" winnerLabel
+        printfn "  Decision: %s | WDL: %d/%d/%d (%d games) | Elo: %.2f | LLR: %.4f"
+          finalStats.Decision finalStats.Wins finalStats.Draws finalStats.Losses finalStats.Games finalStats.Elo finalStats.Llr
+
       let tunedPairs = TunerRunner.tunedValuesFromVector baseEngine.Options resolved bestX
       TunerRunner.writeBestOptions bestOptionsPath tunedPairs
 
@@ -1434,13 +1531,13 @@ module BayesianOptimizer =
           IterationInPhase = iterationInPhase
           GlobalIteration = globalIteration
           CandidateCount = candidateCount
-          RandomCallsConsumed = 0
           X = Array.copy bestX
           BestX = Array.copy bestX
           StartedUtc = state.StartedUtc
           LastUpdatedUtc = DateTime.UtcNow.ToString("O")
           ObservationsX = observations |> Seq.map (fun o -> o.X) |> Seq.toArray
           ObservationsY = observations |> Seq.map (fun o -> o.Y) |> Seq.toArray
+          ObservationsN = observations |> Seq.map (fun o -> o.Games) |> Seq.toArray
           FinalValidationCompleted = true }
       TunerRunner.saveState statePath finalState
     else
@@ -1452,11 +1549,8 @@ module BayesianOptimizer =
     printfn "- best options: %s" bestOptionsPath
     printfn "- summary: %s" summaryPath
 
-  /// Entry point that dispatches to either SPSA or Bayesian optimizer.
-  /// Called from Program.fs instead of TunerRunner.runTune.
+  /// Entry point for running the Bayesian optimizer tuner.
   let runTuneWithDispatch path =
     let setup = TunerRunner.prepareTune path
     TunerRunner.printTuneHeader setup
-    match setup.Optimizer with
-    | "bayesian" | "bo" -> runBayesianTune setup
-    | _ -> TunerRunner.runSpsaTune setup
+    runBayesianTune setup

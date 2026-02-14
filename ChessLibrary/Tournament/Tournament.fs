@@ -42,39 +42,6 @@ module TournamentUtils =
       return valid
     } |> Async.StartAsTask
   
-  let bestQMove (nodes:int) (engine: ChessEngine) fenWithMoves (tboard:Board) = async {
-    let qList = ResizeArray<float*string*EvalType>()    
-    tboard.ResetBoardState()
-    tboard.PlayCommands fenWithMoves
-    let legalMoves = tboard.GetLegalMoves()    
-    for (lSan,_) in legalMoves do
-      let cmd = sprintf "%s %s" fenWithMoves lSan
-      engine.Position cmd
-      engine.GoNodes nodes
-      
-      let mutable cont = true
-      let mutable infoString = ""
-      let mutable eval = EvalType.NA
-      while cont do
-        let! line = engine.ReadLineAsyncWithTimeout CancellationToken.None |> Async.AwaitTask  // Initialization.readLine engine CancellationToken.None        
-        if line.StartsWith "bestmove" then
-          cont <- false
-        elif line.StartsWith "info string node" then
-          infoString <- line
-        elif line.StartsWith "info depth" then
-          eval <- 
-            match Regex.evalParser line with
-              |NA -> NA
-              |CP eval ->
-                let eval = if eval = -0.0 then 0.0 else eval
-                (if tboard.Position.STM = 0uy then -eval/100.0 else eval / 100.0) |> CP
-              |Mate _ as mate -> mate
-      
-      let res = Regex.floatParser infoString Regex.v
-      qList.Add (res, lSan, eval)
-    let score, m, ev = qList |> Seq.minBy (fun (s,_,_) -> s)
-    return (-score, sprintf "bestmove %s" m, ev) }
-
 module Manager =  
 
   let mutable cupResumeRequested = false

@@ -88,7 +88,6 @@
 		<Compile Include="Analysis\PuzzleEngineAnalysis.fs" />
 		<Compile Include="Analysis\PuzzleEngineAgent.fs" />
 		<Compile Include="Analysis\PuzzleRunners.fs" />
-		<Compile Include="Analysis\PuzzleExperiments.fs" />
 
 		<!-- Internal utilities (perft, test helpers) -->
 		<Compile Include="Internal\Chess960TestPositions.fs" />

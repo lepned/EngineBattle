@@ -17,10 +17,10 @@ type VerbResult =
 
 
 type CLIArguments =
-    | Help 
+    | Help
     | Games of int
     | Rounds of int
-    | Verb of VerbResult    
+    | Verb of VerbResult
 
 
 let createCombinedScoresTable
@@ -28,7 +28,7 @@ let createCombinedScoresTable
     (policyScores: ChessLibrary.PuzzleTypes.Score list)
     (valueScores: ChessLibrary.PuzzleTypes.Score list)
     (searchScores: ChessLibrary.PuzzleTypes.Score list)=
-    
+
     let sb = StringBuilder()
     sb.AppendLine("\n```\n") |> ignore
     sb.AppendLine(sprintf "Puzzle file name: %s\n" fileName) |> ignore
@@ -37,7 +37,7 @@ let createCombinedScoresTable
     let allScores = policyScores @ valueScores @ searchScores
 
     // Helper to get max of header length vs. data lengths
-    let maxOf (header:string) (lengths :int list) =       
+    let maxOf (header:string) (lengths :int list) =
         let length = if lengths.Length > 0 then (lengths |> List.max) else 0
         max (header.Length) length
 
@@ -78,26 +78,26 @@ let createCombinedScoresTable
           ("Avg rating".PadRight maxAvgRatingWidth)
           ("Theme".PadRight maxThemeWidth)
           ("Nodes".PadRight maxNodesWidth)
-    
+
     let mutable startGroup =
         match policyScores |> List.tryHead with
         | Some s -> s.RatingAvg
         | None -> 0
-            
+
 
     let mutable widestText = ""
-    
+
     // Sum up all column widths and add a buffer for tab spacing
-    let approximateWidth = 
+    let approximateWidth =
         let tabWidth = 6
         let columns = 8
-        maxEngineWidth + maxNeuralNetWidth + maxPerfWidth + maxAccuracyWidth + 
-        maxTotalWidth + maxAvgRatingWidth + maxThemeWidth + maxNodesWidth + 
+        maxEngineWidth + maxNeuralNetWidth + maxPerfWidth + maxAccuracyWidth +
+        maxTotalWidth + maxAvgRatingWidth + maxThemeWidth + maxNodesWidth +
         (columns - 1) * tabWidth
         //20 // Buffer for spacing between columns
-    
-    let separatorLine = String.replicate approximateWidth "-"    
-        
+
+    let separatorLine = String.replicate approximateWidth "-"
+
     // Append policy Tests
     if policyScores.Length > 0 then
         sb.AppendLine("Policy Head Tests\n") |> ignore
@@ -106,7 +106,7 @@ let createCombinedScoresTable
     |> List.iter (fun s ->
         let perf = s.PlayerRecord.Rating.ToString("F0")
         let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
-        let line = 
+        let line =
             sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
                 (s.Engine.PadRight maxEngineWidth)
                 (s.NeuralNet.PadRight maxNeuralNetWidth)
@@ -118,7 +118,7 @@ let createCombinedScoresTable
                 (s.Nodes.ToString().PadRight maxNodesWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
-            startGroup <- s.RatingAvg            
+            startGroup <- s.RatingAvg
             sb.AppendLine(separatorLine) |> ignore
         sb.AppendLine(line) |> ignore)
     sb.AppendLine() |> ignore
@@ -150,11 +150,11 @@ let createCombinedScoresTable
                 (s.Nodes.ToString().PadRight maxNodesWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
-            startGroup <- s.RatingAvg            
+            startGroup <- s.RatingAvg
             sb.AppendLine(separatorLine) |> ignore
         sb.AppendLine(line) |> ignore)
     sb.AppendLine() |> ignore
-    
+
     // Append search Tests
     if searchScores.Length > 0 then
         sb.AppendLine("Search Tests\n") |> ignore
@@ -165,7 +165,7 @@ let createCombinedScoresTable
         match searchScores |> List.tryHead with
         | Some s -> s.RatingAvg
         | None -> 0
-    
+
     // Append each search score row
     searchScores
     |> List.iter (fun s ->

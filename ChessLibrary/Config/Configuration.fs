@@ -740,27 +740,40 @@ module JSONParser =
         else
             failwithf "File not found: %s" filePath
 
+    /// Extracts (prefix option, embedded params option) from an existing Network value.
+    /// Prefix = backend identifier like "ONNX_TRT" (distinguished from drive letter by length > 1).
+    /// Embedded params = everything from the first "|" onward (e.g., "|cudagraphs=true;V1TEMP=0.55").
+    let private extractNetworkParts (existing: string) =
+        let pipeIdx = existing.IndexOf('|')
+        let mainPart, embeddedParams =
+            if pipeIdx >= 0 then existing.Substring(0, pipeIdx), Some (existing.Substring(pipeIdx))
+            else existing, None
+        let colonIdx = mainPart.IndexOf(':')
+        let prefix =
+            if colonIdx > 1 then Some (mainPart.Substring(0, colonIdx))
+            else None
+        prefix, embeddedParams
+
     let private applyNetToConfig (baseConfig: EngineConfig) (net: string) =
         let newOptions = JSON.cloneOptions baseConfig.Options
 
         if newOptions.ContainsKey("WeightsFile") then
             newOptions.["WeightsFile"] <- box net
         elif newOptions.ContainsKey("Network") then
-            match newOptions.["Network"] with
-            | :? JsonElement as jsonElem when jsonElem.ValueKind = JsonValueKind.String ->
-                let prev = jsonElem.GetString()
-                match prev.Split(':') |> Seq.tryHead with
-                | Some prefix ->
-                    let prefixNet = prefix + ":" + net
-                    newOptions.["Network"] <- box prefixNet
-                | _ -> ()
-            | :? string as prev ->
-                match prev.Split(':') |> Seq.tryHead with
-                | Some prefix ->
-                    let prefixNet = prefix + ":" + net
-                    newOptions.["Network"] <- box prefixNet
-                | _ -> ()
-            | _ -> ()
+            let existingStr =
+                match newOptions.["Network"] with
+                | :? JsonElement as je when je.ValueKind = JsonValueKind.String -> je.GetString()
+                | :? string as s -> s
+                | _ -> null
+            if not (isNull existingStr) then
+                let prefix, embeddedParams = extractNetworkParts existingStr
+                let result =
+                    (match prefix with Some p -> p + ":" | None -> "")
+                    + net
+                    + (match embeddedParams with Some e -> e | None -> "")
+                newOptions.["Network"] <- box result
+            else
+                newOptions.["Network"] <- box net
         else
             ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network' option to set net '%s'" baseConfig.Name net)
 
