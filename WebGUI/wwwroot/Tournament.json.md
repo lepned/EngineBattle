@@ -53,6 +53,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **OpeningsPath**: Path to the openings file, either a PGN-file or an EPD-file.
 - **OpeningsPly**: Number of plies for openings.
 - **OpeningsTwice**: Use openings twice.
+- **RandomOpenings**: True to randomize opening order for Round Robin and Gauntlet modes. Cup and Swiss modes have their own RandomOpenings in CupOptions/SwissOptions.
 
 ### Cup Options
 

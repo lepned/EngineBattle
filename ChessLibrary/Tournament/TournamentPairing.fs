@@ -10,6 +10,22 @@ open ChessUtilities
 
 module PairingHelper =
 
+  /// Build a salt that is unique per tournament (output path + sorted engine names)
+  /// and stable on resume (neither changes between restarts).
+  let tournamentSalt (pgnOutPath: string) (engines: EngineConfig list) =
+    let names = engines |> List.map (fun e -> e.Name) |> List.sort |> String.concat ","
+    pgnOutPath + "|" + names
+
+  /// Shuffle openings with a deterministic seed so resume produces the same permutation.
+  /// The salt (e.g. from tournamentSalt) makes the seed unique per tournament, so different
+  /// tournaments using the same opening book get different shuffles.
+  let shuffleOpenings (salt: string) (openings: PGNTypes.PgnGame list) =
+    let arr = openings |> List.toArray
+    let seed = abs (hash (arr.Length, salt))
+    let rng = Random(seed)
+    rng.Shuffle(arr)
+    arr |> Array.toList
+
   type CupSeedingStrategy =
     | Random
     | ByRating

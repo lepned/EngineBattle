@@ -89,7 +89,10 @@ let parallelTournamentRun
               ChessLibrary.FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
           else
               [||]
-      let gamesToPlay = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
+      let gamesToPlay =
+          let openings = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
+          if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
+          else openings
       let challengers = tourny.EngineSetup.Engines |> List.filter(fun e -> e.IsChallenger)
       let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
 

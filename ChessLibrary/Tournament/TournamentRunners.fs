@@ -68,7 +68,10 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
 
-  let roundsToPlay = games |> Seq.truncate tourny.Rounds |> Seq.toList
+  let roundsToPlay =
+    let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
+    if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
+    else openings
   let challengers = tourny.EngineSetup.Engines |> List.take tourny.Challengers
   let opponents = tourny.EngineSetup.Engines |> List.skip tourny.Challengers
   let pairings =
@@ -156,7 +159,10 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
 
-  let gamesToPlay = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
+  let gamesToPlay =
+    let openings = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
+    if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
+    else openings
   let pairings =
     if tourny.Opening.OpeningsTwice then
       PairingHelper.generateAllRoundRobinDoubleRounds tourny.EngineSetup.Engines gamesToPlay

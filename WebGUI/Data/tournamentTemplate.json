@@ -47,7 +47,8 @@
   "Opening": {
     "OpeningsPath": "C:/Dev/Chess/Openings/sufi25.pgn",
     "OpeningsPly": 100,
-    "OpeningsTwice": true
+    "OpeningsTwice": true,
+    "RandomOpenings": false
   },
   "CupOptions": {
     "RoundPairIncrements": [],

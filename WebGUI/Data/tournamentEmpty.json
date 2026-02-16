@@ -47,7 +47,8 @@
   "Opening": {
     "OpeningsPath": "",
     "OpeningsPly": 100,
-    "OpeningsTwice": true    
+    "OpeningsTwice": true,
+    "RandomOpenings": false
   },
   "CupOptions": {
     "RoundPairIncrements": [],

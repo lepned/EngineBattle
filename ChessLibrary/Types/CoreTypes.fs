@@ -481,7 +481,7 @@ module TypesDef =
     type WinOption = { MinWinMove: int; MinWinScore: float; WinMoveLength: int }
     type TableBaseAdjudication = {TablebaseDirectory:string; UseTBAdjudication: bool; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
-    type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int }
+    type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool }
     type CupOptions =
       { RoundPairIncrements: int list
         SeedingStrategy: string
@@ -759,6 +759,8 @@ module TypesDef =
             elif mode.Equals("Cup", StringComparison.OrdinalIgnoreCase) && not (obj.ReferenceEquals(x.CupOptions, null)) then
               parts.Add(sprintf "random=%b" x.CupOptions.RandomOpenings)
               parts.Add(sprintf "unique=%s" (if x.CupOptions.UniquePerMatchOnly then "per match" else "global"))
+            else
+              parts.Add(sprintf "random=%b" x.Opening.RandomOpenings)
             String.Join(" | ", parts)
           let tablebases =
             if x.Adjudication.TBAdj.UseTBAdjudication then
@@ -882,7 +884,7 @@ module TypesDef =
           OrdoExePath = String.Empty
           TimeControl = Unchecked.defaultof<TimeControl>
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
-          Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0 }
+          Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false }
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
           TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1; GPUs = null }

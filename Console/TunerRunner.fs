@@ -613,7 +613,8 @@ module TunerRunner =
       { baseTournament.Opening with
           OpeningsPath = openingPath
           OpeningsPly = cfg.OpeningsPly
-          OpeningsTwice = cfg.OpeningsTwice }
+          OpeningsTwice = cfg.OpeningsTwice
+          RandomOpenings = false }
 
     let hasDeviation = preventDeviationFor <> null && preventDeviationFor.Length > 0
     let testOptions =

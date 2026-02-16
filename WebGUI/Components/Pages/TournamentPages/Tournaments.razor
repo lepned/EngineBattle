@@ -775,8 +775,9 @@
 				return
 					$"Openings, {tournament.Opening.OpeningsPly}ply, {orderText}, {uniqueText}, {tournament.GetOpeningFileName()}";
 			}
+			var orderText2 = tournament.Opening.RandomOpenings ? "random" : "sequential";
 			return
-				$"Openings, {tournament.Opening.OpeningsPly}ply, sequential, {(tournament.Opening.OpeningsTwice ? "twice" : "single")}, {tournament.GetOpeningFileName()}";
+				$"Openings, {tournament.Opening.OpeningsPly}ply, {orderText2}, {(tournament.Opening.OpeningsTwice ? "twice" : "single")}, {tournament.GetOpeningFileName()}";
 		}
 		else
 			return "";
