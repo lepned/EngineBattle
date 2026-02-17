@@ -12,6 +12,7 @@ open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.CupTypes
 open ChessLibrary.SwissTypes
+open ChessLibrary.LadderTypes
 open ChessLibrary.MiscTypes
 open ChessLibrary.TimeControlTypes
 open ChessLibrary.Chess
@@ -1373,5 +1374,362 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
     pgnGameWriterAgent.Post(FullPGNParser.Dispose)
     pgnGameWriterAgent.Dispose()
   swissAgent.Post DisposeSwissState
+  return results
+}
+
+let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
+  let resolveLadderPath () =
+    let configuredPath =
+      if obj.ReferenceEquals(tourny.LadderOptions, null) then "" else tourny.LadderOptions.StatePath
+    let fullPath =
+      if String.IsNullOrWhiteSpace configuredPath then
+        let candidates =
+          [ Path.Combine(Environment.CurrentDirectory, "wwwroot")
+            Path.Combine(Environment.CurrentDirectory, "WebGUI", "wwwroot") ]
+        let folder =
+          candidates |> List.tryFind Directory.Exists
+          |> Option.defaultValue (Path.Combine(Environment.CurrentDirectory, "wwwroot"))
+        Path.Combine(folder, "ladder_state.json")
+      elif Path.IsPathRooted configuredPath then
+        configuredPath
+      else
+        Path.Combine(Environment.CurrentDirectory, configuredPath)
+    let dir = Path.GetDirectoryName(fullPath)
+    if String.IsNullOrWhiteSpace dir |> not then
+      Directory.CreateDirectory(dir) |> ignore
+    fullPath
+
+  let writeLadderState (agent: MailboxProcessor<TournamentTypes.LadderStateMessage>) (state: LadderState) =
+    agent.PostAndReply(fun reply -> TournamentTypes.WriteLadderState(state, reply))
+    callback Update.LadderStateUpdated
+
+  let gamesPerMatch =
+    let pairs = if obj.ReferenceEquals(tourny.LadderOptions, null) then 4 else tourny.LadderOptions.GamePairsPerMatch
+    max 1 pairs * 2
+
+  let mutable gameNr = 0
+  logger.LogInformation("Ladder tournament about to start")
+  let numberOfPlayers = tourny.EngineSetup.Engines.Length
+  if numberOfPlayers < 2 then
+    logger.LogError("Ladder tournaments require at least 2 engines, got {playerCount}", numberOfPlayers)
+    failwith "Ladder tournaments require at least 2 engines."
+
+  let board = Board()
+  board.LoadFen Chess.startPos
+  let mutable results = List.empty<Result>
+
+  let (games, epdBook) = loadOpeningsUnlimited tourny.Opening.OpeningsPath tourny.Rounds
+  let openings = games |> Seq.toList
+  if openings.IsEmpty then
+    logger.LogError("No openings available for Ladder tournament")
+    failwith "No openings available for Ladder tournament."
+  let randomOpenings = if obj.ReferenceEquals(tourny.LadderOptions, null) then false else tourny.LadderOptions.RandomOpenings
+
+  let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
+  let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
+
+  let pgnGameWriterAgent, ownsAgent =
+    match pgnAgent with
+    | Some a -> a, false
+    | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+  let replayList = ResizeArray<GameReplay>()
+  let replayDicts = createReplayDicts tourny.EngineSetup.Engines
+
+  let ladderPath = resolveLadderPath ()
+  let ladderAgent = TournamentState.startLadderStateReaderWriter ladderPath
+  let mutable openingIndex = 0
+  let mutable matchId = 1
+
+  let ensureGlobalOpeningOrder (state: LadderState) =
+    if obj.ReferenceEquals(state.GlobalOpeningOrder, null) then
+      state.GlobalOpeningOrder <- ResizeArray<int>()
+
+  let mutable state : LadderState =
+    match ladderAgent.PostAndReply(fun reply -> TournamentTypes.ReadLadderState reply) with
+    | Some loaded ->
+        ensureGlobalOpeningOrder loaded
+        openingIndex <- loaded.NextOpeningIndex
+        matchId <- (loaded.Matches |> Seq.map (fun m -> m.MatchId) |> Seq.append [0] |> Seq.max) + 1
+        loaded
+    | None ->
+        let sorted =
+          tourny.EngineSetup.Engines
+          |> List.sortByDescending (fun e -> e.Rating)
+          |> List.map (fun e -> e.Name)
+        { TournamentName = tourny.Name
+          GamePairsPerMatch = gamesPerMatch
+          InitialRankings = ResizeArray<string>(sorted)
+          SurvivingEngines = ResizeArray<string>(sorted)
+          EliminatedEngines = ResizeArray<string>()
+          CurrentClimbNumber = 1
+          CurrentClimberIndex = sorted.Length - 1
+          Matches = ResizeArray<LadderMatch>()
+          NextOpeningIndex = openingIndex
+          GlobalOpeningOrder = ResizeArray<int>()
+          UpdatedUtc = DateTime.UtcNow }
+
+  let totalMatches = numberOfPlayers - 1
+  tourny.TotalGames <- totalMatches * gamesPerMatch
+  callback (Update.TotalNumberOfPairs tourny.TotalGames)
+  callback (Update.PairingList (ResizeArray<Pairing>()))
+  let (tTime, gTime) = estimateTournamentAndGameTime tourny.TotalGames tourny []
+  let startInfo = { NumberOfGames = tourny.TotalGames; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny }
+  callback (Update.StartOfTournament startInfo)
+
+  // Initialize global opening order for random openings
+  if randomOpenings && openings.Length > 1 then
+    if state.GlobalOpeningOrder.Count = 0 || state.GlobalOpeningOrder.Count < openings.Length then
+      let order = [0 .. openings.Length - 1]
+      let shuffled = order |> List.toArray
+      Random.Shuffle(shuffled)
+      state.GlobalOpeningOrder <- ResizeArray<int>(shuffled)
+      writeLadderState ladderAgent state
+
+  let globalOpenings =
+    if state.GlobalOpeningOrder.Count > 0 then
+      state.GlobalOpeningOrder
+      |> Seq.map (fun idx -> openings.[idx % openings.Length])
+      |> Seq.toList
+    else
+      openings
+
+  let getNextOpening () =
+    if openingIndex >= globalOpenings.Length then
+      openingIndex <- 0
+    let opening = globalOpenings.[openingIndex]
+    openingIndex <- openingIndex + 1
+    state.NextOpeningIndex <- openingIndex
+    opening
+
+  let searchReplayList (pairing : Pairing) =
+    searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
+
+  let sb = StringBuilder()
+  let stateGamesPlayed =
+    state.Matches
+    |> Seq.collect (fun m -> m.Games)
+    |> Seq.length
+  let gamesPlayedCount = if stateGamesPlayed > 0 then stateGamesPlayed else gamesAlreadyPlayed.Length
+  tourny.CurrentGameNr <- gamesPlayedCount
+
+  let findEngine (name: string) =
+    tourny.EngineSetup.Engines |> List.find (fun e -> e.Name = name)
+
+  let playPairing (pair: Pairing) = async {
+    if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
+      searchReplayList pair
+    tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
+    if cts.IsCancellationRequested then
+      sb.Clear() |> ignore
+      return Result.Empty
+    else
+      let openingsAlreadyPlayed = countOpeningsAlreadyPlayed gamesAlreadyPlayed pair.OpeningHash
+      let roundTxt = computeRoundTextFromPairing pair openingsAlreadyPlayed 0
+      let result = executeGameWithSetup logger tourny board pair epdBook sb cts replayDicts replayList pgnGameWriterAgent tryGetUserAdjudication callback roundTxt
+      results <- result :: results
+      board.ResetBoardState()
+      gameNr <- gameNr + 1
+      if gameNr % 2 = 0 then
+        let res = ResizeArray<Result>(results)
+        callback (Update.PeriodicResults res)
+      return result
+  }
+
+  let printLadderStandings (climbInfo: string) =
+    printfn ""
+    printfn "%s" climbInfo
+    printfn "Current Ladder:"
+    for i in 0 .. state.SurvivingEngines.Count - 1 do
+      let name = state.SurvivingEngines.[i]
+      let eng = findEngine name
+      let marker =
+        if i = state.CurrentClimberIndex && state.SurvivingEngines.Count > 1 then " <- climbing"
+        else ""
+      printfn "  %d. %s (Rating: %d)%s" (i + 1) name eng.Rating marker
+    if state.EliminatedEngines.Count > 0 then
+      printfn "Eliminated: %s" (state.EliminatedEngines |> Seq.rev |> String.concat ", ")
+    printfn ""
+
+  let playMiniMatch (matchInfo: LadderMatch) (challengerConfig: EngineConfig) (defenderConfig: EngineConfig) (startingGamesRemaining: int) = async {
+    let mutable gamesRemaining = startingGamesRemaining
+    while not matchInfo.IsDecided && gamesRemaining > 0 && not cts.IsCancellationRequested do
+      let hasOddGame = matchInfo.Games.Count % 2 = 1
+      let opening =
+        if hasOddGame then
+          let lastGame = matchInfo.Games.[matchInfo.Games.Count - 1]
+          match globalOpenings |> List.tryFind (fun o -> Hash.computeOpeningHashFromGame o = lastGame.OpeningHash) with
+          | Some op -> op
+          | None -> getNextOpening ()
+        else
+          getNextOpening ()
+      let openingHash = Hash.computeOpeningHashFromGame opening
+      let playOrder =
+        if hasOddGame then
+          let lastGame = matchInfo.Games.[matchInfo.Games.Count - 1]
+          if lastGame.White = challengerConfig.Name then
+            [ (defenderConfig, challengerConfig) ]
+          else
+            [ (challengerConfig, defenderConfig) ]
+        else
+          [ (challengerConfig, defenderConfig); (defenderConfig, challengerConfig) ]
+      for (white, black) in playOrder do
+        if matchInfo.IsDecided || gamesRemaining = 0 || cts.IsCancellationRequested then
+          ()
+        else
+          let pairing =
+            { Opening = opening
+              White = white
+              Black = black
+              GameNr = 0
+              RoundNr = $"L{state.CurrentClimbNumber}.{matchInfo.Games.Count + 1}"
+              OpeningHash = openingHash }
+          let! result = playPairing pairing
+          if result.Reason <> ResultReason.Cancel then
+            let game : LadderGame =
+              { GameNr = gameNr
+                White = white.Name
+                Black = black.Name
+                OpeningId = opening.GameNumber.ToString()
+                OpeningHash = openingHash
+                Result = result.Result }
+            matchInfo.Games.Add game
+            let scoreWhite =
+              match result.Result with
+              | "1-0" -> 1.0 | "0-1" -> 0.0 | "1/2-1/2" -> 0.5 | _ -> 0.0
+            let scoreBlack =
+              match result.Result with
+              | "1-0" -> 0.0 | "0-1" -> 1.0 | "1/2-1/2" -> 0.5 | _ -> 0.0
+            if white.Name = matchInfo.Challenger then
+              matchInfo.ScoreChallenger <- matchInfo.ScoreChallenger + scoreWhite
+              matchInfo.ScoreDefender <- matchInfo.ScoreDefender + scoreBlack
+            else
+              matchInfo.ScoreChallenger <- matchInfo.ScoreChallenger + scoreBlack
+              matchInfo.ScoreDefender <- matchInfo.ScoreDefender + scoreWhite
+            gamesRemaining <- gamesRemaining - 1
+            // Early termination check
+            if matchInfo.ScoreChallenger > matchInfo.ScoreDefender + float gamesRemaining then
+              matchInfo.IsDecided <- true
+              matchInfo.Winner <- Some matchInfo.Challenger
+            elif matchInfo.ScoreDefender > matchInfo.ScoreChallenger + float gamesRemaining then
+              matchInfo.IsDecided <- true
+              matchInfo.Winner <- Some matchInfo.Defender
+            elif gamesRemaining = 0 then
+              matchInfo.IsDecided <- true
+              if matchInfo.ScoreChallenger > matchInfo.ScoreDefender then
+                matchInfo.Winner <- Some matchInfo.Challenger
+              else
+                // Tie or defender wins: defender survives
+                matchInfo.Winner <- Some matchInfo.Defender
+            writeLadderState ladderAgent state
+            // Delay between individual games within a match
+            if gamesRemaining > 0 && not matchInfo.IsDecided && not cts.IsCancellationRequested then
+              do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+  }
+
+  let processMatchResult (matchInfo: LadderMatch) =
+    if matchInfo.IsDecided then
+      let winnerName = matchInfo.Winner |> Option.defaultValue matchInfo.Defender
+      let loserName = if winnerName = matchInfo.Challenger then matchInfo.Defender else matchInfo.Challenger
+      state.EliminatedEngines.Add loserName
+      state.SurvivingEngines.Remove loserName |> ignore
+      let climbInfo = sprintf "=== Ladder Match %d (Climb %d) === [Challenger] %s vs [Defender] %s: %s wins %.1f-%.1f. %s eliminated."
+                        matchInfo.MatchId state.CurrentClimbNumber matchInfo.Challenger matchInfo.Defender winnerName matchInfo.ScoreChallenger matchInfo.ScoreDefender loserName
+      if winnerName = matchInfo.Challenger then
+        // Challenger continues climbing — index shifts because defender was removed
+        let idx = state.SurvivingEngines.IndexOf(winnerName)
+        if idx < 0 then
+          logger.LogWarning("Ladder: winner {Winner} not found in SurvivingEngines — restarting climb", winnerName)
+          state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
+          state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
+        elif idx = 0 then
+          // Climber beat the #1 engine — start new climb from bottom
+          state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
+          state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
+        else
+          state.CurrentClimberIndex <- idx
+      else
+        // Challenger eliminated, start new climb from bottom
+        state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
+        state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
+      writeLadderState ladderAgent state
+      printLadderStandings climbInfo
+      let res = ResizeArray<Result>(results)
+      callback (Update.PeriodicResults res)
+
+  // Resume: skip already-decided matches
+  // Find the current match to resume or start fresh
+  let currentUndecidedMatch =
+    state.Matches |> Seq.tryFind (fun m -> not m.IsDecided)
+
+  // Resume an undecided match if there is one
+  match currentUndecidedMatch with
+  | Some matchInfo ->
+      let challengerConfig = findEngine matchInfo.Challenger
+      let defenderConfig = findEngine matchInfo.Defender
+      let remaining = max 0 (gamesPerMatch - matchInfo.Games.Count)
+      do! playMiniMatch matchInfo challengerConfig defenderConfig remaining
+      processMatchResult matchInfo
+  | None -> ()
+
+  // Main ladder loop
+  while state.SurvivingEngines.Count > 1 && not cts.IsCancellationRequested do
+    let climberIdx = state.CurrentClimberIndex
+    let defenderIdx = climberIdx - 1
+    if defenderIdx < 0 then
+      // Climber is at the top — shouldn't happen, but handle gracefully
+      state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
+      state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
+      writeLadderState ladderAgent state
+    else
+      let challengerName = state.SurvivingEngines.[climberIdx]
+      let defenderName = state.SurvivingEngines.[defenderIdx]
+      let challengerConfig = findEngine challengerName
+      let defenderConfig = findEngine defenderName
+
+      let matchInfo : LadderMatch =
+        { MatchId = matchId
+          ClimbNumber = state.CurrentClimbNumber
+          Challenger = challengerName
+          Defender = defenderName
+          ChallengerRating = challengerConfig.Rating
+          DefenderRating = defenderConfig.Rating
+          ScoreChallenger = 0.0
+          ScoreDefender = 0.0
+          Winner = None
+          IsDecided = false
+          Games = ResizeArray<LadderGame>() }
+      matchId <- matchId + 1
+      state.Matches.Add matchInfo
+      writeLadderState ladderAgent state
+
+      printfn ""
+      printfn "=== Ladder Match %d (Climb %d) ===" matchInfo.MatchId state.CurrentClimbNumber
+      printfn "[Challenger] %s (%d) vs [Defender] %s (%d)" challengerName challengerConfig.Rating defenderName defenderConfig.Rating
+
+      do! playMiniMatch matchInfo challengerConfig defenderConfig gamesPerMatch
+      if not cts.IsCancellationRequested then
+        processMatchResult matchInfo
+
+  // Final standings
+  if state.SurvivingEngines.Count = 1 then
+    let champion = state.SurvivingEngines.[0]
+    printfn ""
+    printfn "========================================="
+    printfn "  LADDER CHAMPION: %s" champion
+    printfn "========================================="
+    printfn "Final standings:"
+    printfn "  1. %s (Champion)" champion
+    let mutable rank = 2
+    for name in state.EliminatedEngines |> Seq.rev do
+      printfn "  %d. %s (Eliminated)" rank name
+      rank <- rank + 1
+    printfn ""
+
+  let res = ResizeArray<Result>(results)
+  callback (Update.PeriodicResults res)
+  if ownsAgent then
+    pgnGameWriterAgent.Post(FullPGNParser.Dispose)
+    pgnGameWriterAgent.Dispose()
+  ladderAgent.Post TournamentTypes.DisposeLadderState
   return results
 }

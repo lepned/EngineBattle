@@ -99,13 +99,20 @@
 									WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 									ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 				}
+				else if (IsLadderMode)
+				{
+					<LadderCyclingView FontSize=@layoutOptions.Fonts.StandingsFont Height=@height
+									   CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
+									   WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
+									   ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
+				}
 				else
 				{
 					<Standings FontSize=@layoutOptions.Fonts.StandingsFont ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
 							   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
 				}
 			</div>
-			@if (!layoutOptions.OnlyShowStandings && !IsCupMode)
+			@if (!layoutOptions.OnlyShowStandings && !IsCupMode && !IsLadderMode)
 			{
 				<CrossTableSummary FontSize=@layoutOptions.Fonts.CrossTableFont CrossTable="table" Players="@tournament.EngineSetup.Engines.Count()" />
 			}
@@ -125,6 +132,15 @@
 										ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 					</div>
 				}
+				else if (IsLadderMode)
+				{
+					<div class="standingTable">
+						<LadderCyclingView FontSize=@layoutOptions.Fonts.StandingsFont Height=@height
+										   CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
+										   WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
+										   ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
+					</div>
+				}
 				else
 				{
 					<div class="standingTable">
@@ -142,6 +158,13 @@
 										CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 										WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 										ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
+					}
+					else if (IsLadderMode)
+					{
+						<LadderCyclingView FontSize=@layoutOptions.Fonts.StandingsFont Height=@height
+										   CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
+										   WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
+										   ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 					}
 					else
 					{
@@ -756,6 +779,8 @@
 				GetCupSummary() :
 				IsSwissMode ?
 				GetSwissSummary() :
+				IsLadderMode ?
+				$"Ladder, {tournament.EngineSetup.Engines.Count()} engines, {tournament.LadderOptions.GamePairsPerMatch} game pairs per match" :
 				IsGauntletMode ?
 				$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
 				$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
@@ -763,6 +788,7 @@
 	bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);
 	bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", StringComparison.OrdinalIgnoreCase);
 	bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swiss", StringComparison.OrdinalIgnoreCase);
+	bool IsLadderMode => tournament != null && tournament.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase);
 
 	string GetOpening()
 	{
@@ -1491,9 +1517,12 @@
 					activeGameNr = start.Game.CurrentGameNr;
 
 					TimeSpan duration = TimeSpan.Zero;
-					var roundNumber = !string.IsNullOrEmpty(roundNr) && roundNr.Contains('.')
-															? int.Parse(roundNr.Split('.')[0])
-															: 1;
+					var roundNumber = 1;
+					if (!string.IsNullOrEmpty(roundNr) && roundNr.Contains('.'))
+					{
+						if (!int.TryParse(roundNr.Split('.')[0], out roundNumber))
+							roundNumber = 1;
+					}
 
 					var gamesLeft = runner.GetAllPairings().Count;
 					tournament.CurrentGameNr = totalNumberOfPairs - gamesLeft + 1;
@@ -1701,6 +1730,12 @@
 						pendingSwissDialog = false;
 						await InvokeAsync(() => OpenSwissDialog(false));
 					}
+				}
+				break;
+			case var ladderUpdate when ladderUpdate.IsLadderStateUpdated:
+				if (IsLadderMode)
+				{
+					await Notifier.NotifyLadderUpdated();
 				}
 				break;
 			case TournamentTypes.Update.PonderStatus ponderStatus:

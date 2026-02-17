@@ -1,0 +1,106 @@
+@using WebGUI.Components.Layout.TournamentLayout
+@using static ChessLibrary.TypesDef.CoreTypes
+@implements IAsyncDisposable
+
+@* Cycling view for Ladder mode - alternates between ladder progress and standings table *@
+
+@if (showLadder)
+{
+	<LadderProgressTable FontSize="@FontSize" Height="@Height"
+						 CycleSeconds="@CycleSeconds" ShouldCycle="false"
+						 WhitePlayer="@WhitePlayer" BlackPlayer="@BlackPlayer" />
+}
+else
+{
+	<Standings FontSize="@FontSize" ScoreTable="@ScoreTable" ShowNPM="@ShowNPM"
+			   Height="@Height" CycleSeconds="@CycleSeconds" ShouldCycle="false" />
+}
+
+@code {
+	#nullable enable
+
+	[Parameter]
+	public int FontSize { get; set; }
+
+	[Parameter]
+	public int Height { get; set; }
+
+	[Parameter]
+	public int CycleSeconds { get; set; } = 20;
+
+	[Parameter]
+	public bool ShouldCycle { get; set; } = true;
+
+	[Parameter]
+	public string WhitePlayer { get; set; } = "";
+
+	[Parameter]
+	public string BlackPlayer { get; set; } = "";
+
+	[Parameter]
+	public List<PlayerResult> ScoreTable { get; set; } = new();
+
+	[Parameter]
+	public bool ShowNPM { get; set; }
+
+	private bool showLadder = true;
+	private System.Threading.Timer? cycleTimer;
+	private int lastCycleSeconds = 0;
+	private bool lastShouldCycle = false;
+	private bool isInitialized = false;
+
+	protected override void OnAfterRender(bool firstRender)
+	{
+		if (firstRender)
+		{
+			isInitialized = true;
+			lastShouldCycle = ShouldCycle;
+			lastCycleSeconds = CycleSeconds;
+			if (ShouldCycle && CycleSeconds > 0)
+			{
+				StartCycling();
+			}
+		}
+	}
+
+	protected override void OnParametersSet()
+	{
+		// Only restart timer if cycling settings changed
+		if (isInitialized && (ShouldCycle != lastShouldCycle || CycleSeconds != lastCycleSeconds))
+		{
+			if (ShouldCycle && CycleSeconds > 0)
+			{
+				StartCycling();
+			}
+			else
+			{
+				StopCycling();
+			}
+			lastShouldCycle = ShouldCycle;
+			lastCycleSeconds = CycleSeconds;
+		}
+	}
+
+	private void StartCycling()
+	{
+		StopCycling();
+
+		cycleTimer = new System.Threading.Timer(_ =>
+		{
+			showLadder = !showLadder;
+			InvokeAsync(StateHasChanged);
+		}, null, TimeSpan.FromSeconds(CycleSeconds), TimeSpan.FromSeconds(CycleSeconds));
+	}
+
+	private void StopCycling()
+	{
+		cycleTimer?.Dispose();
+		cycleTimer = null;
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		StopCycling();
+		await ValueTask.CompletedTask;
+	}
+}

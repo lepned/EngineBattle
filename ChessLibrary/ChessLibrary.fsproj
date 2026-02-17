@@ -19,6 +19,7 @@
 		<Compile Include="Types\EPDTypes.fs" />
 		<Compile Include="Types\CupTypes.fs" />
 		<Compile Include="Types\SwissTypes.fs" />
+		<Compile Include="Types\LadderTypes.fs" />
 		<Compile Include="Types\TimeControlTypes.fs" />
 		<Compile Include="Types\MiscTypes.fs" />
 		<Compile Include="Types\PGNTypes.fs" />

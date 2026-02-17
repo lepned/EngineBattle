@@ -482,3 +482,82 @@ let ``InlineTokensFromGraph handles late variation comment game`` () =
     let lastMove = board.MovesAndFenPlayed |> Seq.last
     Assert.Equal("fxg5", lastMove.ShortSan)
     Assert.Equal("fxg5", lastText)
+
+// ============================================================================
+// En Passant FEN Tests — r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1
+// White pawn on e5 can capture en passant on d6 when EP square is set
+// ============================================================================
+
+[<Fact>]
+let ``FEN round-trip with en passant d6 should preserve EP square`` () =
+    let fen = "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - d6 0 1"
+    let board = Board()
+    board.LoadFen(fen)
+    Assert.Equal(fen, board.FEN())
+
+[<Fact>]
+let ``FEN round-trip without en passant should preserve dash`` () =
+    let fen = "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - - 0 1"
+    let board = Board()
+    board.LoadFen(fen)
+    Assert.Equal(fen, board.FEN())
+
+[<Fact>]
+let ``En passant capture exd6 should be legal when EP square is d6`` () =
+    let fen = "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - d6 0 1"
+    let board = Board()
+    board.LoadFen(fen)
+    let moves = board.GenerateMoves()
+    let pos = board.Position
+    let mutable foundEP = false
+    for i in 0 .. moves.Length - 1 do
+      let mutable m = moves.[i]
+      if not (RuntimeUtilities.BoardHelper.Illegal &m &pos) then
+        if int m.From = 36 && int m.To = 43 then // e5=36, d6=43
+          foundEP <- true
+    Assert.True(foundEP, "En passant capture e5xd6 should be a legal move")
+
+[<Fact>]
+let ``No en passant capture when EP square is not set`` () =
+    let fen = "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - - 0 1"
+    let board = Board()
+    board.LoadFen(fen)
+    let moves = board.GenerateMoves()
+    let pos = board.Position
+    let mutable foundEP = false
+    for i in 0 .. moves.Length - 1 do
+      let mutable m = moves.[i]
+      if not (RuntimeUtilities.BoardHelper.Illegal &m &pos) then
+        if (int m.MoveType &&& int MoveTypes.TPieceType.EP) <> 0 then
+          foundEP <- true
+    Assert.False(foundEP, "No en passant capture should exist without EP square")
+
+[<Fact>]
+let ``Perft depth 1 with en passant d6 should have one more move than without`` () =
+    let countLegalMoves fen =
+      let board = Board()
+      board.LoadFen(fen)
+      let moves = board.GenerateMoves()
+      let pos = board.Position
+      let mutable count = 0
+      for i in 0 .. moves.Length - 1 do
+        let mutable m = moves.[i]
+        if not (RuntimeUtilities.BoardHelper.Illegal &m &pos) then
+          count <- count + 1
+      count
+    let movesWithEP = countLegalMoves "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - d6 0 1"
+    let movesNoEP = countLegalMoves "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - - 0 1"
+    Assert.Equal(movesNoEP + 1, movesWithEP)
+
+[<Fact>]
+let ``En passant capture exd6 should remove the d5 pawn`` () =
+    let fen = "r1bqr3/2p1bp1k/1np4p/p2pP3/2PNNP2/3P4/PP4PP/R2Q1RK1 w - d6 0 1"
+    let board = Board()
+    board.LoadFen(fen)
+    board.PlayUciMove "e5d6"
+    let newFen = board.FEN()
+    // After exd6 e.p.: pawn moves from e5 to d6, d5 pawn is captured
+    // Rank 5 was "p2pP3" (a5,d5,e5), now should be "p7" (only a5 pawn — d5 captured, e5 vacated)
+    Assert.Contains("/p7/", newFen)
+    // Rank 6 was "1np4p" (b6=n,c6=p,h6=p), now should have white P on d6: "1npP3p"
+    Assert.Contains("/1npP3p/", newFen)

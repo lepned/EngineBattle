@@ -496,6 +496,10 @@ module TypesDef =
         RandomOpenings: bool
         AllowExtraPairsOnTie: bool
         StatePath: string }
+    type LadderOptions =
+      { GamePairsPerMatch: int
+        RandomOpenings: bool
+        StatePath: string }
     type EngineSetup =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
@@ -533,6 +537,7 @@ module TypesDef =
         Opening: Opening
         CupOptions: CupOptions
         SwissOptions: SwissOptions
+        LadderOptions: LadderOptions
         PgnOutPath: string
         ReferencePGNPath: string
         EngineSetup: EngineSetup
@@ -545,6 +550,8 @@ module TypesDef =
         member x.Hardware() = sprintf "%s : %s : %s" x.CPU x.RAM x.GPU
         member x.IsGauntlet =
           x.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
+        member x.IsLadder =
+          x.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase)
         member x.Players() =
           match x.EngineSetup.Engines with
           | [] -> "No players"
@@ -887,6 +894,7 @@ module TypesDef =
           Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false }
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
+          LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }
           TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1; GPUs = null }
           Adjudication =
             {

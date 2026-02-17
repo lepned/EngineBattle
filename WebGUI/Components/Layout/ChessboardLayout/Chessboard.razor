@@ -489,6 +489,10 @@
 				fenWithMoves = fenWithMoves.TrimStart().TrimEnd();
 				ChessBoard.PlayFenWithMoves(fenWithMoves);
 				fen = ChessBoard.FEN();
+				firstNNMoves.Clear();
+				secondNNMoves.Clear();
+				if (chessJSmodule is not null)
+					await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
 				await SetPosition(fen, false);
 				await OnNewFENOnBoard.InvokeAsync(fen);
 				UpdateVariationsDisplay();

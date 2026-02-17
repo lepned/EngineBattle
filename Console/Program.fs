@@ -773,6 +773,8 @@ module Program =
                                 ConsoleOnly = true
                                 DelayBetweenGames = TimeOnly.MinValue
                             }
+                        if tournament.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase) then
+                          printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)
                         printfn "Running tournament with config file: %s" configFile
                         use host = createHost()
                         host.Start()    

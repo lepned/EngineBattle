@@ -1541,8 +1541,9 @@ type Board() =
       this.ResetBoardState()
       let (fen, moves) = FEN.parseFENandMoves fenMoves
       this.LoadFen fen
-      this.CurrentFEN <- fen
-      this.StartPosition <- fen
+      let normalizedFen = this.FEN()
+      this.CurrentFEN <- normalizedFen
+      this.StartPosition <- normalizedFen
       for m in moves do
         this.PlayUciMove m
 

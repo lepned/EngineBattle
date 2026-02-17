@@ -95,9 +95,11 @@ module Manager =
                   let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
                   let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
                   { baseOptions with Rounds = rounds }
+                let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }
+                let ladderOptions = if obj.ReferenceEquals(tourny.LadderOptions, null) then ladderDefaults else tourny.LadderOptions
                 // Challengers is only used for Gauntlet mode; reset to 0 for other modes
                 let challengers = if isGauntlet then tourny.Challengers else 0
-                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode; Challengers = challengers }
+                let updatedTourny = {tourny with EngineSetup = engineSetup; CupOptions = cupOptions; SwissOptions = swissOptions; LadderOptions = ladderOptions; TournamentMode = tournamentMode; Challengers = challengers }
                 Validation.validateTournamentInput updatedTourny
                 updatedTourny
               else 
@@ -114,10 +116,12 @@ module Manager =
                   let baseOptions = if obj.ReferenceEquals(tourny.SwissOptions, null) then swissDefaults else tourny.SwissOptions
                   let rounds = if baseOptions.Rounds > 0 then baseOptions.Rounds else tourny.Rounds
                   { baseOptions with Rounds = rounds }
+                let ladderDefaults = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }
+                let ladderOptions = if obj.ReferenceEquals(tourny.LadderOptions, null) then ladderDefaults else tourny.LadderOptions
                 // Challengers is only used for Gauntlet mode; reset to 0 for other modes
                 let isGauntlet = tournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
                 let challengers = if isGauntlet then tourny.Challengers else 0
-                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; TournamentMode = tournamentMode; Challengers = challengers }
+                { tourny with CupOptions = cupOptions; SwissOptions = swissOptions; LadderOptions = ladderOptions; TournamentMode = tournamentMode; Challengers = challengers }
 
             let openingPath = 
               match tourny.Opening.OpeningsPath with
@@ -170,6 +174,8 @@ module Manager =
               TournamentRunners.cup seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "swiss" ->
               TournamentRunners.swiss logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
+          | "ladder" ->
+              TournamentRunners.ladder logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "rr" | "roundrobin" | "round-robin" | _ ->
               TournamentRunners.roundRobin logger tournament sendResponse cts tryGetUserAdjudication pgnAgent            
       

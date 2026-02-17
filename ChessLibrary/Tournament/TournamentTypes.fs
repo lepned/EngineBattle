@@ -8,6 +8,7 @@ open ChessLibrary.EngineTypes
 open ChessLibrary.MiscTypes
 open ChessLibrary.CupTypes
 open ChessLibrary.SwissTypes
+open ChessLibrary.LadderTypes
 
 /// Update messages sent during tournament execution for UI callbacks
 type Update =
@@ -30,6 +31,7 @@ type Update =
     | PeriodicResults of results: ResizeArray<Result>
     | CupBracketUpdated
     | SwissStateUpdated
+    | LadderStateUpdated
     | GameSummary of summary: string
 
 /// Messages for the cup bracket state MailboxProcessor
@@ -43,6 +45,12 @@ type SwissStateMessage =
     | WriteSwissState of State: SwissState * Reply: AsyncReplyChannel<unit>
     | ReadSwissState of Reply: AsyncReplyChannel<SwissState option>
     | DisposeSwissState
+
+/// Messages for the Ladder state MailboxProcessor
+type LadderStateMessage =
+    | WriteLadderState of State: LadderState * Reply: AsyncReplyChannel<unit>
+    | ReadLadderState of Reply: AsyncReplyChannel<LadderState option>
+    | DisposeLadderState
 
 /// User adjudication request for a specific game
 type UserAdjudication =

@@ -444,12 +444,15 @@ module Validation =
           || normalized = "gauntlet"
           || normalized = "cup"
           || normalized = "swiss"
+          || normalized = "ladder"
       if not isKnown then
-          Errors ["TournamentMode must be one of: RR, Gauntlet, Cup, Swiss."]
+          Errors ["TournamentMode must be one of: RR, Gauntlet, Cup, Swiss, Ladder."]
       elif normalized = "cup" && obj.ReferenceEquals(tourny.CupOptions, null) then
           Errors ["CupOptions must be set when TournamentMode is Cup."]
       elif normalized = "swiss" && obj.ReferenceEquals(tourny.SwissOptions, null) then
           Errors ["SwissOptions must be set when TournamentMode is Swiss."]
+      elif normalized = "ladder" && obj.ReferenceEquals(tourny.LadderOptions, null) then
+          Errors ["LadderOptions must be set when TournamentMode is Ladder."]
       else
           Ok
 

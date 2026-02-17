@@ -1,0 +1,427 @@
+@using System.Text.Json
+@using WebGUI.Services
+@using System.Timers
+@implements IDisposable
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject ILogger<LadderProgressTable> Logger
+@inject IWebHostEnvironment Environment
+@inject NotifierService Notifier
+
+<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
+    <div class="header">
+        <span class="header-text">Ladder Progress</span>
+    </div>
+    <div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "20vh"); overflow-y: auto;" id="ladderProgressDiv">
+        <table class="custom-table">
+            <thead>
+                <tr class="header-row">
+                    <th class="header-cell">Rank</th>
+                    <th class="header-cell">Engine</th>
+                    <th class="header-cell center">Rating</th>
+                    <th class="header-cell">Status</th>
+                    <th class="header-cell center">Climb</th>
+                    <th class="header-cell center">Match</th>
+                    <th class="header-cell center">Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in progressEntries)
+                {
+                    <tr class="data-row @(IsActivePlayer(entry.Player) ? "challenger" : "")">
+                        <td class="data-cell">@entry.Rank</td>
+                        <td class="data-cell">@entry.Player</td>
+                        <td class="data-cell center">@FormatRating(entry.Rating)</td>
+                        <td class="data-cell">@entry.Status</td>
+                        <td class="data-cell center">@entry.ClimbInfo</td>
+                        <td class="data-cell center">@entry.MatchScore</td>
+                        <td class="data-cell center">@entry.TotalScore.ToString("0.0")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int FontSize { get; set; }
+    [Parameter] public int Height { get; set; }
+    [Parameter] public int CycleSeconds { get; set; } = 20;
+    [Parameter] public bool ShouldCycle { get; set; }
+    [Parameter] public string StateFileName { get; set; } = "ladder_state.json";
+    [Parameter] public string WhitePlayer { get; set; } = "";
+    [Parameter] public string BlackPlayer { get; set; } = "";
+
+    private List<LadderProgressEntry> progressEntries = new();
+    private Timer cycleTimer;
+    private int activeTableIndex = 0;
+    private int cycleSeconds = 20;
+    private bool isSubscribed;
+    private IJSObjectReference chessJSmodule;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadProgress();
+        if (ShouldCycle && CycleSeconds > 0 && CycleSeconds != cycleSeconds)
+        {
+            cycleSeconds = CycleSeconds;
+            Dispose();
+            StartCycleTimer();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+            SubscribeToUpdates();
+            if (ShouldCycle && CycleSeconds > 0)
+            {
+                StartCycleTimer();
+            }
+        }
+    }
+
+    private void SubscribeToUpdates()
+    {
+        if (isSubscribed)
+            return;
+
+        Notifier.LadderUpdated += OnLadderUpdated;
+        isSubscribed = true;
+    }
+
+    private async Task OnLadderUpdated()
+    {
+        await LoadProgress();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void StartCycleTimer()
+    {
+        cycleTimer = new Timer(CycleSeconds * 1000);
+        cycleTimer.Elapsed += async (sender, args) =>
+        {
+            activeTableIndex = (activeTableIndex + 1) % 2;
+            await InvokeAsync(DoScroll);
+        };
+        cycleTimer.Start();
+    }
+
+    private async Task LoadProgress()
+    {
+        var statePath = Path.Combine(Environment.ContentRootPath, "wwwroot", StateFileName);
+        if (!File.Exists(statePath))
+        {
+            progressEntries = new List<LadderProgressEntry>();
+            return;
+        }
+
+        try
+        {
+            var json = NormalizeBracketJson(await ReadFileWithRetry(statePath));
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
+            var ladderState = JsonSerializer.Deserialize<LadderStateModel>(json, options);
+            progressEntries = BuildProgress(ladderState);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to read ladder state: {ex.Message}");
+            progressEntries = new List<LadderProgressEntry>();
+        }
+    }
+
+    private static async Task<string> ReadFileWithRetry(string path)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await ReadAllTextWithSharing(path);
+            }
+            catch (IOException) when (attempt < maxAttempts)
+            {
+                await Task.Delay(75);
+            }
+        }
+
+        return await ReadAllTextWithSharing(path);
+    }
+
+    private static async Task<string> ReadAllTextWithSharing(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private static string NormalizeBracketJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return json;
+
+        var trimmed = json.TrimStart();
+        if (trimmed.StartsWith("\"", StringComparison.Ordinal) && json.TrimEnd().EndsWith("}", StringComparison.Ordinal))
+            return "{" + json;
+
+        return json;
+    }
+
+    private List<LadderProgressEntry> BuildProgress(LadderStateModel state)
+    {
+        if (state is null)
+            return new List<LadderProgressEntry>();
+
+        var engineScores = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var engineRatings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var engineLastMatch = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var engineElimClimb = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var eliminationOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        // Build rating lookup from initial rankings + matches
+        if (state.Matches != null)
+        {
+            foreach (var m in state.Matches)
+            {
+                if (!engineRatings.ContainsKey(m.Challenger))
+                    engineRatings[m.Challenger] = m.ChallengerRating;
+                if (!engineRatings.ContainsKey(m.Defender))
+                    engineRatings[m.Defender] = m.DefenderRating;
+            }
+        }
+
+        // Compute total scores from all matches
+        if (state.Matches != null)
+        {
+            foreach (var m in state.Matches)
+            {
+                // Compute per-engine scores from games
+                double challengerScore = 0, defenderScore = 0;
+                if (m.Games != null)
+                {
+                    foreach (var g in m.Games)
+                    {
+                        var scoreWhite = g.Result switch { "1-0" => 1.0, "1/2-1/2" => 0.5, _ => 0.0 };
+                        var scoreBlack = g.Result switch { "0-1" => 1.0, "1/2-1/2" => 0.5, _ => 0.0 };
+                        if (g.White.Equals(m.Challenger, StringComparison.OrdinalIgnoreCase))
+                        {
+                            challengerScore += scoreWhite;
+                            defenderScore += scoreBlack;
+                        }
+                        else
+                        {
+                            challengerScore += scoreBlack;
+                            defenderScore += scoreWhite;
+                        }
+                    }
+                }
+
+                engineScores.TryAdd(m.Challenger, 0);
+                engineScores.TryAdd(m.Defender, 0);
+                engineScores[m.Challenger] += challengerScore;
+                engineScores[m.Defender] += defenderScore;
+
+                // Track last match score for each engine
+                if (m.Games is { Count: > 0 })
+                {
+                    engineLastMatch[m.Challenger] = $"{m.ScoreChallenger:0.#}-{m.ScoreDefender:0.#}";
+                    engineLastMatch[m.Defender] = $"{m.ScoreDefender:0.#}-{m.ScoreChallenger:0.#}";
+                }
+
+                // Track elimination climb
+                if (m.IsDecided && !string.IsNullOrWhiteSpace(m.Winner))
+                {
+                    var loser = m.Winner.Equals(m.Challenger, StringComparison.OrdinalIgnoreCase) ? m.Defender : m.Challenger;
+                    engineElimClimb[loser] = m.ClimbNumber;
+                }
+            }
+        }
+
+        // Track elimination order from state
+        if (state.EliminatedEngines != null)
+        {
+            for (var i = 0; i < state.EliminatedEngines.Count; i++)
+                eliminationOrder[state.EliminatedEngines[i]] = i + 1;
+        }
+
+        var entries = new List<LadderProgressEntry>();
+        var rank = 1;
+
+        // Surviving engines by rank (index 0 = champion/top)
+        if (state.SurvivingEngines != null)
+        {
+            for (var i = 0; i < state.SurvivingEngines.Count; i++)
+            {
+                var name = state.SurvivingEngines[i];
+                var isChampion = state.SurvivingEngines.Count == 1;
+                var isClimbing = i == state.CurrentClimberIndex && state.SurvivingEngines.Count > 1;
+                var status = isChampion ? "Champion" : isClimbing ? "Climbing" : "Surviving";
+                var climbInfo = isClimbing ? state.CurrentClimbNumber.ToString() : "--";
+                engineRatings.TryGetValue(name, out var rating);
+                engineScores.TryGetValue(name, out var totalScore);
+                engineLastMatch.TryGetValue(name, out var matchScore);
+
+                entries.Add(new LadderProgressEntry
+                {
+                    Rank = rank++,
+                    Player = name,
+                    Rating = rating,
+                    Status = status,
+                    ClimbInfo = climbInfo,
+                    MatchScore = matchScore ?? "--",
+                    TotalScore = totalScore,
+                    IsChampion = isChampion,
+                    IsClimbing = isClimbing,
+                    IsEliminated = false,
+                    EliminationOrder = 0
+                });
+            }
+        }
+
+        // Eliminated engines (last eliminated first = highest placement)
+        if (state.EliminatedEngines != null)
+        {
+            for (var i = state.EliminatedEngines.Count - 1; i >= 0; i--)
+            {
+                var name = state.EliminatedEngines[i];
+                engineRatings.TryGetValue(name, out var rating);
+                engineScores.TryGetValue(name, out var totalScore);
+                engineLastMatch.TryGetValue(name, out var matchScore);
+                engineElimClimb.TryGetValue(name, out var elimClimb);
+                eliminationOrder.TryGetValue(name, out var elimOrder);
+
+                entries.Add(new LadderProgressEntry
+                {
+                    Rank = rank++,
+                    Player = name,
+                    Rating = rating,
+                    Status = $"Eliminated ({elimOrder})",
+                    ClimbInfo = elimClimb > 0 ? elimClimb.ToString() : "--",
+                    MatchScore = matchScore ?? "--",
+                    TotalScore = totalScore,
+                    IsChampion = false,
+                    IsClimbing = false,
+                    IsEliminated = true,
+                    EliminationOrder = elimOrder
+                });
+            }
+        }
+
+        return entries;
+    }
+
+    private string FormatRating(int rating) => rating > 0 ? rating.ToString() : "--";
+
+    private bool IsActivePlayer(string player) =>
+        !string.IsNullOrWhiteSpace(player) &&
+        (player.Equals(WhitePlayer, StringComparison.OrdinalIgnoreCase) ||
+         player.Equals(BlackPlayer, StringComparison.OrdinalIgnoreCase));
+
+    private async Task SafeInvokeAsync(string identifier, params object[] args)
+    {
+        try
+        {
+            await chessJSmodule.InvokeVoidAsync(identifier, args);
+        }
+        catch (JSException jsEx) when (jsEx.Message.Contains("Cannot set properties of undefined"))
+        {
+            Console.WriteLine($"Suppressed known animation error in {identifier}: {jsEx.Message}");
+        }
+        catch (JSException jsEx)
+        {
+            Logger.LogError($"JS error in {identifier}: {jsEx.Message}");
+        }
+        catch (TaskCanceledException tcEx)
+        {
+            Logger.LogWarning($"JS interop task canceled in {identifier}: {tcEx.Message}");
+        }
+        catch (OperationCanceledException ocEx)
+        {
+            Logger.LogWarning($"JS interop operation canceled in {identifier}: {ocEx.Message}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Unexpected error in {identifier}: {ex.GetType().Name} - {ex.Message}");
+        }
+    }
+
+    private async Task DoScroll()
+    {
+        if (!ShouldCycle || chessJSmodule is null)
+            return;
+
+        try
+        {
+            if (activeTableIndex == 1)
+                await SafeInvokeAsync("scrollDivToEnd", "ladderProgressDiv");
+            else
+                await SafeInvokeAsync("scrollDivToTop", "ladderProgressDiv");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Error in DoScroll: {ex.GetType().Name} - {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        cycleTimer?.Dispose();
+        if (isSubscribed)
+            Notifier.LadderUpdated -= OnLadderUpdated;
+    }
+
+    private sealed class LadderProgressEntry
+    {
+        public int Rank { get; set; }
+        public string Player { get; set; } = "";
+        public int Rating { get; set; }
+        public string Status { get; set; } = "";
+        public string ClimbInfo { get; set; } = "--";
+        public string MatchScore { get; set; } = "--";
+        public double TotalScore { get; set; }
+        public bool IsChampion { get; set; }
+        public bool IsClimbing { get; set; }
+        public bool IsEliminated { get; set; }
+        public int EliminationOrder { get; set; }
+    }
+
+    private sealed class LadderStateModel
+    {
+        public string TournamentName { get; set; } = "";
+        public int GamePairsPerMatch { get; set; }
+        public List<string> InitialRankings { get; set; } = new();
+        public List<string> SurvivingEngines { get; set; } = new();
+        public List<string> EliminatedEngines { get; set; } = new();
+        public int CurrentClimbNumber { get; set; }
+        public int CurrentClimberIndex { get; set; }
+        public List<LadderMatchModel> Matches { get; set; } = new();
+        public int NextOpeningIndex { get; set; }
+    }
+
+    private sealed class LadderMatchModel
+    {
+        public int MatchId { get; set; }
+        public int ClimbNumber { get; set; }
+        public string Challenger { get; set; } = "";
+        public string Defender { get; set; } = "";
+        public int ChallengerRating { get; set; }
+        public int DefenderRating { get; set; }
+        public double ScoreChallenger { get; set; }
+        public double ScoreDefender { get; set; }
+        public string Winner { get; set; }
+        public bool IsDecided { get; set; }
+        public List<LadderGameModel> Games { get; set; } = new();
+    }
+
+    private sealed class LadderGameModel
+    {
+        public int GameNr { get; set; }
+        public string White { get; set; } = "";
+        public string Black { get; set; } = "";
+        public string OpeningId { get; set; } = "";
+        public string OpeningHash { get; set; } = "";
+        public string Result { get; set; } = "";
+    }
+}

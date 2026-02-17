@@ -16,7 +16,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **VerboseLogging**: Enable or disable verbose logging.
 - **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, depth, move time), `"Standard"` (11 fields), `"Full"` (all 22 fields). Backward compatible: `true` → Full, `false` → Standard.
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
-- **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
+- **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet, Ladder).
 - **AllowPondering**: Allow engines to ponder during the opponent’s time.
 - **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
@@ -72,6 +72,14 @@ This document provides an overview of the `tournament.json` configuration file u
 - **RandomOpenings**: True to randomize openings instead of using the list order.
 - **AllowExtraPairsOnTie**: True to play extra pairs if the top score is tied after scheduled rounds.
 - **StatePath**: Path for the generated swiss state JSON file.
+
+### Ladder Options
+
+- **GamePairsPerMatch**: Number of game pairs per mini-match (each pair is 2 games with reversed colors). Default: 4.
+- **RandomOpenings**: True to randomize openings instead of using the list order.
+- **StatePath**: Path for the generated ladder state JSON file.
+
+Ladder mode is an elimination-style climbing tournament. Engines are ranked by rating (highest = rank 1). The lowest-ranked surviving engine challenges the one above it. The loser is eliminated, the winner continues climbing. When a climber loses, a new climb starts from the new bottom engine. Ties go to the higher-ranked defender. The tournament ends when only 1 engine remains.
 
 ### Output Paths
 
@@ -199,6 +207,11 @@ This document provides an overview of the `tournament.json` configuration file u
     "RandomOpenings": true,
     "AllowExtraPairsOnTie": true,
     "StatePath": "wwwroot/swiss_state.json"
+  },
+  "LadderOptions": {
+    "GamePairsPerMatch": 4,
+    "RandomOpenings": true,
+    "StatePath": "wwwroot/ladder_state.json"
   },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",

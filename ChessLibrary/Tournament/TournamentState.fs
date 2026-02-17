@@ -6,6 +6,7 @@ open System.Text
 open System.Text.Json
 open ChessLibrary.CupTypes
 open ChessLibrary.SwissTypes
+open ChessLibrary.LadderTypes
 open ChessLibrary.TournamentTypes
 
 /// Normalize bracket JSON that may have leading quotes stripped
@@ -108,6 +109,53 @@ let startSwissStateReaderWriter (filePath: string) =
                             reply.Reply None
                         else
                             let loaded = JsonSerializer.Deserialize<SwissState>(json, optionsRead)
+                            if obj.ReferenceEquals(loaded, null) then reply.Reply None else reply.Reply (Some loaded)
+                    with
+                    | _ -> reply.Reply None
+        })
+
+/// Start a MailboxProcessor agent for reading/writing Ladder state
+let startLadderStateReaderWriter (filePath: string) =
+    MailboxProcessor<LadderStateMessage>.Start(fun inbox ->
+        async {
+            let optionsWrite = JsonSerializerOptions(WriteIndented = true)
+            let optionsRead = JsonSerializerOptions(PropertyNameCaseInsensitive = true, AllowTrailingCommas = true)
+            let mutable inMemory = ""
+            while true do
+                let! message = inbox.Receive()
+                match message with
+                | DisposeLadderState ->
+                    return ()
+                | WriteLadderState (state, reply) ->
+                    try
+                        state.UpdatedUtc <- DateTime.UtcNow
+                        let json = JsonSerializer.Serialize(state, optionsWrite)
+                        if String.IsNullOrWhiteSpace filePath then
+                            inMemory <- json
+                        else
+                            let tmpPath = filePath + ".tmp"
+                            File.WriteAllText(tmpPath, json, Encoding.UTF8)
+                            File.Move(tmpPath, filePath, true)
+                    with ex ->
+                        eprintfn "WriteLadderState error: %s" ex.Message
+                    reply.Reply()
+                | ReadLadderState reply ->
+                    try
+                        let json =
+                            if String.IsNullOrWhiteSpace filePath then
+                                inMemory
+                            else
+                                if File.Exists filePath then
+                                    use stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete)
+                                    use reader = new StreamReader(stream, Encoding.UTF8)
+                                    reader.ReadToEnd()
+                                else
+                                    ""
+                        if String.IsNullOrWhiteSpace json then
+                            reply.Reply None
+                        else
+                            let json = normalizeBracketJson json
+                            let loaded = JsonSerializer.Deserialize<LadderState>(json, optionsRead)
                             if obj.ReferenceEquals(loaded, null) then reply.Reply None else reply.Reply (Some loaded)
                     with
                     | _ -> reply.Reply None
