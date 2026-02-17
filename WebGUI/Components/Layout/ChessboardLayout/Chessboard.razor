@@ -802,7 +802,12 @@
 	{
 		if (overlay == OverlaySettings.None)
 		{
-			await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+			if (id == currentId || string.IsNullOrEmpty(currentId))
+			{
+				if (chessJSmodule is not null)
+					await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+				currentId = string.Empty;
+			}
 		}
 		else
 		{
@@ -810,7 +815,6 @@
 			var lastNNMoves = GetNNValues(id);
 			await DisplayMoveAnnotation(lastNNMoves, id);
 		}
-		await Task.CompletedTask;
 	}
 
 	public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
