@@ -95,6 +95,7 @@ This document provides an overview of the `tournament.json` configuration file u
   - **CrossTableFont**: Font size for the cross table.
   - **CupBracketFont**: Font size for the cup bracket overview.
   - **SwissOverviewFont**: Font size for the swiss overview.
+  - **LadderOverviewFont**: Font size for the ladder overview.
   - **PairingsFont**: Font size for the pairings table.
   - **LatestGamesFont**: Font size for the latest games.
 - **Sizes**:
@@ -222,6 +223,7 @@ This document provides an overview of the `tournament.json` configuration file u
       "CrossTableFont": 22,
       "CupBracketFont": 20,
       "SwissOverviewFont": 20,
+      "LadderOverviewFont": 20,
       "PairingsFont": 16,
       "LatestGamesFont": 16
     },

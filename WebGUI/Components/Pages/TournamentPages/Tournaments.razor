@@ -276,7 +276,9 @@
 	private IDialogReference bracketDialogReference;
 	private bool pendingCupDialog;
 	private bool pendingSwissDialog;
+	private bool pendingLadderDialog;
 	private IDialogReference swissDialogReference;
+	private IDialogReference ladderDialogReference;
 	private IDialogReference resultDialogReference;
 	private List<CrossTableEntry> table = new();
 	private bool swapTables = true;
@@ -634,6 +636,29 @@
 		bracketDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupBracketDialog>("", parameters, options);
 	}
 
+	async Task OpenLadderDialog()
+	{
+		CloseAllDialogs();
+		await Task.Delay(1000);
+		var options = new DialogOptions()
+		{
+			MaxWidth = MaxWidth.ExtraLarge,
+			FullWidth = true,
+			CloseButton = false,
+			Position = DialogPosition.TopCenter
+		};
+
+		var parameters = new DialogParameters
+		{
+			{ "StatePath", GetLadderStatePath() },
+			{ "ShowActions", false },
+			{ "LadderCompleted", false },
+			{ "LadderInvalid", false },
+			{ "FontSize", layoutOptions.Fonts.LadderOverviewFont }
+		};
+		ladderDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.LadderResumeDialog>("", parameters, options);
+	}
+
 	void CloseDialog() => dialogReference?.Close();
 
 	void CloseBetweenGamesDialogs()
@@ -649,6 +674,8 @@
 		bracketDialogReference = null;
 		swissDialogReference?.Close();
 		swissDialogReference = null;
+		ladderDialogReference?.Close();
+		ladderDialogReference = null;
 		resultDialogReference?.Close();
 		resultDialogReference = null;
 	}
@@ -898,13 +925,12 @@
 		if (tournament == null)
 			return "";
 
-		var totalGames = totalNumberOfPairs > 0 ? totalNumberOfPairs : tournament.TotalGames;
+		var totalGames = tournament.TotalGames > 0 ? tournament.TotalGames : totalNumberOfPairs;
 		if (totalGames <= 0)
 			return "";
 
-		var completedGames = results?.Count ?? 0;
-		var currentGame = Math.Min(completedGames + 1, totalGames);
-		return $"{currentGame}/{totalGames}";
+		var currentGame = Math.Min(tournament.CurrentGameNr, totalGames);
+		return currentGame <= 0 ? "" : $"{currentGame}/{totalGames}";
 	}
 
 	string GetWin()
@@ -1365,13 +1391,13 @@
 				gameResult = $"{gameTxtResult} by {explanation}";
 				var mh = $"{moveHistory}  ({e.Result.Result} : {explanation})";
 				moveHistory = mh;
-				await Task.Delay(200);
-				await InvokeAsync(() => streamingBoard.UpdateMoveHistory(mh));
 				if (e.Result.Reason != ResultReason.Cancel)
 				{
 					results.Insert(0, e.Result);
 					infoBannerInfo.ResultTxt = e.Result.Result;
 				}
+				await Task.Delay(200);
+				await InvokeAsync(() => streamingBoard.UpdateMoveHistory(mh));
 				engineStatus.Clear();
 				if (timer != null)
 					timer.Dispose();
@@ -1398,6 +1424,10 @@
 					else if (IsSwissMode)
 					{
 						pendingSwissDialog = true;
+					}
+					else if (IsLadderMode)
+					{
+						pendingLadderDialog = true;
 					}
 					else
 					{
@@ -1525,23 +1555,25 @@
 					}
 
 					var gamesLeft = runner.GetAllPairings().Count;
-					tournament.CurrentGameNr = totalNumberOfPairs - gamesLeft + 1;
+					var gamesLeftForEstimate = IsLadderMode
+						? Math.Max(0, tournament.TotalGames - tournament.CurrentGameNr + 1)
+						: gamesLeft;
 
 					if (results.Count > 5)
 					{
 						double avgTimePerGame = results.Average(e => e.GameTime);
-						double totalDelay = gamesLeft * (tournament.DelayBetweenGames.ToTimeSpan().TotalSeconds + 15);
-						var timeLeft = (avgTimePerGame * gamesLeft) + totalDelay;
+						double totalDelay = gamesLeftForEstimate * (tournament.DelayBetweenGames.ToTimeSpan().TotalMilliseconds + 15000);
+						var timeLeft = (avgTimePerGame * gamesLeftForEstimate) + totalDelay;
 						var timespan = TimeSpan.FromMilliseconds(timeLeft);
 						duration = TimeSpan.FromSeconds(Math.Round(timespan.TotalSeconds));
 					}
 					else
 					{
 						var allPairings = runner.GetAllPairings();
-						if (allPairings.Count == 0)
+						if (allPairings.Count == 0 || IsLadderMode)
 						{
 							double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
-							duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeft);
+							duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
 						}
 						else
 						{
@@ -1675,8 +1707,10 @@
 							await InvokeAsync(OpenCupBracketDialog);
 						else if (IsSwissMode)
 						{
-							await InvokeAsync(() => OpenSwissDialog(false));							
+							await InvokeAsync(() => OpenSwissDialog(false));
 						}
+						else if (IsLadderMode)
+							await InvokeAsync(OpenLadderDialog);
 						else
 							await InvokeAsync(OpenDialog);
 					}
@@ -1736,6 +1770,11 @@
 				if (IsLadderMode)
 				{
 					await Notifier.NotifyLadderUpdated();
+					if (pendingLadderDialog && layoutOptions.ShowCrosstableBetweenGames)
+					{
+						pendingLadderDialog = false;
+						await InvokeAsync(OpenLadderDialog);
+					}
 				}
 				break;
 			case TournamentTypes.Update.PonderStatus ponderStatus:
@@ -2063,6 +2102,8 @@
 			return;
 		if (!await ConfirmSwissResumeOrNew())
 			return;
+		if (!await ConfirmLadderResumeOrNew())
+			return;
 		RunTournament();
 	}
 
@@ -2215,6 +2256,148 @@
 	}
 
 	private sealed class SwissPairingSnapshot
+	{
+		public bool IsDecided { get; set; }
+	}
+
+	private async Task<bool> ConfirmLadderResumeOrNew()
+	{
+		if (!IsLadderMode)
+			return true;
+
+		var statePath = GetLadderStatePath();
+		if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
+			return true;
+
+		var stateSummary = GetLadderStateSummary(statePath);
+		if (stateSummary == LadderStateSummary.Missing)
+			return true;
+
+		var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = false, Position = DialogPosition.TopCenter };
+		var parameters = new DialogParameters
+		{
+			{ "StatePath", statePath },
+			{ "ShowActions", true },
+			{ "LadderCompleted", stateSummary == LadderStateSummary.Completed },
+			{ "LadderInvalid", stateSummary == LadderStateSummary.Invalid },
+			{ "FontSize", layoutOptions.Fonts.LadderOverviewFont }
+		};
+		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.LadderResumeDialog>("", parameters, options);
+		var result = await dialog.Result;
+		if (result.Canceled)
+			return false;
+
+		var action = result.Data as string ?? "";
+		if (action.Equals("new", StringComparison.OrdinalIgnoreCase))
+		{
+			BackupLadderStateFile(statePath);
+			DeleteLadderStateFiles(statePath);
+		}
+
+		return true;
+	}
+
+	private string GetLadderStatePath()
+	{
+		var configured = tournament?.LadderOptions?.StatePath ?? "wwwroot/ladder_state.json";
+		if (Path.IsPathRooted(configured))
+			return configured;
+		return Path.Combine(Environment.ContentRootPath, configured);
+	}
+
+	private static void DeleteLadderStateFiles(string statePath)
+	{
+		try
+		{
+			var dir = Path.GetDirectoryName(statePath);
+			if (File.Exists(statePath))
+				File.Delete(statePath);
+			if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+			{
+				var pattern = Path.GetFileName(statePath) + ".tmp*";
+				foreach (var file in Directory.GetFiles(dir, pattern))
+				{
+					try
+					{
+						File.Delete(file);
+					}
+					catch (IOException)
+					{
+					}
+				}
+			}
+		}
+		catch (IOException)
+		{
+		}
+	}
+
+	private static void BackupLadderStateFile(string statePath)
+	{
+		try
+		{
+			if (!File.Exists(statePath))
+				return;
+
+			var dir = Path.GetDirectoryName(statePath);
+			if (string.IsNullOrWhiteSpace(dir))
+				return;
+
+			var backupPath = Path.Combine(dir, $"{Path.GetFileName(statePath)}.bak");
+			File.Copy(statePath, backupPath, true);
+		}
+		catch (IOException)
+		{
+		}
+	}
+
+	private static LadderStateSummary GetLadderStateSummary(string statePath)
+	{
+		try
+		{
+			if (string.IsNullOrWhiteSpace(statePath) || !File.Exists(statePath))
+				return LadderStateSummary.Missing;
+
+			var json = File.ReadAllText(statePath);
+			if (string.IsNullOrWhiteSpace(json))
+				return LadderStateSummary.Missing;
+
+			var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+			var state = JsonSerializer.Deserialize<LadderStateSnapshot>(json, options);
+			if (state == null || state.SurvivingEngines == null)
+				return LadderStateSummary.Invalid;
+
+			if (state.SurvivingEngines.Count <= 1)
+				return LadderStateSummary.Completed;
+
+			return LadderStateSummary.InProgress;
+		}
+		catch (JsonException)
+		{
+			return LadderStateSummary.Invalid;
+		}
+		catch (IOException)
+		{
+			return LadderStateSummary.Invalid;
+		}
+	}
+
+	private enum LadderStateSummary
+	{
+		Missing,
+		InProgress,
+		Completed,
+		Invalid
+	}
+
+	private sealed class LadderStateSnapshot
+	{
+		public List<string> SurvivingEngines { get; set; } = new();
+		public List<string> EliminatedEngines { get; set; } = new();
+		public List<LadderMatchSnapshot> Matches { get; set; } = new();
+	}
+
+	private sealed class LadderMatchSnapshot
 	{
 		public bool IsDecided { get; set; }
 	}
@@ -2551,6 +2734,7 @@
 		var bannerEnd = infoBannerInfo.TournamentEndsTxt;
 		var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;
 		infoBannerInfo = new InfoBannerInfo(tournament);
+		infoBannerInfo.Game = GetDisplayedGameText();
 		infoBannerInfo.TimeLeftTxt = bannerTime;
 		infoBannerInfo.TournamentEndsTxt = bannerEnd;
 		infoBannerInfo.Round = roundNr;

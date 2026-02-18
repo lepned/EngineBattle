@@ -79,7 +79,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **RandomOpenings**: True to randomize openings instead of using the list order.
 - **StatePath**: Path for the generated ladder state JSON file.
 
-Ladder mode is an elimination-style climbing tournament. Engines are ranked by rating (highest = rank 1). The lowest-ranked surviving engine challenges the one above it. The loser is eliminated, the winner continues climbing. When a climber loses, a new climb starts from the new bottom engine. Ties go to the higher-ranked defender. The tournament ends when only 1 engine remains.
+Ladder mode is an elimination-style climbing tournament. Engines are ranked by rating (highest = rank 1). The lowest-ranked surviving engine challenges the one above it. The loser is eliminated, the winner continues climbing. When a climber loses, a new climb starts from the new bottom engine. Tied matches play extra game pairs until one engine leads. The tournament ends when only 1 engine remains.
 
 ### Output Paths
 
@@ -103,6 +103,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
   - **CrossTableFont**: Font size for the cross table.
   - **CupBracketFont**: Font size for the cup bracket overview.
   - **SwissOverviewFont**: Font size for the swiss overview.
+  - **LadderOverviewFont**: Font size for the ladder overview.
   - **PairingsFont**: Font size for the pairings table.
   - **LatestGamesFont**: Font size for the latest games.
 - **Sizes**:
@@ -236,6 +237,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
       "CrossTableFont": 22,
       "CupBracketFont": 20,
       "SwissOverviewFont": 20,
+      "LadderOverviewFont": 20,
       "PairingsFont": 16,
       "LatestGamesFont": 16
     },

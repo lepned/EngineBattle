@@ -10,6 +10,7 @@ module LayoutTypes =
       CrossTableFont: int
       CupBracketFont: int
       SwissOverviewFont: int
+      LadderOverviewFont: int
       MoveListFont: int
       InfoBannerFont: int
       TournamentDescFont: int
@@ -71,6 +72,7 @@ module LayoutTypes =
               CrossTableFont = 13
               CupBracketFont = 16
               SwissOverviewFont = 16
+              LadderOverviewFont = 16
               MoveListFont = 15
               InfoBannerFont = 14
               TournamentDescFont = 12

@@ -38,7 +38,7 @@ Engines are sorted by rating (highest = rank 1, lowest = last). This determines 
 2. The challenger plays a mini-match against the engine directly above it (the **defender**).
 3. The loser is eliminated and the winner stays on the ladder.
 4. If the challenger wins, it moves up and challenges the next engine above.
-5. If the challenger loses (or ties), it is eliminated and a new climb starts from the new bottom engine.
+5. If the challenger loses, it is eliminated and a new climb starts from the new bottom engine.
 6. This continues until only one engine remains — the **champion**.
 
 ### Mini-Match Structure
@@ -55,7 +55,7 @@ A mini-match ends early when the outcome is mathematically decided. After each g
 
 ### Tie-Breaking
 
-**Ties go to the defender.** If the mini-match score is level after all games, the higher-ranked defender wins and the challenger is eliminated. This gives the higher-ranked engine the advantage of needing only a draw to survive.
+If the mini-match score is level after all scheduled games, **extra game pairs** are played until one engine leads. Each tiebreak round adds 2 games (one pair with reversed colors) using a fresh opening. This continues until the tie is broken — there is no limit on tiebreak rounds.
 
 ### Climbs
 
@@ -64,7 +64,7 @@ A "climb" is one full attempt by a bottom engine to ascend the ladder. A new cli
 - The current climber loses (eliminated) — the new bottom engine starts climbing.
 - The climber reaches rank 1 and beats the top engine — the climber is champion, but if other engines remain, a new climb starts from the new bottom.
 
-The climb number increments with each new attempt. Match identifiers include the climb number (e.g., `L2.3` = climb 2, game 3).
+The climb number increments with each new attempt. Match identifiers include the climb number (e.g., `2.3` = climb 2, game 3).
 
 ## Opening Selection
 
@@ -84,16 +84,25 @@ Ladder state is saved to `StatePath` (JSON) after every game, including:
 
 ### Resume Behavior
 
-To resume a ladder tournament:
+When starting a ladder tournament and a state file exists, a dialog is shown with:
 
-1. Ensure the state file exists at the configured `StatePath`.
-2. The state file is the source of truth for progress.
-3. Completed matches are skipped; an in-progress match continues from the last completed game.
-4. Opening order and index are restored so no openings are repeated or skipped.
+- **Resume** — continue from where the tournament left off (disabled if the ladder is completed or the state file is unreadable).
+- **Start New** — back up the existing state file (`.bak`) and start a fresh ladder.
+- **Cancel** — abort without starting.
+
+The dialog includes a preview of the current ladder standings (ranked table of surviving and eliminated engines).
+
+If no state file exists, the tournament starts fresh with no dialog.
+
+When resuming:
+
+1. The state file is the source of truth for progress.
+2. Completed matches are skipped; an in-progress match continues from the last completed game.
+3. Opening order and index are restored so no openings are repeated or skipped.
 
 ## Tournament Length
 
-For N engines, the tournament plays exactly **N - 1** mini-matches (each match eliminates one engine). The maximum total games is `(N - 1) x GamePairsPerMatch x 2`, though early termination typically reduces this.
+For N engines, the tournament plays exactly **N - 1** mini-matches (each match eliminates one engine). The minimum games per match is `GamePairsPerMatch x 2`, though tiebreaks can extend individual matches. Early termination typically reduces total games played.
 
 | Engines | Mini-Matches | Max Games (4 pairs) |
 |---------|-------------|---------------------|
@@ -185,4 +194,6 @@ Climb 2: C challenges B (new bottom after E eliminated is C)
 - Live updates during matches via `LadderStateUpdated` events
 - Cycling view alternates between ladder progress and standings tables
 - Current players (white/black) are highlighted in the progress table
+- Between-games overlay shows the ladder standings dialog (same behavior as Cup and Swiss modes, controlled by `ShowCrosstableBetweenGames` in layout options)
+- `LadderOverviewFont` in layout `Fonts` controls the font size of the ladder overview dialog
 - Cross-table is not shown for Ladder mode (not applicable to elimination format)

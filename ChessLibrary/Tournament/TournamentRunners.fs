@@ -501,7 +501,18 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
         let matchCount = Math.Max(1, numberOfPlayers / (pown 2 roundNumber))
         matchCount * gamesPerMatchForRound roundNumber)
   tourny.TotalGames <- minTotalGames
-  callback (Update.TotalNumberOfPairs minTotalGames)
+
+  // Adjust TotalGames for decided matches that played fewer/more games than scheduled
+  // (early termination saves games, tiebreaks add games)
+  for round in bracket.Rounds do
+      let gpm = gamesPerMatchForRound round.RoundNumber
+      for m in round.Matches do
+          if m.IsDecided then
+              let diff = m.Games.Count - gpm
+              if diff <> 0 then
+                  tourny.TotalGames <- tourny.TotalGames + diff
+
+  callback (Update.TotalNumberOfPairs tourny.TotalGames)
   callback (Update.PairingList (ResizeArray<Pairing>()))
   let (tTime, gTime) = estimateTournamentAndGameTime minTotalGames tourny []
   let startInfo = { NumberOfGames = minTotalGames; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny }
@@ -540,7 +551,13 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
     searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
 
   let sb = StringBuilder()
-  tourny.CurrentGameNr <- gamesAlreadyPlayed.Length
+  let bracketGamesPlayed =
+    bracket.Rounds
+    |> Seq.collect (fun r -> r.Matches |> Seq.collect (fun m -> m.Games))
+    |> Seq.length
+  let gamesPlayedCount = if bracketGamesPlayed > 0 then bracketGamesPlayed else gamesAlreadyPlayed.Length
+  tourny.CurrentGameNr <- gamesPlayedCount
+  gameNr <- gamesPlayedCount
 
   let playPairing (pair: Pairing) = async {
     if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
@@ -715,6 +732,8 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
           let tieBreakRound = gamesRemaining = 0
           if gamesRemaining = 0 then
             gamesRemaining <- 2
+            tourny.TotalGames <- tourny.TotalGames + 2
+            callback (Update.TotalNumberOfPairs tourny.TotalGames)
           let hasOddGame = matchInfo.Games.Count % 2 = 1
           let opening =
             if hasOddGame then
@@ -806,6 +825,10 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
                   elif matchInfo.ScoreB > matchInfo.ScoreA then
                     matchInfo.IsDecided <- true
                     matchInfo.Winner <- Some matchInfo.PlayerB
+                // Adjust total for unplayed games when match decided early
+                if matchInfo.IsDecided && gamesRemaining > 0 then
+                  tourny.TotalGames <- tourny.TotalGames - gamesRemaining
+                  callback (Update.TotalNumberOfPairs tourny.TotalGames)
                 writeCupBracket cupBracketAgent bracket
       match matchInfo.Winner with
       | Some name when name = playerA.Name ->
@@ -1065,6 +1088,7 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
     |> Seq.length
   let gamesPlayedCount = if stateGamesPlayed > 0 then stateGamesPlayed else gamesAlreadyPlayed.Length
   tourny.CurrentGameNr <- gamesPlayedCount
+  gameNr <- gamesPlayedCount
 
   let playPairing (pair: Pairing) = async {
     if tourny.PreventMoveDeviation && not cts.Token.IsCancellationRequested then
@@ -1363,6 +1387,9 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
           let byeSet = buildByeSet ()
           let roundPairs : (EngineConfig * EngineConfig) list =
             PairingHelper.swissRoundPairings tiedPlayers seedOrder scores Set.empty byeSet
+          let extraGames = roundPairs.Length * (gamesPerMatchForRound tieRoundNumber)
+          tourny.TotalGames <- tourny.TotalGames + extraGames
+          callback (Update.TotalNumberOfPairs tourny.TotalGames)
           do! runRound tieRoundNumber roundPairs
           return! resolveTieBreak (tieRoundNumber + 1)
     }
@@ -1470,6 +1497,15 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
 
   let totalMatches = numberOfPlayers - 1
   tourny.TotalGames <- totalMatches * gamesPerMatch
+
+  // Adjust TotalGames for decided matches that played fewer/more games than scheduled
+  // (early termination saves games, tiebreaks add games)
+  for m in state.Matches do
+      if m.IsDecided then
+          let diff = m.Games.Count - gamesPerMatch
+          if diff <> 0 then
+              tourny.TotalGames <- tourny.TotalGames + diff
+
   callback (Update.TotalNumberOfPairs tourny.TotalGames)
   callback (Update.PairingList (ResizeArray<Pairing>()))
   let (tTime, gTime) = estimateTournamentAndGameTime tourny.TotalGames tourny []
@@ -1511,6 +1547,7 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
     |> Seq.length
   let gamesPlayedCount = if stateGamesPlayed > 0 then stateGamesPlayed else gamesAlreadyPlayed.Length
   tourny.CurrentGameNr <- gamesPlayedCount
+  gameNr <- gamesPlayedCount
 
   let findEngine (name: string) =
     tourny.EngineSetup.Engines |> List.find (fun e -> e.Name = name)
@@ -1552,7 +1589,12 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
 
   let playMiniMatch (matchInfo: LadderMatch) (challengerConfig: EngineConfig) (defenderConfig: EngineConfig) (startingGamesRemaining: int) = async {
     let mutable gamesRemaining = startingGamesRemaining
-    while not matchInfo.IsDecided && gamesRemaining > 0 && not cts.IsCancellationRequested do
+    while not matchInfo.IsDecided && not cts.IsCancellationRequested do
+      if gamesRemaining = 0 then
+        gamesRemaining <- 2
+        tourny.TotalGames <- tourny.TotalGames + 2
+        callback (Update.TotalNumberOfPairs tourny.TotalGames)
+        printfn "  Tiebreak: scores tied %.1f-%.1f, playing 2 extra games" matchInfo.ScoreChallenger matchInfo.ScoreDefender
       let hasOddGame = matchInfo.Games.Count % 2 = 1
       let opening =
         if hasOddGame then
@@ -1572,6 +1614,38 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
             [ (challengerConfig, defenderConfig) ]
         else
           [ (challengerConfig, defenderConfig); (defenderConfig, challengerConfig) ]
+      // Build planned pairings for UI display
+      let plannedPairings = ResizeArray<Pairing>()
+      let mutable planIdx = 0
+      let mutable planRemaining = gamesRemaining
+      for (w, b) in playOrder do
+        if planRemaining > 0 then
+          plannedPairings.Add
+            { Opening = opening
+              White = w
+              Black = b
+              GameNr = 0
+              RoundNr = $"{state.CurrentClimbNumber}.{matchInfo.Games.Count + planIdx + 1}"
+              OpeningHash = openingHash }
+          planIdx <- planIdx + 1
+          planRemaining <- planRemaining - 1
+      let mutable peekIndex = openingIndex
+      while planRemaining > 0 do
+        let peekOpening = globalOpenings.[peekIndex % globalOpenings.Length]
+        peekIndex <- peekIndex + 1
+        let peekHash = Hash.computeOpeningHashFromGame peekOpening
+        for (w, b) in [ (challengerConfig, defenderConfig); (defenderConfig, challengerConfig) ] do
+          if planRemaining > 0 then
+            plannedPairings.Add
+              { Opening = peekOpening
+                White = w
+                Black = b
+                GameNr = 0
+                RoundNr = $"{state.CurrentClimbNumber}.{matchInfo.Games.Count + planIdx + 1}"
+                OpeningHash = peekHash }
+            planIdx <- planIdx + 1
+            planRemaining <- planRemaining - 1
+      callback (Update.PairingList plannedPairings)
       for (white, black) in playOrder do
         if matchInfo.IsDecided || gamesRemaining = 0 || cts.IsCancellationRequested then
           ()
@@ -1581,7 +1655,7 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
               White = white
               Black = black
               GameNr = 0
-              RoundNr = $"L{state.CurrentClimbNumber}.{matchInfo.Games.Count + 1}"
+              RoundNr = $"{state.CurrentClimbNumber}.{matchInfo.Games.Count + 1}"
               OpeningHash = openingHash }
           let! result = playPairing pairing
           if result.Reason <> ResultReason.Cancel then
@@ -1614,12 +1688,17 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
               matchInfo.IsDecided <- true
               matchInfo.Winner <- Some matchInfo.Defender
             elif gamesRemaining = 0 then
-              matchInfo.IsDecided <- true
               if matchInfo.ScoreChallenger > matchInfo.ScoreDefender then
+                matchInfo.IsDecided <- true
                 matchInfo.Winner <- Some matchInfo.Challenger
-              else
-                // Tie or defender wins: defender survives
+              elif matchInfo.ScoreDefender > matchInfo.ScoreChallenger then
+                matchInfo.IsDecided <- true
                 matchInfo.Winner <- Some matchInfo.Defender
+              // else: still tied, outer loop will add tiebreak pair
+            // Adjust total for unplayed games when match decided early
+            if matchInfo.IsDecided && gamesRemaining > 0 then
+              tourny.TotalGames <- tourny.TotalGames - gamesRemaining
+              callback (Update.TotalNumberOfPairs tourny.TotalGames)
             writeLadderState ladderAgent state
             // Delay between individual games within a match
             if gamesRemaining > 0 && not matchInfo.IsDecided && not cts.IsCancellationRequested then
@@ -1666,7 +1745,13 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
   | Some matchInfo ->
       let challengerConfig = findEngine matchInfo.Challenger
       let defenderConfig = findEngine matchInfo.Defender
-      let remaining = max 0 (gamesPerMatch - matchInfo.Games.Count)
+      let remaining =
+        let base' = gamesPerMatch - matchInfo.Games.Count
+        if base' < 0 then
+          // In tiebreak territory: finish the current pair if mid-pair
+          if matchInfo.Games.Count % 2 = 1 then 1 else 0
+        else
+          base'
       do! playMiniMatch matchInfo challengerConfig defenderConfig remaining
       processMatchResult matchInfo
   | None -> ()

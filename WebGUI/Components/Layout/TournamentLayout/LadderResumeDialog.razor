@@ -1,0 +1,60 @@
+@using System.IO
+
+<MudDialog>
+    <DialogContent>
+        @if (ShowActions)
+        {
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h5">@Title</MudText>
+                <MudText Typo="Typo.body2">@Subtitle</MudText>
+                <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="400" />
+            </MudStack>
+        }
+        else
+        {
+            <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="400" />
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (ShowActions)
+        {
+            <MudButton Disabled="@(LadderInvalid || LadderCompleted)" Color="Color.Primary"
+                       Variant="Variant.Filled" OnClick="Resume">@ResumeLabel</MudButton>
+            <MudButton Color="Color.Secondary" Variant="Variant.Outlined"
+                       OnClick="StartNew">Start New</MudButton>
+            <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public string StatePath { get; set; } = "";
+    [Parameter] public bool LadderCompleted { get; set; }
+    [Parameter] public bool LadderInvalid { get; set; }
+    [Parameter] public bool ShowActions { get; set; }
+    [Parameter] public int FontSize { get; set; }
+
+    private string StateFileName =>
+        string.IsNullOrWhiteSpace(StatePath)
+            ? "ladder_state.json"
+            : Path.GetFileName(StatePath);
+
+    private string Title =>
+        LadderInvalid ? "Ladder state is unreadable" :
+        LadderCompleted ? "Ladder tournament completed" :
+        "Resume ladder tournament?";
+
+    private string Subtitle =>
+        LadderInvalid
+            ? "State file could not be read. You can start a new ladder or cancel."
+            : LadderCompleted
+                ? "All matches are decided. You can start a new ladder or cancel."
+                : "Existing ladder state found. Choose to resume or start a new ladder.";
+
+    private string ResumeLabel => LadderCompleted ? "Resume (disabled)" : "Resume";
+
+    private void Resume() => MudDialog.Close(DialogResult.Ok("resume"));
+    private void StartNew() => MudDialog.Close(DialogResult.Ok("new"));
+    private void Cancel() => MudDialog.Cancel();
+}
