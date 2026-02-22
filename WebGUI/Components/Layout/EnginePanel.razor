@@ -1420,6 +1420,7 @@
     public async Task OnNotifyFen(string newPos)
     {
         fen = newPos;
+        NNInfoList.Clear();
         if (autoSearchSwitch)
         {
             if (searchInProgress)

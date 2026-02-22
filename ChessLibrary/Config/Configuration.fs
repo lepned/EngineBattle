@@ -479,6 +479,12 @@ module Validation =
       | Errors msgs ->
           for msg in msgs do
               ConsoleUtils.printInColor ConsoleColor.Red msg
+      // Non-blocking warnings
+      let mode = tourny.ModeLabel().Trim().ToLowerInvariant()
+      let isRRorGauntlet = mode = "rr" || mode = "roundrobin" || mode = "round-robin" || mode = "gauntlet"
+      if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then
+          ConsoleUtils.printInColor ConsoleColor.Yellow
+              "Warning: RandomOpenings is enabled but OpeningsTwice is false. Each engine pair will play each opening from only one color side. Set OpeningsTwice to true for balanced color distribution."
 
 module JSON =
 
@@ -782,7 +788,8 @@ module JSONParser =
 
         let netName = Path.GetFileNameWithoutExtension net
         let firstName = baseConfig.Name.Split(' ') |> Seq.head
-        { baseConfig with Name = firstName + " " + netName; Options = newOptions }
+        let displayNet = Path.GetFileName(net)
+        { baseConfig with Name = firstName + " " + netName; Options = newOptions; NetworkPath = displayNet }
 
     let mapToEngConfig (engineFolder: string) (engine: PuzzleTypes.PuzzleEngine) =
         match engine with

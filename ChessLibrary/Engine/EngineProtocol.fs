@@ -318,7 +318,7 @@ module Regex =
     else
       NA
 
-  let floatParser line regex = parseRegex 0.0 (fun x -> float x) line regex
+  let floatParser line regex = parseRegex 0.0 (fun x -> float (x.Replace(',', '.'))) line regex
   let evalParser line = parseEvalRegex line
   let intParser line regex = parseRegex 0 (fun x -> int x) line regex
   let int64Parser line regex = parseRegex 0L (fun x -> int64 x) line regex
@@ -327,10 +327,10 @@ module Regex =
 
   let move = new Regex("info string\s+(\w+)", RegexOptions.Compiled)
   let nodes = new Regex("N:\s+(\d+)", RegexOptions.Compiled)
-  let p = new Regex("P:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
-  let q = new Regex("Q:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
-  let v = new Regex("V:\s+(-?\d+\.\d+)", RegexOptions.Compiled)
-  let e = new Regex("E:\s+(\d+\.\d+)", RegexOptions.Compiled)
+  let p = new Regex(@"P:\s+(-?\d+[.,]\d+)", RegexOptions.Compiled)
+  let q = new Regex(@"Q:\s+(-?\d+[.,]\d+)", RegexOptions.Compiled)
+  let v = new Regex(@"V:\s+(-?\d+[.,]\d+)", RegexOptions.Compiled)
+  let e = new Regex(@"E:\s+(\d+[.,]\d+)", RegexOptions.Compiled)
 
   let getEssentialDataWithEPS (line:string) isWhite =
     if line.StartsWith "info" then

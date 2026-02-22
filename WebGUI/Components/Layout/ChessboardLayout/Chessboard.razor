@@ -253,6 +253,7 @@
 	private List<NNValues> firstNNMoves = new();
 	private List<NNValues> secondNNMoves = new();
 	private string currentId = string.Empty;
+	private long _positionGeneration;
 	private bool isBoardFlipped;
 	private double MinPolicyThreshold { get; set; } // Minimum probability threshold for displaying moves
 	private List<MoveAndFen> MoveList { get; set; }
@@ -343,6 +344,16 @@
 		return new List<NNValues>();
 	}
 
+	private async Task ClearOverlayOnPositionChange()
+	{
+		_positionGeneration++;
+		firstNNMoves.Clear();
+		secondNNMoves.Clear();
+		currentId = string.Empty;
+		if (chessJSmodule is not null)
+			await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+	}
+
 	private async Task OnValueChanged(string value)
 	{
 		fenWithMoves = value;
@@ -357,6 +368,7 @@
 		stopAutoPlay = true;
 		if (index != -1)
 		{
+			await ClearOverlayOnPositionChange();
 			var move = MoveList[index];
 			fen = move.FenAfterMove;
 			ChessBoard.LoadFen(fen);
@@ -430,7 +442,11 @@
 			if (moveIsProvided)
 			{
 				ChessBoard.PlayUciMove(move);
+				await ClearOverlayOnPositionChange();
 				await OnMoveMadeOnBoard.InvokeAsync(move);
+				// Defense: clear again in case stale data arrived during await
+				firstNNMoves.Clear();
+				secondNNMoves.Clear();
 			}
 
 			fenWithMoves = ChessBoard.PositionWithMoves();
@@ -489,10 +505,7 @@
 				fenWithMoves = fenWithMoves.TrimStart().TrimEnd();
 				ChessBoard.PlayFenWithMoves(fenWithMoves);
 				fen = ChessBoard.FEN();
-				firstNNMoves.Clear();
-				secondNNMoves.Clear();
-				if (chessJSmodule is not null)
-					await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+				await ClearOverlayOnPositionChange();
 				await SetPosition(fen, false);
 				await OnNewFENOnBoard.InvokeAsync(fen);
 				UpdateVariationsDisplay();
@@ -686,6 +699,7 @@
 	private async Task StartOfGame()
 	{
 		stopAutoPlay = true;
+		await ClearOverlayOnPositionChange();
 		var first = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
 		if (first != null)
 		{
@@ -699,6 +713,7 @@
 	private async Task EndOfGame()
 	{
 		stopAutoPlay = true;
+		await ClearOverlayOnPositionChange();
 		ChessBoard.EndCurrentVariation();
 		var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
 		if (fenAndMove != null)
@@ -715,6 +730,7 @@
 	private async Task NextMove()
 	{
 		stopAutoPlay = true;
+		await ClearOverlayOnPositionChange();
 		var next = ChessBoard.TryGetNextMoveAndFen(fen);
 		if (next != null)
 		{
@@ -742,6 +758,7 @@
 	private async Task StepBackInternal(bool notifyParent)
 	{
 		stopAutoPlay = true;
+		await ClearOverlayOnPositionChange();
 		var prev = ChessBoard.TryGetPreviousMoveAndFen(fen);
 		if (prev != null)
 		{
@@ -774,6 +791,7 @@
 
 	public async Task OnReceivedFen(string newPos)
 	{
+		await ClearOverlayOnPositionChange();
 		fen = newPos;
 		await SetPosition(newPos, false);
 		UpdateVariationsDisplay();
@@ -789,6 +807,7 @@
 
 		if (fen != input.FenAfterMove)
 		{
+			await ClearOverlayOnPositionChange();
 			await SetPositionAndMove(input, invokeMove: true);
 			fen = input.FenAfterMove;
 			ChessBoard.LoadFen(fen);
@@ -819,14 +838,28 @@
 
 	public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
 	{
-		var list = moves.ToList();
+		var genBefore = _positionGeneration;
 		var lastNNMoves = GetNNValues(id);
 		lastNNMoves.Clear();
 		lastNNMoves.AddRange(moves);
-		if (id == currentId)
+
+		// Stale data check: position changed since we entered this method
+		if (genBefore != _positionGeneration)
 		{
-			await DisplayMoveAnnotation(lastNNMoves, id);
+			lastNNMoves.Clear();
+			return;
 		}
+
+		// Only display for engines that have overlay enabled
+		if (OverlaySetting.GetOverlaySetting(id) == OverlaySettings.None)
+			return;
+
+		// First-responder: if no engine is active, lock to this one
+		if (string.IsNullOrEmpty(currentId))
+			currentId = id;
+
+		if (id == currentId)
+			await DisplayMoveAnnotation(lastNNMoves, id);
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1029,6 +1062,7 @@
 		}
 
 		stopAutoPlay = true;
+		await ClearOverlayOnPositionChange();
 		ChessBoard.LoadFen(token.Fen);
 		var history = ChessBoard.GetMoveHistoryToCurrentFen(token.Fen);		
 		fen = token.Fen;

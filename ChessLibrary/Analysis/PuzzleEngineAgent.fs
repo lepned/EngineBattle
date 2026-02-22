@@ -210,7 +210,9 @@ let performValueNetworkTest
 
             let results = resultsBag.ToArray()
 
-            let networkName = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let networkName =
+                if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+                else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
 
             //Aggregate results
             let correct = results |> Array.filter (fun r -> r.WasCorrect)
@@ -286,7 +288,9 @@ let performPolicyOrSearchTest
 
         let results = resultsBag.ToArray()
 
-        let networkName = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+        let networkName =
+            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
 
         //Aggregate results
         let correct = results |> Array.filter (fun r -> r.WasCorrect)

@@ -477,7 +477,7 @@
                     {
                         overlayEngineSource = 1;
                         overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
-                        overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                        overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
                     }
                     else if (engine1SupportsOverlay)
                     {
@@ -916,13 +916,11 @@
         if (showOverlayControls && selectedOverlay == OverlaySettings.None)
         {
             selectedOverlay = OverlaySettings.Policy;
-            // Set overlay for the active source only (or the only one that supports it)
+            // Set overlay for both capable engines (first-responder in Chessboard picks which to display)
             if (engine1SupportsOverlay && engine2SupportsOverlay)
             {
-                // Both support - use selected source
-                var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
-                overlaySettings.SetOverlaySetting(activeId, selectedOverlay);
-                overlaySettings.SetOverlaySetting(overlayEngineSource == 1 ? "nnInput2" : "nnInput1", OverlaySettings.None);
+                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+                overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
             }
             else if (engine1SupportsOverlay)
             {
@@ -949,62 +947,40 @@
     private async Task SetOverlaySource(int source)
     {
         overlayEngineSource = source;
-        // Disable overlay on the other engine, enable on the selected one
-        if (source == 1)
-        {
+        // Both engines keep the selected overlay type
+        if (engine1SupportsOverlay)
             overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
-            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
-            await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput2");
-        }
-        else
-        {
-            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
+        if (engine2SupportsOverlay)
             overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
-            await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput2");
-        }
+        // Tell Chessboard which engine to display
+        var activeId = source == 1 ? "nnInput1" : "nnInput2";
+        await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
     }
 
     private async Task OnOverlayChanged()
     {
-        if (engine1SupportsOverlay && engine2SupportsOverlay)
+        if (engine1SupportsOverlay)
+            overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+        if (engine2SupportsOverlay)
+            overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
+
+        if (selectedOverlay != OverlaySettings.None)
         {
-            // Both support - only update the selected source
             var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
-            overlaySettings.SetOverlaySetting(activeId, selectedOverlay);
             await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
         }
         else
         {
-            // Only one supports - update whichever does
-            if (engine1SupportsOverlay)
-            {
-                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
-                await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
-            }
-            if (engine2SupportsOverlay)
-            {
-                overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
-                await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput2");
-            }
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput2");
         }
     }
 
     private async Task OnMinPolicyChanged(double value)
     {
         overlaySettings.MinPolicyThreshold = value;
-        if (engine1SupportsOverlay && engine2SupportsOverlay)
-        {
-            // Both support - only update the selected source
-            var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
-            await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
-        }
-        else
-        {
-            if (engine1SupportsOverlay) await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
-            if (engine2SupportsOverlay) await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput2");
-        }
+        var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+        await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
     }
 
     private void OpenDualPVComparison()
@@ -1107,10 +1083,9 @@
                         selectedOverlay = OverlaySettings.Policy;
                         if (engine1SupportsOverlay && engine2SupportsOverlay)
                         {
-                            // Both support - only enable for source 1 by default
                             overlayEngineSource = 1;
                             overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
-                            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
                         }
                         else if (engine1SupportsOverlay)
                         {

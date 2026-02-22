@@ -690,6 +690,8 @@ export function addChessboardToElement(dotnetHelper, fen, element) {
 
     var fen = await dotnetHelper.invokeMethodAsync('GetPositionFen');
     board.position(fen, true);
+    clearHighlightSquaresForElement(element);
+    clearOverlayLabels(element);
     highlightSquare2(element, target, toMove, false);
   }
 
@@ -700,6 +702,7 @@ export function setPositionWithCallback(dotnetHelper, element, fen, withCallback
   let board = element.board;
   board.position(fen, true);
   clearHighlightSquaresForElement(element);
+  clearOverlayLabels(element);
   if (withCallback) {
     dotnetHelper.invokeMethodAsync('UpdateNewMove', "", true);
   }
@@ -713,6 +716,7 @@ export function makeSimpleMove2(element, color, fromSq, toSq, fen) {
   let board = element.board;
   board.position(fen, true);
   clearHighlightSquaresForElement(element);
+  clearOverlayLabels(element);
   highlightSquare2(element, fromSq, color, false);
   highlightSquare2(element, toSq, color, false);
 }
@@ -721,6 +725,7 @@ export function makeSimpleMoveWithCallBack(dotnetHelper, element, color, fromSq,
     let board = element.board;
     board.position(fen, true);
     clearHighlightSquaresForElement(element);
+    clearOverlayLabels(element);
     highlightSquare2(element, fromSq, color, false);
     highlightSquare2(element, toSq, color, false);
     if (invokeMove) {
