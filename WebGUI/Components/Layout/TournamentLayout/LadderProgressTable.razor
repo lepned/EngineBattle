@@ -12,7 +12,7 @@
     <div class="header">
         <span class="header-text">Ladder Progress</span>
     </div>
-    <div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "20vh"); overflow-y: auto;" id="ladderProgressDiv">
+    <div class="standings-table-wrapper" style="@(Height > 0 ? $"max-height: {Height}px; overflow-y: auto;" : "")" id="ladderProgressDiv">
         <table class="custom-table">
             <thead>
                 <tr class="header-row">

@@ -21,7 +21,9 @@ module PairingHelper =
   /// tournaments using the same opening book get different shuffles.
   let shuffleOpenings (salt: string) (openings: PGNTypes.PgnGame list) =
     let arr = openings |> List.toArray
-    let seed = abs (hash (arr.Length, salt))
+    let bytes = System.Text.Encoding.UTF8.GetBytes($"{arr.Length}|{salt}")
+    let hashBytes = System.Security.Cryptography.MD5.HashData(bytes)
+    let seed = abs (BitConverter.ToInt32(hashBytes, 0))
     let rng = Random(seed)
     rng.Shuffle(arr)
     arr |> Array.toList

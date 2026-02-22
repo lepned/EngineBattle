@@ -642,7 +642,7 @@
 		await Task.Delay(1000);
 		var options = new DialogOptions()
 		{
-			MaxWidth = MaxWidth.ExtraLarge,
+			MaxWidth = MaxWidth.ExtraExtraLarge,
 			FullWidth = true,
 			CloseButton = false,
 			Position = DialogPosition.TopCenter
@@ -2273,7 +2273,7 @@
 		if (stateSummary == LadderStateSummary.Missing)
 			return true;
 
-		var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraLarge, FullWidth = true, CloseButton = false, Position = DialogPosition.TopCenter };
+		var options = new DialogOptions() { MaxWidth = MaxWidth.ExtraExtraLarge, FullWidth = true, CloseButton = false, Position = DialogPosition.TopCenter };
 		var parameters = new DialogParameters
 		{
 			{ "StatePath", statePath },

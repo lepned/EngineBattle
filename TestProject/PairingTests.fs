@@ -361,3 +361,24 @@ let ``round robin no player faces itself`` () =
 
     for g in games do
         Assert.NotEqual<string>(g.White.Name, g.Black.Name)
+
+[<Fact>]
+let ``shuffleOpenings produces same order for same salt across calls`` () =
+    let openings = [ for i in 1..20 -> mkOpening i ]
+    let salt = "C:/output/test.pgn|Alpha,Beta"
+
+    let result1 = shuffleOpenings salt openings
+    let result2 = shuffleOpenings salt openings
+
+    let raws1 = result1 |> List.map (fun g -> g.Raw)
+    let raws2 = result2 |> List.map (fun g -> g.Raw)
+    Assert.Equal<string list>(raws1, raws2)
+
+[<Fact>]
+let ``shuffleOpenings with different salts produces different order`` () =
+    let openings = [ for i in 1..20 -> mkOpening i ]
+
+    let result1 = shuffleOpenings "salt-A" openings |> List.map (fun g -> g.Raw)
+    let result2 = shuffleOpenings "salt-B" openings |> List.map (fun g -> g.Raw)
+
+    Assert.NotEqual<string list>(result1, result2)
