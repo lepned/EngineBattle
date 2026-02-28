@@ -89,6 +89,63 @@ let bestQ (nodes:int) (engine: ChessEngine) (pos: EPDEntry) (board:Board inref) 
   let m = qList |> Seq.minBy fst
   m
 
+let solvePuzzleSearch (nodes: int) (engine: ChessEngine) (pos: string) =
+  // A valid UCI move is 4-5 chars: [a-h][1-8][a-h][1-8][qrbn]?
+  // Used to strip non-move tokens from PV (e.g. Ceres appends "string M= N").
+  let isUciMove (s: string) =
+      (s.Length = 4 || s.Length = 5)
+      && s.[0] >= 'a' && s.[0] <= 'h'
+      && s.[1] >= '1' && s.[1] <= '8'
+      && s.[2] >= 'a' && s.[2] <= 'h'
+      && s.[3] >= '1' && s.[3] <= '8'
+
+  let mutable cont = true
+  let mutable bestmove = ""
+  let mutable lastPV = ""
+  let nnList = ResizeArray<EngineTypes.NNValues>()
+  engine.Position pos
+  engine.GoNodes nodes
+  while cont do
+    let line = engine.ReadLine()
+    if line.StartsWith "bestmove" then
+      bestmove <- line.Split().[1]
+      cont <- false
+    elif line.StartsWith "info depth" then
+      let pvMatch = EngineProtocol.Regex.pvRegex.Match(line)
+      if pvMatch.Success then
+        let rawPV = pvMatch.Groups.[1].Value.TrimEnd()
+        // Strip trailing non-move tokens (e.g. Ceres "string M= 2")
+        lastPV <-
+            rawPV.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            |> Array.takeWhile isUciMove
+            |> String.concat " "
+    elif line.StartsWith "info string" && line.Contains "N:" then
+      let nnMsg = EngineProtocol.Regex.getInfoStringData engine.Name line
+      if nnList.Count > 0 then nnList.Clear()
+      nnList.Add(nnMsg)
+      let mutable contNN = not (line.StartsWith "info string node")
+      while contNN do
+          let newline = engine.ReadLine()
+          if newline.StartsWith "info string node" then
+              contNN <- false
+          elif newline.StartsWith "info string" then
+              nnList.Add(EngineProtocol.Regex.getInfoStringData engine.Name newline)
+          else
+              // Non-NNValues line got interleaved — exit inner loop and handle it
+              contNN <- false
+              if newline.StartsWith "bestmove" then
+                  bestmove <- newline.Split().[1]
+                  cont <- false
+              elif newline.StartsWith "info depth" then
+                  let pvMatch = EngineProtocol.Regex.pvRegex.Match(newline)
+                  if pvMatch.Success then
+                      let rawPV = pvMatch.Groups.[1].Value.TrimEnd()
+                      lastPV <-
+                          rawPV.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                          |> Array.takeWhile isUciMove
+                          |> String.concat " "
+  (bestmove, lastPV, nnList)
+
 let getPuzzlePolicyEngine config =
   let engine = EngineHelper.createEngine(config)
   let ok = engine.WaitForReadyOk() // wait for readyok
@@ -233,6 +290,8 @@ let bestPolicyMove (nodes:int) (engine: ChessEngine) (pos:string)  =
 let bestMoveWithTime (timeInMs:int) (engine: ChessEngine) (pos:string) =
   let mutable cont = true
   let mutable infoString = ""
+  engine.UciNewGame()
+  engine.WaitForReadyOk() |> ignore
   engine.Position pos
   engine.Go timeInMs
   let list = ResizeArray<NNValues>()

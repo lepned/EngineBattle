@@ -401,39 +401,25 @@ module Program =
         | [] ->
             printfn "No puzzle types specified, defaulting to both policy and value test"
             PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
-        | [a] ->
-            printfn "Puzzle type specified: %s" a
-            match a with
-            | "policy" -> PuzzleRunners.runPolicyHeadTest(puzzleInput, update, ct)
-            | "value" -> PuzzleRunners.runValueHeadTest(puzzleInput, update, ct)
-            | "search" -> PuzzleRunners.runSearchTests(puzzleInput, update, ct)
-            | _ ->
-                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
-        | [a;b] ->
-            printfn "Puzzle type specified: %s" data.Type
-            match Set.ofList [a; b] with
-            | set when set = Set.ofList ["policy"; "search"] ->
-                PuzzleRunners.runPolicyAndSearchTests(puzzleInput, update, ct)
-            | set when set = Set.ofList ["policy"; "value"] ->
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
-            | set when set = Set.ofList ["search"; "value"] ->
-                PuzzleRunners.runValueAndSearchTest(puzzleInput, update, ct)
-            | _ ->
-                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
-        | [a;b;c] ->
-            printfn "Puzzle type specified: %s" data.Type
-            match Set.ofList [a; b; c] with
-            | set when set = Set.ofList ["policy"; "value"; "search"] ->
-                printfn "All three puzzle types specified: %s - running all tests, including search" data.Type
-                PuzzleRunners.runAllTests(puzzleInput, update, ct)
-            | _ ->
-                printfn "Invalid puzzle type specified: %s - defaulting to policy and value test" a
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
         | _ ->
-            printfn "Invalid puzzle type specified: %s - max three options are allowed, defaulting to policy and value test" data.Type
-            PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+            printfn "Puzzle types specified: %s" data.Type
+            let nodeList = PuzzleDataUtils.parseNodes puzzleInput.nodes
+            let subTests =
+                types
+                |> List.collect (fun t ->
+                    match t with
+                    | "policy" -> [ PuzzleEngineAgent.SubTest.Policy ]
+                    | "value"  -> [ PuzzleEngineAgent.SubTest.Value ]
+                    | "search" -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Search
+                    | "solve"  -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Solve
+                    | other ->
+                        printfn "Unknown puzzle type '%s', skipping" other
+                        [])
+            if subTests.IsEmpty then
+                printfn "No valid puzzle types found, defaulting to policy and value test"
+                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
+            else
+                PuzzleEngineAgent.runTest puzzleInput (Action<Lichess>(update)) subTests ct
 
     let valueScores = 
         scores 
@@ -451,9 +437,17 @@ module Program =
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
         |> Seq.toList
 
-    let search = 
-        scores 
+    let search =
+        scores
         |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Search") && e.Nodes > 1)
+        |> fun seq -> seq.OrderBy(fun e -> e.Filter)
+                         .ThenByDescending(fun e -> e.RatingAvg)
+                         .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
+        |> Seq.toList
+
+    let solve =
+        scores
+        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Solve") && e.Nodes > 1)
         |> fun seq -> seq.OrderBy(fun e -> e.Filter)
                          .ThenByDescending(fun e -> e.RatingAvg)
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
@@ -477,7 +471,7 @@ module Program =
             
             for (puzzle,_,policyStr) in sorted do
                 for cmd in puzzle.Commands do
-                    if not (String.IsNullOrWhiteSpace(cmd.MovePlayed)) then
+                    if not (String.IsNullOrWhiteSpace(cmd.MovePlayed)) && cmd.MovePlayed.Length >= 4 then
                         boardBm.PlayCommands(cmd.Command)
                         let fen = boardBm.FEN()
                         boardBm.PlayUciMove(cmd.CorrectMove)
@@ -495,7 +489,7 @@ module Program =
                         sw.WriteLine(msg)
         
     let escaped = escapeString data.FailedPuzzlesOutputFolder
-    let table = createCombinedScoresTable normalizedPath policyScores valueScores search
+    let table = createCombinedScoresTable normalizedPath policyScores valueScores search solve
     printfn "%s" table
 
     if Directory.Exists(escaped) then
@@ -509,6 +503,7 @@ module Program =
         writeToFile policyScores sw boardBm boardAm
         writeToFile valueScores sw boardBm boardAm
         writeToFile search sw boardBm boardAm
+        writeToFile solve sw boardBm boardAm
 
         let testTypeInfo = String.Join("-", types)
         let engineCount = engineConfigs.Count

@@ -109,9 +109,12 @@
       moveSeq = Board.GetSanMoveHistory();
       Board.PlayCommands(position.Command);
       var fenBeforeMovePlayed = Board.FEN();
-      Board.PlayUciMove(position.MovePlayed);
-      playedMove = position.MovePlayed;
-      var movePlayedInShortSan = Board.SanMovesPlayed.Last();      
+      if (!string.IsNullOrEmpty(position.MovePlayed) && position.MovePlayed.Length >= 4)
+      {
+          Board.PlayUciMove(position.MovePlayed);
+          playedMove = position.MovePlayed;
+      }
+      var movePlayedInShortSan = Board.SanMovesPlayed.LastOrDefault() ?? "";      
       theme = Puzzle.Themes;      
       var nr = (indexFailed + 1) / 2;
       (var correctMovePolicy, var movePlayedPolicy) = GetPolicyInfo(PolicyData);
@@ -126,7 +129,6 @@
         var correctMoveInShortSan = Board.SanMovesPlayed.Last();
         if (correctMovePolicy == string.Empty)
         {
-          // desc = $"Incorrect move {correctMoveInShortSan} on board {indexFailed + 1}, played {movePlayedInShortSan} | correct move sequence is: {moveSeq}";
           desc = $"Played incorrect move on board {indexFailed + 1}: {movePlayedInShortSan} | correct move sequence is: {moveSeq}";
         }
         else

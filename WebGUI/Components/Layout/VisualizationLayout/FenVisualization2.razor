@@ -40,7 +40,7 @@
 				}
 				else
 				{
-					var wrongMovePlayed = string.IsNullOrEmpty(MovePlayed) == false;
+					var wrongMovePlayed = !string.IsNullOrEmpty(MovePlayed) && MovePlayed.Length >= 4;
 					if (wrongMovePlayed)
 					{
 						var wrongFromSq = MovePlayed.Substring(0, 2);

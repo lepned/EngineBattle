@@ -194,6 +194,8 @@ module PuzzleTypes =
         | Ok      of AsyncReplyChannel<bool>
         | BestMove  of cmd:Position * AsyncReplyChannel<string*float>
         | BestMoveWithPolicy  of cmd:Position * correct:string * AsyncReplyChannel<string * string>
+        | SolvePuzzle of command:string * AsyncReplyChannel<string * string * ResizeArray<EngineTypes.NNValues>>
+        | NewGame   of AsyncReplyChannel<unit>
         | Quit      of AsyncReplyChannel<unit>
         | Network   of AsyncReplyChannel<string>
 

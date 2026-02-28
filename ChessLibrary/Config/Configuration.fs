@@ -656,6 +656,9 @@ module JSONParser =
                   sb.Append(c) |> ignore
           sb.ToString()
 
+    let private emptyPositions : Position seq = Seq.empty
+    let private emptyFens : string seq = Seq.empty
+
     let parsePuzzle (filePath: string) (random: bool) : CsvPuzzleData[] =
         let parseLine (line: string) =
             let fields = line.Split(',')
@@ -669,13 +672,11 @@ module JSONParser =
             let themes          = fields.[7]
             let gameUrl         = fields.[8]
             let openingTags     = fields.[9]
-            let fens            = ResizeArray<string>()
-            let posList         = ResizeArray<Position>()
 
             CsvPuzzleData.Create(
               puzzleId, fen, moves, rating, ratingDeviation,
               popularity, nbPlays, themes, gameUrl,
-              openingTags, line, posList, fens, 0
+              openingTags, "", emptyPositions, emptyFens, 0
             )
 
         let records =
@@ -706,9 +707,9 @@ module JSONParser =
                     fields.[7],
                     fields.[8],
                     fields.[9],
-                    line,
-                    ResizeArray<Position>(),
-                    ResizeArray<string>(),
+                    "",
+                    emptyPositions,
+                    emptyFens,
                     0 ))
 
         if random then

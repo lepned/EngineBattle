@@ -43,6 +43,18 @@ let runSearchTests
     |> List.map Search
   runTest input callback searches ct
 
+/// Only "solve" runs at each node setting
+let runSolveTests
+    (input    : PuzzleInput,
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
+  =
+  let solves =
+    parseNodes input.nodes
+    |> Array.toList
+    |> List.map Solve
+  runTest input callback solves ct
+
 /// Value + Policy
 let runValueAndPolicyHeadTest
     (input      : PuzzleInput,
@@ -76,7 +88,41 @@ let runPolicyAndSearchTests
     |> List.map Search
   runTest input callback (Policy :: searches) ct
 
-/// All three: Value, Policy, and (if requested) Search
+/// Search + Solve
+let runSearchAndSolveTests
+    (input    : PuzzleInput,
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
+  =
+  let nodes = parseNodes input.nodes |> Array.toList
+  let tests = (nodes |> List.map Search) @ (nodes |> List.map Solve)
+  runTest input callback tests ct
+
+/// Policy + Solve
+let runPolicyAndSolveTests
+    (input    : PuzzleInput,
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
+  =
+  let solves =
+    parseNodes input.nodes
+    |> Array.toList
+    |> List.map Solve
+  runTest input callback (Policy :: solves) ct
+
+/// Value + Solve
+let runValueAndSolveTests
+    (input    : PuzzleInput,
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
+  =
+  let solves =
+    parseNodes input.nodes
+    |> Array.toList
+    |> List.map Solve
+  runTest input callback (Value :: solves) ct
+
+/// All: Value, Policy, Search, and Solve
 let runAllTests
     (input      : PuzzleInput,
      callback   : Action<Lichess>,
@@ -85,7 +131,8 @@ let runAllTests
   let baseTests = [ Value; Policy ]
   let allTests =
       baseTests @
-      (parseNodes input.nodes |> Array.toList |> List.map Search)
+      (parseNodes input.nodes |> Array.toList |> List.map Search) @
+      (parseNodes input.nodes |> Array.toList |> List.map Solve)
   runTest input callback allTests ct
 
 let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (boardBm: Chess.Board) (boardAm: Chess.Board) =

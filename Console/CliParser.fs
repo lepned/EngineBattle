@@ -27,14 +27,15 @@ let createCombinedScoresTable
     (fileName: string)
     (policyScores: ChessLibrary.PuzzleTypes.Score list)
     (valueScores: ChessLibrary.PuzzleTypes.Score list)
-    (searchScores: ChessLibrary.PuzzleTypes.Score list)=
+    (searchScores: ChessLibrary.PuzzleTypes.Score list)
+    (solveScores: ChessLibrary.PuzzleTypes.Score list)=
 
     let sb = StringBuilder()
     sb.AppendLine("\n```\n") |> ignore
     sb.AppendLine(sprintf "Puzzle file name: %s\n" fileName) |> ignore
 
     // Combine all sets of scores
-    let allScores = policyScores @ valueScores @ searchScores
+    let allScores = policyScores @ valueScores @ searchScores @ solveScores
 
     // Helper to get max of header length vs. data lengths
     let maxOf (header:string) (lengths :int list) =
@@ -168,6 +169,39 @@ let createCombinedScoresTable
 
     // Append each search score row
     searchScores
+    |> List.iter (fun s ->
+        let perf = s.PlayerRecord.Rating.ToString("F0")
+        let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
+        let line =
+            sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
+                (s.Engine.PadRight maxEngineWidth)
+                (s.NeuralNet.PadRight maxNeuralNetWidth)
+                (perf.PadRight maxPerfWidth)
+                (accuracy.PadRight maxAccuracyWidth)
+                (s.TotalNumber.ToString().PadRight maxTotalWidth)
+                (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth)
+                (s.Filter.PadRight maxThemeWidth)
+                (s.Nodes.ToString().PadRight maxNodesWidth)
+        widestText <- if widestText.Length < line.Length then line else widestText
+        if s.RatingAvg <> startGroup then
+            startGroup <- s.RatingAvg
+            sb.AppendLine(separatorLine) |> ignore
+        sb.AppendLine(line) |> ignore)
+    sb.AppendLine() |> ignore
+
+    // Append solve Tests
+    if solveScores.Length > 0 then
+        sb.AppendLine("Solve Tests\n") |> ignore
+        sb.AppendLine(headerLine) |> ignore
+
+    widestText <- ""
+    let mutable startGroup =
+        match solveScores |> List.tryHead with
+        | Some s -> s.RatingAvg
+        | None -> 0
+
+    // Append each solve score row
+    solveScores
     |> List.iter (fun s ->
         let perf = s.PlayerRecord.Rating.ToString("F0")
         let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
