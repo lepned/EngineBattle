@@ -88,6 +88,7 @@
 		<Compile Include="Analysis\PuzzleDataUtils.fs" />
 		<Compile Include="Analysis\PuzzleEngineAnalysis.fs" />
 		<Compile Include="Analysis\PuzzleEngineAgent.fs" />
+		<Compile Include="Analysis\PuzzleCrossEngine.fs" />
 		<Compile Include="Analysis\PuzzleRunners.fs" />
 
 		<!-- Internal utilities (perft, test helpers) -->

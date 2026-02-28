@@ -843,6 +843,14 @@
                             }
                         }
                     }
+
+                    // Cross-engine analysis files
+                    var allScoresForCross = PolicyScores.AsEnumerable()
+                        .Concat(ValueScores)
+                        .Concat(SearchScores)
+                        .Concat(SolveScores);
+                    ChessLibrary.PuzzleCrossEngine.writeCrossEngineFiles(normalized, datePart, allScoresForCross);
+
                     //write table to file with date and time
                     var tableFileName = Path.Combine(normalized, $"LichessSummary{datePart}.txt");
                     using (StreamWriter sw = new StreamWriter(tableFileName))

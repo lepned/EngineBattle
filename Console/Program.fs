@@ -505,6 +505,9 @@ module Program =
         writeToFile search sw boardBm boardAm
         writeToFile solve sw boardBm boardAm
 
+        let allScoresForCross = Seq.concat [ policyScores; valueScores; search; solve ]
+        PuzzleCrossEngine.writeCrossEngineFiles escaped filenameFriendlyDate allScoresForCross
+
         let testTypeInfo = String.Join("-", types)
         let engineCount = engineConfigs.Count
         //write table to file with date and time
