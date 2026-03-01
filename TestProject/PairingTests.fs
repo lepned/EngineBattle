@@ -32,7 +32,7 @@ let ``gauntletSingleRound pairs challengers with all opponents`` () =
     let opponents = [ mkEngine "B"; mkEngine "C" ]
     let openings = [ mkOpening 1 ]
 
-    let games = gauntletSingleRound false challengers opponents openings
+    let games = gauntletSingleRound false false openings.Length challengers opponents openings
 
     Assert.Equal(2, games.Length)
     Assert.All(games, fun g -> Assert.Equal("A", g.White.Name))
@@ -45,7 +45,7 @@ let ``gauntletDoubleRound includes color-reversed rematches`` () =
     let opponents = [ mkEngine "B"; mkEngine "C" ]
     let openings = [ mkOpening 1 ]
 
-    let games = gauntletDoubleRound false challengers opponents openings
+    let games = gauntletDoubleRound false false openings.Length challengers opponents openings
 
     Assert.Equal(4, games.Length)
 
@@ -212,7 +212,7 @@ let ``gauntletSingleRound with multiple challengers pairs each against all oppon
     let opponents = [ mkEngine "X"; mkEngine "Y" ]
     let openings = [ mkOpening 1 ]
 
-    let games = gauntletSingleRound false challengers opponents openings
+    let games = gauntletSingleRound false false openings.Length challengers opponents openings
 
     Assert.Equal(4, games.Length)
     let whites = games |> List.map (fun g -> g.White.Name) |> Set.ofList
@@ -226,7 +226,7 @@ let ``gauntletSingleRound with multiple openings generates games per opening`` (
     let opponents = [ mkEngine "B"; mkEngine "C" ]
     let openings = [ mkOpening 1; mkOpening 2 ]
 
-    let games = gauntletSingleRound false challengers opponents openings
+    let games = gauntletSingleRound false false openings.Length challengers opponents openings
 
     // 1 challenger * 2 opponents * 2 openings = 4 games
     Assert.Equal(4, games.Length)
@@ -239,8 +239,8 @@ let ``gauntletSingleRound with doNotDeviate rotates opponents per opening`` () =
     let opponents = [ mkEngine "B"; mkEngine "C"; mkEngine "D" ]
     let openings = [ mkOpening 1; mkOpening 2 ]
 
-    let gamesRotated = gauntletSingleRound true challengers opponents openings
-    let gamesStatic = gauntletSingleRound false challengers opponents openings
+    let gamesRotated = gauntletSingleRound true false openings.Length challengers opponents openings
+    let gamesStatic = gauntletSingleRound false false openings.Length challengers opponents openings
 
     // Both produce same total count
     Assert.Equal(gamesRotated.Length, gamesStatic.Length)
@@ -261,7 +261,7 @@ let ``gauntletDoubleRound with multiple openings doubles game count`` () =
     let opponents = [ mkEngine "B" ]
     let openings = [ mkOpening 1; mkOpening 2 ]
 
-    let games = gauntletDoubleRound false challengers opponents openings
+    let games = gauntletDoubleRound false false openings.Length challengers opponents openings
 
     // 1 challenger * 1 opponent * 2 openings * 2 colors = 4 games
     Assert.Equal(4, games.Length)
@@ -277,7 +277,7 @@ let ``gauntletSingleRound game numbers are sequential`` () =
     let opponents = [ mkEngine "B"; mkEngine "C" ]
     let openings = [ mkOpening 1; mkOpening 2 ]
 
-    let games = gauntletSingleRound false challengers opponents openings
+    let games = gauntletSingleRound false false openings.Length challengers opponents openings
 
     let gameNrs = games |> List.map (fun g -> g.GameNr)
     Assert.Equal<int list>([ 1; 2; 3; 4 ], gameNrs)
@@ -382,3 +382,114 @@ let ``shuffleOpenings with different salts produces different order`` () =
     let result2 = shuffleOpenings "salt-B" openings |> List.map (fun g -> g.Raw)
 
     Assert.NotEqual<string list>(result1, result2)
+
+[<Fact>]
+let ``gauntletSingleRound randomOffset gives each opponent a unique opening per round`` () =
+    let challengers = [ mkEngine "Hero" ]
+    let opponents = [ mkEngine "A"; mkEngine "B"; mkEngine "C" ]
+    let openings = [ for i in 1..9 -> mkOpening i ]
+
+    let games = gauntletSingleRound false true 3 challengers opponents openings
+
+    // 1 challenger * 3 opponents * 3 rounds = 9 games
+    Assert.Equal(9, games.Length)
+    // Group by round (3 games per round)
+    let rounds = games |> List.chunkBySize 3
+    for round in rounds do
+        let openingRaws = round |> List.map (fun g -> g.Opening.Raw)
+        // Each opponent in the round gets a different opening
+        Assert.Equal(3, openingRaws |> List.distinct |> List.length)
+
+[<Fact>]
+let ``gauntletSingleRound randomOffset challengers share same opening vs same opponent`` () =
+    let challengers = [ mkEngine "Hero1"; mkEngine "Hero2" ]
+    let opponents = [ mkEngine "A"; mkEngine "B" ]
+    let openings = [ for i in 1..4 -> mkOpening i ]
+
+    let games = gauntletSingleRound false true 2 challengers opponents openings
+
+    // 2 challengers * 2 opponents * 2 rounds = 8 games
+    Assert.Equal(8, games.Length)
+    // For each (round, opponent) pair, both challengers use the same opening
+    let grouped =
+        games
+        |> List.groupBy (fun g -> g.Opening.Raw, g.Black.Name)
+    for ((openingRaw, oppName), gs) in grouped do
+        let challengerNames = gs |> List.map (fun g -> g.White.Name) |> Set.ofList
+        Assert.Equal(2, challengerNames.Count) // Both challengers present
+
+[<Fact>]
+let ``gauntletSingleRound randomOffset with single opponent degenerates to current behavior`` () =
+    let challengers = [ mkEngine "Hero" ]
+    let opponents = [ mkEngine "Opp" ]
+    let openings = [ for i in 1..5 -> mkOpening i ]
+
+    let gamesOffset = gauntletSingleRound false true 5 challengers opponents openings
+    let gamesNormal = gauntletSingleRound false false openings.Length challengers opponents openings
+
+    Assert.Equal(gamesNormal.Length, gamesOffset.Length)
+    // Same openings used in same order
+    let offsetRaws = gamesOffset |> List.map (fun g -> g.Opening.Raw)
+    let normalRaws = gamesNormal |> List.map (fun g -> g.Opening.Raw)
+    Assert.Equal<string list>(normalRaws, offsetRaws)
+
+[<Fact>]
+let ``gauntletDoubleRound randomOffset gives each opponent a unique opening per round`` () =
+    let challengers = [ mkEngine "Hero" ]
+    let opponents = [ mkEngine "A"; mkEngine "B" ]
+    let openings = [ for i in 1..6 -> mkOpening i ]
+
+    let games = gauntletDoubleRound false true 3 challengers opponents openings
+
+    // 1 challenger * 2 opponents * 3 rounds * 2 colors = 12 games
+    Assert.Equal(12, games.Length)
+    // Group by opening: each opening should appear exactly twice (both colors)
+    let perOpening =
+        games
+        |> List.groupBy (fun g -> g.Opening.Raw)
+        |> List.map (fun (_, gs) -> gs.Length)
+    Assert.All(perOpening, fun count -> Assert.Equal(2, count))
+    // 6 distinct openings used
+    Assert.Equal(6, perOpening.Length)
+
+[<Fact>]
+let ``gauntletSingleRound randomOffset wraps with modulo when book is smaller than needed`` () =
+    let challengers = [ mkEngine "Hero" ]
+    let opponents = [ mkEngine "A"; mkEngine "B"; mkEngine "C" ]
+    // Book has only 4 openings, but we want 5 rounds (needs 15 slots, wraps around)
+    let openings = [ for i in 1..4 -> mkOpening i ]
+
+    let games = gauntletSingleRound false true 5 challengers opponents openings
+
+    // 1 challenger * 3 opponents * 5 rounds = 15 games
+    Assert.Equal(15, games.Length)
+    // All 15 games should have valid openings (no index-out-of-range)
+    Assert.All(games, fun g -> Assert.NotNull(g.Opening))
+
+[<Fact>]
+let ``filterByPlayCount handles duplicate pairing keys from modulo wrapping`` () =
+    let challengers = [ mkEngine "Hero" ]
+    let opponents = [ mkEngine "A"; mkEngine "B"; mkEngine "C" ]
+    let openings = [ for i in 1..4 -> mkOpening i ]
+
+    let allPairings = gauntletSingleRound false true 5 challengers opponents openings
+    Assert.Equal(15, allPairings.Length)
+
+    // Simulate: first 3 games were played (round 0, all 3 opponents)
+    let playedGames =
+        allPairings
+        |> List.take 3
+        |> List.map (fun p ->
+            { PgnGame.Empty p.GameNr with
+                GameMetaData = { GameMetadata.Empty with
+                                    OpeningHash = p.OpeningHash
+                                    Fen = p.Opening.GameMetaData.Fen
+                                    White = p.White.Name
+                                    Black = p.Black.Name } })
+        |> List.toArray
+
+    let remaining = filterByPlayCount allPairings playedGames
+    // Should skip exactly 3, play remaining 12
+    Assert.Equal(12, remaining.Length)
+    // First remaining game should be game #4 (round 1, opp A)
+    Assert.Equal(4, remaining.Head.GameNr)

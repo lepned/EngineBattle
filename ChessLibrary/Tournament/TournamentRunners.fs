@@ -65,6 +65,9 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
   let mutable results = List.empty<Result>
 
   // Load openings, games already played, and reference games using helpers
+  let challengers = tourny.EngineSetup.Engines |> List.take tourny.Challengers
+  let opponents = tourny.EngineSetup.Engines |> List.skip tourny.Challengers
+  let useRandomOffset = tourny.Opening.RandomOpenings && opponents.Length > 1
   let (games, epdBook) = loadOpenings tourny.Opening.OpeningsPath tourny.Rounds
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
@@ -73,20 +76,19 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
     let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
     if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
     else openings
-  let challengers = tourny.EngineSetup.Engines |> List.take tourny.Challengers
-  let opponents = tourny.EngineSetup.Engines |> List.skip tourny.Challengers
   let pairings =
     if tourny.Opening.OpeningsTwice then
-      PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation challengers opponents roundsToPlay
+      PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers opponents roundsToPlay
     else
-      PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation challengers opponents roundsToPlay
-  let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
+      PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers opponents roundsToPlay
   let gamesLeftToPlay =
-    [
-      for p in pairings do
-      if PairingHelper.hasPlayedBefore p playedSet |> not then
-        yield p
-    ]
+    if useRandomOffset then
+      PairingHelper.filterByPlayCount pairings gamesAlreadyPlayed
+    else
+      let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
+      [ for p in pairings do
+          if PairingHelper.hasPlayedBefore p playedSet |> not then
+            yield p ]
 
   PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
   let totalGames = pairings.Length

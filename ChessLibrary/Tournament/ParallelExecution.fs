@@ -71,6 +71,11 @@ let parallelTournamentRun
 
       logger.LogInformation("Tournament in parallel run about to start")
 
+      let challengers = tourny.EngineSetup.Engines |> List.filter(fun e -> e.IsChallenger)
+      let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
+      let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
+      let useRandomOffset = isGauntlet && tourny.Opening.RandomOpenings && rest.Length > 1
+
       let mutable epdBook = false
       let games =
           match tourny.Opening.OpeningsPath with
@@ -107,30 +112,29 @@ let parallelTournamentRun
           else
               [||]
       let gamesToPlay =
-          let openings = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
+          let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
           if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
           else openings
-      let challengers = tourny.EngineSetup.Engines |> List.filter(fun e -> e.IsChallenger)
-      let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
 
       let allPairings =
-          if tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase) then
+          if isGauntlet then
               if tourny.Opening.OpeningsTwice then
-                  PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation challengers rest gamesToPlay
+                  PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers rest gamesToPlay
               else
-                  PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation challengers rest gamesToPlay
+                  PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers rest gamesToPlay
           else
               if tourny.Opening.OpeningsTwice then
                   PairingHelper.generateAllRoundRobinDoubleRounds tourny.EngineSetup.Engines gamesToPlay
               else
                   PairingHelper.generateAllRoundRobinSingleRounds tourny.EngineSetup.Engines gamesToPlay
-      let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
       let gamesLeftToPlay =
-          [
-          for p in allPairings do
-          if PairingHelper.hasPlayedBefore p playedSet |> not then
-              yield p
-          ]
+          if useRandomOffset then
+              PairingHelper.filterByPlayCount allPairings gamesAlreadyPlayed
+          else
+              let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
+              [ for p in allPairings do
+                  if PairingHelper.hasPlayedBefore p playedSet |> not then
+                      yield p ]
 
       if tourny.VerboseLogging then
           PairingHelper.printAllOpeningPairs logger gamesLeftToPlay

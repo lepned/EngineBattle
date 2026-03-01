@@ -493,6 +493,27 @@ module PairingHelper =
         let key = pairingKey pairing.OpeningHash pairing.Opening.GameMetaData.Fen pairing.White.Name pairing.Black.Name
         playedSet.Contains key
 
+  /// Count-based filtering for pairings that may have duplicate keys (e.g. modulo-wrapped openings).
+  /// Each played game decrements the count for its key; remaining pairings with exhausted counts are kept.
+  let filterByPlayCount (pairings: Pairing list) (gamesAlreadyPlayed: PgnGame array) =
+        let playedCounts = Dictionary<string, int>()
+        for g in gamesAlreadyPlayed do
+            let key =
+                pairingKey
+                    (if String.IsNullOrEmpty g.GameMetaData.OpeningHash then g.GameNumber.ToString() else g.GameMetaData.OpeningHash)
+                    g.GameMetaData.Fen
+                    g.GameMetaData.White
+                    g.GameMetaData.Black
+            match playedCounts.TryGetValue(key) with
+            | true, n -> playedCounts.[key] <- n + 1
+            | false, _ -> playedCounts.[key] <- 1
+        [ for p in pairings do
+            let key = pairingKey p.OpeningHash p.Opening.GameMetaData.Fen p.White.Name p.Black.Name
+            match playedCounts.TryGetValue(key) with
+            | true, n when n > 0 ->
+                playedCounts.[key] <- n - 1
+            | _ -> yield p ]
+
   /// Rotates a list by moving the first element to the end.
   /// Used in Berger round robin pairing to rotate the player list each round.
   let rotateListByOne (lst: 'a list) : 'a list =
@@ -527,15 +548,33 @@ module PairingHelper =
       ] |> List.concat
 
 
-  let gauntletSingleRound doNotDeviate (challengers: EngineConfig list) (opponents: EngineConfig list) (openings: PGNTypes.PgnGame list) =
-    [
-      let mutable opponents = opponents
-      for opening in openings do
-        if doNotDeviate then
-          opponents <- rotateListByOne opponents
-        let games = gauntletSingleRoundPerOpening challengers opponents opening
-        yield games
-    ] |> List.concat |> List.mapi(fun i e -> {e with GameNr = i + 1})
+  let gauntletSingleRound doNotDeviate randomOffsetOpenings (rounds: int) (challengers: EngineConfig list) (opponents: EngineConfig list) (openings: PGNTypes.PgnGame list) =
+    if randomOffsetOpenings && opponents.Length > 1 then
+      // Each opponent gets a unique opening per round, wrapping with modulo if book is smaller.
+      let numOpponents = opponents.Length
+      let bookSize = openings.Length
+      [
+        for roundIdx in 0 .. rounds - 1 do
+          let mutable opps = opponents
+          if doNotDeviate then
+            for _ in 1 .. roundIdx + 1 do
+              opps <- rotateListByOne opps
+          for oppIdx in 0 .. opps.Length - 1 do
+            let o = opps.[oppIdx]
+            let slotIdx = roundIdx * numOpponents + oppIdx
+            let opening = openings.[slotIdx % bookSize]
+            let games = gauntletSingleRoundPerOpening challengers [o] opening
+            yield games
+      ] |> List.concat |> List.mapi(fun i e -> {e with GameNr = i + 1})
+    else
+      [
+        let mutable opponents = opponents
+        for opening in openings do
+          if doNotDeviate then
+            opponents <- rotateListByOne opponents
+          let games = gauntletSingleRoundPerOpening challengers opponents opening
+          yield games
+      ] |> List.concat |> List.mapi(fun i e -> {e with GameNr = i + 1})
 
   let gauntletDoubleRoundPerOpening (challengers: EngineConfig list) (opponents: EngineConfig list) (opening: PGNTypes.PgnGame) =
       let singleMatches = gauntletSingleRoundPerOpening challengers opponents opening
@@ -545,15 +584,32 @@ module PairingHelper =
       let reverseGames = singleMatches |> List.mapi (fun idx p -> reverseColors p (fromIdx + idx))
       (singleMatches @ reverseGames)
 
-  let gauntletDoubleRound doNotDeviate (challengers: EngineConfig list) (opponents: EngineConfig list) (openings: PGNTypes.PgnGame list) =
-    [
-      let mutable opponents = opponents
-      for opening in openings do
-        if doNotDeviate then
-          opponents <- rotateListByOne opponents
-        let games = gauntletDoubleRoundPerOpening challengers opponents opening
-        yield games
-    ] |> List.concat |> List.mapi(fun i e -> {e with GameNr = i + 1})
+  let gauntletDoubleRound doNotDeviate randomOffsetOpenings (rounds: int) (challengers: EngineConfig list) (opponents: EngineConfig list) (openings: PGNTypes.PgnGame list) =
+    if randomOffsetOpenings && opponents.Length > 1 then
+      let numOpponents = opponents.Length
+      let bookSize = openings.Length
+      [
+        for roundIdx in 0 .. rounds - 1 do
+          let mutable opps = opponents
+          if doNotDeviate then
+            for _ in 1 .. roundIdx + 1 do
+              opps <- rotateListByOne opps
+          for oppIdx in 0 .. opps.Length - 1 do
+            let o = opps.[oppIdx]
+            let slotIdx = roundIdx * numOpponents + oppIdx
+            let opening = openings.[slotIdx % bookSize]
+            let games = gauntletDoubleRoundPerOpening challengers [o] opening
+            yield games
+      ] |> List.concat |> List.mapi(fun i e -> {e with GameNr = i + 1})
+    else
+      [
+        let mutable opponents = opponents
+        for opening in openings do
+          if doNotDeviate then
+            opponents <- rotateListByOne opponents
+          let games = gauntletDoubleRoundPerOpening challengers opponents opening
+          yield games
+      ] |> List.concat |> List.mapi(fun i e -> {e with GameNr = i + 1})
 
   let getRotatedLists (players: EngineConfig list) =
     let padded =
