@@ -14,31 +14,6 @@
 @inject OverlaySetting OverlaySetting
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
-<div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
-	<MudPaper Elevation="3" Class="pa-1">
-		<MudStack Row="true" Spacing="0">
-			<MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
-						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-				<img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
-					 style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-			</MudIconButton>
-			<MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
-						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-				<img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-			</MudIconButton>
-			<MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
-						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-				<img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-			</MudIconButton>
-			<MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
-						   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-				<img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-
-			</MudIconButton>
-		</MudStack>
-	</MudPaper>
-</div>
-
 <MudGrid Justify="Justify.Center">
 	@if (ShowPlayerInfo)
 	{
@@ -48,7 +23,32 @@
 	}
 
 	<MudItem sm=12 md="12" lg="12">
-		<div class="chessboard-root" style="height:100%" @ref="board"></div>
+		<div style="position:relative;">
+			<div class="chessboard-root" style="height:100%" @ref="board"></div>
+			<div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
+				<MudPaper Elevation="3" Class="pa-1">
+					<MudStack Row="true" Spacing="0">
+						<MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
+									   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+							<img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
+								 style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+						</MudIconButton>
+						<MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
+									   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+							<img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+						</MudIconButton>
+						<MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
+									   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+							<img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+						</MudIconButton>
+						<MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
+									   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+							<img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+						</MudIconButton>
+					</MudStack>
+				</MudPaper>
+			</div>
+		</div>
 	</MudItem>
 
 	@if (!String.IsNullOrEmpty(OpeningMoves))

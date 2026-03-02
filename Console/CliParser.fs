@@ -15,9 +15,22 @@ type AnalyzeParams =
       UciOptions: (string * string) list
       ShowOptions: bool }
 
+type CompareParams =
+    { Engine1: string
+      Engine2: string
+      Fen: string
+      PositionsFile: string option
+      Nodes: int option
+      MoveTime: int option
+      Depth: int option
+      Threshold: float option
+      UciOptions1: (string * string) list
+      UciOptions2: (string * string) list }
+
 type VerbResult =
     | Perft of depth:int * sampleSize:int
     | Analyze of AnalyzeParams
+    | Compare of CompareParams
     | PuzzleJson of path:string
     | Tournament of configFile:string
     | Eret of configFile: string
@@ -303,6 +316,38 @@ module CustomParser =
                               UciOptions = List.rev uciOptions; ShowOptions = showOptions }
                     parseArgs args i (Verb (Analyze p) :: acc)
                 else failwith "Missing parameter for Analyze (requires: <engine>)"
+            | "compare" | "cmp" -> // Handle the Compare verb
+                if index + 2 < args.Length then
+                    let engine1 = args.[index + 1]
+                    let engine2 = args.[index + 2]
+                    let mutable i = index + 3
+                    let mutable fen = "startpos"
+                    let mutable positions = None
+                    let mutable nodes = None
+                    let mutable movetime = None
+                    let mutable depth = None
+                    let mutable threshold = None
+                    let mutable uci1 = []
+                    let mutable uci2 = []
+                    while i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--fen" -> fen <- args.[i + 1]; i <- i + 2
+                        | "--positions" -> positions <- Some args.[i + 1]; i <- i + 2
+                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--depth" -> depth <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--threshold" ->
+                            threshold <- Some (Double.Parse(args.[i + 1], System.Globalization.CultureInfo.InvariantCulture))
+                            i <- i + 2
+                        | "--uci1" -> uci1 <- (args.[i + 1], args.[i + 2]) :: uci1; i <- i + 3
+                        | "--uci2" -> uci2 <- (args.[i + 1], args.[i + 2]) :: uci2; i <- i + 3
+                        | unknown -> failwithf "Unknown compare option: %s" unknown
+                    let p = { Engine1 = engine1; Engine2 = engine2; Fen = fen
+                              PositionsFile = positions; Nodes = nodes; MoveTime = movetime
+                              Depth = depth; Threshold = threshold
+                              UciOptions1 = List.rev uci1; UciOptions2 = List.rev uci2 }
+                    parseArgs args i (Verb (Compare p) :: acc)
+                else failwith "Missing parameters for Compare (requires: <engine1> <engine2>)"
             | "puzzlejson" | "puzzle" | "p" -> // Handle the PuzzleFile verb
                 if index + 1 < args.Length then
                     let puzzleFile = args.[index + 1]

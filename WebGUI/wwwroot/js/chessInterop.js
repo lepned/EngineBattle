@@ -672,15 +672,16 @@ export function addChessboardToElement(dotnetHelper, fen, element) {
     // Check if this is a promotion move
     if (moveValidated && moveValidated.startsWith("promotion:")) {
 
-      // Get the position of the target square for showing the dialog
+      // Get the position of the target square relative to the board element
       const square = element.querySelector(`[data-square-coord=${target}]`);
       const rect = square.getBoundingClientRect();
+      const boardRect = element.getBoundingClientRect();
 
       // Get the side to move to determine piece color
       const isWhite = toMove === 'w';
 
       // Show promotion dialog and get selected piece
-      const promotionPiece = await dotnetHelper.invokeMethodAsync('ShowPromotionDialog', moveStr, Math.round(rect.left), Math.round(rect.top), isWhite);
+      const promotionPiece = await dotnetHelper.invokeMethodAsync('ShowPromotionDialog', moveStr, Math.round(rect.left - boardRect.left), Math.round(rect.top - boardRect.top), isWhite);
 
       // Now we have the complete move with promotion piece
       dotnetHelper.invokeMethodAsync('UpdateNewMove', promotionPiece, true);

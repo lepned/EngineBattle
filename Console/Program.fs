@@ -349,6 +349,109 @@ module Program =
       (Eret.processEret data)
       CancellationToken.None |> ignore
 
+  type PositionResult = {
+      Depth: int; SDepth: int; Eval: ChessLibrary.MiscTypes.EvalType
+      Nodes: int64; Nps: int64; Time: TimeSpan
+      TBHits: int64; WDL: ChessLibrary.EngineTypes.WDL option
+      Bestmove: string; PV: string; SanPV: string
+  }
+
+  /// Resolves an engine path (JSON config or bare exe) to an EngineConfig, applying UCI option overrides.
+  let private resolveEngineConfig (enginePath: string) (uciOptions: (string * string) list) =
+      let normalizedEngine = normalizePath enginePath
+      if not (File.Exists normalizedEngine) then
+          failwithf "Engine file not found: %s" normalizedEngine
+      let config =
+          if normalizedEngine.EndsWith(".json", StringComparison.OrdinalIgnoreCase) then
+              Configuration.JSON.readSingleEngineConfig normalizedEngine
+          else
+              TypesDef.CoreTypes.EngineConfig.EmptyWithPath normalizedEngine
+      let options = System.Collections.Generic.Dictionary<string, obj>(config.Options)
+      for (key, value) in uciOptions do
+          options.[key] <- box value
+      { config with Options = options }
+
+  /// Runs engine analysis on a single position using an already-created engine.
+  /// Sends ucinewgame + isready before the search. Caller is responsible for engine lifecycle.
+  let private analyzePosition (engine: Engine.ChessEngine) (fen: string) (moves: string list) (searchDepth: int option) (searchMovetime: int option) (searchNodes: int option) (verbose: bool) =
+      let isStartpos = fen.Equals("startpos", StringComparison.OrdinalIgnoreCase)
+      let actualFen =
+          if isStartpos then "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+          else fen
+      let board = ChessLibrary.Chess.Board()
+      board.LoadFen actualFen
+      for m in moves do
+          board.PlayUciMove m
+      let isWhite = board.Position.STM = 0uy
+
+      engine.UciNewGame()
+      let ok = engine.WaitForReadyOk(60000)
+      if not ok then failwith "Engine did not respond to isready"
+
+      let movesStr = if moves.Length > 0 then " moves " + String.concat " " moves else ""
+      if isStartpos then
+          engine.Position("position startpos" + movesStr)
+      else
+          engine.Position(sprintf "position fen %s%s" actualFen movesStr)
+
+      match searchDepth, searchMovetime, searchNodes with
+      | Some d, _, _ -> engine.Write(sprintf "go depth %d" d)
+      | _, Some ms, _ -> engine.Go ms
+      | _, _, Some n -> engine.GoNodes n
+      | _ -> engine.GoNodes 1_000_000
+
+      let sw = Diagnostics.Stopwatch.StartNew()
+      let mutable lastDepth = 0
+      let mutable lastEval = ChessLibrary.MiscTypes.EvalType.NA
+      let mutable lastNodes = 0L
+      let mutable lastNps = 0L
+      let mutable lastPV = ""
+      let mutable lastTBHits = 0L
+      let mutable lastWDL: ChessLibrary.EngineTypes.WDL option = None
+      let mutable lastSDepth = 0
+      let mutable bestmove = ""
+      let mutable running = true
+
+      while running do
+          let line = engine.ReadLine()
+          if isNull line then
+              running <- false
+          else
+              let trimmed = line.TrimStart()
+              if trimmed.StartsWith("info", StringComparison.OrdinalIgnoreCase) then
+                  if verbose then
+                      if trimmed.StartsWith("info string", StringComparison.OrdinalIgnoreCase) then
+                          printfn "%s" trimmed
+                      elif trimmed.Contains("depth") && not (trimmed.Contains("currmove")) then
+                          printfn "%s" trimmed
+                  match ChessLibrary.EngineProtocol.Regex.getEssentialDataWithEPS trimmed isWhite with
+                  | Some (depth, eval, nodes, nps, _eps, pv, tbhits, wdl, sDepth, _mpv) ->
+                      lastDepth <- depth
+                      lastEval <- eval
+                      lastNodes <- nodes
+                      lastNps <- nps
+                      lastPV <- pv
+                      lastTBHits <- tbhits
+                      lastWDL <- wdl
+                      lastSDepth <- sDepth
+                  | None -> ()
+              elif trimmed.StartsWith("bestmove", StringComparison.OrdinalIgnoreCase) then
+                  if verbose then printfn "%s" trimmed
+                  let parts = trimmed.Split(' ')
+                  if parts.Length >= 2 then bestmove <- parts.[1]
+                  running <- false
+
+      sw.Stop()
+      let sanPV =
+          if not (String.IsNullOrWhiteSpace lastPV) then
+              let moveList = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
+              ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast moveList &board lastPV
+          else ""
+      { Depth = lastDepth; SDepth = lastSDepth; Eval = lastEval
+        Nodes = lastNodes; Nps = lastNps; Time = sw.Elapsed
+        TBHits = lastTBHits; WDL = lastWDL; Bestmove = bestmove
+        PV = lastPV; SanPV = sanPV }
+
   let runAnalyze (p: CliParser.AnalyzeParams) =
     let normalizedEngine = normalizePath p.Engine
     if not (File.Exists normalizedEngine) then
@@ -510,6 +613,158 @@ module Program =
     with ex ->
         printfn "Error during analysis: %s" ex.Message
 
+  let runCompare (p: CliParser.CompareParams) =
+    try
+        let config1 = resolveEngineConfig p.Engine1 p.UciOptions1
+        let config2 = resolveEngineConfig p.Engine2 p.UciOptions2
+
+        // Build position list: either from EPD file or single FEN
+        let positions =
+            match p.PositionsFile with
+            | Some path ->
+                let normalizedPath = normalizePath path
+                if not (File.Exists normalizedPath) then
+                    failwithf "Positions file not found: %s" normalizedPath
+                EPDExtractor.readEPDs normalizedPath
+                |> Seq.map (fun epd -> epd.FEN, epd.Id |> Option.defaultValue "")
+                |> Seq.toArray
+            | None ->
+                let fen =
+                    if p.Fen.Equals("startpos", StringComparison.OrdinalIgnoreCase) then
+                        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                    else p.Fen
+                [| fen, "" |]
+
+        let searchDesc =
+            match p.Depth, p.MoveTime, p.Nodes with
+            | Some d, _, _ -> sprintf "depth %d" d
+            | _, Some ms, _ -> sprintf "movetime %dms" ms
+            | _, _, Some n -> sprintf "nodes %s" (n.ToString("N0"))
+            | _ -> "nodes 1,000,000"
+
+        printfn ""
+        printfn "Engine 1: %s" config1.Name
+        printfn "Engine 2: %s" config2.Name
+        printfn "Positions: %d" positions.Length
+        printfn "Search:   %s" searchDesc
+        match p.Threshold with
+        | Some t -> printfn "Threshold: %.2f cp" t
+        | None -> ()
+        printfn ""
+
+        // Create engines once, reuse across all positions
+        let engine1 = ChessLibrary.EngineHelper.createEngine(config1, None)
+        let engine2 = ChessLibrary.EngineHelper.createEngine(config2, None)
+        try
+
+        let mutable totalAgreements = 0
+        let mutable totalPositions = 0
+        let mutable totalEvalDiff = 0.0
+        let mutable maxEvalDiff = 0.0
+        let mutable maxEvalDiffIdx = 0
+        let mutable npsSum1 = 0.0
+        let mutable npsSum2 = 0.0
+
+        // Engine legend
+        printfn "E1 = %s" config1.Name
+        printfn "E2 = %s" config2.Name
+        printfn ""
+
+        // Header
+        let fenW = positions |> Array.map (fun (fen, _) -> fen.Length) |> Array.max |> max 3
+        printfn "%-4s  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s"
+            "#" fenW "FEN" "Eval E1" "Eval E2" "Diff" "NPS E1" "NPS E2" "Ratio" "Move"
+        printfn "%s" (String.replicate (4 + 2 + fenW + 2 + 8 + 2 + 8 + 2 + 8 + 2 + 10 + 2 + 10 + 2 + 6 + 2 + 10) "-")
+
+        for i in 0 .. positions.Length - 1 do
+            let fen, _id = positions.[i]
+            try
+                let r1 = analyzePosition engine1 fen [] p.Depth p.MoveTime p.Nodes false
+                let r2 = analyzePosition engine2 fen [] p.Depth p.MoveTime p.Nodes false
+
+                let eval1Cp =
+                    match r1.Eval with
+                    | ChessLibrary.MiscTypes.EvalType.CP cp -> Some cp
+                    | ChessLibrary.MiscTypes.EvalType.Mate m -> Some (float (sign m) * 999.99)
+                    | _ -> None
+                let eval2Cp =
+                    match r2.Eval with
+                    | ChessLibrary.MiscTypes.EvalType.CP cp -> Some cp
+                    | ChessLibrary.MiscTypes.EvalType.Mate m -> Some (float (sign m) * 999.99)
+                    | _ -> None
+
+                let diff =
+                    match eval1Cp, eval2Cp with
+                    | Some e1, Some e2 -> Some (abs (e1 - e2))
+                    | _ -> None
+
+                let moveAgree = r1.Bestmove = r2.Bestmove
+                totalPositions <- totalPositions + 1
+                if moveAgree then totalAgreements <- totalAgreements + 1
+
+                match diff with
+                | Some d ->
+                    totalEvalDiff <- totalEvalDiff + d
+                    if d > maxEvalDiff then
+                        maxEvalDiff <- d
+                        maxEvalDiffIdx <- i + 1
+                | None -> ()
+
+                if r1.Nps > 0L then npsSum1 <- npsSum1 + float r1.Nps
+                if r2.Nps > 0L then npsSum2 <- npsSum2 + float r2.Nps
+
+                let shouldPrint =
+                    match p.Threshold, diff with
+                    | Some t, Some d -> d >= t
+                    | _ -> true
+
+                if shouldPrint then
+                    let diffStr =
+                        match diff with
+                        | Some d -> sprintf "%+.2f" d
+                        | None -> "N/A"
+                    let moveStr =
+                        if moveAgree then r1.Bestmove
+                        else sprintf "%s/%s" r1.Bestmove r2.Bestmove
+                    let npsRatio =
+                        if r1.Nps > 0L && r2.Nps > 0L then sprintf "%.1fx" (float r1.Nps / float r2.Nps)
+                        else "N/A"
+                    printfn "%-4d  %-*s  %8s  %8s  %8s  %10s  %10s  %6s  %s"
+                        (i + 1) fenW fen
+                        (r1.Eval.ToString())
+                        (r2.Eval.ToString())
+                        diffStr
+                        (GameAnalysis.Formatting.formatNPS (float r1.Nps))
+                        (GameAnalysis.Formatting.formatNPS (float r2.Nps))
+                        npsRatio
+                        moveStr
+            with ex ->
+                printfn "%-4d  %-*s  ERROR: %s" (i + 1) fenW fen ex.Message
+
+        // Summary
+        if totalPositions > 0 then
+            printfn ""
+            printfn "--- Summary (%d positions) ---" totalPositions
+            let avgDiff = if totalPositions > 0 then totalEvalDiff / float totalPositions else 0.0
+            let agreePct = 100.0 * float totalAgreements / float totalPositions
+            printfn "Move agreement: %d/%d (%.1f%%)" totalAgreements totalPositions agreePct
+            printfn "Avg eval diff:  %.2f cp" avgDiff
+            printfn "Max eval diff:  %.2f cp (position #%d)" maxEvalDiff maxEvalDiffIdx
+            if npsSum1 > 0.0 && npsSum2 > 0.0 then
+                let avgNps1 = npsSum1 / float totalPositions
+                let avgNps2 = npsSum2 / float totalPositions
+                let ratio = avgNps1 / avgNps2
+                printfn "Avg NPS:        %s vs %s (ratio: %.2fx)"
+                    (GameAnalysis.Formatting.formatNPS avgNps1)
+                    (GameAnalysis.Formatting.formatNPS avgNps2)
+                    ratio
+
+        finally
+            engine1.StopProcess()
+            engine2.StopProcess()
+    with ex ->
+        printfn "Error during comparison: %s" ex.Message
+
   let runPuzzles (path:string) =
     let data = loadPuzzleConfig (normalizePath path)
     let normalizedPath = normalizePath data.PuzzleFile
@@ -649,6 +904,20 @@ module Program =
                         let msg = $"{fen} bm {bm}; am {aM}; id \"Lichess id {puzzle.PuzzleId}, policy value for bestmove {bm}={bmP} and move played {aM}={amP}\"; other \"{cmd.CorrectMove},{cmd.MovePlayed}\""
                         sw.WriteLine(msg)
         
+    let writeFailedPuzzlesToCsv (allScores: Score list list) (csvPath: string) =
+        let allFailed =
+            allScores
+            |> Seq.concat
+            |> Seq.collect (fun score -> score.FailedPuzzles |> Seq.map fst)
+            |> Seq.distinctBy (fun p -> p.PuzzleId)
+            |> Seq.toArray
+        if allFailed.Length > 0 then
+            use sw = new StreamWriter(csvPath)
+            sw.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags")
+            for p in allFailed do
+                sw.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{int p.Rating},{int p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}")
+            printfn "  Failed puzzles CSV (%d unique): %s" allFailed.Length csvPath
+
     let escaped = escapeString data.FailedPuzzlesOutputFolder
     let table = createCombinedScoresTable normalizedPath policyScores valueScores search solve
     printfn "%s" table
@@ -665,6 +934,9 @@ module Program =
         writeToFile valueScores sw boardBm boardAm
         writeToFile search sw boardBm boardAm
         writeToFile solve sw boardBm boardAm
+
+        let csvFileName = Path.Combine(escaped, $"failedLichessPuzzles_{filenameFriendlyDate}.csv")
+        writeFailedPuzzlesToCsv [policyScores; valueScores; search; solve] csvFileName
 
         let allScoresForCross = Seq.concat [ policyScores; valueScores; search; solve ]
         PuzzleCrossEngine.writeCrossEngineFiles escaped filenameFriendlyDate allScoresForCross
@@ -890,6 +1162,8 @@ module Program =
                     Test.completeFRCPerftVerificationTestFast depth sampleSize
                 | Verb (Analyze p) ->
                     runAnalyze p
+                | Verb (Compare p) ->
+                    runCompare p
                 | Verb (PuzzleJson path) -> 
                     runPuzzles path          
                 | Verb (Eret path) ->                     
@@ -1009,6 +1283,7 @@ module Program =
                     printfn "  puzzlejson, puzzle, p <config>          Run puzzle evaluation from JSON config"
                     printfn "  eretjson, eret <config>                 Run ERET evaluation from JSON config"
                     printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
+                    printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
                     printfn "  benchmark, bench, b <config>            Run engine benchmark"
                     printfn "  tune <config>                           Run Bayesian parameter tuner"
                     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
@@ -1030,6 +1305,16 @@ module Program =
                     printfn "  --uci K V      Set any UCI option (repeatable, e.g. --uci Backend onnx-trt)"
                     printfn "  --options       Show all UCI options supported by the engine and exit"
                     printfn ""
+                    printfn "Compare options:"
+                    printfn "  --fen S         Set position (quoted FEN string)"
+                    printfn "  --positions F   EPD file with multiple positions"
+                    printfn "  --nodes N       Search N nodes (default: 1000000)"
+                    printfn "  --movetime N    Search for N milliseconds"
+                    printfn "  --depth N       Search to depth N"
+                    printfn "  --threshold CP  Only show positions with eval diff >= CP"
+                    printfn "  --uci1 K V      Set UCI option for engine 1 (repeatable)"
+                    printfn "  --uci2 K V      Set UCI option for engine 2 (repeatable)"
+                    printfn ""
                     printfn "Examples:"
                     printfn "  t C:/path/to/tournament.json"
                     printfn "  v C:/path/to/tournament.json"
@@ -1040,6 +1325,9 @@ module Program =
                     printfn "  a engine.json startpos --nodes 100000"
                     printfn "  a C:/path/to/engine.exe startpos --depth 15"
                     printfn "  a engine.json \"fen string\" --movetime 5000 --uci Threads 2"
+                    printfn "  cmp engine1.json engine2.json --nodes 100000"
+                    printfn "  cmp engine1.json engine2.json --positions test.epd --depth 20"
+                    printfn "  cmp engine1.exe engine2.exe --positions test.epd --threshold 0.5"
                     printfn "  gui"
                     printfn "  gui singleEngineAnalysis"
                     printfn "  gui 5020"

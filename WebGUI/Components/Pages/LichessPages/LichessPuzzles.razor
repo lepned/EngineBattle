@@ -844,6 +844,24 @@
                         }
                     }
 
+                    // Write failed puzzles as Lichess CSV for re-use as puzzle input
+                    var csvFileName = Path.Combine(normalized, $"failedLichessPuzzles_{datePart}.csv");
+                    var allFailed = allScores
+                        .SelectMany(s => s.FailedPuzzles.Select(t => t.Item1))
+                        .GroupBy(p => p.PuzzleId)
+                        .Select(g => g.First())
+                        .ToArray();
+                    if (allFailed.Length > 0)
+                    {
+                        using var csvWriter = new StreamWriter(csvFileName);
+                        csvWriter.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags");
+                        foreach (var p in allFailed)
+                        {
+                            csvWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
+                        }
+                        logger.LogInformation($"  Failed puzzles CSV ({allFailed.Length} unique): {csvFileName}");
+                    }
+
                     // Cross-engine analysis files
                     var allScoresForCross = PolicyScores.AsEnumerable()
                         .Concat(ValueScores)
