@@ -891,7 +891,7 @@ module ParsingTests =
       InSufficientMaterial = false
     }
 
-  let gameAnalysisNew path chunkSize threshold (highEvalThreshold, lowEvalThreshold) =
+  let pgnTerminationSummary path chunkSize threshold (highEvalThreshold, lowEvalThreshold) =
     // Function to calculate maximum length for each column
     let calculateMaxLengths (headers:string list) (rows: string list list) =
         let columns = headers |> List.mapi (fun i _ -> rows |> List.map (fun row -> row.[i]))
@@ -971,7 +971,7 @@ module ParsingTests =
 
     //set console color to green for the following output
     Console.ForegroundColor <- ConsoleColor.Green
-    printfn "\nWorking on file: %s" path
+    printfn "\nWorking on file: %s\n" path
     Console.ResetColor()
     let detailDesc = sprintf "Detailed analysis of each missed win game in file %s:\n" (Path.GetFileName path)
     appendLine(detailDesc)
@@ -1122,7 +1122,7 @@ module ParsingTests =
         writer.WriteLine($"Working on file: {file}")
         //writer.WriteLine("---------------------------------------------------------\n")
         
-        for numberOfGames, summary, detailSummary in gameAnalysisNew file chunkSize threshold (highEvalThreshold, lowEvalThreshold) do
+        for numberOfGames, summary, detailSummary in pgnTerminationSummary file chunkSize threshold (highEvalThreshold, lowEvalThreshold) do
             writer.WriteLine(summary)        
             writer.WriteLine(detailSummary)
             writer.WriteLine("---------------------------------------------------------")

@@ -349,7 +349,168 @@ module Program =
       (Eret.processEret data)
       CancellationToken.None |> ignore
 
-  let runPuzzles (path:string) =    
+  let runAnalyze (p: CliParser.AnalyzeParams) =
+    let normalizedEngine = normalizePath p.Engine
+    if not (File.Exists normalizedEngine) then
+        printfn "Engine file not found: %s" normalizedEngine
+    else
+    try
+        // Resolve engine config: JSON file or bare exe
+        let config =
+            if normalizedEngine.EndsWith(".json", StringComparison.OrdinalIgnoreCase) then
+                Configuration.JSON.readSingleEngineConfig normalizedEngine
+            else
+                TypesDef.CoreTypes.EngineConfig.EmptyWithPath normalizedEngine
+
+        // Apply UCI option overrides
+        let options = System.Collections.Generic.Dictionary<string, obj>(config.Options)
+        for (key, value) in p.UciOptions do
+            options.[key] <- box value
+        let config = { config with Options = options }
+        let config =
+            match p.Args with
+            | Some a -> { config with Args = a }
+            | None -> config
+
+        // Validate FEN
+        let isStartpos = p.Fen.Equals("startpos", StringComparison.OrdinalIgnoreCase)
+        let fen =
+            if isStartpos then
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+            else p.Fen
+        let board = ChessLibrary.Chess.Board()
+        board.LoadFen fen
+
+        // Play moves on the board so STM/ply are correct for SAN PV
+        for m in p.Moves do
+            board.PlayUciMove m
+
+        let isWhite = board.Position.STM = 0uy
+
+        printfn ""
+        printfn "Engine: %s" config.Name
+        printfn "FEN:    %s" fen
+        if p.Moves.Length > 0 then
+            printfn "Moves:  %s" (String.concat " " p.Moves)
+
+        // Create synchronous engine
+        let engine = ChessLibrary.EngineHelper.createEngine(config, None)
+        try
+            if p.ShowOptions then
+                printfn "\nUCI options for %s:\n" config.Name
+                let defaults = engine.GetDefaultOptions()
+                for opt in defaults do
+                    printfn "  %-30s  %s" opt.Key (opt.Value.ToString())
+            else
+
+            engine.UciNewGame()
+            let ok = engine.WaitForReadyOk(60000)
+            if not ok then failwith "Engine did not respond to isready"
+
+            // Send position
+            let movesStr = if p.Moves.Length > 0 then " moves " + String.concat " " p.Moves else ""
+            if isStartpos then
+                engine.Position("position startpos" + movesStr)
+            else
+                engine.Position(sprintf "position fen %s%s" fen movesStr)
+
+            // Send go command
+            let searchDesc =
+                match p.Depth, p.MoveTime, p.Nodes with
+                | Some d, _, _ ->
+                    engine.Write(sprintf "go depth %d" d)
+                    sprintf "depth %d" d
+                | _, Some ms, _ ->
+                    engine.Go ms
+                    sprintf "movetime %dms" ms
+                | _, _, Some n ->
+                    engine.GoNodes n
+                    sprintf "nodes %s" (n.ToString("N0"))
+                | _ ->
+                    engine.GoNodes 1_000_000
+                    "nodes 1,000,000"
+            printfn "Search: %s" searchDesc
+            printfn ""
+
+            let sw = Diagnostics.Stopwatch.StartNew()
+            // Read loop — print raw info lines and track last parsed stats
+            let mutable lastDepth = 0
+            let mutable lastEval = ChessLibrary.MiscTypes.EvalType.NA
+            let mutable lastNodes = 0L
+            let mutable lastNps = 0L
+            let mutable lastPV = ""
+            let mutable lastTBHits = 0L
+            let mutable lastWDL: ChessLibrary.EngineTypes.WDL option = None
+            let mutable lastSDepth = 0
+            let mutable bestmove = ""
+            let mutable running = true
+
+            while running do
+                let line = engine.ReadLine()
+                if isNull line then
+                    running <- false
+                else
+                    let trimmed = line.TrimStart()
+                    if trimmed.StartsWith("info", StringComparison.OrdinalIgnoreCase) then
+                        // Print info lines with depth (skip currmove etc.) and info string (LogLiveStats)
+                        if trimmed.StartsWith("info string", StringComparison.OrdinalIgnoreCase) then
+                            printfn "%s" trimmed
+                        elif trimmed.Contains("depth") && not (trimmed.Contains("currmove")) then
+                            printfn "%s" trimmed
+                        match ChessLibrary.EngineProtocol.Regex.getEssentialDataWithEPS trimmed isWhite with
+                        | Some (depth, eval, nodes, nps, _eps, pv, tbhits, wdl, sDepth, _mpv) ->
+                            lastDepth <- depth
+                            lastEval <- eval
+                            lastNodes <- nodes
+                            lastNps <- nps
+                            lastPV <- pv
+                            lastTBHits <- tbhits
+                            lastWDL <- wdl
+                            lastSDepth <- sDepth
+                        | None -> ()
+                    elif trimmed.StartsWith("bestmove", StringComparison.OrdinalIgnoreCase) then
+                        printfn "%s" trimmed
+                        let parts = trimmed.Split(' ')
+                        if parts.Length >= 2 then bestmove <- parts.[1]
+                        running <- false
+
+            // Print summary
+            sw.Stop()
+            printfn ""
+            printfn "--- Summary ---"
+            if lastDepth > 0 then
+                let formattedNps = GameAnalysis.Formatting.formatNPS (float lastNps)
+                let wdlStr =
+                    match lastWDL with
+                    | Some wdl -> sprintf "WDL: %d-%d-%d" (int wdl.Win) (int wdl.Draw) (int wdl.Loss)
+                    | None -> "WDL: N/A"
+                let elapsed = sw.Elapsed
+                let timeStr =
+                    if elapsed.TotalSeconds < 1.0 then sprintf "%dms" elapsed.Milliseconds
+                    elif elapsed.TotalMinutes < 1.0 then sprintf "%.1fs" elapsed.TotalSeconds
+                    else sprintf "%dm %02ds" (int elapsed.TotalMinutes) elapsed.Seconds
+                printfn "Depth:    %d (SD: %d)" lastDepth lastSDepth
+                printfn "Eval:     %s" (lastEval.ToString())
+                printfn "Nodes:    %s" (lastNodes.ToString("N0"))
+                printfn "NPS:      %s" formattedNps
+                printfn "Time:     %s" timeStr
+                printfn "TBHits:   %d" lastTBHits
+                printfn "%s" wdlStr
+                printfn "Bestmove: %s" bestmove
+                if not (String.IsNullOrWhiteSpace lastPV) then
+                    let pv = if lastPV.Length > 80 then lastPV.Substring(0, 77) + "..." else lastPV
+                    printfn "PV:       %s" pv
+                    let moveList = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
+                    let sanPV = ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast moveList &board lastPV
+                    printfn "PV (SAN): %s" sanPV
+            else
+                printfn "No search info received from engine."
+        finally
+            engine.StopProcess()
+    with ex ->
+        printfn "Error during analysis: %s" ex.Message
+
+  let runPuzzles (path:string) =
     let data = loadPuzzleConfig (normalizePath path)
     let normalizedPath = normalizePath data.PuzzleFile
     printfn "Processing Lichess puzzle file: %s" path   
@@ -727,25 +888,8 @@ module Program =
                 | Verb (Perft (depth, sampleSize)) ->
                     printfn "Running Chess960 PERFT with depth: %d and sample size: %d" depth sampleSize
                     Test.completeFRCPerftVerificationTestFast depth sampleSize
-                | Verb (Analyze fenOrFile) ->
-                    let board = Chess.Board()
-                    board.LoadFen fenOrFile
-                    let update (engineUpdate: ChessLibrary.EngineTypes.EngineUpdate)  =
-                        match engineUpdate with
-                        | EngineTypes.EngineUpdate.Info (p, info) ->
-                            printfn "Info: %s" info
-                        | EngineTypes.EngineUpdate.BestMove bestMove ->
-                            printfn "Best move: %s" bestMove.MoveHistory
-                        | EngineTypes.EngineUpdate.Eval (p,eval) ->
-                            printfn "Eval: %A" eval
-                        | _ -> ()
-                    printfn "Todo - Analyzing FEN not implemented: %s" fenOrFile
-                    //let engine = Engine.createAltEngine( update, (TestPath.tournament()).EngineSetup.Engines.[0])
-                    //engine.SendUCICommand(TypesDef.Engine.UCICommand.UciNewGame)
-                    //engine.SendUCICommand(TypesDef.Engine.UCICommand.Position fenOrFile)
-                    //engine.SendUCICommand(TypesDef.Engine.UCICommand.GoNodes 1000000)                    
-                    //Engine.playMovesFromFen engine engine fenOrFile 5000 1
-                    //engine.StopProcess()
+                | Verb (Analyze p) ->
+                    runAnalyze p
                 | Verb (PuzzleJson path) -> 
                     runPuzzles path          
                 | Verb (Eret path) ->                     
@@ -791,6 +935,53 @@ module Program =
                         Environment.Exit(0)
                     )
                     BayesianOptimizer.runTuneWithDispatch path
+                | Verb (Validate configFile) ->
+                    let normalizedPath = normalizePath configFile
+                    let tournamentConfig = JSON.readTournamentJson normalizedPath
+                    match tournamentConfig with
+                    | Some tourny ->
+                        let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList
+                        let engineSetup = {tourny.EngineSetup with Engines = engineList}
+                        let t = {tourny with EngineSetup = engineSetup}
+                        Validation.validateTournamentInput t
+                        printfn "Validation complete."
+                    | None ->
+                        printfn "Config file not found: %s" normalizedPath
+                | Verb (PgnSummary path) ->
+                    let normalizedPath = normalizePath path
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                    else
+                        try
+                            ChessLibrary.Test.ParsingTests.pgnTerminationSummary normalizedPath 2 4.0 (3.0, 0.5) |> ignore
+                        with ex ->
+                            printfn "Error processing PGN file: %s" ex.Message
+                | Verb (Elo path) ->
+                    let normalizedPath = normalizePath path
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                    else
+                        try
+                            let games = FullPGNParser.parsePgnFile normalizedPath
+                            let consoleRes, _, _, _ = PGNCalculator.getEngineDataResults games
+                            printfn "%s" consoleRes
+                        with ex ->
+                            printfn "Error processing PGN file: %s" ex.Message
+                | Verb (Speed path) ->
+                    let normalizedPath = normalizePath path
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                    else
+                        try
+                            let games = FullPGNParser.parsePgnFile normalizedPath
+                            let stats =
+                                PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0)
+                                |> Array.filter _.Median
+                                |> Array.sortByDescending _.AvgNPS
+                            let table = ConsoleHelper.writeSummaryEngineStatsToConsole stats
+                            printfn "%s" table
+                        with ex ->
+                            printfn "Error processing PGN file: %s" ex.Message
                 | Verb (Redash path) ->
                     BayesianOptimizer.regenerateDashboard path
                 | Verb (GUI (page, port)) ->
@@ -808,16 +999,51 @@ module Program =
                     Console.ReadLine() |> ignore
                     BlazorInterop.stopBlazorApp()
                 | Help ->
-                    printfn "Help: Available commands are:"
-                    printfn "  - perft <depth> <sampleSize>"
-                    printfn "  - puzzlejson <path>"
-                    printfn "  - eretjson <path>"
-                    printfn "  - tournamentjson <configFile>"
-                    printfn "  - benchmark <configFile>"
-                    printfn "  - tune <configFile>"
-                    printfn "  - redash <configFile>  - Regenerate BO dashboard from saved state"
-                    printfn "  - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)"
-                    printfn "    Examples: gui, gui singleEngineAnalysis, gui 5020, gui help 5020"
+                    printfn ""
+                    printfn "EngineBattle - Chess engine tournament, analysis, and puzzle testing"
+                    printfn ""
+                    printfn "Usage: EngineBattle <command> [arguments]"
+                    printfn ""
+                    printfn "Commands:"
+                    printfn "  tournamentjson, tournament, t <config>  Run a tournament from JSON config"
+                    printfn "  puzzlejson, puzzle, p <config>          Run puzzle evaluation from JSON config"
+                    printfn "  eretjson, eret <config>                 Run ERET evaluation from JSON config"
+                    printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
+                    printfn "  benchmark, bench, b <config>            Run engine benchmark"
+                    printfn "  tune <config>                           Run Bayesian parameter tuner"
+                    printfn "  redash <config>                         Regenerate BO dashboard from saved state"
+                    printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
+                    printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
+                    printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
+                    printfn "  validate, v <config>                    Validate a tournament config without running"
+                    printfn "  perft <depth> [sampleSize]              Run perft move generation test"
+                    printfn "  gui [page] [port]                       Launch WebGUI (default: tournament, port 5018)"
+                    printfn "  help, h                                 Show this help message"
+                    printfn ""
+                    printfn "Analyze options:"
+                    printfn "  --fen S        Set position (quoted FEN string)"
+                    printfn "  --moves M...   Append moves to position (e.g. --moves d2d4 d7d5 c2c4)"
+                    printfn "  --nodes N      Search N nodes (default: 1000000)"
+                    printfn "  --movetime N   Search for N milliseconds"
+                    printfn "  --depth N      Search to depth N"
+                    printfn "  --args S       Override engine command-line arguments (e.g. dag-preview)"
+                    printfn "  --uci K V      Set any UCI option (repeatable, e.g. --uci Backend onnx-trt)"
+                    printfn "  --options       Show all UCI options supported by the engine and exit"
+                    printfn ""
+                    printfn "Examples:"
+                    printfn "  t C:/path/to/tournament.json"
+                    printfn "  v C:/path/to/tournament.json"
+                    printfn "  p C:/path/to/puzzle.json"
+                    printfn "  pgn C:/path/to/games.pgn"
+                    printfn "  elo C:/path/to/games.pgn"
+                    printfn "  sp C:/path/to/games.pgn"
+                    printfn "  a engine.json startpos --nodes 100000"
+                    printfn "  a C:/path/to/engine.exe startpos --depth 15"
+                    printfn "  a engine.json \"fen string\" --movetime 5000 --uci Threads 2"
+                    printfn "  gui"
+                    printfn "  gui singleEngineAnalysis"
+                    printfn "  gui 5020"
+                    printfn ""
                 | _ ->
                     printfn "Unhandled argument: %A" arg
         0

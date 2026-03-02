@@ -4,9 +4,20 @@ open System
 open System.Text
 
 // --- CLI definition using a discriminated union ---
+type AnalyzeParams =
+    { Engine: string
+      Fen: string
+      Nodes: int option
+      MoveTime: int option
+      Depth: int option
+      Args: string option
+      Moves: string list
+      UciOptions: (string * string) list
+      ShowOptions: bool }
+
 type VerbResult =
     | Perft of depth:int * sampleSize:int
-    | Analyze of fenOrFile:string
+    | Analyze of AnalyzeParams
     | PuzzleJson of path:string
     | Tournament of configFile:string
     | Eret of configFile: string
@@ -14,6 +25,10 @@ type VerbResult =
     | Tune of configFile:string
     | Redash of configFile:string
     | GUI of page: string * port: int option
+    | PgnSummary of path:string
+    | Validate of configFile:string
+    | Elo of path:string
+    | Speed of path:string
 
 
 type CLIArguments =
@@ -251,27 +266,59 @@ module CustomParser =
                             10
                     parseArgs args (nextIndex) (Verb (Perft (depth, sampleSize)) :: acc)
                 else failwith "Missing parameter for PERFT"
-            | "analyze" -> // Handle the Analyze verb
+            | "analyze" | "a" -> // Handle the Analyze verb
                 if index + 1 < args.Length then
-                    let fenOrFile = args.[index + 1]
-                    parseArgs args (index + 2) (Verb (Analyze fenOrFile) :: acc)
-                else failwith "Missing parameter for Analyze"
-            | "puzzlejson" -> // Handle the PuzzleFile verb
+                    let engine = args.[index + 1]
+                    // FEN is optional — if next arg is missing or starts with --, default to startpos
+                    let mutable fen, startIdx =
+                        if index + 2 < args.Length && not (args.[index + 2].StartsWith("--")) then
+                            args.[index + 2], index + 3
+                        else
+                            "startpos", index + 2
+                    let mutable i = startIdx
+                    let mutable nodes = None
+                    let mutable movetime = None
+                    let mutable depth = None
+                    let mutable engineArgs = None
+                    let mutable moves = []
+                    let mutable uciOptions = []
+                    let mutable showOptions = false
+                    while i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--depth" -> depth <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--fen" -> fen <- args.[i + 1]; i <- i + 2
+                        | "--args" -> engineArgs <- Some args.[i + 1]; i <- i + 2
+                        | "--moves" ->
+                            i <- i + 1
+                            while i < args.Length && not (args.[i].StartsWith("--")) do
+                                moves <- args.[i] :: moves; i <- i + 1
+                            moves <- List.rev moves
+                        | "--uci" -> uciOptions <- (args.[i + 1], args.[i + 2]) :: uciOptions; i <- i + 3
+                        | "--options" -> showOptions <- true; i <- i + 1
+                        | unknown -> failwithf "Unknown analyze option: %s" unknown
+                    let p = { Engine = engine; Fen = fen; Nodes = nodes; MoveTime = movetime
+                              Depth = depth; Args = engineArgs; Moves = moves
+                              UciOptions = List.rev uciOptions; ShowOptions = showOptions }
+                    parseArgs args i (Verb (Analyze p) :: acc)
+                else failwith "Missing parameter for Analyze (requires: <engine>)"
+            | "puzzlejson" | "puzzle" | "p" -> // Handle the PuzzleFile verb
                 if index + 1 < args.Length then
                     let puzzleFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (PuzzleJson puzzleFile) :: acc)
                 else failwith "Missing parameter for Puzzlejson"
-            | "eretjson" -> // Handle the eretjson verb
+            | "eretjson" | "eret" -> // Handle the eretjson verb
                 if index + 1 < args.Length then
                     let eretFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (Eret eretFile) :: acc)
                 else failwith "Missing parameter for Eretjson"
-            | "tournamentjson" -> // Handle the Tournament verb
+            | "tournamentjson" | "tournament" | "t" -> // Handle the Tournament verb
                 if index + 1 < args.Length then
                     let configFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (Tournament configFile) :: acc)
                 else failwith "Missing parameter for Tournament" 
-            | "benchmark" -> // Handle the Benchmark verb
+            | "benchmark" | "bench" | "b" -> // Handle the Benchmark verb
                 if index + 1 < args.Length then
                     let configFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (Benchmark configFile) :: acc)
@@ -286,6 +333,26 @@ module CustomParser =
                     let configFile = args.[index + 1]
                     parseArgs args (index + 2) (Verb (Redash configFile) :: acc)
                 else failwith "Missing parameter for Redash"
+            | "pgnsummary" | "pgn" | "ps" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (PgnSummary path) :: acc)
+                else failwith "Missing parameter for pgnsummary"
+            | "validate" | "v" ->
+                if index + 1 < args.Length then
+                    let configFile = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (Validate configFile) :: acc)
+                else failwith "Missing parameter for Validate"
+            | "elo" | "e" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (Elo path) :: acc)
+                else failwith "Missing parameter for Elo"
+            | "speed" | "sp" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (Speed path) :: acc)
+                else failwith "Missing parameter for Speed"
             | "gui" ->
                 // Accept: gui <page> <port> | gui <port> | gui <page>
                 let nextArg idx = if idx < args.Length then Some args.[idx] else None
