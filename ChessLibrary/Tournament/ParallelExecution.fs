@@ -74,7 +74,6 @@ let parallelTournamentRun
       let challengers = tourny.EngineSetup.Engines |> List.filter(fun e -> e.IsChallenger)
       let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
       let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
-      let useRandomOffset = isGauntlet && tourny.Opening.RandomOpenings && rest.Length > 1
 
       let mutable epdBook = false
       let games =
@@ -119,16 +118,16 @@ let parallelTournamentRun
       let allPairings =
           if isGauntlet then
               if tourny.Opening.OpeningsTwice then
-                  PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers rest gamesToPlay
+                  PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers rest gamesToPlay
               else
-                  PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers rest gamesToPlay
+                  PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers rest gamesToPlay
           else
               if tourny.Opening.OpeningsTwice then
                   PairingHelper.generateAllRoundRobinDoubleRounds tourny.EngineSetup.Engines gamesToPlay
               else
                   PairingHelper.generateAllRoundRobinSingleRounds tourny.EngineSetup.Engines gamesToPlay
       let gamesLeftToPlay =
-          if useRandomOffset then
+          if isGauntlet then
               PairingHelper.filterByPlayCount allPairings gamesAlreadyPlayed
           else
               let playedSet = PairingHelper.playedSet gamesAlreadyPlayed

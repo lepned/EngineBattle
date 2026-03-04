@@ -67,7 +67,6 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
   // Load openings, games already played, and reference games using helpers
   let challengers = tourny.EngineSetup.Engines |> List.take tourny.Challengers
   let opponents = tourny.EngineSetup.Engines |> List.skip tourny.Challengers
-  let useRandomOffset = tourny.Opening.RandomOpenings && opponents.Length > 1
   let (games, epdBook) = loadOpenings tourny.Opening.OpeningsPath tourny.Rounds
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
@@ -78,17 +77,11 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
     else openings
   let pairings =
     if tourny.Opening.OpeningsTwice then
-      PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers opponents roundsToPlay
+      PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers opponents roundsToPlay
     else
-      PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation useRandomOffset tourny.Rounds challengers opponents roundsToPlay
+      PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers opponents roundsToPlay
   let gamesLeftToPlay =
-    if useRandomOffset then
-      PairingHelper.filterByPlayCount pairings gamesAlreadyPlayed
-    else
-      let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
-      [ for p in pairings do
-          if PairingHelper.hasPlayedBefore p playedSet |> not then
-            yield p ]
+    PairingHelper.filterByPlayCount pairings gamesAlreadyPlayed
 
   PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
   let totalGames = pairings.Length

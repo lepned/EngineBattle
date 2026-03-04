@@ -419,21 +419,6 @@ let ``gauntletSingleRound randomOffset challengers share same opening vs same op
         Assert.Equal(2, challengerNames.Count) // Both challengers present
 
 [<Fact>]
-let ``gauntletSingleRound randomOffset with single opponent degenerates to current behavior`` () =
-    let challengers = [ mkEngine "Hero" ]
-    let opponents = [ mkEngine "Opp" ]
-    let openings = [ for i in 1..5 -> mkOpening i ]
-
-    let gamesOffset = gauntletSingleRound false true 5 challengers opponents openings
-    let gamesNormal = gauntletSingleRound false false openings.Length challengers opponents openings
-
-    Assert.Equal(gamesNormal.Length, gamesOffset.Length)
-    // Same openings used in same order
-    let offsetRaws = gamesOffset |> List.map (fun g -> g.Opening.Raw)
-    let normalRaws = gamesNormal |> List.map (fun g -> g.Opening.Raw)
-    Assert.Equal<string list>(normalRaws, offsetRaws)
-
-[<Fact>]
 let ``gauntletDoubleRound randomOffset gives each opponent a unique opening per round`` () =
     let challengers = [ mkEngine "Hero" ]
     let opponents = [ mkEngine "A"; mkEngine "B" ]
