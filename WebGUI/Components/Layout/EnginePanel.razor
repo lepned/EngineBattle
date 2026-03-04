@@ -251,7 +251,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in NNInfoList)
+                    @foreach (var item in NNInfoList.ToArray())
                     {
                         <tr @onclick="@(() => PlayMoveFromNNTable(item))">
                             <td>@item?.Raw</td>
@@ -292,7 +292,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in dataList)
+                    @foreach (var item in dataList.ToArray())
                     {
                         <tr @onclick="@(() => PlayMoveFromStatusTable(item))">
                             <td>@item.Value.Eval</td>

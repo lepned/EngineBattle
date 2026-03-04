@@ -26,13 +26,14 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var context in ScoreTable)
+                @{ var scoreTable = ScoreTable.ToArray(); }
+                @foreach (var context in scoreTable)
                 {
                     <tr class="data-row @(context.Challenger ? "challenger" : "")">
                         <td class="data-cell">@context.Player</td>
                         <td class="data-cell">@FormatPoints(context)</td>
                         <td class="data-cell">@FormatPerf(context)</td>
-                        <td class="data-cell center">@FormatEloWithError(context, context.Challenger, ScoreTable.Count == 2 && ScoreTable.IndexOf(context) == 0)</td>
+                        <td class="data-cell center">@FormatEloWithError(context, context.Challenger, scoreTable.Length == 2 && Array.IndexOf(scoreTable, context) == 0)</td>
                         <td class="data-cell center">@context.Win-@context.Draw-@context.Loss</td>
                         <td class="data-cell">
                             @if (ShowNPM)

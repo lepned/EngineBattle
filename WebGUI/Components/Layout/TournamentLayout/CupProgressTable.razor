@@ -25,7 +25,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var entry in progressEntries)
+                @foreach (var entry in progressEntries.ToArray())
                 {
                     <tr class="data-row @(IsActivePlayer(entry.Player) ? "challenger" : "")">
                         <td class="data-cell">@entry.Seed</td>

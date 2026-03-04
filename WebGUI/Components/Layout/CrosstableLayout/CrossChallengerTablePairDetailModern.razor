@@ -8,7 +8,8 @@
     <thead>
       <tr>
         <th class="cross-modern-head cross-modern-head-player">Player (Pairs)</th>
-        @foreach (var challenger in CrossTable)
+        @{ var crossTable = CrossTable.ToArray(); }
+        @foreach (var challenger in crossTable)
         {
           if (challenger.Rank == 1)
           {
@@ -21,7 +22,7 @@
       </tr>
     </thead>
     <tbody>
-      @foreach (var entry in CrossTable)
+      @foreach (var entry in crossTable)
       {
         <tr>
           <td class="cross-modern-player">

@@ -20,6 +20,7 @@
 @inject ClipboardService ClipboardService
 @inject JavaScriptInteropService JsInteropService
 @inject OverlaySetting overlaySettings
+@inject OpeningExplorerService openingExplorer
 
 <PageTitle>Modern Analysis - Single Engine</PageTitle>
 <InputFile id="configFile" OnChange="@OpenConfigFile" hidden />
@@ -91,7 +92,8 @@
             </div>
             <div class="sa-board-wrapper">
                 <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
-                            MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board" />
+                            MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                            DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
             <div class="sa-save-section">
@@ -307,6 +309,8 @@
     private AnalyzeConfig config = AnalyzeConfig.empty;
     private int nodes = 1;
     private string searchString = "";
+    private string detectedOpeningName = "";
+    private string detectedOpeningECO = "";
     private GamePgnChart chart;
     private CustomChartType selectedChart = CustomChartType.Evaluation;
     private readonly object _pgnPasteLock = new();
@@ -790,6 +794,7 @@
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
+        UpdateDetectedOpening();
         await Notifier.UpdateFen(fen);
         if (chart != null)
             await chart.UpdateMoveIndicatorAsync(board.MoveNumber());
@@ -800,9 +805,17 @@
     {
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
+        UpdateDetectedOpening();
         await Notifier.UpdateFen(fen);
         if (chart != null)
             await chart.UpdateMoveIndicatorAsync(board.MoveNumber());
+    }
+
+    private void UpdateDetectedOpening()
+    {
+        var info = openingExplorer.Lookup(board);
+        detectedOpeningName = info?.Name ?? "";
+        detectedOpeningECO = info?.ECO ?? "";
     }
 
     public async void OnEngineMoveMade(string move)

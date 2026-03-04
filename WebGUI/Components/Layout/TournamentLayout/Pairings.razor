@@ -16,9 +16,10 @@ style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
         </tr>
       </thead>
       <tbody>
-        @if (PairingList.Count > 0)
+        @{ var pairingList = PairingList.ToArray(); }
+        @if (pairingList.Length > 0)
         {
-          foreach (var context in PairingList)
+          foreach (var context in pairingList)
           {
             <tr class="data-row">
               <td class="data-cell">@context.White.Name</td>

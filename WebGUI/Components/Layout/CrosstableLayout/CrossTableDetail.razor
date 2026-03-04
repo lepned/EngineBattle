@@ -5,10 +5,11 @@
     <div class="cross-detail-title" style="@FontHeaderTxt">Crosstable</div>
     <div class="cross-detail-subtitle" style="@FontNormal">Last game: @gameResultHeader</div>
   </div>
-  <MudTable Class="cross-detail-table hideScroll" Items="CrossTable" Dense=true>
+  @{ var crossTable = CrossTable.ToArray(); }
+  <MudTable Class="cross-detail-table hideScroll" Items="crossTable" Dense=true>
   <HeaderContent>
     <MudTh Style=@NameHeaderTxt>Player (Pairs)</MudTh>
-    @foreach (var entry in CrossTable)
+    @foreach (var entry in crossTable)
     {
       <MudTh Class="noOverflow" Style=@FontHeaderTxt>@entry.Player</MudTh>
     }
@@ -27,7 +28,7 @@
       }
 
     </MudTd>
-    @foreach (var opponent in CrossTable)
+    @foreach (var opponent in crossTable)
     {      
       if (context.Player == opponent.Player)
       {

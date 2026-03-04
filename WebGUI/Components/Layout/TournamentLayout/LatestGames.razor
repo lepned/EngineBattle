@@ -20,9 +20,10 @@ style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
         </tr>
       </thead>
       <tbody>
-        @if (Results.Count > 0)
+        @{ var results = Results.ToArray(); }
+        @if (results.Length > 0)
         {
-          foreach (var context in Results)
+          foreach (var context in results)
           {
             <tr class="data-row">
               <td class="data-cell">@context.Player1</td>

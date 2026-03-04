@@ -5,17 +5,18 @@
     <div></div>
   </div>
   <table class="cross-modern-table">
+    @{ var crossTable = CrossTable.ToArray(); }
     <thead>
       <tr>
         <th class="cross-modern-head cross-modern-head-player">Player</th>
-        @foreach (var entry in CrossTable)
+        @foreach (var entry in crossTable)
         {
           <th class="cross-modern-head cross-modern-name">@entry.Player</th>
         }
       </tr>
     </thead>
     <tbody>
-      @foreach (var entry in CrossTable)
+      @foreach (var entry in crossTable)
       {
         <tr>
           <td class="cross-modern-player">
@@ -26,7 +27,7 @@
               @RenderWdlTotals(entry)
             </div>
           </td>
-          @foreach (var opponent in CrossTable)
+          @foreach (var opponent in crossTable)
           {
             if (entry.Player == opponent.Player)
             {

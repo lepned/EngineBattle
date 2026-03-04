@@ -14,14 +14,15 @@
           <th class="header-cell">Nr</th>
           <th class="header-cell">Player</th>
           <th class="header-cell pl-5">Pairs</th>
-          @foreach (var item in CrossTable)
+          @{ var crossTable = CrossTable.ToArray(); }
+          @foreach (var item in crossTable)
           {
             <th class="header-cell pl-6">@item.Rank</th>
           }
         </tr>
       </thead>
       <tbody>
-        @foreach (var item in CrossTable)
+        @foreach (var item in crossTable)
         {
           var (wins, draws, losses) = GetAllPairs(item);
           <tr class="data-row @(item.Challenger ? "challenger" : "")">
@@ -33,7 +34,7 @@
               <span style="color: #FF3C54">-@losses</span>
             </td>
 
-            @foreach (var opponent in CrossTable)
+            @foreach (var opponent in crossTable)
             {
               @if (item.Player == opponent.Player)
               {

@@ -5,10 +5,11 @@
     <div class="cross-detail-title" style="@FontHeaderTxt">@crossTableHeader</div>
     <div class="cross-detail-subtitle" style="@FontNormal">Last game: @gameResultHeader</div>
   </div>
-  <MudTable Class="cross-detail-table" Items="CrossTable" Dense=true>
+  @{ var crossTable = CrossTable.ToArray(); }
+  <MudTable Class="cross-detail-table" Items="crossTable" Dense=true>
   <HeaderContent>
     <MudTh Style=@NameHeaderTxt>Player (Pairs)</MudTh>
-    @foreach (var challenger in CrossTable)
+    @foreach (var challenger in crossTable)
     {
       if (challenger.Rank == 1)
       {

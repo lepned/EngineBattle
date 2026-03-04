@@ -63,6 +63,15 @@
 		</MudItem>
 	}
 
+	@if (!String.IsNullOrEmpty(DetectedOpeningName))
+	{
+		<MudItem sm="12" md="12" lg="12" Class="pa-0 mb-0" Style="text-align:center;">
+			<span style="font-size:14px; color:#8fa8c8; opacity:0.90;">
+				<strong>@DetectedOpeningECO</strong> @DetectedOpeningName
+			</span>
+		</MudItem>
+	}
+
 	@if (ShowChessNavButtons)
 	{
 		<MudItem lg="12">
@@ -98,7 +107,8 @@
 			<div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
 				<span style="color:skyblue ">@OpeningMoves</span>
 				<span>
-					@foreach (var tok in InlineTokens)
+					@{ var tokens1 = InlineTokens.ToArray(); }
+					@foreach (var tok in tokens1)
 					{
 						if (tok.IsBracket)
 						{
@@ -113,9 +123,9 @@
 								  @onclick="@(() => OnInlineMoveClick(tok))"
 								  @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
 								  @oncontextmenu:preventDefault
-								  style="@(isCurrent? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">								
+								  style="@(isCurrent? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">
 								@($" {tok.DisplayText} ")
-								
+
 								@if (!String.IsNullOrEmpty(tok.Comment))
 								{
 									@WrapInlineComment(tok.Comment)
@@ -134,7 +144,7 @@
 		<MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
 			<div id="moveListDiv" class="scrollable mb-3 ml-3 mr-3" style=@moveListStyle>
 				<span>
-					@foreach (var tok in InlineTokens.Select((tok, idx) => (tok, idx)))
+					@foreach (var tok in InlineTokens.ToArray().Select((tok, idx) => (tok, idx)))
 					{
 						if (tok.tok.IsBracket)
 						{
@@ -219,6 +229,8 @@
 	[Parameter] public string FENposition { get; set; }
 	[Parameter] public string OpeningName { get; set; }
 	[Parameter] public string OpeningMoves { get; set; }
+	[Parameter] public string DetectedOpeningName { get; set; }
+	[Parameter] public string DetectedOpeningECO { get; set; }
 	[Parameter] public EventCallback<string> OnMoveMadeOnBoard { get; set; }
 	[Parameter] public EventCallback<string> OnNewFENOnBoard { get; set; }
 	[Parameter] public EventCallback<bool> OnBoardFlipped { get; set; }

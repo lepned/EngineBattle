@@ -21,6 +21,7 @@
 @inject HotKeys HotKeys
 @inject ShutdownTokenProvider shutdownTokenProvider
 @inject IWebHostEnvironment Environment
+@inject OpeningExplorerService openingExplorer
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -1828,6 +1829,25 @@
 		SetGameParams(info);
 		TB = 0;
 		currentOpeningInPlay = info.OpeningName;
+		// Try hash-based opening detection for better names
+		if (info.OpeningMovesAndFen.Count > 0)
+		{
+			try
+			{
+				var board = new ChessLibrary.Chess.Board();
+				OpeningInfo best = null;
+				foreach (var entry in info.OpeningMovesAndFen)
+				{
+					board.LoadFen(entry.FenAfterMove);
+					var found = openingExplorer.Lookup(board);
+					if (found != null)
+						best = found;
+				}
+				if (best != null)
+					currentOpeningInPlay = $"Opening: {best.Name}, ECO: {best.ECO}";
+			}
+			catch { }
+		}
 		moveNr = 0;
 		UpdateDeviationReference(info);
 		whitePlayer = info.WhitePlayer.Name;
