@@ -51,6 +51,19 @@ let ``FenParsing_Chess960_ShouldReturnOriginalFenAfterRoundTrip`` () =
   let fenRoundTrip = posToFen pos
   Assert.Equal(fenRoundTrip, fen)
 
+[<Fact>]
+let ``FenParsing_InvalidCastlingRights_ShouldSilentlyStrip`` () =
+  // "G" indicates castling with g-file rook, but no rook exists there — should not throw
+  let fen = "r5k1/pp4r1/2n1b1pR/q1p1p2Q/P3P3/2NP4/1P3PP1/4K1N1 w G - 0 19"
+  let mutable pos = getPosFromFen (Some fen)
+  // Invalid castling right silently stripped — no castling flags set
+  Assert.Equal(0uy, pos.CastleFlags)
+  // Position should still parse correctly otherwise
+  Assert.Equal(PositionOps.WHITE, pos.STM)
+  let roundTrip = posToFen pos
+  // Round-trip should produce "-" for castling (stripped invalid rights)
+  Assert.Contains(" - ", roundTrip)
+
 // ============================================================================
 // Move Generation Tests
 // ============================================================================

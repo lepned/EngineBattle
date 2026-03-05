@@ -321,9 +321,9 @@ module BoardHelper =
                 | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
                 | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
                 | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
-                | _ -> failwith "Invalid character in FEN"
+                | _ -> ()
                 i <- i + 1
-            cursor <- i + 1          
+            cursor <- i + 1
         else //chess960 castling logic
           while i < len && fen.[i] <> ' ' do
             let cur = fen.[i]
@@ -339,9 +339,9 @@ module BoardHelper =
                   match cur with
                   | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
                   | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                  | _ -> failwith "Invalid character in FEN"
+                  | _ -> ()
                 else
-                  failwith "Invalid character in FEN"                  
+                  ()
             | _ when Char.IsLower cur -> // Adjust for black's castling flags in Chess960
                 if pos.RookInfo.BlackKRInitPlacement = (byte)(curRookPlacement-56) then
                   pos.CastleFlags <- pos.CastleFlags ||| 0x20uy                  
@@ -351,11 +351,11 @@ module BoardHelper =
                   match cur with
                   | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
                   | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
-                  | _ -> failwith "Invalid character in FEN"
+                  | _ -> ()
                 else
-                  failwith "Invalid character in FEN"                   
+                  ()
             | '-' -> () // No castling available
-            | _ -> failwith "Invalid character in FEN"
+            | _ -> ()
             i <- i + 1
         cursor <- i + 1        
     else
