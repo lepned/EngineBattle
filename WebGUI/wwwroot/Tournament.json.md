@@ -14,7 +14,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **GPU**: The GPU specifications.
 - **MainLogoFileName**: The filename of the tournament logo.
 - **VerboseLogging**: Enable or disable verbose logging.
-- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, depth, move time), `"Standard"` (11 fields), `"Full"` (all 22 fields). Backward compatible: `true` → Full, `false` → Standard.
+- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, nodes, NPS, move time — 4 fields), `"Standard"` (eval, move time, NPS, EPS, nodes, depth, seldepth, PV depth, time left, TB hits, PV — 11 fields), `"Full"` (all 18 fields). Backward compatible: `true` → Full, `false` → Standard.
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
 - **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
 - **AllowPondering**: Allow engines to ponder during the opponent’s time.

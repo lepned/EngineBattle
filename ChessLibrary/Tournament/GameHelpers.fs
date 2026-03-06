@@ -279,15 +279,15 @@ let annotation (moveAnnotation: MoveAnnotation) (board: Board) (numberMove : str
         if board.PlyCount > 1 then sprintf " %s" numberMove
         else numberMove
     | MoveAnnotation.Minimal ->
-        let fmt = chessMoveInfo.CompactAnnotation
-        if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
-        else sprintf "%s {%s}" numberMove fmt
-    | MoveAnnotation.Standard ->
         let fmt = chessMoveInfo.MinimalAnnotation
         if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
         else sprintf "%s {%s}" numberMove fmt
+    | MoveAnnotation.Standard ->
+        let fmt = chessMoveInfo.StandardAnnotation
+        if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
+        else sprintf "%s {%s}" numberMove fmt
     | MoveAnnotation.Full ->
-        let fmt = chessMoveInfo.Annotation
+        let fmt = chessMoveInfo.FullAnnotation
         if board.PlyCount > 1 then sprintf " %s {%s}" numberMove fmt
         else sprintf "%s {%s}" numberMove fmt
 
