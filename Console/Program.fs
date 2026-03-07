@@ -541,6 +541,7 @@ module Program =
             let mutable lastEval = ChessLibrary.MiscTypes.EvalType.NA
             let mutable lastNodes = 0L
             let mutable lastNps = 0L
+            let mutable lastEps = 0L
             let mutable lastPV = ""
             let mutable lastTBHits = 0L
             let mutable lastWDL: ChessLibrary.EngineTypes.WDL option = None
@@ -561,11 +562,12 @@ module Program =
                         elif trimmed.Contains("depth") && not (trimmed.Contains("currmove")) then
                             printfn "%s" trimmed
                         match ChessLibrary.EngineProtocol.Regex.getEssentialDataWithEPS trimmed isWhite with
-                        | Some (depth, eval, nodes, nps, _eps, pv, tbhits, wdl, sDepth, _mpv) ->
+                        | Some (depth, eval, nodes, nps, eps, pv, tbhits, wdl, sDepth, _mpv) ->
                             lastDepth <- depth
                             lastEval <- eval
                             lastNodes <- nodes
                             lastNps <- nps
+                            lastEps <- eps
                             lastPV <- pv
                             lastTBHits <- tbhits
                             lastWDL <- wdl
@@ -583,6 +585,7 @@ module Program =
             printfn "--- Summary ---"
             if lastDepth > 0 then
                 let formattedNps = GameAnalysis.Formatting.formatNPS (float lastNps)
+                let formattedEps = if lastEps > 0L then sprintf " (%s)" (GameAnalysis.Formatting.formatEPS (float lastEps)) else ""
                 let wdlStr =
                     match lastWDL with
                     | Some wdl -> sprintf "WDL: %d-%d-%d" (int wdl.Win) (int wdl.Draw) (int wdl.Loss)
@@ -595,7 +598,7 @@ module Program =
                 printfn "Depth:    %d (SD: %d)" lastDepth lastSDepth
                 printfn "Eval:     %s" (lastEval.ToString())
                 printfn "Nodes:    %s" (lastNodes.ToString("N0"))
-                printfn "NPS:      %s" formattedNps
+                printfn "NPS:      %s%s" formattedNps formattedEps
                 printfn "Time:     %s" timeStr
                 printfn "TBHits:   %d" lastTBHits
                 printfn "%s" wdlStr

@@ -797,10 +797,6 @@ module JSONParser =
         | PuzzleTypes.Engine (name, _) ->
             let fullpath = Path.Combine(engineFolder, name)
             let engineConfig = JSON.readSingleEngineConfig fullpath
-            let options = engineConfig.Options
-            let networkFound = options.ContainsKey("WeightsFile") || options.ContainsKey("Network")
-            if not networkFound then
-                ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network' option to set" name)
             [ engineConfig ]
         | PuzzleTypes.EngineWithNets (name, _, nets) ->
             let fullPath = Path.Combine(engineFolder, name)
@@ -817,10 +813,6 @@ module JSONParser =
                 try
                     let fullpath = Path.Combine(engineFolder, name)
                     let engineConfig = JSON.readSingleEngineConfig fullpath
-                    let options = engineConfig.Options
-                    let networkFound = options.ContainsKey("WeightsFile") || options.ContainsKey("Network")
-                    if not networkFound then
-                        ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network'" name)
                     [ engineConfig, nodes ]
                 with ex ->
                     ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Error reading engine config '%s': %s" name ex.Message)

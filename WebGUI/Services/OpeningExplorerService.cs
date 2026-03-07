@@ -64,6 +64,16 @@ public class OpeningExplorerService
         _byHash = dict;
     }
 
+    public OpeningInfo? Lookup(ulong hash)
+    {
+        var dict = _byHash;
+        if (dict == null)
+            return null; // still loading
+        if (dict.TryGetValue(hash, out var info))
+            return info;
+        return null;
+    }
+
     public OpeningInfo? Lookup(Board board)
     {
         var hash = _byHash;

@@ -967,7 +967,7 @@
             }
             catch (Exception)
             {
-                logger.LogError("Failed to load analyzeConfig.json file, please load it manually");
+                logger.LogInformation("No analyzeConfig.json file found, please load it manually");
             }
 
             finally

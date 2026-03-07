@@ -246,19 +246,23 @@
 			state.LastPV = pvMove;
 			if (chessJSmodule is not null)
 			{
-				var (fromSq, toSq) = (pvMove.Substring(0, 2), pvMove.Substring(2, 2));
-				if (ValidatePV(oppPvMove))
+				try
 				{
-					var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
-					var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
+					var (fromSq, toSq) = (pvMove.Substring(0, 2), pvMove.Substring(2, 2));
+					if (ValidatePV(oppPvMove))
+					{
+						var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
+						var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
 
-					await chessJSmodule.InvokeVoidAsync("setDoubleArrowHighlighting", element, fromSq, toSq, oppFromSq, oppToSq, color, oppColor);
-					//Console.WriteLine($"PV: {pvMove} OppPV: {oppPvMove} FromSq: {fromSq} ToSq: {toSq} OppFromSq: {oppFromSq} OppToSq: {oppToSq}");
+						await chessJSmodule.InvokeVoidAsync("setDoubleArrowHighlighting", element, fromSq, toSq, oppFromSq, oppToSq, color, oppColor);
+					}
+					else
+					{
+						await chessJSmodule.InvokeVoidAsync("setArrowHighlighting", element, fromSq, toSq, "#9D8989");
+					}
 				}
-				else
+				catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException)
 				{
-					await chessJSmodule.InvokeVoidAsync("setArrowHighlighting", element, fromSq, toSq, "#9D8989");
-					//Console.WriteLine($"PV: {pvMove} OppPV: {oppPvMove} FromSq: {fromSq} ToSq: {toSq}");
 				}
 			}
 		}

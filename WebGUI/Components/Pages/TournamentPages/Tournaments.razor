@@ -22,6 +22,7 @@
 @inject ShutdownTokenProvider shutdownTokenProvider
 @inject IWebHostEnvironment Environment
 @inject OpeningExplorerService openingExplorer
+@inject TournamentService TournamentSvc
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -260,6 +261,7 @@
 
 
 @code {
+	Chess.Board board = new ChessLibrary.Chess.Board();
 	List<string> validSizes = ["small", "medium", "large"];
 	private int height = 100;
 	private bool shouldCycle;
@@ -334,7 +336,7 @@
 	private List<EngineStatus> engineStatus = new();
 	private EngineStatus Engine1 = EngineStatus.Empty;
 	private EngineStatus Engine2 = EngineStatus.Empty;
-	private ChessLibrary.Tournament.Manager.Runner runner;
+	private ChessLibrary.Tournament.Manager.Runner runner => TournamentSvc.CurrentRunner;
 	private EngineConfig WhiteEngineConfig = EngineConfig.Empty;
 	private EngineConfig BlackEngineConfig = EngineConfig.Empty;
 	private string moveHistory = string.Empty;
@@ -1132,7 +1134,7 @@
 
 	private async void CancelTournament()
 	{
-		runner.Cancel();
+		TournamentSvc.Cancel();
 		timer?.Dispose();
 		oneSecondTimer?.Dispose();
 		await Notifier.NotifyFullScreenRequested(false);
@@ -1289,7 +1291,7 @@
 	}
 
 	private async Task PlayOpeningMoves(List<MoveAndFen> moves)
-	{
+	{        
 		moveHistory = string.Empty;
 		openingMoves = string.Empty;
 		var isWhite = true;
@@ -1359,6 +1361,8 @@
 
 	private async void Update(TournamentTypes.Update update)
 	{
+		try
+		{
 		switch (update)
 		{
 			case TournamentTypes.Update.GameStarted player:
@@ -1439,7 +1443,11 @@
 
 			case TournamentTypes.Update.BestMove b:
 				moveHistory = b.Info.MoveHistory;
-				FinalStatusReceived(b.Status);
+				FinalStatusReceived(b.Status);		
+				board.LoadFen(b.Info.MoveAndFen.FenAfterMove);
+				var found = openingExplorer.Lookup(board.PositionHash());
+				if (found != null)					
+					currentOpeningInPlay = $"{found.Name}, ECO: {found.ECO}";
 				await streamingBoard.OnNotifyMoveAndFen(b.Info.MoveAndFen);
 				TB = b.Info.PiecesLeft - tournament.Adjudication.TBAdj.TBMen;
 				move50 = b.Info.Move50;
@@ -1488,7 +1496,7 @@
 
 				if (runWithLogLiveStats)
 				{
-					searchInfoPlot.ClearSearchData();
+					searchInfoPlot?.ClearSearchData();
 				}
 
 				await InvokeAsync(StateHasChanged);
@@ -1522,7 +1530,7 @@
 			case TournamentTypes.Update.NNSeq n:
 				try
 				{
-					if (runWithLogLiveStats && n.NNSeq.Count > 0)
+					if (runWithLogLiveStats && n.NNSeq.Count > 0 && searchInfoPlot != null)
 					{
 						n.NNSeq.Reverse();
 						searchInfoPlot.AddData(n.NNSeq);
@@ -1782,6 +1790,11 @@
 				await PonderStatusReceived(ponderStatus.Engine);
 				break;
 		}
+		}
+		catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException)
+		{
+			// Circuit disposed (e.g. user navigated away) — safe to ignore
+		}
 	}
 
 	private async Task UpdateSpeed(int delayInMs)
@@ -1827,14 +1840,13 @@
 	private async Task GameStartedReceived(StartGameInfo info)
 	{
 		SetGameParams(info);
-		TB = 0;
+		board.ResetBoardState();
 		currentOpeningInPlay = info.OpeningName;
 		// Try hash-based opening detection for better names
 		if (info.OpeningMovesAndFen.Count > 0)
 		{
 			try
-			{
-				var board = new ChessLibrary.Chess.Board();
+			{				
 				OpeningInfo best = null;
 				foreach (var entry in info.OpeningMovesAndFen)
 				{
@@ -1849,6 +1861,7 @@
 			catch { }
 		}
 		moveNr = 0;
+		TB = 0;
 		UpdateDeviationReference(info);
 		whitePlayer = info.WhitePlayer.Name;
 		whiteDev = info.WhitePlayer.Dev;
@@ -1941,7 +1954,7 @@
 	private void FinalStatusReceived(EngineStatus info)
 	{
 		SetEngineStatus(info);
-
+		
 		if (info.WDL.IsHasValue)
 		{
 			switch (info.WDL)
@@ -2085,14 +2098,15 @@
 
 	private void RunTournament()
 	{
-		runner = new ChessLibrary.Tournament.Manager.Runner(logger, Update, true, false);
-		runner.LinkCancellation(shutdownTokenProvider.Token);
-		tournament = runner.Tournament();
+		var r = TournamentSvc.CreateRunner(logger, shutdownTokenProvider);
+		TournamentSvc.Subscribe(Update);
+		TournamentSvc.MarkRunning();
+		tournament = r.Tournament();
 		Task.Factory.StartNew(() =>
 			{
 				try
 				{
-					runner.Run();
+					r.Run();
 				}
 				catch (Exception ex)
 				{
@@ -2647,8 +2661,33 @@
 			//.Add(ModKey.Ctrl, Key.s, (() => SwapBothTables()), "Swap tables")
 			//.Add(ModKey.Ctrl, Key.b, (() => BenchmarkConfig()), "Create benchmark config")
 			//.Add(ModKey.Ctrl, Key.l, (() => OpenResultDialog()), "Show result");
-			runner = new ChessLibrary.Tournament.Manager.Runner(logger, Update, true, false);
-			tournament = runner.Tournament();
+			if (TournamentSvc.IsRunning && runner != null)
+			{
+				// Reconnect to a running tournament
+				tournament = runner.Tournament();
+				results = runner.GetResults();
+				scoreTable = runner.GetPlayerResults(results);
+				table = runner.GenerateStatsCrosstable(results);
+				pairings = runner.GetLastestPairings();
+				infoBannerInfo = new InfoBannerInfo(tournament);
+				// Re-create charts so live updates don't hit null
+				evalList = new LivePlot(chessModule, evalChart, whitePlayer, blackPlayer, "Eval in CP", "Centipawns");
+				nodeList = new LivePlot(chessModule, nodesChart, whitePlayer, blackPlayer, "Nodes per move", "Total nodes");
+				npsList = new LivePlot(chessModule, npsChart, whitePlayer, blackPlayer, "Speed (NPS)", "Nodes per sec");
+				epsList = new LivePlot(chessModule, epsChart, whitePlayer, blackPlayer, "Speed (EPS)", "NN eval per sec");
+				timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
+				// Subscribe last — after all state is ready for incoming updates
+				TournamentSvc.Subscribe(Update);
+			}
+			else
+			{
+				// Normal init — create config-reading runner
+				var r = TournamentSvc.GetConfigRunner(logger);
+				tournament = r.Tournament();
+				results = r.GetResults();
+				scoreTable = r.GetPlayerResults(results);
+				table = r.GenerateStatsCrosstable(results);
+			}
 			layoutOptions = tournament.LayoutOption;
 			descriptionStyle = $"margin-left:10px; font-size:{layoutOptions.Fonts.TournamentDescFont}px;";
 			liveChartStyle = $"Height:{layoutOptions.Sizes.LiveChartHeight}px;";
@@ -2661,9 +2700,6 @@
 				autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
 			}
 			ValidatePVSize();
-			results = runner.GetResults();
-			scoreTable = runner.GetPlayerResults(results);
-			table = runner.GenerateStatsCrosstable(results);
 			var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;
 			infoBannerInfo = new InfoBannerInfo(tournament);
 			infoBannerInfo.HeadToHead = headToHead;
@@ -2767,6 +2803,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        TournamentSvc.Unsubscribe();
         Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;
         keyContext?.DisposeAsync();

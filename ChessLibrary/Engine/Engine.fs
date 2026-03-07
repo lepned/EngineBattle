@@ -1050,9 +1050,15 @@ module Engine =
                   RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
                   raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
         with
-        | :? OperationCanceledException -> logCritical "Engine initialization timed out."
-        | :? Channels.ChannelClosedException -> logCritical "Engine channel was closed unexpectedly."
-        | ex -> logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)      
+        | :? OperationCanceledException ->
+            passed <- false
+            logCritical "Engine initialization timed out."
+        | :? Channels.ChannelClosedException ->
+            passed <- false
+            logCritical "Engine channel was closed unexpectedly."
+        | ex ->
+            passed <- false
+            logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)      
       
       do
          startProcess ()
@@ -1136,11 +1142,15 @@ module Engine =
       member this.StartProcess() = startProcess()
         
       member this.DoNotValidate() = validate <- false
-      member this.StopProcess() =       
-        if proc.HasExited then
-          logInformation (sprintf "Engine %s has already exited" name)
-        else
-          terminateProcess proc 3000        
+      member this.StopProcess() =
+        try
+          if proc.HasExited then
+            logInformation (sprintf "Engine %s has already exited" name)
+          else
+            terminateProcess proc 3000
+        with
+        | :? InvalidOperationException ->
+            logCritical (sprintf "Engine %s: process was never started or is in a bad state — check engine path, permissions, and dependencies" name)        
     
       member _.PassedValidation = passed
       member this.BenchmarkLC0Cmd = benchMarkLC0Cmd
