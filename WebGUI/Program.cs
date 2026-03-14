@@ -1,4 +1,5 @@
 
+using System.Diagnostics;
 using MudBlazor.Services;
 using Serilog;
 using Serilog.Events;
@@ -105,4 +106,20 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 EnsureTournamentJsonIsLoaded();
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var address = (app.Urls.FirstOrDefault() ?? "http://localhost:5000").TrimEnd('/') + "/analysis/single";
+    try
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            Process.Start(new ProcessStartInfo(address) { UseShellExecute = true });
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            Process.Start("open", address);
+        else
+            Process.Start("xdg-open", address);
+    }
+    catch { }
+});
+
 app.Run();

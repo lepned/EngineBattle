@@ -4,19 +4,7 @@
 		<AssemblyName>EngineBattle.WebGUI</AssemblyName>
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
-	<ItemGroup>
-	  <Content Include="Tools\fathom.exe">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </Content>
-	  <Content Include="Tools\fathom.linux">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </Content>
-	  <Content Include="Tools\fathom.macosx">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </Content>
-	</ItemGroup>
-
-	<ItemGroup>
+<ItemGroup>
 		<PackageReference Include="Markdig" Version="0.41.1" />
 		<PackageReference Include="MudBlazor" Version="8.5.1" />
 		<PackageReference Include="Toolbelt.Blazor.HotKeys2" Version="6.0.1" />
