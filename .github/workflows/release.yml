@@ -21,20 +21,38 @@ jobs:
     strategy:
       matrix:
         rid: [win-x64, linux-x64, osx-x64, osx-arm64]
+        selfcontained: [true, false]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
       - name: Publish
-        run: dotnet publish WebGUI -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/${{ matrix.rid }}
+        run: |
+          if [ "${{ matrix.selfcontained }}" = "true" ]; then
+            dotnet publish WebGUI -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/${{ matrix.rid }}
+          else
+            dotnet publish WebGUI -c Release -r ${{ matrix.rid }} --no-self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/${{ matrix.rid }}-fd
+          fi
+      - name: Set artifact name
+        id: names
+        run: |
+          if [ "${{ matrix.selfcontained }}" = "true" ]; then
+            echo "dir=publish/${{ matrix.rid }}" >> $GITHUB_OUTPUT
+            echo "zip=EngineBattle-${{ matrix.rid }}.zip" >> $GITHUB_OUTPUT
+            echo "artifact=EngineBattle-${{ matrix.rid }}" >> $GITHUB_OUTPUT
+          else
+            echo "dir=publish/${{ matrix.rid }}-fd" >> $GITHUB_OUTPUT
+            echo "zip=EngineBattle-${{ matrix.rid }}-framework-dependent.zip" >> $GITHUB_OUTPUT
+            echo "artifact=EngineBattle-${{ matrix.rid }}-framework-dependent" >> $GITHUB_OUTPUT
+          fi
       - name: Zip
-        run: cd publish/${{ matrix.rid }} && zip -r ../../EngineBattle-${{ matrix.rid }}.zip .
+        run: cd ${{ steps.names.outputs.dir }} && zip -r ../../${{ steps.names.outputs.zip }} .
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EngineBattle-${{ matrix.rid }}
-          path: EngineBattle-${{ matrix.rid }}.zip
+          name: ${{ steps.names.outputs.artifact }}
+          path: ${{ steps.names.outputs.zip }}
 
   release:
     needs: build
