@@ -188,7 +188,7 @@
   {
     var pgnName = e.File.Name;
     logger.LogInformation("PGN file opened {File}", pgnName);
-    var env = Environment.CurrentDirectory;
+    var env = AppPaths.BaseDir;
     var fullPath = Path.Combine(env, pgnName);
     await using (FileStream fs = new(fullPath, FileMode.Create))
     {

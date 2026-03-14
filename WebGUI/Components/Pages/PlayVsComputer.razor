@@ -934,7 +934,7 @@
         analyzer?.Engine.ShutDownEngine();
         var name = e.File.Name;
         logger.LogInformation("Engine.json file opened {File}", name);
-        var env = Environment.CurrentDirectory;
+        var env = AppPaths.BaseDir;
         var fullPath = Path.Combine(env, "NN", name);
         
         try

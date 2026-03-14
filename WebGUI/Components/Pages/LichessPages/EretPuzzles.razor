@@ -212,7 +212,7 @@
         fileName = pgnName;
         //finalMessage = $"Running tests on {fileName}";
         logger.LogInformation("Config file opened {File}", pgnName);
-        var env = Environment.CurrentDirectory;
+        var env = AppPaths.BaseDir;
         fullPath = Path.Combine(env, "wwwroot", pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))
         {

@@ -782,8 +782,10 @@
         var pgnName = e.File.Name;
         logger.LogInformation("Loading network file {File}", pgnName);
         DeleteLoadedNNFile();
-        var env = Environment.CurrentDirectory;
-        var fullPath = Path.Combine(env, "NN", pgnName);
+        var env = AppPaths.BaseDir;
+        var nnDir = Path.Combine(env, "NN");
+        Directory.CreateDirectory(nnDir);
+        var fullPath = Path.Combine(nnDir, pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))
         {
             browserFile = e.File;
@@ -813,32 +815,43 @@
 
     private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
     {
-        waitingForEngine = true;
-        searchInProgress = false;
-        StateHasChanged();
-        analyzer?.Engine?.ShutDownEngine();
-        var name = e.File.Name;
-        logger.LogInformation("Engine.json file opened {File}", name);
-        var env = Environment.CurrentDirectory;
-        var fullPath = Path.Combine(env, "NN", name);
-        await using (FileStream fs = new(fullPath, FileMode.Create))
+        try
         {
-            browserFile = e.File;
-            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+            waitingForEngine = true;
+            searchInProgress = false;
+            StateHasChanged();
+            analyzer?.Engine?.ShutDownEngine();
+            var name = e.File.Name;
+            logger.LogInformation("Engine.json file opened {File}", name);
+            var env = AppPaths.BaseDir;
+            var nnDir = Path.Combine(env, "NN");
+            Directory.CreateDirectory(nnDir);
+            var fullPath = Path.Combine(nnDir, name);
+            await using (FileStream fs = new(fullPath, FileMode.Create))
+            {
+                browserFile = e.File;
+                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
+            }
+            var jsonFile = e.File.Name;
+            logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
+            var engineConfig = JSON.readSingleEngineConfig(fullPath);
+            var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
+            await OnNewEngineLoaded.InvokeAsync(args);
+            Engine = engineConfig;
+            NNInfoList.Clear();
+            analyzer = null;
+            await StartAnalyzer();
+            neuralNet = analyzer.GetNetwork();
+            backend = analyzer.BackendInfo();
+            File.Delete(fullPath);
+            StateHasChanged();
         }
-        var jsonFile = e.File.Name;
-        logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
-        var engineConfig = JSON.readSingleEngineConfig(fullPath);
-        var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
-        await OnNewEngineLoaded.InvokeAsync(args);
-        Engine = engineConfig;
-        NNInfoList.Clear();
-        analyzer = null;
-        await StartAnalyzer();
-        neuralNet = analyzer.GetNetwork();
-        backend = analyzer.BackendInfo();
-        File.Delete(fullPath);
-        StateHasChanged();
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load engine.json file {File}", e.File.Name);
+            waitingForEngine = false;
+            StateHasChanged();
+        }
     }
 
     private void SetDefaultContempt()

@@ -470,7 +470,7 @@
                 return;
             }
             logger.LogInformation("Selected file {File}", pgnName);
-            var env = Environment.CurrentDirectory;
+            var env = AppPaths.BaseDir;
             fullPath = Path.Combine(env, pgnName);
             await using (FileStream fs = new(fullPath, FileMode.Create))
             {

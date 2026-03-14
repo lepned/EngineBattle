@@ -282,7 +282,7 @@
 		{
 			var pgnName = e.File.Name;
 			logger.LogInformation("Config file '{File}' loaded and saved to '{Path}'", pgnName, fullPath);
-			var env = Environment.CurrentDirectory;
+			var env = AppPaths.BaseDir;
 			fullPath = Path.Combine(env, "wwwroot", pgnName);
 
 			await using (FileStream fs = new(fullPath, FileMode.Create))
@@ -707,7 +707,7 @@
 		pgnName = e.File.Name;
 		logger.LogInformation("Tablebase result file opened {File}", pgnName);
 
-		var env = Environment.CurrentDirectory;
+		var env = AppPaths.BaseDir;
 		var fullPath = Path.Combine(env, pgnName);
 		await using (FileStream fs = new(fullPath, FileMode.Create))
 		{
@@ -732,7 +732,7 @@
 			return;
 		}
 		logger.LogInformation("EPD file opened {File}", pgnName);
-		var env = Environment.CurrentDirectory;
+		var env = AppPaths.BaseDir;
 		var fullPath = Path.Combine(env, pgnName);
 		await using (FileStream fs = new(fullPath, FileMode.Create))
 		{
@@ -759,7 +759,7 @@
 		}
 
 		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = Environment.CurrentDirectory;
+		var env = AppPaths.BaseDir;
 		var fullPath = Path.Combine(env, pgnName);
 		await using (FileStream fs = new(fullPath, FileMode.Create))
 		{
@@ -839,7 +839,7 @@
 			board.StartPosition = fen;
 			try
 			{
-				var env = Environment.CurrentDirectory;
+				var env = AppPaths.BaseDir;
 				fullPath = Path.Combine(env, "wwwroot", "AnalyzeConfig.json");
 				config = Configuration.JSONParser.loadAnalyzeConfig(fullPath); ;
 				var folder = config.EngineFolder;

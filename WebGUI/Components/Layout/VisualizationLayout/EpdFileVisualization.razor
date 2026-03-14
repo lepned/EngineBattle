@@ -54,7 +54,7 @@
   {
     var pgnName = e.File.Name;
     Logger.LogInformation("CSV file opened {File}", pgnName);
-    var env = Environment.CurrentDirectory;
+    var env = AppPaths.BaseDir;
     var path = Path.Combine(env, pgnName);
     await using (FileStream fs = new(path, FileMode.Create))
     {

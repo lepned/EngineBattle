@@ -408,7 +408,7 @@
         {
             var pgnName = e.File.Name;
             logger.LogInformation("Config file '{File}' loaded", pgnName);
-            var env = Environment.CurrentDirectory;
+            var env = AppPaths.BaseDir;
             fullPath = Path.Combine(env, "wwwroot", pgnName);
 
             await using (FileStream fs = new(fullPath, FileMode.Create))
@@ -745,7 +745,7 @@
             return;
         }
         logger.LogInformation("EPD file opened {File}", pgnName);
-        var env = Environment.CurrentDirectory;
+        var env = AppPaths.BaseDir;
         var fullPath = Path.Combine(env, pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))
         {
@@ -771,7 +771,7 @@
         }
 
         logger.LogInformation("PGN file opened {File}", pgnName);
-        var env = Environment.CurrentDirectory;
+        var env = AppPaths.BaseDir;
         var fullPath = Path.Combine(env, pgnName);
         await using (FileStream fs = new(fullPath, FileMode.Create))
         {
@@ -945,7 +945,7 @@
             UpdateDetectedOpening();
             try
             {
-                var env = Environment.CurrentDirectory;
+                var env = AppPaths.BaseDir;
                 fullPath = Path.Combine(env, "wwwroot", "AnalyzeConfig.json");
                 config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
                 var folder = config.EngineFolder;

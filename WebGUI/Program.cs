@@ -10,20 +10,26 @@ using WebGUI.Services;
 
 static void EnsureTournamentJsonIsLoaded()
 {
-    string currentDir = Environment.CurrentDirectory;    
+    string currentDir = AppPaths.BaseDir;
 
     string path = Path.Combine(currentDir, "Data", "tournamentEmpty.json");
-    string dest = Path.Combine(currentDir, "wwwroot", "tournament.json");    
+    string dest = Path.Combine(currentDir, "wwwroot", "tournament.json");
 
-    if (!File.Exists(dest))   
+    if (!File.Exists(dest))
     {
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"Note: source template not found at {path}, skipping tournament.json copy.");
+            return;
+        }
         Console.WriteLine("***Note: tournament.json file not found, copying a default version from Data folder.");
         Console.WriteLine($"Copying file to {dest}\n");
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         File.Copy(path, dest, true);
     }
 }
 
-var logPath = Path.Combine("..", "logs", "log-{Date}.txt");
+var logPath = Path.Combine(Environment.CurrentDirectory, "logs", "log-{Date}.txt");
 
 var log = new LoggerConfiguration()
     .MinimumLevel.Debug()
@@ -95,6 +101,9 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var app = builder.Build();
 
+// Use ContentRootPath — correct in both dev (project dir) and published (exe dir) modes
+AppPaths.BaseDir = app.Environment.ContentRootPath;
+
 // Get the .NET runtime version
 Console.WriteLine("Runtime version: " + Environment.Version);
 
@@ -123,3 +132,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+
+public static class AppPaths
+{
+    public static string BaseDir { get; set; } = AppContext.BaseDirectory;
+}

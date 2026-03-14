@@ -215,7 +215,7 @@ else
     var pgnName = e.File.Name;
     fileName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
-    var env = Environment.CurrentDirectory;
+    var env = AppPaths.BaseDir;
     var fullPath = Path.Combine(env, pgnName);
     deviationListCritical.Clear();
     deviationListAll.Clear();

@@ -47,7 +47,7 @@
 
     logger.LogInformation("Executable opened {File}", pgnName);
     logger.LogInformation("Creating default engine.json file from executable", e.File.Name);
-    var env = Environment.CurrentDirectory;
+    var env = AppPaths.BaseDir;
     var fullPath = pgnName.ToLower().Contains("ceres") ? engineFolder : Path.Combine(env, pgnName);
     var useFolder = pgnName.ToLower().Contains("ceres");
     ChessLibrary.Engine.ChessEngine engine = null;
