@@ -119,7 +119,7 @@
                     </div>
                 </div>
                 <div class="sa-save-group">
-                    <input type="text" @bind="openingAndVariation" placeholder="Sicilian; Sveshnikov" />
+                    <input type="text" @bind="openingAndVariation" placeholder="Opening; Variation" />
                     <span class="sa-helper">Opening name; Variation name</span>
                     <button class="sa-btn secondary" @onclick="OpeningBook">
                         Create Opening book
@@ -278,7 +278,8 @@
     private string currentGame = "";
     private int gameIndex = 0;
     private string gamesPath = "C:/dev/chess/mygames.pgn";
-    private string openingAndVariation = "Sicilian; Sveshnikov";
+    private string openingAndVariation = "";
+    private string lastAutoDetectedOpening = "";
     bool pgnFileLoaded = false;
     bool epdFileLoaded = false;
     EngineConfig Engine;
@@ -544,6 +545,7 @@
         board.LoadPGNGameWithVariations(game);
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
+        UpdateDetectedOpening();
         moveHistory = board.GetMoveHistoryWithVariations();
         var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
         await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
@@ -650,6 +652,7 @@
         board.LoadFen(epd.FEN);
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
+        UpdateDetectedOpening();
         await Notifier.UpdateFen(fen);
         StateHasChanged();
     }
@@ -816,6 +819,36 @@
         var info = openingExplorer.Lookup(board);
         detectedOpeningName = info?.Name ?? "";
         detectedOpeningECO = info?.ECO ?? "";
+        SyncOpeningInputWithDetectedOpening();
+    }
+
+    private void SyncOpeningInputWithDetectedOpening()
+    {
+        var autoDetectedOpening = FormatOpeningForInput(detectedOpeningName);
+        var canOverwrite = string.IsNullOrWhiteSpace(openingAndVariation)
+            || string.Equals(openingAndVariation, lastAutoDetectedOpening, StringComparison.Ordinal);
+
+        lastAutoDetectedOpening = autoDetectedOpening;
+
+        if (canOverwrite)
+        {
+            openingAndVariation = autoDetectedOpening;
+        }
+    }
+
+    private static string FormatOpeningForInput(string openingName)
+    {
+        if (string.IsNullOrWhiteSpace(openingName))
+        {
+            return string.Empty;
+        }
+
+        var separators = new[] { ": ", ":" };
+        var parts = openingName.Split(separators, 2, StringSplitOptions.TrimEntries);
+
+        return parts.Length == 2
+            ? $"{parts[0]}; {parts[1]}"
+            : openingName.Trim();
     }
 
     public async void OnEngineMoveMade(string move)
@@ -878,6 +911,7 @@
                 board.StartPosition = fenOpt.Value;
                 fen = board.FEN();
                 frcPositionId = frcInput;
+                UpdateDetectedOpening();
                 await Notifier.UpdateFenToBoard(fen);
                 StateHasChanged();
             }
@@ -908,6 +942,7 @@
             board.LoadFen(fen);
             board.StartPosition = fen;
             UpdateFrcId(board.StartPosition);
+            UpdateDetectedOpening();
             try
             {
                 var env = Environment.CurrentDirectory;

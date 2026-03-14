@@ -114,17 +114,17 @@ module Engine =
         async {
             while cont do
                 let mode = if uciMode = "uci" then inUciResponsMode else inIsreadyMode
-                if mode then
-                    do! Async.Sleep(200)
-                    if cancellationToken.IsCancellationRequested then
-                        // Handle timeout here and print a message including the ucimode
-                        printfn "Timeout for %s" uciMode
-                        ok <- false; cont <- false                      
-                    else
-                        ok <- true
-                else
+                if cancellationToken.IsCancellationRequested then
+                    printfn "Timeout for %s" uciMode
+                    ok <- false
                     cont <- false
-            printfn "%s responded with uciMode %s" config.Name uciMode
+                elif mode then
+                    do! Async.Sleep(200)
+                else
+                    ok <- true
+                    cont <- false
+            if ok then
+                printfn "%s responded with uciMode %s" config.Name uciMode
             return ok
         } |> Async.RunSynchronously
 
@@ -565,6 +565,19 @@ module Engine =
           assignNetworkName cmd
           commands.Add cmd
           dict.[opt.Key] <- opt.Value
+
+      member this.WaitForReadyOk(?timeoutMs: int) =
+          if engineProcess.HasExited then
+              false
+          else
+              match winboardHandler with
+              | Some _ ->
+                  true
+              | None ->
+                  inIsreadyMode <- true
+                  write "isready"
+                  let timeoutInMs = defaultArg timeoutMs (TimeSpan.FromHours(2).TotalMilliseconds |> int)
+                  waitForInitialization ((new CancellationTokenSource(timeoutInMs)).Token) "readyok"
 
       member this.SendUCICommand (command: UCICommand) =
           match command with

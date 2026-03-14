@@ -79,6 +79,9 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
         let command = board.PositionWithMovesFromGraph()
         printfn "Search command: %s" command
         engine.SendUCICommand (PositionWithMoves command)
+        let isReady = engine.WaitForReadyOk()
+        if not isReady then
+          failwith $"Engine {engine.Name} did not respond to isready command before go infinite"
         engine.SendUCICommand (GoInfinite)
 
     member x.SearchNodes (nodes, keepNodes : bool) =
@@ -95,6 +98,9 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
         let graphCmds = board.PositionWithMovesFromGraph()
         printfn "Search command: %s" graphCmds
         engine.SendUCICommand (PositionWithMoves graphCmds)
+        let isReady = engine.WaitForReadyOk()
+        if not isReady then
+          failwith $"Engine {engine.Name} did not respond to isready command before go nodes"
         engine.SendUCICommand (GoNodes nodes)
 
     member x.SearchNodesWithCommand (nodes, commands:string, keepNodes : bool) =
@@ -110,6 +116,9 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
           SearchDict.Clear()
         printfn "Search command: %s" commands
         engine.SendUCICommand (PositionWithMoves commands)
+        let isReady = engine.WaitForReadyOk()
+        if not isReady then
+          failwith $"Engine {engine.Name} did not respond to isready command before go nodes"
         engine.SendUCICommand (GoNodes nodes)
 
     member x.DumpStats command = engine.SendUCICommand (RawCommand command)
@@ -123,4 +132,7 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
         let graphCmds = board.PositionWithMovesFromGraph()
         printfn "Search indexed command: %s" graphCmds
         engine.SendUCICommand (PositionWithMoves graphCmds)
+        let isReady = engine.WaitForReadyOk()
+        if not isReady then
+          failwith $"Engine {engine.Name} did not respond to isready command before search"
         engine.SendUCICommand (RawCommand goCommand)
