@@ -1,9 +1,8 @@
 # EngineBattle
 
-**EngineBattle** is a comprehensive tool designed for running tournaments, testing, analyzing, and comparing chess engines. It simplifies puzzle-based testing, detailed analysis, tournament management, and provides interactive visualizations, making it ideal for chess developers, researchers, and streamers.
+**EngineBattle** is a comprehensive tool for running tournaments, testing, analyzing, and comparing chess engines. It supports engines using the **UCI** and **Winboard/XBoard** protocols. With puzzle-based testing, detailed analysis, tournament management, and interactive visualizations, it is ideal for chess developers, researchers, and streamers.
 
 <img src="Img/Tournament.png" alt="Tournament" style="max-width:100%; height:auto;" />
-
 *Example: Tournament GUI — follow live games, standings, and results with interactive visualizations.*
 
 ---
@@ -55,7 +54,7 @@
 
 ### 💻 Console Mode
 
-- **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking.
+- **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
 - **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking.
 
 ### 🎥 Streaming and Community Features
@@ -65,49 +64,83 @@
 
 ---
 
-## ⚠️ Limitations
+## 📦 Quick Start
 
-- **UCI Engines Only:** EngineBattle exclusively supports chess engines using the Universal Chess Interface (UCI). Older or alternative protocols are not supported.
+Pre-built binaries are available from [GitHub Releases](https://github.com/lepned/EngineBattle/releases).
+
+### 1. Download
+
+Choose a variant:
+
+| Variant | Size | .NET Runtime Required? |
+|---------|------|----------------------|
+| **Self-contained** | ~58 MB | No — everything is bundled |
+| **Framework-dependent** | ~16 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
+
+Available platforms: **win-x64**, **linux-x64**, **osx-x64**, **osx-arm64**
+
+### 2. Run
+
+Extract the zip and run:
+
+- **Windows:** `EngineBattle.exe`
+- **Linux / macOS:** `./EngineBattle`
+
+Your browser opens automatically. If not, navigate to the localhost URL shown in the console.
+
+### 3. First Run
+
+A blank `tournament.json` is auto-created next to the executable on first startup. See [Configuration](#configuration) below to set up your engines.
 
 ---
 
-## ✨ Purpose and Goals
+## 🛠 Build from Source
 
-EngineBattle streamlines the process of testing, evaluating, and showcasing chess engines, offering powerful tools and intuitive interfaces designed for chess engine developers, enthusiasts, researchers, and streamers. Its primary focus is on creating enjoyable, interactive, and community-friendly engine tournaments and puzzle-based testing environments.
+For developers who want to modify the code, use the CLI console commands, or run the latest unreleased changes.
 
-Enjoy the powerful capabilities of EngineBattle and enhance your chess engine experience today!
+### Prerequisites
 
+[.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later.
 
+### Clone and Run
 
-## Prerequisites
+```bash
+git clone https://github.com/lepned/EngineBattle.git
+cd EngineBattle/WebGUI
+dotnet run -c release
+```
 
-To run the program, you will need to have .NET 10.0 or later installed. You can download it from the official [.NET website](https://dotnet.microsoft.com/download/dotnet/10.0).
+A console application should now run with a link to the localhost URL. Ctrl + click on the link to open the URL in the browser. To keep your local copy updated:
 
-## Installation
+```bash
+git pull origin main
+```
 
-1. Create a folder where the code is to be installed (e.g., `Chess` folder).
-2. Open Terminal and change the directory to the folder you just created.
-3. Run the following git command to clone the repository:
-    ` git clone https://github.com/lepned/EngineBattle.git `
-4. Change the directory to the `WebGUI` folder inside the newly created `EngineBattle` folder:
-    ` cd EngineBattle/WebGUI `
-    
-5. Run the following dotnet command to start the application:    
-    ` dotnet run -c release `
+### Console Commands (source builds only)
 
-A console application should now run and display a link such as "http://localhost:5018/." Ctrl-click on the link to open the URL in the browser (such as Edge,  the most thoroughly tested browser). You should now be able to see the web GUI in the browser. 
-To keep your local copy of this repo updated, navigate to the `EngineBattle` folder in the console and run:
+The Console project provides CLI commands not included in the release binaries:
 
-` git pull origin main `
+```bash
+cd Console
+dotnet run -c release -- tournamentjson <fullPathToTournament.json>
+dotnet run -c release -- puzzlejson <fullPathToPuzzleConfig.json>
+dotnet run -c release -- eretjson <fullPathToEretConfig.json>
+dotnet run -c release -- analyze <engine> [fen] [options]
+dotnet run -c release -- compare <engine1> <engine2> [options]
+dotnet run -c release -- tune <fullPathToTunerConfig.json>
+```
+
+---
 
 ## Configuration
 
 Before you can do much with the GUI, you need to configure all the engines you want to use. Follow these steps to configure `EngineSetup`:
 
-1. Edit the `tournament.json` file located under the `wwwroot` folder in `WebGUI` - [Link to Tournament.json](Tournament.json.md).
-    - If the tournament.json file is not present, you can create one by copying the `Tournament.json` file from the link above and pasting it into the `wwwroot` folder.
-2. Define the folder where all `engineDefs` are located. Set the path to this folder under the key: `EngineDefFolder`.
-3. Every engine needs an `EngineDef.json` file - [Link to EngineDef.json](EngineDef.json.md) / [Link to LC0Def.json](LC0Def.json.md). Make a copy, configure each engine as you wish, and save it with a proper name like `SFDef.json` for Stockfish.
+1. Edit the `tournament.json` file - [Tournament Configuration Reference](TournamentConfig.md).
+    - **Release binaries:** `tournament.json` is auto-created next to the executable on first startup.
+    - **Source builds:** `tournament.json` is located in the `WebGUI/wwwroot` folder and is auto-created on first startup if it doesn't exist.
+2. Create and define the folder where all `engineDefs` are located. Set the path to this folder under the key: `EngineDefFolder`.
+3. Every engine needs an `EngineDef.json` file - [Engine Configuration Reference](EngineDefConfig.md) / [LC0 Configuration Reference](LC0Config.md). Make a copy, configure each engine as you wish, and save it with a proper name like `SFDef.json` for Stockfish.
 4. Add all your `EngineDef.json` files that will be part of the tournament under the key: `EngineDefList`. See below for an example of how to do this.
     ```
       "EngineSetup": {
@@ -144,9 +177,13 @@ After you have created and configured a `tournament.json` file on your computer(
 
 The `wwwroot` folder includes a selection of images used by the program, located in the Img subfolder. To add new images (e.g., for additional engines), simply place them in the `Img` folder as .png or .jpg files.
 
+### Logs
+
+Log files are written to a `logs/` folder in the current working directory. Logs use daily rolling files with a 10 MB size limit per file.
+
 ## Running a Tournament
 
-Use your browser’s built-in zoom function to adjust the GUI size to your preference. For streaming, it’s recommended to set the zoom level to 80% or 90%, depending on your screen resolution and size. 
+Use your browser's built-in zoom function to adjust the GUI size to your preference. For streaming, it's recommended to set the zoom level to 80% or 90%, depending on your screen resolution and size.
 Press F11 to enter full-screen mode — this is also recommended for the best streaming experience.
 
 To operate a tournament, you only need two keys:
@@ -241,7 +278,7 @@ Each `ResultReason` has a corresponding explanation that provides more details a
 
 ## Analysis Mode
 
-The analysis mode provides a user-friendly interface for analyzing chess positions and optionally comparing engine evaluations side by side. 
+The analysis mode provides a user-friendly interface for analyzing chess positions and optionally comparing engine evaluations side by side.
 
 Analysis mode uses a `AnalyzeConfig.json` file - [Link to AnalyzeConfig.json](AnalyzeConfig.md) - to pick engines in order from top to bottom, so the first engine in the list will be picked for single analysis and the first two engines will be picked for dual analysis.
 
@@ -294,7 +331,6 @@ This application uses the following libraries, which are licensed under their re
 - **CommandLineParser** - [MIT License](https://github.com/commandlineparser/commandline/blob/master/License.md)
 - **Fathom** - [MIT License](https://github.com/basil00/Fathom/blob/master/LICENSE)
 - **Toolbelt.Blazor.HotKeys2** - [Mozilla Public License 2.0](https://github.com/jsakamoto/Toolbelt.Blazor.HotKeys/blob/master/LICENSE)
-- **CliWrap** - [MIT License](https://github.com/Tyrrrz/CliWrap/blob/master/License.txt) 
-- **chessboardjs** - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md) 
+- **CliWrap** - [MIT License](https://github.com/Tyrrrz/CliWrap/blob/master/License.txt)
+- **chessboardjs** - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
 - **plotly.js** - [MIT License](https://github.com/plotly/plotly.js/blob/master/LICENSE)
-

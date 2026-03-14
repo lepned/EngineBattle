@@ -50,7 +50,7 @@ dotnet run -c Release -- tournamentjson C:/Dev/Chess/Tournaments/my_tournament.j
 - Outputs PGN to the configured `PgnOutPath`
 - Displays live standings and results in the console
 
-**Configuration:** See [Tournament.json.md](Tournament.json.md) for full configuration reference.
+**Configuration:** See [TournamentConfig.md](TournamentConfig.md) for full configuration reference.
 
 ---
 
@@ -292,8 +292,8 @@ Help: Available commands are:
 
 ## Related Documentation
 
-- [Tournament.json.md](Tournament.json.md) - Tournament configuration reference
-- [EngineDef.json.md](EngineDef.json.md) - Engine definition configuration
+- [TournamentConfig.md](TournamentConfig.md) - Tournament configuration reference
+- [EngineDefConfig.md](EngineDefConfig.md) - Engine definition configuration
 - [PuzzleConfig.md](PuzzleConfig.md) - Lichess puzzle test configuration
 - [EretConfig.md](EretConfig.md) - ERET puzzle test configuration
 - [SwissMode.md](SwissMode.md) - Swiss tournament mode details

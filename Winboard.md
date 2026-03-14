@@ -221,6 +221,6 @@ Where:
 
 ## See Also
 
-- [EngineDef.json.md](EngineDef.json.md) - Complete engine configuration reference
-- [Tournament.json.md](Tournament.json.md) - Tournament configuration
+- [EngineDefConfig.md](EngineDefConfig.md) - Complete engine configuration reference
+- [TournamentConfig.md](TournamentConfig.md) - Tournament configuration
 - [CECP Specification](https://www.gnu.org/software/xboard/engine-intf.html) - Official protocol spec
