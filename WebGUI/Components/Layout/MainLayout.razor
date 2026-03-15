@@ -1,6 +1,7 @@
 ﻿@using WebGUI.Services;
 @inherits LayoutComponentBase
 @inject NotifierService notify
+@inject IJSRuntime JS
 
 <MudThemeProvider Theme="theme" @bind-IsDarkMode="isDarkMode" />
 <MudPopoverProvider />
@@ -36,17 +37,33 @@
   bool _drawerOpen = true;
   MudTheme theme = new();
   private bool isDarkMode = true;
+  private IJSObjectReference _chessModule;
 
   void DrawerToggle()
   {
     _drawerOpen = !_drawerOpen;
+    _ = ResizeChessboardsAfterDelay();
   }
 
   async Task Notify_IsFullScreenRequested(bool isFullScreenRequested)
   {
     _drawerOpen = !isFullScreenRequested;
-    await Task.CompletedTask;
+    await ResizeChessboardsAfterDelay();
     StateHasChanged();
+  }
+
+  private async Task ResizeChessboardsAfterDelay()
+  {
+    try
+    {
+      _chessModule = _chessModule ?? await JS.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js");
+      for (int i = 0; i < 3; i++)
+      {
+        await Task.Delay(100);
+        await _chessModule.InvokeVoidAsync("resizeAllChessboards");
+      }
+    }
+    catch { }
   }
 
   protected override void OnAfterRender(bool firstRender)
@@ -61,7 +78,10 @@
   public async ValueTask DisposeAsync()
   {
     notify.IsFullScreenRequested -= Notify_IsFullScreenRequested;
-    await ValueTask.CompletedTask;
+    if (_chessModule != null)
+    {
+      await _chessModule.DisposeAsync();
+    }
   }
  
 }

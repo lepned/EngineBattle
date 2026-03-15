@@ -17,5 +17,9 @@
 		<ProjectReference Include="..\ChessLibrary\ChessLibrary.fsproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<Content Update="wwwroot\AnalyzeConfig.json" CopyToPublishDirectory="Never" />
+	</ItemGroup>
+
 </Project>
    

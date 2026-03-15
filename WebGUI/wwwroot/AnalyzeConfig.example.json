@@ -1,0 +1,21 @@
+{
+    "EngineFolder": "C:/Path/To/Your/EngineDefs",
+    "Engines": [
+      {
+        "Engine": {
+          "ConfigName": "YourEngine.json",
+          "Nodes": 1000
+        }
+      },
+      {
+        "Engine": {
+          "ConfigName": "YourOtherEngine.json",
+          "Nodes": 100000
+        }
+      }
+    ],
+    "Nodes" : 1,
+    "ChartLines": 4,
+    "PolicyDistributionMinMaxFilter" : "0.4,0.6",
+    "CombineWhiteAndBlackMoves" : true
+}

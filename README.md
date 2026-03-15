@@ -92,7 +92,7 @@ Choose a variant:
 | **Self-contained** | ~58 MB | No — everything is bundled |
 | **Framework-dependent** | ~16 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
 
-Available platforms: **win-x64**, **linux-x64**, **osx-x64**, **osx-arm64**
+Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **osx-arm64**
 
 ### 2. Run
 
@@ -102,6 +102,8 @@ Extract the zip and run:
 - **Linux / macOS:** `./EngineBattle`
 
 Your browser opens automatically. If not, navigate to the localhost URL shown in the console.
+
+> **Windows note:** Windows may show a SmartScreen warning for unsigned executables. To bypass this, right-click `EngineBattle.exe` → **Properties** → check **Unblock** → **OK**, then run it normally.
 
 ### 3. First Run
 

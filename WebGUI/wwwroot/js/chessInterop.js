@@ -84,6 +84,13 @@ export function triggerResizeEvent() {
   window.dispatchEvent(new Event('resize'));
 }
 
+// Resize all chessboards on the page
+export function resizeAllChessboards() {
+  document.querySelectorAll('.chessboard-root').forEach(el => {
+    if (el.board) el.board.resize();
+  });
+}
+
 export function updateCarouselHeight() {
   var carousel = document.querySelector('.myMudCarousel');
   var items = carousel.querySelectorAll('.mud-carousel-item');
