@@ -1,4 +1,4 @@
-﻿# Tournament Configuration
+# Tournament Configuration
 
 This document provides an overview of the `tournament.json` configuration file used in the EngineBattle application. This file defines the settings and parameters for running a chess engine tournament.
 
@@ -14,9 +14,9 @@ This document provides an overview of the `tournament.json` configuration file u
 - **GPU**: The GPU specifications.
 - **MainLogoFileName**: The filename of the tournament logo.
 - **VerboseLogging**: Enable or disable verbose logging.
-- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, nodes, NPS, move time — 4 fields), `"Standard"` (eval, move time, NPS, EPS, nodes, depth, seldepth, PV depth, time left, TB hits, PV — 11 fields), `"Full"` (all 18 fields). Backward compatible: `true` → Full, `false` → Standard.
+- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, depth, move time), `"Standard"` (11 fields), `"Full"` (all 22 fields). Backward compatible: `true` → Full, `false` → Standard.
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
-- **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet).
+- **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet, Ladder).
 - **AllowPondering**: Allow engines to ponder during the opponent’s time.
 - **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
@@ -73,6 +73,14 @@ This document provides an overview of the `tournament.json` configuration file u
 - **AllowExtraPairsOnTie**: True to play extra pairs if the top score is tied after scheduled rounds.
 - **StatePath**: Path for the generated swiss state JSON file.
 
+### Ladder Options
+
+- **GamePairsPerMatch**: Number of game pairs per mini-match (each pair is 2 games with reversed colors). Default: 4.
+- **RandomOpenings**: True to randomize openings instead of using the list order.
+- **StatePath**: Path for the generated ladder state JSON file.
+
+Ladder mode is an elimination-style climbing tournament. Engines are ranked by rating (highest = rank 1). The lowest-ranked surviving engine challenges the one above it. The loser is eliminated, the winner continues climbing. When a climber loses, a new climb starts from the new bottom engine. Tied matches play extra game pairs until one engine leads. The tournament ends when only 1 engine remains.
+
 ### Output Paths
 
 - **PgnOutPath**: Path to the output PGN file.
@@ -102,6 +110,7 @@ This document provides an overview of the `tournament.json` configuration file u
   - **LiveChartHeight**: Height of the live chart, which is MCTS charts (typically Lc0 and Ceres) for Top N visited moves and Top N Q-values (eval).
   - **MoveChartHeight**: Height of the move chart, which is regular Eval, NPS, NPM and Time charts.
   - **PVboardSize**: Size of the PV board.
+  - **LogoSize**: Maximum size for engine logos. Format: "WxH" (e.g., "150x100") for width x height, or "N" for square (e.g., "120" for 120x120). Empty string or omitted uses default sizing. These values act as upper bounds; logos still shrink on narrow screens.
 - **Charts**:
   - **ShowEval**: Show evaluation chart.
   - **ShowNPS**: Show nodes per second chart.
@@ -200,6 +209,11 @@ This document provides an overview of the `tournament.json` configuration file u
     "AllowExtraPairsOnTie": true,
     "StatePath": "wwwroot/swiss_state.json"
   },
+  "LadderOptions": {
+    "GamePairsPerMatch": 4,
+    "RandomOpenings": true,
+    "StatePath": "wwwroot/ladder_state.json"
+  },
 
   "PgnOutPath": "C:/Dev/Chess/PGNs/quickTest001.pgn",
   "ReferencePGNPath": "",
@@ -228,10 +242,11 @@ This document provides an overview of the `tournament.json` configuration file u
       "LatestGamesFont": 16
     },
 
-    "Sizes": {      
+    "Sizes": {
       "LiveChartHeight": 240,
       "MoveChartHeight": 250,
-      "PVboardSize": "medium"
+      "PVboardSize": "medium",
+      "LogoSize": ""
     },
 
     "Charts": {

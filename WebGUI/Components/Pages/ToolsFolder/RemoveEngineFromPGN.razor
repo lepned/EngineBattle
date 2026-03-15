@@ -1,44 +1,62 @@
-﻿@page "/pgnUtilities"
+@page "/pgnUtilities"
 @inject ILogger<RemoveEngineFromPGN> logger
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <InputFile id="pgnReady" OnChange="@MakePGNExportReady" hidden />
 <InputFile id="pgnMinimal" OnChange="@MinimalPGN" hidden />
 
-<PageTitle>RemoveEngineFromPGN</PageTitle>
-<MudCard>
-	<div style="margin:20px; width:900px">
-		<MudText Typo="Typo.h4">Remove games from a PGN file</MudText>
-		<MudText Class="mt-3" Typo="Typo.body2">
-			Remove games associated with a specific engine name from a PGN file. Specify the folder for saving the output and the engine name below.
-		</MudText>
-		<MudTextField Class="mt-3" Placeholder="Specify the folder to save the output" T="string" Typo="Typo.h6" Text="@path" @bind-value="path"
-					  HelperText="Specify the folder to save the output"></MudTextField>
-		<MudTextField Class="mt-3" T="string" Typo="Typo.h6"
-					  HelperText="Enter the engine name you want to remove" Text="@engineName" @bind-value="engineName"></MudTextField>
-	</div>
-</MudCard>
-<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.Download" for="fileInput" />
+<PageTitle>PGN Utilities</PageTitle>
 
-<MudCard>
-	<div style="margin:20px; width:900px">
-		<MudText Typo="Typo.h4">Make PGN ready for export </MudText>
-		<MudText Class="mt-3" Typo="Typo.body2">
-			Ensure there are blank lines between games in the PGN file.
-		</MudText>
-		<MudTextField Class="mt-3" Placeholder="Specify the folder to save the output" T="string" Typo="Typo.h6" Text="@path" @bind-value="path"
-					  HelperText="Specify the folder to save the output"></MudTextField>
-	</div>
-</MudCard>
-<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.Download" for="pgnReady" />
+<div class="tool-page">
+	<h1>PGN Utilities</h1>
+	<div class="tool-subtitle">Remove engines, fix formatting and strip annotations from PGN files</div>
 
-<MudCard>
-	<div style="margin:20px; width:900px">
-		<MudText Class="mt-3" Typo="Typo.h4">Create minimal PGN-file with annotation removed</MudText>
-		<MudTextField Class="mt-3" HelperText="Write complete path to file" Placeholder="Write complete path to file" T="string" Typo="Typo.h6" Text="@minimalPGNpath" @bind-value="minimalPGNpath"></MudTextField>
+	<div class="tool-section">
+		<h2>Remove Engine from PGN</h2>
+		<p class="tool-section-desc">Remove all games associated with a specific engine name from a PGN file.</p>
+		<div style="max-width:600px">
+			<div class="tool-input-group">
+				<label>Output folder</label>
+				<input class="tool-input" style="width:100%" @bind="path" />
+			</div>
+			<div class="tool-input-group">
+				<label>Engine name to remove</label>
+				<input class="tool-input" style="width:100%" @bind="engineName" />
+			</div>
+		</div>
+		<div class="tool-controls">
+			<label for="fileInput" class="tool-upload-btn">Pick PGN file</label>
+		</div>
 	</div>
-</MudCard>
-<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Pick PGN-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="pgnMinimal" />
+
+	<div class="tool-section">
+		<h2>Export-Ready PGN</h2>
+		<p class="tool-section-desc">Ensure there are blank lines between games in the PGN file for proper formatting.</p>
+		<div style="max-width:600px">
+			<div class="tool-input-group">
+				<label>Output folder</label>
+				<input class="tool-input" style="width:100%" @bind="path" />
+			</div>
+		</div>
+		<div class="tool-controls">
+			<label for="pgnReady" class="tool-upload-btn">Pick PGN file</label>
+		</div>
+	</div>
+
+	<div class="tool-section">
+		<h2>Minimal PGN</h2>
+		<p class="tool-section-desc">Create a stripped-down PGN file with all engine annotations removed.</p>
+		<div style="max-width:600px">
+			<div class="tool-input-group">
+				<label>Output file path</label>
+				<input class="tool-input" style="width:100%" @bind="minimalPGNpath" />
+			</div>
+		</div>
+		<div class="tool-controls">
+			<label for="pgnMinimal" class="tool-upload-btn">Pick PGN file</label>
+		</div>
+	</div>
+</div>
 
 @code {
 

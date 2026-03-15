@@ -1,4 +1,4 @@
-﻿@page "/createOpeningBook"
+@page "/createOpeningBook"
 @inject ILogger<CreateOpeningBook> logger
 
 <InputFile id="pgnCreateInput" OnChange="@CreateOpeningBookFromPgnAsync" hidden />
@@ -6,79 +6,100 @@
 <InputFile id="epdToPgnInput" OnChange="@ConvertEpdToPgnAsync" hidden />
 <InputFile id="pgnShuffleInput" OnChange="@ShufflePgnOpeningBookAsync" hidden />
 
-<PageTitle>CreateOpeningBook</PageTitle>
-<div style="margin:20px; width:700px">
+<PageTitle>Opening Book</PageTitle>
 
-	<MudText Typo="Typo.h4">Generate Chess960 Positions </MudText>
-	<MudText Class="mt-3" Typo="Typo.body2">
-		Creates an EPD file containing random Chess960 positions, suitable for use as an opening book. The default output path is C:/Dev/Chess/Openings, but you can change the name of the path and number of positions below.
-	</MudText>
-	<MudTextField Placeholder="Write path to opening folder" T="string" Typo="Typo.h6" Text="@chess960Path" @bind-value="chess960Path"></MudTextField>
-	<MudNumericField Label="Number of positions" @bind-Value="numberOfPositions" Min="1" Max="960" Step="1" />
-	<MudButton Class="mt-5" Color="Color.Primary" Variant="Variant.Outlined" OnClick=@GenerateChess960Positions>Create FRC book</MudButton>
-	<MudButton Class="mt-5 ml-2" Color="Color.Primary" Variant="Variant.Outlined" OnClick=@GenerateDoubleChess960Positions>Create DFRC book</MudButton>
+<div class="tool-page">
+  <h1>Opening Book Tools</h1>
+  <div class="tool-subtitle">Create, evaluate and shuffle chess opening books</div>
 
+  <div class="tool-section">
+    <h2>Generate Chess960 Positions</h2>
+    <p>Creates an EPD file containing random Chess960 positions, suitable for use as an opening book.</p>
+    <div class="tool-controls">
+      <div class="tool-input-group" style="margin-bottom:0; flex:1; max-width:400px;">
+        <label>Output folder path</label>
+        <input type="text" class="tool-input" style="width:100%" @bind="chess960Path" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Number of positions</label>
+        <input type="number" class="tool-input" style="width:120px" @bind="numberOfPositions" min="1" max="960" step="1" />
+      </div>
+    </div>
+    <div style="display:flex; gap:12px; margin-top:12px;">
+      <button class="tool-action-btn" @onclick="GenerateChess960Positions">Create FRC book</button>
+      <button class="tool-action-btn" @onclick="GenerateDoubleChess960Positions">Create DFRC book</button>
+    </div>
+  </div>
+
+  <div class="tool-section">
+    <h2>Opening Book from PGN</h2>
+    <p>Creates a PGN-based opening book from a PGN file downloaded from TCEC/CCC archives.</p>
+    <div class="tool-input-group" style="max-width:500px;">
+      <label>Output file path</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="pgnOpeningFullName" />
+    </div>
+    <label for="pgnCreateInput" class="tool-upload-btn">Load PGN file</label>
+  </div>
+
+  <div class="tool-section">
+    <h2>Opening Book from EPD</h2>
+    <p>Creates an opening book from an EPD file.</p>
+    <div class="tool-input-group" style="max-width:500px;">
+      <label>Output directory path</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="epdToPgnFileName" />
+    </div>
+    <label for="epdToPgnInput" class="tool-upload-btn">Load EPD file</label>
+  </div>
+
+  <div class="tool-section">
+    <h2>Out-of-Book Evaluation</h2>
+    <p>
+      Generates a new opening book by evaluating positions from an existing book.
+      Ensure engines are defined in tournament.json and engine names match engine.json.
+    </p>
+    <div class="tool-controls">
+      <div class="tool-input-group" style="margin-bottom:0; flex:1; min-width:200px;">
+        <label>Engine names (comma separated)</label>
+        <input type="text" class="tool-input" style="width:100%" placeholder="stockfish, lc0" @bind="engineName" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0; flex:1; min-width:160px;">
+        <label>Nodes (comma separated)</label>
+        <input type="text" class="tool-input" style="width:100%" placeholder="1000, 1" @bind="nodes" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Number of openings</label>
+        <input type="text" class="tool-input" style="width:120px" @bind="numberOfOpenings" />
+      </div>
+    </div>
+    <div class="tool-controls">
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Min eval (cp)</label>
+        <input type="text" class="tool-input" style="width:100px" @bind="minEvalScore" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Max eval (cp)</label>
+        <input type="text" class="tool-input" style="width:100px" @bind="maxEvalScore" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Max eval diff (cp)</label>
+        <input type="text" class="tool-input" style="width:100px" @bind="maxEvalDiff" />
+      </div>
+    </div>
+    <div style="margin-top:12px;">
+      <label for="bookEvalInput" class="tool-upload-btn">Pick, evaluate and sort opening book</label>
+    </div>
+  </div>
+
+  <div class="tool-section">
+    <h2>Shuffle PGN Opening Book</h2>
+    <p>Generate a new opening book by shuffling the games from an existing PGN file. The output is saved as <code>Shuffled_&lt;filename&gt;</code> in the specified folder.</p>
+    <div class="tool-input-group" style="max-width:500px;">
+      <label>Output folder path</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="shuffleOutputPath" />
+    </div>
+    <label for="pgnShuffleInput" class="tool-upload-btn">Pick PGN file</label>
+  </div>
 </div>
-<div style="margin:40px 20px;width:700px">
-	<MudText Typo="Typo.h4">Generate an Opening Book from TCEC/CCC Games</MudText>
-	<MudText Class="mt-3" Typo="Typo.body2">Creates a PGN-based opening book from a PGN file you have downloaded from the TCEC archives. The default path is C:\Dev\Chess\PGNs\openingbookCreator1.pgn, but you can change the name and the path below. </MudText>
-	<MudTextField Placeholder="Write complete path to file" T="string" Typo="Typo.h6" Text="@pgnOpeningFullName" @bind-value="pgnOpeningFullName"></MudTextField>
-</div>
-
-<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Load pgn file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="pgnCreateInput" />
-
-<div style="margin:40px 20px;width:700px">
-	<MudText Typo="Typo.h4">Generate an Opening Book from an EPD File</MudText>
-	<MudText Class="mt-3" Typo="Typo.body2">This will create an opening book from an EPD file. The default path is C:/Dev/Chess/PGNs, but you can change the path below. </MudText>
-	<MudTextField Placeholder="Write complete path to file" T="string" Typo="Typo.h6" Text="@epdToPgnFileName" @bind-value="epdToPgnFileName"></MudTextField>
-</div>
-
-@*<MudButton Color="Color.Primary" Variant="Variant.Outlined" OnClick=@OpenPGNFile>Select file</MudButton>*@
-
-<MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdToPgnInput" />
-
-<div style="margin:40px 20px; width:900px">
-	<MudText Typo="Typo.h4">Create your own opening book by Out-of-Book Evaluation </MudText>
-	<MudText Class="mt-3" Typo="Typo.body2">
-		This tool generates a new opening book by evaluating positions from the main book. You can use either a PGN-based or an EPD-based input.
-		Ensure that the engines are defined in tournament.json and that the engine name matches the one in engine.json.
-		Provide the engine names, corresponding node counts, the number of openings to evaluate, as well as the minimum and maximum evaluation scores (in centipawns) and the maximum evaluation difference (when using multiple engines).
-		The console will display the path to the newly created opening book.
-	</MudText>
-	<MudGrid Class="ml-1 mb-2 mt-2">
-		<MudTextField Typo="Typo.h6" HelperText="Add engine names (comma separated) from engine.json above"
-					  Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
-					  Placeholder="stockfish, lc0" T="string" Text="@engineName" @bind-value="engineName"></MudTextField>
-
-		<MudTextField Typo="Typo.h6" HelperText="Select number of nodes (comma separated)"
-					  Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
-					  Placeholder="1000, 1" T="string" Text="@nodes" @bind-value="nodes"></MudTextField>
-
-		<MudTextField Typo="Typo.h6" HelperText="Number of openings"
-					  Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; width:100px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
-					  T="string" Text="@numberOfOpenings" @bind-value="numberOfOpenings"></MudTextField>
-	</MudGrid>
-	<MudGrid Class="ml-1 mb-2 mt-2">
-		<MudTextField Typo="Typo.h6"
-					  Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
-					  HelperText="Minimum eval score in centipawn"
-					  T="string" Text="@minEvalScore" @bind-value="minEvalScore"></MudTextField>
-		<MudTextField Typo="Typo.h6" HelperText="Maximum eval score in centipawn"
-					  Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
-					  T="string" Text="@maxEvalScore" @bind-value="maxEvalScore"></MudTextField>
-		<MudTextField Typo="Typo.h6" HelperText="Maximum eval score difference in centipawn"
-					  Style="border: 2px dashed gray; border-radius: 2px; padding-left: 20px; margin-left: 4px; margin-right: 10px; color: whitesmoke; cursor: pointer; text-align:center;"
-					  T="string" Text="@maxEvalDiff" @bind-value="maxEvalDiff"></MudTextField>
-	</MudGrid>
-</div>
-<MudFab Class="ml-3 mb-3" HtmlTag="label" Color="Color.Default" Label="Pick, evaluate and sort opening book" Size="Size.Large" StartIcon="@Icons.Material.Filled.Analytics" for="bookEvalInput" />
-
-<div style="margin:40px 20px;width:800px">
-	<MudText Typo="Typo.h4">Shuffle Openings Based on a PGN Opening Book</MudText>
-	<MudText Class="mt-3" Typo="Typo.body2">Generate a new opening book by shuffling the games from an existing PGN file. The console will display the path to the newly created shuffled opening book.</MudText>
-</div>
-
-<MudFab Class="ml-3 mb-9 mt-1" HtmlTag="label" Color="Color.Default" Label="Pick pgn-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="pgnShuffleInput" />
 
 
 @code {
@@ -86,6 +107,7 @@
 	private string pgnOpeningFullName = "C:/Dev/Chess/PGNs/openingbookCreator1.pgn";
 	private string epdToPgnFileName = "C:/Dev/Chess/PGNs/";
 	private string chess960Path = "C:/Dev/Chess/Openings";
+	private string shuffleOutputPath = "C:/Dev/Chess/Openings";
 	private int numberOfPositions = 960;
 	private string engineName = "CeresV2 T3";
 	private string minEvalScore = "60";
@@ -136,7 +158,6 @@
 		var tourny = ChessLibrary.Tournament.Manager.loadTournament();
 		var configs = tourny.EngineSetup.Engines.ToList();
 
-		// Split engineName using comma as the separator and trim each part
 		var engineParts = engineName
 			.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
 			.Select(part => part.Trim())
@@ -147,7 +168,6 @@
 				.Where(e => e.Name.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0))
 				.SelectMany(e => e).ToList();
 
-		//sort candidates by the use of engineParts
 		candidates = candidates.OrderBy(e => engineParts.ToList().IndexOf(e.Name)).ToList();
 		var candidatesString = string.Join(", ", candidates.Select(c => c.Name));
 
@@ -155,7 +175,6 @@
 		var zipped = candidates.Zip(nodeList);
 		var concatenated = zipped.Select(z => $"{z.First.Name} ({z.Second:N0}N)").ToList();
 		var concatenatedString = string.Join(", ", concatenated);
-		//var head = candidates.FirstOrDefault();
 
 		if (candidates.Count == 0)
 		{
@@ -169,7 +188,6 @@
 			return;
 		}
 
-		//return if length of nodeList is different than length of candidates
 		if (nodeList.Count != candidates.Count)
 		{
 			Console.WriteLine($"Number of nodes and engines do not match. Failed to sort openings");
@@ -178,9 +196,9 @@
 
 		string outPutDir = $"{chess960Path}/BookEvals";
 		var filePath = Path.Combine(outPutDir, $"BookEval_{epdName}_{concatenatedString}.epd");
-		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");		
+		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
 		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(nodeList, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff);
-		
+
 		if (!Directory.Exists(outPutDir))
 		{
 			Directory.CreateDirectory(outPutDir);
@@ -214,13 +232,11 @@
 		var tourny = ChessLibrary.Tournament.Manager.loadTournament();
 		var configs = tourny.EngineSetup.Engines.ToList();
 
-		// Split engineName using comma as the separator and trim each part
 		var engineParts = engineName
 			.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
 			.Select(part => part.Trim())
 			.ToArray();
 
-		// Filter configs so that every part of engineName is found (case-insensitive)
 		var candidates =
 			engineParts.Select(part => configs
 				.Where(e => e.Name.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0))
@@ -231,7 +247,6 @@
 		var zipped = candidates.Zip(nodeList);
 		var concatenated = zipped.Select(z => $"{z.First.Name} ({z.Second:N0}N)").ToList();
 		var concatenatedString = string.Join(", ", concatenated);
-		//var head = candidates.FirstOrDefault();
 		if (candidates.Count == 0)
 		{
 			Console.WriteLine($"No enigne with name {engineName} is present in tournament.json file. Failed to sort openings");
@@ -244,7 +259,6 @@
 			return;
 		}
 
-		//return if length of nodeList is different than length of candidates
 		if (nodeList.Count != candidates.Count)
 		{
 			Console.WriteLine($"Number of nodes and engines do not match. Failed to sort openings");
@@ -254,8 +268,8 @@
 		string outPutDir = $"{chess960Path}/BookEvals";
 		var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.pgn");
 		logger.LogInformation($"Sorting openings based on Eval with use of {concatenatedString} started...");
-		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);		
-		
+		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(nodeList, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff);
+
 		if (!Directory.Exists(outPutDir))
 		{
 			Directory.CreateDirectory(outPutDir);
@@ -268,18 +282,14 @@
 			{
 				foreach (var pgn in positionEvalsWithMoves)
 				{
-					//logger.LogInformation($"Game nr: {pgn.Pgn.GameNumber} eval: {pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}");
 					var eval = $"[MaxEval \"{pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}\"]";
 					var raw = pgn.Pgn.Raw.TrimStart(new char[] { ' ', '\r', '\n' });
 					raw = raw.TrimEnd(new char[] { ' ', '\r', '\n' });
-					// Find the last index of a closing bracket
 					var lastBracketIndex = raw.LastIndexOf("]");
 					string summary;
 					if (lastBracketIndex >= 0)
 					{
-						// Take all text up to and including the last closing bracket as the header block
 						var headers = raw.Substring(0, lastBracketIndex + 1);
-						// The remainder is the moves section (which may or may not start with a newline)
 						var moves = raw.Substring(lastBracketIndex + 1);
 						summary = $"{headers}\n{eval}{moves}\n";
 					}
@@ -324,8 +334,7 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
-		var filePath = Path.Combine(chess960Path, $"Shuffled_{pgnName}");
-		//logger.LogInformation($"Shuffle started...");
+		var filePath = Path.Combine(shuffleOutputPath, $"Shuffled_{pgnName}");
 		PGNHelper.shufflePgnGames(filePath, games);
 		logger.LogInformation("Opening book was shuffled and written to path", filePath);
 		File.Delete(fullPath);
@@ -340,7 +349,6 @@
 		else
 		{
 			logger.LogError("Failed to parse numberOfOpenings: {NumberOfOpenings}", numberOfOpenings);
-			// Return a default value, for example 10
 			return 10;
 		}
 	}
@@ -358,8 +366,6 @@
 		}
 
 		var games = FullPGNParser.parsePgnFile(fullPath);
-        //var uniqueOpenings = PuzzleEngineAnalysis.onlyUniqueOpenings(games);
-		//PGNWriter.writeNewOpeningBookBasedOnOlder(uniqueOpenings, pgnOpeningFullName);
 		PGNWriter.writeOpeningPgnFile(games, pgnOpeningFullName);
 		logger.LogInformation("Opening book created: analyzed {GameCount} games. Written to {Path}", games.Count(), pgnOpeningFullName);
 		File.Delete(fullPath);

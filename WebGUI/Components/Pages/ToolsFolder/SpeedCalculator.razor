@@ -1,128 +1,220 @@
-﻿@page "/speed"
+@page "/speed"
 @inject ILogger<SpeedCalculator> logger
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 
-<PageTitle>Median Speed calculation</PageTitle>
+<PageTitle>Engine Speed</PageTitle>
 
-<MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Calculate engine speed statistics from PGN-file</MudText>
+<div class="tool-page">
+  <h1>Engine Speed</h1>
+  <div class="tool-subtitle">NPS, depth and node statistics per engine and game</div>
 
-<div style="display:flex; align-items:center; gap:50px;" class="ml-3 mb-3 mt-6">
-  <MudFab HtmlTag="label" Color="Color.Default" Label="Load pgn file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-  <MudNumericField Style="width:140px;" T="int" HelperText="min move time (secs)" @bind-Value="@minMoveTimeInSecs" Step="1" Min="0" />
+  <div class="tool-controls">
+    <label for="fileInput" class="tool-upload-btn">Load pgn file</label>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Min move time (secs)</label>
+      <input type="number" class="tool-input" style="width:120px" @bind="minMoveTimeInSecs" min="0" step="1" />
+    </div>
+  </div>
+
+  <div class="file-name">@fileOpenName</div>
+
+  <div class="tool-tab-bar">
+    <button class="tool-tab @(activeView == ViewMode.Median ? "active" : "")" @onclick='() => SetView(ViewMode.Median)'>Median</button>
+    <button class="tool-tab @(activeView == ViewMode.Average ? "active" : "")" @onclick='() => SetView(ViewMode.Average)'>Average</button>
+    <button class="tool-tab @(activeView == ViewMode.PerGame ? "active" : "")" @onclick='() => SetView(ViewMode.PerGame)'>Per Game</button>
+  </div>
+
+  <div class="tool-table-container">
+    @if (activeView == ViewMode.Median || activeView == ViewMode.Average)
+    {
+      <table class="tool-table sortable">
+        <thead>
+          <tr>
+            <th @onclick='() => SortBy("Player")'>Player @SortIndicator("Player")</th>
+            <th @onclick='() => SortBy("Games")'>Games @SortIndicator("Games")</th>
+            <th @onclick='() => SortBy("Nodes")'>Nodes @SortIndicator("Nodes")</th>
+            <th @onclick='() => SortBy("NPS")'>NPS @SortIndicator("NPS")</th>
+            <th @onclick='() => SortBy("Depth")'>Depth @SortIndicator("Depth")</th>
+            <th @onclick='() => SortBy("SD")'>SD @SortIndicator("SD")</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var item in GetPagedSummaryItems())
+          {
+            <tr>
+              <td>@item.Player</td>
+              <td>@item.Games</td>
+              <td>@FormatNodes(item.AvgNodes)</td>
+              <td>@FormatNodes(item.AvgNPS)</td>
+              <td>@item.AvgDepth.ToString("F0")</td>
+              <td>@item.AvgSelfDepth.ToString("F0")</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+    else
+    {
+      <table class="tool-table sortable dense">
+        <thead>
+          <tr>
+            <th @onclick='() => SortBy("Player")'>Player @SortIndicator("Player")</th>
+            <th @onclick='() => SortBy("Game")'>Game# @SortIndicator("Game")</th>
+            <th @onclick='() => SortBy("AvgNodes")'>AvgNodes @SortIndicator("AvgNodes")</th>
+            <th @onclick='() => SortBy("MedNodes")'>MedNodes @SortIndicator("MedNodes")</th>
+            <th @onclick='() => SortBy("AvgNPS")'>AvgNPS @SortIndicator("AvgNPS")</th>
+            <th @onclick='() => SortBy("MedNPS")'>MedNPS @SortIndicator("MedNPS")</th>
+            <th @onclick='() => SortBy("AvgDepth")'>AvgDepth @SortIndicator("AvgDepth")</th>
+            <th @onclick='() => SortBy("MedDepth")'>MedDepth @SortIndicator("MedDepth")</th>
+            <th @onclick='() => SortBy("AvgSD")'>AvgSD @SortIndicator("AvgSD")</th>
+            <th @onclick='() => SortBy("MedSD")'>MedSD @SortIndicator("MedSD")</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var item in GetPagedGameItems())
+          {
+            <tr>
+              <td>@item.Player</td>
+              <td class="tc">@item.GameNr</td>
+              <td class="tc">@FormatNodes(item.AvgNodes)</td>
+              <td class="tc">@FormatNodes(item.MedianNodes)</td>
+              <td class="tc">@FormatNodes(item.AvgNps)</td>
+              <td class="tc">@FormatNodes(item.MedianNps)</td>
+              <td class="tc">@item.AvgDepth.ToString("F0")</td>
+              <td class="tc">@item.MedianDepth.ToString("F0")</td>
+              <td class="tc">@item.AvgSD.ToString("F0")</td>
+              <td class="tc">@item.MedianSD.ToString("F0")</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+    <div class="tool-pager">
+      <span>@(totalItems) items</span>
+      <select @bind="pageSize" @bind:after="ResetPage">
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <span>per page</span>
+      <button disabled="@(currentPage <= 0)" @onclick="PrevPage">Prev</button>
+      <span>Page @(currentPage + 1) / @totalPages</span>
+      <button disabled="@(currentPage >= totalPages - 1)" @onclick="NextPage">Next</button>
+    </div>
+  </div>
 </div>
 
-<MudText Color=Color.Primary Typo=Typo.h6 Class="ml-3 mb-3 mt-6 pl-3">@fileOpenName</MudText>
+@code {
 
-<MudText Typo=Typo.h6 Class="pt-10 pl-4">Median Speed metrics</MudText>
-<MudTable Class="mt-4 pl-3" Style="width:1000px" Items="@medianSpeedTable" FixedHeader=true T="CoreTypes.SummaryEngineStat">
+  private enum ViewMode { Median, Average, PerGame }
 
-  <ColGroup>
-    <col style="width: 50%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-  </ColGroup>
-  <HeaderContent>
-    <MudTh Style="font-size:20px"> Player</MudTh>
-    <MudTh Style="font-size:20px"> Games </MudTh>
-    <MudTh Style="font-size:20px"> Nodes</MudTh>
-    <MudTh Style="font-size:20px"> NPS </MudTh>
-    <MudTh Style="font-size:20px"> Depth </MudTh>
-    <MudTh Style="font-size:20px"> SD </MudTh>
-  </HeaderContent>
-  <RowTemplate>
-    <MudTd Style="font-size:16px" DataLabel="Player">@context.Player</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Player">@context.Games</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Points">@(FormatNodes(context.AvgNodes))</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Score">@(FormatNodes(context.AvgNPS))</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Win">@context.AvgDepth.ToString("F0")</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Win">@context.AvgSelfDepth.ToString("F0")</MudTd>
-    </RowTemplate>
-  </MudTable>
-
-  <MudText Typo=Typo.h6 Class="pt-10 pl-4">Average Speed metrics</MudText>
-<MudTable Class="mt-4 pl-3" Style="width:1000px" Items="@averageSpeedTable" FixedHeader=true T="CoreTypes.SummaryEngineStat">
-
-    <ColGroup>
-      <col style="width: 50%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-    </ColGroup>
-    <HeaderContent>
-      <MudTh Style="font-size:20px"> Player</MudTh>
-      <MudTh Style="font-size:20px"> Games </MudTh>
-      <MudTh Style="font-size:20px"> Nodes</MudTh>
-      <MudTh Style="font-size:20px"> NPS </MudTh>
-      <MudTh Style="font-size:20px"> Depth </MudTh>
-      <MudTh Style="font-size:20px"> SD </MudTh>
-    </HeaderContent>
-    <RowTemplate>
-      <MudTd Style="font-size:16px" DataLabel="Player">@context.Player</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Player">@context.Games</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Points">@(FormatNodes(context.AvgNodes))</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Score">@(FormatNodes(context.AvgNPS))</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Win">@context.AvgDepth.ToString("F0")</MudTd>
-      <MudTd Style="font-size:16px" DataLabel="Win">@context.AvgSelfDepth.ToString("F0")</MudTd>
-    </RowTemplate>
-  </MudTable>
-
-  <MudText Typo=Typo.h6 Class="pt-10 pl-4">All games speed metrics</MudText>
-<MudTable Class="mt-4 pl-3" Style="width:1300px" Items="@allGamesSpeedTable" Dense=true FixedHeader=true T="CoreTypes.EngineStatsPerGame">
-
-    <ColGroup>
-      <col style="width: 30%;" />
-      <col style="width: 5%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-      <col style="width: 10%;" />
-      <col style="width: 7%;" />
-      <col style="width: 8%;" />
-      <col style="width: 5%;" />
-      <col style="width: 5%;" />
-    </ColGroup>
-    <HeaderContent>
-      <MudTh Style="font-size:15px"> Player</MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> Game# </MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> AvgNodes</MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> MedNodes</MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> AvgNPS </MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> MedNPS </MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> AvgDepth </MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> MedDepth </MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> AvgSD </MudTh>
-      <MudTh Style="font-size:15px;text-align:center"> MedSD </MudTh>
-    </HeaderContent>
-    <RowTemplate>
-      <MudTd Style="font-size:14px" DataLabel="Player">@context.Player</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Player">@context.GameNr</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Points">@(FormatNodes(context.AvgNodes))</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Points">@(FormatNodes(context.MedianNodes))</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Score">@(FormatNodes(context.AvgNps))</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Score">@(FormatNodes(context.MedianNps))</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Win">@context.AvgDepth.ToString("F0")</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Win">@context.MedianDepth.ToString("F0")</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Win">@context.AvgSD.ToString("F0")</MudTd>
-      <MudTd Style="font-size:14px; text-align:center" DataLabel="Win">@context.MedianSD.ToString("F0")</MudTd>
-    </RowTemplate>
-  </MudTable>
-
-
-
-  @code {
-  
   private int minMoveTimeInSecs = 0;
   private List<SummaryEngineStat> medianSpeedTable = new();
   private List<SummaryEngineStat> averageSpeedTable = new();
   private List<EngineStatsPerGame> allGamesSpeedTable = new();
   private string fileOpenName = "";
   IBrowserFile browserFile;
+
+  // View state
+  private ViewMode activeView = ViewMode.Median;
+
+  private List<SummaryEngineStat> ActiveSummarySource => activeView == ViewMode.Average ? averageSpeedTable : medianSpeedTable;
+
+  private void SetView(ViewMode view)
+  {
+    activeView = view;
+    currentPage = 0;
+    sortColumn = view switch
+    {
+      ViewMode.Median => "NPS",
+      ViewMode.Average => "NPS",
+      ViewMode.PerGame => "Game",
+      _ => "Player"
+    };
+    sortAscending = view == ViewMode.PerGame;
+  }
+
+  // Sorting state
+  private string sortColumn = "NPS";
+  private bool sortAscending = false;
+
+  // Pagination state
+  private int currentPage = 0;
+  private int pageSize = 25;
+  private int totalItems => activeView == ViewMode.PerGame ? allGamesSpeedTable.Count : ActiveSummarySource.Count;
+  private int totalPages => Math.Max(1, (int)Math.Ceiling((double)totalItems / pageSize));
+
+  private void SortBy(string column)
+  {
+    if (sortColumn == column)
+      sortAscending = !sortAscending;
+    else
+    {
+      sortColumn = column;
+      sortAscending = true;
+    }
+    currentPage = 0;
+  }
+
+  private MarkupString SortIndicator(string column)
+  {
+    if (sortColumn != column)
+      return new MarkupString("<span class=\"sort-arrow\">&#9650;</span>");
+    var arrow = sortAscending ? "&#9650;" : "&#9660;";
+    return new MarkupString($"<span class=\"sort-arrow active\">{arrow}</span>");
+  }
+
+  private IEnumerable<SummaryEngineStat> GetSortedSummaryItems()
+  {
+    var items = ActiveSummarySource.AsEnumerable();
+    items = sortColumn switch
+    {
+      "Player" => sortAscending ? items.OrderBy(x => x.Player) : items.OrderByDescending(x => x.Player),
+      "Games" => sortAscending ? items.OrderBy(x => x.Games) : items.OrderByDescending(x => x.Games),
+      "Nodes" => sortAscending ? items.OrderBy(x => x.AvgNodes) : items.OrderByDescending(x => x.AvgNodes),
+      "NPS" => sortAscending ? items.OrderBy(x => x.AvgNPS) : items.OrderByDescending(x => x.AvgNPS),
+      "Depth" => sortAscending ? items.OrderBy(x => x.AvgDepth) : items.OrderByDescending(x => x.AvgDepth),
+      "SD" => sortAscending ? items.OrderBy(x => x.AvgSelfDepth) : items.OrderByDescending(x => x.AvgSelfDepth),
+      _ => items
+    };
+    return items;
+  }
+
+  private IEnumerable<EngineStatsPerGame> GetSortedGameItems()
+  {
+    var items = allGamesSpeedTable.AsEnumerable();
+    items = sortColumn switch
+    {
+      "Player" => sortAscending ? items.OrderBy(x => x.Player) : items.OrderByDescending(x => x.Player),
+      "Game" => sortAscending ? items.OrderBy(x => x.GameNr) : items.OrderByDescending(x => x.GameNr),
+      "AvgNodes" => sortAscending ? items.OrderBy(x => x.AvgNodes) : items.OrderByDescending(x => x.AvgNodes),
+      "MedNodes" => sortAscending ? items.OrderBy(x => x.MedianNodes) : items.OrderByDescending(x => x.MedianNodes),
+      "AvgNPS" => sortAscending ? items.OrderBy(x => x.AvgNps) : items.OrderByDescending(x => x.AvgNps),
+      "MedNPS" => sortAscending ? items.OrderBy(x => x.MedianNps) : items.OrderByDescending(x => x.MedianNps),
+      "AvgDepth" => sortAscending ? items.OrderBy(x => x.AvgDepth) : items.OrderByDescending(x => x.AvgDepth),
+      "MedDepth" => sortAscending ? items.OrderBy(x => x.MedianDepth) : items.OrderByDescending(x => x.MedianDepth),
+      "AvgSD" => sortAscending ? items.OrderBy(x => x.AvgSD) : items.OrderByDescending(x => x.AvgSD),
+      "MedSD" => sortAscending ? items.OrderBy(x => x.MedianSD) : items.OrderByDescending(x => x.MedianSD),
+      _ => items
+    };
+    return items;
+  }
+
+  private IEnumerable<SummaryEngineStat> GetPagedSummaryItems()
+  {
+    return GetSortedSummaryItems().Skip(currentPage * pageSize).Take(pageSize);
+  }
+
+  private IEnumerable<EngineStatsPerGame> GetPagedGameItems()
+  {
+    return GetSortedGameItems().Skip(currentPage * pageSize).Take(pageSize);
+  }
+
+  private void PrevPage() { if (currentPage > 0) currentPage--; }
+  private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
+  private void ResetPage() { currentPage = 0; }
 
   private async Task OpenPGNFile(InputFileChangeEventArgs e)
   {
@@ -143,10 +235,10 @@
     medianSpeedTable =
       allRes.Where(e => e.Median )
       .OrderByDescending(e => e.AvgNPS).ToList();
-    var avgSpeedTable = 
+    var avgSpeedTable =
       allRes.Where(e => e.Median == false)
           .OrderByDescending(e => e.AvgNPS).ToList();
-      
+
     logger.LogInformation("PGN file parsed {File}", pgnName);
 
     logger.LogInformation("\nMedian speed calculated\n");
@@ -156,13 +248,6 @@
     logger.LogInformation("\nAverage speed calculated\n");
     var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(avgSpeedTable);
     logger.LogInformation(avgSummary);
-
-    //foreach (var stat in medianSpeedTable)
-    //{
-    //  var nodes = FormatNodes(stat.AvgNodes);
-    //  var nps = FormatNPS(stat.AvgNPS);
-    //  logger.LogInformation($"Player: {stat.Player} - Nodes: {nodes} NPS: {nps} Depth: {stat.AvgDepth:N0} SD: {stat.AvgSelfDepth:N0}");
-    //}
 
     StateHasChanged();
     averageSpeedTable =
@@ -179,7 +264,8 @@
     logger.LogInformation("\nSpeed per game calculated\n");
     var consoleSummary = ConsoleHelper.writeEngineStatsToConsole(allIndividualGames);
     logger.LogInformation(consoleSummary);
-    
+
+    currentPage = 0;
     logger.LogInformation("Done with calculation");
     File.Delete(fullPath);
     StateHasChanged();

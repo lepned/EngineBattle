@@ -1,4 +1,4 @@
-﻿@page "/LichessPuzzles"
+@page "/LichessPuzzles"
 @using System.Text
 @using System.Threading
 @using WebGUI.Components.Layout
@@ -15,245 +15,183 @@
 <InputFile id="fileInput" OnChange="@OpenCSVFile" hidden />
 
 <PageTitle>Lichess Puzzles</PageTitle>
-<MudItem Class="d-flex mr-3 mb-3">
-    <MudItem lg="3" md="4" sm="5">
-        <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h3">Lichess Puzzles run</MudText>
-        <MudPaper Class="ml-6 mb-3 mt-6">
-            <MudText Class="mb-5" Typo="Typo.h6"> This enables you to run policy, value and search tests based on your puzzleconfig.json file. You can draw a set of puzzle theme filters below and select how many puzzles you want to vizualize.  </MudText>
-            <MudItem>
-                <MudButton Class="mb-3 mt-3 ml-1" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" OnClick="Draw" Disabled=@disableDraw>Draw themes</MudButton>
-                <MudTextField Label="Puzzle theme filter (csv)" @bind-Value="@Filter"></MudTextField>
-            </MudItem>
-            <MudTextField Label="Number of failed puzzles to show" @bind-Value="@failedNumber"></MudTextField>
-            <MudTextField Label="Number of solved puzzles to show" @bind-Value="@solvedNumber"></MudTextField>
-        </MudPaper>
 
-        <div class="d-flex align-items-center mb-3" style="gap: 1rem;">
-            <MudFab HtmlTag="label"
-                    Color="Color.Default"
-                    Label="Pick and run puzzle config file"
-                    Size="Size.Large"
-                    StartIcon="@Icons.Material.Filled.DownloadForOffline"
-                    for="fileInput"
-                    Disabled=@disableRun
-                    Class="mb-3 mt-2 ml-5" />
-            <MudProgressCircular Color="Color.Primary" Size="Size.Medium"
-                                 Indeterminate="true" style=@($"visibility:{SpinnerVisibility}; align-self: center;") />
+<div class="tool-page">
+  <h1>Lichess Puzzles</h1>
+  <div class="tool-subtitle">Run policy, value, search and solve tests from your puzzle config</div>
+
+  <div class="tool-controls">
+    <button class="tool-action-btn" @onclick="Draw" disabled="@disableDraw">Draw themes</button>
+    <div class="tool-input-group" style="margin-bottom:0; min-width:220px;">
+      <label>Puzzle theme filter (csv)</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="Filter" />
+    </div>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Failed puzzles to show</label>
+      <input type="number" class="tool-input" style="width:120px" @bind="failedNumber" min="0" step="1" />
+    </div>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Solved puzzles to show</label>
+      <input type="number" class="tool-input" style="width:120px" @bind="solvedNumber" min="0" step="1" />
+    </div>
+    <label for="fileInput" class="tool-upload-btn" style="@(disableRun ? "pointer-events:none;opacity:0.5" : "")">Pick and run puzzle config file</label>
+    @if (disableRun)
+    {
+      <div class="tool-spinner"></div>
+    }
+  </div>
+
+  <div class="file-name">
+    @if (disableRun && !string.IsNullOrEmpty(puzzleFileName))
+    {
+      @((MarkupString)$"Processing puzzles from <b>{puzzleFileName}</b>...")
+    }
+    else
+    {
+      @((MarkupString)$"<b>{puzzleFileName}</b>")
+    }
+  </div>
+
+  @if (HasAnyScores)
+  {
+    <div class="tool-tab-bar">
+      @foreach (var tab in ActiveTabs)
+      {
+        <button class="tool-tab @(activeScoreTab == tab ? "active" : "")" @onclick="() => SetScoreTab(tab)">@tab</button>
+      }
+    </div>
+
+    <div class="tool-table-container">
+      <table class="tool-table sortable">
+        <thead>
+          <tr>
+            <th @onclick='() => ScoreSortBy("Engine")'>Engine @ScoreSortIndicator("Engine")</th>
+            <th @onclick='() => ScoreSortBy("NeuralNet")'>Neural net @ScoreSortIndicator("NeuralNet")</th>
+            <th @onclick='() => ScoreSortBy("Perf")'>Perf @ScoreSortIndicator("Perf")</th>
+            <th @onclick='() => ScoreSortBy("Accuracy")'>Accuracy @ScoreSortIndicator("Accuracy")</th>
+            <th @onclick='() => ScoreSortBy("Total")'>Total @ScoreSortIndicator("Total")</th>
+            <th @onclick='() => ScoreSortBy("AvgRating")'>Avg rating @ScoreSortIndicator("AvgRating")</th>
+            <th @onclick='() => ScoreSortBy("Type")'>Type @ScoreSortIndicator("Type")</th>
+            <th @onclick='() => ScoreSortBy("Theme")'>Theme @ScoreSortIndicator("Theme")</th>
+            <th @onclick='() => ScoreSortBy("Nodes")'>Nodes @ScoreSortIndicator("Nodes")</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var item in GetPagedScoreItems())
+          {
+            <tr>
+              <td>@item.Engine</td>
+              <td>@item.NeuralNet</td>
+              <td>@item.PlayerRecord.Rating.ToString("F0")</td>
+              <td>@(item.TotalNumber > 0 ? ((decimal)item.Correct / item.TotalNumber).ToString("P1") : "N/A")</td>
+              <td>@item.TotalNumber</td>
+              <td>@item.RatingAvg.ToString("F0")</td>
+              <td>@item.Type</td>
+              <td>@item.Filter</td>
+              <td>@item.Nodes</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <div class="tool-pager">
+        <span>@ActiveScoreSource.Count items</span>
+        <select @bind="scorePageSize" @bind:after="ResetScorePage">
+          <option value="10">10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        <span>per page</span>
+        <button disabled="@(scoreCurrentPage <= 0)" @onclick="ScorePrevPage">Prev</button>
+        <span>Page @(scoreCurrentPage + 1) / @scoreTotalPages</span>
+        <button disabled="@(scoreCurrentPage >= scoreTotalPages - 1)" @onclick="ScoreNextPage">Next</button>
+      </div>
+    </div>
+  }
+
+  @if (HasAnyScores)
+  {
+    <div class="tool-section">
+      <h2>Puzzle Visualizations</h2>
+
+      <div class="tool-controls">
+        <div class="tool-input-group" style="margin-bottom:0">
+          <label>Filter by Type</label>
+          <select class="tool-input" @bind="selectedType" @bind:after="OnFilterChanged">
+            <option value="All">All Types</option>
+            <option value="Policy">Policy</option>
+            <option value="Value">Value</option>
+            <option value="Search">Search</option>
+            <option value="Solve">Solve</option>
+          </select>
         </div>
-        <MudText Class="ml-6 mt-2" Typo="Typo.body1">
-            @if (disableRun && !string.IsNullOrEmpty(puzzleFileName))
+        <div class="tool-input-group" style="margin-bottom:0">
+          <label>Filter by Engine</label>
+          <select class="tool-input" @bind="selectedEngine" @bind:after="OnFilterChanged">
+            <option value="All">All Engines</option>
+            @foreach (var engine in AvailableEngines)
             {
-                <MudText Typo="Typo.body1">
-                    @((MarkupString)$"Processing puzzles from <b>{puzzleFileName}</b>...")
-                </MudText>
+              <option value="@engine">@engine</option>
             }
-            else
+          </select>
+        </div>
+      </div>
+
+      <div class="tool-table-container" style="margin-top:12px">
+        <table class="tool-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Engine</th>
+              <th>Neural Net</th>
+              <th>Theme</th>
+              <th>Nodes</th>
+              <th>Rating</th>
+              <th>Accuracy</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @foreach (var item in FilteredScores)
             {
-                <MudText Typo="Typo.body1">
-                    @((MarkupString)$"<b>{puzzleFileName}</b>")
-                </MudText>
+              var itemId = item.GetHashCode();
+              <tr>
+                <td>@item.Type</td>
+                <td>@item.Engine</td>
+                <td>@item.NeuralNet</td>
+                <td>@(string.IsNullOrEmpty(item.Filter) ? "None" : item.Filter)</td>
+                <td>@item.Nodes</td>
+                <td>@item.PlayerRecord.Rating.ToString("F0")</td>
+                <td>@(item.TotalNumber > 0 ? ((decimal)item.Correct / item.TotalNumber).ToString("P1") : "N/A")</td>
+                <td>
+                  <button class="tool-action-btn tool-action-btn-sm" @onclick="() => ToggleScoreDetails(item)">
+                    @(expandedScoreIds.Contains(itemId) ? "Hide Boards" : "Show Boards")
+                  </button>
+                </td>
+              </tr>
+              @if (expandedScoreIds.Contains(itemId))
+              {
+                <tr>
+                  <td colspan="8" style="padding:0; border-bottom: 1px solid #2c2c3e;">
+                    <div style="padding: 8px;" @key="itemId">
+                      <DeferredContent>
+                        <ChildContent>
+                          <PuzzleBanner Score="@item"
+                                        NumberOfFailedPussles="@failedNumber"
+                                        NumberOfSolvedPussles="@solvedNumber" />
+                        </ChildContent>
+                      </DeferredContent>
+                    </div>
+                  </td>
+                </tr>
+              }
             }
-
-        </MudText>
-
-    </MudItem>
-    <MudItem Class="ml-10" xl="8" md="9">
-        @if (PolicyScores.Count > 0)
-        {
-            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Policy head tests  </MudText>
-            <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@PolicyScores" T="Score" SortLabel="Sort By">
-                    <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
-                        <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
-                        <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
-                        <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
-                        <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
-                        <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        }
-        @if (ValueScores.Count > 0)
-        {
-            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Value head tests </MudText>
-            <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@ValueScores" T="Score" SortLabel="Sort By">
-                    <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
-                        <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
-                        <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
-                        <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
-                        <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
-                        <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        }
-
-        @if (SearchScores.Count > 0)
-        {
-            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Search tests </MudText>
-            <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@SearchScores" T="Score" SortLabel="Sort By">
-                    <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
-                        <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
-                        <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
-                        <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
-                        <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
-                        <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        }
-
-        @if (SolveScores.Count > 0)
-        {
-            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Solve tests </MudText>
-            <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@SolveScores" T="Score" SortLabel="Sort By">
-                    <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Engine)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.NeuralNet)"> Neural net</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.PlayerRecord.Rating)"> Perf</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => (decimal)x.Correct / x.TotalNumber)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.TotalNumber)"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.RatingAvg)"> Avg rating</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Type)"> Type</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<Score, object>(x => x.Filter)"> Theme </MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"><MudTableSortLabel SortBy="new Func<Score, object>(x => x.Nodes)"> Nodes</MudTableSortLabel></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Engine" Style="font-size:19px">@context.Engine</MudTd>
-                        <MudTd DataLabel="Neural net" Style="font-size:16px">@context.NeuralNet</MudTd>
-                        <MudTd DataLabel="Perf" Style="font-size:19px">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
-                        <MudTd DataLabel="Total" Style="font-size:19px">@context.TotalNumber</MudTd>
-                        <MudTd DataLabel="Avg rating" Style="font-size:19px">@context.RatingAvg.ToString("F0")</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Type</MudTd>
-                        <MudTd DataLabel="Theme" Style="font-size:19px">@context.Filter</MudTd>
-                        <MudTd DataLabel="Nodes" Style="font-size:19px">@context.Nodes</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        }
-    </MudItem>
-
-</MudItem>
-
-<MudPaper Class="pa-4 mt-4">
-    <MudText Typo="Typo.h5" Class="mb-3">Puzzle Visualizations</MudText>
-
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudSelect T="string" Label="Filter by Type" Value="@selectedType" ValueChanged="@((string val) => FilterByType(val))">
-                <MudSelectItem Value="@("All")">All Types</MudSelectItem>
-                <MudSelectItem Value="@("Policy")">Policy</MudSelectItem>
-                <MudSelectItem Value="@("Value")">Value</MudSelectItem>
-                <MudSelectItem Value="@("Search")">Search</MudSelectItem>
-                <MudSelectItem Value="@("Solve")">Solve</MudSelectItem>
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="12" md="6">
-            <MudSelect T="string" Label="Filter by Engine" Value="@selectedEngine" ValueChanged="@((string val) => FilterByEngine(val))">
-                <MudSelectItem Value="@("All")">All Engines</MudSelectItem>
-                @foreach (var engine in AvailableEngines)
-                {
-                    <MudSelectItem Value="@engine">@engine</MudSelectItem>
-                }
-            </MudSelect>
-        </MudItem>
-    </MudGrid>
-
-    <MudTable Items="@FilteredScores" Hover="true" Dense="true" Class="mt-3">
-        <HeaderContent>
-            <MudTh>Type</MudTh>
-            <MudTh>Engine</MudTh>
-            <MudTh>Neural Net</MudTh>
-            <MudTh>Theme</MudTh>
-            <MudTh>Nodes</MudTh>
-            <MudTh>Rating</MudTh>
-            <MudTh>Accuracy</MudTh>
-            <MudTh>Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Type">@context.Type</MudTd>
-            <MudTd DataLabel="Engine">@context.Engine</MudTd>
-            <MudTd DataLabel="Neural Net">@context.NeuralNet</MudTd>
-            <MudTd DataLabel="Theme">@(string.IsNullOrEmpty(context.Filter) ? "None" : context.Filter)</MudTd>
-            <MudTd DataLabel="Nodes">@context.Nodes.ToString()</MudTd>
-            <MudTd DataLabel="Rating">@context.PlayerRecord.Rating.ToString("F0")</MudTd>
-            <MudTd DataLabel="Accuracy">@(context.TotalNumber > 0 ? ((decimal)context.Correct / context.TotalNumber).ToString("P1") : "N/A")</MudTd>
-            <MudTd>
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           Size="Size.Small"
-                           OnClick="@(() => ToggleScoreDetails(context))">
-                    @(expandedScoreIds.Contains(context.GetHashCode()) ? "Hide Boards" : "Show Boards")
-                </MudButton>
-            </MudTd>
-        </RowTemplate>
-        <ChildRowContent>
-            @if (expandedScoreIds.Contains(context.GetHashCode()))
-            {
-                <MudTd colspan="8" Style="padding:0;">
-                    <MudPaper Class="pa-2 mt-1" Elevation="3" @key="context.GetHashCode()">
-                        <DeferredContent>
-                            <ChildContent>
-                                <PuzzleBanner Score="@context"
-                                              NumberOfFailedPussles="@failedNumber"
-                                              NumberOfSolvedPussles="@solvedNumber" />
-                            </ChildContent>
-                        </DeferredContent>
-                    </MudPaper>
-                </MudTd>
-            }
-        </ChildRowContent>
-    </MudTable>
-</MudPaper>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>
 
 
 @code {
@@ -266,7 +204,7 @@
     private List<Score> ValueScores = new();
     private List<Score> SearchScores = new();
     private List<Score> SolveScores = new();
-    private string Filter { get; set; } = ""; // "sacrifice, mate, endgame, defensive"; // "sacrifice, deflection, attraction, attack, fork, defensive";
+    private string Filter { get; set; } = "";
     int failedNumber = 5;
     int solvedNumber = 5;
     private string FolderName { get; set; } = String.Empty;
@@ -277,8 +215,93 @@
     private string selectedType = "All";
     private string selectedEngine = "All";
     private HashSet<int> expandedScoreIds = new HashSet<int>();
-    private string SpinnerVisibility => disableRun ? "visible" : "hidden";
 
+    // Score table state
+    private string activeScoreTab = "Policy";
+    private string scoreSortColumn = "Accuracy";
+    private bool scoreSortAscending = false;
+    private int scoreCurrentPage = 0;
+    private int scorePageSize = 25;
+
+    private bool HasAnyScores => PolicyScores.Count > 0 || ValueScores.Count > 0 || SearchScores.Count > 0 || SolveScores.Count > 0;
+
+    private IEnumerable<string> ActiveTabs
+    {
+        get
+        {
+            if (PolicyScores.Count > 0) yield return "Policy";
+            if (ValueScores.Count > 0) yield return "Value";
+            if (SearchScores.Count > 0) yield return "Search";
+            if (SolveScores.Count > 0) yield return "Solve";
+        }
+    }
+
+    private List<Score> ActiveScoreSource => activeScoreTab switch
+    {
+        "Policy" => PolicyScores,
+        "Value" => ValueScores,
+        "Search" => SearchScores,
+        "Solve" => SolveScores,
+        _ => PolicyScores
+    };
+
+    private int scoreTotalPages => Math.Max(1, (int)Math.Ceiling((double)ActiveScoreSource.Count / scorePageSize));
+
+    private void SetScoreTab(string tab)
+    {
+        activeScoreTab = tab;
+        scoreCurrentPage = 0;
+    }
+
+    private void ScoreSortBy(string column)
+    {
+        if (scoreSortColumn == column)
+            scoreSortAscending = !scoreSortAscending;
+        else
+        {
+            scoreSortColumn = column;
+            scoreSortAscending = true;
+        }
+        scoreCurrentPage = 0;
+    }
+
+    private MarkupString ScoreSortIndicator(string column)
+    {
+        if (scoreSortColumn != column)
+            return new MarkupString("<span class=\"sort-arrow\">&#9650;</span>");
+        var arrow = scoreSortAscending ? "&#9650;" : "&#9660;";
+        return new MarkupString($"<span class=\"sort-arrow active\">{arrow}</span>");
+    }
+
+    private IEnumerable<Score> GetSortedScoreItems()
+    {
+        var items = ActiveScoreSource.AsEnumerable();
+        items = scoreSortColumn switch
+        {
+            "Engine" => scoreSortAscending ? items.OrderBy(x => x.Engine) : items.OrderByDescending(x => x.Engine),
+            "NeuralNet" => scoreSortAscending ? items.OrderBy(x => x.NeuralNet) : items.OrderByDescending(x => x.NeuralNet),
+            "Perf" => scoreSortAscending ? items.OrderBy(x => x.PlayerRecord.Rating) : items.OrderByDescending(x => x.PlayerRecord.Rating),
+            "Accuracy" => scoreSortAscending ? items.OrderBy(x => x.TotalNumber > 0 ? (decimal)x.Correct / x.TotalNumber : -1) : items.OrderByDescending(x => x.TotalNumber > 0 ? (decimal)x.Correct / x.TotalNumber : -1),
+            "Total" => scoreSortAscending ? items.OrderBy(x => x.TotalNumber) : items.OrderByDescending(x => x.TotalNumber),
+            "AvgRating" => scoreSortAscending ? items.OrderBy(x => x.RatingAvg) : items.OrderByDescending(x => x.RatingAvg),
+            "Type" => scoreSortAscending ? items.OrderBy(x => x.Type) : items.OrderByDescending(x => x.Type),
+            "Theme" => scoreSortAscending ? items.OrderBy(x => x.Filter) : items.OrderByDescending(x => x.Filter),
+            "Nodes" => scoreSortAscending ? items.OrderBy(x => x.Nodes) : items.OrderByDescending(x => x.Nodes),
+            _ => items
+        };
+        return items;
+    }
+
+    private IEnumerable<Score> GetPagedScoreItems()
+    {
+        return GetSortedScoreItems().Skip(scoreCurrentPage * scorePageSize).Take(scorePageSize);
+    }
+
+    private void ScorePrevPage() { if (scoreCurrentPage > 0) scoreCurrentPage--; }
+    private void ScoreNextPage() { if (scoreCurrentPage < scoreTotalPages - 1) scoreCurrentPage++; }
+    private void ResetScorePage() { scoreCurrentPage = 0; }
+
+    // Visualization filters
     private IEnumerable<string> AvailableEngines =>
       PolicyScores.Concat(ValueScores).Concat(SearchScores).Concat(SolveScores)
         .Select(s => s.Engine)
@@ -295,18 +318,9 @@
         .ThenByDescending(s => s.PlayerRecord.Rating)
         .ThenBy(s => s.Engine);
 
-    private void FilterByType(string type)
+    private void OnFilterChanged()
     {
-        selectedType = type;
         expandedScoreIds.Clear();
-        StateHasChanged();
-    }
-
-    private void FilterByEngine(string engine)
-    {
-        selectedEngine = engine;
-        expandedScoreIds.Clear();
-        StateHasChanged();
     }
 
     private async void ToggleScoreDetails(Score score)
@@ -319,11 +333,7 @@
         else
         {
             expandedScoreIds.Add(id);
-
-            // Force a complete state update
             await InvokeAsync(StateHasChanged);
-
-            // Give the DOM time to update, then trigger another refresh
             await Task.Delay(200);
             await InvokeAsync(StateHasChanged);
         }
@@ -345,6 +355,10 @@
                     SolveScores.Add(pRes.Item);
                 else
                     SearchScores.Add(pRes.Item);
+
+                // Auto-select first tab with data
+                if (!ActiveTabs.Contains(activeScoreTab))
+                    activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
                 break;
             case Lichess.Done msg:
                 endOfRun = ": " + msg.Item;
@@ -356,32 +370,17 @@
     private void Draw()
     {
         Filter = drawPuzzleCategories(5);
-        // var test = Puzzle.getPuzzleCategories().ToList();
-        // foreach (var item in test)
-        // {
-        //   //print each item to the console
-        //   var cat = item.Category;
-        //   var description = item.Description;
-        //   Console.WriteLine($"Category: {cat}, Description: {description}");
-        // }
         StateHasChanged();
     }
 
     private CsvPuzzleData[] ParseCsv(string filePath, bool random)
     {
-        // Create an empty list of records
         var records = new List<CsvPuzzleData>();
-
-        // Read the input file
         var lines = File.ReadAllLines(filePath);
 
-        // Skip the header line
         foreach (var line in lines.Skip(1))
         {
-            // Split the line by comma
             var fields = line.Split(',');
-
-            // Parse the fields into variables
             var puzzleId = fields[0].GetHashCode();
             var fen = fields[1];
             var moves = fields[2];
@@ -392,13 +391,12 @@
             var themes = fields[7];
             var gameUrl = fields[8];
             var openingTags = fields[9];
-            var fens = new List<string>(); //GetAllFens(fen,ms);
+            var fens = new List<string>();
             var posList = new List<PuzzleTypes.Position>();
             var record = CsvPuzzleData.Create(puzzleId, fen, moves, rating, ratingDeviation, popularity, nbPlays, themes, gameUrl, openingTags, line, posList, fens, 0);
             records.Add(record);
         }
 
-        // Shuffle the records list using Fisher-Yates algorithm
         var recordsArray = records.ToArray();
         if (random)
             System.Random.Shared.Shuffle(recordsArray);
@@ -412,16 +410,13 @@
         StateHasChanged();
     }
 
-    // New: clear and release large references before a new run
     private async Task ClearPreviousRunResourcesAsync()
     {
         try
         {
-            // Detach big arrays / lists so GC can collect them
             Array.Clear(puzzles);
             puzzles = null;
 
-            // Clear and replace lists to drop references to nested objects
             PolicyScores?.Clear();
             ValueScores?.Clear();
             SearchScores?.Clear();
@@ -432,19 +427,15 @@
             SearchScores = new List<Score>();
             SolveScores = new List<Score>();
 
-            // Collapse any expanded UI content
             expandedScoreIds.Clear();
 
-            // Allow UI to update and yield back to the renderer
             await InvokeAsync(StateHasChanged);
-            await Task.Delay(50); // give a moment for pending work to complete
+            await Task.Delay(50);
 
-            // Suggest a GC cycle (use sparingly). This helps when runs allocate big objects.
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
-            // brief yield to let finalizers run
             await Task.Yield();
         }
         catch (Exception ex)
@@ -461,7 +452,6 @@
         {
             var pgnName = e.File.Name;
             fileName = pgnName;
-            //check if the file ends on .json
             if (!pgnName.EndsWith(".json"))
             {
                 logger.LogError("Selected file does not end with .json, please select you puzzle config file (JSON)");
@@ -481,7 +471,6 @@
         }
         await Run(null);
 
-        // Reset the file input to allow re-selection of the same file
         browserFile = null;
         fileName = string.Empty;
         disableRun = false;
@@ -494,10 +483,8 @@
         var sb = new StringBuilder();
         sb.AppendLine("\n```\n");
         sb.AppendLine($"Puzzle file name: {puzzleFile}\n");
-        // Combine all sets of scores to calculate the maximum width for each column
         var allScores = PolicyScores.Concat(ValueScores).Concat(SearchScores).Concat(SolveScores).ToList();
 
-        // Calculate the maximum width for each column
         int maxEngineWidth = Math.Max("Engine".Length, allScores.Max(s => s.Engine.Length));
         int maxNeuralNetWidth = Math.Max("Neural net".Length, allScores.Max(s => s.NeuralNet.Length));
         int maxPerfWidth = Math.Max("Perf".Length, allScores.Max(s => s.PlayerRecord.Rating.ToString("F0").Length));
@@ -508,37 +495,29 @@
         int maxThemeWidth = Math.Max("Theme".Length, allScores.Max(s => s.Filter.Length + 2));
         int maxNodesWidth = Math.Max("Nodes".Length, allScores.Max(s => s.Nodes.ToString().Length));
 
-        // Calculate approximate separator width
-        int tabWidth = 6; // Approximate width of a tab character
-        int columns = 8; // Number of columns in the table
+        int tabWidth = 6;
+        int columns = 8;
         int approximateWidth = maxEngineWidth + maxNeuralNetWidth + maxPerfWidth +
                               maxAccuracyWidth + maxTotalWidth + maxAvgRatingWidth +
                               maxThemeWidth + maxNodesWidth + (columns - 1) * tabWidth;
 
         string separatorLine = new string('-', approximateWidth);
 
-        // Add headers with fixed width
         if (PolicyScores.Count > 0)
         {
             sb.AppendLine("Policy Head Tests\n");
             sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
 
-            // Track groups by rating average
             double? currentGroup = null;
-
-            // Add policy scores with fixed width for each column
             foreach (var score in PolicyScores)
             {
-                // If we've moved to a new rating group, add a separator
                 if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
                 {
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-
                 sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
-
             sb.AppendLine();
         }
         if (ValueScores.Count > 0)
@@ -546,19 +525,14 @@
             sb.AppendLine("Value Head Tests\n");
             sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
 
-            // Track groups by rating average
             double? currentGroup = null;
-
-            // Add value scores with fixed width for each column
             foreach (var score in ValueScores)
             {
-                // If we've moved to a new rating group, add a separator
                 if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
                 {
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-
                 sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
@@ -569,19 +543,14 @@
             sb.AppendLine("Search Tests\n");
             sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
 
-            // Track groups by rating average
             double? currentGroup = null;
-
-            // Add search scores with fixed width for each column
             foreach (var score in SearchScores)
             {
-                // If we've moved to a new rating group, add a separator
                 if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
                 {
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-
                 sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
@@ -592,19 +561,14 @@
             sb.AppendLine("Solve Tests\n");
             sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
 
-            // Track groups by rating average
             double? currentGroup = null;
-
-            // Add solve scores with fixed width for each column
             foreach (var score in SolveScores)
             {
-                // If we've moved to a new rating group, add a separator
                 if (currentGroup.HasValue && score.RatingAvg != currentGroup.Value)
                 {
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-
                 sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
@@ -632,20 +596,16 @@
             return;
         }
 
-        // Clear large references and request GC before starting a new run
         await ClearPreviousRunResourcesAsync();
 
         disableRun = true;
-        //StateHasChanged();
 
         await Task.Run(async () =>
         {
             try
             {
-                // Load and normalize config
                 var data = loadPuzzleConfig(normalizePath(fullPathName));
                 puzzleFileName = Path.GetFileName(data.PuzzleFile);
-                //add drawn filters (optional) to puzzle filter
                 if (!string.IsNullOrWhiteSpace(data.PuzzleFilter) && !string.IsNullOrWhiteSpace(Filter))
                 {
                     data.PuzzleFilter = $"{data.PuzzleFilter},{Filter}";
@@ -656,7 +616,6 @@
                 }
                 await InvokeAsync(StateHasChanged);
 
-                //make the puzzle filter lower case and remove duplicates
                 if (!string.IsNullOrWhiteSpace(data.PuzzleFilter))
                 {
                     data.PuzzleFilter =
@@ -671,22 +630,17 @@
                 var normalizedPath = normalizePath(data.PuzzleFile);
                 logger.LogInformation($"Processing Lichess puzzle file: {fullPathName}");
 
-                // Build engine configs
                 var engineConfigs = data.Engines
               .SelectMany(e => mapToEngPuzzleConfig(data.EngineFolder, e))
               .ToList();
 
-                // Parse puzzles
                 puzzles = parsePuzzle(normalizedPath, false);
                 var formattedLength = puzzles.Length.ToString("N0");
                 logger.LogInformation($"Loaded {formattedLength} puzzles from {normalizedPath}");
 
-                // Create the puzzle input
                 var puzzleInput = TypesDef.PuzzleInput.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
                                   engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, data.Concurrency);
 
-
-                // parse the comma-separated types (or get an empty list)
                 var types = string.IsNullOrWhiteSpace(data.Type)
             ? new List<string>()
             : data.Type
@@ -695,7 +649,6 @@
               .Select(e => e.Trim())
               .Where(e => e.Length > 0)
               .ToList();
-
 
                 List<Score> scores;
 
@@ -789,13 +742,14 @@
                   .ToList();
                 }
 
+                // Auto-select first available tab
+                activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
+
                 var normalized = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
                 var table = CreateCombinedScoresTable(data.PuzzleFile);
                 logger.LogInformation(table);
-                //check if folder exists here
                 if (Directory.Exists(normalized))
                 {
-                    //combine all scores into one list
                     var allScores = new List<Score>();
                     allScores.AddRange(PolicyScores);
                     allScores.AddRange(ValueScores);
@@ -819,7 +773,6 @@
                     return (tuple.Item1, tuple.Item1.Rating, tuple.Item2);
                 })
                       .OrderBy(tuple => tuple.Item2);
-                            //.TakeWhile(tuple => tuple.Item2 < 100.0);
 
                             foreach (var puzzle in sorted)
                             {
@@ -844,7 +797,6 @@
                         }
                     }
 
-                    // Write failed puzzles as Lichess CSV for re-use as puzzle input
                     var csvFileName = Path.Combine(normalized, $"failedLichessPuzzles_{datePart}.csv");
                     var allFailed = allScores
                         .SelectMany(s => s.FailedPuzzles.Select(t => t.Item1))
@@ -862,14 +814,12 @@
                         logger.LogInformation($"  Failed puzzles CSV ({allFailed.Length} unique): {csvFileName}");
                     }
 
-                    // Cross-engine analysis files
                     var allScoresForCross = PolicyScores.AsEnumerable()
                         .Concat(ValueScores)
                         .Concat(SearchScores)
                         .Concat(SolveScores);
                     ChessLibrary.PuzzleCrossEngine.writeCrossEngineFiles(normalized, datePart, allScoresForCross);
 
-                    //write table to file with date and time
                     var tableFileName = Path.Combine(normalized, $"LichessSummary{datePart}.txt");
                     using (StreamWriter sw = new StreamWriter(tableFileName))
                     {
@@ -903,7 +853,6 @@
 
     public async ValueTask DisposeAsync()
     {
-        //cleanup
         await ClearPreviousRunResourcesAsync();
         logger.LogInformation("Disposing LichessPuzzles component");
         await ValueTask.CompletedTask;

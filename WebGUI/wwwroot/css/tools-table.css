@@ -1,0 +1,391 @@
+/* Shared dark-themed table styles for tool pages */
+
+.tool-page {
+    padding: 20px 24px;
+    color: #e0e0e6;
+}
+
+.tool-page h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: transparent;
+    background: linear-gradient(135deg, #c0c8e8 0%, #8b9cd0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    margin: 24px 0 4px 0;
+    letter-spacing: 0.02em;
+}
+
+.tool-page h1 + .tool-subtitle {
+    font-size: 0.88rem;
+    color: #787890;
+    margin: 0 0 16px 0;
+}
+
+.tool-page h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #d4d4e0;
+    margin: 32px 0 12px 0;
+}
+
+.tool-page h3 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: #b8b8c8;
+    margin: 24px 0 8px 0;
+}
+
+.tool-page .file-name {
+    color: #8b9ce8;
+    font-size: 1rem;
+    margin: 8px 0 16px 0;
+}
+
+/* Upload button */
+.tool-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    background: #303046;
+    color: #e8e8f0;
+    border: 1px solid #444460;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+}
+
+.tool-upload-btn:hover {
+    background: #3a3a52;
+    border-color: #505068;
+}
+
+/* Action button (no icon) */
+.tool-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    background: #303046;
+    color: #e8e8f0;
+    border: 1px solid #444460;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+}
+
+.tool-action-btn:hover:not(:disabled) {
+    background: #3a3a52;
+    border-color: #505068;
+}
+
+.tool-action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.tool-action-btn-sm {
+    padding: 4px 12px;
+    font-size: 0.82rem;
+}
+
+.tool-upload-btn::before {
+    content: "\2B07";
+    font-size: 1.1rem;
+}
+
+/* Input fields */
+.tool-input-group {
+    margin-bottom: 12px;
+}
+
+.tool-input-group label {
+    display: block;
+    font-size: 0.85rem;
+    color: #9898ac;
+    margin-bottom: 4px;
+}
+
+.tool-input {
+    background: #1c1c2c;
+    border: 1px solid #444460;
+    border-radius: 4px;
+    color: #e0e0e6;
+    padding: 8px 12px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.tool-input:focus {
+    border-color: #8b9ce8;
+}
+
+/* Sections (for form-style pages like PGN Utilities) */
+.tool-section {
+    margin: 24px 0 32px 0;
+    padding: 20px 24px;
+    background: #232334;
+    border-radius: 8px;
+    border: 1px solid #2c2c3e;
+}
+
+.tool-section h2 {
+    margin: 0 0 4px 0;
+}
+
+.tool-section-desc {
+    font-size: 0.88rem;
+    color: #8888a0;
+    margin: 0 0 16px 0;
+}
+
+.tool-section p {
+    font-size: 0.92rem;
+    color: #c0c0d0;
+    line-height: 1.6;
+    margin: 8px 0;
+}
+
+.tool-section ul {
+    margin: 8px 0 8px 20px;
+    padding: 0;
+}
+
+.tool-section li {
+    font-size: 0.92rem;
+    color: #c0c0d0;
+    line-height: 1.6;
+    margin-bottom: 6px;
+}
+
+.tool-section code {
+    background: #1c1c2c;
+    border: 1px solid #444460;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.85rem;
+    color: #8b9ce8;
+}
+
+.tool-controls {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+}
+
+/* Table container */
+.tool-table-container {
+    background: #232334;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    overflow-x: auto;
+    margin: 8px 0 24px 0;
+}
+
+/* Table */
+.tool-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.tool-table thead th {
+    background: linear-gradient(180deg, #353548 0%, #2e2e42 100%);
+    color: #c8c8d8;
+    font-weight: 600;
+    font-size: 0.92rem;
+    padding: 11px 12px;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    border-bottom: 2px solid #48486a;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.tool-table tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #2c2c3e;
+    white-space: nowrap;
+}
+
+.tool-table tbody tr:nth-child(even) {
+    background: #272738;
+}
+
+.tool-table tbody tr:hover {
+    background: #2e2e40;
+}
+
+/* Keyboard key styling */
+.tool-table kbd {
+    display: inline-block;
+    background: linear-gradient(180deg, #323246 0%, #28283a 100%);
+    border: 1px solid #444460;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: #d0d0e0;
+    white-space: nowrap;
+}
+
+/* Dense variant */
+.tool-table.dense tbody td {
+    padding: 5px 10px;
+    font-size: 0.85rem;
+}
+
+.tool-table.dense thead th {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+}
+
+/* Center-aligned cells */
+.tool-table .tc {
+    text-align: center;
+}
+
+/* Sortable headers */
+.tool-table.sortable thead th {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.tool-table.sortable thead th:hover {
+    background: linear-gradient(180deg, #3e3e54 0%, #36364c 100%);
+}
+
+.tool-table .sort-arrow {
+    font-size: 0.75rem;
+    margin-left: 4px;
+    opacity: 0.35;
+}
+
+.tool-table .sort-arrow.active {
+    opacity: 1;
+    color: #8b9ce8;
+}
+
+/* Pager */
+.tool-pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #232334;
+    border-top: 1px solid #2c2c3e;
+    font-size: 0.85rem;
+    color: #b0b0c0;
+    border-radius: 0 0 8px 8px;
+}
+
+.tool-pager button {
+    background: #303046;
+    color: #e0e0e6;
+    border: 1px solid #444460;
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+}
+
+.tool-pager button:hover:not(:disabled) {
+    background: #3a3a52;
+}
+
+.tool-pager button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.tool-pager select {
+    background: #1c1c2c;
+    color: #e0e0e6;
+    border: 1px solid #444460;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+}
+
+/* Tab bar */
+.tool-tab-bar {
+    display: flex;
+    gap: 0;
+    margin: 16px 0 0 0;
+}
+
+.tool-tab {
+    padding: 9px 24px;
+    background: #272738;
+    color: #9090a4;
+    border: 1px solid #444460;
+    border-bottom: 2px solid #444460;
+    border-radius: 6px 6px 0 0;
+    font-size: 0.92rem;
+    cursor: pointer;
+    margin-right: -1px;
+    transition: background 0.15s, color 0.15s;
+}
+
+.tool-tab:hover:not(.active) {
+    background: #2e2e40;
+    color: #c8c8d8;
+}
+
+.tool-tab.active {
+    background: #323246;
+    color: #d8d8e6;
+    border-bottom-color: #323246;
+    font-weight: 600;
+}
+
+/* Spinner */
+.tool-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #444460;
+    border-top-color: #8b9ce8;
+    border-radius: 50%;
+    animation: tool-spin 0.8s linear infinite;
+}
+
+@keyframes tool-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Puzzle grid */
+.tool-puzzle-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 6px 48px;
+    margin: 8px 0 12px 0;
+}
+
+.tool-puzzle-card {
+    min-width: 0;
+    overflow: hidden;
+    padding-bottom: 2px;
+}
+
+.tool-puzzle-card > div,
+.tool-puzzle-card img,
+.tool-puzzle-card canvas {
+    max-width: 100%;
+}

@@ -1,4 +1,4 @@
-﻿@page "/deviationFinder"
+@page "/deviationFinder"
 @using System.Text
 @using WebGUI.Components.Layout
 @using WebGUI.Components.Layout.ChessboardLayout
@@ -11,144 +11,132 @@
 
 <PageTitle>Move deviation page</PageTitle>
 
-<MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Move Deviation Analysis for PGN Games</MudText>
+<div class="tool-page">
+  <h1>Move Deviation Analysis</h1>
+  <div class="tool-subtitle">Find and visualize move deviations across PGN games</div>
 
-<MudFab Class="ml-3 mb-3 mt-6" HtmlTag="label" Color="Color.Default" Label="Load pgn file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-<MudText Typo=Typo.body1 Class="pt-5 pl-4 mb-4">@fileName</MudText>
-<MudTextField @bind-Value="refPlayer" Label="Reference player name" Variant="Variant.Outlined" Class="ml-3 mb-3 mt-3" Style="width: 300px;" />  
-<MudTextField @bind-Value="comparePlayers" Label="Compare players name in Csv format, empty = all players" Variant="Variant.Outlined" Class="ml-3 mb-3 mt-3" Style="width: 600px;" />
-<MudSwitch @bind-Value="@isFindMoveAllDifferencesEnabled" T="bool" Color="Color.Primary" Class="ml-3 mb-3 mt-3" Label="Compare Between Different Engines (Off: Analyze Single Engine Inconsistencies)" />
+  <div class="tool-controls">
+    <label for="fileInput" class="tool-upload-btn">Load PGN file</label>
+    <div class="tool-input-group" style="margin-bottom:0; min-width:220px;">
+      <label>Reference player name</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="refPlayer" />
+    </div>
+    <div class="tool-input-group" style="margin-bottom:0; min-width:320px;">
+      <label>Compare players (csv, empty = all)</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="comparePlayers" />
+    </div>
+  </div>
 
+  <div class="tool-controls">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#c0c0d0; font-size:0.92rem;">
+      <input type="checkbox" @bind="isFindMoveAllDifferencesEnabled" style="width:16px; height:16px; accent-color:#8b9ce8;" />
+      Compare between different engines
+    </label>
+    <span style="font-size:0.85rem; color:#787890;">Off: analyze single engine inconsistencies</span>
+  </div>
 
-@if (isFindMoveAllDifferencesEnabled)
-{
-  <MudText Typo=Typo.h6 Class="pt-10 pl-4 mt-3">Critical Move Differences Analysis Between Chess Engines </MudText>
-}
-else
-{
-  <MudText Typo=Typo.h6 Class="pt-10 pl-4 mt-3">Move Deviations By Same Engine</MudText>
-}
+  <div class="file-name">@fileName</div>
 
-<pre style="font-size:16px; margin:14px;">@resultDescription1</pre>
-
-<MudPaper Class="pa-4 mt-4">
-  <MudText Typo="Typo.h5" Class="mb-3">Critical Deviation Visualizations</MudText>
-
-  <MudGrid>
-    <MudItem xs="12" md="6">
-      <MudSelect T="string" Label="Select Engine" @bind-Value="selectedEngine">
-        <MudSelectItem Value="@("All")">All Engines</MudSelectItem>
-        @foreach (var engine in deviationListCritical.Select(d => d.PlayerToDeviate).Distinct().OrderBy(e => e))
-        {
-          <MudSelectItem Value="@engine">@engine</MudSelectItem>
-        }
-      </MudSelect>
-    </MudItem>
-    <MudItem xs="12" md="6">
-      <MudButton Variant="Variant.Filled"
-                 Color="Color.Primary"
-                 OnClick="ToggleCriticalVisualizations"
-                 Class="ml-2 mt-2">
-        @(showCriticalVisualizations ? "Hide Boards" : "Render Boards")
-      </MudButton>
-    </MudItem>
-  </MudGrid>
-
-  @if (showCriticalVisualizations)
+  @if (!string.IsNullOrEmpty(resultDescription1))
   {
-    <MudTable Class="mt-4 pl-3" Style="width:700px" Items="@FilteredCriticalDeviations" FixedHeader=true T="MoveDeviation">
-      <ColGroup>
-        <col style="width: 50%;" />
-        <col style="width: 50%;" />
-      </ColGroup>
-      <RowTemplate>
-        <MudTd Style="font-size:16px" DataLabel="B2">
-          <WebGUI.Components.Layout.VisualizationLayout.MoveDeviation MoveDeviationInput="context" OwnDeviations=@(!isFindMoveAllDifferencesEnabled) />
-        </MudTd>
-      </RowTemplate>
-    </MudTable>
+    <h2>@(isFindMoveAllDifferencesEnabled ? "Critical Move Differences Between Engines" : "Move Deviations By Same Engine")</h2>
+    <pre style="font-size:0.88rem; color:#c0c0d0; margin:8px 0 16px 0; line-height:1.6;">@resultDescription1</pre>
   }
-</MudPaper>
-<MudText Typo=Typo.h6 Class="pt-10 pl-4">Move deviation for all games </MudText>
 
-<MudTable Class="mt-4 pl-3" Style="width:1200px"
-          Items="@FilteredDeviationListAll"
-          FixedHeader=true
-          T="MoveDeviation"
-          Dense="true"
-          Hover="true"
-          Virtualize="true" >
-  <ColGroup>
-    <col style="width: 8%;" />
-    <col style="width: 5%;" />
-    <col style="width: 5%;" />
-    <col style="width: 5%;" />
-    <col style="width: 15%;" />
-    <col style="width: 15%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-    <col style="width: 10%;" />
-  </ColGroup>
-  <HeaderContent>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.Round)">Round</MudTableSortLabel>
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.GameNr)">GameNr</MudTableSortLabel>      
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.MoveNr)">MoveNr</MudTableSortLabel>      
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.Color)">Color</MudTableSortLabel>
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.PlayerToDeviate)">Deviator</MudTableSortLabel>
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.Opponent)">Opponent</MudTableSortLabel>
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.PrevSanMove.Item1)">Move1</MudTableSortLabel>      
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.DevSanMove.Item1)">Move2</MudTableSortLabel>      
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.Result)">Res1</MudTableSortLabel>      
-    </MudTh>
-    <MudTh>
-      <MudTableSortLabel SortBy="new Func<MoveDeviation, object>(x => x.DevRes)">Res2</MudTableSortLabel>      
-    </MudTh>
-  </HeaderContent>
-  <RowTemplate>
-    <MudTd Style="font-size:16px" DataLabel="Round">@context.Round</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Game">@context.GameNr</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="MoveNr">@context.MoveNr</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Color">@context.Color</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Deviator">@context.PlayerToDeviate</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Opp">@context.Opponent</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Move1">@context.PrevSanMove.Item1</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Move2">@context.DevSanMove.Item1</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Res">@context.Result</MudTd>
-    <MudTd Style="font-size:16px" DataLabel="Res">@context.DevRes</MudTd>
-  </RowTemplate>
-  <PagerContent>
-    <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
-  </PagerContent>
-</MudTable>
+  @if (deviationListCritical.Count > 0)
+  {
+    <div class="tool-section">
+      <h2>Critical Deviation Visualizations</h2>
 
+      <div class="tool-controls">
+        <div class="tool-input-group" style="margin-bottom:0">
+          <label>Select Engine</label>
+          <select class="tool-input" @bind="selectedEngine">
+            <option value="All">All Engines</option>
+            @foreach (var engine in deviationListCritical.Select(d => d.PlayerToDeviate).Distinct().OrderBy(e => e))
+            {
+              <option value="@engine">@engine</option>
+            }
+          </select>
+        </div>
+        <button class="tool-action-btn" @onclick="ToggleCriticalVisualizations">
+          @(showCriticalVisualizations ? "Hide Boards" : "Render Boards")
+        </button>
+      </div>
 
-<pre style="font-size:16px; margin:14px;">@resultDescription2</pre>
+      @if (showCriticalVisualizations)
+      {
+        <div style="margin-top:12px;">
+          @foreach (var item in FilteredCriticalDeviations)
+          {
+            <div style="margin-bottom:8px;">
+              <WebGUI.Components.Layout.VisualizationLayout.MoveDeviation MoveDeviationInput="item" OwnDeviations=@(!isFindMoveAllDifferencesEnabled) />
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  @if (deviationListAll.Count > 0)
+  {
+    <h2>Move Deviations — All Games</h2>
+
+    <div class="tool-table-container">
+      <table class="tool-table sortable dense">
+        <thead>
+          <tr>
+            <th @onclick='() => SortBy("Round")'>Round @SortIndicator("Round")</th>
+            <th @onclick='() => SortBy("GameNr")'>Game @SortIndicator("GameNr")</th>
+            <th @onclick='() => SortBy("MoveNr")'>Move @SortIndicator("MoveNr")</th>
+            <th @onclick='() => SortBy("Color")'>Color @SortIndicator("Color")</th>
+            <th @onclick='() => SortBy("Deviator")'>Deviator @SortIndicator("Deviator")</th>
+            <th @onclick='() => SortBy("Opponent")'>Opponent @SortIndicator("Opponent")</th>
+            <th @onclick='() => SortBy("Move1")'>Move1 @SortIndicator("Move1")</th>
+            <th @onclick='() => SortBy("Move2")'>Move2 @SortIndicator("Move2")</th>
+            <th @onclick='() => SortBy("Res1")'>Res1 @SortIndicator("Res1")</th>
+            <th @onclick='() => SortBy("Res2")'>Res2 @SortIndicator("Res2")</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var d in GetPagedItems())
+          {
+            <tr>
+              <td>@d.Round</td>
+              <td>@d.GameNr</td>
+              <td>@d.MoveNr</td>
+              <td>@d.Color</td>
+              <td>@d.PlayerToDeviate</td>
+              <td>@d.Opponent</td>
+              <td>@d.PrevSanMove.Item1</td>
+              <td>@d.DevSanMove.Item1</td>
+              <td>@d.Result</td>
+              <td>@d.DevRes</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <div class="tool-pager">
+        <span>@FilteredDeviationListAll.Count() items</span>
+        <select @bind="pageSize" @bind:after="ResetPage">
+          <option value="10">10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        <span>per page</span>
+        <button disabled="@(currentPage <= 0)" @onclick="PrevPage">Prev</button>
+        <span>Page @(currentPage + 1) / @totalPages</span>
+        <button disabled="@(currentPage >= totalPages - 1)" @onclick="NextPage">Next</button>
+      </div>
+    </div>
+
+    <pre style="font-size:0.88rem; color:#c0c0d0; margin:8px 0 16px 0; line-height:1.6;">@resultDescription2</pre>
+  }
+</div>
+
 
 @code {
-  private void ClearAllFilters()
-  {
-    filterRound = filterGameNr = filterMoveNr = filterColor = filterDeviator =
-    filterOpponent = filterMove1 = filterMove2 = filterRes1 = filterRes2 = string.Empty;
-  }
-  
   // Filter fields
   private string filterRound, filterGameNr, filterMoveNr, filterColor, filterDeviator, filterOpponent, filterMove1, filterMove2, filterRes1, filterRes2;
 
@@ -171,11 +159,21 @@ else
   private string resultDescription1;
   private string resultDescription2;
   private string fileName;
-  private string comparePlayers = ""; //"Lc0-Bt4-it332-Contempt, Lc0-Bt4-it332-No Contempt"; //String.Empty;
-  private string refPlayer = String.Empty; //"Ceres C1-640-34"
+  private string comparePlayers = "";
+  private string refPlayer = String.Empty;
   private bool isFindMoveAllDifferencesEnabled = true;
   private string selectedEngine = "All";
   private bool showCriticalVisualizations = false;
+
+  // Sorting state
+  private string sortColumn = "Round";
+  private bool sortAscending = true;
+
+  // Pagination state
+  private int currentPage = 0;
+  private int pageSize = 25;
+  private int totalItems => FilteredDeviationListAll.Count();
+  private int totalPages => Math.Max(1, (int)Math.Ceiling((double)totalItems / pageSize));
 
   private IEnumerable<MoveDeviation> FilteredCriticalDeviations =>
       selectedEngine == "All"
@@ -187,7 +185,56 @@ else
     showCriticalVisualizations = !showCriticalVisualizations;
     StateHasChanged();
   }
-  
+
+  private void SortBy(string column)
+  {
+    if (sortColumn == column)
+      sortAscending = !sortAscending;
+    else
+    {
+      sortColumn = column;
+      sortAscending = true;
+    }
+    currentPage = 0;
+  }
+
+  private MarkupString SortIndicator(string column)
+  {
+    if (sortColumn != column)
+      return new MarkupString("<span class=\"sort-arrow\">&#9650;</span>");
+    var arrow = sortAscending ? "&#9650;" : "&#9660;";
+    return new MarkupString($"<span class=\"sort-arrow active\">{arrow}</span>");
+  }
+
+  private IEnumerable<MoveDeviation> GetSortedItems()
+  {
+    var items = FilteredDeviationListAll;
+    items = sortColumn switch
+    {
+      "Round" => sortAscending ? items.OrderBy(x => x.Round) : items.OrderByDescending(x => x.Round),
+      "GameNr" => sortAscending ? items.OrderBy(x => x.GameNr) : items.OrderByDescending(x => x.GameNr),
+      "MoveNr" => sortAscending ? items.OrderBy(x => x.MoveNr) : items.OrderByDescending(x => x.MoveNr),
+      "Color" => sortAscending ? items.OrderBy(x => x.Color) : items.OrderByDescending(x => x.Color),
+      "Deviator" => sortAscending ? items.OrderBy(x => x.PlayerToDeviate) : items.OrderByDescending(x => x.PlayerToDeviate),
+      "Opponent" => sortAscending ? items.OrderBy(x => x.Opponent) : items.OrderByDescending(x => x.Opponent),
+      "Move1" => sortAscending ? items.OrderBy(x => x.PrevSanMove.Item1) : items.OrderByDescending(x => x.PrevSanMove.Item1),
+      "Move2" => sortAscending ? items.OrderBy(x => x.DevSanMove.Item1) : items.OrderByDescending(x => x.DevSanMove.Item1),
+      "Res1" => sortAscending ? items.OrderBy(x => x.Result) : items.OrderByDescending(x => x.Result),
+      "Res2" => sortAscending ? items.OrderBy(x => x.DevRes) : items.OrderByDescending(x => x.DevRes),
+      _ => items
+    };
+    return items;
+  }
+
+  private IEnumerable<MoveDeviation> GetPagedItems()
+  {
+    return GetSortedItems().Skip(currentPage * pageSize).Take(pageSize);
+  }
+
+  private void PrevPage() { if (currentPage > 0) currentPage--; }
+  private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
+  private void ResetPage() { currentPage = 0; }
+
   double GetScore(MoveDeviation game)
   {
     var deviatorColor = game.PgnGamePair.Item1.GameMetaData.White == game.Opponent ? "w" : "b";
@@ -206,10 +253,9 @@ else
       _ => 0
     };
 
-    //calculate difference between result and other result from deviators perspective
     return deviatorColor == "w" ? res : -res;
   }
- 
+
   private async Task OpenPGNFile(InputFileChangeEventArgs e)
   {
     var pgnName = e.File.Name;
@@ -227,9 +273,9 @@ else
       await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
 
-        var games = FullPGNParser.parsePgnFile(fullPath).ToList();
+    var games = FullPGNParser.parsePgnFile(fullPath).ToList();
     var comparList = ConvertCsvStringToList(comparePlayers);
-    var deviations = 
+    var deviations =
       isFindMoveAllDifferencesEnabled ?
         DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList) :
         DeviationAnalysis.findAllDeviationsForAllPlayers(games);
@@ -245,7 +291,7 @@ else
     foreach (var deviator in distinctCritical)
     {
       var playerDeviations = critical.Where(e => e.PlayerToDeviate == deviator);
-      var playerScore = playerDeviations.Sum(e => GetScore(e));      
+      var playerScore = playerDeviations.Sum(e => GetScore(e));
       sb.AppendLine($"Player: {deviator} did deviate {playerDeviations.Count()} times and resulted in a calculated net score of: {playerScore}");
     }
     resultDescription1 = sb.ToString();
@@ -261,6 +307,7 @@ else
     logger.LogInformation(resultDescription2);
     logger.LogInformation("Done with calculation");
     File.Delete(fullPath);
+    currentPage = 0;
     await Task.CompletedTask;
   }
 

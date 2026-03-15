@@ -1,4 +1,4 @@
-﻿@page "/backendSpeed"
+@page "/backendSpeed"
 @using System.Linq
 @inject ILogger<BackendSpeed> logger
 @inject IJSRuntime JSRuntime
@@ -6,45 +6,79 @@
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 
-<PageTitle>Median Speed calculation</PageTitle>
+<PageTitle>Backend Speed</PageTitle>
 
-<MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">Calculate backend speed statistics from PGN-file</MudText>
-<MudFab Class="ml-3 mb-3 mt-6" HtmlTag="label" Color="Color.Default" Label="Load pgn file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
-<MudText Color=Color.Primary Typo=Typo.h6 Class="ml-3 mb-3 mt-6 pl-3">@fileOpenName</MudText>
+<div class="tool-page">
+	<h1>Backend Speed</h1>
+	<div class="tool-subtitle">NPS and EPS by piece count from PGN games</div>
 
-<MudTable T="PieceCountRow" Style="max-width:75%;" Items="@FlattenedRows" Striped="true" Hover="false" Dense="true" SortLabel="Sort By">
-	<HeaderContent>
-		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.FileName)">Engine Name</MudTableSortLabel></MudTh>
-		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.PieceCount)">Piece Count</MudTableSortLabel></MudTh>
-		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.AvgNps)">Avg NPS</MudTableSortLabel></MudTh>
-		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.AvgEps)">Avg EPS</MudTableSortLabel></MudTh>
-		<MudTh><MudTableSortLabel SortBy="new Func<PieceCountRow, object>(x => x.AvgNps - x.AvgEps)">Diff</MudTableSortLabel></MudTh>
-	</HeaderContent>
-	<RowTemplate>
-		<MudTd DataLabel="Engine Name">@context.FileName</MudTd>
-		<MudTd DataLabel="Piece Count">@context.PieceCount</MudTd>
-		<MudTd DataLabel="Avg NPS">@FormatNPS(context.AvgNps, true)</MudTd>
-		<MudTd DataLabel="Avg EPS">@FormatNPS(context.AvgEps, false)</MudTd>
-		<MudTd DataLabel="Diff">@FormatNPS(context.AvgNps - context.AvgEps, true)</MudTd>
-	</RowTemplate>
-</MudTable>
-<MudPaper Style="max-width:75%;" Class="ml-1 mr-4 mt-4" Elevation="0">
-	<MudGrid Style="max-width:80%;">
-		<MudTextField  Class="ml-3 mb-3 mt-6 pl-3" Label="Set output file path" @bind-Value="dummyOutputFilePath" Variant="Variant.Outlined" />
-		<MudButton Class="ml-3 mb-3 mt-6 pl-3" Variant="Variant.Filled" Color="Color.Primary" OnClick="() => PrintPieceCountData()">Write Piece Count Performance Data to File</MudButton>
-	</MudGrid>
-	<!-- Engine selector: choose one engine or All Engines -->
-	<MudSelect Style="max-width:50%;" T="string" Label="Engine" Value="@selectedEngine" ValueChanged="OnEngineChanged" Clearable="true" Class="ml-3 mb-3 mt-6 pl-3" Dense="true">
-		<MudSelectItem T="string" Value="@AllEnginesSentinel">All Engines</MudSelectItem>
-		@foreach (var engine in EngineOptions)
-		{
-			<MudSelectItem T="string" Value="@engine">@engine</MudSelectItem>
-		}
-	</MudSelect>
+	<div class="tool-controls">
+		<label for="fileInput" class="tool-upload-btn">Load pgn file</label>
+		<div class="tool-input-group" style="margin-bottom:0">
+			<label>Engine filter</label>
+			<select class="tool-input" style="width:220px" @bind="selectedEngine" @bind:after="OnEngineChanged">
+				<option value="@AllEnginesSentinel">All Engines</option>
+				@foreach (var engine in EngineOptions)
+				{
+					<option value="@engine">@engine</option>
+				}
+			</select>
+		</div>
+	</div>
 
-	<MudButton Class="ml-3 mb-3 mt-6 pl-3" Variant="Variant.Outlined" Color="Color.Secondary" OnClick="@PlotPieceCountChart">Plot Piece-Count Chart</MudButton>
+	<div class="file-name">@fileOpenName</div>
+
+	<div class="tool-table-container" style="max-width:900px">
+		<table class="tool-table sortable">
+			<thead>
+				<tr>
+					<th @onclick='() => SortBy("Engine")'>Engine @SortIndicator("Engine")</th>
+					<th @onclick='() => SortBy("PieceCount")'>Pieces @SortIndicator("PieceCount")</th>
+					<th @onclick='() => SortBy("AvgNps")'>Avg NPS @SortIndicator("AvgNps")</th>
+					<th @onclick='() => SortBy("AvgEps")'>Avg EPS @SortIndicator("AvgEps")</th>
+					<th @onclick='() => SortBy("Diff")'>Diff @SortIndicator("Diff")</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach (var item in GetPagedItems())
+				{
+					<tr>
+						<td>@item.FileName</td>
+						<td class="tc">@item.PieceCount</td>
+						<td>@FormatNPS(item.AvgNps, true)</td>
+						<td>@FormatNPS(item.AvgEps, false)</td>
+						<td>@FormatNPS(item.AvgNps - item.AvgEps, true)</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+		<div class="tool-pager">
+			<span>@(totalItems) items</span>
+			<select @bind="pageSize" @bind:after="ResetPage">
+				<option value="10">10</option>
+				<option value="25">25</option>
+				<option value="50">50</option>
+				<option value="100">100</option>
+			</select>
+			<span>per page</span>
+			<button disabled="@(currentPage <= 0)" @onclick="PrevPage">Prev</button>
+			<span>Page @(currentPage + 1) / @totalPages</span>
+			<button disabled="@(currentPage >= totalPages - 1)" @onclick="NextPage">Next</button>
+		</div>
+	</div>
+
+	<h2>Export & Chart</h2>
+	<div class="tool-controls">
+		<div class="tool-input-group" style="margin-bottom:0">
+			<label>Output file path</label>
+			<input class="tool-input" style="width:400px" @bind="dummyOutputFilePath" />
+		</div>
+		<button class="tool-upload-btn" style="align-self:flex-end" @onclick="PrintPieceCountData">Write to File</button>
+		<button class="tool-upload-btn" style="align-self:flex-end" @onclick="PlotPieceCountChart">Plot Chart</button>
+	</div>
+
 	<div style="height:500px; width:1000px;" class="chart" @ref=pieceChartElement></div>
-</MudPaper>
+</div>
 
 @code {
 	// model for a single table row
@@ -65,17 +99,72 @@
 		.Distinct()
 		.OrderBy(n => n);
 
-	// flattened rows consumed by MudTable, now filtered by selectedEngine sentinel
+	// flattened rows consumed by table, filtered by selectedEngine sentinel
 	// also filter out AvgNps outliers: require AvgEps > 0 and AvgNps < MaxNpsToEpsRatio * AvgEps
-	private IEnumerable<PieceCountRow> FlattenedRows => pieceCountDataPerPgnFile
+	private List<PieceCountRow> FlattenedRows => pieceCountDataPerPgnFile
 		.Where(g => selectedEngine == AllEnginesSentinel || (g?.Item1 ?? string.Empty) == selectedEngine)
 		.SelectMany(g => (g?.Item2 ?? Array.Empty<PieceCountStat>()).Select(s => new PieceCountRow(g?.Item1 ?? string.Empty, s.PieceCount, s.AvgNps, s.AvgEps)))
 		.Where(r => r.AvgEps > 0 && r.AvgNps < MaxNpsToEpsRatio * r.AvgEps)
-		.OrderByDescending(r => r.AvgNps - r.AvgEps);
+		.OrderByDescending(r => r.AvgNps - r.AvgEps)
+		.ToList();
 
 	private string fileOpenName = "";
 	IBrowserFile browserFile;
 	string dummyOutputFilePath = "C:/dev/chess/speedOutput.txt";
+
+	// Sorting state
+	private string sortColumn = "Diff";
+	private bool sortAscending = false;
+
+	// Pagination state
+	private int currentPage = 0;
+	private int pageSize = 25;
+	private int totalItems => FlattenedRows.Count;
+	private int totalPages => Math.Max(1, (int)Math.Ceiling((double)totalItems / pageSize));
+
+	private void SortBy(string column)
+	{
+		if (sortColumn == column)
+			sortAscending = !sortAscending;
+		else
+		{
+			sortColumn = column;
+			sortAscending = true;
+		}
+		currentPage = 0;
+	}
+
+	private MarkupString SortIndicator(string column)
+	{
+		if (sortColumn != column)
+			return new MarkupString("<span class=\"sort-arrow\">&#9650;</span>");
+		var arrow = sortAscending ? "&#9650;" : "&#9660;";
+		return new MarkupString($"<span class=\"sort-arrow active\">{arrow}</span>");
+	}
+
+	private IEnumerable<PieceCountRow> GetSortedItems()
+	{
+		var items = FlattenedRows.AsEnumerable();
+		items = sortColumn switch
+		{
+			"Engine" => sortAscending ? items.OrderBy(x => x.FileName) : items.OrderByDescending(x => x.FileName),
+			"PieceCount" => sortAscending ? items.OrderBy(x => x.PieceCount) : items.OrderByDescending(x => x.PieceCount),
+			"AvgNps" => sortAscending ? items.OrderBy(x => x.AvgNps) : items.OrderByDescending(x => x.AvgNps),
+			"AvgEps" => sortAscending ? items.OrderBy(x => x.AvgEps) : items.OrderByDescending(x => x.AvgEps),
+			"Diff" => sortAscending ? items.OrderBy(x => x.AvgNps - x.AvgEps) : items.OrderByDescending(x => x.AvgNps - x.AvgEps),
+			_ => items
+		};
+		return items;
+	}
+
+	private IEnumerable<PieceCountRow> GetPagedItems()
+	{
+		return GetSortedItems().Skip(currentPage * pageSize).Take(pageSize);
+	}
+
+	private void PrevPage() { if (currentPage > 0) currentPage--; }
+	private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
+	private void ResetPage() { currentPage = 0; }
 
 	// JS module and element reference for plotting
 	private IJSObjectReference chessModule;
@@ -120,6 +209,7 @@
 		// keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
 		pieceCountDataPerPgnFile = PGNStatistics.calculatePieceCountDataPerPgnFile(games);
 		logger.LogInformation("Groups: {Count}", pieceCountDataPerPgnFile.Length);
+		currentPage = 0;
 		StateHasChanged();
 
 		// attempt to plot automatically after load (filtered by current selection)
@@ -154,9 +244,11 @@
 	}
 
 	// called when selector value changes
-	private async Task OnEngineChanged(string engine)
+	private async Task OnEngineChanged()
 	{
-		selectedEngine = string.IsNullOrEmpty(engine) ? AllEnginesSentinel : engine;
+		if (string.IsNullOrEmpty(selectedEngine))
+			selectedEngine = AllEnginesSentinel;
+		currentPage = 0;
 		StateHasChanged();
 		await PlotPieceCountChart();
 	}

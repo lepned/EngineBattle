@@ -1,4 +1,5 @@
-﻿@page "/EretPuzzleTest"
+@page "/eret-puzzles"
+@page "/EretPuzzleTest"
 @using System.Text
 @using System.Threading
 @using WebGUI.Components.Layout
@@ -13,105 +14,115 @@
 
 <InputFile id="fileInput" OnChange="@OpenConfigFile" hidden />
 
-<PageTitle> ERET Puzzles tests</PageTitle>
-<MudItem Class="d-flex flex-column mr-5" style="height: 95vh;">
-    <MudItem Class="d-flex mr-3 mb-3">
-        <MudItem lg="3">
-            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">ERET parameters</MudText>
-            <MudPaper MaxWidth="300px" Class="ml-6 mb-3 mt-6">
-                <MudTextField Label="Number of failed puzzles to show" @bind-Value="@failedNumber"></MudTextField>
-                <MudTextField Label="Number of solved puzzles to show" @bind-Value="@solvedNumber"></MudTextField>
-            </MudPaper>
-            <div class="d-flex align-items-center mb-3" style="gap: 1rem;">
-                <MudFab HtmlTag="label"
-                        Color="Color.Default"
-                        Label="Pick and run puzzle config file"
-                        Size="Size.Large"
-                        StartIcon="@Icons.Material.Filled.DownloadForOffline"
-                        for="fileInput"
-                        Disabled=@isProcessing
-                        Class="mb-3 mt-2 ml-5" />
-                <MudProgressCircular Color="Color.Primary" Size="Size.Medium"
-                                     Indeterminate="true" style=@($"visibility:{SpinnerVisibility}; align-self: center;") />
-            </div>
-            <MudText Class="ml-6 mt-2" Typo="Typo.body1">
-                @if (isProcessing && !string.IsNullOrEmpty(puzzleFileName))
-                {
-                    <MudText Typo="Typo.body1">
-                        @((MarkupString)$"Processing puzzles from <b>{puzzleFileName}</b>...")
-                    </MudText>
-                }
-                else
-                {
-                    <MudText Typo="Typo.body1">
-                        @((MarkupString)$"<b>{puzzleFileName}</b>")
-                    </MudText>
-                }
+<PageTitle>ERET Puzzle Tests</PageTitle>
 
-            </MudText>
-        </MudItem>
-        <MudItem lg="1">
-        </MudItem>
-        <MudItem lg="6" md="6">
-            <MudText Class="mt-10 ml-5 p-10 mb-4" Typo="Typo.h4">ERET tests with time/node limits  </MudText>
-            <MudPaper>
-                <MudTable FixedHeader=true Dense=true Items="@Scores" T="ERETResults" SortLabel="Sort By">
-                    <HeaderContent>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => x.PlayerName)"> Engine</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => (decimal)x.Accuracy)"> Accuracy</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => (x.FailedPuzzles.Count + x.CorrectPuzzles.Count))"> Total</MudTableSortLabel></MudTh>
-                        <MudTh Style="font-size:19px"> <MudTableSortLabel SortBy="new Func<ERETResults, object>(x => x.Desc)"> Desc</MudTableSortLabel></MudTh>
+<div class="tool-page">
+  <h1>ERET Puzzle Tests</h1>
+  <div class="tool-subtitle">Engine accuracy testing with EPD position suites</div>
 
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Engine" Style="font-size:19px">@context.PlayerName</MudTd>
-                        <MudTd DataLabel="Accuracy" Style="font-size:19px">@context.Accuracy.ToString("P1")</MudTd>
-                        <MudTd DataLabel="Total" Style="font-size:19px">@(context.FailedPuzzles.Count + context.CorrectPuzzles.Count)</MudTd>
-                        <MudTd DataLabel="Neural net" Style="font-size:16px">@context.Desc</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        </MudItem>
-
-    </MudItem>
-
-    <div class="flex-grow-1 overflow-auto" style="overflow-x:hidden">
-        <MudItem xl="11">
-            @foreach (var score in Scores)
-            {
-                string descSolved = $"Solved puzzles by {score.PlayerName}";
-                var correctList = score.CorrectPuzzles.Take(solvedNumber).ToList();
-                string descFailed = $"Failed puzzles by {score.PlayerName}";
-                var failedList = score.FailedPuzzles.Take(failedNumber).ToList();
-                if (score.CorrectPuzzles.Count > 0)
-                {
-                    <MudText Typo="Typo.h5" Class="ml-6 mb-6 mt-3"> @descSolved</MudText>
-                    <MudGrid Class="ml-0 mb-4 mt-0 mr-0">
-                        @foreach (var epd in correctList)
-                        {
-                            <MudItem xs="6" sm="4" md="3" xl="2">
-                                <EPDVisualization EPD="@epd" />
-                            </MudItem>
-                        }
-                    </MudGrid>
-                }
-                if (score.FailedPuzzles.Count > 0)
-                {
-                    <MudText Typo="Typo.h5" Class="ml-6 mb-6 mt-6"> @descFailed</MudText>
-                    <MudGrid Class="ml-0 mb-6 mt-6 mr-0">
-                        @foreach (var epd in failedList)
-                        {
-                            <MudItem xs="6" sm="4" md="3" xl="2">
-                                <EPDVisualization EPD="@epd.Item1" />
-                            </MudItem>
-                        }
-                    </MudGrid>
-                }
-            }
-        </MudItem>
+  <div class="tool-controls">
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Failed puzzles to show</label>
+      <input type="number" class="tool-input" style="width:120px" @bind="failedNumber" min="0" step="1" />
     </div>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Solved puzzles to show</label>
+      <input type="number" class="tool-input" style="width:120px" @bind="solvedNumber" min="0" step="1" />
+    </div>
+    <label for="fileInput" class="tool-upload-btn" style="@(isProcessing ? "pointer-events:none;opacity:0.5" : "")">Pick and run puzzle config file</label>
+    @if (isProcessing)
+    {
+      <div class="tool-spinner"></div>
+    }
+  </div>
 
-</MudItem>
+  <div class="file-name">
+    @if (isProcessing && !string.IsNullOrEmpty(puzzleFileName))
+    {
+      @((MarkupString)$"Processing puzzles from <b>{puzzleFileName}</b>...")
+    }
+    else
+    {
+      @((MarkupString)$"<b>{puzzleFileName}</b>")
+    }
+  </div>
+
+  @if (Scores.Count > 0)
+  {
+    <div class="tool-table-container">
+      <table class="tool-table sortable">
+        <thead>
+          <tr>
+            <th @onclick='() => SortBy("Engine")'>Engine @SortIndicator("Engine")</th>
+            <th @onclick='() => SortBy("Accuracy")'>Accuracy @SortIndicator("Accuracy")</th>
+            <th @onclick='() => SortBy("Total")'>Total @SortIndicator("Total")</th>
+            <th @onclick='() => SortBy("Desc")'>Desc @SortIndicator("Desc")</th>
+          </tr>
+        </thead>
+        <tbody>
+          @foreach (var item in GetPagedItems())
+          {
+            <tr>
+              <td>@item.PlayerName</td>
+              <td>@item.Accuracy.ToString("P1")</td>
+              <td>@(item.FailedPuzzles.Count + item.CorrectPuzzles.Count)</td>
+              <td>@item.Desc</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <div class="tool-pager">
+        <span>@Scores.Count items</span>
+        <select @bind="pageSize" @bind:after="ResetPage">
+          <option value="10">10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        <span>per page</span>
+        <button disabled="@(currentPage <= 0)" @onclick="PrevPage">Prev</button>
+        <span>Page @(currentPage + 1) / @totalPages</span>
+        <button disabled="@(currentPage >= totalPages - 1)" @onclick="NextPage">Next</button>
+      </div>
+    </div>
+  }
+
+  @foreach (var score in Scores)
+  {
+    var correctList = score.CorrectPuzzles.Take(solvedNumber).ToList();
+    var failedList = score.FailedPuzzles.Take(failedNumber).ToList();
+
+    @if (correctList.Count > 0)
+    {
+      <div class="tool-section">
+        <h2>Solved by @score.PlayerName</h2>
+        <div class="tool-puzzle-grid">
+          @foreach (var epd in correctList)
+          {
+            <div class="tool-puzzle-card">
+              <EPDVisualization EPD="@epd" />
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @if (failedList.Count > 0)
+    {
+      <div class="tool-section">
+        <h2>Failed by @score.PlayerName</h2>
+        <div class="tool-puzzle-grid">
+          @foreach (var epd in failedList)
+          {
+            <div class="tool-puzzle-card">
+              <EPDVisualization EPD="@epd.Item1" />
+            </div>
+          }
+        </div>
+      </div>
+    }
+  }
+</div>
 
 @code {
     private Chess.Board chess = new();
@@ -127,7 +138,58 @@
     private string outputFileFolder = string.Empty;
     private EretConfig data = EretConfig.empty;
     private bool isProcessing = false;
-    private string SpinnerVisibility => isProcessing ? "visible" : "hidden";
+
+    // Sorting state
+    private string sortColumn = "Accuracy";
+    private bool sortAscending = false;
+
+    // Pagination state
+    private int currentPage = 0;
+    private int pageSize = 25;
+    private int totalPages => Math.Max(1, (int)Math.Ceiling((double)Scores.Count / pageSize));
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+            sortAscending = !sortAscending;
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        currentPage = 0;
+    }
+
+    private MarkupString SortIndicator(string column)
+    {
+        if (sortColumn != column)
+            return new MarkupString("<span class=\"sort-arrow\">&#9650;</span>");
+        var arrow = sortAscending ? "&#9650;" : "&#9660;";
+        return new MarkupString($"<span class=\"sort-arrow active\">{arrow}</span>");
+    }
+
+    private IEnumerable<ERETResults> GetSortedItems()
+    {
+        var items = Scores.AsEnumerable();
+        items = sortColumn switch
+        {
+            "Engine" => sortAscending ? items.OrderBy(x => x.PlayerName) : items.OrderByDescending(x => x.PlayerName),
+            "Accuracy" => sortAscending ? items.OrderBy(x => x.Accuracy) : items.OrderByDescending(x => x.Accuracy),
+            "Total" => sortAscending ? items.OrderBy(x => x.FailedPuzzles.Count + x.CorrectPuzzles.Count) : items.OrderByDescending(x => x.FailedPuzzles.Count + x.CorrectPuzzles.Count),
+            "Desc" => sortAscending ? items.OrderBy(x => x.Desc) : items.OrderByDescending(x => x.Desc),
+            _ => items
+        };
+        return items;
+    }
+
+    private IEnumerable<ERETResults> GetPagedItems()
+    {
+        return GetSortedItems().Skip(currentPage * pageSize).Take(pageSize);
+    }
+
+    private void PrevPage() { if (currentPage > 0) currentPage--; }
+    private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
+    private void ResetPage() { currentPage = 0; }
 
     private async void Update(ERET update)
     {
@@ -210,7 +272,6 @@
         isProcessing = true;
         var pgnName = e.File.Name;
         fileName = pgnName;
-        //finalMessage = $"Running tests on {fileName}";
         logger.LogInformation("Config file opened {File}", pgnName);
         var env = AppPaths.BaseDir;
         fullPath = Path.Combine(env, "wwwroot", pgnName);

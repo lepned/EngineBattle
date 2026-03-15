@@ -1,4 +1,4 @@
-﻿@page "/testCanvas"
+@page "/testCanvas"
 @using WebGUI.Components.Layout.VisualizationLayout
 
 @inject ILogger<TestCanvas> logger
@@ -7,16 +7,22 @@
 <InputFile id="tbInput" OnChange="@OpenCeresNetTestFile" hidden />
 
 <PageTitle>Test canvas</PageTitle>
-<div class="d-flex align-center mb-4 mt-5 ml-4">
-  <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="mr-2" />
-  <MudText Typo="Typo.h4">EPD Position Analyzer</MudText>
+
+<div class="tool-page">
+  <h1>EPD Position Analyzer</h1>
+  <div class="tool-subtitle">Visualize and analyze EPD position files</div>
+
+  <div class="tool-controls">
+    <label for="epdInput" class="tool-upload-btn">Load EPD file</label>
+  </div>
+
+  @if (!string.IsNullOrEmpty(result))
+  {
+    <div class="file-name">@result</div>
+  }
 </div>
-<MudText Class="mt-3 mb-4" Typo="Typo.h6">@result</MudText>
 
-@* <MudFab Class="ml-3 mb-5 mt-3" HtmlTag="label" Color="Color.Default" Label="Load Ceres-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="tbInput" /> *@
-<MudFab Class="ml-3 mb-7 mt-3" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="epdInput" />
-
-<TBTestVisualization EPDList="EPDList" TBEPDList="TBEPDList" ></TBTestVisualization>
+<TBTestVisualization EPDList="EPDList" TBEPDList="TBEPDList" />
 
 @code {
 
@@ -35,21 +41,21 @@
     await using (FileStream fs = new(fullPath, FileMode.Create))
     {
       browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);    
+      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
     }
-    
+
     var netFile = TestsTypes.records(fullPath).OrderByDescending(e => e.QDn).Take(250);
     var epds = netFile.Select((e, id) => EPDExtractor.mapChessRecordToEPD(e, id));
     EPDList.Clear();
-    TBEPDList.Clear();    
+    TBEPDList.Clear();
     EPDList.AddRange(epds);
     logger.LogInformation(result);
-    File.Delete(fullPath);   
+    File.Delete(fullPath);
     StateHasChanged();
   }
 
   private async Task OpenTBTestFile(InputFileChangeEventArgs e)
-  {    
+  {
     var pgnName = e.File.Name;
     logger.LogInformation("File opened {File}", pgnName);
     var env = AppPaths.BaseDir;
@@ -97,11 +103,11 @@
     TBEPDList.Clear();
     StateHasChanged();
     EPDList.AddRange(epds);
-    File.Delete(fullPath);  
+    File.Delete(fullPath);
   }
 
   private async Task OpenPGNFile(InputFileChangeEventArgs e)
-  {    
+  {
     var pgnName = e.File.Name;
     logger.LogInformation("PGN file opened {File}", pgnName);
     var env = AppPaths.BaseDir;
@@ -113,8 +119,8 @@
     }
 
     PGNgames = FullPGNParser.parsePgnFile(fullPath).ToList();
-    File.Delete(fullPath);    
-    StateHasChanged();    
+    File.Delete(fullPath);
+    StateHasChanged();
   }
 
   private void StripText(string path, string savePath)
@@ -127,7 +133,7 @@
   protected override Task OnAfterRenderAsync(bool firstRender)
   {
     if(firstRender)
-    {      
+    {
       var fullPath = @"C:/Dev/Chess/Lichess/TBTraining/latestDump.txt";
       var savedTo = @"C:/Dev/Chess/Lichess/TBTraining/latestStrippedDump.txt";
 

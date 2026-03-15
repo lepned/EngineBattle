@@ -2,8 +2,7 @@
 
 This document provides an overview of the `AnalyzeConfig.json` configuration file used in the EngineBattle application. This file defines the engines, settings, and parameters to use in single or dual analysis mode.
 
-
-## Analysis Modes
+**Analysis Modes:**
 - **Single Analysis**: Uses only the first engine listed in the configuration for analysis
 - **Dual Analysis**: Uses the first two engines simultaneously, enabling comparative analysis of their outputs
 

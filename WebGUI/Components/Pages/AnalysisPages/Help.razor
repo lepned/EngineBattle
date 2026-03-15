@@ -1,65 +1,58 @@
-﻿@page "/help"
+@page "/analysis-shortcuts"
+@page "/help"
 
+<PageTitle>Analysis Shortcuts</PageTitle>
 
-<PageTitle>Settings.Help</PageTitle>
+<div class="tool-page">
+	<h1>Analysis Shortcuts</h1>
+	<div class="tool-subtitle">Keyboard shortcuts for analysis mode</div>
 
-  <MudContainer Class="my-5 mx-5" Style="width:500px" >
-    <h2 >
-      Shortcuts in analysis mode
-    </h2>
-
-    <MudSimpleTable Class="my-5">
-      <thead>
-        <tr>
-          @foreach (var h in headings)
-          {
-            <th>@h.ToUpper()</th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @foreach ((string x, string y) in rows)
-        {
-          <tr>
-            <td>@x</td>
-            <td>@y</td>
-          </tr>
-        }
-      </tbody>
-    </MudSimpleTable>
-
-  </MudContainer>
-  <MudSpacer></MudSpacer>
-
-
+	<div class="tool-table-container" style="max-width:550px">
+		<table class="tool-table">
+			<thead>
+				<tr>
+					<th>Shortcut</th>
+					<th>Description</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach ((string key, string desc) in rows)
+				{
+					<tr>
+						<td><kbd>@key</kbd></td>
+						<td>@desc</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+</div>
 
 @code {
 
-  string[] headings = { "Shortcut key", "Description" };
-  (string, string)[] rows = {
-        ("Key.Escape", "reset engine"),
-        ("Key.Home", "Start of game"),
-        ("Key.End", "End of game"),
-        ("Key.Left", "Play previous move"),
-        ("Key.Right", "Play next move"), 
-        ("Key.Ctrl + Key.ArrowRight", "Load next game"),
-        ("Key.Ctrl + Key.ArrowLeft", "Load previous game"),
-        ("Key.Ctrl + g", "Infinite search"),
-        ("Key.Ctrl + h", "Halt/stop search"),
-        ("Key.Ctrl + v", "Paste in PGN-moves"),
-        ("F1", "Analyze with 1 node"),
-        ("F2", "Analyze with 1_000 nodes"),
-        ("F3", "Analyze with 10_000 nodes"),
-        ("F4", "Analyze with 100_000 nodes"),
-        ("F5", "Analyze with 1_000_000 nodes"),
-        ("F6", "Analyze with 10_000_000 nodes"),
-        ("F7", "Analyze with 100_000_000 nodes"),
+	(string, string)[] rows = {
+		("Esc", "Reset engine state"),
+		("Home", "Start of game"),
+		("End", "End of game"),
+		("Left", "Step back"),
+		("Right", "Step forward"),
+		("Ctrl + Right", "Next game"),
+		("Ctrl + Left", "Previous game"),
+		("Ctrl + G", "Start infinite search"),
+		("Ctrl + H", "Stop search"),
+		("Ctrl + V", "Paste PGN from clipboard"),
+		("F1", "Search 1 node"),
+		("F2", "Search 1K nodes"),
+		("F3", "Search 10K nodes"),
+		("F4", "Search 100K nodes"),
+		("F5", "Search 1M nodes"),
+		("F6", "Search 10M nodes"),
+		("F7", "Search 100M nodes"),
+	};
 
-    };
-
-  protected override Task OnInitializedAsync()
-  {
-    return base.OnInitializedAsync();
-  }
+	protected override Task OnInitializedAsync()
+	{
+		return base.OnInitializedAsync();
+	}
 
 }

@@ -1,8 +1,10 @@
 # EngineBattle
 
+[![Join the Discord](https://img.shields.io/discord/1379064923744894987?label=Discord&logo=discord&style=flat)](https://discord.gg/tRMYTbk5TE)
+
 **EngineBattle** is a comprehensive tool for running tournaments, testing, analyzing, and comparing chess engines. It supports engines using the **UCI** and **Winboard/XBoard** protocols. With puzzle-based testing, detailed analysis, tournament management, and interactive visualizations, it is ideal for chess developers, researchers, and streamers.
 
-<img src="Img/Tournament.png" alt="Tournament" style="max-width:100%; height:auto;" />
+![Tournament](WebGUI/wwwroot/Img/Tournament.png)
 *Example: Tournament GUI — follow live games, standings, and results with interactive visualizations.*
 
 ---
@@ -15,7 +17,7 @@
 - **Lichess Puzzles:** Direct integration with Lichess puzzles, supporting policy head tests, value head tests, and combined evaluations.
 - **Visualization of Puzzles:** Automatically visualize puzzles that engines fail, clearly showing correct versus incorrect moves on an chessboard.
 
-### 🎯 Tournament Mode
+### 🎯 Tournament Features
 
 - **Prevent Move Deviation option:** Ensures consistent move ordering across game formats, beneficial in gauntlet and round-robin tournaments, even when transpositions occur.
 - **Fischer Random Chess (Chess960):** Supports Chess960, facilitating tests and tournaments with randomized starting positions.
@@ -27,6 +29,19 @@
 - **Move Delay Option:** Specify delays between moves, useful for clearly demonstrating forced checkmate sequences.
 - **Node-Limited Matches:** Conduct node-limited games (e.g., policy tests with single-node searches).
 - **Principal Variation (PV) Boards:** Display real-time PV boards per engine, highlighting evaluation disagreements visually with colored arrows.
+
+### Tournament Modes
+
+EngineBattle supports four tournament formats configured via `TournamentMode` in `tournament.json`:
+
+- **Round Robin (RR):** Every engine plays every other engine once (or twice in double round-robin).
+- **Gauntlet:** One or more challengers play against a pool of opponents for fast benchmarking.
+- **Cup:** Single-elimination knockout with configurable games per match and optional seeding.
+- **Swiss:** Pairings are based on score each round, scaling well for larger fields.
+- **Swiss (odd players):** If the player count is odd, one engine receives a bye each round (worth 1 point) and byes are not repeated when possible.
+
+See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [SwissMode.md](SwissMode.md) and [CupMode.md](CupMode.md) for mode-specific notes.
+
 
 ### 🔍 Analysis Mode
 
@@ -55,7 +70,7 @@
 ### 💻 Console Mode
 
 - **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
-- **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking.
+- **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (accessible via Tools > Test Canvas in the GUI menu).
 
 ### 🎥 Streaming and Community Features
 
@@ -173,11 +188,11 @@ Engines/
 3. Set the `OpeningsPath` and the `PgnOutPath` and time settings. Time controls, `MoveOverhead`, and `DelayBetweenGames` (or any other time settings) are specified in `HH:MM:SS:MMM` (MMM = milliseconds).
 4. The `UseTBAdjudication` can be turned on and off.
 
-After you have created and configured a `tournament.json` file on your computer(s), please make a backup in case you need to reinstall everything from scratch later.
+After you have created and configured a `tournament.json` file on your computer, it is highly advisable to make a backup copy. This ensures you can quickly restore your settings if you need to reinstall the application or encounter any configuration issues.
 
 ### Images
 
-The `wwwroot` folder includes a selection of images used by the program, located in the Img subfolder. To add new images (e.g., for additional engines), simply place them in the `Img` folder as .png or .jpg files.
+The `wwwroot` folder includes a selection of images used by the program, located in the Img subfolder. To add new images for engines you include in tournaments, simply place them in the `Img` folder as .png or .jpg files if the image does not already exist there. This allows you to customize the visual representation of each engine in your tournaments.
 
 ### Logs
 
@@ -228,11 +243,13 @@ In order to use the console mode you need to start the application from the Cons
 
 ` dotnet run -c release tournamentjson <fullPathToYourTournament.json> `
 
-There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel in the console mode. This setting is called `NumberOfGamesInParallelConsoleOnly` and can be set to any number you like. The default value is 2 but values up-to 4 games can be recommended for a strong GPU.
+There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel in the console mode. This setting is called `NumberOfGamesInParallelConsoleOnly` and can be set to any number you like. The default value is 2 but values up-to 4 games can be recommended for a strong GPU. If you run games in parallel 'PreventMoveDeviation' feature will be disabled, see below.
 
 ### PreventMoveDeviation Feature
 
 The **"PreventMoveDeviation"** feature is designed to enhance engine testing by enforcing a consistent move order across different game formats. Stockfish, for example, typically deviates from earlier games played in the same position—about twice per game—which can introduce inconsistencies in testing.
+
+**Important**: This feature requires **single-threaded tournament execution** because the deviation prevention logic must sequentially compare each engine's move choice against its previous play history in the same position. Running games in parallel would prevent this cross-reference mechanism from working correctly.
 
 By strictly adhering to a reference-based move order and tracking position hashes, this feature ensures that recurring board states are consistently recognized, even when transpositions occur. This controlled approach is beneficial in both gauntlet tournaments—where one or more engines play against every other participant—and in normal round-robin tournaments, where engines are prevented from deviating from moves they have previously played in the same position. As a result, testers can evaluate and compare engine performance with greater precision under these uniform conditions.
 
@@ -286,8 +303,9 @@ Analysis mode uses a `AnalyzeConfig.json` file - [Link to AnalyzeConfig.json](An
 
 The dual analysis mode is designed to compare two engines at a time, displaying their evaluations, moves, and search statistics in a clear and concise manner.
 
-<img src="Img/AnalysisMode.png" alt="Analysis" style="max-width:100%; height:auto;" />
+![Analysis](WebGUI/wwwroot/Img/AnalysisMode.png)
 *Example: Dual analysis mode — compare two engines side by side with synchronized move lists and evaluations.*
+
 
 ## Puzzle Testing Mode
 
@@ -295,23 +313,21 @@ The dual analysis mode is designed to compare two engines at a time, displaying 
 The puzzle testing mode allows users to evaluate chess engines using a variety of Lichess puzzles, providing insights into their performance on specific positions. This mode uses the `PuzzleConfig.json` file - [Link to PuzzleConfig.json](PuzzleConfig.md) - to configure the engines, puzzle sources, and test parameters.
 
 The `PuzzleConfig.json` file defines the engines to be used, the puzzle file path, and the testing parameters. In this mode, engines are tested on puzzles sampled from the specified file, with options to filter puzzles by type, rating, or specific characteristics. The configuration also supports running tests with node limits or concurrent engine instances for efficient benchmarking.
-
 This mode is ideal for developers and researchers who want to test engine capabilities on specific puzzle types, such as mate-in-N problems, endgame studies, or tactical motifs. The results can be visualized to identify areas where engines excel or struggle, providing valuable feedback for engine improvement.
+For more information about how to run Lichess puzzles, see [LichessPuzzle.md](LichessPuzzle.md).
 
-<img src="Img/PuzzleDemo.png" alt="Analysis" style="max-width:100%; height:auto;" />
+![Puzzle](WebGUI/wwwroot/Img/PuzzleDemo.png)
 *Example: Visualization of a failed puzzle — the engine's move (red) vs. the correct move (green).*
 
 ### ERET Testing Mode
 
-The ERET (Eigenmann Rapid Engine Test) testing mode is designed to evaluate chess engines using a set of carefully curated puzzles for rapid and precise performance assessment. This mode uses the `EretConfig.json` file to configure the engines, puzzle sources, and test parameters.
+The ERET (Eigenmann Rapid Engine Test) testing mode is designed to evaluate chess engines using a set of carefully curated puzzles for rapid and precise performance assessment. This mode uses the `EretConfig.json` file - [Link to EretConfig.json](EretConfig.md) - to configure the engines, puzzle sources, and test parameters.
 
 The `EretConfig.json` file specifies the engines to be tested, the puzzle file path, and the testing parameters such as time or node limits. It supports both time-based and node-limited testing, allowing users to choose the evaluation method that best suits their needs. The configuration also enables concurrent engine testing for efficient benchmarking.
 
 This mode is ideal for developers and researchers who want to quickly assess engine performance on a diverse set of positions, providing valuable insights into engine strengths, weaknesses, and overall capabilities.
+For more information about how to run ERET puzzles, see [EretPuzzles.md](EretPuzzles.md).
 
-### Console Benchmarking (speed tune)
-
-The Console Benchmarking mode runs a set of UCI option combinations against an engine configuration and a batch of positions to measure engine throughput and per-search performance. This mode uses the `benchmark-options.json` file to configure the engine definition, the option sets to try, search time and the positions to search.
 
 ## Licensing
 

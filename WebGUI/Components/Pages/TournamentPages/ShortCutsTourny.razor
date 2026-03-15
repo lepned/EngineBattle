@@ -1,56 +1,49 @@
-﻿@page "/tournyShortcuts"
+@page "/tournament-shortcuts"
+@page "/tournyShortcuts"
 
+<PageTitle>Tournament Shortcuts</PageTitle>
 
-<PageTitle>Tournament.Help</PageTitle>
+<div class="tool-page">
+	<h1>Tournament Shortcuts</h1>
+	<div class="tool-subtitle">Keyboard shortcuts for tournament mode</div>
 
-<MudContainer Class="my-5 mx-5" Style="width:500px">
-  <h2>
-    Shortcuts in tournament mode
-  </h2>
-
-  <MudSimpleTable Class="my-5">
-    <thead>
-      <tr>
-        @foreach (var h in headings)
-        {
-          <th>@h.ToUpper()</th>
-        }
-      </tr>
-    </thead>
-    <tbody>
-      @foreach ((string x, string y) in rows)
-      {
-        <tr>
-          <td>@x</td>
-          <td>@y</td>
-        </tr>
-      }
-    </tbody>
-  </MudSimpleTable>
-
-</MudContainer>
-<MudSpacer></MudSpacer>
-
-
+	<div class="tool-table-container" style="max-width:550px">
+		<table class="tool-table">
+			<thead>
+				<tr>
+					<th>Shortcut</th>
+					<th>Description</th>
+				</tr>
+			</thead>
+			<tbody>
+				@foreach ((string key, string desc) in rows)
+				{
+					<tr>
+						<td><kbd>@key</kbd></td>
+						<td>@desc</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+</div>
 
 @code {
 
-  string[] headings = { "Shortcut key", "Description" };
-  (string, string)[] rows = {
-    ("Ctrl + v", "Validate your tournament.json"),
-    ("Ctrl + r", "Run tournament"),
-    ("Ctrl + c", "Stop tournament"),
-    ("Ctrl + u", "Update tournament GUI"),
-    ("Ctrl + p", "Create crosstable"),
-    ("Ctrl + Alt + W", "Adjudicate: White wins"),
-    ("Ctrl + Alt + B", "Adjudicate: Black wins"),
-    ("Ctrl + Alt + D", "Adjudicate: Draw"),
+	(string, string)[] rows = {
+		("Ctrl + V", "Validate tournament config"),
+		("Ctrl + R", "Run tournament"),
+		("Ctrl + C", "Stop tournament"),
+		("Ctrl + U", "Refresh tournament view"),
+		("Ctrl + P", "Generate crosstable"),
+		("Ctrl + Alt + W", "Adjudicate: White wins"),
+		("Ctrl + Alt + B", "Adjudicate: Black wins"),
+		("Ctrl + Alt + D", "Adjudicate: Draw"),
+	};
 
-  };
-
-  protected override Task OnInitializedAsync()
-  {
-    return base.OnInitializedAsync();
-  }
+	protected override Task OnInitializedAsync()
+	{
+		return base.OnInitializedAsync();
+	}
 
 }
