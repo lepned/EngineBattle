@@ -1,3 +1,24 @@
+/* Prevent drawer header from being compressed on short viewports;
+   nav menu scrolls independently when viewport is short */
+.mud-drawer-content {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    height: 100%;
+}
+
+.mud-drawer-content > .mud-drawer-header {
+    flex-shrink: 0 !important;
+    position: relative;
+    z-index: 1;
+}
+
+.mud-drawer-content > .mud-navmenu {
+    flex: 1 1 0%;
+    overflow-y: auto !important;
+    min-height: 0;
+}
+
 /* Targets ONLY the main screen container which is the tournament page */
 .main-screen {
   display: flex;

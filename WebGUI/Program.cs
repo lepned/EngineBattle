@@ -1,5 +1,7 @@
 
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using MudBlazor.Services;
 using Serilog;
 using Serilog.Events;
@@ -7,6 +9,22 @@ using System.Runtime.InteropServices;
 using Toolbelt.Blazor.Extensions.DependencyInjection;
 using WebGUI.Components;
 using WebGUI.Services;
+
+static int FindAvailablePort(int startPort)
+{
+    for (int port = startPort; port <= startPort + 100; port++)
+    {
+        try
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return port;
+        }
+        catch (SocketException) { }
+    }
+    return 0;
+}
 
 static void EnsureTournamentJsonIsLoaded()
 {
@@ -115,6 +133,22 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 EnsureTournamentJsonIsLoaded();
+
+bool hasExplicitUrls = args.Any(a => a.StartsWith("--urls", StringComparison.OrdinalIgnoreCase))
+    || Environment.GetEnvironmentVariable("ASPNETCORE_URLS") != null;
+
+if (!hasExplicitUrls && !app.Environment.IsDevelopment())
+{
+    const int defaultPort = 5018;
+    int port = FindAvailablePort(defaultPort);
+    if (port > 0)
+    {
+        app.Urls.Clear();
+        app.Urls.Add($"http://localhost:{port}");
+        if (port != defaultPort)
+            Console.WriteLine($"Port {defaultPort} in use, using port {port} instead.");
+    }
+}
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {

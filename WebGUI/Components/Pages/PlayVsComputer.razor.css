@@ -229,7 +229,7 @@
 }
 
 .play-vs-computer ::deep .chessboard-root {
-    width: min(1024px, 100%);
+    width: min(620px, 100%);
     aspect-ratio: 1 / 1;
     height: auto;
     margin: 0 auto;
@@ -242,7 +242,7 @@
 }
 
 .play-vs-computer .pvc-board-card ::deep .mud-grid {
-    width: min(1024px, 100%);
+    width: min(620px, 100%);
     margin: 0 auto;
 }
 

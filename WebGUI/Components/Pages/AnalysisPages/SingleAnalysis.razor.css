@@ -16,7 +16,7 @@
 
     font-family: "Space Grotesk", "Karla", "Segoe UI", sans-serif;
     color: var(--sa-text);
-    min-height: 100vh;
+    min-height: calc(100vh - 64px);
     background: var(--sa-bg);
     padding: 12px 20px 20px 20px;
     display: flex;
