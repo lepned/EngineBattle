@@ -5,5 +5,14 @@
 <PageTitle>Tutorial puzzles</PageTitle>
 
 <MudContainer Class="my-5 mx-5" Style="width:1000px">
+	<MudPaper Class="pa-4 mb-4" Elevation="0" Style="border: 1px solid var(--mud-palette-lines-default);">
+		<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+			<MudText>Use the Puzzle Creator to build a puzzle configuration interactively.</MudText>
+			<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/tools/puzzle-creator"
+					   StartIcon="@Icons.Material.Filled.Extension" Size="Size.Small">
+				Open Creator
+			</MudButton>
+		</MudStack>
+	</MudPaper>
 	<WebGUI.Components.Layout.ExperimentalLayout.MarkDigComponent FileName="PuzzleConfig.md" />
 </MudContainer>
