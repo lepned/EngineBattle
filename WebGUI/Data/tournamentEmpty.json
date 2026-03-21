@@ -66,6 +66,11 @@
     "AllowExtraPairsOnTie": false,
     "StatePath": "wwwroot/swiss_state.json"
   },
+  "LadderOptions": {
+    "GamePairsPerMatch": 4,
+    "RandomOpenings": false,
+    "StatePath": "wwwroot/ladder_state.json"
+  },
 
   "PgnOutPath": "",
   "ReferencePGNPath": "",

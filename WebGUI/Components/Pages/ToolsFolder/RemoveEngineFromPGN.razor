@@ -1,5 +1,7 @@
+@page "/results/pgn-utilities"
 @page "/pgnUtilities"
 @inject ILogger<RemoveEngineFromPGN> logger
+@inject GlobalSettingsService SettingsService
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <InputFile id="pgnReady" OnChange="@MakePGNExportReady" hidden />
@@ -60,31 +62,34 @@
 
 @code {
 
-	private string path = "C:/Dev/Chess/PGNs/";
-	private string minimalPGNpath = "C:/Dev/Chess/PGNs/minimalPGN1.pgn";
+	private string path = "";
+	private string minimalPGNpath = "";
 	private string engineName = string.Empty;
 	IBrowserFile browserFile;
 
 	private string GetFileName(string pgn, string playerToRemove)
 	{
 		string fileName = Path.GetFileNameWithoutExtension(pgn);
-		string fileDir = Path.GetDirectoryName(path);
 		string fileExt = Path.GetExtension(pgn);
-		string outputFile = Path.Combine(fileDir, $"{fileName}_{playerToRemove}_Removed{fileExt}");
+		string outputFile = Path.Combine(path, $"{fileName}_{playerToRemove}_Removed{fileExt}");
 		return outputFile;
 	}
 
 	private string GetExportFileName(string pgn)
 	{
 		string fileName = Path.GetFileNameWithoutExtension(pgn);
-		string fileDir = Path.GetDirectoryName(path);
 		string fileExt = Path.GetExtension(pgn);
-		string outputFile = Path.Combine(fileDir, $"{fileName}_ExportReady{fileExt}");
+		string outputFile = Path.Combine(path, $"{fileName}_ExportReady{fileExt}");
 		return outputFile;
 	}
 
 	private async Task MinimalPGN(InputFileChangeEventArgs e)
 	{
+		if (string.IsNullOrEmpty(minimalPGNpath))
+		{
+			logger.LogError("Output file path is not specified");
+			return;
+		}
 		var pgnName = e.File.Name;
 		logger.LogInformation("PGN file opened {File}", pgnName);
 		var env = AppPaths.BaseDir;
@@ -104,6 +109,11 @@
 
 	private async Task MakePGNExportReady(InputFileChangeEventArgs e)
 	{
+		if (string.IsNullOrEmpty(path))
+		{
+			logger.LogError("Output folder is not specified");
+			return;
+		}
 		var pgnName = e.File.Name;
 		logger.LogInformation("PGN file opened {File} for export", pgnName);
 		var env = AppPaths.BaseDir;
@@ -124,6 +134,11 @@
 
 	private async Task OpenPGNFile(InputFileChangeEventArgs e)
 	{
+		if (string.IsNullOrEmpty(path))
+		{
+			logger.LogError("Output folder is not specified");
+			return;
+		}
 		if (engineName == string.Empty)
 		{
 			logger.LogError("Engine name is not specified");
@@ -139,7 +154,7 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 
-		var games = FullPGNParser.parsePgnFile(fullPath);
+		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
 		var fileNamePath = GetFileName(pgnName, engineName);
 		PGNWriter.removePlayerFromPGN(engineName, games, fileNamePath);
 		File.Delete(fullPath);
@@ -148,6 +163,12 @@
 
 	protected override Task OnInitializedAsync()
 	{
+		var s = SettingsService.Settings;
+		if (!string.IsNullOrEmpty(s.PgnOutputFolder))
+		{
+			path = s.PgnOutputFolder;
+			minimalPGNpath = Path.Combine(s.PgnOutputFolder, "minimalPGN1.pgn");
+		}
 		return base.OnInitializedAsync();
 	}
 

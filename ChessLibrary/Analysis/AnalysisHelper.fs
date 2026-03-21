@@ -311,7 +311,8 @@ let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player
                   let topQEval = abs topMove.Q
                   if topQEval <= qMax  && topQEval >= qMin then
                       makeShortSan [move;topMove] &playoutBoard
-                      let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite)
+                      let moveNr = playoutBoard.NextMoveNumber()
+                      let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite, moveNr)
                       policies.Add (policy)
               |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
           playoutBoard.PlayUciMove move.Move.LongSan
@@ -344,7 +345,8 @@ let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (p
                   let topQEval = abs topMove.Q
                   if topQEval <= qMax  && topQEval >= qMin then
                       makeShortSan [move;topMove] &playoutBoard
-                      let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite)
+                      let moveNr = playoutBoard.NextMoveNumber()
+                      let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite, moveNr)
                       policies.Add (policy)
               |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
           playoutBoard.PlayUciMove move.Move.LongSan

@@ -204,7 +204,8 @@ namespace WebGUI.Plotting
                 tickformat = ".1f",
                 showgrid = true,
                 tickfont = new { size = fontSizeTickFont },
-                color = whiteColor
+                color = whiteColor,
+                automargin = true
             };
 
             var layout = new
@@ -324,7 +325,8 @@ namespace WebGUI.Plotting
                 rangemode = "tozero",
                 nticks = nticks,
                 showgrid = true,
-                color = whiteColor
+                color = whiteColor,
+                automargin = true
             };
 
             var layout = new
@@ -569,7 +571,8 @@ namespace WebGUI.Plotting
                 nticks = nticks,
                 tickformat = ".1f",
                 showgrid = true,
-                color = whiteColor
+                color = whiteColor,
+                automargin = true
             };
 
             var layout = new

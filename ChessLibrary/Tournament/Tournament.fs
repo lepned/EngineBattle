@@ -62,8 +62,11 @@ module Manager =
     cupBracketPathOverride <- None
     value
 
+  let mutable lastLoadError = ""
+
   let loadTournament () =
-    try 
+    lastLoadError <- ""
+    try
         let path = DirectoryInfo(Environment.CurrentDirectory).FullName //.Parent.Parent.FullName
         let pathToTournamentJson = Path.Combine(path,"wwwroot","tournament.json")
         let tournyFromJson = JSON.readTournamentJson pathToTournamentJson
@@ -137,9 +140,12 @@ module Manager =
             ConsoleUtils.printInColor ConsoleColor.Red "Tournament json file not found!"
             failwith "Tournament json file not found!"
         tournament
-    with exn -> 
-      ConsoleUtils.printInColor ConsoleColor.Red $"Error loading tournament.json: {exn.Message} - please check your engine.json files"
-      Tournament.Empty        
+    with exn ->
+      let innerMsg = if exn.InnerException <> null then exn.InnerException.Message else exn.Message
+      let msg = innerMsg
+      ConsoleUtils.printInColor ConsoleColor.Red $"Error loading tournament.json: {msg}"
+      lastLoadError <- msg
+      Tournament.Empty
   
   let startTournament
     (cts:CancellationTokenSource)
@@ -217,9 +223,10 @@ module Manager =
         logger.LogInformation("Tournament validation failed, please make sure that all engines in the tournament supports value head tests.")
         []
   
-  type Runner (logger: ILogger, callback: Action<Update>, reloadTournament:bool, consoleOnly : bool) =    
+  type Runner (logger: ILogger, callback: Action<Update>, reloadTournament:bool, consoleOnly : bool) =
     let cts = new CancellationTokenSource()
     let userAdjudicationChannel = Channel.CreateUnbounded<UserAdjudication>()
+    let mutable tournamentLoaded = reloadTournament
     let mutable tournament = if reloadTournament then loadTournament() else Tournament.Empty
     let mutable resultsFromPGN = ResizeArray<Result>()
     let mutable pgnReader = None
@@ -363,8 +370,9 @@ module Manager =
 
     member _.Tournament() =
       //check if tournament is empty and reload if necessary
-      if tournament = Tournament.Empty then
+      if not tournamentLoaded then
         tournament <- loadTournament ()
+        tournamentLoaded <- true
       tournament
 
     member _.LayoutUpdated() =      

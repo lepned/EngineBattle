@@ -1,3 +1,4 @@
+@page "/results/move-deviation"
 @page "/deviationFinder"
 @using System.Text
 @using WebGUI.Components.Layout
@@ -138,7 +139,7 @@
 
 @code {
   // Filter fields
-  private string filterRound, filterGameNr, filterMoveNr, filterColor, filterDeviator, filterOpponent, filterMove1, filterMove2, filterRes1, filterRes2;
+  private string filterRound = "", filterGameNr = "", filterMoveNr = "", filterColor = "", filterDeviator = "", filterOpponent = "", filterMove1 = "", filterMove2 = "", filterRes1 = "", filterRes2 = "";
 
   private IEnumerable<MoveDeviation> FilteredDeviationListAll =>
       deviationListAll.Where(d =>

@@ -16,6 +16,7 @@
 @inject IDialogService DialogService
 @inject ILogger<EnginePanel> logger
 @inject OverlaySetting OverlaySetting
+@inject GlobalSettingsService SettingsService
 @implements IAsyncDisposable
 
 <InputFile id="@Id" OnChange="@LoadNNFile" hidden />
@@ -37,7 +38,7 @@
             <span class="ep-engine-name">@EngineName</span>
         </h5>
         <div class="ep-cmd-input">
-            <input type="text" @bind="text" placeholder="dump-uci" />
+            <input type="text" @bind="text" placeholder="UCI command" title="Send a raw UCI command to the engine" />
             <button class="ep-btn secondary small" @onclick="DumpEngineStats">run</button>
         </div>
         <label class="ep-switch">
@@ -615,9 +616,13 @@
         showNPlot = (bool)(e.Value ?? false);
         StateHasChanged();
         // Small delay to allow DOM to update visibility
-        await Task.Delay(50);
-        // Resize the newly visible chart
-        if (chessModule is not null)
+        await Task.Delay(100);
+        if (!showNPlot && searchInfoPlot != null)
+        {
+            // Re-render the rank chart from scratch now that the Q-plot container is visible
+            await searchInfoPlot.ReRenderRankSequence();
+        }
+        else if (chessModule is not null)
         {
             var chartRef = showNPlot ? nPlotReference : qPlotReference;
             await chessModule.InvokeVoidAsync("resizePlot", chartRef);
@@ -1023,6 +1028,7 @@
 
     private async Task DoQAnalysis()
     {
+        if (!showCharts) { logger.LogWarning("Q-rank analysis requires a neural network engine with LogLiveStats"); return; }
         try
         {
             var fen = ChessBoard.FEN();
@@ -1058,7 +1064,7 @@
                 logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
                     player, item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
             }
-            _ = searchInfoPlot?.SetRankSequence(res, neuralNet);
+            _ = searchInfoPlot?.SetRankSequence(res, neuralNet, rankType: "Q", isVisible: !showNPlot);
 
             var whiteRank1s = res.Count(t => t.PolicyRank == 1 && t.IsWhite);
             var blackRank1s = res.Count(t => t.PolicyRank == 1 && !t.IsWhite);
@@ -1103,7 +1109,8 @@
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
                     neuralNet,
                     minDistinctRanks: 2,
-                    tailStart: 10);
+                    tailStart: 10,
+                    rankType: "Q");
             }
             else
             {
@@ -1113,7 +1120,8 @@
                     blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
                     neuralNet,
                     minDistinctRanks: 2,
-                    tailStart: 7);
+                    tailStart: 7,
+                    rankType: "Q");
             }
         }
         catch (Exception ex)
@@ -1124,6 +1132,7 @@
 
     private async Task CheckAnalysis()
     {
+        if (!showCharts) { logger.LogWarning("Policy rank analysis requires a neural network engine with LogLiveStats"); return; }
         try
         {
             await Task.Delay(100);
@@ -1160,7 +1169,7 @@
                 logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
                     player, item.PolicyRank, item.PlayedMove.SANMove, item.PlayedMove.P, item.BestMove.SANMove, item.BestMove.P);
             }
-            _ = searchInfoPlot?.SetRankSequence(res, neuralNet);
+            _ = searchInfoPlot?.SetRankSequence(res, neuralNet, isVisible: !showNPlot);
 
             var whiteRank1s = res.Count(t => t.PolicyRank == 1 && t.IsWhite);
             var blackRank1s = res.Count(t => t.PolicyRank == 1 && !t.IsWhite);
@@ -1227,6 +1236,7 @@
 
     private async Task CheckAllGamesAnalysis()
     {
+        if (!showCharts) { logger.LogWarning("Policy rank analysis requires a neural network engine with LogLiveStats"); return; }
         try
         {
             StateHasChanged();
@@ -1334,6 +1344,117 @@
                     neuralNet,
                     minDistinctRanks: 2,
                     tailStart: 7);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex.Message);
+            throw;
+        }
+    }
+
+    private async Task CheckAllGamesQAnalysis()
+    {
+        if (!showCharts) { logger.LogWarning("Q-rank analysis requires a neural network engine with LogLiveStats"); return; }
+        try
+        {
+            StateHasChanged();
+            var results = new List<PolicyRankInfo>();
+            if (analyzer == null)
+            {
+                logger.LogInformation("No engine loaded");
+                await StartAnalyzer();
+            }
+
+            var playerInSearch = Player.Trim();
+
+            foreach (var game in PGNgames)
+            {
+                logger.LogInformation("Q-analyzing game {White} - {Black} result {Result} round {Round}",
+                    game.GameMetaData.White, game.GameMetaData.Black, game.GameMetaData.Result, game.GameMetaData.Round);
+                LoadAndOpenPGNGame(game);
+                var fen = ChessBoard.FEN();
+                var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
+                var player = String.Empty;
+                if (game.GameMetaData.White.Trim() == playerInSearch)
+                    player = "w";
+                else if (game.GameMetaData.Black.Trim() == playerInSearch)
+                    player = "b";
+                else
+                    player = "all";
+
+                var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                float minVal = 0f, maxVal = 1f;
+                var ok =
+                    parts.Length == 2 &&
+                    float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minVal) &&
+                    float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maxVal) &&
+                    minVal >= 0f && maxVal <= 1f && minVal < maxVal;
+
+                var (min, max) = ok ? (minVal, maxVal) : (0f, 1f);
+                var (neuralNetUsed, res) = analyzer?.TryGetMoveQAndTopForPosSequence(player, min, max);
+                results.AddRange(res);
+                neuralNet = neuralNetUsed;
+            }
+
+            analyzer?.StopDistributionEngine();
+
+            var whiteRank1s = results.Count(t => t.PolicyRank == 1 && t.IsWhite);
+            var blackRank1s = results.Count(t => t.PolicyRank == 1 && !t.IsWhite);
+            var whiteTotal = results.Count(t => t.IsWhite);
+            var blackTotal = results.Count(t => !t.IsWhite);
+            var whiteFrac = whiteTotal > 0 ? (double)whiteRank1s / whiteTotal * 100 : 0;
+            var blackFrac = blackTotal > 0 ? (double)blackRank1s / blackTotal * 100 : 0;
+            logger.LogInformation("White Rank1 moves {WhiteRank1} out of {WhiteTotal} fraction {WhiteFrac:F2}%", whiteRank1s, whiteTotal, whiteFrac);
+            logger.LogInformation("Black Rank1 moves {blackRank1s} out of {blackTotal} fraction {blackFrac:F2}%", blackRank1s, blackTotal, blackFrac);
+
+            var whiteDistribution = results.Where(t => t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var blackDistribution = results.Where(t => !t.IsWhite)
+                .GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            var distribution = results.GroupBy(t => t.PolicyRank)
+                .Select(g => new { Rank = g.Key, Count = g.Count() })
+                .OrderBy(g => g.Rank)
+                .ToList();
+
+            foreach (var item in distribution)
+            {
+                var percentage = (double)item.Count / results.Count() * 100;
+                logger.LogInformation("Rank {Rank} Count {Count} Percentage {Percentage:F2}%", item.Rank, item.Count, percentage);
+            }
+
+            var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
+            var top5frac = (double)top5 / results.Count() * 100;
+            logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, results.Count(), top5frac);
+            if (Config.CombineWhiteAndBlackMoves)
+            {
+                searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 10,
+                    rankType: "Q");
+            }
+            else
+            {
+                searchInfoPlot?.SetPolicyDistributionBucketed(
+                    distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    whiteDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    blackDistribution.Select(d => Tuple.Create(d.Rank, d.Count)),
+                    neuralNet,
+                    minDistinctRanks: 2,
+                    tailStart: 7,
+                    rankType: "Q");
             }
         }
         catch (Exception ex)
@@ -1491,6 +1612,7 @@
 
     protected override Task OnInitializedAsync()
     {
+        numberOfTimeMs = SettingsService.Settings.DefaultSearchTimeMs;
         MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
         Notifier.NotifyFen += OnNotifyFen;
 
@@ -1501,7 +1623,8 @@
             .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => { analyzer.Stop(); await InvokeAsync(StateHasChanged); }), "stop search")
             .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
             .Add(ModKey.Ctrl, Key.q, (Func<Task>)(async () => await DoQAnalysis()), "check Q-rank")
-            .Add(ModKey.Ctrl, Key.a, (() => CheckAllGamesAnalysis()), "check all games policy")
+            .Add(ModCode.Ctrl | ModCode.Alt, Code.P, (() => CheckAllGamesAnalysis()), "check all games policy")
+            .Add(ModCode.Ctrl | ModCode.Alt, Code.Q, (Func<Task>)(async () => await CheckAllGamesQAnalysis()), "check all games Q-rank")
             .Add(Key.F1, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1; await Analyze(); })), "Analyze 1 node")
             .Add(Key.F2, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000; await Analyze(); })), "Analyze 1_000 nodes")
             .Add(Key.F3, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 10_000; await Analyze(); })), "Analyze 10_000 nodes")

@@ -1,0 +1,355 @@
+@using System.IO
+@using System.Runtime.InteropServices
+@inject WebGUI.Services.GlobalSettingsService SettingsService
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@(Mode == FileBrowserMode.Folder ? Icons.Material.Filled.FolderOpen : Icons.Material.Filled.Description)"
+                     Color="Color.Primary" Size="Size.Small" />
+            <MudText Typo="Typo.h6">@(Mode == FileBrowserMode.Folder ? "Select Folder" : "Select File")</MudText>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-2" Dense="true" ShowCloseIcon="true"
+                      CloseIconClicked="() => errorMessage = string.Empty">
+                @errorMessage
+            </MudAlert>
+        }
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2" Spacing="1">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" OnClick="GoUp"
+                           Size="Size.Small" title="Go to parent directory" />
+            <MudTextField @bind-Value="editPath" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Style="flex:1" Immediate="true"
+                          OnKeyDown="OnPathKeyDown" />
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="GoToPath">Go</MudButton>
+        </MudStack>
+
+        <MudBreadcrumbs Items="@breadcrumbs" Separator=">" Class="mb-2 pa-0" Style="font-size: 0.85rem;">
+            <ItemTemplate Context="item">
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => NavigateTo(item.Href)"
+                           Class="@(item.Href == currentPath ? "fb-breadcrumb-current" : "")"
+                           Style="text-transform: none; min-width: 0; padding: 2px 6px;">
+                    @item.Text
+                </MudButton>
+            </ItemTemplate>
+        </MudBreadcrumbs>
+
+        <div style="height: 400px; overflow-y: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+            @if (isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+
+            @if (showDrives)
+            {
+                <MudList T="string" Dense="true" Class="py-0">
+                    @foreach (var drive in drives)
+                    {
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Storage"
+                                     Class="fb-list-item"
+                                     OnClick="() => NavigateTo(drive.RootDirectory.FullName)">
+                            @drive.Name @(drive.IsReady ? $"({drive.VolumeLabel} — {FormatSize(drive.TotalFreeSpace)} free)" : "(not ready)")
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+            else
+            {
+                <MudList T="string" Dense="true" Class="py-0">
+                    @{ int rowIndex = 0; }
+                    @foreach (var dir in directories)
+                    {
+                        var even = rowIndex % 2 == 0;
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Folder" IconColor="Color.Warning"
+                                     Class="@($"fb-list-item {(even ? "fb-row-even" : "")}")"
+                                     OnClick="() => OnDirectoryClick(dir)">
+                            @dir.Name
+                        </MudListItem>
+                        rowIndex++;
+                    }
+                    @if (Mode == FileBrowserMode.File)
+                    {
+                        @foreach (var file in files)
+                        {
+                            var even = rowIndex % 2 == 0;
+                            var isSelected = selectedFile == file.FullPath;
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.InsertDriveFile"
+                                         Class="@($"fb-list-item {(even ? "fb-row-even" : "")} {(isSelected ? "fb-selected" : "")}")"
+                                         OnClick="() => OnFileClick(file)"
+                                         @ondblclick="() => OnFileDoubleClick(file)">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Style="width:100%">
+                                    <MudText Style="flex:1">@file.Name</MudText>
+                                    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary); min-width: 70px; text-align: right;">
+                                        @FormatDate(file.Modified)
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary); min-width: 80px; text-align: right;">
+                                        @FormatSize(file.SizeBytes)
+                                    </MudText>
+                                </MudStack>
+                            </MudListItem>
+                            rowIndex++;
+                        }
+                    }
+                </MudList>
+            }
+        </div>
+
+        @if (!showDrives)
+        {
+            <div class="fb-status-bar">
+                @directories.Count folder@(directories.Count != 1 ? "s" : "")@(Mode == FileBrowserMode.File ? $", {files.Count} file{(files.Count != 1 ? "s" : "")}" : "")
+            </div>
+        }
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2" Spacing="1">
+            <MudText Typo="Typo.body2" Style="white-space: nowrap;">Selected:</MudText>
+            <MudChip T="string" Size="Size.Medium" Variant="Variant.Outlined"
+                     Color="@(HasValidSelection() ? Color.Primary : Color.Default)"
+                     Style="max-width: 100%; overflow: hidden;">
+                @GetSelectedDisplay()
+            </MudChip>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Submit"
+                   Disabled="@(!HasValidSelection())">
+            Select
+        </MudButton>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public string InitialPath { get; set; } = "";
+    [Parameter] public string FileFilter { get; set; } = "*.*";
+    [Parameter] public FileBrowserMode Mode { get; set; } = FileBrowserMode.File;
+
+    private string currentPath = "";
+    private string editPath = "";
+    private string selectedFile = "";
+    private string errorMessage = "";
+    private bool isLoading;
+    private bool showDrives;
+    private List<DirectoryDisplayItem> directories = new();
+    private List<FileDisplayItem> files = new();
+    private List<BreadcrumbItem> breadcrumbs = new();
+    private DriveInfo[] drives = Array.Empty<DriveInfo>();
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrEmpty(InitialPath) && Directory.Exists(InitialPath))
+            NavigateTo(InitialPath);
+        else if (!string.IsNullOrEmpty(InitialPath) && File.Exists(InitialPath))
+        {
+            NavigateTo(Path.GetDirectoryName(InitialPath)!);
+            selectedFile = InitialPath;
+        }
+        else if (!string.IsNullOrEmpty(SettingsService.Settings.LastBrowsedPath) && Directory.Exists(SettingsService.Settings.LastBrowsedPath))
+            NavigateTo(SettingsService.Settings.LastBrowsedPath);
+        else
+            ShowDriveList();
+    }
+
+    private void NavigateTo(string path)
+    {
+        errorMessage = "";
+        isLoading = true;
+        directories.Clear();
+        files.Clear();
+        showDrives = false;
+
+        if (string.IsNullOrEmpty(path))
+        {
+            ShowDriveList();
+            return;
+        }
+
+        try
+        {
+            var dirInfo = new DirectoryInfo(path);
+            if (!dirInfo.Exists)
+            {
+                errorMessage = $"Directory not found: {path}";
+                isLoading = false;
+                return;
+            }
+
+            var enumOptions = new EnumerationOptions { IgnoreInaccessible = true };
+
+            foreach (var dir in dirInfo.EnumerateDirectories("*", enumOptions).OrderBy(d => d.Name))
+            {
+                directories.Add(new DirectoryDisplayItem(dir.Name, dir.FullName));
+            }
+
+            if (Mode == FileBrowserMode.File)
+            {
+                var filters = FileFilter.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var filter in filters)
+                {
+                    foreach (var file in dirInfo.EnumerateFiles(filter, enumOptions))
+                    {
+                        if (seen.Add(file.FullName))
+                            files.Add(new FileDisplayItem(file.Name, file.FullName, file.Length, file.LastWriteTime));
+                    }
+                }
+                files.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            }
+
+            currentPath = dirInfo.FullName;
+            editPath = currentPath;
+
+            if (Mode == FileBrowserMode.Folder)
+                selectedFile = currentPath;
+
+            BuildBreadcrumbs();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            errorMessage = $"Access denied: {path}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowDriveList()
+    {
+        showDrives = true;
+        directories.Clear();
+        files.Clear();
+        currentPath = "";
+        editPath = "";
+        breadcrumbs.Clear();
+        isLoading = false;
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            try { drives = DriveInfo.GetDrives(); }
+            catch { drives = Array.Empty<DriveInfo>(); }
+        }
+        else
+        {
+            NavigateTo("/");
+        }
+    }
+
+    private void GoUp()
+    {
+        if (string.IsNullOrEmpty(currentPath))
+            return;
+
+        var parent = Directory.GetParent(currentPath);
+        if (parent != null)
+            NavigateTo(parent.FullName);
+        else
+            ShowDriveList();
+    }
+
+    private void GoToPath()
+    {
+        if (string.IsNullOrWhiteSpace(editPath)) return;
+
+        if (Directory.Exists(editPath))
+            NavigateTo(editPath);
+        else if (File.Exists(editPath) && Mode == FileBrowserMode.File)
+        {
+            NavigateTo(Path.GetDirectoryName(editPath)!);
+            selectedFile = editPath;
+        }
+        else
+            errorMessage = $"Path not found: {editPath}";
+    }
+
+    private void OnPathKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            GoToPath();
+    }
+
+    private void OnDirectoryClick(DirectoryDisplayItem dir) => NavigateTo(dir.FullPath);
+
+    private void OnFileClick(FileDisplayItem file) => selectedFile = file.FullPath;
+
+    private void OnFileDoubleClick(FileDisplayItem file)
+    {
+        selectedFile = file.FullPath;
+        Submit();
+    }
+
+    private void BuildBreadcrumbs()
+    {
+        breadcrumbs.Clear();
+        if (string.IsNullOrEmpty(currentPath)) return;
+
+        var parts = new List<(string name, string path)>();
+        var dir = new DirectoryInfo(currentPath);
+
+        while (dir != null)
+        {
+            var name = dir.Parent == null ? dir.FullName : dir.Name;
+            parts.Add((name, dir.FullName));
+            dir = dir.Parent;
+        }
+
+        parts.Reverse();
+        foreach (var (name, path) in parts)
+        {
+            breadcrumbs.Add(new BreadcrumbItem(name, path));
+        }
+    }
+
+    private string GetSelectedDisplay()
+    {
+        if (Mode == FileBrowserMode.Folder)
+            return string.IsNullOrEmpty(currentPath) ? "(none)" : currentPath;
+        return string.IsNullOrEmpty(selectedFile) ? "(none)" : selectedFile;
+    }
+
+    private bool HasValidSelection()
+    {
+        if (Mode == FileBrowserMode.Folder)
+            return !string.IsNullOrEmpty(currentPath);
+        return !string.IsNullOrEmpty(selectedFile);
+    }
+
+    private void Submit()
+    {
+        var settings = SettingsService.Settings;
+        settings.LastBrowsedPath = currentPath;
+        SettingsService.Save(settings);
+        MudDialog.Close(DialogResult.Ok(Mode == FileBrowserMode.Folder ? currentPath : selectedFile));
+    }
+    private void Cancel() => MudDialog.Cancel();
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB"
+    };
+
+    private static string FormatDate(DateTime dt)
+    {
+        var now = DateTime.Now;
+        if (dt.Year == now.Year)
+            return dt.ToString("MMM dd HH:mm");
+        return dt.ToString("yyyy-MM-dd");
+    }
+
+    public enum FileBrowserMode { File, Folder }
+    private record DirectoryDisplayItem(string Name, string FullPath);
+    private record FileDisplayItem(string Name, string FullPath, long SizeBytes, DateTime Modified);
+}

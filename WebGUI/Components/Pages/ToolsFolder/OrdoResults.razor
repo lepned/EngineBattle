@@ -1,5 +1,9 @@
+@page "/results/ordo"
 @page "/ordo"
 @inject ILogger<OrdoResults> logger
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 
@@ -16,7 +20,11 @@
 		</div>
 		<div class="tool-input-group">
 			<label>Full path to the Ordo executable</label>
-			<input class="tool-input" style="width:100%" @bind="executablePath" />
+			<div style="display:flex; gap:4px; align-items:center;">
+				<input class="tool-input" style="width:100%" @bind="executablePath" />
+				<MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+							   OnClick="@(() => BrowseFile(v => executablePath = v, executablePath, "*.exe"))" />
+			</div>
 		</div>
 	</div>
 
@@ -81,7 +89,7 @@
 	IBrowserFile browserFile;
 	private Int64 testDuration = 0;
 	private string refEngine = string.Empty;
-	private string executablePath = @"C:/Dev/Chess/Ordo/ordo-win64.exe";
+	private string executablePath = "";
 	private readonly Dictionary<string, double> epsByPlayer = new(StringComparer.OrdinalIgnoreCase);
 
 	string FormatNps(double nps) => GameAnalysis.Formatting.formatNPS(nps);
@@ -269,7 +277,28 @@
 
 	protected override Task OnInitializedAsync()
 	{
+		var s = SettingsService.Settings;
+		if (!string.IsNullOrEmpty(s.OrdoExePath))
+			executablePath = s.OrdoExePath;
 		return base.OnInitializedAsync();
 	}
 
+	private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
+	{
+		var initialDir = !string.IsNullOrEmpty(currentValue)
+			? (File.Exists(currentValue) ? Path.GetDirectoryName(currentValue) ?? ""
+			   : Directory.Exists(currentValue) ? currentValue
+			   : Path.GetDirectoryName(currentValue) ?? "")
+			: "";
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, filter },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+		var result = await dialog.Result;
+		if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+	}
 }

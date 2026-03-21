@@ -1,5 +1,9 @@
+@page "/tools/opening-book"
 @page "/createOpeningBook"
 @inject ILogger<CreateOpeningBook> logger
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <InputFile id="pgnCreateInput" OnChange="@CreateOpeningBookFromPgnAsync" hidden />
 <InputFile id="bookEvalInput" OnChange="@EvaluateAndSortOpeningBookAsync" hidden />
@@ -18,7 +22,11 @@
     <div class="tool-controls">
       <div class="tool-input-group" style="margin-bottom:0; flex:1; max-width:400px;">
         <label>Output folder path</label>
-        <input type="text" class="tool-input" style="width:100%" @bind="chess960Path" />
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="text" class="tool-input" style="width:100%" @bind="chess960Path" />
+          <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                         OnClick="@(() => BrowseFolder(v => chess960Path = v, chess960Path))" />
+        </div>
       </div>
       <div class="tool-input-group" style="margin-bottom:0">
         <label>Number of positions</label>
@@ -46,7 +54,11 @@
     <p>Creates an opening book from an EPD file.</p>
     <div class="tool-input-group" style="max-width:500px;">
       <label>Output directory path</label>
-      <input type="text" class="tool-input" style="width:100%" @bind="epdToPgnFileName" />
+      <div style="display:flex; gap:4px; align-items:center;">
+        <input type="text" class="tool-input" style="width:100%" @bind="epdToPgnFileName" />
+        <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                       OnClick="@(() => BrowseFolder(v => epdToPgnFileName = v, epdToPgnFileName))" />
+      </div>
     </div>
     <label for="epdToPgnInput" class="tool-upload-btn">Load EPD file</label>
   </div>
@@ -95,7 +107,11 @@
     <p>Generate a new opening book by shuffling the games from an existing PGN file. The output is saved as <code>Shuffled_&lt;filename&gt;</code> in the specified folder.</p>
     <div class="tool-input-group" style="max-width:500px;">
       <label>Output folder path</label>
-      <input type="text" class="tool-input" style="width:100%" @bind="shuffleOutputPath" />
+      <div style="display:flex; gap:4px; align-items:center;">
+        <input type="text" class="tool-input" style="width:100%" @bind="shuffleOutputPath" />
+        <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                       OnClick="@(() => BrowseFolder(v => shuffleOutputPath = v, shuffleOutputPath))" />
+      </div>
     </div>
     <label for="pgnShuffleInput" class="tool-upload-btn">Pick PGN file</label>
   </div>
@@ -104,10 +120,10 @@
 
 @code {
 
-	private string pgnOpeningFullName = "C:/Dev/Chess/PGNs/openingbookCreator1.pgn";
-	private string epdToPgnFileName = "C:/Dev/Chess/PGNs/";
-	private string chess960Path = "C:/Dev/Chess/Openings";
-	private string shuffleOutputPath = "C:/Dev/Chess/Openings";
+	private string pgnOpeningFullName = "";
+	private string epdToPgnFileName = "";
+	private string chess960Path = "";
+	private string shuffleOutputPath = "";
 	private int numberOfPositions = 960;
 	private string engineName = "CeresV2 T3";
 	private string minEvalScore = "60";
@@ -395,7 +411,30 @@
 
 	protected override Task OnInitializedAsync()
 	{
+		var s = SettingsService.Settings;
+		if (!string.IsNullOrEmpty(s.PgnOutputFolder))
+		{
+			pgnOpeningFullName = Path.Combine(s.PgnOutputFolder, "openingbookCreator1.pgn");
+			epdToPgnFileName = s.PgnOutputFolder;
+		}
+		if (!string.IsNullOrEmpty(s.OpeningsFolder))
+		{
+			chess960Path = s.OpeningsFolder;
+			shuffleOutputPath = s.OpeningsFolder;
+		}
 		return base.OnInitializedAsync();
 	}
 
+	private async Task BrowseFolder(Action<string> setter, string currentValue)
+	{
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, currentValue },
+			{ x => x.Mode, FileBrowserMode.Folder }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+		var result = await dialog.Result;
+		if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+	}
 }

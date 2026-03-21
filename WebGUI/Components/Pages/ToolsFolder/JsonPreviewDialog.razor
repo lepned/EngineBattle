@@ -1,0 +1,76 @@
+<MudDialog>
+    <DialogContent>
+        @if (Warnings != null && Warnings.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3" Dense="true">
+                @foreach (var warning in Warnings)
+                {
+                    <MudText Typo="Typo.body2">@warning</MudText>
+                }
+            </MudAlert>
+        }
+        @if (Errors != null && Errors.Count > 0)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">
+                @foreach (var error in Errors)
+                {
+                    <MudText Typo="Typo.body2">@error</MudText>
+                }
+            </MudAlert>
+        }
+        @if (validationPassed)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3" Dense="true">
+                <MudText Typo="Typo.body2">Validation passed.</MudText>
+            </MudAlert>
+        }
+        <MudTextField @bind-Value="JsonContent"
+                      Variant="Variant.Outlined"
+                      Lines="30"
+                      Style="font-family: monospace; min-width: 600px;" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CheckCircle"
+                   OnClick="Validate">
+            Validate
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.PlayArrow"
+                   OnClick="Activate">
+            Save &amp; Activate
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Save"
+                   OnClick="SaveToPath">
+            Save to Path
+        </MudButton>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [Parameter] public string JsonContent { get; set; } = "";
+    [Parameter] public List<string> Errors { get; set; } = new();
+    [Parameter] public List<string> Warnings { get; set; } = new();
+    [Parameter] public Func<string, (List<string> errors, List<string> warnings)> ValidateFunc { get; set; }
+
+    private bool validationPassed;
+
+    private void Validate()
+    {
+        validationPassed = false;
+        if (ValidateFunc == null)
+        {
+            Errors = new() { "No validation function configured for this dialog." };
+            return;
+        }
+
+        var (errors, warnings) = ValidateFunc(JsonContent);
+        Errors = errors;
+        Warnings = warnings;
+        validationPassed = errors.Count == 0 && warnings.Count == 0;
+    }
+
+    private void Activate() => MudDialog.Close(DialogResult.Ok(("activate", JsonContent)));
+    private void SaveToPath() => MudDialog.Close(DialogResult.Ok(("save", JsonContent)));
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -35,6 +35,11 @@ namespace WebGUI.Plotting
         //private string blackColor = "#141519";
         private string whiteColor = "rgba(245, 245, 245, 0.75)";
         private string whiteGridColor = "#484952";
+
+        // Stored rank sequence for re-rendering on toggle
+        private List<PolicyRankInfo> _lastRankSequence;
+        private string _lastRankNeuralNet;
+        private string _lastRankType;
         //add callback action field here
         private readonly Func<string, double, double, Task> _callback;
         //private string blackGridColor = "#484952";
@@ -341,10 +346,21 @@ namespace WebGUI.Plotting
     bool showRangeSlider = false,
     bool showSpikes = true,
     int yMaxCap = 10,                 // NEW: fixed cap (<=0 disables)
-    double? yMaxPercentile = null)    // NEW: percentile cap (e.g., 95.0)
+    string rankType = "Policy",
+    double? yMaxPercentile = null,    // NEW: percentile cap (e.g., 95.0)
+    bool isVisible = true)            // Skip Plotly render if Q-plot is hidden
         {
             if (sequence == null) return;
             var list = sequence.ToList();
+
+            // Store for re-rendering on toggle
+            _lastRankSequence = list;
+            _lastRankNeuralNet = neuralNet;
+            _lastRankType = rankType;
+
+            // Don't render into a hidden container — Plotly's responsive handler
+            // would corrupt it on window resize. ReRenderRankSequence handles it on toggle.
+            if (!isVisible) return;
             if (list.Count == 0) return;
 
             var xWhite = new List<int>();
@@ -367,7 +383,7 @@ namespace WebGUI.Plotting
                 var best = info.BestMove?.SANMove ?? "?";
                 var text = $"{(info.IsWhite ? "W" : "B")} {played} (top: {best})";
 
-                int moveNumber = (i / 2) + 1;
+                int moveNumber = info.MoveNumber;
                 string prefix = info.IsWhite ? $"{moveNumber}. " : $"{moveNumber}... ";
                 tickText[i] = $"{prefix}{best}";
 
@@ -428,7 +444,7 @@ namespace WebGUI.Plotting
             int fixedCap = yMaxCap > 0 ? yMaxCap : int.MaxValue;
             int usedMax = (int)Math.Min(maxRank, Math.Min(fixedCap, Math.Ceiling(capFromPct)));
             int clipped = ranks.Count(r => r > usedMax);
-            Title = $"Rank per move ({neuralNet})";
+            Title = $"{rankType} rank per move ({neuralNet})";
 
             int[] whiteSizes = emphasizeBest ? yWhite.Select(r => r == 1 ? 10 : 7).ToArray() : Enumerable.Repeat(8, yWhite.Count).ToArray();
             int[] blackSizes = emphasizeBest ? yBlack.Select(r => r == 1 ? 10 : 7).ToArray() : Enumerable.Repeat(8, yBlack.Count).ToArray();
@@ -514,24 +530,21 @@ namespace WebGUI.Plotting
                     tickvals = tickVals,
                     ticktext = tickText,
                     tickangle = tickAngle,
-                    automargin = true,
                     rangeslider = (showRangeSlider && list.Count > 24) ? new { visible = true, thickness = 0.06, bgcolor = "rgba(0,0,0,0)", bordercolor = "rgba(0,0,0,0)" } : null,
                     showspikes = showSpikes,
                     spikemode = showSpikes ? "across" : null,
                     spikecolor = showSpikes ? "#90CAF9" : null,
                     spikethickness = showSpikes ? 1 : 0,
-                    title = new { text = "Ply", font = new { size = fontSizeLegend - 2, color = titleColor } }
                 };
 
                 var yaxis = new
                 {
                     showgrid = true,
                     gridcolor = whiteGridColor,
-                    automargin = true,
                     tickfont = new { size = fontSizeTickFont },
                     color = whiteColor,
                     range = new double[] { usedMax + 0.5, 0.5 }, // use capped max so outliers don't crush the scale
-                    title = new { text = "Rank (lower is better)", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
+                    dtick = 2
                 };
 
                 var legend = new
@@ -539,17 +552,17 @@ namespace WebGUI.Plotting
                     orientation = "h",
                     x = 1.0,
                     xanchor = "right",
-                    y = 1.08,
-                    yanchor = "bottom",
+                    y = 1.15,
+                    yanchor = "top",
                     bgcolor = "rgba(0,0,0,0)",
                     borderwidth = 0,
-                    font = new { size = fontSizeLegend, color = titleColor }
+                    font = new { size = fontSizeLegend - 2, color = titleColor }
                 };
 
                 var layout = new
                 {
                     legend = legend,
-                    title = new { text = Title, font = new { size = fontSizeTitle, color = titleColor } },
+                    title = new { text = Title, font = new { size = fontSizeTitle - 2, color = titleColor } },
                     paper_bgcolor = "rgba(0,0,0,0)",
                     plot_bgcolor = "rgba(0,0,0,0)",
                     showlegend = true,
@@ -559,7 +572,7 @@ namespace WebGUI.Plotting
                     uirevision = "rank-seq", // preserve zoom/pan on subsequent updates
                     xaxis = xaxis,
                     yaxis = yaxis,
-                    margin = new { l = 60, r = 8, b = 70, t = 105, pad = 2 },
+                    margin = new { l = 20, r = 8, b = 60, t = 40, pad = 2 },
                     shapes = shapes,
                     annotations = annotations
                 };
@@ -594,17 +607,23 @@ namespace WebGUI.Plotting
 
                 if (chessModule is not null && QchartElement.Context is not null)
                     await chessModule.InvokeVoidAsync("setQdataPlot", QchartElement, layout, traces);
-
-                await Task.CompletedTask;
             }
         }
 
-        
+        /// Re-renders the last rank sequence chart. Call after the Q-plot container becomes visible.
+        public async Task ReRenderRankSequence()
+        {
+            if (_lastRankSequence != null && _lastRankSequence.Count > 0)
+                await SetRankSequence(_lastRankSequence, _lastRankNeuralNet, rankType: _lastRankType ?? "Policy");
+        }
+
+
         public async Task SetPolicyDistributionCombinedBucketed(
     IEnumerable<Tuple<int, int>> distribution,
     string neuralNet,
     int minDistinctRanks = 4,
-    int tailStart = 11)
+    int tailStart = 11,
+    string rankType = "Policy")
         {
 
             var maxNumberOfRanks = distribution.Max(e => e.Item1);
@@ -663,10 +682,10 @@ namespace WebGUI.Plotting
                 color = whiteColor,
                 rangemode = "tozero",
                 range = new[] { 0.0, yUpperFinal },
-                title = new { text = "Policy percentage", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
+                title = new { text = $"{rankType} percentage", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
             };
 
-            Title = $"Policy distribution {neuralNet}";
+            Title = $"{rankType} distribution {neuralNet}";
 
             var layout = new
             {
@@ -717,7 +736,8 @@ namespace WebGUI.Plotting
             IEnumerable<Tuple<int, int>> bDistribution,
             string neuralNet,
             int minDistinctRanks = 6,
-            int tailStart = 11)
+            int tailStart = 11,
+            string rankType = "Policy")
         {
             if (tailStart <= 1) tailStart = 11;
             if (minDistinctRanks < 1) minDistinctRanks = 1;
@@ -788,10 +808,10 @@ namespace WebGUI.Plotting
                 color = whiteColor,
                 rangemode = "tozero",
                 range = new[] { 0.0, yUpperFinal },
-                title = new { text = "Policy percentage", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
+                title = new { text = $"{rankType} percentage", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
             };
 
-            Title = $"Policy distribution {neuralNet}";
+            Title = $"{rankType} distribution {neuralNet}";
 
             var layout = new
             {
@@ -865,7 +885,7 @@ namespace WebGUI.Plotting
 
         public async Task SetPolicyDistributionCombined(
     IEnumerable<Tuple<int, int>> distribution,
-    string neuralNet, int nRanks)
+    string neuralNet, int nRanks, string rankType = "Policy")
         {
             // Build combined distribution dictionary
             PolicyDistribution.Clear();
@@ -876,7 +896,7 @@ namespace WebGUI.Plotting
                     PolicyDistribution[rank] = (double)count / sum;
             }
 
-            Title = $"Policy distribution {neuralNet}";
+            Title = $"{rankType} distribution {neuralNet}";
 
             // Natural order: 1..nRanks (missing ranks become 0)
             var ranksToShow = Enumerable.Range(1, Math.Max(1, nRanks)).ToArray();
@@ -924,7 +944,7 @@ namespace WebGUI.Plotting
                 color = whiteColor,
                 rangemode = "tozero",
                 range = new[] { 0.0, yUpperFinal },
-                title = new { text = "Policy percentage", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
+                title = new { text = $"{rankType} percentage", font = new { size = fontSizeLegend - 2, color = titleColor }, standoff = 18 }
             };
 
             var layout = new

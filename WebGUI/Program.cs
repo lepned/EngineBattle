@@ -114,6 +114,7 @@ builder.Services.AddSingleton<OpeningExplorerService>();
 // Register the shutdown token provider so UI/services can link the tournament
 builder.Services.AddSingleton<ShutdownTokenProvider>();
 builder.Services.AddSingleton<TournamentService>();
+builder.Services.AddSingleton<GlobalSettingsService>();
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -152,7 +153,9 @@ if (!hasExplicitUrls && !app.Environment.IsDevelopment())
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {
-    var address = (app.Urls.FirstOrDefault() ?? "http://localhost:5000").TrimEnd('/') + "/analysis/single";
+    var startupPage = app.Services.GetRequiredService<GlobalSettingsService>().Settings.StartupPage;
+    var page = string.IsNullOrEmpty(startupPage) ? "/" : startupPage;
+    var address = (app.Urls.FirstOrDefault() ?? "http://localhost:5000").TrimEnd('/') + page;
     try
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

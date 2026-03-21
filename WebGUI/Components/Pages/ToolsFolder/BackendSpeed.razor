@@ -1,8 +1,10 @@
+@page "/results/backend-metrics"
 @page "/backendSpeed"
 @using System.Linq
 @inject ILogger<BackendSpeed> logger
 @inject IJSRuntime JSRuntime
 @inject JavaScriptInteropService JsInteropService
+@inject GlobalSettingsService SettingsService
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 
@@ -110,7 +112,7 @@
 
 	private string fileOpenName = "";
 	IBrowserFile browserFile;
-	string dummyOutputFilePath = "C:/dev/chess/speedOutput.txt";
+	string dummyOutputFilePath = "";
 
 	// Sorting state
 	private string sortColumn = "Diff";
@@ -347,6 +349,9 @@
 
 	protected override Task OnInitializedAsync()
 	{
+		var s = SettingsService.Settings;
+		if (!string.IsNullOrEmpty(s.PgnOutputFolder))
+			dummyOutputFilePath = Path.Combine(s.PgnOutputFolder, "speedOutput.txt");
 		return base.OnInitializedAsync();
 	}
 

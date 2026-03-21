@@ -820,7 +820,7 @@ export function resizePlot(chart) {
 }
 
 export function setQdataPlot(chart, layout, arr) {
-  var data = arr
+  var data = arr;
   Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
 }
 

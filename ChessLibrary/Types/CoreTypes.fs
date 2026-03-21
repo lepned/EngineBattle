@@ -129,7 +129,6 @@ module TypesDef =
           NegativeContemptAllowed: bool
           Protocol: string
           Path: string
-          OptionsPath: string
           mutable NetworkPath: string
           Args: string
           Options: System.Collections.Generic.Dictionary<string, obj>
@@ -149,7 +148,7 @@ module TypesDef =
                 Alias = ""
                 TimeControlID = 0
                 Version = "Version"
-                Rating = 3000
+                Rating = 3600
                 Dev = ""
                 LogoPath = ""
                 IsChallenger = false
@@ -157,7 +156,6 @@ module TypesDef =
                 NegativeContemptAllowed = false
                 Protocol = "UCI"
                 Path = ""
-                OptionsPath = ""
                 NetworkPath = ""
                 Args = String.Empty
                 Options = new System.Collections.Generic.Dictionary<string, obj>()
@@ -171,15 +169,14 @@ module TypesDef =
                 Alias = "Engine xx"
                 TimeControlID = 1
                 Version = "Version"
-                Rating = 3000
+                Rating = 3600
                 Dev = "from xxx"
-                LogoPath = "img/lc0.png"
+                LogoPath = "Img/lc0.png"
                 IsChallenger = false
                 ContemptEnabled = false
                 NegativeContemptAllowed = false
                 Protocol = "UCI"
                 Path = path
-                OptionsPath = ""
                 NetworkPath = ""
                 Args = if isLc0 then "--show-hidden" else String.Empty
                 Options = new System.Collections.Generic.Dictionary<string, obj>()
@@ -457,15 +454,17 @@ module TypesDef =
             BestMove: NNValues
             PlayedMove: NNValues
             IsWhite: bool
+            MoveNumber: int
         }
         with
-            static member Create(qRank: int, policyRank: int, bestMove: NNValues, playedMove: NNValues, isWhite: bool) =
+            static member Create(qRank: int, policyRank: int, bestMove: NNValues, playedMove: NNValues, isWhite: bool, moveNumber: int) =
                 {
                     QRank = qRank
                     PolicyRank = policyRank
                     BestMove = bestMove
                     PlayedMove = playedMove
                     IsWhite = isWhite
+                    MoveNumber = moveNumber
                 }
 
   // -----------------------------------------------------------------------------

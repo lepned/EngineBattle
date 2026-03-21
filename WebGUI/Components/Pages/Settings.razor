@@ -1,0 +1,327 @@
+@page "/settings"
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using WebGUI.Services
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+
+<PageTitle>Settings</PageTitle>
+
+<div class="settings-container">
+    <h2>Global Settings</h2>
+    <div class="settings-description">Configure common paths and defaults used across EngineBattle.</div>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-@statusType">
+            <span>@statusMessage</span>
+            <button class="dismiss-btn" @onclick="() => statusMessage = string.Empty">&times;</button>
+        </div>
+    }
+
+    <div class="settings-grid">
+
+    @* Row 1: App Behavior | File Paths *@
+    <div class="settings-section">
+        <h4>App Behavior</h4>
+        <div class="section-hint">Controls how the application launches.</div>
+        <div class="field-group">
+            <label>Startup Page</label>
+            <select @bind="startupPage">
+                <option value="">Home</option>
+                <optgroup label="Most used">
+                    <option value="/tournament">Run Tournament</option>
+                    <option value="/analysis/single">Single Engine Analysis</option>
+                    <option value="/analysis/dual">Dual Engine Analysis</option>
+                    <option value="/play/computer">Play vs Computer</option>
+                    <option value="/tools/engine-creator">Engine Creator</option>
+                    <option value="/tools/tournament-creator">Tournament Creator</option>
+                </optgroup>
+                <optgroup label="Puzzles">
+                    <option value="/puzzles/tutorial">Puzzle Tutorial</option>
+                    <option value="/puzzles/download">Download Puzzle Data</option>
+                    <option value="/puzzles/lichess">Lichess Puzzles</option>
+                    <option value="/puzzles/eret">ERET Test</option>
+                </optgroup>
+                <optgroup label="Tools">
+                    <option value="/tools/epd-visualizer">EPD Visualizer</option>
+                    <option value="/tools/opening-book">Opening Book</option>
+                    <option value="/tools/analysis-creator">Analysis Creator</option>
+                </optgroup>
+                <optgroup label="Results & Stats">
+                    <option value="/results/ordo">Ordo Table</option>
+                    <option value="/results/book-exit-speed">Book Exit Speed</option>
+                    <option value="/results/engine-speed">Engine Speed</option>
+                    <option value="/results/backend-metrics">Backend Metrics</option>
+                    <option value="/results/search-metrics">Search Metrics</option>
+                    <option value="/results/move-deviation">Move Deviation</option>
+                    <option value="/results/pgn-utilities">PGN Utilities</option>
+                </optgroup>
+                <optgroup label="Setup & Settings">
+                    <option value="/setup/tournament">Tournament Setup</option>
+                    <option value="/setup/engines">Engine Setup</option>
+                    <option value="/setup/analysis">Analysis Setup</option>
+                    <option value="/tournament/shortcuts">Tournament Shortcuts</option>
+                    <option value="/analysis/shortcuts">Analysis Shortcuts</option>
+                </optgroup>
+            </select>
+            <small>Page to open when the app starts</small>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <h4>File Paths</h4>
+        <div class="section-hint">Full path including filename.</div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Analysis Games</label>
+                <input type="text" @bind="analysisGamesPath" />
+                <small>File where analysis games are saved (.pgn)</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => analysisGamesPath = v, analysisGamesPath, "*.pgn"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Ordo Executable</label>
+                <input type="text" @bind="ordoExePath" />
+                <small>Full path to the Ordo rating tool</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => ordoExePath = v, ordoExePath, "*.exe"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+    </div>
+
+    @* Row 2: Folders (full width, internal 2-col) *@
+    <div class="settings-section span-full">
+        <h4>Folders</h4>
+        <div class="section-hint">Directory paths only — do not include filenames.</div>
+
+        <div class="folders-grid">
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Engine Definitions</label>
+                    <input type="text" @bind="engineDefsFolder" />
+                    <small>Engine .json config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => engineDefsFolder = v, engineDefsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Openings</label>
+                    <input type="text" @bind="openingsFolder" />
+                    <small>Opening books (.pgn/.epd)</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => openingsFolder = v, openingsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>PGN Output</label>
+                    <input type="text" @bind="pgnOutputFolder" />
+                    <small>Folder for saving PGN files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => pgnOutputFolder = v, pgnOutputFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Tournament Configs</label>
+                    <input type="text" @bind="tournamentConfigFolder" />
+                    <small>Tournament .json config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => tournamentConfigFolder = v, tournamentConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Tablebase</label>
+                    <input type="text" @bind="tablebaseFolder" />
+                    <small>Syzygy tablebase folder</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => tablebaseFolder = v, tablebaseFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Neural Networks</label>
+                    <input type="text" @bind="neuralNetFolder" />
+                    <small>Neural network weights</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => neuralNetFolder = v, neuralNetFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+        </div>
+    </div>
+
+    @* Row 3: Analysis Defaults | Tournament Defaults *@
+    <div class="settings-section">
+        <h4>Analysis Defaults</h4>
+        <div class="section-hint">Default values for engine analysis sessions.</div>
+        <div class="number-row">
+            <div class="field-group">
+                <label>Search Time (ms)</label>
+                <input type="number" @bind="defaultSearchTimeMs" min="100" max="600000" />
+            </div>
+            <div class="field-group">
+                <label>Search Nodes</label>
+                <input type="number" @bind="defaultSearchNodes" min="1" max="1000000000" />
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <h4>Tournament Defaults</h4>
+        <div class="section-hint">Default values for tournament configuration.</div>
+        <div class="number-row">
+            <div class="field-group">
+                <label>Delay Between Games (sec)</label>
+                <input type="number" @bind="delayBetweenGamesSec" min="0" max="300" />
+            </div>
+            <div class="field-group">
+                <label>Move Overhead (ms)</label>
+                <input type="number" @bind="moveOverheadMs" min="0" max="5000" />
+            </div>
+        </div>
+    </div>
+
+    </div> @* end settings-grid *@
+
+    <div class="button-row">
+        <button class="btn btn-primary" @onclick="SaveSettings">Save</button>
+        <button class="btn btn-outline" @onclick="ResetToDefaults">Reset to Defaults</button>
+    </div>
+</div>
+
+@code {
+    private string engineDefsFolder = "";
+    private string openingsFolder = "";
+    private string pgnOutputFolder = "";
+    private string tournamentConfigFolder = "";
+    private string tablebaseFolder = "";
+    private string neuralNetFolder = "";
+    private string analysisGamesPath = "";
+    private string ordoExePath = "";
+    private double defaultSearchTimeMs = 3000;
+    private int defaultSearchNodes = 100000;
+    private int delayBetweenGamesSec = 20;
+    private int moveOverheadMs = 100;
+    private string startupPage = "";
+
+    private string statusMessage = "";
+    private string statusType = "info";
+
+    protected override void OnInitialized()
+    {
+        LoadFromService();
+    }
+
+    private void LoadFromService()
+    {
+        var s = SettingsService.Settings;
+        engineDefsFolder = s.EngineDefsFolder;
+        openingsFolder = s.OpeningsFolder;
+        pgnOutputFolder = s.PgnOutputFolder;
+        tournamentConfigFolder = s.TournamentConfigFolder;
+        tablebaseFolder = s.TablebaseFolder;
+        neuralNetFolder = s.NeuralNetFolder;
+        analysisGamesPath = s.AnalysisGamesPath;
+        ordoExePath = s.OrdoExePath;
+        defaultSearchTimeMs = s.DefaultSearchTimeMs;
+        defaultSearchNodes = s.DefaultSearchNodes;
+        delayBetweenGamesSec = s.DelayBetweenGamesSec;
+        moveOverheadMs = s.MoveOverheadMs;
+        startupPage = s.StartupPage;
+    }
+
+    private void SaveSettings()
+    {
+        try
+        {
+            var settings = new GlobalSettings
+            {
+                EngineDefsFolder = engineDefsFolder ?? "",
+                OpeningsFolder = openingsFolder ?? "",
+                PgnOutputFolder = pgnOutputFolder ?? "",
+                TournamentConfigFolder = tournamentConfigFolder ?? "",
+                TablebaseFolder = tablebaseFolder ?? "",
+                NeuralNetFolder = neuralNetFolder ?? "",
+                AnalysisGamesPath = analysisGamesPath ?? "",
+                OrdoExePath = ordoExePath ?? "",
+                LastBrowsedPath = SettingsService.Settings.LastBrowsedPath,
+                DefaultSearchTimeMs = defaultSearchTimeMs,
+                DefaultSearchNodes = defaultSearchNodes,
+                DelayBetweenGamesSec = delayBetweenGamesSec,
+                MoveOverheadMs = moveOverheadMs,
+                StartupPage = startupPage ?? "",
+            };
+            SettingsService.Save(settings);
+            statusMessage = "Settings saved.";
+            statusType = "success";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error saving settings: {ex.Message}";
+            statusType = "error";
+        }
+    }
+
+    private void ResetToDefaults()
+    {
+        var defaults = new GlobalSettings();
+        engineDefsFolder = defaults.EngineDefsFolder;
+        openingsFolder = defaults.OpeningsFolder;
+        pgnOutputFolder = defaults.PgnOutputFolder;
+        tournamentConfigFolder = defaults.TournamentConfigFolder;
+        tablebaseFolder = defaults.TablebaseFolder;
+        neuralNetFolder = defaults.NeuralNetFolder;
+        analysisGamesPath = defaults.AnalysisGamesPath;
+        ordoExePath = defaults.OrdoExePath;
+        defaultSearchTimeMs = defaults.DefaultSearchTimeMs;
+        defaultSearchNodes = defaults.DefaultSearchNodes;
+        delayBetweenGamesSec = defaults.DelayBetweenGamesSec;
+        moveOverheadMs = defaults.MoveOverheadMs;
+        startupPage = defaults.StartupPage;
+        statusMessage = "Reset to defaults — click Save to persist.";
+        statusType = "info";
+    }
+
+    private async Task BrowseFolder(Action<string> setter, string currentValue)
+    {
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, currentValue },
+            { x => x.Mode, FileBrowserMode.Folder }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            setter((string)result.Data!);
+            StateHasChanged();
+        }
+    }
+
+    private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
+    {
+        var initialDir = !string.IsNullOrEmpty(currentValue)
+            ? (File.Exists(currentValue) ? Path.GetDirectoryName(currentValue) ?? ""
+               : Directory.Exists(currentValue) ? currentValue
+               : Path.GetDirectoryName(currentValue) ?? "")
+            : "";
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, filter },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            setter((string)result.Data!);
+            StateHasChanged();
+        }
+    }
+}

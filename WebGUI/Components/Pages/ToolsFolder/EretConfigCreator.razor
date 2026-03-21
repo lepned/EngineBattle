@@ -1,0 +1,677 @@
+@page "/tools/eret-creator"
+@inject ILogger<EretConfigCreator> logger
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using WebGUI.Services
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using static ChessLibrary.PuzzleTypes
+@using Microsoft.FSharp.Collections
+
+<PageTitle>ERET Creator</PageTitle>
+
+<div class="settings-container bottom-space">
+    <h2>ERET Creator</h2>
+    <p class="settings-description">Create configuration files for ERET (Engine Rating Estimation Test) runs.</p>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert @statusClass">
+            <span>@statusMessage</span>
+            <button class="dismiss-btn" @onclick="() => statusMessage = string.Empty">&times;</button>
+        </div>
+    }
+
+    <div class="button-row" style="margin-bottom: 1rem; margin-top: 0;">
+        <label class="upload-label">
+            Load existing config
+            <InputFile OnChange="LoadExistingConfig" accept=".json" style="display:none" />
+        </label>
+    </div>
+
+    <div class="main-grid">
+    <!-- Test Source — essential fields visible, advanced collapsed -->
+    <div class="settings-section">
+        <h4>Test Source</h4>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>EPD File</label>
+                <input type="text" @bind="puzzleFile" />
+                <small>Path to the ERET EPD file</small>
+            </div>
+            <button class="browse-btn" @onclick="() => BrowseFile(v => puzzleFile = v, puzzleFile, epdFilter)" title="Browse"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="two-col">
+            <div class="field-group">
+                <label>Sample Size</label>
+                <input type="number" @bind="sampleSize" />
+                <small>Number of positions to test (0 = all)</small>
+            </div>
+            <div class="field-group" style="display: flex; flex-direction: column; justify-content: center;">
+                <div class="toggle-row" style="margin-bottom: 0;">
+                    <label class="toggle">
+                        <input type="checkbox" @bind="runWithNodeLimit" />
+                        <span class="slider"></span>
+                    </label>
+                    <span class="toggle-label">Use node limit</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="two-col">
+            <div class="field-group">
+                <label>Time (seconds)</label>
+                <input type="number" @bind="timeInSeconds" disabled="@runWithNodeLimit" />
+                <small>Per-position time limit</small>
+            </div>
+            <div class="field-group">
+                <label>Nodes</label>
+                <input type="number" @bind="nodes" disabled="@(!runWithNodeLimit)" />
+                <small>Per-position node limit</small>
+            </div>
+        </div>
+
+        <details class="advanced-details" open>
+            <summary>Advanced settings</summary>
+            <div class="advanced-body">
+                <div class="field-row">
+                    <div class="field-group">
+                        <label>Failed Puzzles Output Folder</label>
+                        <input type="text" @bind="failedFolder" />
+                    </div>
+                    <button class="browse-btn" @onclick="() => BrowseFolder(v => failedFolder = v, failedFolder)" title="Browse"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+                </div>
+            </div>
+        </details>
+
+        <!-- Actions inside left column -->
+        <div class="button-row" style="margin-top: 1rem;">
+            <button class="btn btn-primary" @onclick="GenerateAndPreview">Preview</button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(jsonPreview))
+        {
+            <div style="margin-top: 1rem;">
+                <h4>JSON Preview</h4>
+                <textarea class="json-preview" @bind="jsonPreview" rows="20"></textarea>
+                <div class="button-row">
+                    <button class="btn btn-outline" @onclick="SaveAsDefault">Save as Default</button>
+                    <button class="btn btn-primary" @onclick="SaveToPath">Save to Path</button>
+                </div>
+                <div class="field-row" style="margin-top: 0.5rem;">
+                    <div class="field-group">
+                        <label>Save path (folder)</label>
+                        <input type="text" @bind="savePath" />
+                    </div>
+                    <button class="browse-btn" @onclick="() => BrowseFolder(v => savePath = v, savePath)" title="Browse"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Engines — folder, network folder, table, and config cards -->
+    <div class="settings-section">
+        <h4>Engines</h4>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Engine Definitions Folder</label>
+                <input type="text" @bind="engineFolder" />
+            </div>
+            <button class="browse-btn" @onclick="() => BrowseFolder(v => { engineFolder = v; ScanFolder(); }, engineFolder)" title="Browse"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+        <div class="field-row">
+            <div class="field-group">
+                <label>Neural Network Folder</label>
+                <input type="text" @bind="networkFolder" />
+            </div>
+            <button class="browse-btn" @onclick="() => BrowseFolder(v => networkFolder = v, networkFolder)" title="Browse"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="button-row" style="margin-top: 0; margin-bottom: 0.5rem;">
+            <button class="btn btn-outline btn-sm" @onclick="ScanFolder">Scan Engines</button>
+            <div class="toggle-row" style="margin-bottom: 0; margin-left: 0.5rem;">
+                <label class="toggle">
+                    <input type="checkbox" @bind="scanNetsRecursive" />
+                    <span class="slider"></span>
+                </label>
+                <span class="toggle-label">Scan net subfolders</span>
+            </div>
+        </div>
+
+        @if (availableEngines.Count > 0)
+        {
+            <input type="text" class="engine-filter" placeholder="Filter engines..." @bind="engineFilter" @bind:event="oninput" />
+            <div class="engine-table-wrap">
+                <table class="engine-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px"></th>
+                            <th>Engine</th>
+                            <th>File</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var eng in FilteredEngines)
+                        {
+                            <tr class="@(eng.IsSelected ? "selected" : "")">
+                                <td><input type="checkbox" @bind="eng.IsSelected" /></td>
+                                <td>@eng.Name</td>
+                                <td>@eng.FileName</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <span class="engine-count">@availableEngines.Count(e => e.IsSelected) of @availableEngines.Count selected</span>
+
+            @if (SelectedEngines.Count > 0)
+            {
+                <div class="selected-engines-config">
+                    <p class="sub-heading">Configure selected engines</p>
+                    @foreach (var eng in SelectedEngines)
+                    {
+                        <div class="engine-config-card">
+                            <div class="engine-config-header">
+                                <span class="engine-config-name">@eng.Name</span>
+                                <div class="toggle-row" style="margin-bottom:0;">
+                                    <label class="toggle">
+                                        <input type="checkbox" checked="@(eng.EngineType == "EngineWithNets")"
+                                               @onchange="(e) => ToggleEngineType(eng, (bool)e.Value)" />
+                                        <span class="slider"></span>
+                                    </label>
+                                    <span class="toggle-label">With Nets</span>
+                                </div>
+                            </div>
+                            @if (eng.EngineType == "EngineWithNets")
+                            {
+                                <div class="nets-panel">
+                                    <textarea rows="3" @bind="eng.NetsText" style="width:100%; font-size:0.8rem;"
+                                              placeholder="C:/path/to/network1.onnx&#10;C:/path/to/network2.onnx"></textarea>
+                                    <div style="margin-top: 0.3rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                        <button class="btn btn-outline btn-sm" @onclick="() => OpenNetScanner(eng)">Scan &amp; Select Networks</button>
+                                        <input type="text" @bind="eng.NetPrefix" placeholder="Prefix (e.g. ONNX_TRT)" style="width: 160px; font-size: 0.8rem;" />
+                                    </div>
+                                    @if (netScanEngine == eng && scannedNetworks.Count > 0)
+                                    {
+                                        <div class="net-scan-panel">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                                                <span style="font-size: 0.78rem; font-weight: 500; color: var(--mud-palette-text-secondary);">
+                                                    @scannedNetworks.Count networks found
+                                                </span>
+                                                <button class="btn btn-outline btn-sm" @onclick="CloseNetScanner">Close</button>
+                                            </div>
+                                            <input type="text" class="engine-filter" placeholder="Filter networks..." @bind="netFilter" @bind:event="oninput" />
+                                            <div class="net-scan-list">
+                                                @foreach (var net in FilteredNetworks)
+                                                {
+                                                    var isInList = IsNetInList(eng, net);
+                                                    <div class="net-scan-row @(isInList ? "selected" : "")" @onclick="() => ToggleNet(eng, net)">
+                                                        <input type="checkbox" checked="@isInList" @onclick:stopPropagation="true" @onchange="() => ToggleNet(eng, net)" />
+                                                        <span style="flex:1; overflow: hidden; text-overflow: ellipsis;" title="@net.FullPath">@net.Name</span>
+                                                        <span style="font-size:0.75rem; color: var(--mud-palette-text-secondary); min-width:70px; text-align:right;">@FormatSize(net.SizeBytes)</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+    </div>
+
+</div>
+
+@code {
+    private const string epdFilter = "*.epd";
+    private string puzzleFile = "";
+    private int sampleSize = 10;
+    private int timeInSeconds = 5;
+    private int nodes = 10000;
+    private bool runWithNodeLimit;
+    private string engineFolder = "";
+    private string engineFilter = "";
+    private string failedFolder = "";
+    private string networkFolder = "";
+    private bool scanNetsRecursive;
+    private string netFilter = "";
+    private EngineEntry netScanEngine;
+    private List<NetworkEntry> scannedNetworks = new();
+    private string jsonPreview = "";
+    private string savePath = "";
+    private string statusMessage = "";
+    private string statusClass = "alert-info";
+    private List<EngineEntry> availableEngines = new();
+
+    private IEnumerable<EngineEntry> FilteredEngines => string.IsNullOrWhiteSpace(engineFilter)
+        ? availableEngines
+        : availableEngines.Where(e => e.Name.Contains(engineFilter, StringComparison.OrdinalIgnoreCase)
+            || e.FileName.Contains(engineFilter, StringComparison.OrdinalIgnoreCase));
+
+    private List<EngineEntry> SelectedEngines => availableEngines.Where(e => e.IsSelected).ToList();
+
+    private IEnumerable<NetworkEntry> FilteredNetworks => string.IsNullOrWhiteSpace(netFilter)
+        ? scannedNetworks
+        : scannedNetworks.Where(n => n.Name.Contains(netFilter, StringComparison.OrdinalIgnoreCase));
+
+    private static readonly string[] NetExtensions = { ".onnx", ".pb", ".bin", ".gz", ".lc0" };
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        WriteIndented = true,
+        Converters = { new PuzzleEngineConverter() }
+    };
+
+    protected override void OnInitialized()
+    {
+        var s = SettingsService.Settings;
+        if (!string.IsNullOrEmpty(s.EngineDefsFolder)) engineFolder = s.EngineDefsFolder;
+        if (!string.IsNullOrEmpty(s.NeuralNetFolder)) networkFolder = s.NeuralNetFolder;
+        if (!string.IsNullOrEmpty(engineFolder) && Directory.Exists(engineFolder))
+            ScanFolder();
+    }
+
+    private void ScanFolder()
+    {
+        statusMessage = "";
+        availableEngines.Clear();
+
+        if (string.IsNullOrWhiteSpace(engineFolder) || !Directory.Exists(engineFolder))
+        {
+            statusMessage = "Engine definitions folder not found.";
+            statusClass = "alert-error";
+            return;
+        }
+
+        try
+        {
+            var files = Directory.GetFiles(engineFolder, "*.json")
+                .Where(f => !Path.GetFileName(f).Contains("tournament", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var node = JsonNode.Parse(json);
+                    availableEngines.Add(new EngineEntry
+                    {
+                        FileName = Path.GetFileName(file),
+                        Name = node?["Name"]?.GetValue<string>() ?? Path.GetFileNameWithoutExtension(file),
+                        IsSelected = false
+                    });
+                }
+                catch { }
+            }
+
+            if (availableEngines.Count == 0)
+            {
+                statusMessage = $"No engine .json files found in {engineFolder}.";
+                statusClass = "alert-warning";
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error scanning folder: {ex.Message}";
+            statusClass = "alert-error";
+        }
+    }
+
+    private static string NormalizePath(string path) => (path ?? "").Replace('\\', '/');
+
+    private void ToggleEngineType(EngineEntry eng, bool withNets)
+    {
+        eng.EngineType = withNets ? "EngineWithNets" : "Engine";
+    }
+
+    private string BuildJson()
+    {
+        var selected = availableEngines.Where(e => e.IsSelected).ToList();
+        var engines = new List<PuzzleEngine>();
+
+        foreach (var eng in selected)
+        {
+            if (eng.EngineType == "EngineWithNets")
+            {
+                var nets = (eng.NetsText ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(NormalizePath).ToList();
+                engines.Add(PuzzleEngine.NewEngineWithNets(eng.FileName, 0, ListModule.OfSeq(nets)));
+            }
+            else
+            {
+                engines.Add(PuzzleEngine.NewEngine(eng.FileName, 0));
+            }
+        }
+
+        var config = new EretConfig(
+            NormalizePath(engineFolder),
+            new List<PuzzleEngine>(engines),
+            NormalizePath(puzzleFile),
+            sampleSize,
+            nodes,
+            timeInSeconds,
+            runWithNodeLimit,
+            NormalizePath(failedFolder)
+        );
+
+        return JsonSerializer.Serialize(config, JsonOpts);
+    }
+
+    private void GenerateAndPreview()
+    {
+        statusMessage = "";
+        var errors = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(puzzleFile))
+            errors.Add("EPD File is required.");
+        else if (!File.Exists(puzzleFile))
+            errors.Add($"EPD File not found: {puzzleFile}");
+
+        var selected = availableEngines.Where(e => e.IsSelected).ToList();
+        if (selected.Count == 0)
+            errors.Add("Select at least one engine.");
+
+        if (runWithNodeLimit && nodes <= 0)
+            errors.Add("Nodes must be greater than 0.");
+        if (!runWithNodeLimit && timeInSeconds <= 0)
+            errors.Add("Time must be greater than 0 seconds.");
+
+        if (errors.Count > 0)
+        {
+            statusMessage = string.Join("\n", errors);
+            statusClass = "alert-error";
+            return;
+        }
+
+        jsonPreview = BuildJson();
+        statusMessage = "JSON generated.";
+        statusClass = "alert-success";
+    }
+
+    private async Task SaveAsDefault()
+    {
+        statusMessage = "";
+        var selected = availableEngines.Where(e => e.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            statusMessage = "Select at least one engine.";
+            statusClass = "alert-warning";
+            return;
+        }
+
+        try
+        {
+            var json = string.IsNullOrEmpty(jsonPreview) ? BuildJson() : jsonPreview;
+            var path = Path.Combine(AppPaths.BaseDir, "wwwroot", "EretConfig.json");
+            await File.WriteAllTextAsync(path, json);
+            jsonPreview = json;
+            statusMessage = $"Saved as default to {path}";
+            statusClass = "alert-success";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error saving: {ex.Message}";
+            statusClass = "alert-error";
+        }
+    }
+
+    private async Task SaveToPath()
+    {
+        statusMessage = "";
+        if (string.IsNullOrWhiteSpace(jsonPreview))
+        {
+            statusMessage = "Generate JSON first.";
+            statusClass = "alert-warning";
+            return;
+        }
+
+        var folder = savePath;
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            statusMessage = "Enter a save path.";
+            statusClass = "alert-warning";
+            return;
+        }
+
+        if (folder.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            folder = Path.GetDirectoryName(folder) ?? folder;
+
+        if (!Directory.Exists(folder))
+        {
+            statusMessage = $"Directory does not exist: {folder}";
+            statusClass = "alert-error";
+            return;
+        }
+
+        try
+        {
+            var actualPath = GetUniqueFilePath(folder, "EretConfig");
+            await File.WriteAllTextAsync(actualPath, jsonPreview);
+            statusMessage = $"Saved to {actualPath}";
+            statusClass = "alert-success";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error saving: {ex.Message}";
+            statusClass = "alert-error";
+        }
+    }
+
+    private async Task LoadExistingConfig(InputFileChangeEventArgs e)
+    {
+        statusMessage = "";
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 1024 * 1024);
+            var json = await new StreamReader(stream).ReadToEndAsync();
+            var node = JsonNode.Parse(json);
+            if (node == null) { statusMessage = "Invalid JSON."; statusClass = "alert-error"; return; }
+
+            puzzleFile = node["PuzzleFile"]?.GetValue<string>() ?? "";
+            sampleSize = node["SampleSize"]?.GetValue<int>() ?? 10;
+            timeInSeconds = node["TimeInSeconds"]?.GetValue<int>() ?? 5;
+            nodes = node["Nodes"]?.GetValue<int>() ?? 10000;
+            runWithNodeLimit = node["RunWithNodeLimit"]?.GetValue<bool>() ?? false;
+            failedFolder = node["FailedPuzzlesOutputFolder"]?.GetValue<string>() ?? "";
+            engineFolder = node["EngineFolder"]?.GetValue<string>() ?? engineFolder;
+
+            availableEngines.Clear();
+            var enginesNode = node["Engines"]?.AsArray();
+            if (enginesNode != null)
+            {
+                foreach (var engNode in enginesNode)
+                {
+                    if (engNode?["Engine"] is JsonNode simple)
+                    {
+                        availableEngines.Add(new EngineEntry
+                        {
+                            FileName = simple["ConfigName"]?.GetValue<string>() ?? "",
+                            Name = Path.GetFileNameWithoutExtension(simple["ConfigName"]?.GetValue<string>() ?? ""),
+                            IsSelected = true,
+                            EngineType = "Engine"
+                        });
+                    }
+                    else if (engNode?["EngineWithNets"] is JsonNode withNets)
+                    {
+                        var nets = withNets["ListOfNetsWithPaths"]?.AsArray()?.Select(n => n?.GetValue<string>() ?? "").ToList() ?? new();
+                        availableEngines.Add(new EngineEntry
+                        {
+                            FileName = withNets["ConfigName"]?.GetValue<string>() ?? "",
+                            Name = Path.GetFileNameWithoutExtension(withNets["ConfigName"]?.GetValue<string>() ?? ""),
+                            IsSelected = true,
+                            EngineType = "EngineWithNets",
+                            NetsText = string.Join("\n", nets)
+                        });
+                    }
+                }
+            }
+
+            jsonPreview = "";
+            statusMessage = $"Loaded config from {e.File.Name}";
+            statusClass = "alert-success";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error loading config: {ex.Message}";
+            statusClass = "alert-error";
+        }
+    }
+
+    private static string GetUniqueFilePath(string folder, string baseName)
+    {
+        var path = Path.Combine(folder, $"{baseName}.json");
+        if (!File.Exists(path)) return path;
+        for (int i = 1; i <= 99; i++)
+        {
+            path = Path.Combine(folder, $"{baseName}_{i:D2}.json");
+            if (!File.Exists(path)) return path;
+        }
+        return path;
+    }
+
+    private async Task BrowseFolder(Action<string> setter, string currentValue)
+    {
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, currentValue },
+            { x => x.Mode, FileBrowserMode.Folder }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter(NormalizePath((string)result.Data!)); StateHasChanged(); }
+    }
+
+    private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
+    {
+        var initPath = !string.IsNullOrEmpty(currentValue) ? currentValue : "";
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initPath },
+            { x => x.FileFilter, filter },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter(NormalizePath((string)result.Data!)); StateHasChanged(); }
+    }
+
+    private void OpenNetScanner(EngineEntry eng)
+    {
+        if (string.IsNullOrWhiteSpace(networkFolder) || !Directory.Exists(networkFolder))
+        {
+            statusMessage = "Set the Neural Network Folder first.";
+            statusClass = "alert-warning";
+            return;
+        }
+
+        netScanEngine = eng;
+        netFilter = "";
+        scannedNetworks.Clear();
+
+        try
+        {
+            var enumOpts = new EnumerationOptions { IgnoreInaccessible = true, RecurseSubdirectories = scanNetsRecursive };
+
+            foreach (var file in new DirectoryInfo(networkFolder).EnumerateFiles("*", enumOpts)
+                         .Where(f => NetExtensions.Contains(f.Extension, StringComparer.OrdinalIgnoreCase))
+                         .OrderBy(f => f.Name))
+            {
+                scannedNetworks.Add(new NetworkEntry
+                {
+                    Name = scanNetsRecursive ? Path.GetRelativePath(networkFolder, file.FullName) : file.Name,
+                    FullPath = file.FullName,
+                    SizeBytes = file.Length
+                });
+            }
+
+            if (scannedNetworks.Count == 0)
+            {
+                statusMessage = $"No network files found in {networkFolder}";
+                statusClass = "alert-warning";
+                netScanEngine = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error scanning networks: {ex.Message}";
+            statusClass = "alert-error";
+            netScanEngine = null;
+        }
+    }
+
+    private string GetNetPath(EngineEntry eng, NetworkEntry net)
+    {
+        var prefix = (eng.NetPrefix ?? "").Trim();
+        if (prefix.Length > 0 && !prefix.EndsWith(':'))
+            prefix += ":";
+        return prefix + NormalizePath(net.FullPath);
+    }
+
+    private bool IsNetInList(EngineEntry eng, NetworkEntry net)
+    {
+        var path = GetNetPath(eng, net);
+        var lines = (eng.NetsText ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return lines.Contains(path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void ToggleNet(EngineEntry eng, NetworkEntry net)
+    {
+        var path = GetNetPath(eng, net);
+        var lines = (eng.NetsText ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+        var existing = lines.FirstOrDefault(l => l.Equals(path, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            lines.Remove(existing);
+        }
+        else
+        {
+            lines.Add(path);
+        }
+
+        eng.NetsText = lines.Count > 0 ? string.Join("\n", lines) : "";
+    }
+
+    private void CloseNetScanner()
+    {
+        netScanEngine = null;
+        scannedNetworks.Clear();
+        netFilter = "";
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB"
+    };
+
+    private class EngineEntry
+    {
+        public string FileName { get; set; } = "";
+        public string Name { get; set; } = "";
+        public bool IsSelected { get; set; }
+        public string EngineType { get; set; } = "Engine";
+        public string NetsText { get; set; } = "";
+        public string NetPrefix { get; set; } = "";
+    }
+
+    private class NetworkEntry
+    {
+        public string Name { get; set; } = "";
+        public string FullPath { get; set; } = "";
+        public long SizeBytes { get; set; }
+    }
+}

@@ -1,0 +1,903 @@
+@page "/tools/tournament-creator"
+@page "/tournamentCreator"
+@inject ILogger<TournamentJsonCreator> logger
+@inject GlobalSettingsService SettingsService
+@inject NotifierService Notifier
+@inject IDialogService DialogService
+@using WebGUI.Services
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+
+<PageTitle>Tournament Creator</PageTitle>
+
+<div class="settings-container">
+    <h2>Tournament Creator</h2>
+    <div class="settings-description">Configure and generate a tournament.json file.</div>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-@statusType">
+            <span>@statusMessage</span>
+            <button class="dismiss-btn" @onclick="() => statusMessage = string.Empty">&times;</button>
+        </div>
+    }
+
+    <InputFile id="loadTournamentFile" OnChange="LoadAndActivateFromFile" hidden accept=".json" />
+
+    @* ── Load Existing ── *@
+    <div class="settings-section">
+        <h4>Load Existing Tournament</h4>
+        <div class="section-hint">Pick an existing tournament.json to preview, edit, and activate.</div>
+        <label class="upload-label" for="loadTournamentFile">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
+            Pick tournament.json
+        </label>
+    </div>
+
+    <div class="main-grid">
+    <!-- Left column: settings -->
+    <div>
+    @* ── Tournament Settings ── *@
+    <details class="settings-section" open>
+        <summary>Tournament Settings</summary>
+        <div class="section-body">
+            <div class="two-col">
+                <div class="field-group">
+                    <label>Tournament Name</label>
+                    <input type="text" value="@tournamentName" @oninput="e => OnTournamentNameChanged(e.Value?.ToString())" />
+                </div>
+                <div class="field-group">
+                    <label>Mode</label>
+                    <select @bind="tournamentMode">
+                        <option value="RR">Round Robin</option>
+                        <option value="Gauntlet">Gauntlet</option>
+                        <option value="Swiss">Swiss</option>
+                        <option value="Cup">Cup</option>
+                        <option value="Ladder">Ladder</option>
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label>Rounds</label>
+                    <input type="number" @bind="rounds" min="1" max="10000" />
+                </div>
+                @if (tournamentMode == "Gauntlet")
+                {
+                    <div class="field-group">
+                        <label>Challengers</label>
+                        <input type="number" @bind="challengers" min="1" max="100" />
+                    </div>
+                }
+                @if (tournamentMode == "Ladder")
+                {
+                    <div class="field-group">
+                        <label>Game Pairs Per Match</label>
+                        <input type="number" @bind="ladderGamePairsPerMatch" min="1" max="100" />
+                    </div>
+                }
+            </div>
+            <div class="toggle-row" style="margin-top: 0.4rem;">
+                <label class="toggle"><input type="checkbox" @bind="preventMoveDeviation" /><span class="slider"></span></label>
+                <span class="toggle-label">Prevent Move Deviation</span>
+            </div>
+        </div>
+    </details>
+
+    @* ── Time Control ── *@
+    <details class="settings-section" open>
+        <summary>Time Control</summary>
+        <div class="section-body">
+            @for (int i = 0; i < timeControls.Count; i++)
+            {
+                var tc = timeControls[i];
+                var idx = i;
+                <div class="tc-card">
+                    <div class="tc-header">
+                        <span>Time Control @(idx + 1)</span>
+                        @if (timeControls.Count > 1)
+                        {
+                            <button class="btn-danger btn-sm" @onclick="() => timeControls.RemoveAt(idx)">Remove</button>
+                        }
+                    </div>
+                    <div class="three-col">
+                        <div class="field-group">
+                            <label>Minutes</label>
+                            <input type="number" @bind="tc.Minutes" min="0" max="600" />
+                        </div>
+                        <div class="field-group">
+                            <label>Seconds</label>
+                            <input type="number" @bind="tc.Seconds" min="0" max="59" />
+                        </div>
+                        <div class="field-group">
+                            <label>Increment (sec)</label>
+                            <input type="number" @bind="tc.IncrementSeconds" min="0" max="300" />
+                        </div>
+                    </div>
+                    <div class="toggle-row" style="margin-top: 0.3rem;">
+                        <label class="toggle"><input type="checkbox" @bind="tc.IsNodeLimit" /><span class="slider"></span></label>
+                        <span class="toggle-label">Node Limit</span>
+                    </div>
+                    @if (tc.IsNodeLimit)
+                    {
+                        <div class="field-group" style="margin-top: 0.4rem;">
+                            <label>Nodes</label>
+                            <input type="number" @bind="tc.Nodes" min="1" max="1000000000" />
+                        </div>
+                    }
+                </div>
+            }
+            <button class="btn btn-outline btn-sm" @onclick="AddTimeControl">+ Add Time Control</button>
+        </div>
+    </details>
+
+    @* ── Openings ── *@
+    <details class="settings-section">
+        <summary>Openings</summary>
+        <div class="section-body">
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Openings File Path</label>
+                    <input type="text" @bind="openingsPath" />
+                    <small>Full path to a PGN or EPD file (not a folder)</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => openingsPath = v, openingsPath, "*.pgn;*.epd"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+            <div class="field-group">
+                <label>Openings Ply</label>
+                <input type="number" @bind="openingsPly" min="1" max="999" />
+            </div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" @bind="openingsTwice" /><span class="slider"></span></label>
+                <span class="toggle-label">Play Each Opening Twice (swap colors)</span>
+            </div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" @bind="randomOpenings" /><span class="slider"></span></label>
+                <span class="toggle-label">Random Opening Order</span>
+            </div>
+        </div>
+    </details>
+
+    @* ── Adjudication ── *@
+    <details class="settings-section">
+        <summary>Adjudication</summary>
+        <div class="section-body">
+            <div class="sub-heading">Draw Adjudication</div>
+            <div class="three-col">
+                <div class="field-group">
+                    <label>Min Move</label>
+                    <input type="number" @bind="minDrawMove" min="0" max="200" />
+                </div>
+                <div class="field-group">
+                    <label>Max Score</label>
+                    <input type="number" @bind="maxDrawScore" min="0" max="5" step="0.05" />
+                </div>
+                <div class="field-group">
+                    <label>Move Count</label>
+                    <input type="number" @bind="drawMoveLength" min="1" max="50" />
+                </div>
+            </div>
+
+            <div class="sub-heading">Win Adjudication</div>
+            <div class="three-col">
+                <div class="field-group">
+                    <label>Min Move</label>
+                    <input type="number" @bind="minWinMove" min="0" max="200" />
+                </div>
+                <div class="field-group">
+                    <label>Min Score</label>
+                    <input type="number" @bind="minWinScore" min="0" max="100" step="0.5" />
+                </div>
+                <div class="field-group">
+                    <label>Move Count</label>
+                    <input type="number" @bind="winMoveLength" min="1" max="50" />
+                </div>
+            </div>
+
+            <div class="sub-heading">Tablebase</div>
+            <div class="toggle-row">
+                <label class="toggle"><input type="checkbox" @bind="useTBAdjudication" /><span class="slider"></span></label>
+                <span class="toggle-label">Use Tablebase Adjudication</span>
+            </div>
+            <div class="field-row" style="margin-top: 0.4rem;">
+                <div class="field-group">
+                    <label>Tablebase Directory</label>
+                    <input type="text" @bind="tablebaseDirectory" />
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFolder(v => tablebaseDirectory = v, tablebaseDirectory))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+            @if (useTBAdjudication)
+            {
+                <div class="field-group">
+                    <label>TB Men</label>
+                    <input type="number" @bind="tbMen" min="3" max="7" />
+                </div>
+            }
+        </div>
+    </details>
+
+    @* ── Output ── *@
+    <details class="settings-section" open>
+        <summary>Output</summary>
+        <div class="section-body">
+            <div class="field-group">
+                <label>PGN Output Path</label>
+                <input type="text" @bind="pgnOutPath" />
+                <small>Full path for the tournament PGN file</small>
+            </div>
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Tournament JSON Save Folder</label>
+                    <input type="text" @bind="saveFolder" />
+                    <small>Folder where the tournament .json will be saved</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFolder(v => saveFolder = v, saveFolder))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+            <div class="field-group">
+                <label>Filename</label>
+                <input type="text" value="@saveFileName" @oninput="e => OnSaveFileNameChanged(e.Value?.ToString())" />
+                <small>Auto-generated from tournament name — edit to customize</small>
+            </div>
+        </div>
+    </details>
+
+    @* ── Advanced ── *@
+    <details class="settings-section">
+        <summary>Advanced</summary>
+        <div class="section-body">
+            <div class="two-col">
+                <div class="field-group">
+                    <label>Parallel Games (console only)</label>
+                    <input type="number" @bind="parallelGames" min="1" max="64" />
+                </div>
+                <div class="field-group">
+                    <label>Delay Between Games (seconds)</label>
+                    <input type="number" @bind="delayBetweenGamesSec" min="0" max="300" />
+                </div>
+                <div class="field-group">
+                    <label>Move Overhead (ms)</label>
+                    <input type="number" @bind="moveOverheadMs" min="0" max="5000" />
+                </div>
+                <div class="field-group">
+                    <label>Min Move Time (ms)</label>
+                    <input type="number" @bind="minMoveTimeMs" min="0" max="5000" />
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <div class="button-row bottom-space">
+        <button class="btn btn-primary" @onclick="GenerateJson">Preview</button>
+    </div>
+    </div>
+
+    <!-- Right column: engines -->
+    <details class="settings-section" open>
+        <summary>Engine Selection</summary>
+        <div class="section-body">
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Engine Definitions Folder</label>
+                    <input type="text" @bind="engineDefsFolder" />
+                    <small>Folder containing engine .json config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFolder(v => engineDefsFolder = v, engineDefsFolder))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="button-row" style="margin-bottom: 0.75rem;">
+                <button class="btn btn-outline btn-sm" @onclick="ScanEngineFolder">Scan Folder</button>
+            </div>
+
+            @if (availableEngines.Count > 0)
+            {
+                <div class="field-group engine-filter">
+                    <input type="text" @bind="engineFilter" @bind:event="oninput" placeholder="Filter engines..." />
+                </div>
+
+                <div class="engine-table-wrap">
+                    <table class="engine-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"></th>
+                                <th>Engine</th>
+                                <th style="width: 80px;">Rating</th>
+                                <th>File</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var engine in FilteredEngines)
+                            {
+                                <tr class="@(engine.IsSelected ? "selected" : "")">
+                                    <td><input type="checkbox" @bind="engine.IsSelected" /></td>
+                                    <td>@engine.Name</td>
+                                    <td>@engine.Rating</td>
+                                    <td>@engine.FileName</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <span class="engine-count">@availableEngines.Count(e => e.IsSelected) of @availableEngines.Count selected</span>
+            }
+        </div>
+    </details>
+    </div>
+</div>
+
+@code {
+    // ── Engine selection ──
+    private string engineDefsFolder = "";
+    private string engineFilter = "";
+    private List<EngineEntry> availableEngines = new();
+    private IEnumerable<EngineEntry> FilteredEngines => string.IsNullOrWhiteSpace(engineFilter)
+        ? availableEngines
+        : availableEngines.Where(e => e.Name.Contains(engineFilter, StringComparison.OrdinalIgnoreCase)
+            || e.FileName.Contains(engineFilter, StringComparison.OrdinalIgnoreCase));
+
+    // ── Tournament settings ──
+    private string tournamentName = "New Tournament";
+    private string tournamentMode = "RR";
+    private int rounds = 50;
+    private int challengers = 1;
+    private bool preventMoveDeviation = false;
+    private int ladderGamePairsPerMatch = 4;
+
+    // ── Time control ──
+    private List<TimeControlEntry> timeControls = new() { new TimeControlEntry { Minutes = 1, Seconds = 0, IncrementSeconds = 1 } };
+
+    // ── Openings ──
+    private string openingsPath = "";
+    private int openingsPly = 100;
+    private bool openingsTwice = true;
+    private bool randomOpenings = false;
+
+    // ── Adjudication ──
+    private int minDrawMove = 20;
+    private double maxDrawScore = 0.30;
+    private int drawMoveLength = 5;
+    private int minWinMove = 0;
+    private double minWinScore = 5.0;
+    private int winMoveLength = 5;
+    private bool useTBAdjudication = false;
+    private string tablebaseDirectory = "";
+    private int tbMen = 6;
+
+    // ── Output ──
+    private string pgnOutPath = "";
+    private string saveFolder = "";
+    private string saveFileName = "";
+    private bool saveFileNameCustomized = false;
+
+    // ── Advanced ──
+    private int parallelGames = 1;
+    private int delayBetweenGamesSec = 20;
+    private int moveOverheadMs = 100;
+    private int minMoveTimeMs = 400;
+
+    // ── State ──
+    private string statusMessage = "";
+    private string statusType = "info";
+
+    protected override void OnInitialized()
+    {
+        var s = SettingsService.Settings;
+        if (!string.IsNullOrEmpty(s.EngineDefsFolder))
+            engineDefsFolder = s.EngineDefsFolder;
+        // Don't default openingsPath from folder — this field expects a file path
+        if (!string.IsNullOrEmpty(s.PgnOutputFolder))
+        {
+            var safeName = string.Join("_", tournamentName.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+            pgnOutPath = GetUniqueFilePath(s.PgnOutputFolder, safeName, ".pgn");
+        }
+        if (!string.IsNullOrEmpty(s.TournamentConfigFolder))
+            saveFolder = s.TournamentConfigFolder;
+        saveFileName = GenerateSaveFileName();
+        if (!string.IsNullOrEmpty(s.TablebaseFolder))
+            tablebaseDirectory = s.TablebaseFolder;
+        delayBetweenGamesSec = s.DelayBetweenGamesSec;
+        moveOverheadMs = s.MoveOverheadMs;
+        if (!string.IsNullOrEmpty(engineDefsFolder) && Directory.Exists(engineDefsFolder))
+            ScanEngineFolder();
+    }
+
+    private void ScanEngineFolder()
+    {
+        statusMessage = "";
+        availableEngines.Clear();
+
+        if (string.IsNullOrWhiteSpace(engineDefsFolder) || !Directory.Exists(engineDefsFolder))
+        {
+            statusMessage = "Engine definitions folder not found.";
+            statusType = "error";
+            return;
+        }
+
+        try
+        {
+            var files = Directory.GetFiles(engineDefsFolder, "*.json")
+                .Where(f => !Path.GetFileName(f).Contains("tournament", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var node = JsonNode.Parse(json);
+                    availableEngines.Add(new EngineEntry
+                    {
+                        FileName = Path.GetFileName(file),
+                        Name = node?["Name"]?.GetValue<string>() ?? Path.GetFileNameWithoutExtension(file),
+                        Rating = node?["Rating"]?.GetValue<int>() ?? 0,
+                        IsSelected = false
+                    });
+                }
+                catch { /* skip unparseable files */ }
+            }
+
+            availableEngines.Sort((a, b) => b.Rating.CompareTo(a.Rating));
+            if (availableEngines.Count == 0)
+            {
+                statusMessage = $"No engine .json files found in {engineDefsFolder}. Use the Engine JSON Creator to create engine definitions first.";
+                statusType = "warning";
+            }
+            else
+            {
+                statusMessage = $"Found {availableEngines.Count} engine definitions.";
+                statusType = "success";
+            }
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error scanning folder: {ex.Message}";
+            statusType = "error";
+        }
+    }
+
+    private async Task GenerateJson()
+    {
+        statusMessage = "";
+
+        var selectedEngines = availableEngines.Where(e => e.IsSelected).ToList();
+        if (selectedEngines.Count < 2)
+        {
+            statusMessage = "Select at least 2 engines.";
+            statusType = "warning";
+            return;
+        }
+
+        if (timeControls.Count == 0)
+        {
+            statusMessage = "Add at least one time control.";
+            statusType = "warning";
+            return;
+        }
+
+        string generateWarning = null;
+        if (!string.IsNullOrWhiteSpace(openingsPath) && !openingsPath.EndsWith(".pgn", StringComparison.OrdinalIgnoreCase) && !openingsPath.EndsWith(".epd", StringComparison.OrdinalIgnoreCase))
+        {
+            generateWarning = "Openings path should point to a .pgn or .epd file, not a folder. Fix this before activating.";
+        }
+
+        try
+        {
+            var basePath = Path.Combine(AppPaths.BaseDir, "Data", "tournamentEmpty.json");
+            var baseJson = File.ReadAllText(basePath);
+            var root = JsonNode.Parse(baseJson)!.AsObject();
+
+            // Tournament settings
+            root["Name"] = tournamentName;
+            root["TournamentMode"] = tournamentMode;
+            root["Rounds"] = rounds;
+            root["Challengers"] = challengers;
+            root["PreventMoveDeviation"] = preventMoveDeviation;
+            root["DelayBetweenGames"] = FormatTimeSpan(delayBetweenGamesSec * 1000);
+            root["MoveOverhead"] = FormatTimeSpan(moveOverheadMs);
+            root["MinMoveTimeInMS"] = minMoveTimeMs;
+
+            // Ordo
+            var ordoPath = SettingsService.Settings.OrdoExePath;
+            if (!string.IsNullOrEmpty(ordoPath))
+                root["OrdoExePath"] = ordoPath;
+
+            // Engine setup
+            root["EngineSetup"]!["EngineDefFolder"] = engineDefsFolder;
+            var engineList = new JsonArray();
+            foreach (var e in selectedEngines)
+                engineList.Add(JsonValue.Create(e.FileName));
+            root["EngineSetup"]!["EngineDefList"] = engineList;
+
+            // Time controls
+            var tcArray = new JsonArray();
+            for (int i = 0; i < timeControls.Count; i++)
+            {
+                var tc = timeControls[i];
+                var totalMs = (tc.Minutes * 60 + tc.Seconds) * 1000;
+                var incMs = tc.IncrementSeconds * 1000;
+                var tcNode = new JsonObject
+                {
+                    ["Id"] = i + 1,
+                    ["Fixed"] = FormatTimeSpan(totalMs),
+                    ["Increment"] = FormatTimeSpan(incMs),
+                    ["NodeLimit"] = tc.IsNodeLimit,
+                    ["Nodes"] = tc.IsNodeLimit ? tc.Nodes : 1
+                };
+                tcArray.Add(tcNode);
+            }
+            root["TimeControl"]!["TimeConfigs"] = tcArray;
+
+            // Openings
+            root["Opening"]!["OpeningsPath"] = openingsPath;
+            root["Opening"]!["OpeningsPly"] = openingsPly;
+            root["Opening"]!["OpeningsTwice"] = openingsTwice;
+            root["Opening"]!["RandomOpenings"] = randomOpenings;
+
+            // Adjudication
+            root["Adjudication"]!["DrawOption"]!["MinDrawMove"] = minDrawMove;
+            root["Adjudication"]!["DrawOption"]!["MaxDrawScore"] = maxDrawScore;
+            root["Adjudication"]!["DrawOption"]!["DrawMoveLength"] = drawMoveLength;
+            root["Adjudication"]!["WinOption"]!["MinWinMove"] = minWinMove;
+            root["Adjudication"]!["WinOption"]!["MinWinScore"] = minWinScore;
+            root["Adjudication"]!["WinOption"]!["WinMoveLength"] = winMoveLength;
+            root["Adjudication"]!["TBAdj"]!["UseTBAdjudication"] = useTBAdjudication;
+            root["Adjudication"]!["TBAdj"]!["TablebaseDirectory"] = tablebaseDirectory;
+            root["Adjudication"]!["TBAdj"]!["TBMen"] = tbMen;
+
+            // Ladder options
+            if (root["LadderOptions"] != null)
+            {
+                root["LadderOptions"]!["GamePairsPerMatch"] = ladderGamePairsPerMatch;
+                root["LadderOptions"]!["RandomOpenings"] = randomOpenings;
+            }
+
+            // PGN output path (already a full .pgn path from auto-fill or user edit)
+            root["PgnOutPath"] = pgnOutPath;
+
+            // Advanced
+            root["TestOptions"]!["NumberOfGamesInParallelConsoleOnly"] = parallelGames;
+
+            var generatedJson = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var genWarnings = new List<string>();
+            if (generateWarning != null)
+                genWarnings.Add(generateWarning);
+
+            statusMessage = "";
+            await ShowPreviewDialog("tournament.json", generatedJson, new List<string>(), genWarnings);
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error generating JSON: {ex.Message}";
+            statusType = "error";
+            logger.LogError(ex, "Failed to generate tournament JSON");
+        }
+    }
+
+    private async Task LoadAndActivateFromFile(InputFileChangeEventArgs e)
+    {
+        statusMessage = "";
+
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+
+            // Pretty-print
+            try
+            {
+                var node = JsonNode.Parse(content);
+                content = node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            }
+            catch { }
+
+            var (errors, warnings) = ValidateTournamentJson(content);
+            await ShowPreviewDialog(e.File.Name, content, errors, warnings);
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error: {ex.Message}";
+            statusType = "error";
+            logger.LogError(ex, "Failed to load tournament JSON");
+        }
+    }
+
+    private async Task ShowPreviewDialog(string fileName, string content, List<string> errors = null, List<string> warnings = null)
+    {
+        var parameters = new DialogParameters<JsonPreviewDialog>
+        {
+            { x => x.JsonContent, content },
+            { x => x.Errors, errors ?? new List<string>() },
+            { x => x.Warnings, warnings ?? new List<string>() },
+            { x => x.ValidateFunc, ValidateTournamentJson }
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Large,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+            CloseButton = true
+        };
+        var dialog = await DialogService.ShowAsync<JsonPreviewDialog>(fileName, parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled)
+            return;
+
+        var (action, edited) = ((string, string))result.Data!;
+
+        if (action == "activate")
+        {
+            var (errs, warns) = ValidateTournamentJson(edited);
+            if (errs.Count > 0)
+            {
+                statusMessage = "Still has validation errors:\n" + string.Join("\n", errs);
+                statusType = "error";
+                await ShowPreviewDialog(fileName, edited, errs, warns);
+                return;
+            }
+
+            var wwwrootPath = Path.Combine(AppPaths.BaseDir, "wwwroot", "tournament.json");
+            BackupActiveTournament(wwwrootPath);
+            await File.WriteAllTextAsync(wwwrootPath, edited);
+            await Notifier.RefreshNavMenu(true);
+            var msg = "Activated. Tournament pages are now visible in the nav menu.";
+            if (warns.Count > 0)
+                msg += "\n\nWarnings:\n" + string.Join("\n", warns);
+            statusMessage = msg;
+            statusType = warns.Count > 0 ? "warning" : "success";
+        }
+        else if (action == "save")
+        {
+            if (string.IsNullOrWhiteSpace(saveFolder))
+            {
+                statusMessage = "Set a save folder in the Output section first.";
+                statusType = "warning";
+                return;
+            }
+
+            if (!Directory.Exists(saveFolder))
+            {
+                statusMessage = $"Directory does not exist: {saveFolder}";
+                statusType = "error";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(saveFileName))
+            {
+                statusMessage = "Filename is empty — enter a tournament name or filename.";
+                statusType = "warning";
+                return;
+            }
+
+            // Ensure .json extension
+            var saveName = saveFileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                ? saveFileName : $"{saveFileName}.json";
+            var baseName = Path.GetFileNameWithoutExtension(saveName);
+            var actualPath = GetUniqueFilePath(saveFolder, baseName);
+            await File.WriteAllTextAsync(actualPath, edited);
+            statusMessage = $"Saved to {actualPath}";
+            statusType = "success";
+        }
+    }
+
+    private static readonly string[] ValidModes = { "RR", "Gauntlet", "Swiss", "Cup", "Ladder" };
+
+    private (List<string> errors, List<string> warnings) ValidateTournamentJson(string json)
+    {
+        var errors = new List<string>();
+        var warnings = new List<string>();
+
+        JsonNode root;
+        try
+        {
+            root = JsonNode.Parse(json)!;
+        }
+        catch
+        {
+            errors.Add("Invalid JSON.");
+            return (errors, warnings);
+        }
+
+        // Tournament mode
+        var mode = root["TournamentMode"]?.GetValue<string>() ?? "";
+        if (!ValidModes.Any(m => m.Equals(mode, StringComparison.OrdinalIgnoreCase)))
+            errors.Add($"TournamentMode = \"{mode}\" — must be one of: {string.Join(", ", ValidModes)}");
+
+        // Engine setup
+        var engineFolder = root["EngineSetup"]?["EngineDefFolder"]?.GetValue<string>() ?? "";
+        var engineList = root["EngineSetup"]?["EngineDefList"]?.AsArray();
+        var engineCount = engineList?.Count ?? 0;
+
+        if (string.IsNullOrWhiteSpace(engineFolder))
+            errors.Add("EngineSetup.EngineDefFolder is empty");
+        else if (!Directory.Exists(engineFolder))
+            errors.Add($"EngineSetup.EngineDefFolder = \"{engineFolder}\" — directory not found");
+        else if (engineCount > 0)
+        {
+            foreach (var item in engineList!)
+            {
+                var fileName = item?.GetValue<string>() ?? "";
+                if (!string.IsNullOrEmpty(fileName) && !File.Exists(Path.Combine(engineFolder, fileName)))
+                    errors.Add($"EngineSetup.EngineDefList: \"{fileName}\" — file not found in {engineFolder}");
+            }
+        }
+
+        if (engineCount < 2)
+            errors.Add($"EngineSetup.EngineDefList has {engineCount} entries — at least 2 required");
+
+        // Time controls
+        var timeConfigs = root["TimeControl"]?["TimeConfigs"]?.AsArray();
+        if (timeConfigs == null || timeConfigs.Count == 0)
+            errors.Add("TimeControl.TimeConfigs is empty — at least 1 time control required");
+
+        // Openings path
+        var openingsPath = root["Opening"]?["OpeningsPath"]?.GetValue<string>() ?? "";
+        if (!string.IsNullOrWhiteSpace(openingsPath))
+        {
+            if (Directory.Exists(openingsPath))
+                errors.Add($"Opening.OpeningsPath = \"{openingsPath}\" — this is a folder, must be a .pgn or .epd file");
+            else if (!openingsPath.EndsWith(".pgn", StringComparison.OrdinalIgnoreCase) &&
+                     !openingsPath.EndsWith(".epd", StringComparison.OrdinalIgnoreCase))
+                errors.Add($"Opening.OpeningsPath = \"{openingsPath}\" — must end in .pgn or .epd");
+            else if (!File.Exists(openingsPath))
+                warnings.Add($"Opening.OpeningsPath = \"{openingsPath}\" — file not found (may be on another machine)");
+        }
+
+        // PGN output path
+        var pgnOut = root["PgnOutPath"]?.GetValue<string>() ?? "";
+        if (string.IsNullOrWhiteSpace(pgnOut))
+            warnings.Add("PgnOutPath is empty — games will not be saved to PGN");
+        else
+        {
+            var pgnDir = Path.GetDirectoryName(pgnOut);
+            if (!string.IsNullOrEmpty(pgnDir) && !Directory.Exists(pgnDir))
+                errors.Add($"PgnOutPath = \"{pgnOut}\" — directory {pgnDir} not found");
+        }
+
+        // Tablebase
+        var useTB = root["Adjudication"]?["TBAdj"]?["UseTBAdjudication"]?.GetValue<bool>() ?? false;
+        if (useTB)
+        {
+            var tbDir = root["Adjudication"]?["TBAdj"]?["TablebaseDirectory"]?.GetValue<string>() ?? "";
+            if (string.IsNullOrWhiteSpace(tbDir) || !Directory.Exists(tbDir))
+                warnings.Add($"Adjudication.TBAdj.TablebaseDirectory = \"{tbDir}\" — directory not found");
+        }
+
+        return (errors, warnings);
+    }
+
+    private void BackupActiveTournament(string wwwrootPath)
+    {
+        if (!File.Exists(wwwrootPath))
+            return;
+
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+        var backupPath = Path.Combine(Path.GetDirectoryName(wwwrootPath)!, $"tournament_{timestamp}.json");
+        File.Copy(wwwrootPath, backupPath);
+        logger.LogInformation("Backed up active tournament to {Path}", backupPath);
+    }
+
+    private void AddTimeControl()
+    {
+        timeControls.Add(new TimeControlEntry { Minutes = 3, Seconds = 0, IncrementSeconds = 2 });
+    }
+
+    private void OnTournamentNameChanged(string newName)
+    {
+        tournamentName = newName;
+        UpdatePgnPath();
+        if (!saveFileNameCustomized)
+            saveFileName = GenerateSaveFileName();
+    }
+
+    private void OnSaveFileNameChanged(string newName)
+    {
+        saveFileName = newName;
+        // If the user clears the field, revert to auto-generate mode
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            saveFileNameCustomized = false;
+            saveFileName = GenerateSaveFileName();
+        }
+        else
+        {
+            saveFileNameCustomized = true;
+        }
+    }
+
+    private string GenerateSaveFileName()
+    {
+        var safeName = string.Join("_", tournamentName.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(safeName) ? "" : $"{safeName}.json";
+    }
+
+    private void UpdatePgnPath()
+    {
+        var folder = SettingsService.Settings.PgnOutputFolder;
+        if (string.IsNullOrEmpty(folder)) return;
+
+        // Only auto-update if the current path is in the expected folder (i.e., was auto-generated)
+        try
+        {
+            var currentDir = Path.GetFullPath(Path.GetDirectoryName(pgnOutPath) ?? "").TrimEnd('/', '\\');
+            var normalizedFolder = Path.GetFullPath(folder).TrimEnd('/', '\\');
+            if (!string.Equals(currentDir, normalizedFolder, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+        catch { return; }
+
+        var safeName = string.Join("_", tournamentName.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrWhiteSpace(safeName)) return;
+        pgnOutPath = GetUniqueFilePath(folder, safeName, ".pgn");
+    }
+
+    private static string GetUniqueFilePath(string folder, string baseName, string extension = ".json")
+    {
+        var path = Path.Combine(folder, $"{baseName}{extension}");
+        if (!File.Exists(path))
+            return path;
+
+        for (int i = 1; i <= 999; i++)
+        {
+            path = Path.Combine(folder, $"{baseName}_{i:D3}{extension}");
+            if (!File.Exists(path))
+                return path;
+        }
+        // All 999 suffixes taken — return timestamped fallback
+        var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        return Path.Combine(folder, $"{baseName}_{ts}{extension}");
+    }
+
+    private static string FormatTimeSpan(int totalMs)
+    {
+        var ts = TimeSpan.FromMilliseconds(totalMs);
+        return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}.{ts.Milliseconds:D3}";
+    }
+
+    private async Task BrowseFolder(Action<string> setter, string currentValue)
+    {
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, currentValue },
+            { x => x.Mode, FileBrowserMode.Folder }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+    }
+
+    private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
+    {
+        var initialDir = !string.IsNullOrEmpty(currentValue)
+            ? (File.Exists(currentValue) ? Path.GetDirectoryName(currentValue) ?? ""
+               : Directory.Exists(currentValue) ? currentValue
+               : Path.GetDirectoryName(currentValue) ?? "")
+            : "";
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, filter },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+    }
+
+    private class EngineEntry
+    {
+        public string FileName { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int Rating { get; set; }
+        public bool IsSelected { get; set; }
+    }
+
+    private class TimeControlEntry
+    {
+        public int Minutes { get; set; }
+        public int Seconds { get; set; }
+        public int IncrementSeconds { get; set; }
+        public bool IsNodeLimit { get; set; }
+        public int Nodes { get; set; } = 1;
+    }
+}

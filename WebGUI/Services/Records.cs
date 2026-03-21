@@ -82,9 +82,7 @@ namespace WebGUI.Services
 
     public static string GetTournamentEnd(TimeSpan duration)
     {
-      DateTime now = DateTime.UtcNow;
-      TimeZoneInfo timeZone = TimeZoneInfo.Local;
-      var end = TimeZoneInfo.ConvertTimeFromUtc(now, timeZone).AddTicks(duration.Ticks);
+      var end = DateTime.UtcNow.AddTicks(duration.Ticks);
       var formattedEnd = GetFormattedTournamentEnds(end);
       return formattedEnd;
     }

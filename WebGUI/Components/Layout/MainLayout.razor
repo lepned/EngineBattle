@@ -57,10 +57,10 @@
     try
     {
       _chessModule = _chessModule ?? await JS.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js");
-      for (int i = 0; i < 3; i++)
+      for (int i = 0; i < 25; i++)
       {
-        await Task.Delay(100);
-        await _chessModule.InvokeVoidAsync("resizeAllChessboards");
+        await Task.Delay(16);
+        await _chessModule.InvokeVoidAsync("triggerResizeEvent");
       }
     }
     catch { }

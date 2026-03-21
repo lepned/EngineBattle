@@ -1,0 +1,24 @@
+::deep .fb-list-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+::deep .fb-list-item.fb-selected {
+    background-color: rgba(var(--mud-palette-primary-rgb), 0.15);
+}
+
+::deep .fb-list-item.fb-row-even {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+::deep .fb-breadcrumb-current {
+    font-weight: 600;
+    color: var(--mud-palette-primary);
+}
+
+.fb-status-bar {
+    font-size: 0.78rem;
+    color: var(--mud-palette-text-secondary);
+    padding: 4px 8px;
+    border-top: 1px solid var(--mud-palette-lines-default);
+    background-color: rgba(255, 255, 255, 0.02);
+}

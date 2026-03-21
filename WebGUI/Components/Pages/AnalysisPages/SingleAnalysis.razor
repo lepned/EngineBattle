@@ -21,6 +21,7 @@
 @inject JavaScriptInteropService JsInteropService
 @inject OverlaySetting overlaySettings
 @inject OpeningExplorerService openingExplorer
+@inject GlobalSettingsService SettingsService
 
 <PageTitle>Modern Analysis - Single Engine</PageTitle>
 <InputFile id="configFile" OnChange="@OpenConfigFile" hidden />
@@ -277,7 +278,14 @@
     private int minMoveTimeInSecs = 0;
     private string currentGame = "";
     private int gameIndex = 0;
-    private string gamesPath = "C:/dev/chess/mygames.pgn";
+    private string gamesPath = "";
+
+    protected override void OnInitialized()
+    {
+        var s = SettingsService.Settings;
+        if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
+            gamesPath = s.AnalysisGamesPath;
+    }
     private string openingAndVariation = "";
     private string lastAutoDetectedOpening = "";
     bool pgnFileLoaded = false;

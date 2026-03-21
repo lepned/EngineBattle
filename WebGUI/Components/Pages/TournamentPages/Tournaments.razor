@@ -27,6 +27,21 @@
 
 <PageTitle> Tournament page </PageTitle>
 
+@if (!string.IsNullOrEmpty(tournamentLoadError))
+{
+	<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-5">
+		<MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">
+			<MudText Typo="Typo.h6" Class="mb-2">Failed to load tournament.json</MudText>
+			<MudText Style="white-space: pre-line;">@tournamentLoadError</MudText>
+		</MudAlert>
+		<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/tools/tournament-creator"
+				   StartIcon="@Icons.Material.Filled.PostAdd">
+			Open Tournament Creator
+		</MudButton>
+	</MudContainer>
+	return;
+}
+
 <div class="main-screen" id="tournamentPage">
 	<div class="rhs lhs infoB">
 
@@ -302,6 +317,7 @@
 	private int DrawP = 0;
 	private string tournamentGamesHeader = "";
 	private TypesDef.Tournament.Tournament tournament = TypesDef.Tournament.Tournament.Empty;
+	private string tournamentLoadError = "";
 	private InfoBannerInfo infoBannerInfo;
 	private string currentOpeningInPlay = "Opening:";
 	private string tournamentDesc = string.Empty;
@@ -1143,21 +1159,25 @@
 		await InvokeAsync(OnBrowserResize);
 	}
 
-	private bool TournamentJsonOk() =>
-	ChessLibrary.Configuration.Validation.validateTournament(tournament) is ChessLibrary.Configuration.Validation.ValidationResult res &&
-	res == ChessLibrary.Configuration.Validation.ValidationResult.Ok;
+	private (bool ok, string errors) ValidateTournamentJson()
+	{
+		var result = ChessLibrary.Configuration.Validation.validateTournament(tournament);
+		if (result is ChessLibrary.Configuration.Validation.ValidationResult.Errors errResult)
+		{
+			var msgs = errResult.Item;
+			return (false, string.Join("\n", msgs));
+		}
+		return (true, "");
+	}
 
 	private async Task ValidateTournamentInput()
 	{
-		var errorsFound = !TournamentJsonOk();
-
-		//add pop up dialog if not ok
-		if (errorsFound)
+		var (jsonOk, errors) = ValidateTournamentJson();
+		if (!jsonOk)
 		{
 			var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
-			var title = $"Tournament validation failed!";
-			var msg = "Please check the console for errors";
-			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", msg } }, opt);
+			var title = "Tournament validation failed!";
+			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", errors } }, opt);
 			return;
 		}
 
@@ -1166,8 +1186,8 @@
 		if (!ok)
 		{
 			var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
-			var title = $"Tournament validation failed!";
-			var msg = "Please check the console for errors";
+			var title = "Engine validation failed!";
+			var msg = "One or more engines failed to start or did not pass UCI validation. Check that all engine paths are correct and engines respond to the UCI protocol.";
 			var res = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>(title, new DialogParameters { { "Result", msg } }, opt);
 			return;
 		}
@@ -2652,12 +2672,12 @@
 			keyContext = HotKeys.CreateContext()
 			.Add(ModKey.Ctrl, Key.r, (Func<Task>)(async () => { await StartTournamentFlow(); }), "Run tournament")
 			.Add(ModKey.Ctrl, Key.c, (() => CancelTournament()), "Cancel tournament")
-			.Add(ModKey.Ctrl, Key.v, (() => ValidateTournamentInput()), "Validate tournament input")
-			.Add(ModKey.Ctrl, Key.u, (Func<Task>)(async () => await UpdateState()), "Update state")
-			.Add(ModKey.Ctrl, Key.p, (() => OpenQuickDialog()), "Open tournament view")
-			.Add(ModCode.Ctrl | ModCode.Alt, Code.W, (() => WhiteWins()), "White wins")
-			.Add(ModCode.Ctrl | ModCode.Alt, Code.B, (() => BlackWins()), "Black wins")
-			.Add(ModCode.Ctrl | ModCode.Alt, Code.D, (() => DrawGame()), "Draw");
+			.Add(ModKey.Ctrl, Key.v, (Func<Task>)(async () => { await ValidateTournamentInput(); }), "Validate tournament input")
+			.Add(ModKey.Ctrl, Key.u, (Func<Task>)(async () => { await UpdateState(); }), "Update state")
+			.Add(ModKey.Ctrl, Key.p, (Func<Task>)(async () => { await OpenQuickDialog(); }), "Open tournament view")
+			.Add(ModCode.Ctrl | ModCode.Alt, Code.W, (Func<Task>)(async () => { await WhiteWins(); }), "White wins")
+			.Add(ModCode.Ctrl | ModCode.Alt, Code.B, (Func<Task>)(async () => { await BlackWins(); }), "Black wins")
+			.Add(ModCode.Ctrl | ModCode.Alt, Code.D, (Func<Task>)(async () => { await DrawGame(); }), "Draw");
 			//.Add(ModKey.Ctrl, Key.s, (() => SwapBothTables()), "Swap tables")
 			//.Add(ModKey.Ctrl, Key.b, (() => BenchmarkConfig()), "Create benchmark config")
 			//.Add(ModKey.Ctrl, Key.l, (() => OpenResultDialog()), "Show result");
@@ -2682,11 +2702,30 @@
 			else
 			{
 				// Normal init — create config-reading runner
-				var r = TournamentSvc.GetConfigRunner(logger);
-				tournament = r.Tournament();
-				results = r.GetResults();
-				scoreTable = r.GetPlayerResults(results);
-				table = r.GenerateStatsCrosstable(results);
+				try
+				{
+					var r = TournamentSvc.GetConfigRunner(logger);
+					tournament = r.Tournament();
+					if (tournament == null || tournament.EngineSetup?.Engines == null || tournament.EngineSetup.Engines.Length == 0)
+					{
+						var loadErr = ChessLibrary.Tournament.Manager.lastLoadError;
+						tournamentLoadError = !string.IsNullOrEmpty(loadErr)
+							? loadErr
+							: "tournament.json could not be loaded. Check that all engine definition files exist and paths are correct.";
+						StateHasChanged();
+						return;
+					}
+					results = r.GetResults();
+					scoreTable = r.GetPlayerResults(results);
+					table = r.GenerateStatsCrosstable(results);
+				}
+				catch (Exception ex)
+				{
+					tournamentLoadError = ex.Message;
+					logger.LogError(ex, "Failed to load tournament configuration");
+					StateHasChanged();
+					return;
+				}
 			}
 			layoutOptions = tournament.LayoutOption;
 			descriptionStyle = $"margin-left:10px; font-size:{layoutOptions.Fonts.TournamentDescFont}px;";

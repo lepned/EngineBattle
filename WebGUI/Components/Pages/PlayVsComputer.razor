@@ -1,3 +1,4 @@
+@page "/play/computer"
 @page "/play-vs-computer"
 
 @using System.Globalization
@@ -10,6 +11,7 @@
 @inject OverlaySetting overlaySettings
 @inject IDialogService DialogService
 @inject IJSRuntime JS
+@inject GlobalSettingsService SettingsService
 @implements IAsyncDisposable
 
 <InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
@@ -246,6 +248,9 @@
 
     protected override void OnInitialized()
     {
+        var s = SettingsService.Settings;
+        if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
+            gamesPath = s.AnalysisGamesPath;
         ApplyTimeControl();
         ResetClocks();
         LoadSavedGamesFromPgn();

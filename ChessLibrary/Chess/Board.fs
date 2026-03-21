@@ -524,6 +524,11 @@ type Board() =
       let ply = int position.Ply
       max 1 ((ply + 1) / 2)
 
+    /// Move number for the side about to move (before a move is played)
+    member this.NextMoveNumber() =
+      let ply = int position.Ply
+      max 1 ((ply + 2) / 2)
+
     //stats - castles, captures and eps
     member this.CollectStat (move:_ inref) =
       if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then

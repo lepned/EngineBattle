@@ -1170,7 +1170,8 @@ module Engine =
       member this.ShowCommands = printCommands
       member this.Config = config
       member this.Path = config.Path
-      member this.GetUCICommands() = this.Uci() //optionsMap    
+      member this.GetUCICommands() = this.Uci() //optionsMap
+      member _.GetOptionsMap() = optionsMap
     
       member this.Uci() =
         let cmd = "uci"        

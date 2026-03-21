@@ -1,110 +1,428 @@
-﻿@page "/engineJSONCreator"
+@page "/tools/engine-creator"
+@page "/engineJSONCreator"
 @inject ILogger<DefaultEngineJsonCreator> logger
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using WebGUI.Services
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 @using System.Text.Json
+@using System.Text.Json.Nodes
 
+<PageTitle>Engine Creator</PageTitle>
 
-<InputFile id="engineDefault" OnChange="@PickExecutable" hidden />
+<div class="settings-container">
+    <h2>Engine Creator</h2>
+    <div class="settings-description">Probe a chess engine executable to generate a default engine.json configuration file.</div>
 
-<PageTitle>EngineJSONCreator</PageTitle>
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-@statusType">
+            <span>@statusMessage</span>
+            <button class="dismiss-btn" @onclick="() => statusMessage = string.Empty">&times;</button>
+        </div>
+    }
 
-<MudItem Class="d-flex mt-5">
-  <MudItem sm="6">
-    <MudText Class="mt-5" Typo="Typo.h4">Create default engine.json files from pointing to an engine executable</MudText>
-    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
-      <MudTextField HelperText="Folder where the executable is located" Placeholder="Write complete path to executable" T="string" Typo="Typo.h6" Text="@engineFolder" @bind-value="engineFolder"></MudTextField>
+    <div class="main-grid">
+    <!-- Left column: Base config + JSON preview -->
+    <div>
+    <div class="settings-section">
+        <h4>Base Configuration</h4>
+        <div class="section-hint">Optionally load an existing engine.json to carry over its settings into the new config.</div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Base engine.json</label>
+                <input type="text" @bind="baseConfigPath" />
+                <small>Existing engine.json to copy settings from</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => baseConfigPath = v, baseConfigPath, "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="button-row">
+            <button class="btn btn-outline" @onclick="LoadBaseConfig">Load base config</button>
+        </div>
+
+        @if (baseConfig != null)
+        {
+            <div class="alert alert-info" style="margin-top: 0.75rem;">
+                <span>Base config loaded: @baseConfig.Name — settings will be applied on probe.</span>
+            </div>
+        }
     </div>
-    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
-    <MudTextField HelperText="Folder where the engine.json files will be written to" Placeholder="Write path to engine JSON folder" T="string" Typo="Typo.h6" Text="@engineDefs" @bind-value="engineDefs"></MudTextField>
+
+    @if (!string.IsNullOrEmpty(jsonPreview))
+    {
+        <div class="settings-section">
+            <h4>JSON Preview</h4>
+            <div class="section-hint">Review and edit the generated configuration before saving.</div>
+
+            <textarea class="json-preview" @bind="jsonPreview" rows="20"></textarea>
+
+            <div class="button-row">
+                <button class="btn btn-success" @onclick="SaveJson">Save JSON</button>
+            </div>
+        </div>
+    }
     </div>
-    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
-    <MudTextField HelperText="Full path to optional weightsfile" Placeholder="Write path to engine JSON folder" T="string" Typo="Typo.h6" Text="@pathToWeights" @bind-value="pathToWeights"></MudTextField>
+
+    <!-- Right column: Engine probe -->
+    <div class="settings-section">
+        <h4>Engine</h4>
+        <div class="section-hint">Select the engine executable to probe and the output folder for the generated JSON.</div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Engine executable path</label>
+                <input type="text" @bind="enginePath" />
+                <small>Full path to the engine executable</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => enginePath = v, enginePath, "*.exe"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Output folder</label>
+                <input type="text" @bind="outputFolder" />
+                <small>Folder where the engine.json file will be saved</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFolder(v => outputFolder = v, outputFolder))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="button-row">
+            <button class="btn btn-primary" @onclick="ProbeEngine" disabled="@isProbing">
+                @if (isProbing)
+                {
+                    <span class="spinner"></span>
+                    <text>Probing...</text>
+                }
+                else
+                {
+                    <text>Probe Engine</text>
+                }
+            </button>
+        </div>
     </div>
-    <div style="border: 2px solid black; padding: 10px; margin-top: 20px; border-color:gray">
-    <MudTextField HelperText="Full path to optional Syzygy database" Placeholder="Write path to engine JSON folder" T="string" Typo="Typo.h6" Text="@pathToSyzygyPath" @bind-value="pathToSyzygyPath"></MudTextField>
     </div>
-    <MudFab Class="ml-3 mb-3 mt-5" HtmlTag="label" Color="Color.Default" Label="Pick executable" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="engineDefault" />
-    <MudText Class="ml-3 mt-5">Remember to add text to empty strings (or remove the empty properties) in the generated engine.json file</MudText>
-  </MudItem>
-</MudItem>
+</div>
 
 @code {
+    private string baseConfigPath = "";
+    private string enginePath = "";
+    private string outputFolder = "";
+    private string jsonPreview = "";
+    private CoreTypes.EngineConfig baseConfig;
+    private string statusMessage = "";
+    private string statusType = "info";
+    private bool isProbing;
+    private string probedEngineName = "";
 
-  private string engineDefs = "C:/Dev/Chess/Engines/EngineDefs";
-  private string pathToWeights = "C:/Dev/Chess/Networks/BT4/BT4-1024x15x32h-swa-6147500.pb.gz";
-  private string pathToSyzygyPath = "C:/Dev/Chess/TableBases/sygyzy";
-  private string engineFolder = "C:/Dev/Chess/LeelaBuild/PolicyBoostingCutlass/lc0/build";
-
-  private async Task PickExecutable(InputFileChangeEventArgs e)
-  {
-    var pgnName = e.File.Name;
-    //check if file is executable and that check if the file is in the engineDefs folder specified above
-    var inFolder = Directory.GetFiles(engineFolder).Any(x => x.Contains(pgnName));
-    if (!pgnName.EndsWith(".exe") || !inFolder)
+    protected override void OnInitialized()
     {
-      logger.LogWarning("Executable or folder not valid {File} {Folder}", pgnName, engineDefs);
-      return;
+        outputFolder = SettingsService.Settings.EngineDefsFolder;
     }
 
-    logger.LogInformation("Executable opened {File}", pgnName);
-    logger.LogInformation("Creating default engine.json file from executable", e.File.Name);
-    var env = AppPaths.BaseDir;
-    var fullPath = pgnName.ToLower().Contains("ceres") ? engineFolder : Path.Combine(env, pgnName);
-    var useFolder = pgnName.ToLower().Contains("ceres");
-    ChessLibrary.Engine.ChessEngine engine = null;
-    CoreTypes.EngineConfig config = null;
-    var path = Path.Combine(engineFolder, pgnName);
-    config = CoreTypes.EngineConfig.EmptyWithPath(path);
-    engine = EngineHelper.createEngine (config, null);
-    engine.StartProcess();
-    engine.StopProcess();
-    var defs = engine.GetDefaultOptions();
-
-    //WeightsFile
-    if (defs.ContainsKey("WeightsFile"))
+    private void LoadBaseConfig()
     {
-      defs["WeightsFile"] = pathToWeights;
+        statusMessage = "";
+        baseConfig = null;
+
+        if (string.IsNullOrWhiteSpace(baseConfigPath))
+        {
+            statusMessage = "Base config path is empty.";
+            statusType = "warning";
+            return;
+        }
+
+        if (!File.Exists(baseConfigPath))
+        {
+            statusMessage = $"File not found: {baseConfigPath}";
+            statusType = "error";
+            return;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(baseConfigPath);
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, AllowTrailingCommas = true };
+            baseConfig = JsonSerializer.Deserialize<CoreTypes.EngineConfig>(json, options);
+
+            // Pre-fill engine path from base config if the field is empty
+            if (string.IsNullOrWhiteSpace(enginePath) && !string.IsNullOrWhiteSpace(baseConfig.Path))
+                enginePath = baseConfig.Path;
+
+            statusMessage = $"Loaded base config: {baseConfig.Name}";
+            statusType = "success";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error loading base config: {ex.Message}";
+            statusType = "error";
+        }
     }
 
-    //SyzygyPath
-    if (defs.ContainsKey("SyzygyPath"))
+    private async Task ProbeEngine()
     {
-      if (string.IsNullOrEmpty(pathToSyzygyPath))
-      {
-        defs.Remove("SyzygyPath");
-      }
-      else
-      {
-        defs["SyzygyPath"] = pathToSyzygyPath;
-      }
+        statusMessage = "";
+        jsonPreview = "";
+
+        if (string.IsNullOrWhiteSpace(enginePath))
+        {
+            statusMessage = "Engine executable path is required.";
+            statusType = "warning";
+            return;
+        }
+
+        if (!File.Exists(enginePath))
+        {
+            statusMessage = $"File not found: {enginePath}";
+            statusType = "error";
+            return;
+        }
+
+        isProbing = true;
+        StateHasChanged();
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var result = await Task.Run(() =>
+            {
+                var config = CoreTypes.EngineConfig.EmptyWithPath(enginePath);
+                var engine = EngineHelper.createEngine(config, null);
+                try
+                {
+                    engine.StartProcess();
+                    cts.Token.ThrowIfCancellationRequested();
+                    engine.StopProcess();
+                }
+                catch
+                {
+                    try { engine.StopProcess(); } catch { }
+                    throw;
+                }
+                var defs = engine.GetDefaultOptions();
+                var uciCommands = engine.GetOptionsMap();
+                return (config, defs, uciCommands);
+            }, cts.Token);
+
+            var config = result.config;
+            var defs = result.defs;
+            var uciCommands = result.uciCommands;
+
+            // If a base config is loaded, overlay its option values onto probed defaults
+            if (baseConfig != null && baseConfig.Options != null)
+            {
+                foreach (var opt in baseConfig.Options)
+                {
+                    if (defs.ContainsKey(opt.Key))
+                        defs[opt.Key] = opt.Value;
+                }
+            }
+
+            // Extract engine name and author from UCI id lines
+            string uciEngineName = null;
+            string uciAuthor = null;
+            if (uciCommands.TryGetValue("name", out var nameOpt) &&
+                nameOpt.OptionType.IsIdAndAuthor)
+            {
+                var idAndAuthor = (ChessLibrary.UciOption.UciOptionType.IdAndAuthor)nameOpt.OptionType;
+                uciEngineName = idAndAuthor.Item3;
+                config.Name = uciEngineName;
+            }
+            if (uciCommands.TryGetValue("author", out var authorOpt) &&
+                authorOpt.OptionType.IsIdAndAuthor)
+            {
+                var idAndAuthor = (ChessLibrary.UciOption.UciOptionType.IdAndAuthor)authorOpt.OptionType;
+                uciAuthor = idAndAuthor.Item3;
+            }
+
+            // Apply neural net folder: base config NetworkPath takes priority, then global settings
+            if (baseConfig != null && !string.IsNullOrWhiteSpace(baseConfig.NetworkPath))
+            {
+                config.NetworkPath = baseConfig.NetworkPath;
+            }
+            else
+            {
+                var nnFolder = SettingsService.Settings.NeuralNetFolder;
+                if (!string.IsNullOrWhiteSpace(nnFolder))
+                    config.NetworkPath = nnFolder;
+            }
+
+            // Apply tablebase path from global settings (base config options already applied above)
+            var syzygyVal = defs.ContainsKey("SyzygyPath") ? defs["SyzygyPath"]?.ToString() : null;
+            if (string.IsNullOrWhiteSpace(syzygyVal) || string.Equals(syzygyVal, "<empty>", StringComparison.OrdinalIgnoreCase))
+            {
+                var tbPath = SettingsService.Settings.TablebaseFolder;
+                if (defs.ContainsKey("SyzygyPath"))
+                {
+                    if (!string.IsNullOrWhiteSpace(tbPath))
+                        defs["SyzygyPath"] = tbPath;
+                    else
+                        defs.Remove("SyzygyPath");
+                }
+            }
+
+            // Auto-enable useful options (only if not already set by base config)
+            if (defs.ContainsKey("LogLiveStats"))
+                defs["LogLiveStats"] = true;
+            if (defs.ContainsKey("VerboseMoveStats"))
+                defs["VerboseMoveStats"] = true;
+            if (defs.ContainsKey("UCI_ShowWDL"))
+                defs["UCI_ShowWDL"] = true;
+
+            var defaultConfig = CoreTypes.EngineConfig.AddOptions(config, defs);
+            var jsonNode = JsonSerializer.SerializeToNode(defaultConfig);
+            var obj = jsonNode!.AsObject();
+
+            // Apply UCI id values to JSON
+            if (uciEngineName != null)
+            {
+                obj["Version"] = uciEngineName;
+                obj["Alias"] = StripVersion(uciEngineName);
+            }
+            if (uciAuthor != null)
+                obj["Dev"] = uciAuthor;
+
+            // Apply base config top-level fields (non-option settings)
+            if (baseConfig != null)
+            {
+                if (!string.IsNullOrWhiteSpace(baseConfig.Alias))
+                    obj["Alias"] = baseConfig.Alias;
+                if (!string.IsNullOrWhiteSpace(baseConfig.LogoPath))
+                    obj["LogoPath"] = baseConfig.LogoPath;
+                if (!string.IsNullOrWhiteSpace(baseConfig.Args))
+                    obj["Args"] = baseConfig.Args;
+                obj["Rating"] = baseConfig.Rating;
+                obj["ContemptEnabled"] = baseConfig.ContemptEnabled;
+                obj["NegativeContemptAllowed"] = baseConfig.NegativeContemptAllowed;
+            }
+
+            obj.Remove("IsChallenger");
+            obj.Remove("WinboardConfig");
+            obj.Remove("DeviceOption");
+            obj.Remove("DeviceTemplate");
+            jsonPreview = obj.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            probedEngineName = uciEngineName ?? Path.GetFileNameWithoutExtension(enginePath);
+
+            var baseNote = baseConfig != null ? $" (with settings from {baseConfig.Name})" : "";
+            statusMessage = $"Successfully probed {probedEngineName} — {defs.Count} UCI options detected.{baseNote}";
+            statusType = "success";
+        }
+        catch (OperationCanceledException)
+        {
+            statusMessage = "Engine probe timed out after 15 seconds. The engine may be unresponsive or not a valid UCI engine.";
+            statusType = "error";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error probing engine: {ex.Message}";
+            statusType = "error";
+            logger.LogError(ex, "Failed to probe engine at {Path}", enginePath);
+        }
+        finally
+        {
+            isProbing = false;
+        }
     }
 
-    //LogLiveStats
-    if (defs.ContainsKey("LogLiveStats"))
+    private async Task SaveJson()
     {
-      defs["LogLiveStats"] = true;
+        statusMessage = "";
+
+        if (string.IsNullOrWhiteSpace(jsonPreview))
+        {
+            statusMessage = "Nothing to save — probe an engine first.";
+            statusType = "warning";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(outputFolder))
+        {
+            statusMessage = "Output folder path is required.";
+            statusType = "warning";
+            return;
+        }
+
+        if (!Directory.Exists(outputFolder))
+        {
+            statusMessage = $"Output folder does not exist: {outputFolder}";
+            statusType = "error";
+            return;
+        }
+
+        try
+        {
+            var outPath = GetUniqueFilePath(outputFolder, probedEngineName);
+            await File.WriteAllTextAsync(outPath, jsonPreview);
+            statusMessage = $"Saved to {outPath}";
+            statusType = "success";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Error saving file: {ex.Message}";
+            statusType = "error";
+            logger.LogError(ex, "Failed to save engine JSON");
+        }
     }
 
-    //VerboseMoveStats
-    if (defs.ContainsKey("VerboseMoveStats"))
+    private static string GetUniqueFilePath(string folder, string baseName)
     {
-      defs["VerboseMoveStats"] = true;
+        var path = Path.Combine(folder, $"{baseName}.json");
+        if (!File.Exists(path))
+            return path;
+
+        for (int i = 1; i <= 99; i++)
+        {
+            path = Path.Combine(folder, $"{baseName}_{i:D2}.json");
+            if (!File.Exists(path))
+                return path;
+        }
+        return path;
     }
 
-    //UCI_ShowWDL
-    if (defs.ContainsKey("UCI_ShowWDL"))
+    private static string StripVersion(string engineName)
     {
-      defs["UCI_ShowWDL"] = true;
+        // Strip trailing version-like tokens: "Stockfish 17" -> "Stockfish", "Lc0 v0.31.2" -> "Lc0"
+        var parts = engineName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var nameparts = new System.Collections.Generic.List<string>();
+        foreach (var part in parts)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(part, @"^v?\d"))
+                break;
+            nameparts.Add(part);
+        }
+        return nameparts.Count > 0 ? string.Join(" ", nameparts) : engineName;
     }
 
-    var defaultConfig = CoreTypes.EngineConfig.AddOptions(config, defs);
-    //make the json indented for better read
-    var setting = System.Text.Json.JsonSerializerOptions.Default.WriteIndented;
-    var json = System.Text.Json.JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions { WriteIndented = true, AllowTrailingCommas = true });
-    var name = pgnName.Replace(".exe", ".json");
-    var outPath = Path.Combine(engineDefs, name);
-    await File.WriteAllTextAsync(outPath, json);
-    await Task.Delay(1000);
-    logger.LogInformation($"Done with creating default engine.json file {engineDefs}");
-  }
+    private async Task BrowseFolder(Action<string> setter, string currentValue)
+    {
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, currentValue },
+            { x => x.Mode, FileBrowserMode.Folder }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+    }
 
+    private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
+    {
+        var initialDir = !string.IsNullOrEmpty(currentValue)
+            ? (File.Exists(currentValue) ? Path.GetDirectoryName(currentValue) ?? ""
+               : Directory.Exists(currentValue) ? currentValue
+               : Path.GetDirectoryName(currentValue) ?? "")
+            : "";
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, filter },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+    }
 }
