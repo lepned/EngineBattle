@@ -650,13 +650,13 @@
         netFilter = "";
     }
 
-    private static string FormatSize(long bytes) => bytes switch
+    private static string FormatSize(long bytes)
     {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
-        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB"
-    };
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
+    }
 
     private class EngineEntry
     {
