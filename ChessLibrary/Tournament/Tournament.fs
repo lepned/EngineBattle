@@ -368,6 +368,9 @@ module Manager =
 
     member _.Cancel() = cts.Cancel()
 
+    member _.InvalidateTournament() =
+      tournamentLoaded <- false
+
     member _.Tournament() =
       //check if tournament is empty and reload if necessary
       if not tournamentLoaded then

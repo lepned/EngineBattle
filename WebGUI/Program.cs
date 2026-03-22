@@ -26,6 +26,36 @@ static int FindAvailablePort(int startPort)
     return 0;
 }
 
+/// <summary>
+/// Finds the CSS isolation bundle directory in obj/ for the active build configuration.
+/// Returns empty string if not found (e.g. in published builds where the bundle is already in wwwroot).
+/// </summary>
+static string FindCssBundleDir(IWebHostEnvironment env)
+{
+    var cssName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name + ".styles.css";
+
+    // Published builds already have the CSS in wwwroot — no fallback needed
+    if (File.Exists(Path.Combine(env.WebRootPath, cssName))) return "";
+
+    // In dev mode, search obj/ for the bundle directory matching the build configuration
+    var contentRoot = env.ContentRootPath;
+#if DEBUG
+    var configDir = Path.Combine(contentRoot, "obj", "Debug");
+#else
+    var configDir = Path.Combine(contentRoot, "obj", "Release");
+#endif
+    if (!Directory.Exists(configDir))
+        configDir = Path.Combine(contentRoot, "obj");
+    if (!Directory.Exists(configDir)) return "";
+
+    try
+    {
+        var source = Directory.GetFiles(configDir, cssName, SearchOption.AllDirectories).FirstOrDefault();
+        return source != null ? Path.GetDirectoryName(source) : "";
+    }
+    catch { return ""; }
+}
+
 static void EnsureTournamentJsonIsLoaded()
 {
     string currentDir = AppPaths.BaseDir;
@@ -129,10 +159,23 @@ Console.WriteLine("Runtime version: " + Environment.Version);
 // Get the full framework description
 Console.WriteLine("Framework: " + RuntimeInformation.FrameworkDescription);
 
-app.UseStaticFiles();
+app.MapStaticAssets();
+
+// CSS isolation fallback: serve CSS bundle directly from obj/ if not in wwwroot (dev mode with stale builds)
+var cssBundleDir = FindCssBundleDir(app.Environment);
+if (!string.IsNullOrEmpty(cssBundleDir))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(cssBundleDir),
+        ContentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider(
+            new Dictionary<string, string> { [".css"] = "text/css" })
+    });
+}
 app.UseAntiforgery();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .WithStaticAssets();
 EnsureTournamentJsonIsLoaded();
 
 bool hasExplicitUrls = args.Any(a => a.StartsWith("--urls", StringComparison.OrdinalIgnoreCase))

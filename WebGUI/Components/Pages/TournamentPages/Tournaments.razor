@@ -1315,22 +1315,18 @@
 		moveHistory = string.Empty;
 		openingMoves = string.Empty;
 		var isWhite = true;
-		await evalList.ClearData(whitePlayer, blackPlayer);
-		await nodeList.ClearData(whitePlayer, blackPlayer);
-		await npsList.ClearData(whitePlayer, blackPlayer);
-		await epsList.ClearData(whitePlayer, blackPlayer);
-		await timeUsageList.ClearData(whitePlayer, blackPlayer);
+		var startMove = moves.Count > 0 ? (moves.Count + 1) / 2 + 1 : 1;
+		await evalList.ClearData(whitePlayer, blackPlayer, startMove);
+		await nodeList.ClearData(whitePlayer, blackPlayer, startMove);
+		await npsList.ClearData(whitePlayer, blackPlayer, startMove);
+		await epsList.ClearData(whitePlayer, blackPlayer, startMove);
+		await timeUsageList.ClearData(whitePlayer, blackPlayer, startMove);
 
 		if (moves.Count != 0)
 		{
 			foreach (var move in moves)
 			{
 				CreateOpeningMoves(move);
-				evalList.AddEvalData(isWhite, false, 0.0);
-				nodeList.AddData(isWhite, 0.0, false);
-				npsList.AddData(isWhite, 0.0, true);
-				epsList.AddData(isWhite, 0.0, true);
-				timeUsageList.AddData(isWhite, 0.0, false);
 				isWhite = !isWhite;
 				await Task.Delay(tournament.MinMoveTimeInMS);
 				await InvokeAsync(StateHasChanged);
@@ -1339,6 +1335,7 @@
 					await pvBoardDuo.SetPVMoveWithAnnotation(move, true);
 			}
 		}
+
 		if (moves.Count > 0)
 		{
 			var move = moves.Last();

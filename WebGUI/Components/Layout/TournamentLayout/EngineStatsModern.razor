@@ -7,21 +7,21 @@
   <!-- Row 1: Engine Headers & Main Logo -->
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
-    <div class="engine-logo-wrapper" style="@LogoWrapperStyle">
-      <img src="@Engine1Logo" alt="@Engine1Name" class="engine-logo" />
+    <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
+      <img src="@Engine1Logo" alt="@Engine1Name" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
     <h3 class="engine-name">@Engine1Name</h3>
     <span class="engine-version">@Engine1Version</span>
   </div>
-  <div class="main-logo-wrapper">
-    <img src="@MainLogo" alt="EngineBattle" class="main-logo" />
+  <div class="main-logo-wrapper" style="overflow:hidden;max-width:100%;">
+    <img src="@MainLogo" alt="EngineBattle" class="main-logo" style="max-width:300px;max-height:200px;object-fit:contain;" />
     <span class="powered-by">Powered by EngineBattle</span>
     <span class="author">Lars E. Pedersen</span>
   </div>
   <div class="engine-header-cell @(Engine1ToMove ? "" : "active")">
     <span class="side-label">Black</span>
-    <div class="engine-logo-wrapper" style="@LogoWrapperStyle">
-      <img src="@Engine2Logo" alt="@Engine2Name" class="engine-logo" />
+    <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
+      <img src="@Engine2Logo" alt="@Engine2Name" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
     <h3 class="engine-name">@Engine2Name</h3>
     <span class="engine-version">@Engine2Version</span>

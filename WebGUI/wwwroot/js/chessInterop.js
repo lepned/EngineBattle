@@ -794,9 +794,17 @@ export function updateLineEvalChartData(chart, trace, index) {
   try {
     var x = trace.x;
     var y = trace.y;
-    var x0 = [[x[x.length - 1]]];
+    var x0 = [[x[y.length - 1]]];
     var y0 = [[y[y.length - 1]]];
     Plotly.extendTraces(chart, { x: x0, y: y0 }, [index]);
+    var lastX = x[y.length - 1];
+    var firstX = x[0];
+    var span = lastX - firstX + 2;
+    var raw = span / 10;
+    var nice = [1, 2, 5, 10, 20, 50, 100];
+    var dtick = nice.find(n => n >= raw) || nice[nice.length - 1];
+    if (chart.layout.xaxis.dtick !== dtick)
+      Plotly.relayout(chart, { 'xaxis.dtick': dtick });
   } catch (error) {
     console.error(error);
   }

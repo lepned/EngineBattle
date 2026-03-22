@@ -13,6 +13,43 @@ namespace WebGUI.Plotting
         public List<double> PlayerBlackData { get; set; } = new List<double>();
         public List<int> MoveElements { get; set; } = Enumerable.Range(1, maxNumberOfMoves).ToList();
 
+        public void SetStartMove(int moveNumber)
+        {
+            MoveElements = Enumerable.Range(moveNumber, maxNumberOfMoves).ToList();
+        }
+
+        private object BuildXAxis(bool showLine = false, bool showZeroline = false)
+        {
+            var start = MoveElements.Count > 0 ? MoveElements[0] : 1;
+            var hasData = PlayerWhiteData.Count > 0 || PlayerBlackData.Count > 0;
+            if (hasData)
+                return new
+                {
+                    tickfont = new { size = fontSizeTickFont },
+                    showgrid = false,
+                    zeroline = false,
+                    showline = showLine,
+                    showzeroline = showZeroline,
+                    color = whiteColor,
+                    tick0 = 0,
+                    dtick = 1,
+                    rangemode = "nonnegative",
+                };
+            return new
+            {
+                tickfont = new { size = fontSizeTickFont },
+                showgrid = false,
+                zeroline = false,
+                showline = showLine,
+                showzeroline = showZeroline,
+                color = whiteColor,
+                tick0 = 0,
+                dtick = 1,
+                rangemode = "nonnegative",
+                range = new[] { start - 1, start + 11 },
+            };
+        }
+
         private const double maxEvalValue = 20;
         private const double minEvalValue = -20;
         private const int maxNumberOfMoves = 500;
@@ -46,7 +83,7 @@ namespace WebGUI.Plotting
             margin = new
             {
                 l = 50,
-                r = 15,
+                r = 30,
                 b = 30,
                 t = 50,
                 pad = 2,
@@ -95,7 +132,7 @@ namespace WebGUI.Plotting
 
         }
 
-        public async Task ClearData(string white, string black)
+        public async Task ClearData(string white, string black, int startMove = 1)
         {
             try
             {
@@ -105,7 +142,7 @@ namespace WebGUI.Plotting
                 liveUpdateStarted = false;
                 PlayerWhite = white;
                 PlayerBlack = black;
-                MoveElements = Enumerable.Range(1, maxNumberOfMoves).ToList();
+                MoveElements = Enumerable.Range(startMove, maxNumberOfMoves).ToList();
                 await Task.WhenAll(
                     SetEvalChartData(),
                     SetChartNodeData(),
@@ -187,13 +224,7 @@ namespace WebGUI.Plotting
 
         public async Task SetEvalChartData()
         {
-            var xaxis = new
-            {
-                tickfont = new { size = fontSizeTickFont },
-                showgrid = false,
-                zeroline = false,
-                color = whiteColor
-            };
+            var xaxis = BuildXAxis();
 
             var yaxis = new
             {
@@ -309,13 +340,7 @@ namespace WebGUI.Plotting
 
         public async Task SetSingleChartNodeData()
         {
-            var xaxis = new
-            {
-                tickfont = new { size = fontSizeTickFont },
-                showgrid = false,
-                zeroline = false,
-                color = whiteColor
-            };
+            var xaxis = BuildXAxis();
 
             var yaxis = new
             {
@@ -412,15 +437,7 @@ namespace WebGUI.Plotting
 
         public async Task SetDoubleChartNodeData()
         {
-            var xaxis = new
-            {
-                tickfont = new { size = fontSizeTickFont },
-                showgrid = false,
-                zeroline = false,
-                showline = false,
-                showzeroline = false,
-                color = whiteColor
-            };
+            var xaxis = BuildXAxis(showLine: false, showZeroline: false);
 
             var yaxis = new
             {
@@ -539,13 +556,7 @@ namespace WebGUI.Plotting
 
         public async Task SetChartTimeUsageData()
         {
-            var xaxis = new
-            {
-                tickfont = new { size = fontSizeTickFont },
-                showgrid = false,
-                zeroline = false,
-                color = whiteColor
-            };
+            var xaxis = BuildXAxis();
 
             var yaxis = new
             {

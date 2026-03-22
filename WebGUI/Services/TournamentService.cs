@@ -52,7 +52,11 @@ namespace WebGUI.Services
 
         public Tournament.Manager.Runner GetConfigRunner(ILogger logger)
         {
-            if (_runner != null) return _runner;
+            if (_runner != null)
+            {
+                if (!IsRunning) _runner.InvalidateTournament();
+                return _runner;
+            }
             _runner = new Tournament.Manager.Runner(logger, HandleUpdate, true, false);
             return _runner;
         }
