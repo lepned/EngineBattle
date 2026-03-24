@@ -496,12 +496,16 @@
                     {
                         overlayEngineSource = 1;
                         overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                        overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
                     }
                     else
                     {
                         overlayEngineSource = 2;
+                        overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
                         overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
                     }
+                    var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+                    await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
                 }
                 chartLines = config.ChartLines;
             }
@@ -522,6 +526,8 @@
                     selectedOverlay = OverlaySettings.Policy;
                     overlayEngineSource = 1;
                     overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                    overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                    await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
                 }
             }
             chartLines = config.ChartLines;
@@ -967,25 +973,19 @@
         engine2SupportsOverlay = Engine2?.Options?.Keys.Contains("LogLiveStats") ?? false;
         showOverlayControls = engine1SupportsOverlay || engine2SupportsOverlay;
 
-        if (showOverlayControls && selectedOverlay == OverlaySettings.None)
+        if (showOverlayControls)
         {
-            selectedOverlay = OverlaySettings.Policy;
-            // Set overlay for both capable engines (first-responder in Chessboard picks which to display)
-            if (engine1SupportsOverlay && engine2SupportsOverlay)
-            {
-                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
-                overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
-            }
-            else if (engine1SupportsOverlay)
-            {
+            if (selectedOverlay == OverlaySettings.None)
+                selectedOverlay = OverlaySettings.Policy;
+            // Always re-evaluate both engines' overlay based on current support
+            overlaySettings.SetOverlaySetting("nnInput1", engine1SupportsOverlay ? selectedOverlay : OverlaySettings.None);
+            overlaySettings.SetOverlaySetting("nnInput2", engine2SupportsOverlay ? selectedOverlay : OverlaySettings.None);
+            if (engine1SupportsOverlay)
                 overlayEngineSource = 1;
-                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
-            }
-            else if (engine2SupportsOverlay)
-            {
+            else
                 overlayEngineSource = 2;
-                overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
-            }
+            var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+            await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
         }
         else if (!showOverlayControls)
         {
@@ -1147,12 +1147,16 @@
                         {
                             overlayEngineSource = 1;
                             overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
                         }
                         else
                         {
                             overlayEngineSource = 2;
+                            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
                             overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
                         }
+                        var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+                        await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
                     }
                 }
                 else if (engineConfigs.Count > 0)
@@ -1172,6 +1176,8 @@
                         selectedOverlay = OverlaySettings.Policy;
                         overlayEngineSource = 1;
                         overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                        overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                        await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
                     }
                 }
                 chartLines = config.ChartLines;

@@ -833,7 +833,7 @@
 	{
 		if (overlay == OverlaySettings.None)
 		{
-			if (id == currentId || string.IsNullOrEmpty(currentId))
+			if (id == currentId)
 			{
 				if (chessJSmodule is not null)
 					await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);

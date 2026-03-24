@@ -61,6 +61,9 @@ module Engine =
       let dict = System.Collections.Generic.Dictionary<string, obj>()
       let nonDefaultValues = System.Collections.Generic.Dictionary<string, (string * string)>()
       let mutable inPolicyDistributionMode = false
+      let mutable searchMoves: string list = []
+      let searchMoveSuffix() =
+        if searchMoves.IsEmpty then "" else " searchmoves " + (searchMoves |> String.concat " ")
 
       let ceresNetworkName = 
         //check if config.Options contains Network as key
@@ -328,7 +331,7 @@ module Engine =
       let analysisCommands =
         [
           //sprintf "setoption name %s value %d" "SmartPruningFactor" 0
-          sprintf "setoption name %s value %d" "MultiPV" 10
+          sprintf "setoption name %s value %d" "MultiPV" 20
         ]
 
       let distribution = ResizeArray<NNValues>()
@@ -654,23 +657,23 @@ module Engine =
               write cmd
               commands.Add cmd
           | GoNodes nodes ->
-              let cmd = (sprintf "go nodes %d" nodes)
+              let cmd = sprintf "go nodes %d%s" nodes (searchMoveSuffix())
               write cmd
               commands.Add cmd
           | GoInfinite ->
-              let cmd = (sprintf "go infinite")
+              let cmd = sprintf "go infinite%s" (searchMoveSuffix())
               write cmd
               commands.Add cmd
-          | GoMoveTime timeInMs -> 
-              let cmd = sprintf "go movetime %d" timeInMs
+          | GoMoveTime timeInMs ->
+              let cmd = sprintf "go movetime %d%s" timeInMs (searchMoveSuffix())
               write cmd
               commands.Add cmd
-          | GoValue -> 
+          | GoValue ->
               let cmd = sprintf "go value"
               write cmd
               commands.Add cmd
           | GoTimeControl (tc,wTime,bTime) ->
-              let cmd = TimeControlCommands.uciTimeCommand tc wTime bTime
+              let cmd = TimeControlCommands.uciTimeCommand tc wTime bTime + searchMoveSuffix()
               write cmd
               commands.Add cmd
           | UciNewGame ->
@@ -707,8 +710,12 @@ module Engine =
                         commands.Add cmd
                   | _ -> ()
               | None -> printfn "Option not found: %s value: %d" optionName ms
-  
-  
+
+      member this.SetSearchMoves (moves: string list) = searchMoves <- moves
+      member this.ClearSearchMoves () = searchMoves <- []
+      member this.SearchMoves with get() = searchMoves
+
+
   let printedEngines = System.Collections.Generic.HashSet<string>()
   let printLock = obj()
   let resetPrintedEngines () = printedEngines.Clear()
@@ -1213,19 +1220,19 @@ module Engine =
         write cmd
         commands.Add cmd
 
-      member this.Go (timeControl : UnionType, wTime, bTime) = 
+      member this.Go (timeControl : UnionType, wTime, bTime) =
         isRunning <- true
-        let cmd = TimeControlCommands.uciTimeCommand timeControl wTime bTime        
+        let cmd = TimeControlCommands.uciTimeCommand timeControl wTime bTime
         write cmd
         commands.Add cmd
 
-      member this.GoNodes (nodes:int) = 
+      member this.GoNodes (nodes:int) =
         isRunning <- true
-        let cmd = TimeControlCommands.createNodes nodes        
+        let cmd = TimeControlCommands.createNodes nodes
         write cmd
         commands.Add cmd
 
-      member this.GoValue () = 
+      member this.GoValue () =
         isRunning <- true
         let cmd = "go value"
         write cmd

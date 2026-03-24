@@ -91,6 +91,13 @@
             Auto
         </button>
 
+        <button class="ep-upload @(focusModeEnabled ? "active" : "")" @onclick="ToggleFocusMode" title="Focus mode: click moves in NN table to restrict search">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+            </svg>
+            Focus
+        </button>
+
         <button class="ep-upload @(showCharts || showCpChart ? "active" : "")" @onclick="ToggleCharts" title="Toggle charts">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
@@ -138,6 +145,18 @@
             <span>NN: Not set</span>
         }
     </div>
+
+    @if (focusModeEnabled && focusedMoves.Count > 0)
+    {
+        <div class="ep-focus-moves">
+            <span class="ep-focus-label">Focus:</span>
+            @foreach (var move in focusedMoves.ToArray())
+            {
+                <span class="ep-focus-chip" @onclick="@(() => RemoveFocusMove(move))">@move x</span>
+            }
+            <button class="ep-focus-clear" @onclick="ClearFocusMoves">Clear all</button>
+        </div>
+    }
 
     <div class="ep-pv-label">
         Principal Variation
@@ -198,7 +217,7 @@
         <div class="ep-charts-controls">
             <div class="ep-slider" style="min-width:200px;">
                 <label>Chart lines: @numberOfLines</label>
-                <input type="range" min="1" max="9" step="1" @bind="numberOfLines" />
+                <input type="range" min="1" max="20" step="1" @bind="numberOfLines" />
             </div>
 
             <label class="ep-switch">
@@ -220,7 +239,7 @@
         <div class="ep-charts-controls">
             <div class="ep-slider" style="min-width:200px;">
                 <label>Chart lines: @cpChartLines</label>
-                <input type="range" min="1" max="10" step="1" @bind="cpChartLines" />
+                <input type="range" min="1" max="20" step="1" @bind="cpChartLines" />
             </div>
         </div>
         <div class="ep-chart-container" style="height:@GetCpChartHeight();">
@@ -254,7 +273,8 @@
                 <tbody>
                     @foreach (var item in NNInfoList.ToArray())
                     {
-                        <tr @onclick="@(() => PlayMoveFromNNTable(item))">
+                        <tr class="@(focusedMoves.Contains(item?.LANMove) ? "ep-focused-row" : "")"
+                            @onclick="@(() => OnNNTableRowClick(item))">
                             <td>@item?.Raw</td>
                         </tr>
                     }
@@ -295,7 +315,8 @@
                 <tbody>
                     @foreach (var item in dataList.ToArray())
                     {
-                        <tr @onclick="@(() => PlayMoveFromStatusTable(item))">
+                        <tr class="@(focusModeEnabled && focusedMoves.Contains(GetFirstMove(item.Value.PVLongSAN)) ? "ep-focused-row" : "")"
+                            @onclick="@(() => OnPVTableRowClick(item))">
                             <td>@item.Value.Eval</td>
                             <td>@item.Value.Depth</td>
                             <td>@item.Value.SD</td>
@@ -382,6 +403,8 @@
     private ElementReference cpChartReference;
     private CpEvalPlot cpEvalPlot;
     private int cpChartLines = 4;
+    private bool focusModeEnabled = false;
+    private List<string> focusedMoves = new();
 
     // Expose PVState for parent components (e.g., DualAnalysis for dual comparison)
     public PVState PVState => pvState;
@@ -681,6 +704,83 @@
         StateHasChanged();
     }
 
+    private async Task OnNNTableRowClick(NNValues moveInfo)
+    {
+        if (focusModeEnabled && !autoSearchSwitch && moveInfo != null)
+        {
+            var move = moveInfo.LANMove;
+            if (focusedMoves.Contains(move))
+                focusedMoves.Remove(move);
+            else
+                focusedMoves.Add(move);
+            ApplySearchMoves();
+            if (searchInProgress && analyzer != null)
+                StartSearchWithMode();
+            StateHasChanged();
+        }
+        else
+        {
+            await PlayMoveFromNNTable(moveInfo);
+        }
+    }
+
+    private void ToggleFocusMode()
+    {
+        focusModeEnabled = !focusModeEnabled;
+        if (!focusModeEnabled)
+            ClearFocusMoves();
+    }
+
+    private void RemoveFocusMove(string move)
+    {
+        focusedMoves.Remove(move);
+        ApplySearchMoves();
+        if (searchInProgress && analyzer != null)
+            StartSearchWithMode();
+        StateHasChanged();
+    }
+
+    private void ClearFocusMoves()
+    {
+        focusedMoves.Clear();
+        ApplySearchMoves();
+        if (searchInProgress && analyzer != null)
+            StartSearchWithMode();
+        StateHasChanged();
+    }
+
+    private string GetFirstMove(string pvLongSAN) =>
+        pvLongSAN?.Split(' ').FirstOrDefault() ?? "";
+
+    private void ApplySearchMoves()
+    {
+        if (analyzer != null)
+            analyzer.SetSearchMoves(Microsoft.FSharp.Collections.ListModule.OfSeq(focusedMoves));
+    }
+
+    private async Task OnPVTableRowClick(KeyValuePair<int, EngineStatus> status)
+    {
+        if (focusModeEnabled && !autoSearchSwitch)
+        {
+            var move = status.Value.PVLongSAN?.Split(' ').FirstOrDefault();
+            if (!string.IsNullOrEmpty(move))
+            {
+                if (focusedMoves.Contains(move))
+                    focusedMoves.Remove(move);
+                else
+                    focusedMoves.Add(move);
+                ApplySearchMoves();
+                if (searchInProgress && analyzer != null)
+                    StartSearchWithMode();
+                StateHasChanged();
+            }
+        }
+        else
+        {
+            await PlayMoveFromStatusTable(status);
+        }
+    }
+
     private async Task PlayMoveFromStatusTable(KeyValuePair<int, EngineStatus> status)
     {
         InfoLineList.Clear();
@@ -907,7 +1007,8 @@
         cpEvalPlot?.Clear();
         searchInProgress = true;
         ResetSearchTimer();
-        await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
+        if (selectedOverlaySetting != OverlaySettings.None)
+            await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
         await InvokeAsync(StateHasChanged);
         if (analyzer == null)
         {
@@ -1510,6 +1611,8 @@
         NNInfoList.Clear();
         InfoLineList.Clear();
         data.Clear();
+        focusedMoves.Clear();
+        analyzer?.ClearSearchMoves();
         dataList.Clear();
         StateHasChanged();
     }

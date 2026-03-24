@@ -75,6 +75,7 @@
             <th @onclick='() => ScoreSortBy("Type")'>Type @ScoreSortIndicator("Type")</th>
             <th @onclick='() => ScoreSortBy("Theme")'>Theme @ScoreSortIndicator("Theme")</th>
             <th @onclick='() => ScoreSortBy("Nodes")'>Nodes @ScoreSortIndicator("Nodes")</th>
+            <th @onclick='() => ScoreSortBy("AvgKLD")'>AvgKLD @ScoreSortIndicator("AvgKLD")</th>
           </tr>
         </thead>
         <tbody>
@@ -90,6 +91,7 @@
               <td>@item.Type</td>
               <td>@item.Filter</td>
               <td>@item.Nodes</td>
+              <td>@(item.AvgKLD > 0 ? item.AvgKLD.ToString("F4") : "—")</td>
             </tr>
           }
         </tbody>
@@ -288,6 +290,7 @@
             "Type" => scoreSortAscending ? items.OrderBy(x => x.Type) : items.OrderByDescending(x => x.Type),
             "Theme" => scoreSortAscending ? items.OrderBy(x => x.Filter) : items.OrderByDescending(x => x.Filter),
             "Nodes" => scoreSortAscending ? items.OrderBy(x => x.Nodes) : items.OrderByDescending(x => x.Nodes),
+            "AvgKLD" => scoreSortAscending ? items.OrderBy(x => x.AvgKLD) : items.OrderByDescending(x => x.AvgKLD),
             _ => items
         };
         return items;
@@ -348,9 +351,9 @@
         {
             case Lichess.PuzzleResult pRes:
                 var res = pRes.Item;
-                if (res.Type == "Policy" && pRes.Item.Nodes == 1)
+                if (res.Type.Contains("Policy") || res.Type.StartsWith("pTop"))
                     PolicyScores.Add(pRes.Item);
-                else if (res.Type == "Value")
+                else if (res.Type.Contains("Value") || res.Type.StartsWith("vTop"))
                     ValueScores.Add(pRes.Item);
                 else if (res.Type == "Solve")
                     SolveScores.Add(pRes.Item);
@@ -491,23 +494,28 @@
         int maxPerfWidth = Math.Max("Perf".Length, allScores.Max(s => s.PlayerRecord.Rating.ToString("F0").Length));
         int maxAccuracyWidth = Math.Max("Accuracy".Length, allScores.Max(s => ((decimal)s.Correct / s.TotalNumber).ToString("P1").Length));
         int maxTotalWidth = Math.Max("Total".Length, allScores.Max(s => s.TotalNumber.ToString().Length));
-        int maxAvgRatingWidth = Math.Max("Avg rating".Length, allScores.Max(s => s.RatingAvg.ToString("F0").Length));
+        int maxAvgRatingWidth = Math.Max("AvgR".Length, allScores.Max(s => s.RatingAvg.ToString("F0").Length));
         int maxTypeWidth = Math.Max("Type".Length, allScores.Max(s => s.Type.Length));
         int maxThemeWidth = Math.Max("Theme".Length, allScores.Max(s => s.Filter.Length + 2));
         int maxNodesWidth = Math.Max("Nodes".Length, allScores.Max(s => s.Nodes.ToString().Length));
+        int maxKLDWidth = Math.Max("KLD".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => s.AvgKLD > 0 ? s.AvgKLD.ToString("F4").Length : 1) : 1);
+        string FormatKLD(Score s) => s.AvgKLD > 0 ? s.AvgKLD.ToString("F4") : "—";
+        var sep = "  ";
+        string BaseRow(Score s) => $"{s.Engine.PadRight(maxEngineWidth)}{sep}{s.NeuralNet.PadRight(maxNeuralNetWidth)}{sep}{s.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}{sep}{(s.TotalNumber > 0 ? ((decimal)s.Correct / s.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}{sep}{s.TotalNumber.ToString().PadRight(maxTotalWidth)}{sep}{s.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}{sep}{s.Filter.PadRight(maxThemeWidth)}";
+        string BaseHeader() => $"{"Engine".PadRight(maxEngineWidth)}{sep}{"Neural net".PadRight(maxNeuralNetWidth)}{sep}{"Perf".PadRight(maxPerfWidth)}{sep}{"Accuracy".PadRight(maxAccuracyWidth)}{sep}{"Total".PadRight(maxTotalWidth)}{sep}{"AvgR".PadRight(maxAvgRatingWidth)}{sep}{"Theme".PadRight(maxThemeWidth)}";
 
-        int tabWidth = 6;
+        int sepWidth = 2;
         int columns = 8;
         int approximateWidth = maxEngineWidth + maxNeuralNetWidth + maxPerfWidth +
                               maxAccuracyWidth + maxTotalWidth + maxAvgRatingWidth +
-                              maxThemeWidth + maxNodesWidth + (columns - 1) * tabWidth;
+                              maxThemeWidth + maxNodesWidth + (columns - 1) * sepWidth;
 
         string separatorLine = new string('-', approximateWidth);
 
         if (PolicyScores.Count > 0)
         {
             sb.AppendLine("Policy Head Tests\n");
-            sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+            sb.AppendLine($"{BaseHeader()}{sep}{"Type".PadRight(maxTypeWidth)}{sep}{"KLD".PadRight(maxKLDWidth)}");
 
             double? currentGroup = null;
             foreach (var score in PolicyScores)
@@ -517,14 +525,14 @@
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{BaseRow(score)}{sep}{score.Type.PadRight(maxTypeWidth)}{sep}{FormatKLD(score).PadRight(maxKLDWidth)}");
             }
             sb.AppendLine();
         }
         if (ValueScores.Count > 0)
         {
             sb.AppendLine("Value Head Tests\n");
-            sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+            sb.AppendLine($"{BaseHeader()}{sep}{"Type".PadRight(maxTypeWidth)}");
 
             double? currentGroup = null;
             foreach (var score in ValueScores)
@@ -534,7 +542,7 @@
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{BaseRow(score)}{sep}{score.Type.PadRight(maxTypeWidth)}");
             }
             sb.AppendLine();
         }
@@ -542,7 +550,7 @@
         if (SearchScores.Count > 0)
         {
             sb.AppendLine("Search Tests\n");
-            sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+            sb.AppendLine($"{BaseHeader()}{sep}{"Nodes".PadRight(maxNodesWidth)}");
 
             double? currentGroup = null;
             foreach (var score in SearchScores)
@@ -552,7 +560,7 @@
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{BaseRow(score)}{sep}{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
         }
@@ -560,7 +568,7 @@
         if (SolveScores.Count > 0)
         {
             sb.AppendLine("Solve Tests\n");
-            sb.AppendLine($"{"Engine".PadRight(maxEngineWidth)}\t{"Neural net".PadRight(maxNeuralNetWidth)}\t{"Perf".PadRight(maxPerfWidth)}\t{"Accuracy".PadRight(maxAccuracyWidth)}\t{"Total".PadRight(maxTotalWidth)}\t{"Avg rating".PadRight(maxAvgRatingWidth)}\t{"Theme".PadRight(maxThemeWidth)}\t{"Nodes".PadRight(maxNodesWidth)}");
+            sb.AppendLine($"{BaseHeader()}{sep}{"Nodes".PadRight(maxNodesWidth)}");
 
             double? currentGroup = null;
             foreach (var score in SolveScores)
@@ -570,7 +578,7 @@
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-                sb.AppendLine($"{score.Engine.PadRight(maxEngineWidth)}\t{score.NeuralNet.PadRight(maxNeuralNetWidth)}\t{score.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}\t{(score.TotalNumber > 0 ? ((decimal)score.Correct / score.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}\t{score.TotalNumber.ToString().PadRight(maxTotalWidth)}\t{score.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}\t{score.Filter.PadRight(maxThemeWidth)}\t{score.Nodes.ToString().PadRight(maxNodesWidth)}");
+                sb.AppendLine($"{BaseRow(score)}{sep}{score.Nodes.ToString().PadRight(maxNodesWidth)}");
             }
             sb.AppendLine();
         }
@@ -685,7 +693,18 @@
                                             subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewSolve(n));
                                         break;
                                     default:
-                                        logger.LogWarning($"Unknown puzzle type '{t}', skipping");
+                                        // policytop3 / policy3 → PolicyTopN
+                                        if (t.StartsWith("policytop") && int.TryParse(t.Substring("policytop".Length), out int topN) && topN >= 1)
+                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewPolicyTopN(topN));
+                                        else if (t.StartsWith("policy") && t.Length > 6 && int.TryParse(t.Substring("policy".Length), out int pn) && pn >= 1)
+                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewPolicyTopN(pn));
+                                        // valuetop3 / value3 → ValueTopN
+                                        else if (t.StartsWith("valuetop") && int.TryParse(t.Substring("valuetop".Length), out int valueTopN) && valueTopN >= 1)
+                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewValueTopN(valueTopN));
+                                        else if (t.StartsWith("value") && t.Length > 5 && int.TryParse(t.Substring("value".Length), out int vn) && vn >= 1)
+                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewValueTopN(vn));
+                                        else
+                                            logger.LogWarning($"Unknown puzzle type '{t}', skipping");
                                         break;
                                 }
                             }
@@ -706,7 +725,7 @@
                 if (ValueScores.Any())
                 {
                     ValueScores =
-                  ValueScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Value"))
+                  ValueScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Value") || e.Type.StartsWith("vTop")))
                   .OrderBy(e => e.Filter)
                   .ThenByDescending(e => e.RatingAvg)
                   .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
@@ -716,7 +735,7 @@
                 if (PolicyScores.Any())
                 {
                     PolicyScores =
-                  PolicyScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Policy"))
+                  PolicyScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Policy") || e.Type.StartsWith("pTop")))
                   .OrderBy(e => e.Filter)
                   .ThenByDescending(e => e.RatingAvg)
                   .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))

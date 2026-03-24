@@ -194,6 +194,9 @@ module PuzzleTypes =
         | Ok      of AsyncReplyChannel<bool>
         | BestMove  of cmd:Position * AsyncReplyChannel<string*float>
         | BestMoveWithPolicy  of cmd:Position * correct:string * AsyncReplyChannel<string * string>
+        | BestMoveWithAllPolicies of cmd:Position * AsyncReplyChannel<string * EngineTypes.NNValues list>
+        | EvalAllMovesValue of cmd:Position * AsyncReplyChannel<(string * float) list>
+        | ValueTopNEval of cmd:Position * AsyncReplyChannel<string * EngineTypes.NNValues list>
         | SolvePuzzle of command:string * AsyncReplyChannel<string * string * ResizeArray<EngineTypes.NNValues>>
         | NewGame   of AsyncReplyChannel<unit>
         | Quit      of AsyncReplyChannel<unit>
@@ -238,6 +241,7 @@ module PuzzleTypes =
         FailedMove : string
         ValueHead: bool
         Policy: string
+        KLD: float
       }
 
     type Score =
@@ -253,7 +257,8 @@ module PuzzleTypes =
         CorrectPuzzles: ResizeArray<CsvPuzzleData>
         Nodes: int
         WithHistory: bool
-        Type: string }
+        Type: string
+        AvgKLD: float }
         with
           static member empty =
             { Engine = ""
@@ -268,7 +273,8 @@ module PuzzleTypes =
               CorrectPuzzles = ResizeArray<CsvPuzzleData>()
               Nodes = 0
               WithHistory = false
-              Type = "" }
+              Type = ""
+              AvgKLD = 0.0 }
 
     type Lichess =
       | PuzzleResult of Score

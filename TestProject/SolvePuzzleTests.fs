@@ -19,6 +19,9 @@ let private mkMockSolveAgent (bestmove: string) (pv: string) =
             | Quit reply             -> reply.Reply()
             | BestMove (_, reply)    -> reply.Reply("", 0.0)
             | BestMoveWithPolicy (_, _, reply) -> reply.Reply("", "")
+            | BestMoveWithAllPolicies (_, reply) -> reply.Reply("", [])
+            | EvalAllMovesValue (_, reply) -> reply.Reply([])
+            | ValueTopNEval (_, reply) -> reply.Reply("", [])
             return! loop()
         }
         loop()

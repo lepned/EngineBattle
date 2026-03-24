@@ -87,7 +87,7 @@ let createCombinedScoresTable
     let maxTotalWidth =
         maxOf "Total" (allScores |> List.map (fun s -> s.TotalNumber.ToString().Length))
     let maxAvgRatingWidth =
-        maxOf "Avg rating"
+        maxOf "AvgR"
           (allScores
            |> List.map (fun s -> s.RatingAvg.ToString("F0").Length))
     let maxThemeWidth =
@@ -95,18 +95,42 @@ let createCombinedScoresTable
           (allScores |> List.map (fun s -> s.Filter.Length + 2))
     let maxNodesWidth =
         maxOf "Nodes" (allScores |> List.map (fun s -> s.Nodes.ToString().Length))
+    let maxTypeWidth =
+        maxOf "Type" (allScores |> List.map (fun s -> s.Type.Length))
+    let maxKLDWidth =
+        maxOf "KLD" (policyScores |> List.map (fun s -> if s.AvgKLD > 0.0 then s.AvgKLD.ToString("F4").Length else 1))
+    let formatKLD (s: ChessLibrary.PuzzleTypes.Score) =
+        if s.AvgKLD > 0.0 then s.AvgKLD.ToString("F4") else "—"
 
-    // Build a header line formatter
-    let headerLine =
-        sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
-          ("Engine".PadRight maxEngineWidth)
-          ("Neural net".PadRight maxNeuralNetWidth)
-          ("Perf".PadRight maxPerfWidth)
-          ("Accuracy".PadRight maxAccuracyWidth)
-          ("Total".PadRight maxTotalWidth)
-          ("Avg rating".PadRight maxAvgRatingWidth)
+    let sep = "  "
+    // Base columns shared by all sections
+    let baseHeader =
+        sprintf "%s%s%s%s%s%s%s%s%s%s%s%s%s"
+          ("Engine".PadRight maxEngineWidth) sep
+          ("Neural net".PadRight maxNeuralNetWidth) sep
+          ("Perf".PadRight maxPerfWidth) sep
+          ("Accuracy".PadRight maxAccuracyWidth) sep
+          ("Total".PadRight maxTotalWidth) sep
+          ("AvgR".PadRight maxAvgRatingWidth) sep
           ("Theme".PadRight maxThemeWidth)
-          ("Nodes".PadRight maxNodesWidth)
+    let baseRow (s: ChessLibrary.PuzzleTypes.Score) =
+        let perf = s.PlayerRecord.Rating.ToString("F0")
+        let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
+        sprintf "%s%s%s%s%s%s%s%s%s%s%s%s%s"
+            (s.Engine.PadRight maxEngineWidth) sep
+            (s.NeuralNet.PadRight maxNeuralNetWidth) sep
+            (perf.PadRight maxPerfWidth) sep
+            (accuracy.PadRight maxAccuracyWidth) sep
+            (s.TotalNumber.ToString().PadRight maxTotalWidth) sep
+            (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth) sep
+            (s.Filter.PadRight maxThemeWidth)
+
+    // Policy: base + Type + KLD (no Nodes)
+    let policyHeaderLine = baseHeader + sep + ("Type".PadRight maxTypeWidth) + sep + ("KLD".PadRight maxKLDWidth)
+    // Value: base + Type (no Nodes, no KLD)
+    let valueHeaderLine = baseHeader + sep + ("Type".PadRight maxTypeWidth)
+    // Search/Solve: base + Nodes (no Type, no KLD)
+    let searchHeaderLine = baseHeader + sep + ("Nodes".PadRight maxNodesWidth)
 
     let mutable startGroup =
         match policyScores |> List.tryHead with
@@ -118,11 +142,11 @@ let createCombinedScoresTable
 
     // Sum up all column widths and add a buffer for tab spacing
     let approximateWidth =
-        let tabWidth = 6
+        let sepWidth = 2
         let columns = 8
         maxEngineWidth + maxNeuralNetWidth + maxPerfWidth + maxAccuracyWidth +
         maxTotalWidth + maxAvgRatingWidth + maxThemeWidth + maxNodesWidth +
-        (columns - 1) * tabWidth
+        (columns - 1) * sepWidth
         //20 // Buffer for spacing between columns
 
     let separatorLine = String.replicate approximateWidth "-"
@@ -130,21 +154,10 @@ let createCombinedScoresTable
     // Append policy Tests
     if policyScores.Length > 0 then
         sb.AppendLine("Policy Head Tests\n") |> ignore
-        sb.AppendLine(headerLine) |> ignore
+        sb.AppendLine(policyHeaderLine) |> ignore
     policyScores
     |> List.iter (fun s ->
-        let perf = s.PlayerRecord.Rating.ToString("F0")
-        let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
-        let line =
-            sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
-                (s.Engine.PadRight maxEngineWidth)
-                (s.NeuralNet.PadRight maxNeuralNetWidth)
-                (perf.PadRight maxPerfWidth)
-                (accuracy.PadRight maxAccuracyWidth)
-                (s.TotalNumber.ToString().PadRight maxTotalWidth)
-                (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth)
-                (s.Filter.PadRight maxThemeWidth)
-                (s.Nodes.ToString().PadRight maxNodesWidth)
+        let line = baseRow s + sep + (s.Type.PadRight maxTypeWidth) + sep + ((formatKLD s).PadRight maxKLDWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
             startGroup <- s.RatingAvg
@@ -155,7 +168,7 @@ let createCombinedScoresTable
     // Append Value Head Tests
     if valueScores.Length > 0 then
         sb.AppendLine("Value Head Tests\n") |> ignore
-        sb.AppendLine(headerLine) |> ignore
+        sb.AppendLine(valueHeaderLine) |> ignore
 
     widestText <- ""
     let mutable startGroup =
@@ -165,18 +178,7 @@ let createCombinedScoresTable
     // Append each value score row
     valueScores
     |> List.iter (fun s ->
-        let perf = s.PlayerRecord.Rating.ToString("F0")
-        let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
-        let line =
-            sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
-                (s.Engine.PadRight maxEngineWidth)
-                (s.NeuralNet.PadRight maxNeuralNetWidth)
-                (perf.PadRight maxPerfWidth)
-                (accuracy.PadRight maxAccuracyWidth)
-                (s.TotalNumber.ToString().PadRight maxTotalWidth)
-                (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth)
-                (s.Filter.PadRight maxThemeWidth)
-                (s.Nodes.ToString().PadRight maxNodesWidth)
+        let line = baseRow s + sep + (s.Type.PadRight maxTypeWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
             startGroup <- s.RatingAvg
@@ -187,7 +189,7 @@ let createCombinedScoresTable
     // Append search Tests
     if searchScores.Length > 0 then
         sb.AppendLine("Search Tests\n") |> ignore
-        sb.AppendLine(headerLine) |> ignore
+        sb.AppendLine(searchHeaderLine) |> ignore
 
     widestText <- ""
     let mutable startGroup =
@@ -198,18 +200,7 @@ let createCombinedScoresTable
     // Append each search score row
     searchScores
     |> List.iter (fun s ->
-        let perf = s.PlayerRecord.Rating.ToString("F0")
-        let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
-        let line =
-            sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
-                (s.Engine.PadRight maxEngineWidth)
-                (s.NeuralNet.PadRight maxNeuralNetWidth)
-                (perf.PadRight maxPerfWidth)
-                (accuracy.PadRight maxAccuracyWidth)
-                (s.TotalNumber.ToString().PadRight maxTotalWidth)
-                (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth)
-                (s.Filter.PadRight maxThemeWidth)
-                (s.Nodes.ToString().PadRight maxNodesWidth)
+        let line = baseRow s + sep + (s.Nodes.ToString().PadRight maxNodesWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
             startGroup <- s.RatingAvg
@@ -220,7 +211,7 @@ let createCombinedScoresTable
     // Append solve Tests
     if solveScores.Length > 0 then
         sb.AppendLine("Solve Tests\n") |> ignore
-        sb.AppendLine(headerLine) |> ignore
+        sb.AppendLine(searchHeaderLine) |> ignore
 
     widestText <- ""
     let mutable startGroup =
@@ -231,18 +222,7 @@ let createCombinedScoresTable
     // Append each solve score row
     solveScores
     |> List.iter (fun s ->
-        let perf = s.PlayerRecord.Rating.ToString("F0")
-        let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
-        let line =
-            sprintf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s"
-                (s.Engine.PadRight maxEngineWidth)
-                (s.NeuralNet.PadRight maxNeuralNetWidth)
-                (perf.PadRight maxPerfWidth)
-                (accuracy.PadRight maxAccuracyWidth)
-                (s.TotalNumber.ToString().PadRight maxTotalWidth)
-                (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth)
-                (s.Filter.PadRight maxThemeWidth)
-                (s.Nodes.ToString().PadRight maxNodesWidth)
+        let line = baseRow s + sep + (s.Nodes.ToString().PadRight maxNodesWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
             startGroup <- s.RatingAvg

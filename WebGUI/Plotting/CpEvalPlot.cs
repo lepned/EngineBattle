@@ -27,6 +27,16 @@ public class CpEvalPlot
         "#17becf", // Cyan
         "#bcbd22", // Yellow-Green
         "#8c564b", // Brown
+        "#aec7e8", // Light Blue
+        "#ff9896", // Light Red
+        "#98df8a", // Light Green
+        "#c5b0d5", // Light Purple
+        "#f7b6d2", // Light Pink
+        "#c49c94", // Light Brown
+        "#dbdb8d", // Light Yellow-Green
+        "#9edae5", // Light Cyan
+        "#393b79", // Dark Blue
+        "#e7969c", // Muted Rose
     };
 
     public CpEvalPlot(IJSObjectReference chessModule, ElementReference chartElement)

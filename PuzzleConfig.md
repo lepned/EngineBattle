@@ -7,7 +7,15 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
 ### General Information
 
 - **PuzzleFile**: The file path to the puzzle file (CSV format).
-- **Type**: Comma-separated type(s) of puzzles to test (e.g., "policy, value, search").
+- **Type**: Comma-separated type(s) of puzzles to test. Available types:
+  - `policy` — Top-1 policy accuracy + KLD. Tests if the engine's best policy move matches the puzzle solution.
+  - `policy2`, `policy3`, `policy5` (or `policytop2`, etc.) — Top-N policy accuracy + KLD. Tests if the correct move is within the top N policy moves. Multiple policy types are merged into a single pass (e.g., `"policy, policy3, policy5"` evaluates each puzzle once).
+  - `value` — Value head test (Lc0: ValueOnly + `go nodes 1`, Ceres: `go value`). Tests if the value head's best move matches the puzzle solution.
+  - `value2`, `value3`, `value5` (or `valuetop2`, etc.) — Top-N value head accuracy. Evaluates every legal move's child position with `go nodes 1` and checks if the correct move ranks in the top N by value. Multiple value types are merged into a single pass. Slower than policy tests (~30x) due to per-child evaluation. Lc0/Ceres only.
+  - `search` — Search accuracy at N nodes (uses the `Nodes` setting).
+  - `solve` — Solve from first position, verify full PV (uses the `Nodes` setting).
+
+  **KLD (Kullback-Leibler Divergence)**: Reported for all policy types. Measures `-log(P_correct / 100)` — how much probability the policy assigns to the correct move. Lower = better. KLD is identical across all policy TopN thresholds since it depends on the raw probability, not the threshold.
 - **MaxRating**: The maximum puzzle rating to include.
 - **MinRating**: The minimum puzzle rating to include.
 - **RatingGroups**: Comma-separated rating groups for analysis (e.g., "2500, 2700").
@@ -34,7 +42,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
 ```
 {
   "PuzzleFile": "C:/Dev/Chess/Puzzles/lichess_db_April_2025.csv",
-  "Type": "policy, search",
+  "Type": "policy, policy3, policy5, value3, search",
   "MaxRating": 3500,
   "MinRating": 0,
   "RatingGroups": "2500, 2700",

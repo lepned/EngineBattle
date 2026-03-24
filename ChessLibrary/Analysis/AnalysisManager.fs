@@ -121,6 +121,10 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
           failwith $"Engine {engine.Name} did not respond to isready command before go nodes"
         engine.SendUCICommand (GoNodes nodes)
 
+    member x.SetSearchMoves (moves: string list) = engine.SetSearchMoves moves
+    member x.ClearSearchMoves () = engine.ClearSearchMoves()
+    member x.SearchMoves with get() = engine.SearchMoves
+
     member x.DumpStats command = engine.SendUCICommand (RawCommand command)
 
     member x.Play (goCommand: string) =

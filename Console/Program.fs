@@ -831,6 +831,30 @@ module Program =
                     | "value"  -> [ PuzzleEngineAgent.SubTest.Value ]
                     | "search" -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Search
                     | "solve"  -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Solve
+                    | t when t.StartsWith("policytop") ->
+                        match System.Int32.TryParse(t.Substring("policytop".Length)) with
+                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.PolicyTopN n ]
+                        | _ ->
+                            printfn "Invalid policytop value '%s', expected e.g. policytop3" t
+                            []
+                    | t when t.StartsWith("policy") && t.Length > 6 ->
+                        match System.Int32.TryParse(t.Substring("policy".Length)) with
+                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.PolicyTopN n ]
+                        | _ ->
+                            printfn "Invalid policy value '%s', expected e.g. policy3" t
+                            []
+                    | t when t.StartsWith("valuetop") ->
+                        match System.Int32.TryParse(t.Substring("valuetop".Length)) with
+                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.ValueTopN n ]
+                        | _ ->
+                            printfn "Invalid valuetop value '%s', expected e.g. valuetop3" t
+                            []
+                    | t when t.StartsWith("value") && t.Length > 5 ->
+                        match System.Int32.TryParse(t.Substring("value".Length)) with
+                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.ValueTopN n ]
+                        | _ ->
+                            printfn "Invalid value value '%s', expected e.g. value3" t
+                            []
                     | other ->
                         printfn "Unknown puzzle type '%s', skipping" other
                         [])
@@ -842,7 +866,7 @@ module Program =
 
     let valueScores = 
         scores 
-        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Value"))
+        |> Seq.filter (fun e -> e.TotalNumber > 0 && (e.Type.Contains("Value") || e.Type.StartsWith("vTop")))
         |> fun seq -> seq.OrderBy(fun e -> e.Filter)
                          .ThenByDescending(fun e -> e.RatingAvg)
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)                         
@@ -850,7 +874,7 @@ module Program =
 
     let policyScores = 
         scores 
-        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Policy") && e.Nodes = 1)
+        |> Seq.filter (fun e -> e.TotalNumber > 0 && (e.Type.Contains("Policy") || e.Type.StartsWith("pTop")))
         |> fun seq -> seq.OrderBy(fun e -> e.Filter)
                          .ThenByDescending(fun e -> e.RatingAvg)
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)

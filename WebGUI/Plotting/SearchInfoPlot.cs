@@ -29,7 +29,7 @@ namespace WebGUI.Plotting
         private object margin;
         private int fontSizeTickFont = 15;
         private int fontSizeTitle = 20;
-        private int fontSizeLegend = 15;
+        private int fontSizeLegend = 14;
         //private string axisColor = "#c1c1c4";
         private string titleColor = "#c1c1c4";
         //private string blackColor = "#141519";
@@ -317,11 +317,20 @@ namespace WebGUI.Plotting
                     3 => "#9467bd",// Purple
                     4 => "#ffbb78",// Light Orange
                     5 => "#7f7f7f",// Gray
-                    6 => "#e377c2",// Pink 
+                    6 => "#e377c2",// Pink
                     7 => "#17becf",// Cyan
                     8 => "#bcbd22",// Yellow-Green
                     9 => "#8c564b",// Brown
                     10 => "#aec7e8",// Light Blue
+                    11 => "#ff9896",// Light Red
+                    12 => "#98df8a",// Light Green
+                    13 => "#c5b0d5",// Light Purple
+                    14 => "#f7b6d2",// Light Pink
+                    15 => "#c49c94",// Light Brown
+                    16 => "#dbdb8d",// Light Yellow-Green
+                    17 => "#9edae5",// Light Cyan
+                    18 => "#393b79",// Dark Blue
+                    19 => "#e7969c",// Muted Rose
                     _ => "#7f7f7f",// Default to light gray if index is out of range
                 };
             }
@@ -1060,7 +1069,7 @@ namespace WebGUI.Plotting
                 {
                     font = new
                     {
-                        size = fontSizeLegend, // adjust the global legend font size here
+                        size = fontSizeLegend - 2,
                         color = titleColor
                     }
                 },
@@ -1103,8 +1112,8 @@ namespace WebGUI.Plotting
                 potentialMoves.Add(topPolicy);
             }
 
-            var maxNumberOfLines = Math.Min(10, potentialMoves.Count);
-            bool topPolicyNotInMoveList = maxNumberOfLines > numberOfLines;
+            var maxNumberOfLines = Math.Min(numberOfLines, potentialMoves.Count);
+            bool topPolicyNotInMoveList = potentialMoves.Count > numberOfLines;
             var moves = potentialMoves;
 
             if (NvaluesDict.Count == 0)
@@ -1201,7 +1210,7 @@ namespace WebGUI.Plotting
                 {
                     font = new
                     {
-                        size = fontSizeLegend, // adjust the global legend font size here
+                        size = fontSizeLegend - 2,
                         color = titleColor
                     }
                 },
@@ -1249,8 +1258,8 @@ namespace WebGUI.Plotting
             //  qMoves.Add(topPolicy);
             var potentialMoves = OrderAndSortQList(nMoves, qMoves);
 
-            var maxNumberOfLines = Math.Min(10, potentialMoves.Count);
-            bool topPolicyNotInMoveList = false; //maxNumberOfLines > numberOfLines;
+            var maxNumberOfLines = Math.Min(numberOfLines, potentialMoves.Count);
+            bool topPolicyNotInMoveList = false;
             var moves = new List<NNValues>(potentialMoves.Take(maxNumberOfLines));
 
             if (QvaluesDict.Count == 0)
