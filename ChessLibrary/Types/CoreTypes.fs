@@ -194,24 +194,6 @@ module TypesDef =
         RoundNr: string
         OpeningHash : string}
 
-    type EngineLineData = {
-        Player : string
-        Elo : float
-        Error : float
-        Points : float
-        Played : int
-        Percent : float
-        CFS : int
-        mutable EPS: double
-        mutable Speed: double
-        Win : int
-        Draw : int
-        Loss : int
-        D : int
-        WhiteScore : float
-        BlackScore : float
-        Pairs : string }
-
     type WDLStats = { Wins: int; Draws: int; Losses: int }
 
     type CrossTableEntry = {
@@ -391,11 +373,19 @@ module TypesDef =
         D: int
         WhiteWDL: (int * int * int)
         BlackWDL: (int * int * int)
-        PairWins: int
-        PairLosses: int
+        mutable PairWins: int
+        mutable PairLosses: int
         mutable MedSpeed: double
         mutable AvgNPM: double
+        mutable EPS: double
         mutable Challenger: bool }
+        member this.WhiteScore =
+          let ww, wd, _ = this.WhiteWDL
+          float ww + float wd * 0.5
+        member this.BlackScore =
+          let bw, bd, _ = this.BlackWDL
+          float bw + float bd * 0.5
+        member this.PairsString = sprintf "%d-%d" this.PairWins this.PairLosses
         override this.ToString() =
           sprintf "%s: %.1f (%d) %d %d %d %d %.1f %.1f %d" this.Player this.Points this.Played this.Win this.Draw this.Loss this.CFS this.Error this.Elo this.Percent
 
@@ -417,6 +407,7 @@ module TypesDef =
         PairLosses = pairLosses
         MedSpeed = 0.0
         AvgNPM = 0.0
+        EPS = 0.0
         Challenger = false }
 
     type Outcome =

@@ -652,29 +652,6 @@
         }
     }
 
-    private string FormatEPS(double eps)
-    {
-        if (eps > 1_000_000_000)
-            return (eps / 1_000_000_000).ToString("F1") + "Beps";
-        else if (eps > 1_000_000)
-            return (eps / 1_000_000).ToString("F1") + "Meps";
-        else if (eps > 1_000)
-            return (eps / 1000).ToString("F1") + "Keps";
-        else
-            return eps.ToString("F1") + " eps";
-    }
-
-    private string FormatNPS(double nps)
-    {
-        if (nps > 1_000_000_000)
-            return (nps / 1_000_000_000).ToString("F1") + "Bnps";
-        else if (nps > 1_000_000)
-            return (nps / 1_000_000).ToString("F1") + "Mnps";
-        else if (nps > 1_000)
-            return (nps / 1000).ToString("F1") + "Knps";
-        else
-            return nps.ToString("F1") + " nps";
-    }
 
     private string FormatNodes(double nodes)
     {
@@ -1640,7 +1617,7 @@
     private async Task Update(EngineStatus status)
     {
         var nodes = FormatNodes(status.Nodes);
-        var nps = FormatNPS(status.NPS);
+        var nps = GameAnalysis.Formatting.formatNPS(status.NPS);
         var k = status.MultiPV;
         data[k] = status;
         var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
@@ -1651,7 +1628,7 @@
         }
         else
         {
-            var eps = FormatEPS(status.EPS);
+            var eps = GameAnalysis.Formatting.formatEPS(status.EPS);
             tableHeader = $"{nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
         }
         dataList = ordered;

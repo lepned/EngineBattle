@@ -67,14 +67,14 @@
 						<td>@item.Played</td>
 						<td>@item.Percent.ToString("F0")</td>
 						<td>@item.CFS.ToString("F0")</td>
-						<td>@FormatSpeedWithEps(item.Speed, item.Player)</td>
+						<td>@FormatSpeedWithEps(item)</td>
 						<td>@item.Win</td>
 						<td>@item.Draw</td>
 						<td>@item.Loss</td>
 						<td>@item.D</td>
 						<td>@item.WhiteScore</td>
 						<td>@item.BlackScore</td>
-						<td>@item.Pairs</td>
+						<td>@item.PairsString</td>
 					</tr>
 				}
 			</tbody>
@@ -84,23 +84,17 @@
 
 @code {
 
-	private List<EngineLineData> engineLineData = new();
+	private List<PlayerResult> engineLineData = new();
 	private string fileOpenName = "";
 	IBrowserFile browserFile;
 	private Int64 testDuration = 0;
 	private string refEngine = string.Empty;
 	private string executablePath = "";
-	private readonly Dictionary<string, double> epsByPlayer = new(StringComparer.OrdinalIgnoreCase);
-
-	string FormatNps(double nps) => GameAnalysis.Formatting.formatNPS(nps);
-	string FormatEps(double eps) => GameAnalysis.Formatting.formatEPS(eps);
-	string FormatSpeedWithEps(double nps, string player)
+	string FormatSpeedWithEps(PlayerResult p)
 	{
-		var baseSpeed = FormatNps(nps);
-		if (epsByPlayer.TryGetValue(player, out var eps) && eps > 0.0)
-		{
-			return $"{baseSpeed} ({FormatEps(eps)})";
-		}
+		var baseSpeed = GameAnalysis.Formatting.formatNPS(p.MedSpeed);
+		if (p.EPS > 0.0)
+			return $"{baseSpeed} ({GameAnalysis.Formatting.formatEPS(p.EPS)})";
 		return baseSpeed;
 	}
 
@@ -127,7 +121,7 @@
 		return value.ToString("F0");
 	}
 
-	bool isChallenger(EngineLineData data)
+	bool isChallenger(PlayerResult data)
 	{
 		var higher = engineLineData.Any(e => (double)e.Played * 1.5 < data.Played);
 		return higher;
@@ -136,7 +130,6 @@
 	private async Task OpenPGNFile(InputFileChangeEventArgs e)
 	{
 		engineLineData.Clear();
-		epsByPlayer.Clear();
 		var pgnName = e.File.Name;
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
@@ -148,14 +141,6 @@
 			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
 		}
 		var games = FullPGNParser.parsePgnFile(fullPath).ToList();
-		var speedStats = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
-		foreach (var stat in speedStats)
-		{
-			if (stat.Median && stat.EPS > 0.0)
-			{
-				epsByPlayer[stat.Player] = stat.EPS;
-			}
-		}
 		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = DeviationAnalysis.analyzeDeviations(games);
 		GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
 		var pentaDefault = Statistics.Pentanomial.formatPerEngineDefault(games);
@@ -199,31 +184,6 @@
 		await Task.CompletedTask;
 	}
 
-	private void UpdateSpeed(IEnumerable<PGNTypes.PgnGame> games, IEnumerable<PlayerResult> players, IEnumerable<EngineLineData> data)
-	{
-		var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
-		var avgSpeed =
-		  res.Where(e => e.Median)
-		  .OrderByDescending(e => e.AvgNPS).ToList();
-		foreach (var player in players)
-		{
-			var speed = avgSpeed.FirstOrDefault(e => e.Player == player.Player);
-			if (speed != null)
-			{
-				player.MedSpeed = speed.AvgNPS;
-				player.AvgNPM = speed.AvgNodes;
-			}
-		}
-		foreach (var line in data)
-		{
-			var speed = avgSpeed.FirstOrDefault(e => e.Player == line.Player);
-			if (speed != null)
-			{
-				line.Speed = speed.AvgNPS;
-			}
-		}
-	}
-
 	private string FormatNodes(double nodes)
 	{
 		if (nodes > 1_000_000_000)
@@ -250,30 +210,6 @@
 		}
 	}
 
-	private string FormatNPS(double nps)
-	{
-		if (nps > 1_000_000_000)
-		{
-			var mill = nps / 1_000_000_000;
-			return mill.ToString("F1") + "Gnps"; //Gnps
-		}
-		else if (nps > 1_000_000)
-		{
-			var mill = nps / 1_000_000;
-			return mill.ToString("F1") + "Mnps"; //Mnps
-		}
-
-		else if (nps > 1_000)
-		{
-			var thousand = nps / 1_000;
-			return thousand.ToString("F1") + "Knps"; //Knps
-		}
-
-		else
-		{
-			return nps.ToString("F1") + " nps"; //nps
-		}
-	}
 
 	protected override Task OnInitializedAsync()
 	{

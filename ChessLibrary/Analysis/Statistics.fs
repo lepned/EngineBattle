@@ -18,7 +18,7 @@ module EloCalculator =
 
   let inline eloDifferenceFromScore score =
     let s = max 0.000001 (min 0.999999 score)
-    -log (1.0 / s - 1.0) * 400.0 / log10
+    -log (1.0 / s - 1.0) * 400.0 / log10 + 0.0
 
   let calculateEloConfidenceInterval wins draws losses confidenceMultiplier =
       let totalGames = float (wins + draws + losses)
@@ -37,7 +37,7 @@ module EloCalculator =
       //printfn "Error calc: Min Elo: %f, Max Elo: %f" minElo maxElo
       let diff = (maxElo - minElo)
       if diff = 0.0 || Double.IsNaN minElo || Double.IsNaN maxElo then
-        999.0 / numberOfGames
+        Double.PositiveInfinity
       else
         min 699.0 (diff / 2.0)
 
@@ -193,6 +193,9 @@ module Pentanomial =
     static member Empty engine =
       { Engine = engine
         L2 = 0; L15 = 0; D = 0; W15 = 0; W2 = 0; CompletedPairs = 0; IncompletePairs = 0 }
+    member this.ToCounts() =
+      { L2 = this.L2; L15 = this.L15; D = this.D; W15 = this.W15; W2 = this.W2
+        CompletedPairs = this.CompletedPairs; IncompletePairs = this.IncompletePairs }
 
   let private isFinalResult (result: string) =
     match result with
@@ -392,6 +395,34 @@ module Pentanomial =
     |> Seq.sortByDescending (fun c -> c.CompletedPairs, c.Engine)
     |> Seq.toList
 
+  let pentanomialEloErrorAndLos (c: Counts) =
+    let n = float c.CompletedPairs
+    if n < 1.0 then (0.0, Double.PositiveInfinity, 0.5)
+    else
+      let scores = [| 0.0; 0.5; 1.0; 1.5; 2.0 |]
+      let counts = [| float c.L2; float c.L15; float c.D; float c.W15; float c.W2 |]
+      let mean = (Array.map2 (*) scores counts |> Array.sum) / n
+      let variance =
+        (Array.map2 (fun s cnt -> cnt * (s - mean) ** 2.0) scores counts |> Array.sum) / n
+        |> Math.Sqrt
+      let scoreFrac = mean / 2.0
+      let se = variance / (2.0 * Math.Sqrt n)
+      let z = 1.96
+      let minFrac = max 0.00001 (scoreFrac - z * se)
+      let maxFrac = min 0.99999 (scoreFrac + z * se)
+      let elo = EloCalculator.eloDifferenceFromScore scoreFrac
+      let minElo = EloCalculator.eloDifferenceFromScore minFrac
+      let maxElo = EloCalculator.eloDifferenceFromScore maxFrac
+      let diff = maxElo - minElo
+      let error =
+        if diff = 0.0 || Double.IsNaN minElo || Double.IsNaN maxElo then Double.PositiveInfinity
+        else min 699.0 (diff / 2.0)
+      let los =
+        if se > 0.0 then
+          0.5 + 0.5 * MathNet.Numerics.SpecialFunctions.Erf((scoreFrac - 0.5) / (se * Math.Sqrt 2.0))
+        else 0.5
+      (elo, error, los)
+
   let formatAllMatchups (games: seq<PgnGame>) (maxLines: int) =
     let data = calculateAllMatchups games
     if data.IsEmpty then ""
@@ -415,10 +446,9 @@ module Pentanomial =
         let minW = "Matchup".Length
         if matchupStrings.IsEmpty then minW else max minW (matchupStrings |> List.maxBy String.length |> String.length)
 
-      // Match the compact list-style format used by formatPerEngineDefault.
       let header =
-        sprintf "%-*s  %s  %4s  %3s"
-          matchupWidth "Matchup" "[0-2,0.5-1.5,1-1,1.5-0.5,2-0]" "Done" "Inc"
+        sprintf "%-*s  %s  %4s  %3s  %7s  %6s"
+          matchupWidth "Matchup" "[0-2,0.5-1.5,1-1,1.5-0.5,2-0]" "Done" "Inc" "Elo" "Error"
       sb.AppendLine header |> ignore
       sb.AppendLine (String.replicate header.Length "-") |> ignore
 
@@ -426,7 +456,13 @@ module Pentanomial =
         let ((_, _), c) = lines.[i]
         let matchup = matchupStrings.[i].PadRight(matchupWidth)
         let buckets = sprintf "[%d, %d, %d, %d, %d]" c.L2 c.L15 c.D c.W15 c.W2
-        sb.AppendLine(sprintf "%s  %-29s  %4d  %3d" matchup buckets c.CompletedPairs c.IncompletePairs) |> ignore
+        let elo, error, _ = pentanomialEloErrorAndLos c
+        let eloStr = if Double.IsNaN elo then "---" else sprintf "%7.1f" elo
+        let errStr =
+          if error = Double.PositiveInfinity then "    \u221E"
+          elif Double.IsNaN error then "  ---"
+          else sprintf "%6.1f" error
+        sb.AppendLine(sprintf "%s  %-29s  %4d  %3d  %s  %s" matchup buckets c.CompletedPairs c.IncompletePairs eloStr errStr) |> ignore
 
       if data.Length > lines.Length then
         sb.AppendLine($"... truncated ({lines.Length}/{data.Length} matchups shown)") |> ignore
@@ -435,6 +471,23 @@ module Pentanomial =
 
   let formatAllMatchupsDefault (games: seq<PgnGame>) =
     formatAllMatchups games 200
+
+  let formatSingleMatchupCompact (games: seq<PgnGame>) =
+    let data = calculateAllMatchups games
+    match data with
+    | [ ((a, _), c) ] ->
+        let elo, error, los = pentanomialEloErrorAndLos c
+        let eloStr = if Double.IsNaN elo then "---" else sprintf "%.1f" elo
+        let errStr =
+          if error = Double.PositiveInfinity then "\u221E"
+          elif Double.IsNaN error then "---"
+          else sprintf "%.1f" error
+        let cfs = los * 100.0
+        let cfsStr = if Double.IsNaN cfs then "---" else sprintf "%.1f" cfs
+        let incStr = if c.IncompletePairs > 0 then sprintf " (+%d inc)" c.IncompletePairs else ""
+        sprintf "\nPentanomial [%d, %d, %d, %d, %d] Pairs: %d%s | Elo: %s \u00B1%s (95%%) CFS: %s%% [%s]\n"
+          c.L2 c.L15 c.D c.W15 c.W2 c.CompletedPairs incStr eloStr errStr cfsStr a
+    | _ -> formatAllMatchups games 200
 
   let formatPerEngine (games: seq<PgnGame>) (maxLines: int) =
     let data = calculatePerEngine games

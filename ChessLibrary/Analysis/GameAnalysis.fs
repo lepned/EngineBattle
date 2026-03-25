@@ -24,6 +24,12 @@ module Formatting =
   let inline formatEPS (eps: double) =
     if eps = 0.0 then "NA" else formatMetric "eps" eps
 
+  let inline formatNPM (npm: double) =
+    if npm > 1_000_000_000.0 then sprintf "%.1fGnpm" (npm / 1_000_000_000.0)
+    elif npm > 1_000_000.0 then sprintf "%.1fMnpm" (npm / 1_000_000.0)
+    elif npm >= 1_000.0 then sprintf "%.1fKnpm" (npm / 1_000.0)
+    else sprintf "%.0f npm" npm
+
   let formatMoveTime (moveTime: int64) =
     let hours = moveTime / 3600000L
     let remainingAfterHours = moveTime % 3600000L
@@ -97,16 +103,16 @@ module OrdoHelper =
     if Seq.isEmpty lengths then minPadding
     else max ((Seq.max lengths) + delta) minPadding
 
-  let addDataFromEBToOrdo (output: string) (engineData : EngineLineData seq) =
+  let addDataFromEBToOrdo (output: string) (engineData : PlayerResult seq) =
     let lines = output.Split('\n')[3..] // Split the string into lines and remove the first three lines
     let sb = new StringBuilder()
     let minPadding = 8
     let delta = 2 //extra padding for columns with values
-    let wScorePadding = calcPadding minPadding delta (fun e -> e.WhiteScore.ToString()) engineData
-    let bScorePadding = calcPadding minPadding delta (fun e -> e.BlackScore.ToString()) engineData
-    let pairsPadding  = calcPadding minPadding delta (fun e -> e.Pairs) engineData
-    let formatSpeed (e: EngineLineData) =
-      let nps = Formatting.formatNPS e.Speed
+    let wScorePadding = calcPadding minPadding delta (fun (e: PlayerResult) -> e.WhiteScore.ToString()) engineData
+    let bScorePadding = calcPadding minPadding delta (fun (e: PlayerResult) -> e.BlackScore.ToString()) engineData
+    let pairsPadding  = calcPadding minPadding delta (fun (e: PlayerResult) -> e.PairsString) engineData
+    let formatSpeed (e: PlayerResult) =
+      let nps = Formatting.formatNPS e.MedSpeed
       if e.EPS > 0.0 then $"{nps} ({Formatting.formatEPS e.EPS})" else nps
     let speedPadding  = calcPadding minPadding delta formatSpeed engineData
     let speedHeader =
@@ -125,7 +131,7 @@ module OrdoHelper =
             sb.Append (line.TrimEnd('\r')) |> ignore
             sb.Append (e.WhiteScore.ToString().PadLeft(wScorePadding)) |> ignore
             sb.Append (e.BlackScore.ToString().PadLeft(bScorePadding)) |> ignore
-            sb.Append (e.Pairs.PadLeft(pairsPadding)) |> ignore
+            sb.Append (e.PairsString.PadLeft(pairsPadding)) |> ignore
             sb.Append "   " |> ignore
             let speed = formatSpeed e
             sb.Append (speed.PadRight(speedPadding) + "\n") |> ignore
@@ -144,7 +150,7 @@ module OrdoHelper =
 
 
     // Execute the command asynchronously and capture the output
-  let runCommandAsync (cmd:Command) (engineData : EngineLineData seq) (cancellationToken: System.Threading.CancellationToken) =
+  let runCommandAsync (cmd:Command) (engineData : PlayerResult seq) (cancellationToken: System.Threading.CancellationToken) =
       task {
           try
               use cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
@@ -169,31 +175,6 @@ module OrdoHelper =
 
   let lossCombinations = [ "00"; "01/2"; "1/20" ]
   let winCombinations = [ "11"; "11/2"; "1/21" ]
-
-  let getEngineLineDataForPlayer (p : PlayerResult) pairWins pairLosses : EngineLineData =
-    let bw,bd,_ = p.BlackWDL
-    let ww,wd,_ = p.WhiteWDL
-    let bscore = float bw + float bd * 0.5
-    let wscore = float ww + float wd * 0.5
-    let pairs = sprintf "%2d-%d" pairWins pairLosses
-    {
-        Player = p.Player
-        Elo = p.Elo // if p.Challenger then 0.0 else p.Elo
-        Error = p.Error //if p.Challenger then 0.0 else p.Error
-        Points = p.Points
-        Played = p.Played
-        Percent = p.Percent
-        CFS = p.CFS
-        EPS = 0.0
-        Speed = p.MedSpeed
-        Win = p.Win
-        Draw = p.Draw
-        Loss = p.Loss
-        D = p.D
-        WhiteScore = wscore
-        BlackScore = bscore
-        Pairs = pairs
-    }
 
   let calculatePairs (results: string[]) =
     let welcome = 1
@@ -223,26 +204,19 @@ module OrdoHelper =
         let wins, draws, losses = calculatePairs results
         (accWins + wins, accDraws + draws, accLosses + losses)) (0, 0, 0)
 
-  let getEngineLineData (engines: PlayerResult seq) (table:CrossTableEntry seq) =
+  let populatePairData (engines: PlayerResult seq) (table: CrossTableEntry seq) =
     if table |> Seq.length = 2 then
       (table |> Seq.head).Challenger <- true
-    seq {
-      for p in engines do
-        let (wins, losses) =
-          match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
-          |Some t ->
-            let pairs = getAllPairs t
-            p.Challenger <- t.Challenger
-            let (w,_,l) = pairs
-            w,l
-          |_ -> (0,0)
-        getEngineLineDataForPlayer p wins losses
-    }
+    for p in engines do
+      match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
+      | Some t ->
+          p.Challenger <- t.Challenger
+          let w, _, l = getAllPairs t
+          p.PairWins <- w
+          p.PairLosses <- l
+      | _ -> ()
 
-  let writeResultHeader (n:int) : string =
-    sprintf "%-*s : %7s %6s %7s %7s %4s %10s %5s %5s %5s %5s %7s %7s %8s" n "# PLAYER" "ELO" "ERROR" "POINTS" "PLAYED" "(%)" "Speed" "W" "D" "L" "D(%)" "WScore" "BScore" "Pairs"
-
-  let writeResultHeaderWithSpeed (n:int) (speedPadding:int) : string =
+  let writeResultHeader (n:int) (speedPadding:int) : string =
     let label = "Speed"
     let leftPad =
       let diff = speedPadding - label.Length
@@ -268,28 +242,11 @@ module OrdoHelper =
       elif error = System.Double.NegativeInfinity then ConsoleUtils.negativeInfinitySymbol
       else error.ToString("F1")
 
-  let writeEngineLineForPlayer (p: PlayerResult) pairWins pairLosses n =
-      let bw, bd, _ = p.BlackWDL
-      let ww, wd, _ = p.WhiteWDL
-      let bscore = float bw + float bd * 0.5
-      let wscore = float ww + float wd * 0.5
-      let pairs = sprintf "%2d-%d" pairWins pairLosses
-      let elo = formatElo p.Elo p.Challenger
-      let error = formatError p.Error p.Challenger
-      let speed = Formatting.formatNPS p.MedSpeed
-      sprintf "%-*s : %7s %6s %7.1f %7d %4d %10s %5d %5d %5d %5d %7.1f %7.1f %8s"
-              n p.Player elo error p.Points p.Played p.Percent speed p.Win p.Draw p.Loss p.D wscore bscore pairs
-
-  let writeEngineLineForPlayerWithSpeed (p: PlayerResult) pairWins pairLosses n (speed: string) (speedPadding:int) =
-      let bw, bd, _ = p.BlackWDL
-      let ww, wd, _ = p.WhiteWDL
-      let bscore = float bw + float bd * 0.5
-      let wscore = float ww + float wd * 0.5
-      let pairs = sprintf "%2d-%d" pairWins pairLosses
+  let writeEngineLineForPlayer (p: PlayerResult) n (speed: string) (speedPadding: int) =
       let elo = formatElo p.Elo p.Challenger
       let error = formatError p.Error p.Challenger
       sprintf "%-*s : %7s %6s %7.1f %7d %4d %6d   %-*s %5d %5d %5d %5d %7.1f %7.1f %8s"
-              n p.Player elo error p.Points p.Played p.Percent p.CFS speedPadding speed p.Win p.Draw p.Loss p.D wscore bscore pairs
+              n p.Player elo error p.Points p.Played p.Percent p.CFS speedPadding speed p.Win p.Draw p.Loss p.D p.WhiteScore p.BlackScore p.PairsString
 
   let printStatsMatrix (table: CrossTableEntry seq) =
     let endOfLine = "\n```\n"
@@ -345,63 +302,14 @@ module OrdoHelper =
         printfn ""
 
   let getResultsAndPairsInConsoleFormat (engines: PlayerResult seq) (table: CrossTableEntry seq) =
-    let sb = new StringBuilder()
-    let appendLine (txt: string) = sb.AppendLine txt |> ignore
-
-    appendLine "\n```\n"
-
-    // Find longest player name for formatting
-    let longest = engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
-    writeResultHeader longest |> appendLine
-
-    // In a two player table, the first player is always the challenger
-    let players =
-        engines
-        |> Seq.mapi (fun idx p ->
-            let isChallenger =
-                table |> Seq.length = 2 && idx = 0
-            { p with Challenger = isChallenger }
-        )
-        |> Seq.toList
-
-    // Sort: challengers first, then by Elo descending
-    let sortedPlayers =
-        let (challengers, rest) = players |> List.partition (fun p -> p.Challenger)
-        let restSorted = rest |> List.sortByDescending (fun e -> e.Elo)
-        challengers @ restSorted
-
-    //normalize rating based on the first player's elo performance
-    let firstPlayerElo =
-        match sortedPlayers |> List.tryHead with
-        | Some p -> p.Elo
-        | None -> 0.0
-
-    let normalizeElo (elo: float) = elo - firstPlayerElo
-
-    // Write each player's line
-    for p in sortedPlayers do
-        //p.Elo <- normalizeElo p.Elo
-        let (wins, losses) =
-            match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
-            | Some t ->
-                let w, _, l = getAllPairs t
-                w, l
-            | None -> 0, 0
-        writeEngineLineForPlayer p wins losses longest |> appendLine
-
-    appendLine "\n```"
-    sb.ToString()
-
-  let getResultsAndPairsInConsoleFormatWithEps
-    (engines: PlayerResult seq)
-    (table: CrossTableEntry seq)
-    (epsByPlayer: Map<string, float>) =
       let sb = new StringBuilder()
       let appendLine (txt: string) = sb.AppendLine txt |> ignore
 
       appendLine "\n```\n"
 
       let longest = engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
+
+      // In a two player table, the first player is always the challenger
       let players =
           engines
           |> Seq.mapi (fun idx p ->
@@ -411,6 +319,7 @@ module OrdoHelper =
           )
           |> Seq.toList
 
+      // Sort: challengers first, then by Elo descending
       let sortedPlayers =
           let (challengers, rest) = players |> List.partition (fun p -> p.Challenger)
           let restSorted = rest |> List.sortByDescending (fun e -> e.Elo)
@@ -420,32 +329,14 @@ module OrdoHelper =
           sortedPlayers
           |> List.map (fun p ->
               let baseSpeed = Formatting.formatNPS p.MedSpeed
-              match epsByPlayer |> Map.tryFind p.Player with
-              | Some eps when eps > 0.0 -> $"{baseSpeed} ({Formatting.formatEPS eps})"
-              | _ -> baseSpeed)
+              if p.EPS > 0.0 then $"{baseSpeed} ({Formatting.formatEPS p.EPS})"
+              else baseSpeed)
 
       let speedPadding = calcPadding 8 0 id speedStrings
-      writeResultHeaderWithSpeed longest speedPadding |> appendLine
+      writeResultHeader longest speedPadding |> appendLine
 
-      for p in sortedPlayers do
-          let (wins, losses) =
-              match table |> Seq.tryFind (fun e -> e.Player = p.Player) with
-              | Some t ->
-                  let w, _, l = getAllPairs t
-                  w, l
-              | None -> 0, 0
-          let bw, bd, _ = p.BlackWDL
-          let ww, wd, _ = p.WhiteWDL
-          let bscore = float bw + float bd * 0.5
-          let wscore = float ww + float wd * 0.5
-          let pairs = sprintf "%2d-%d" wins losses
-          let baseSpeed = Formatting.formatNPS p.MedSpeed
-          let speed =
-              match epsByPlayer |> Map.tryFind p.Player with
-              | Some eps when eps > 0.0 ->
-                  $"{baseSpeed} ({Formatting.formatEPS eps})"
-              | _ -> baseSpeed
-          writeEngineLineForPlayerWithSpeed p wins losses longest speed speedPadding |> appendLine
+      for (p, speed) in List.zip sortedPlayers speedStrings do
+          writeEngineLineForPlayer p longest speed speedPadding |> appendLine
 
       appendLine "\n```"
       sb.ToString()
@@ -660,39 +551,42 @@ module PGNCalculator =
     printfn "\n%s\n" idealized
 
 
+  let populatePentanomialError (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
+    if Seq.length players = 2 then
+      let matchups = Pentanomial.calculateAllMatchups pgnGames
+      match matchups with
+      | [ (_, counts) ] ->
+          let _, error, _ = Pentanomial.pentanomialEloErrorAndLos counts
+          for p in players do
+            p.Error <- error
+      | _ -> ()
+
+  let populateSpeedMetrics (players: PlayerResult seq) (pgnGames: PGNTypes.PgnGame seq) =
+    let avgSpeed =
+      PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(pgnGames, 0)
+      |> Array.filter _.Median
+    for player in players do
+      let speed = avgSpeed |> Array.tryFind (fun e -> e.Player = player.Player)
+      if speed.IsSome then
+          player.MedSpeed <- speed.Value.AvgNPS
+          player.AvgNPM <- speed.Value.AvgNodes
+          if speed.Value.EPS > 0.0 then
+            player.EPS <- speed.Value.EPS
+
   let getEngineDataResults results =
     let allResults = getResultsFromPGNGames results
     let cross = generateCrosstableEntries allResults
     let playerRes = getFullStatFromResults allResults |> Seq.toList
-    let avgSpeed =
-      PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(results,0)
-      |> Array.filter _.Median
-      |> Array.sortByDescending _.AvgNPS
-
-    for player in playerRes do
-      let speed = avgSpeed |> Seq.tryFind (fun e -> e.Player = player.Player)
-      if speed.IsSome then
-          player.MedSpeed <- speed.Value.AvgNPS
-          player.AvgNPM <- speed.Value.AvgNodes
-
-    let epsByPlayer =
-      avgSpeed
-      |> Seq.filter (fun e -> e.EPS > 0.0)
-      |> Seq.map (fun e -> e.Player, e.EPS)
-      |> Map.ofSeq
+    populateSpeedMetrics playerRes results
+    populatePentanomialError playerRes results
+    OrdoHelper.populatePairData playerRes cross
     let consoleContent =
-      OrdoHelper.getResultsAndPairsInConsoleFormatWithEps playerRes cross epsByPlayer
-    let engineStats =
-      OrdoHelper.getEngineLineData playerRes cross
-      |> Seq.map (fun e ->
-          match epsByPlayer |> Map.tryFind e.Player with
-          | Some eps when eps > 0.0 ->
-              e.EPS <- eps
-              e
-          | _ -> e)
-      |> Seq.toList
+      let standings = OrdoHelper.getResultsAndPairsInConsoleFormat playerRes cross
+      if playerRes.Length = 2 then
+        standings + Pentanomial.formatSingleMatchupCompact results
+      else standings
 
-    consoleContent, engineStats, cross, allResults
+    consoleContent, playerRes, cross, allResults
 
   let calculateStatistics (engines:string list) results =
       engines |> List.map (fun player -> calculateStatisticsForPlayer player results)

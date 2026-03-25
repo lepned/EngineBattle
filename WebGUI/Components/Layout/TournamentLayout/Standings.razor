@@ -38,11 +38,11 @@
                         <td class="data-cell">
                             @if (ShowNPM)
                             {
-                                @FormatNPM(context.AvgNPM)
+                                @GameAnalysis.Formatting.formatNPM(context.AvgNPM)
                             }
                             else
                             {
-                                @FormatNPS(context.MedSpeed)
+                                @GameAnalysis.Formatting.formatNPS(context.MedSpeed)
                             }
                         </td>
                     </tr>
@@ -190,55 +190,6 @@
         return msg;
     }
 
-    private string FormatNPS(double nps)
-    {
-        if (nps > 1_000_000_000)
-        {
-            var mill = nps / 1_000_000_000;
-            return mill.ToString("F1") + "Gnps"; //Gnps
-        }
-        else if (nps > 1_000_000)
-        {
-            var mill = nps / 1_000_000;
-            return mill.ToString("F1") + "Mnps"; //Mnps
-        }
-
-        else if (nps >= 1_000)
-        {
-            var thousand = nps / 1_000;
-            return thousand.ToString("F1") + "Knps"; //Knps
-        }
-
-        else
-        {
-            return nps.ToString("F1") + " nps"; //nps
-        }
-    }
-
-    private string FormatNPM(double npm)
-    {
-        if (npm > 1_000_000_000)
-        {
-            var mill = npm / 1_000_000_000;
-            return mill.ToString("F1") + "Gnpm"; //Gnps
-        }
-        else if (npm > 1_000_000)
-        {
-            var mill = npm / 1_000_000;
-            return mill.ToString("F1") + "Mnpm"; //Mnps
-        }
-
-        else if (npm >= 1_000)
-        {
-            var thousand = npm / 1_000;
-            return thousand.ToString("F1") + "Knpm"; //Knps
-        }
-
-        else
-        {
-            return npm.ToString("F0") + " npm"; //nps
-        }
-    }
 
     private async Task DoScroll()
     {

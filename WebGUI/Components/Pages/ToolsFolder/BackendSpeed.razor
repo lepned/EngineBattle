@@ -47,9 +47,9 @@
 					<tr>
 						<td>@item.FileName</td>
 						<td class="tc">@item.PieceCount</td>
-						<td>@FormatNPS(item.AvgNps, true)</td>
-						<td>@FormatNPS(item.AvgEps, false)</td>
-						<td>@FormatNPS(item.AvgNps - item.AvgEps, true)</td>
+						<td>@GameAnalysis.Formatting.formatNPS(item.AvgNps)</td>
+						<td>@GameAnalysis.Formatting.formatEPS(item.AvgEps)</td>
+						<td>@GameAnalysis.Formatting.formatNPS(item.AvgNps - item.AvgEps)</td>
 					</tr>
 				}
 			</tbody>
@@ -181,8 +181,8 @@
 			logger.LogInformation("File: {FileName}", fileData.Item1);
 			foreach (var stat in fileData.Item2)
 			{
-				var formattedNps = FormatNPS(stat.AvgNps, true);
-				var formattedEps = FormatNPS(stat.AvgEps, false);
+				var formattedNps = GameAnalysis.Formatting.formatNPS(stat.AvgNps);
+				var formattedEps = GameAnalysis.Formatting.formatEPS(stat.AvgEps);
 				logger.LogInformation("Piece Count: {PieceCount}, Avg NPS: {AvgNPS}, Avg EPS: {AvgEps}",
 					stat.PieceCount, formattedNps, formattedEps);
 			}
@@ -222,28 +222,6 @@
 		await Task.CompletedTask;
 	}
 
-	private string FormatNPS(double nps, bool isNPS)
-	{
-		if (nps > 1_000_000_000)
-		{
-			var mill = nps / 1_000_000_000;
-			return isNPS ? mill.ToString("F1") + " G nps" : mill.ToString("F1") + " G eps";
-		}
-		else if (nps > 1_000_000)
-		{
-			var mill = nps / 1_000_000;
-			return isNPS ? mill.ToString("F1") + " M nps" : mill.ToString("F1") + " M eps";
-		}
-		else if (nps > 1_000)
-		{
-			var thousand = nps / 1_000;
-			return isNPS ? thousand.ToString("F1") + " K nps" : thousand.ToString("F1") + " K eps";
-		}
-		else
-		{
-			return isNPS ? nps.ToString("F1") + " nps" : nps.ToString("F1") + " eps";
-		}
-	}
 
 	// called when selector value changes
 	private async Task OnEngineChanged()

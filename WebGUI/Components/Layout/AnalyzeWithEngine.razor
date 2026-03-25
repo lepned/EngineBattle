@@ -451,55 +451,6 @@
         analyzer?.DumpStats(command);
     }
 
-    private string FormatEPS(double eps)
-    {
-        if (eps > 1_000_000_000)
-        {
-            var bill = eps / 1_000_000_000;
-            return bill.ToString("F1") + "Beps"; //G eps
-        }
-        else if (eps > 1_000_000)
-        {
-            var mill = eps / 1_000_000;
-            return mill.ToString("F1") + "Meps"; //M eps
-        }
-
-        else if (eps > 1_000)
-        {
-            var thousand = eps / 1000;
-            return thousand.ToString("F1") + "Keps"; //K eps
-        }
-
-        else
-        {
-            return eps.ToString("F1") + " eps"; //eps
-        }
-    }
-
-    private string FormatNPS(double nps)
-    {
-        if (nps > 1_000_000_000)
-        {
-            var bill = nps / 1_000_000_000;
-            return bill.ToString("F1") + "Bnps"; //Gnps
-        }
-        else if (nps > 1_000_000)
-        {
-            var mill = nps / 1_000_000;
-            return mill.ToString("F1") + "Mnps"; //Mnps
-        }
-
-        else if (nps > 1_000)
-        {
-            var thousand = nps / 1000;
-            return thousand.ToString("F1") + "Knps"; //Knps
-        }
-
-        else
-        {
-            return nps.ToString("F1") + " nps"; //nps
-        }
-    }
 
     private string FormatNodes(double nodes)
     {
@@ -1292,18 +1243,18 @@
     private async Task Update(EngineStatus status)
     {
         var nodes = FormatNodes(status.Nodes);
-        var nps = FormatNPS(status.NPS);
+        var nps = GameAnalysis.Formatting.formatNPS(status.NPS);
         var k = status.MultiPV;
         data[k] = status;
         var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
         var wdlString = status.WDL != null ? CalcWDL(ordered[0].Value.WDL) : "W: N/A D: N/A L: N/A";
         if (status.EPS == 0)
         {
-            tableHeader = $"Analysis: {nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";            
+            tableHeader = $"Analysis: {nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
         }
         else
         {
-            var eps = FormatEPS(status.EPS);
+            var eps = GameAnalysis.Formatting.formatEPS(status.EPS);
             tableHeader = $"Analysis: {nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
         }
         dataList = ordered;

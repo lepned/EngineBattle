@@ -83,3 +83,27 @@ let ``calculateAllMatchups returns counts from alphabetically-first engine persp
     let swapped = { c with W2 = c.L2; L2 = c.W2; W15 = c.L15; L15 = c.W15 }
     Assert.Equal(0, swapped.W2)
     Assert.Equal(1, swapped.L2)
+
+[<Fact>]
+let ``Pentanomial Elo, error and LOS from OpenBench reference data`` () =
+    // Reference: Elo 47.31 +-8.51 (95%), Games N:1330 W:423 L:243 D:664, Penta [0, 66, 353, 246, 0]
+    let counts =
+      { Pentanomial.Counts.Empty with
+          L2 = 0; L15 = 66; D = 353; W15 = 246; W2 = 0
+          CompletedPairs = 665 }
+    let elo, error, los = Pentanomial.pentanomialEloErrorAndLos counts
+    Assert.InRange(elo, 47.0, 48.0)       // ~47.3
+    Assert.InRange(error, 8.0, 9.0)       // ~8.5 (95% CI, z=1.96)
+    Assert.InRange(los, 0.999, 1.001)     // ~100%
+
+[<Fact>]
+let ``Trinomial Elo and error from OpenBench reference data`` () =
+    // Same reference: Games N:1330 W:423 L:243 D:664
+    let elo = EloCalculator.eloDiffWDL 423.0 664.0 243.0
+    let error = EloCalculator.calculateEloError 423 664 243
+    let los = EloCalculator.calculateLikelihoodOfSuperiority 423 243 (float (423 + 243))
+    let cfs = los * 100.0
+    Assert.InRange(elo, 47.0, 48.0)       // ~47.3 (same point estimate as pentanomial)
+    Assert.InRange(error, 11.0, 12.0)     // ~11.6 (wider than pentanomial's ~8.5, uses z=1.72)
+    Assert.InRange(los, 0.999, 1.001)     // ~100%
+    Assert.InRange(cfs, 99.9, 100.1)      // CFS ~100%

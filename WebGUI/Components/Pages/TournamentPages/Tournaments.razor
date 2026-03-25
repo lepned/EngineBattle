@@ -1155,8 +1155,8 @@
 		oneSecondTimer?.Dispose();
 		await Notifier.NotifyFullScreenRequested(false);
 		await Task.Delay(200);
-		await chessModule.InvokeVoidAsync("triggerResizeEvent");
 		await InvokeAsync(OnBrowserResize);
+		await chessModule.InvokeVoidAsync("triggerResizeEvent");
 	}
 
 	private (bool ok, string errors) ValidateTournamentJson()
@@ -1430,9 +1430,13 @@
 				var summary = runner.GetPlayerResults(results);
 				scoreTable = summary;
 				table = runner.GenerateStatsCrosstable(results);
-				await UpdateSpeed(0);
+				GameAnalysis.OrdoHelper.populatePairData(summary, table);
+				var pgnGames = await UpdateSpeed(0);
+				GameAnalysis.PGNCalculator.populatePentanomialError(summary, pgnGames);
 				await InvokeAsync(StateHasChanged);
 				var resLog = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
+				if (summary.Count == 2)
+					resLog += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGames);
 				Console.WriteLine(resLog);
 				if (tournament.VerboseLogging)
 					logger.LogInformation(resLog);
@@ -1657,11 +1661,17 @@
 					var players = runner.GetPlayerResults(results);
 					scoreTable = players;
 					table = runner.GenerateStatsCrosstable(results);
+					GameAnalysis.OrdoHelper.populatePairData(players, table);
+					System.Collections.Generic.List<PGNTypes.PgnGame> gameData = null;
 					if (results.Count > 0)
 					{
-						await UpdateSpeed(0);
+						gameData = await UpdateSpeed(0);
 					}
+					gameData ??= runner.GetPGNGames();
+					GameAnalysis.PGNCalculator.populatePentanomialError(players, gameData);
 					var consoleInfo = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
+					if (players.Count == 2)
+						consoleInfo += Statistics.Pentanomial.formatSingleMatchupCompact(gameData);
 					Console.WriteLine(consoleInfo);
 					if (tournament.VerboseLogging)
 						logger.LogInformation(consoleInfo);
@@ -1680,13 +1690,16 @@
 				{
 					if (File.Exists(tourny.Info.PgnOutPath))
 					{
-						var deviations = runner.GetPGNGames();
-						var anyGameData = deviations.Any();
-						tournament.DeviationCounter = anyGameData ? deviations.Last().GameMetaData.Deviations : 0;
-						tournament.TotalGames = totalNumberOfPairs; //deviations.Count();
+						var pgnGamesEnd = runner.GetPGNGames();
+						var anyGameData = pgnGamesEnd.Any();
+						tournament.DeviationCounter = anyGameData ? pgnGamesEnd.Last().GameMetaData.Deviations : 0;
+						tournament.TotalGames = totalNumberOfPairs;
 						results = runner.GetResults();
 						scoreTable = runner.GetPlayerResults(results);
 						table = runner.GenerateStatsCrosstable(results);
+						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+						GameAnalysis.PGNCalculator.populateSpeedMetrics(scoreTable, pgnGamesEnd);
+						GameAnalysis.PGNCalculator.populatePentanomialError(scoreTable, pgnGamesEnd);
 						if (pairings.Count == 0)
 						{
 							infoBannerInfo = new InfoBannerInfo(tournament);
@@ -1695,22 +1708,11 @@
 						}
 						var testTime = TimeSpan.FromMilliseconds(results.Sum(r => r.GameTime));
 						var durMsg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and {testTime.Minutes} minutes";
-						var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(deviations, 0);
-						var avgSpeed =
-								res.Where(e => e.Median)
-								.OrderByDescending(e => e.AvgNPS).ToList();
-						foreach (var player in scoreTable)
-						{
-							var speed = avgSpeed.FirstOrDefault(e => e.Player == player.Player);
-							if (speed != null)
-							{
-								player.MedSpeed = speed.AvgNPS;
-								player.AvgNPM = speed.AvgNodes;
-							}
-						}
 						Console.WriteLine(durMsg);
 						tournament.PrintTournamentSummary();
 						var consoleRes = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(scoreTable, table);
+						if (scoreTable.Count == 2)
+							consoleRes += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGamesEnd);
 						Console.WriteLine(consoleRes);
 						if (tournament.VerboseLogging)
 							logger.LogDebug(consoleRes);
@@ -1814,7 +1816,7 @@
 		}
 	}
 
-	private async Task UpdateSpeed(int delayInMs)
+	private async Task<System.Collections.Generic.List<PGNTypes.PgnGame>> UpdateSpeed(int delayInMs)
 	{
 		if (tournament.VerboseLogging)
 			logger.LogDebug("Speed update started: " + DateTime.Now.ToString());
@@ -1823,19 +1825,8 @@
 		if (tournament.VerboseLogging)
 			logger.LogDebug("Speed update delay ended: " + DateTime.Now.ToString());
 		var games = runner.GetPGNGames();
-		var res = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
-		var avgSpeed =
-				res.Where(e => e.Median)
-				.OrderByDescending(e => e.AvgNPS).ToList();
-		foreach (var player in scoreTable)
-		{
-			var speed = avgSpeed.FirstOrDefault(e => e.Player == player.Player);
-			if (speed != null)
-			{
-				player.MedSpeed = speed.AvgNPS;
-				player.AvgNPM = speed.AvgNodes;
-			}
-		}
+		GameAnalysis.PGNCalculator.populateSpeedMetrics(scoreTable, games);
+		return games;
 	}
 
 	private async Task OpenQuickDialog()

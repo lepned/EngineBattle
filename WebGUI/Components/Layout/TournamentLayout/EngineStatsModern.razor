@@ -38,9 +38,9 @@
   <div class="stat-cell">@Engine2.Depth/@Engine2.SD</div>
 
   <!-- Row 4: Speed -->
-  <div class="stat-cell">@(Engine1.EPS > 0 ? FormatNPS(Engine1.NPS) + " (" + FormatEPS(Engine1.EPS) + ")" : FormatNPS(Engine1.NPS))</div>
+  <div class="stat-cell">@(Engine1.EPS > 0 ? GameAnalysis.Formatting.formatNPS(Engine1.NPS) + " (" + GameAnalysis.Formatting.formatEPS(Engine1.EPS) + ")" : GameAnalysis.Formatting.formatNPS(Engine1.NPS))</div>
   <div class="label-cell">Speed</div>
-  <div class="stat-cell">@(Engine2.EPS > 0 ? FormatNPS(Engine2.NPS) + " (" + FormatEPS(Engine2.EPS) + ")" : FormatNPS(Engine2.NPS))</div>
+  <div class="stat-cell">@(Engine2.EPS > 0 ? GameAnalysis.Formatting.formatNPS(Engine2.NPS) + " (" + GameAnalysis.Formatting.formatEPS(Engine2.EPS) + ")" : GameAnalysis.Formatting.formatNPS(Engine2.NPS))</div>
 
   <!-- Row 5: Nodes -->
   <div class="stat-cell">@FormatNodes(Engine1.Nodes)</div>
@@ -194,51 +194,6 @@
     }
   }
 
-  private string FormatEPS(double nps)
-  {
-    if (nps > 1_000_000_000)
-    {
-        var mill = (decimal)nps / 1_000_000_000;
-        return mill.ToString("F1") + "Geps";
-    }
-    else if (nps > 1_000_000)
-    {
-        var mill = (decimal)nps / 1_000_000;
-        return mill.ToString("F1") + "Meps";
-    }
-    else if (nps > 1_000)
-    {
-        var thousand = (decimal)nps / 1_000;
-        return thousand.ToString("F1") + "Keps";
-    }
-    else
-    {
-        return nps.ToString("F1") + " eps";
-    }
-  }
-
-  private string FormatNPS(double nps)
-  {
-    if (nps > 1_000_000_000)
-    {
-      var mill = (decimal)nps / 1_000_000_000;
-      return mill.ToString("F1") + "Gnps";
-    }
-    else if (nps > 1_000_000)
-    {
-      var mill = (decimal)nps / 1_000_000;
-      return mill.ToString("F1") + "Mnps";
-    }
-    else if (nps > 1_000)
-    {
-      var thousand = (decimal)nps / 1_000;
-      return thousand.ToString("F1") + "Knps";
-    }
-    else
-    {
-      return nps.ToString("F1") + " nps";
-    }
-  }
 
   protected override void OnInitialized()
   {

@@ -234,7 +234,7 @@ module Manager =
     let executablePath() = tournament.OrdoExePath
 
     // Serializes Ordo calls on a background thread with "latest wins" draining
-    let ordoAgent = MailboxProcessor<EngineLineData[] * string * string>.Start(fun inbox ->
+    let ordoAgent = MailboxProcessor<PlayerResult[] * string * string>.Start(fun inbox ->
         let rec loop () = async {
             let! msg = inbox.Receive()
             // Drain queue to only process the latest request

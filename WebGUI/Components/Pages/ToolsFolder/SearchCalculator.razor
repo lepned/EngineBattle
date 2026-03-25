@@ -279,29 +279,6 @@
     }
   }
 
-  private string FormatNPS(double nps)
-  {
-    if (nps > 1_000_000_000)
-    {
-      var mill = nps / 1_000_000_000;
-      return mill.ToString("F1") + "Gnps"; //Gnps
-    }
-    else if (nps > 1_000_000)
-    {
-      var mill = nps / 1_000_000;
-      return mill.ToString("F1") + "Mnps"; //Mnps
-    }
-
-    else if (nps > 1_000)
-    {
-      var thousand = nps / 1_000;
-      return thousand.ToString("F1") + "Knps"; //Knps
-    }
-
-    else
-    {
-      return nps.ToString("F1") + " nps"; //nps
-    }
   }
 
   protected override Task OnInitializedAsync()
