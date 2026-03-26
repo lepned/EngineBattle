@@ -20,7 +20,6 @@
 @implements IAsyncDisposable
 
 <InputFile id="@Id" OnChange="@LoadNNFile" hidden />
-<InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
 
 <div class="engine-panel">
     <header class="ep-header">
@@ -112,12 +111,12 @@
             Weights
         </label>
 
-        <label class="ep-upload" for="@engineJson">
+        <button class="ep-upload" @onclick="BrowseEngineFile">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
             </svg>
             Engine
-        </label>
+        </button>
     </div>
 
     <div class="ep-nn-info">
@@ -344,7 +343,6 @@
     [Parameter] public EventCallback<EngineConfigEventArgs> OnNewEngineLoaded { get; set; }
     [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
     [Parameter] public string Player { get; set; }
-    [Parameter] public PuzzleTypes.AnalyzeConfig Config { get; set; }
 
     private int Nodes = 0;
     private int ChartLines = 3;
@@ -362,7 +360,6 @@
     private string currentName = string.Empty;
     private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
     private NNValues currentPosition = NNValues.Empty;
-    private string engineJson => "engineJson" + Id;
     private bool runLogLiveStats;
     private System.Text.RegularExpressions.Regex firstMoveInPV = new(@"(?:\d+\.\.\.\.|^\d+\.)\s*([^\s]+)", RegexOptions.Compiled);
     private string whitePV;
@@ -895,29 +892,36 @@
         analyzer?.AddSetoption(option);
     }
 
-    private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
+    private async Task BrowseEngineFile()
     {
+        var initialDir = SettingsService.Settings.EngineDefsFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Engine Definition", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
+
+        var filePath = (string)result.Data!;
         try
         {
             waitingForEngine = true;
             searchInProgress = false;
             StateHasChanged();
             analyzer?.Engine?.ShutDownEngine();
-            var name = e.File.Name;
-            logger.LogInformation("Engine.json file opened {File}", name);
-            var env = AppPaths.BaseDir;
-            var nnDir = Path.Combine(env, "NN");
-            Directory.CreateDirectory(nnDir);
-            var fullPath = Path.Combine(nnDir, name);
-            await using (FileStream fs = new(fullPath, FileMode.Create))
+            logger.LogInformation("Engine.json file opened {File}", filePath);
+            var engineConfig = JSON.readSingleEngineConfig(filePath);
+            var args = new EngineConfigEventArgs
             {
-                browserFile = e.File;
-                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-            }
-            var jsonFile = e.File.Name;
-            logger.LogInformation("New engine.json file loaded {jsonFile}", jsonFile);
-            var engineConfig = JSON.readSingleEngineConfig(fullPath);
-            var args = new EngineConfigEventArgs { EngineConfig = engineConfig, OldName = Engine?.Name ?? "NoEngine", Id = Id };
+                EngineConfig = engineConfig,
+                OldName = Engine?.Name ?? "NoEngine",
+                Id = Id,
+                SourceFilePath = filePath
+            };
             await OnNewEngineLoaded.InvokeAsync(args);
             Engine = engineConfig;
             NNInfoList.Clear();
@@ -925,12 +929,11 @@
             await StartAnalyzer();
             neuralNet = analyzer.GetNetwork();
             backend = analyzer.BackendInfo();
-            File.Delete(fullPath);
             StateHasChanged();
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to load engine.json file {File}", e.File.Name);
+            logger.LogError(ex, "Failed to load engine.json file {File}", filePath);
             waitingForEngine = false;
             StateHasChanged();
         }
@@ -1121,7 +1124,7 @@
             }
             var engineName = "all";
 
-            var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+            var parts = (SettingsService.Settings.PolicyDistributionMinMaxFilter ?? "")
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             float minVal = 0f, maxVal = 1f;
@@ -1181,7 +1184,7 @@
             var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
             var top5frac = (double)top5 / res.Count() * 100;
             logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, res.Count(), top5frac);
-            if (Config.CombineWhiteAndBlackMoves)
+            if (SettingsService.Settings.CombineWhiteAndBlackMoves)
             {
                 searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
@@ -1226,7 +1229,7 @@
             }
             var engineName = "all";
 
-            var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+            var parts = (SettingsService.Settings.PolicyDistributionMinMaxFilter ?? "")
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             float minVal = 0f, maxVal = 1f;
@@ -1286,7 +1289,7 @@
             var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
             var top5frac = (double)top5 / res.Count() * 100;
             logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, res.Count(), top5frac);
-            if (Config.CombineWhiteAndBlackMoves)
+            if (SettingsService.Settings.CombineWhiteAndBlackMoves)
             {
                 searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
@@ -1349,7 +1352,7 @@
                     player = "all";
                 }
 
-                var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                var parts = (SettingsService.Settings.PolicyDistributionMinMaxFilter ?? "")
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
                 float minVal = 0f, maxVal = 1f;
@@ -1405,7 +1408,7 @@
             var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
             var top5frac = (double)top5 / results.Count() * 100;
             logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, results.Count(), top5frac);
-            if (Config.CombineWhiteAndBlackMoves)
+            if (SettingsService.Settings.CombineWhiteAndBlackMoves)
             {
                 searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
@@ -1461,7 +1464,7 @@
                 else
                     player = "all";
 
-                var parts = (Config.PolicyDistributionMinMaxFilter ?? "")
+                var parts = (SettingsService.Settings.PolicyDistributionMinMaxFilter ?? "")
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
                 float minVal = 0f, maxVal = 1f;
@@ -1514,7 +1517,7 @@
             var top5 = distribution.Where(d => d.Rank <= 5).Sum(d => d.Count);
             var top5frac = (double)top5 / results.Count() * 100;
             logger.LogInformation("Top 5 moves {Top5} out of {Total} fraction {Top5Frac:F2}%", top5, results.Count(), top5frac);
-            if (Config.CombineWhiteAndBlackMoves)
+            if (SettingsService.Settings.CombineWhiteAndBlackMoves)
             {
                 searchInfoPlot?.SetPolicyDistributionCombinedBucketed(
                     distribution.Select(d => Tuple.Create(d.Rank, d.Count)),
@@ -1784,7 +1787,7 @@
             }
             searchInProgress = false;
             ChessBoard.inAnalysisMode = true;
-            ChartLines = Config == null ? ChartLines : Config.ChartLines;
+            ChartLines = SettingsService.Settings.ChartLines;
             numberOfLines = Math.Max(1, ChartLines);
             numberOfNodes = Math.Max(1, Nodes);
             Qdiff = 2;

@@ -829,6 +829,16 @@
 		await InvokeAsync(StateHasChanged);		
 	}
 
+	public async Task SetPositionDirect(string targetFen)
+	{
+		fen = targetFen;
+		if (chessJSmodule is not null && board.Context is not null)
+		{
+			await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, false);
+		}
+		await InvokeAsync(StateHasChanged);
+	}
+
 	public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
 	{
 		if (overlay == OverlaySettings.None)

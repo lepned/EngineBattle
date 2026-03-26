@@ -17,9 +17,16 @@ public class GlobalSettings
     // Tool paths
     public string OrdoExePath { get; set; } = "";
 
+    // Engine defaults
+    public string DefaultEnginePath { get; set; } = "";
+    public string SecondaryEnginePath { get; set; } = "";
+
     // Analysis defaults
     public double DefaultSearchTimeMs { get; set; } = 3000;
     public int DefaultSearchNodes { get; set; } = 100000;
+    public int ChartLines { get; set; } = 4;
+    public string PolicyDistributionMinMaxFilter { get; set; } = "0.4,0.6";
+    public bool CombineWhiteAndBlackMoves { get; set; } = true;
 
     // Tournament defaults
     public int DelayBetweenGamesSec { get; set; } = 20;

@@ -732,12 +732,12 @@ module JSONParser =
         else
             failwithf "File not found: %s" filePath
 
-    let loadAnalyzeConfig (filePath: string) : PuzzleTypes.AnalyzeConfig =
+    let loadEngineListConfig (filePath: string) : PuzzleTypes.EngineListConfig =
         let options = new JsonSerializerOptions(AllowTrailingCommas = true)
         options.Converters.Add(PuzzleTypes.PuzzleEngineConverter())
         if File.Exists(filePath) then
             let json = File.ReadAllText(filePath)
-            JsonSerializer.Deserialize<PuzzleTypes.AnalyzeConfig>(json, options)
+            JsonSerializer.Deserialize<PuzzleTypes.EngineListConfig>(json, options)
         else
             failwithf "File not found: %s" filePath
 

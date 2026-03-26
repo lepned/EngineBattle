@@ -1364,11 +1364,18 @@ type Board() =
             loop t
       loop (moveList|>Array.toList)    
 
-    member this.FindEpMove move =      
+    member this.GetUciFromSan (san: string) =
+      let islegal move = this.IllegalMove &move |> not
+      let moveList = this.GenerateMoves()
+      match TMoveOps.getTMoveFromShortSan san moveList position.STM islegal with
+      | Some move -> Some (TMoveOps.getUciNotation move position.STM)
+      | None -> None
+
+    member this.FindEpMove move =
         let islegal move = this.IllegalMove &move |> not
         let moveList = this.GenerateMoves()
         match TMoveOps.getTMoveFromShortSan move moveList position.STM islegal with
-        |Some tmove -> (tmove.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY               
+        |Some tmove -> (tmove.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
         |None -> false        
 
     member this.PlayUciMove move =

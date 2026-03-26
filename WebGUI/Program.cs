@@ -139,6 +139,7 @@ builder.Services.AddScoped<NotifierService>();
 builder.Services.AddScoped<ChessConfigurationService>();
 builder.Services.AddScoped<JavaScriptInteropService>();
 builder.Services.AddScoped<ClipboardService>();
+builder.Services.AddScoped<GameReviewService>();
 builder.Services.AddSingleton<OverlaySetting>();
 builder.Services.AddSingleton<OpeningExplorerService>();
 // Register the shutdown token provider so UI/services can link the tournament

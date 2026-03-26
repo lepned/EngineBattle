@@ -24,21 +24,11 @@
 @inject GlobalSettingsService SettingsService
 
 <PageTitle>Modern Analysis - Single Engine</PageTitle>
-<InputFile id="configFile" OnChange="@OpenConfigFile" hidden />
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 <InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
 
 <div class="single-analysis">
     <div class="sa-toolbar">
-        <label class="sa-toolbar-btn" for="configFile" title="Load config">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-            </svg>
-            Config
-        </label>
         <label class="sa-toolbar-btn" for="fileInput" title="Load PGN">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -60,6 +50,13 @@
                    @onkeydown="OnFrcKeyDown" placeholder="0-959" title="Enter FRC position ID (0-959)" />
             <label class="sa-toolbar-btn" @onclick="LoadFrcPosition" title="Load FRC position">Load</label>
         </div>
+        <button class="sa-toolbar-btn" @onclick="SetAsDefaultEngine" disabled="@(string.IsNullOrEmpty(engineConfigPath))"
+                title="Set current engine as default">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+            </svg>
+            Set Default
+        </button>
     </div>
 
     <div class="sa-main">
@@ -68,7 +65,7 @@
             <EnginePanel @ref="analysisWithEngine" FEN="@fen" OnUCIReceived="OnUCIReceived"
                          ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
                          Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
-                         PGNgames="games" Player=@searchString Config="@config" />
+                         PGNgames="games" Player=@searchString />
         </div>
 
         <!-- Center Panel: Chessboard + Save -->
@@ -285,7 +282,18 @@
         var s = SettingsService.Settings;
         if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
             gamesPath = s.AnalysisGamesPath;
+        chartLines = s.ChartLines;
+        if (Engine == null && !string.IsNullOrEmpty(s.DefaultEnginePath))
+        {
+            try
+            {
+                Engine = Configuration.JSON.readSingleEngineConfig(s.DefaultEnginePath);
+                engineConfigPath = s.DefaultEnginePath;
+            }
+            catch { }
+        }
     }
+    private string engineConfigPath = "";
     private string openingAndVariation = "";
     private string lastAutoDetectedOpening = "";
     bool pgnFileLoaded = false;
@@ -315,8 +323,6 @@
     IBrowserFile browserFile;
     private string fullPath = string.Empty;
     private int chartLines = 4;
-    private AnalyzeConfig config = AnalyzeConfig.empty;
-    private int nodes = 1;
     private string searchString = "";
     private string detectedOpeningName = "";
     private string detectedOpeningECO = "";
@@ -408,62 +414,6 @@
             return true;
 
         return false;
-    }
-
-    private async Task OpenConfigFile(InputFileChangeEventArgs e)
-    {
-        try
-        {
-            var pgnName = e.File.Name;
-            logger.LogInformation("Config file '{File}' loaded", pgnName);
-            var env = AppPaths.BaseDir;
-            fullPath = Path.Combine(env, "wwwroot", pgnName);
-
-            await using (FileStream fs = new(fullPath, FileMode.Create))
-            {
-                browserFile = e.File;
-                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-            }
-
-            config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
-            var folder = config.EngineFolder;
-
-            var engineConfigs =
-                    config.Engines
-                    .SelectMany(e => Configuration.JSONParser.mapToEngConfig(folder, e))
-                    .ToList();
-
-            if (engineConfigs.Count > 0)
-            {
-                Engine = engineConfigs[0];
-                if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
-                {
-                    showOverlayControls = true;
-                    selectedOverlay = OverlaySettings.Policy;
-                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
-                }
-                nodes = config.Engines[0] switch
-                {
-                    PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
-                    PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
-                    _ => Math.Max(1, config.Nodes)
-                };
-            }
-            chartLines = config.ChartLines;
-        }
-        catch (System.IO.FileNotFoundException)
-        {
-            logger.LogError("Config file not found at '{Path}'", fullPath);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to load analyzeConfig.json file");
-            File.Delete(fullPath);
-        }
-        finally
-        {
-            StateHasChanged();
-        }
     }
 
     [JSInvokable]
@@ -872,6 +822,7 @@
         if (engineConf.Id.Contains("Input1"))
         {
             Engine = engineConf.EngineConfig;
+            engineConfigPath = engineConf.SourceFilePath ?? "";
             showOverlayControls = Engine?.Options?.Keys.Contains("LogLiveStats") ?? false;
             if (showOverlayControls)
             {
@@ -886,6 +837,27 @@
             }
         }
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void SetAsDefaultEngine()
+    {
+        if (string.IsNullOrEmpty(engineConfigPath)) return;
+        var s = SettingsService.Settings;
+        var updated = new GlobalSettings
+        {
+            EngineDefsFolder = s.EngineDefsFolder, OpeningsFolder = s.OpeningsFolder,
+            PgnOutputFolder = s.PgnOutputFolder, TournamentConfigFolder = s.TournamentConfigFolder,
+            TablebaseFolder = s.TablebaseFolder, NeuralNetFolder = s.NeuralNetFolder,
+            AnalysisGamesPath = s.AnalysisGamesPath, OrdoExePath = s.OrdoExePath,
+            LastBrowsedPath = s.LastBrowsedPath, StartupPage = s.StartupPage,
+            DefaultEnginePath = engineConfigPath,
+            SecondaryEnginePath = s.SecondaryEnginePath,
+            DefaultSearchTimeMs = s.DefaultSearchTimeMs, DefaultSearchNodes = s.DefaultSearchNodes,
+            ChartLines = s.ChartLines, PolicyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter,
+            CombineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves,
+            DelayBetweenGamesSec = s.DelayBetweenGamesSec, MoveOverheadMs = s.MoveOverheadMs,
+        };
+        SettingsService.Save(updated);
     }
 
     private async Task OnOverlayChanged()
@@ -951,45 +923,14 @@
             board.StartPosition = fen;
             UpdateFrcId(board.StartPosition);
             UpdateDetectedOpening();
-            try
-            {
-                var env = AppPaths.BaseDir;
-                fullPath = Path.Combine(env, "wwwroot", "AnalyzeConfig.json");
-                config = Configuration.JSONParser.loadAnalyzeConfig(fullPath);
-                var folder = config.EngineFolder;
 
-                var engineConfigs =
-                  config.Engines
-                  .SelectMany(e => Configuration.JSONParser.mapToEngConfig(folder, e))
-                  .ToList();
-
-                if (engineConfigs.Count > 0)
-                {
-                    Engine = engineConfigs[0];
-                    if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
-                    {
-                        showOverlayControls = true;
-                        selectedOverlay = OverlaySettings.Policy;
-                        overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
-                    }
-                    nodes = config.Engines[0] switch
-                    {
-                        PuzzleEngine.Engine eng => Math.Max(1, eng.Nodes),
-                        PuzzleEngine.EngineWithNets engWithNets => Math.Max(1, engWithNets.Nodes),
-                        _ => Math.Max(1, config.Nodes)
-                    };
-                }
-                chartLines = config.ChartLines;
-                logger.LogInformation("Analyze config loaded from {path}", fullPath);
-            }
-            catch (Exception)
+            if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
             {
-                logger.LogInformation("No analyzeConfig.json file found, please load it manually");
+                showOverlayControls = true;
+                selectedOverlay = OverlaySettings.Policy;
+                overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
             }
-            finally
-            {
-                StateHasChanged();
-            }
+            StateHasChanged();
         }
     }
 

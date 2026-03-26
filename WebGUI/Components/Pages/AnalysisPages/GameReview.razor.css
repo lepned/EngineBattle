@@ -1,0 +1,336 @@
+.game-review {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 4px;
+    padding: 4px;
+}
+
+.gr-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+    flex-wrap: wrap;
+}
+
+.gr-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #c1c1c4;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: background 0.15s;
+}
+
+.gr-toolbar-btn:hover {
+    background: rgba(255,255,255,0.12);
+}
+
+.gr-engine-tag {
+    font-size: 0.8rem;
+    color: #90CAF9;
+    background: rgba(144, 202, 249, 0.1);
+    border: 1px solid rgba(144, 202, 249, 0.25);
+    border-radius: 4px;
+    padding: 2px 8px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gr-progress-text {
+    font-size: 0.75rem;
+    color: #888;
+    text-align: center;
+    padding: 2px;
+}
+
+.gr-main {
+    display: grid;
+    grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.2fr) minmax(220px, 0.8fr);
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+.gr-left {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+}
+
+.gr-center {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gr-right {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+}
+
+/* Move List */
+.gr-movelist {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 6px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 4px;
+    font-size: 0.82rem;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.gr-movenum {
+    color: #888;
+    font-size: 0.75rem;
+    margin-left: 4px;
+}
+
+.gr-move {
+    cursor: pointer;
+    padding: 1px 3px;
+    border-radius: 3px;
+    transition: background 0.1s;
+}
+
+.gr-move:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.gr-move-selected {
+    background: rgba(255,212,0,0.2) !important;
+    outline: 1px solid rgba(255,212,0,0.4);
+}
+
+.gr-badge {
+    font-weight: bold;
+    font-size: 0.7rem;
+    margin-left: 1px;
+}
+
+/* Classification colors */
+.gr-brilliant { color: #FFD700; }
+.gr-great { color: #00CED1; }
+.gr-best { color: #4CAF50; }
+.gr-excellent { color: #81C784; }
+.gr-good { color: #c1c1c4; }
+.gr-inaccuracy { color: #FFC107; }
+.gr-mistake { color: #FF9800; }
+.gr-blunder { color: #F44336; }
+.gr-neutral { color: #999; }
+
+/* Game info (shown during analysis) */
+.gr-game-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px;
+    background: rgba(0,0,0,0.15);
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.gr-game-info-players {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #c1c1c4;
+}
+
+.gr-game-info-opening {
+    font-size: 0.82rem;
+    color: #999;
+    font-style: italic;
+}
+
+.gr-game-info-result {
+    font-size: 0.9rem;
+    color: #90CAF9;
+    font-weight: 500;
+}
+
+/* Detail chip (color-coded classification label) */
+.gr-detail-chip {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid currentColor;
+}
+
+/* Chart */
+.gr-chart {
+    width: 100%;
+    min-height: 280px;
+    max-height: 350px;
+}
+
+/* Move Detail */
+.gr-move-detail {
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+.gr-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.gr-detail-move {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.gr-detail-body {
+    font-size: 0.82rem;
+    color: #bbb;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.gr-pv {
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: #999;
+    word-break: break-all;
+}
+
+/* Stats Cards */
+.gr-stats-card {
+    background: rgba(0,0,0,0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.gr-stats-card h4 {
+    margin: 0 0 6px 0;
+    font-size: 0.85rem;
+    color: #c1c1c4;
+}
+
+.gr-engine-info {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #90CAF9;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.gr-engine-detail {
+    color: #888;
+    font-weight: normal;
+    margin-left: 6px;
+}
+
+.gr-accuracy-row {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    gap: 16px;
+}
+
+.gr-accuracy-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.gr-accuracy-circle {
+    --pct: 0;
+    --ring-color: #90caf9;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gr-accuracy-circle::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(var(--ring-color) calc(var(--pct) * 1%), #333 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #fff calc(100% - 6px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #fff calc(100% - 6px));
+}
+
+.gr-accuracy-value {
+    position: relative;
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+.gr-accuracy-label {
+    font-size: 0.75rem;
+    color: #999;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Tables */
+.gr-class-table, .gr-phase-table {
+    width: 100%;
+    font-size: 0.8rem;
+    border-collapse: collapse;
+}
+
+.gr-class-table th, .gr-phase-table th {
+    text-align: left;
+    color: #888;
+    padding: 2px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.gr-class-table td, .gr-phase-table td {
+    padding: 2px 6px;
+}
+
+/* Game List */
+.gr-gamelist {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.gr-game-row {
+    display: flex;
+    gap: 8px;
+    padding: 3px 6px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    border-radius: 3px;
+}
+
+.gr-game-row:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.gr-game-selected {
+    background: rgba(255,212,0,0.1);
+}

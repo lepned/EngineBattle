@@ -85,6 +85,7 @@
 		<!-- Analysis support modules (depend on engine, parser, configuration, GameAnalysis) -->
 		<Compile Include="Analysis\AnalysisHelper.fs" />
 		<Compile Include="Analysis\AnalysisManager.fs" />
+		<Compile Include="Analysis\GameAccuracyAnalysis.fs" />
 		<Compile Include="Analysis\PuzzleDataUtils.fs" />
 		<Compile Include="Analysis\PuzzleEngineAnalysis.fs" />
 		<Compile Include="Analysis\PuzzleEngineAgent.fs" />

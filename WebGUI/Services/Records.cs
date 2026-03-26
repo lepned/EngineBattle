@@ -17,6 +17,7 @@ namespace WebGUI.Services
     public EngineConfig EngineConfig { get; set; }
     public string OldName { get; set; }
     public string Id { get; set; }
+    public string SourceFilePath { get; set; }
   }
 
   public class InfoBannerInfo

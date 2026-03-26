@@ -45,7 +45,6 @@
                 <optgroup label="Tools">
                     <option value="/tools/epd-visualizer">EPD Visualizer</option>
                     <option value="/tools/opening-book">Opening Book</option>
-                    <option value="/tools/analysis-creator">Analysis Creator</option>
                 </optgroup>
                 <optgroup label="Results & Stats">
                     <option value="/results/ordo">Ordo Table</option>
@@ -59,7 +58,6 @@
                 <optgroup label="Setup & Settings">
                     <option value="/setup/tournament">Tournament Setup</option>
                     <option value="/setup/engines">Engine Setup</option>
-                    <option value="/setup/analysis">Analysis Setup</option>
                     <option value="/tournament/shortcuts">Tournament Shortcuts</option>
                     <option value="/analysis/shortcuts">Analysis Shortcuts</option>
                 </optgroup>
@@ -153,7 +151,30 @@
         </div>
     </div>
 
-    @* Row 3: Analysis Defaults | Tournament Defaults *@
+    @* Row 3: Default Engines | Analysis Defaults *@
+    <div class="settings-section">
+        <h4>Default Engines</h4>
+        <div class="section-hint">Auto-loaded when opening analysis and review pages.</div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Default Engine</label>
+                <input type="text" @bind="defaultEnginePath" />
+                <small>Primary engine for Single Analysis, Game Review</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => defaultEnginePath = v, EngineInitialDir(defaultEnginePath), "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Secondary Engine</label>
+                <input type="text" @bind="secondaryEnginePath" />
+                <small>Second engine for Dual Analysis</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => secondaryEnginePath = v, EngineInitialDir(secondaryEnginePath), "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+    </div>
+
     <div class="settings-section">
         <h4>Analysis Defaults</h4>
         <div class="section-hint">Default values for engine analysis sessions.</div>
@@ -166,6 +187,25 @@
                 <label>Search Nodes</label>
                 <input type="number" @bind="defaultSearchNodes" min="1" max="1000000000" />
             </div>
+        </div>
+        <div class="number-row">
+            <div class="field-group">
+                <label>Chart Lines</label>
+                <input type="number" @bind="chartLines" min="1" max="20" />
+                <small>Number of PV lines to display</small>
+            </div>
+            <div class="field-group">
+                <label>Policy Distribution Filter</label>
+                <input type="text" @bind="policyDistributionMinMaxFilter" />
+                <small>Min,Max probability range (e.g. 0.4,0.6)</small>
+            </div>
+        </div>
+        <div class="field-group">
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="combineWhiteAndBlackMoves" />
+                Combine White & Black Moves
+            </label>
+            <small>Merge white and black move data in policy charts</small>
         </div>
     </div>
 
@@ -207,6 +247,12 @@
     private int moveOverheadMs = 100;
     private string startupPage = "";
 
+    private string defaultEnginePath = "";
+    private string secondaryEnginePath = "";
+    private int chartLines = 4;
+    private string policyDistributionMinMaxFilter = "0.4,0.6";
+    private bool combineWhiteAndBlackMoves = true;
+
     private string statusMessage = "";
     private string statusType = "info";
 
@@ -226,8 +272,13 @@
         neuralNetFolder = s.NeuralNetFolder;
         analysisGamesPath = s.AnalysisGamesPath;
         ordoExePath = s.OrdoExePath;
+        defaultEnginePath = s.DefaultEnginePath;
+        secondaryEnginePath = s.SecondaryEnginePath;
         defaultSearchTimeMs = s.DefaultSearchTimeMs;
         defaultSearchNodes = s.DefaultSearchNodes;
+        chartLines = s.ChartLines;
+        policyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter;
+        combineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves;
         delayBetweenGamesSec = s.DelayBetweenGamesSec;
         moveOverheadMs = s.MoveOverheadMs;
         startupPage = s.StartupPage;
@@ -248,8 +299,13 @@
                 AnalysisGamesPath = analysisGamesPath ?? "",
                 OrdoExePath = ordoExePath ?? "",
                 LastBrowsedPath = SettingsService.Settings.LastBrowsedPath,
+                DefaultEnginePath = defaultEnginePath ?? "",
+                SecondaryEnginePath = secondaryEnginePath ?? "",
                 DefaultSearchTimeMs = defaultSearchTimeMs,
                 DefaultSearchNodes = defaultSearchNodes,
+                ChartLines = chartLines,
+                PolicyDistributionMinMaxFilter = policyDistributionMinMaxFilter ?? "0.4,0.6",
+                CombineWhiteAndBlackMoves = combineWhiteAndBlackMoves,
                 DelayBetweenGamesSec = delayBetweenGamesSec,
                 MoveOverheadMs = moveOverheadMs,
                 StartupPage = startupPage ?? "",
@@ -276,8 +332,13 @@
         neuralNetFolder = defaults.NeuralNetFolder;
         analysisGamesPath = defaults.AnalysisGamesPath;
         ordoExePath = defaults.OrdoExePath;
+        defaultEnginePath = defaults.DefaultEnginePath;
+        secondaryEnginePath = defaults.SecondaryEnginePath;
         defaultSearchTimeMs = defaults.DefaultSearchTimeMs;
         defaultSearchNodes = defaults.DefaultSearchNodes;
+        chartLines = defaults.ChartLines;
+        policyDistributionMinMaxFilter = defaults.PolicyDistributionMinMaxFilter;
+        combineWhiteAndBlackMoves = defaults.CombineWhiteAndBlackMoves;
         delayBetweenGamesSec = defaults.DelayBetweenGamesSec;
         moveOverheadMs = defaults.MoveOverheadMs;
         startupPage = defaults.StartupPage;
@@ -301,6 +362,9 @@
             StateHasChanged();
         }
     }
+
+    private string EngineInitialDir(string path) =>
+        !string.IsNullOrEmpty(path) ? path : engineDefsFolder;
 
     private async Task BrowseFile(Action<string> setter, string currentValue, string filter)
     {
