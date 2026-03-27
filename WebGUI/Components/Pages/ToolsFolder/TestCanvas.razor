@@ -1,11 +1,11 @@
 @page "/tools/epd-visualizer"
 @page "/testCanvas"
 @using WebGUI.Components.Layout.VisualizationLayout
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 @inject ILogger<TestCanvas> logger
-
-<InputFile id="epdInput" OnChange="@OpenEPDFile" hidden />
-<InputFile id="tbInput" OnChange="@OpenCeresNetTestFile" hidden />
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
 
 <PageTitle>Test canvas</PageTitle>
 
@@ -14,7 +14,7 @@
   <div class="tool-subtitle">Visualize and analyze EPD position files</div>
 
   <div class="tool-controls">
-    <label for="epdInput" class="tool-upload-btn">Load EPD file</label>
+    <button class="tool-upload-btn" @onclick="BrowseEpdFile">Load EPD file</button>
   </div>
 
   @if (!string.IsNullOrEmpty(result))
@@ -30,44 +30,30 @@
   private List<EPDTypes.EPDEntry> EPDList = new();
   private List<EPDTypes.TablebaseEPDEntry> TBEPDList = new();
   private List<PGNTypes.PgnGame> PGNgames = new();
-  IBrowserFile browserFile;
   private string result;
 
-  private async Task OpenCeresNetTestFile(InputFileChangeEventArgs e)
+  private async Task BrowseRecordsPgnFile()
   {
-    var pgnName = e.File.Name;
-    logger.LogInformation("File opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
+    var filePath = await BrowseFile("*.pgn", SettingsService.Settings.PgnOutputFolder, "Select Records PGN File");
+    if (filePath == null) return;
 
-    var netFile = TestsTypes.records(fullPath).OrderByDescending(e => e.QDn).Take(250);
+    logger.LogInformation("File opened {File}", Path.GetFileName(filePath));
+    var netFile = TestsTypes.records(filePath).OrderByDescending(e => e.QDn).Take(250);
     var epds = netFile.Select((e, id) => EPDExtractor.mapChessRecordToEPD(e, id));
     EPDList.Clear();
     TBEPDList.Clear();
     EPDList.AddRange(epds);
     logger.LogInformation(result);
-    File.Delete(fullPath);
     StateHasChanged();
   }
 
-  private async Task OpenTBTestFile(InputFileChangeEventArgs e)
+  private async Task BrowseTablebasePgnFile()
   {
-    var pgnName = e.File.Name;
-    logger.LogInformation("File opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
-    var testList = PGNHelper.readTableBaseResults(fullPath).ToList();
-    File.Delete(fullPath);
+    var filePath = await BrowseFile("*.pgn", SettingsService.Settings.PgnOutputFolder, "Select Tablebase PGN File");
+    if (filePath == null) return;
+
+    logger.LogInformation("File opened {File}", Path.GetFileName(filePath));
+    var testList = PGNHelper.readTableBaseResults(filePath).ToList();
     var tourny = ChessLibrary.Tournament.Manager.loadTournament();
     var configs = tourny.EngineSetup.Engines.ToList();
     var head = configs.First();
@@ -83,18 +69,13 @@
     StateHasChanged();
   }
 
-  private async Task OpenEPDFile(InputFileChangeEventArgs e)
+  private async Task BrowseEpdFile()
   {
-    var epdName = e.File.Name;
-    logger.LogInformation("EPD file opened {File}", epdName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, epdName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
-    var epds = EPDExtractor.readEPDs(fullPath).Take(1500).ToList();
+    var filePath = await BrowseFile("*.epd", SettingsService.Settings.OpeningsFolder, "Select EPD File");
+    if (filePath == null) return;
+
+    logger.LogInformation("EPD file opened {File}", Path.GetFileName(filePath));
+    var epds = EPDExtractor.readEPDs(filePath).Take(1500).ToList();
     if (epds.Count == 0)
     {
       logger.LogInformation("No EPDs found in file");
@@ -104,24 +85,31 @@
     TBEPDList.Clear();
     StateHasChanged();
     EPDList.AddRange(epds);
-    File.Delete(fullPath);
   }
 
-  private async Task OpenPGNFile(InputFileChangeEventArgs e)
+  private async Task BrowsePgnFile()
   {
-    var pgnName = e.File.Name;
-    logger.LogInformation("PGN file opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
+    var filePath = await BrowseFile("*.pgn", SettingsService.Settings.PgnOutputFolder, "Select PGN File");
+    if (filePath == null) return;
 
-    PGNgames = FullPGNParser.parsePgnFile(fullPath).ToList();
-    File.Delete(fullPath);
+    logger.LogInformation("PGN file opened {File}", Path.GetFileName(filePath));
+    PGNgames = FullPGNParser.parsePgnFile(filePath).ToList();
     StateHasChanged();
+  }
+
+  private async Task<string> BrowseFile(string fileFilter, string initialDir, string title)
+  {
+    var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+    {
+      { x => x.InitialPath, initialDir },
+      { x => x.FileFilter, fileFilter },
+      { x => x.Mode, FileBrowserMode.File }
+    };
+    var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+    var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>(title, parameters, options);
+    var result = await dialog.Result;
+    if (result == null || result.Canceled) return null;
+    return (string)result.Data!;
   }
 
   private void StripText(string path, string savePath)

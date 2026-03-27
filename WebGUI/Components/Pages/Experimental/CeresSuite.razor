@@ -8,11 +8,12 @@
 @inject ChessConfigurationService Setup
 @inject IDialogService DialogService
 @inject NotifierService Notifier
+@inject GlobalSettingsService SettingsService
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 @implements IAsyncDisposable
 
 <PageTitle> Move agreement analysis </PageTitle>
 
-<InputFile id="fileInput" OnChange="@OpenEPDFile" hidden />
 
 <MudContainer Class="ml-6 mt-5 mb-3">
   <MudGrid>
@@ -26,8 +27,8 @@
   </MudItem>*@
   <MudItem Class="config mt-5">
     <MudText Class="pa-1 ma-1">Input for test suite: </MudText>
-    <MudFab Class="ml-3 mb-3 mt-3" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large"
-            StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+    <MudFab Class="ml-3 mb-3 mt-3" Color="Color.Default" Label="Load EPD-file" Size="Size.Large"
+            StartIcon="@Icons.Material.Filled.DownloadForOffline" OnClick="BrowseEPDFile" />
     <MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="EPD file name:" @bind-Value=epdFile
                   TextChanged="EpdFileChanged" Variant="Variant.Filled"></MudTextField>
     @*<MudTextField Style="font-size:10px" Class="pa-1 ma-1" Label="Neural net folder:" @bind-Value=setting.NeuralNetFolder
@@ -87,9 +88,19 @@
     setting.RefNeuralNet = net;
   }
 
-  private void OpenEPDFile(InputFileChangeEventArgs e)
+  private async Task BrowseEPDFile()
   {
-    epdFile = e.File.Name;
+    var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+    {
+        { x => x.InitialPath, SettingsService.Settings.OpeningsFolder },
+        { x => x.FileFilter, "*.epd" },
+        { x => x.Mode, FileBrowserMode.File }
+    };
+    var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+    var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select EPD File", parameters, options);
+    var result = await dialog.Result;
+    if (result == null || result.Canceled) return;
+    epdFile = (string)result.Data!;
   }
 
   //private async Task RunAnalysis()

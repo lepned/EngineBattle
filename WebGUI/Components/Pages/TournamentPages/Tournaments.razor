@@ -1141,13 +1141,6 @@
 		}
 	}
 
-	private async Task ConfigureTournament()
-	{
-		var opt = new DialogOptions { MaxWidth = MaxWidth.Large };
-		var title = $"Configure your tournament";
-		await DialogService.ShowAsync<Config>(title, opt);
-	}
-
 	private async void CancelTournament()
 	{
 		TournamentSvc.Cancel();

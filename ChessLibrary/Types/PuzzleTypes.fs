@@ -171,6 +171,7 @@ module PuzzleTypes =
         | PlayerResult of ERETResults
         | AllResults of ERETResults list
         | ResultsInConsole of string
+        | EretError of string
 
     type BlunderRecord =
       { Date: DateTime
@@ -279,6 +280,8 @@ module PuzzleTypes =
     type Lichess =
       | PuzzleResult of Score
       | Done of string
+      | Progress of Processed:int * Total:int * Label:string
+      | LichessError of string
 
     type Iteration = { Id: int; Positions: CsvPuzzleData seq; Theme: string }
 

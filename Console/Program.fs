@@ -287,16 +287,18 @@ module Eret =
        
     | ResultsInConsole table ->
         let escaped = JSONParser.escapeString data.FailedPuzzlesOutputFolder
-        if Directory.Exists(escaped) then        
+        if Directory.Exists(escaped) then
           let datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm")
           let outputPath = Path.Combine(escaped, $"EretSummary_{datePart}.txt")
-          try          
+          try
             File.WriteAllText(outputPath, table);
             Console.WriteLine($"Console summary written to {outputPath}")
-          with 
+          with
           | ex ->
-              Console.WriteLine($"Failed to write results to file: {ex.Message}")        
+              Console.WriteLine($"Failed to write results to file: {ex.Message}")
         printfn "\n%s" table
+    | EretError msg ->
+        RuntimeUtilities.ConsoleUtils.redConsole $"\nERET Error: {msg}"
 
  
 module Program =
@@ -805,6 +807,10 @@ module Program =
             let name = score.Engine
             printfn "Puzzle result for %s: Correct: %d, Failed: %d" name correct failed
         | Done msg -> printfn "Puzzle done: %s" msg
+        | Progress (processed, total, label) ->
+            printf "\r  %s: %d / %d" label processed total
+        | LichessError msg ->
+            RuntimeUtilities.ConsoleUtils.redConsole $"\nPuzzle Error: {msg}"
                   
     let types = 
         if String.IsNullOrEmpty(data.Type) || String.IsNullOrWhiteSpace (data.Type.Trim()) then            

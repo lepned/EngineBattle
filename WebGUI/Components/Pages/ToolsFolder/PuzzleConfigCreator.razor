@@ -24,10 +24,7 @@
     }
 
     <div class="button-row" style="margin-bottom: 1rem; margin-top: 0;">
-        <label class="upload-label">
-            Load existing config
-            <InputFile OnChange="LoadExistingConfig" accept=".json" style="display:none" />
-        </label>
+        <button class="upload-label" @onclick="BrowseExistingConfig">Load existing config</button>
     </div>
 
     <div class="main-grid">
@@ -501,13 +498,25 @@
         }
     }
 
-    private async Task LoadExistingConfig(InputFileChangeEventArgs e)
+    private async Task BrowseExistingConfig()
     {
+        var initialDir = SettingsService.Settings.PuzzleConfigFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
+        var filePath = (string)result.Data!;
+
         statusMessage = "";
         try
         {
-            using var stream = e.File.OpenReadStream(maxAllowedSize: 1024 * 1024);
-            var json = await new StreamReader(stream).ReadToEndAsync();
+            var json = await File.ReadAllTextAsync(filePath);
             var node = JsonNode.Parse(json);
             if (node == null) { statusMessage = "Invalid JSON."; statusClass = "alert-error"; return; }
 
@@ -560,7 +569,7 @@
             }
 
             jsonPreview = "";
-            statusMessage = $"Loaded config from {e.File.Name}";
+            statusMessage = $"Loaded config from {Path.GetFileName(filePath)}";
             statusClass = "alert-success";
         }
         catch (Exception ex)

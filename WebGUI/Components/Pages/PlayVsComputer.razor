@@ -14,7 +14,6 @@
 @inject GlobalSettingsService SettingsService
 @implements IAsyncDisposable
 
-<InputFile id="@engineJson" OnChange="@LoadEngineJsonFile" hidden />
 <PageTitle>Play vs Computer</PageTitle>
 
 <div class="play-vs-computer">
@@ -97,9 +96,9 @@
                 </div>
             </div>
             <div class="pvc-actions">
-                <label class="pvc-upload @(engineReady ? string.Empty : "warn")" for="@engineJson">Engine.json</label>
-                <button class="pvc-btn" @onclick="StartGame" disabled="@(!engineReady)">Start Game</button>
-                <button class="pvc-btn secondary" @onclick="RestartGame" disabled="@(!engineReady)">Restart</button>
+                <button class="pvc-upload @(engineReady ? string.Empty : "warn")" @onclick="BrowseEngineJsonFile">Engine.json</button>
+                <button class="pvc-btn" @onclick="StartGame" disabled="@(!engineReady || engineInitializing)">Start Game</button>
+                <button class="pvc-btn secondary" @onclick="RestartGame" disabled="@(!engineReady || engineInitializing)">Restart</button>
                 <button class="pvc-btn secondary" @onclick="ForceComputerMove" disabled="@(!CanForceMove)">Force Move</button>
                 <button class="pvc-btn secondary" @onclick="OfferTakeback" disabled="@(!CanTakeback)">Take Back</button>
                 <button class="pvc-btn secondary" @onclick="Abort" disabled="@(!gameActive)">Abort</button>
@@ -217,9 +216,6 @@
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private string moveHistory = string.Empty;
     private int numberOfNodes = 1;
-    private bool keepNodesWhileSearching = false;
-    private const int EngineJsonFileId = 101;
-    private string engineJson => "engineJson" + EngineJsonFileId;
     private string gamesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "chess", "mygames.pgn");
     private readonly object clockLock = new object();
     private Chessboard chessboardRef;
@@ -229,6 +225,7 @@
     private string lastResultTag = "*";
     private string lastResultReason = string.Empty;
     private bool engineReady;
+    private bool engineInitializing;
     private bool suppressNextHumanMoveEvent;
     private bool clockEnabled = true;
 
@@ -244,13 +241,20 @@
     private string BlackPlayerLabel => humanIsWhite ? Engine?.Name ?? "Computer" : "You";
 
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
-    IBrowserFile browserFile;
 
     protected override void OnInitialized()
     {
         var s = SettingsService.Settings;
         if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
             gamesPath = s.AnalysisGamesPath;
+        if (Engine == null && !string.IsNullOrEmpty(s.DefaultEnginePath))
+        {
+            try
+            {
+                Engine = Configuration.JSON.readSingleEngineConfig(s.DefaultEnginePath);
+            }
+            catch { }
+        }
         ApplyTimeControl();
         ResetClocks();
         LoadSavedGamesFromPgn();
@@ -319,17 +323,46 @@
         ApplyTimeControl();
         ResetClocks();
         board.ResetBoardState();
+        fen = board.FEN();
+        chessboardRef?.ResetGameState();
         var whiteToMove = board.Position.STM == 0;
         isWhiteTurn = whiteToMove;
         gameActive = true;
         resultRecorded = false;
+
+        if (analyzer != null)
+        {
+            analyzer.NewGame();
+        }
+        else
+        {
+            engineInitializing = true;
+            gameStatus = "Initializing engine...";
+            StateHasChanged();
+            try
+            {
+                analyzer = await Task.Factory.StartNew(() =>
+                    new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false));
+            }
+            catch (Exception ex)
+            {
+                engineInitializing = false;
+                gameActive = false;
+                gameStatus = $"Engine failed to initialize: {ex.Message}";
+                logger.LogError(ex, "Engine initialization failed");
+                StateHasChanged();
+                return;
+            }
+            engineInitializing = false;
+        }
+
+        // Engine is ready — start clock and trigger engine move if needed
+        whiteToMove = board.Position.STM == 0;
+        isWhiteTurn = whiteToMove;
         gameStatus = humanIsWhite == whiteToMove ? "Your move." : "Computer to move.";
-        analyzer?.NewGame();
         StartClock();
         if (humanIsWhite != whiteToMove)
-        {
             await RequestEngineMove();
-        }
         StateHasChanged();
     }
 
@@ -837,50 +870,32 @@
 
     private async Task RequestEngineMove()
     {
-        if (Engine == null)
+        if (Engine == null || analyzer == null)
         {
-			logger.LogInformation("No engine loaded to play against.");
+            logger.LogInformation("No engine loaded to play against.");
             return;
         }
 
-        if (analyzer == null)
+        var nodeLimitCommand = TimeControlTypes.TimeControlCommands.createNodes(numberOfNodes);
+        if (IsCustomTimeControl && customLimitMode == "Nodes")
         {
-            analyzer = new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false);
-            try
-            {
-                analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
-            }
-            catch (Exception ex)
-            {
-                logger.LogInformation(ex.Message);
-                throw;
-            }
+            analyzer.Play(nodeLimitCommand);
         }
-
+        else if (IsCustomTimeControl && customLimitMode == "Infinite")
+        {
+            var big = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(300));
+            var zero = TimeOnly.FromTimeSpan(TimeSpan.Zero);
+            var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
+            analyzer.Play(incrCommand);
+        }
         else
         {
-            var nodeLimitCommand = TimeControlTypes.TimeControlCommands.createNodes(numberOfNodes);
-            if (IsCustomTimeControl && customLimitMode == "Nodes")
-            {
-                analyzer.Play(nodeLimitCommand);
-            }
-            else if (IsCustomTimeControl && customLimitMode == "Infinite")
-            {
-                var big = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(300));
-                var zero = TimeOnly.FromTimeSpan(TimeSpan.Zero);
-                var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
-                analyzer.Play(incrCommand);
-            }
-            else
-            {
-                var timeOnlyWhite = new TimeOnly(whiteTime.Ticks);
-                var timeOnlyBlack = new TimeOnly(blackTime.Ticks);
-                var incWhite = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(whiteIncrementSeconds));
-                var incBlack = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(blackIncrementSeconds));
-                var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(timeOnlyWhite, timeOnlyBlack, incWhite, incBlack);
-                Console.WriteLine(incrCommand);
-                analyzer.Play(incrCommand);
-            }
+            var timeOnlyWhite = new TimeOnly(whiteTime.Ticks);
+            var timeOnlyBlack = new TimeOnly(blackTime.Ticks);
+            var incWhite = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(whiteIncrementSeconds));
+            var incBlack = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(blackIncrementSeconds));
+            var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(timeOnlyWhite, timeOnlyBlack, incWhite, incBlack);
+            analyzer.Play(incrCommand);
         }
 
         await InvokeAsync(StateHasChanged);
@@ -933,45 +948,46 @@
         fen = newFen;
     }
 
-    private async Task LoadEngineJsonFile(InputFileChangeEventArgs e)
+    private async Task BrowseEngineJsonFile()
     {
-        StateHasChanged();
-        analyzer?.Engine.ShutDownEngine();
-        var name = e.File.Name;
+        var initialDir = SettingsService.Settings.EngineDefsFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
+        var filePath = (string)result.Data!;
+
+        analyzer?.Engine?.ShutDownEngine();
+        analyzer = null;
+        var name = Path.GetFileName(filePath);
         logger.LogInformation("Engine.json file opened {File}", name);
-        var env = AppPaths.BaseDir;
-        var fullPath = Path.Combine(env, "NN", name);
-        
+
         try
         {
-            await using (FileStream fs = new(fullPath, FileMode.Create))
-            {
-                browserFile = e.File;
-                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-            }
-            
-            logger.LogInformation("New engine.json file loaded {jsonFile}", e.File.Name);
-            var engineConfig = JSON.readSingleEngineConfig(fullPath);
+            var engineConfig = JSON.readSingleEngineConfig(filePath);
             Engine = engineConfig;
-            analyzer = new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false);
             engineReady = true;
-            
-            try
-            {
-                File.Delete(fullPath);
-            }
-            catch (Exception deleteEx)
-            {
-                logger.LogWarning(deleteEx, "Failed to delete temporary engine config file {path}", fullPath);
-            }
+            engineInitializing = true;
+            gameStatus = "Initializing engine...";
+            StateHasChanged();
+            analyzer = await Task.Factory.StartNew(() =>
+                new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false));
+            engineInitializing = false;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to load engine configuration from {file}", name);
             gameStatus = $"Error loading engine: {ex.Message}";
             engineReady = false;
+            engineInitializing = false;
         }
-        
+
         StateHasChanged();
     }
 

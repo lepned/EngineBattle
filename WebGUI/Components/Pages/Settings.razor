@@ -10,6 +10,25 @@
     <h2>Global Settings</h2>
     <div class="settings-description">Configure common paths and defaults used across EngineBattle.</div>
 
+    <div class="settings-help @(showHelp ? "" : "collapsed")">
+        <h4 class="collapsible-header" @onclick="() => showHelp = !showHelp">
+            Quick Guide
+            <span class="collapse-indicator">@(showHelp ? "▾" : "▸")</span>
+        </h4>
+        @if (showHelp)
+        {
+            <div class="settings-help-content">
+                <p><b>General</b> — Set your startup page and default engines. Default engines auto-load in analysis and review pages, saving you from re-browsing every session.</p>
+                <p><b>Paths & Tools</b> — PGN save path for analysis games and the Ordo rating tool path.</p>
+                <p><b>Folders</b> — Directory paths populate the file browser bookmarks and set initial browse locations. Configure these once and every file picker starts in the right place.</p>
+                <p><b>Analysis</b> — Search limits, chart lines, MultiPV, and policy thresholds. These defaults apply when opening analysis pages.</p>
+                <p><b>Game Review</b> — How deeply each move is analyzed during game review (mode, time, nodes, depth).</p>
+                <p><b>Tournament</b> — Delay between games (GPU cooling) and move overhead (communication buffer).</p>
+                <p style="margin-bottom:0"><i>Click <b>Save</b> to persist changes. Settings are stored in <code>Data/globalSettings.json</code>.</i></p>
+            </div>
+        }
+    </div>
+
     @if (!string.IsNullOrEmpty(statusMessage))
     {
         <div class="alert alert-@statusType">
@@ -20,10 +39,10 @@
 
     <div class="settings-grid">
 
-    @* Row 1: App Behavior | File Paths *@
+    @* Row 1: General (startup + engines) *@
     <div class="settings-section">
-        <h4>App Behavior</h4>
-        <div class="section-hint">Controls how the application launches.</div>
+        <h4>General</h4>
+        <div class="section-hint">Startup page and default engines for analysis.</div>
         <div class="field-group">
             <label>Startup Page</label>
             <select @bind="startupPage">
@@ -32,6 +51,7 @@
                     <option value="/tournament">Run Tournament</option>
                     <option value="/analysis/single">Single Engine Analysis</option>
                     <option value="/analysis/dual">Dual Engine Analysis</option>
+                    <option value="/analysis/game-review">Game Review</option>
                     <option value="/play/computer">Play vs Computer</option>
                     <option value="/tools/engine-creator">Engine Creator</option>
                     <option value="/tools/tournament-creator">Tournament Creator</option>
@@ -45,6 +65,8 @@
                 <optgroup label="Tools">
                     <option value="/tools/epd-visualizer">EPD Visualizer</option>
                     <option value="/tools/opening-book">Opening Book</option>
+                    <option value="/tools/puzzle-creator">Lichess Puzzle Creator</option>
+                    <option value="/tools/eret-creator">ERET Creator</option>
                 </optgroup>
                 <optgroup label="Results & Stats">
                     <option value="/results/ordo">Ordo Table</option>
@@ -64,11 +86,29 @@
             </select>
             <small>Page to open when the app starts</small>
         </div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Default Engine</label>
+                <input type="text" @bind="defaultEnginePath" />
+                <small>Primary engine for analysis and review</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => defaultEnginePath = v, EngineInitialDir(defaultEnginePath), "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
+
+        <div class="field-row">
+            <div class="field-group">
+                <label>Secondary Engine</label>
+                <input type="text" @bind="secondaryEnginePath" />
+                <small>Second engine for Dual Analysis</small>
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => secondaryEnginePath = v, EngineInitialDir(secondaryEnginePath), "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+        </div>
     </div>
 
     <div class="settings-section">
-        <h4>File Paths</h4>
-        <div class="section-hint">Full path including filename.</div>
+        <h4>Paths & Tools</h4>
+        <div class="section-hint">External file paths and executables.</div>
 
         <div class="field-row">
             <div class="field-group">
@@ -89,7 +129,7 @@
         </div>
     </div>
 
-    @* Row 2: Folders (full width, internal 2-col) *@
+    @* Folders (full width, internal multi-col) *@
     <div class="settings-section span-full">
         <h4>Folders</h4>
         <div class="section-hint">Directory paths only — do not include filenames.</div>
@@ -148,35 +188,21 @@
                 </div>
                 <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => neuralNetFolder = v, neuralNetFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
             </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Puzzle Configs</label>
+                    <input type="text" @bind="puzzleConfigFolder" />
+                    <small>Puzzle and ERET config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => puzzleConfigFolder = v, puzzleConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
         </div>
     </div>
 
-    @* Row 3: Default Engines | Analysis Defaults *@
+    @* Row 3: Analysis | Game Review | Tournament *@
     <div class="settings-section">
-        <h4>Default Engines</h4>
-        <div class="section-hint">Auto-loaded when opening analysis and review pages.</div>
-
-        <div class="field-row">
-            <div class="field-group">
-                <label>Default Engine</label>
-                <input type="text" @bind="defaultEnginePath" />
-                <small>Primary engine for Single Analysis, Game Review</small>
-            </div>
-            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => defaultEnginePath = v, EngineInitialDir(defaultEnginePath), "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-        </div>
-
-        <div class="field-row">
-            <div class="field-group">
-                <label>Secondary Engine</label>
-                <input type="text" @bind="secondaryEnginePath" />
-                <small>Second engine for Dual Analysis</small>
-            </div>
-            <button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => secondaryEnginePath = v, EngineInitialDir(secondaryEnginePath), "*.json"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-        </div>
-    </div>
-
-    <div class="settings-section">
-        <h4>Analysis Defaults</h4>
+        <h4>Analysis</h4>
         <div class="section-hint">Default values for engine analysis sessions.</div>
         <div class="number-row">
             <div class="field-group">
@@ -192,12 +218,24 @@
             <div class="field-group">
                 <label>Chart Lines</label>
                 <input type="number" @bind="chartLines" min="1" max="20" />
-                <small>Number of PV lines to display</small>
+                <small>CP chart lines to display</small>
             </div>
+            <div class="field-group">
+                <label>MultiPV Lines</label>
+                <input type="number" @bind="defaultMultiPV" min="1" max="20" />
+                <small>Default engine PV lines</small>
+            </div>
+        </div>
+        <div class="number-row">
             <div class="field-group">
                 <label>Policy Distribution Filter</label>
                 <input type="text" @bind="policyDistributionMinMaxFilter" />
                 <small>Min,Max probability range (e.g. 0.4,0.6)</small>
+            </div>
+            <div class="field-group">
+                <label>Min Policy Threshold</label>
+                <input type="number" @bind="minPolicyThreshold" min="0" max="1" step="0.01" />
+                <small>Min probability for overlay display</small>
             </div>
         </div>
         <div class="field-group">
@@ -209,8 +247,42 @@
         </div>
     </div>
 
+    <div class="settings-section @(showGameReview ? "" : "collapsed")">
+        <h4 class="collapsible-header" @onclick="() => showGameReview = !showGameReview">
+            Game Review
+            <span class="collapse-indicator">@(showGameReview ? "▾" : "▸")</span>
+        </h4>
+        @if (showGameReview)
+        {
+            <div class="number-row" style="margin-top:0.5rem">
+                <div class="field-group">
+                    <label>Mode</label>
+                    <select @bind="reviewSearchMode">
+                        <option value="Time">Time</option>
+                        <option value="Nodes">Nodes</option>
+                        <option value="Depth">Depth</option>
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label>Time (ms)</label>
+                    <input type="number" @bind="reviewTimePerMove" min="100" max="600000" />
+                </div>
+            </div>
+            <div class="number-row">
+                <div class="field-group">
+                    <label>Nodes</label>
+                    <input type="number" @bind="reviewNodes" min="1" max="1000000000" />
+                </div>
+                <div class="field-group">
+                    <label>Depth</label>
+                    <input type="number" @bind="reviewDepth" min="1" max="100" />
+                </div>
+            </div>
+        }
+    </div>
+
     <div class="settings-section">
-        <h4>Tournament Defaults</h4>
+        <h4>Tournament</h4>
         <div class="section-hint">Default values for tournament configuration.</div>
         <div class="number-row">
             <div class="field-group">
@@ -239,6 +311,7 @@
     private string tournamentConfigFolder = "";
     private string tablebaseFolder = "";
     private string neuralNetFolder = "";
+    private string puzzleConfigFolder = "";
     private string analysisGamesPath = "";
     private string ordoExePath = "";
     private double defaultSearchTimeMs = 3000;
@@ -252,6 +325,15 @@
     private int chartLines = 4;
     private string policyDistributionMinMaxFilter = "0.4,0.6";
     private bool combineWhiteAndBlackMoves = true;
+    private int defaultMultiPV = 10;
+    private double minPolicyThreshold = 0.05;
+
+    private string reviewSearchMode = "Time";
+    private int reviewTimePerMove = 1000;
+    private int reviewNodes = 5000;
+    private int reviewDepth = 18;
+    private bool showGameReview = true;
+    private bool showHelp = false;
 
     private string statusMessage = "";
     private string statusType = "info";
@@ -270,6 +352,7 @@
         tournamentConfigFolder = s.TournamentConfigFolder;
         tablebaseFolder = s.TablebaseFolder;
         neuralNetFolder = s.NeuralNetFolder;
+        puzzleConfigFolder = s.PuzzleConfigFolder;
         analysisGamesPath = s.AnalysisGamesPath;
         ordoExePath = s.OrdoExePath;
         defaultEnginePath = s.DefaultEnginePath;
@@ -279,9 +362,15 @@
         chartLines = s.ChartLines;
         policyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter;
         combineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves;
+        defaultMultiPV = s.DefaultMultiPV;
+        minPolicyThreshold = s.MinPolicyThreshold;
         delayBetweenGamesSec = s.DelayBetweenGamesSec;
         moveOverheadMs = s.MoveOverheadMs;
         startupPage = s.StartupPage;
+        reviewSearchMode = s.ReviewSearchMode;
+        reviewTimePerMove = s.ReviewTimePerMove;
+        reviewNodes = s.ReviewNodes;
+        reviewDepth = s.ReviewDepth;
     }
 
     private void SaveSettings()
@@ -296,9 +385,11 @@
                 TournamentConfigFolder = tournamentConfigFolder ?? "",
                 TablebaseFolder = tablebaseFolder ?? "",
                 NeuralNetFolder = neuralNetFolder ?? "",
+                PuzzleConfigFolder = puzzleConfigFolder ?? "",
                 AnalysisGamesPath = analysisGamesPath ?? "",
                 OrdoExePath = ordoExePath ?? "",
                 LastBrowsedPath = SettingsService.Settings.LastBrowsedPath,
+                RecentBrowsePaths = SettingsService.Settings.RecentBrowsePaths,
                 DefaultEnginePath = defaultEnginePath ?? "",
                 SecondaryEnginePath = secondaryEnginePath ?? "",
                 DefaultSearchTimeMs = defaultSearchTimeMs,
@@ -306,9 +397,15 @@
                 ChartLines = chartLines,
                 PolicyDistributionMinMaxFilter = policyDistributionMinMaxFilter ?? "0.4,0.6",
                 CombineWhiteAndBlackMoves = combineWhiteAndBlackMoves,
+                DefaultMultiPV = defaultMultiPV,
+                MinPolicyThreshold = minPolicyThreshold,
                 DelayBetweenGamesSec = delayBetweenGamesSec,
                 MoveOverheadMs = moveOverheadMs,
                 StartupPage = startupPage ?? "",
+                ReviewSearchMode = reviewSearchMode ?? "Time",
+                ReviewTimePerMove = reviewTimePerMove,
+                ReviewNodes = reviewNodes,
+                ReviewDepth = reviewDepth,
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -330,6 +427,7 @@
         tournamentConfigFolder = defaults.TournamentConfigFolder;
         tablebaseFolder = defaults.TablebaseFolder;
         neuralNetFolder = defaults.NeuralNetFolder;
+        puzzleConfigFolder = defaults.PuzzleConfigFolder;
         analysisGamesPath = defaults.AnalysisGamesPath;
         ordoExePath = defaults.OrdoExePath;
         defaultEnginePath = defaults.DefaultEnginePath;
@@ -339,9 +437,15 @@
         chartLines = defaults.ChartLines;
         policyDistributionMinMaxFilter = defaults.PolicyDistributionMinMaxFilter;
         combineWhiteAndBlackMoves = defaults.CombineWhiteAndBlackMoves;
+        defaultMultiPV = defaults.DefaultMultiPV;
+        minPolicyThreshold = defaults.MinPolicyThreshold;
         delayBetweenGamesSec = defaults.DelayBetweenGamesSec;
         moveOverheadMs = defaults.MoveOverheadMs;
         startupPage = defaults.StartupPage;
+        reviewSearchMode = defaults.ReviewSearchMode;
+        reviewTimePerMove = defaults.ReviewTimePerMove;
+        reviewNodes = defaults.ReviewNodes;
+        reviewDepth = defaults.ReviewDepth;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }

@@ -12,8 +12,9 @@
 @implements IAsyncDisposable
 
 @inject ILogger<LichessPuzzles> logger
-
-<InputFile id="fileInput" OnChange="@OpenCSVFile" hidden />
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
+@inject IJSRuntime JS
 
 <PageTitle>Lichess Puzzles</PageTitle>
 
@@ -35,12 +36,38 @@
       <label>Solved puzzles to show</label>
       <input type="number" class="tool-input" style="width:120px" @bind="solvedNumber" min="0" step="1" />
     </div>
-    <label for="fileInput" class="tool-upload-btn" style="@(disableRun ? "pointer-events:none;opacity:0.5" : "")">Pick and run puzzle config file</label>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Concurrency</label>
+      <input type="number" class="tool-input" style="width:80px" @bind="concurrencyOverride" min="1" max="16" step="1" />
+    </div>
+    <button class="tool-upload-btn" style="@(disableRun ? "pointer-events:none;opacity:0.5" : "")" @onclick="BrowseAndRunConfig" disabled="@disableRun">Pick and run puzzle config file</button>
     @if (disableRun)
     {
-      <div class="tool-spinner"></div>
+      <button class="tool-cancel-btn" @onclick="CancelRun">Stop</button>
+      @if (progressTotal == 0)
+      {
+        <div class="tool-spinner"></div>
+      }
     }
   </div>
+
+  @if (!string.IsNullOrEmpty(errorMessage))
+  {
+    <div class="tool-error" style="color:#ef5350; margin:8px 0; font-weight:500;">@errorMessage</div>
+  }
+
+  @if (disableRun && progressTotal > 0)
+  {
+    <div class="puzzle-progress">
+      <div class="puzzle-progress-header">
+        <span class="puzzle-progress-label">@progressEngine</span>
+        <span class="puzzle-progress-count">@progressProcessed / @progressTotal</span>
+      </div>
+      <div class="puzzle-progress-track">
+        <div class="puzzle-progress-fill" style="width:@($"{(double)progressProcessed / progressTotal * 100:F1}%")"></div>
+      </div>
+    </div>
+  }
 
   <div class="file-name">
     @if (disableRun && !string.IsNullOrEmpty(puzzleFileName))
@@ -60,6 +87,7 @@
       {
         <button class="tool-tab @(activeScoreTab == tab ? "active" : "")" @onclick="() => SetScoreTab(tab)">@tab</button>
       }
+      <button class="tool-action-btn tool-action-btn-sm" style="margin-left:auto" @onclick="CopyResultsToClipboard" title="Copy results table to clipboard">@copyLabel</button>
     </div>
 
     <div class="tool-table-container">
@@ -199,8 +227,6 @@
 
 @code {
     private Chess.Board chess = new();
-    IBrowserFile browserFile;
-    private string fileName;
     private string puzzleFileName = string.Empty;
     private CsvPuzzleData[] puzzles = Array.Empty<CsvPuzzleData>();
     private List<Score> PolicyScores = new();
@@ -210,7 +236,13 @@
     private string Filter { get; set; } = "";
     int failedNumber = 5;
     int solvedNumber = 5;
-    private string FolderName { get; set; } = String.Empty;
+    private int concurrencyOverride = 1;
+    private int progressProcessed = 0;
+    private int progressTotal = 0;
+    private string progressEngine = "";
+    private string errorMessage = "";
+    private string copyLabel = "Copy";
+    private CancellationTokenSource cts;
     private string fullPath = string.Empty;
     private bool disableRun = false;
     private bool disableDraw = false;
@@ -366,6 +398,18 @@
                 break;
             case Lichess.Done msg:
                 endOfRun = ": " + msg.Item;
+                progressProcessed = 0;
+                progressTotal = 0;
+                progressEngine = "";
+                break;
+            case Lichess.Progress prog:
+                progressProcessed = prog.Processed;
+                progressTotal = prog.Total;
+                progressEngine = prog.Label;
+                break;
+            case Lichess.LichessError err:
+                errorMessage = err.Item;
+                disableRun = false;
                 break;
         }
         await InvokeAsync(StateHasChanged);
@@ -411,6 +455,12 @@
     {
         endOfRun = ": started";
         disableRun = true;
+        progressProcessed = 0;
+        progressTotal = 0;
+        progressEngine = "";
+        errorMessage = "";
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
         StateHasChanged();
     }
 
@@ -448,38 +498,62 @@
         }
     }
 
-    private async Task OpenCSVFile(InputFileChangeEventArgs e)
+    private void CancelRun()
     {
-        StartOfRun();
+        cts?.Cancel();
+        disableRun = false;
+        progressProcessed = 0;
+        progressTotal = 0;
+        progressEngine = "";
+        StateHasChanged();
+    }
 
-        if (puzzles == null || fileName != e.File.Name)
+    private async Task BrowseAndRunConfig()
+    {
+        var initialDir = SettingsService.Settings.PuzzleConfigFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
         {
-            var pgnName = e.File.Name;
-            fileName = pgnName;
-            if (!pgnName.EndsWith(".json"))
-            {
-                logger.LogError("Selected file does not end with .json, please select you puzzle config file (JSON)");
-                disableRun = false;
-                StateHasChanged();
-                return;
-            }
-            logger.LogInformation("Selected file {File}", pgnName);
-            var env = AppPaths.BaseDir;
-            fullPath = Path.Combine(env, pgnName);
-            await using (FileStream fs = new(fullPath, FileMode.Create))
-            {
-                browserFile = e.File;
-                await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
-            }
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Puzzle Config", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
 
-        }
+        fullPath = (string)result.Data!;
+        logger.LogInformation("Selected file {File}", fullPath);
+
+        StartOfRun();
         await Run(null);
 
-        browserFile = null;
-        fileName = string.Empty;
         disableRun = false;
         StateHasChanged();
         await Task.Delay(500);
+    }
+
+    private async Task CopyResultsToClipboard()
+    {
+        try
+        {
+            var table = CreateCombinedScoresTable(puzzleFileName);
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", table);
+            copyLabel = "Copied!";
+            StateHasChanged();
+            await Task.Delay(2000);
+            copyLabel = "Copy";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Failed to copy to clipboard: {Message}", ex.Message);
+            copyLabel = "Failed";
+            StateHasChanged();
+            await Task.Delay(2000);
+            copyLabel = "Copy";
+            StateHasChanged();
+        }
     }
 
     private string CreateCombinedScoresTable(string puzzleFile)
@@ -597,7 +671,7 @@
 
     private async Task Run(MouseEventArgs args)
     {
-        var fullPathName = string.IsNullOrWhiteSpace(fullPath) ? FolderName : fullPath;
+        var fullPathName = fullPath;
 
         if (!File.Exists(fullPathName))
         {
@@ -647,8 +721,9 @@
                 var formattedLength = puzzles.Length.ToString("N0");
                 logger.LogInformation($"Loaded {formattedLength} puzzles from {normalizedPath}");
 
+                var concurrency = concurrencyOverride > 0 ? concurrencyOverride : data.Concurrency;
                 var puzzleInput = TypesDef.PuzzleInput.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
-                                  engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, data.Concurrency);
+                                  engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, concurrency);
 
                 var types = string.IsNullOrWhiteSpace(data.Type)
             ? new List<string>()
@@ -665,7 +740,7 @@
                 {
                     case 0:
                         logger.LogInformation("No puzzle types specified, defaulting to policy and value test");
-                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
+                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, cts.Token);
                         break;
 
                     default:
@@ -711,12 +786,12 @@
                             if (subTests.Count == 0)
                             {
                                 logger.LogInformation("No valid puzzle types found, defaulting to policy and value test");
-                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, CancellationToken.None);
+                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, cts.Token);
                             }
                             else
                             {
                                 var subTestList = Microsoft.FSharp.Collections.ListModule.OfSeq(subTests);
-                                scores = ChessLibrary.PuzzleEngineAgent.runTest(puzzleInput, Update, subTestList, CancellationToken.None);
+                                scores = ChessLibrary.PuzzleEngineAgent.runTest(puzzleInput, Update, subTestList, cts.Token);
                             }
                         }
                         break;
@@ -849,6 +924,10 @@
 
                 await Task.CompletedTask;
             }
+            catch (OperationCanceledException)
+            {
+                logger.LogInformation("Puzzle tests cancelled by user");
+            }
             catch (Exception ex)
             {
                 logger.LogError("Lichess puzzle failed to start/run - ");
@@ -857,10 +936,6 @@
 
             finally
             {
-                if (!string.IsNullOrWhiteSpace(fullPath))
-                {
-                    File.Delete(fullPath);
-                }
                 await InvokeAsync(() => disableRun = false);
             }
 
@@ -873,6 +948,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        cts?.Cancel();
+        cts?.Dispose();
         await ClearPreviousRunResourcesAsync();
         logger.LogInformation("Disposing LichessPuzzles component");
         await ValueTask.CompletedTask;

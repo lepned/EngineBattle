@@ -11,9 +11,11 @@
 @using static ChessLibrary.PuzzleRunners
 @using static ChessLibrary.PuzzleTypes
 
-@inject ILogger<EretPuzzles> logger
+@implements IAsyncDisposable
 
-<InputFile id="fileInput" OnChange="@OpenConfigFile" hidden />
+@inject ILogger<EretPuzzles> logger
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
 
 <PageTitle>ERET Puzzle Tests</PageTitle>
 
@@ -30,12 +32,34 @@
       <label>Solved puzzles to show</label>
       <input type="number" class="tool-input" style="width:120px" @bind="solvedNumber" min="0" step="1" />
     </div>
-    <label for="fileInput" class="tool-upload-btn" style="@(isProcessing ? "pointer-events:none;opacity:0.5" : "")">Pick and run puzzle config file</label>
+    <button class="tool-upload-btn" style="@(isProcessing ? "pointer-events:none;opacity:0.5" : "")" @onclick="BrowseAndRunConfig" disabled="@isProcessing">Pick and run puzzle config file</button>
     @if (isProcessing)
     {
-      <div class="tool-spinner"></div>
+      <button class="tool-cancel-btn" @onclick="CancelRun">Stop</button>
+      @if (eretTotal == 0)
+      {
+        <div class="tool-spinner"></div>
+      }
     }
   </div>
+
+  @if (!string.IsNullOrEmpty(eretErrorMessage))
+  {
+    <div class="tool-error" style="color:#ef5350; margin:8px 0; font-weight:500;">@eretErrorMessage</div>
+  }
+
+  @if (isProcessing && eretTotal > 0)
+  {
+    <div class="puzzle-progress">
+      <div class="puzzle-progress-header">
+        <span class="puzzle-progress-label">ERET</span>
+        <span class="puzzle-progress-count">@eretProcessed / @eretTotal</span>
+      </div>
+      <div class="puzzle-progress-track">
+        <div class="puzzle-progress-fill" style="width:@($"{(double)eretProcessed / eretTotal * 100:F1}%")"></div>
+      </div>
+    </div>
+  }
 
   <div class="file-name">
     @if (isProcessing && !string.IsNullOrEmpty(puzzleFileName))
@@ -127,8 +151,6 @@
 
 @code {
     private Chess.Board chess = new();
-    IBrowserFile browserFile;
-    private string fileName;
     private string puzzleFileName = string.Empty;
     private List<ERETResults> Scores = new();
     int failedNumber = 3;
@@ -137,6 +159,10 @@
     private string finalMessage = "";
     private EPDTypes.EPDEntry epd = EPDTypes.EPDEntry.Empty;
     private string outputFileFolder = string.Empty;
+    private int eretProcessed = 0;
+    private int eretTotal = 0;
+    private string eretErrorMessage = "";
+    private CancellationTokenSource cts;
     private EretConfig data = EretConfig.empty;
     private bool isProcessing = false;
 
@@ -197,11 +223,19 @@
         switch (update)
         {
             case ERET.Start player:
-
+                eretProcessed = 0;
+                eretErrorMessage = "";
                 break;
 
             case ERET.Puzzle p:
+                eretProcessed++;
+                await InvokeAsync(StateHasChanged);
+                break;
 
+            case ERET.EretError err:
+                eretErrorMessage = err.Item;
+                isProcessing = false;
+                await InvokeAsync(StateHasChanged);
                 break;
 
             case ERET.PlayerResult pRes:
@@ -268,23 +302,32 @@
         }
     }
 
-    private async Task OpenConfigFile(InputFileChangeEventArgs e)
+    private async Task BrowseAndRunConfig()
     {
-        isProcessing = true;
-        var pgnName = e.File.Name;
-        fileName = pgnName;
-        logger.LogInformation("Config file opened {File}", pgnName);
-        var env = AppPaths.BaseDir;
-        fullPath = Path.Combine(env, "wwwroot", pgnName);
-        await using (FileStream fs = new(fullPath, FileMode.Create))
+        var initialDir = SettingsService.Settings.PuzzleConfigFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
         {
-            browserFile = e.File;
-            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
-        }
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select ERET Config", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
+
+        isProcessing = true;
+        fullPath = (string)result.Data!;
+        logger.LogInformation("Config file opened {File}", fullPath);
 
         data = Configuration.JSONParser.loadEretConfig(fullPath);
         puzzleFileName = Path.GetFileName(data.PuzzleFile);
         finalMessage = $"Running tests on {puzzleFileName}";
+        eretTotal = data.SampleSize * data.Engines.Count;
+        eretProcessed = 0;
+        eretErrorMessage = "";
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
         await InvokeAsync(StateHasChanged);
         outputFileFolder = data.FailedPuzzlesOutputFolder;
         // Build engine configs
@@ -302,12 +345,16 @@
                   var nodesConfig = TimeControlTypes.TimeControlCommands.getNodeTime(data.Nodes);
                   if (data.RunWithNodeLimit)
                   {
-                      results = PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update, CancellationToken.None);
+                      results = PuzzleRunners.runEretTests(nodesConfig, engineConfigs, data, Update, cts.Token);
                   }
                   else
                   {
-                      results = PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update, CancellationToken.None);
+                      results = PuzzleRunners.runEretTests(timeConfig, engineConfigs, data, Update, cts.Token);
                   }
+              }
+              catch (OperationCanceledException)
+              {
+                  logger.LogInformation("ERET tests cancelled by user");
               }
               catch (Exception ex)
               {
@@ -318,7 +365,22 @@
           });
 
         finalMessage = $"Finished running tests on {puzzleFileName}";
-        File.Delete(fullPath);
     }
 
+    private void CancelRun()
+    {
+        cts?.Cancel();
+        isProcessing = false;
+        eretProcessed = 0;
+        eretTotal = 0;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        cts?.Cancel();
+        cts?.Dispose();
+        logger.LogInformation("Disposing EretPuzzles component");
+        await ValueTask.CompletedTask;
+    }
 }

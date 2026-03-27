@@ -2,10 +2,8 @@
 @page "/pgnUtilities"
 @inject ILogger<RemoveEngineFromPGN> logger
 @inject GlobalSettingsService SettingsService
-
-<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
-<InputFile id="pgnReady" OnChange="@MakePGNExportReady" hidden />
-<InputFile id="pgnMinimal" OnChange="@MinimalPGN" hidden />
+@inject IDialogService DialogService
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <PageTitle>PGN Utilities</PageTitle>
 
@@ -27,7 +25,7 @@
 			</div>
 		</div>
 		<div class="tool-controls">
-			<label for="fileInput" class="tool-upload-btn">Pick PGN file</label>
+			<button class="tool-upload-btn" @onclick="BrowseRemoveEnginePgnFile">Pick PGN file</button>
 		</div>
 	</div>
 
@@ -41,7 +39,7 @@
 			</div>
 		</div>
 		<div class="tool-controls">
-			<label for="pgnReady" class="tool-upload-btn">Pick PGN file</label>
+			<button class="tool-upload-btn" @onclick="BrowseExportReadyPgnFile">Pick PGN file</button>
 		</div>
 	</div>
 
@@ -55,7 +53,7 @@
 			</div>
 		</div>
 		<div class="tool-controls">
-			<label for="pgnMinimal" class="tool-upload-btn">Pick PGN file</label>
+			<button class="tool-upload-btn" @onclick="BrowseMinimalPgnFile">Pick PGN file</button>
 		</div>
 	</div>
 </div>
@@ -65,7 +63,6 @@
 	private string path = "";
 	private string minimalPGNpath = "";
 	private string engineName = string.Empty;
-	IBrowserFile browserFile;
 
 	private string GetFileName(string pgn, string playerToRemove)
 	{
@@ -83,56 +80,42 @@
 		return outputFile;
 	}
 
-	private async Task MinimalPGN(InputFileChangeEventArgs e)
+	private async Task BrowseMinimalPgnFile()
 	{
 		if (string.IsNullOrEmpty(minimalPGNpath))
 		{
 			logger.LogError("Output file path is not specified");
 			return;
 		}
-		var pgnName = e.File.Name;
-		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
-		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
+		var filePath = await BrowsePgnFile();
+		if (filePath == null) return;
 
-		var games = FullPGNParser.parsePgnFile(fullPath);
+		var pgnName = Path.GetFileName(filePath);
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var games = FullPGNParser.parsePgnFile(filePath);
 		PGNWriter.writeMinimalPgnFile(games, minimalPGNpath);
 		logger.LogInformation($"Done with writing minimal PGN file to {minimalPGNpath}");
-		File.Delete(fullPath);
-		await Task.CompletedTask;
 	}
 
-	private async Task MakePGNExportReady(InputFileChangeEventArgs e)
+	private async Task BrowseExportReadyPgnFile()
 	{
 		if (string.IsNullOrEmpty(path))
 		{
 			logger.LogError("Output folder is not specified");
 			return;
 		}
-		var pgnName = e.File.Name;
-		logger.LogInformation("PGN file opened {File} for export", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
-		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
+		var filePath = await BrowsePgnFile();
+		if (filePath == null) return;
 
-		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
+		var pgnName = Path.GetFileName(filePath);
+		logger.LogInformation("PGN file opened {File} for export", pgnName);
+		var games = FullPGNParser.parsePgnFileWithRaw(filePath);
 		var exportPath = GetExportFileName(pgnName);
 		PGNWriter.ensureBlankLinesBetweenGames(exportPath, games);
-		File.Delete(fullPath);
 		logger.LogInformation($"PGN-file was made ready for export and written to path {exportPath}");
 	}
 
-
-	private async Task OpenPGNFile(InputFileChangeEventArgs e)
+	private async Task BrowseRemoveEnginePgnFile()
 	{
 		if (string.IsNullOrEmpty(path))
 		{
@@ -144,21 +127,31 @@
 			logger.LogError("Engine name is not specified");
 			return;
 		}
-		var pgnName = e.File.Name;
-		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
-		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
+		var filePath = await BrowsePgnFile();
+		if (filePath == null) return;
 
-		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
+		var pgnName = Path.GetFileName(filePath);
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var games = FullPGNParser.parsePgnFileWithRaw(filePath);
 		var fileNamePath = GetFileName(pgnName, engineName);
 		PGNWriter.removePlayerFromPGN(engineName, games, fileNamePath);
-		File.Delete(fullPath);
 		logger.LogInformation($"Engine {engineName} was removed from PGN-file and written to path {fileNamePath}");
+	}
+
+	private async Task<string> BrowsePgnFile()
+	{
+		var initialDir = SettingsService.Settings.PgnOutputFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.pgn" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select PGN File", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return null;
+		return (string)result.Data!;
 	}
 
 	protected override Task OnInitializedAsync()

@@ -19,8 +19,6 @@
 @inject GlobalSettingsService SettingsService
 @implements IAsyncDisposable
 
-<InputFile id="@Id" OnChange="@LoadNNFile" hidden />
-
 <div class="engine-panel">
     <header class="ep-header">
         <h5>
@@ -97,19 +95,12 @@
             Focus
         </button>
 
-        <button class="ep-upload @(showCharts || showCpChart ? "active" : "")" @onclick="ToggleCharts" title="Toggle charts">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-            </svg>
-            Charts
-        </button>
-
-        <label class="ep-upload" for="@Id">
+        <button class="ep-upload" @onclick="BrowseNNFile">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
             </svg>
             Weights
-        </label>
+        </button>
 
         <button class="ep-upload" @onclick="BrowseEngineFile">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -391,7 +382,6 @@
     public bool autoSearchSwitch { get; set; } = false;
     public bool showCharts { get; set; } = true;
     private string neuralNet = "Not set";
-    private string loadedNNFilePath;
     private string backend = "";
     private bool searchInProgress = false;
     private bool showPVBoard = false;
@@ -414,7 +404,6 @@
     string opt0 = """backend=cuda-fp16,(gpu=0,policy_head=optimistic,value_head=winner)""";
     string opt1 = """backend=cuda-fp16,(gpu=1,policy_head=optimistic,value_head=winner)""";
     HotKeysContext keyContext;
-    IBrowserFile browserFile;
     public List<KeyValuePair<int, EngineStatus>> dataList = new();
     Dictionary<int, EngineStatus> data = new();
     public bool IsOpt { get; set; } = false;
@@ -438,14 +427,6 @@
     private void ToggleOverlayDropdown()
     {
         overlayDropdownOpen = !overlayDropdownOpen;
-    }
-
-    private void ToggleCharts()
-    {
-        if (runLogLiveStats)
-            showCharts = !showCharts;
-        else
-            showCpChart = !showCpChart;
     }
 
     private void ToggleAutoSearch()
@@ -846,33 +827,24 @@
         StateHasChanged();
     }
 
-    private void DeleteLoadedNNFile()
+    private async Task BrowseNNFile()
     {
-        if (!string.IsNullOrEmpty(loadedNNFilePath) && File.Exists(loadedNNFilePath))
+        var initialDir = SettingsService.Settings.NeuralNetFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
         {
-            try { File.Delete(loadedNNFilePath); }
-            catch (Exception ex) { logger.LogWarning(ex, "Failed to delete uploaded NN file {Path}", loadedNNFilePath); }
-            loadedNNFilePath = null;
-        }
-    }
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.*" },
+            { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Neural Network", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
 
-    private async Task LoadNNFile(InputFileChangeEventArgs e)
-    {
-        var pgnName = e.File.Name;
-        logger.LogInformation("Loading network file {File}", pgnName);
-        DeleteLoadedNNFile();
-        var env = AppPaths.BaseDir;
-        var nnDir = Path.Combine(env, "NN");
-        Directory.CreateDirectory(nnDir);
-        var fullPath = Path.Combine(nnDir, pgnName);
-        await using (FileStream fs = new(fullPath, FileMode.Create))
-        {
-            browserFile = e.File;
-            await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-        }
-        loadedNNFilePath = fullPath;
-        neuralNet = e.File.Name;
-        if (searchInfoPlot == null)
+        var filePath = (string)result.Data!;
+        logger.LogInformation("Loading network file {File}", filePath);
+        neuralNet = Path.GetFileName(filePath);
+        if (searchInfoPlot != null)
         {
             searchInfoPlot.NN = neuralNet;
         }
@@ -884,11 +856,8 @@
             logger.LogWarning("No engine loaded, cannot set weights file");
             return;
         }
-        else
-        {
-            logger.LogInformation("Engine loaded, setting weights file");
-        }
-        var option = EngineOption.Create("WeightsFile", fullPath);
+        logger.LogInformation("Engine loaded, setting weights file");
+        var option = EngineOption.Create("WeightsFile", filePath);
         analyzer?.AddSetoption(option);
     }
 
@@ -957,7 +926,7 @@
         {
             analyzer = await Task.Factory.StartNew(() =>
             {
-                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, UpdateMe, true);
+                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, HandleUpdate, false);
             });
             analyzer.Board = ChessBoard;
         }
@@ -1029,7 +998,7 @@
         await Task.CompletedTask;
     }
 
-    private async void UpdateMe(EngineUpdate update)
+    public async void HandleUpdate(EngineUpdate update)
     {
         switch (update)
         {
@@ -1788,7 +1757,7 @@
             searchInProgress = false;
             ChessBoard.inAnalysisMode = true;
             ChartLines = SettingsService.Settings.ChartLines;
-            numberOfLines = Math.Max(1, ChartLines);
+            numberOfLines = Math.Max(1, SettingsService.Settings.DefaultMultiPV);
             numberOfNodes = Math.Max(1, Nodes);
             Qdiff = 2;
             StateHasChanged();
@@ -1801,7 +1770,6 @@
     {
         Notifier.NotifyFen -= OnNotifyFen;
         analyzer?.Quit();
-        DeleteLoadedNNFile();
         logger.LogInformation("Disposing {page}", "EnginePanel");
         this.keyContext?.DisposeAsync();
         await ValueTask.CompletedTask;

@@ -1,6 +1,7 @@
 @using System.IO
 @using System.Runtime.InteropServices
 @inject WebGUI.Services.GlobalSettingsService SettingsService
+@inject IJSRuntime JS
 
 <MudDialog>
     <TitleContent>
@@ -21,12 +22,38 @@
 
         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2" Spacing="1">
             <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" OnClick="GoUp"
-                           Size="Size.Small" title="Go to parent directory" />
+                           Size="Size.Small" title="Go to parent directory (Backspace)" />
             <MudTextField @bind-Value="editPath" Variant="Variant.Outlined" Margin="Margin.Dense"
                           Style="flex:1" Immediate="true"
                           OnKeyDown="OnPathKeyDown" />
             <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="GoToPath">Go</MudButton>
+            <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" OnClick="ToggleNewFolder"
+                           Size="Size.Small" title="Create new folder"
+                           Disabled="@(showDrives || string.IsNullOrEmpty(currentPath))" />
+            @if (recentPaths.Length > 0)
+            {
+                <MudMenu Icon="@Icons.Material.Filled.History" Size="Size.Small" Dense="true"
+                         title="Recent locations" Variant="Variant.Outlined">
+                    @foreach (var rp in recentPaths)
+                    {
+                        <MudMenuItem OnClick="() => NavigateTo(rp)">@rp</MudMenuItem>
+                    }
+                </MudMenu>
+            }
         </MudStack>
+
+        @if (showNewFolderInput)
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2" Spacing="1">
+                <MudTextField @bind-Value="newFolderName" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Style="flex:1" Placeholder="New folder name" Immediate="true"
+                              OnKeyDown="OnNewFolderKeyDown" AutoFocus="true" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           OnClick="CreateNewFolder" Disabled="@(string.IsNullOrWhiteSpace(newFolderName))">Create</MudButton>
+                <MudButton Variant="Variant.Text" Size="Size.Small"
+                           OnClick="() => showNewFolderInput = false">Cancel</MudButton>
+            </MudStack>
+        }
 
         <MudBreadcrumbs Items="@breadcrumbs" Separator=">" Class="mb-2 pa-0" Style="font-size: 0.85rem;">
             <ItemTemplate Context="item">
@@ -38,7 +65,21 @@
             </ItemTemplate>
         </MudBreadcrumbs>
 
-        <div style="height: 400px; overflow-y: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+        @if (bookmarks.Count > 0)
+        {
+            <div class="fb-bookmarks">
+                @foreach (var bm in bookmarks)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                             OnClick="() => NavigateTo(bm.Path)"
+                             Icon="@Icons.Material.Filled.Folder" Class="fb-bookmark-chip">
+                        @bm.Label
+                    </MudChip>
+                }
+            </div>
+        }
+
+        <div class="fb-file-list" @onkeydown="OnListKeyDown" tabindex="0" @ref="listRef">
             @if (isLoading)
             {
                 <MudProgressLinear Indeterminate="true" />
@@ -64,8 +105,9 @@
                     @foreach (var dir in directories)
                     {
                         var even = rowIndex % 2 == 0;
+                        var idx = rowIndex;
                         <MudListItem T="string" Icon="@Icons.Material.Filled.Folder" IconColor="Color.Warning"
-                                     Class="@($"fb-list-item {(even ? "fb-row-even" : "")}")"
+                                     Class="@($"fb-list-item {(even ? "fb-row-even" : "")} {(idx == focusedIndex ? "fb-focused" : "")}")"
                                      OnClick="() => OnDirectoryClick(dir)">
                             @dir.Name
                         </MudListItem>
@@ -73,12 +115,13 @@
                     }
                     @if (Mode == FileBrowserMode.File)
                     {
-                        @foreach (var file in files)
+                        @foreach (var file in sortedFiles)
                         {
                             var even = rowIndex % 2 == 0;
+                            var idx = rowIndex;
                             var isSelected = selectedFile == file.FullPath;
                             <MudListItem T="string" Icon="@Icons.Material.Filled.InsertDriveFile"
-                                         Class="@($"fb-list-item {(even ? "fb-row-even" : "")} {(isSelected ? "fb-selected" : "")}")"
+                                         Class="@($"fb-list-item {(even ? "fb-row-even" : "")} {(isSelected ? "fb-selected" : "")} {(idx == focusedIndex ? "fb-focused" : "")}")"
                                          OnClick="() => OnFileClick(file)"
                                          @ondblclick="() => OnFileDoubleClick(file)">
                                 <MudStack Row="true" AlignItems="AlignItems.Center" Style="width:100%">
@@ -100,9 +143,37 @@
 
         @if (!showDrives)
         {
-            <div class="fb-status-bar">
-                @directories.Count folder@(directories.Count != 1 ? "s" : "")@(Mode == FileBrowserMode.File ? $", {files.Count} file{(files.Count != 1 ? "s" : "")}" : "")
-            </div>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="fb-status-bar" Spacing="2">
+                <MudText Typo="Typo.caption" Style="flex:1">
+                    @directories.Count folder@(directories.Count != 1 ? "s" : "")@(Mode == FileBrowserMode.File ? $", {files.Count} file{(files.Count != 1 ? "s" : "")}" : "")
+                </MudText>
+                @if (Mode == FileBrowserMode.File)
+                {
+                    <MudButtonGroup OverrideStyles="false" Size="Size.Small" Variant="Variant.Text" Class="fb-sort-group">
+                        <MudButton OnClick="@(() => SetSort(SortField.Name))"
+                                   Class="@(sortField == SortField.Name ? "fb-sort-active" : "")"
+                                   Size="Size.Small" title="Sort by name">Name</MudButton>
+                        <MudButton OnClick="@(() => SetSort(SortField.Date))"
+                                   Class="@(sortField == SortField.Date ? "fb-sort-active" : "")"
+                                   Size="Size.Small" title="Sort by date">Date</MudButton>
+                        <MudButton OnClick="@(() => SetSort(SortField.Size))"
+                                   Class="@(sortField == SortField.Size ? "fb-sort-active" : "")"
+                                   Size="Size.Small" title="Sort by size">Size</MudButton>
+                    </MudButtonGroup>
+                }
+            </MudStack>
+        }
+
+        @if (Mode == FileBrowserMode.File)
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2" Spacing="1">
+                <MudText Typo="Typo.body2" Style="white-space: nowrap;">Filter:</MudText>
+                <MudTextField @bind-Value="activeFilter" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Style="flex:1; max-width: 200px;" Immediate="true"
+                              OnKeyDown="OnFilterKeyDown" Placeholder="*.pgn" />
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                               OnClick="ApplyFilter" title="Apply filter" />
+            </MudStack>
         }
 
         <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2" Spacing="1">
@@ -133,20 +204,34 @@
     private string editPath = "";
     private string selectedFile = "";
     private string errorMessage = "";
+    private string activeFilter = "";
     private bool isLoading;
     private bool showDrives;
+    private int focusedIndex = -1;
+    private SortField sortField = SortField.Date;
     private List<DirectoryDisplayItem> directories = new();
     private List<FileDisplayItem> files = new();
+    private List<FileDisplayItem> sortedFiles = new();
     private List<BreadcrumbItem> breadcrumbs = new();
     private DriveInfo[] drives = Array.Empty<DriveInfo>();
+    private string[] recentPaths = [];
+    private bool showNewFolderInput;
+    private string newFolderName = "";
+    private List<(string Label, string Path)> bookmarks = new();
+    private ElementReference listRef;
 
     protected override void OnInitialized()
     {
+        activeFilter = FileFilter;
+        recentPaths = SettingsService.Settings.RecentBrowsePaths ?? [];
+        BuildBookmarks();
+
         if (!string.IsNullOrEmpty(InitialPath) && Directory.Exists(InitialPath))
             NavigateTo(InitialPath);
         else if (!string.IsNullOrEmpty(InitialPath) && File.Exists(InitialPath))
         {
-            NavigateTo(Path.GetDirectoryName(InitialPath)!);
+            var dir = Path.GetDirectoryName(InitialPath);
+            if (!string.IsNullOrEmpty(dir)) NavigateTo(dir);
             selectedFile = InitialPath;
         }
         else if (!string.IsNullOrEmpty(SettingsService.Settings.LastBrowsedPath) && Directory.Exists(SettingsService.Settings.LastBrowsedPath))
@@ -155,13 +240,23 @@
             ShowDriveList();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await listRef.FocusAsync(); } catch { }
+        }
+    }
+
     private void NavigateTo(string path)
     {
         errorMessage = "";
         isLoading = true;
         directories.Clear();
         files.Clear();
+        sortedFiles.Clear();
         showDrives = false;
+        focusedIndex = -1;
 
         if (string.IsNullOrEmpty(path))
         {
@@ -188,7 +283,7 @@
 
             if (Mode == FileBrowserMode.File)
             {
-                var filters = FileFilter.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var filters = activeFilter.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var filter in filters)
@@ -199,7 +294,7 @@
                             files.Add(new FileDisplayItem(file.Name, file.FullName, file.Length, file.LastWriteTime));
                     }
                 }
-                files.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                ApplySorting();
             }
 
             currentPath = dirInfo.FullName;
@@ -229,10 +324,12 @@
         showDrives = true;
         directories.Clear();
         files.Clear();
+        sortedFiles.Clear();
         currentPath = "";
         editPath = "";
         breadcrumbs.Clear();
         isLoading = false;
+        focusedIndex = -1;
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -265,7 +362,8 @@
             NavigateTo(editPath);
         else if (File.Exists(editPath) && Mode == FileBrowserMode.File)
         {
-            NavigateTo(Path.GetDirectoryName(editPath)!);
+            var dir = Path.GetDirectoryName(editPath);
+            if (!string.IsNullOrEmpty(dir)) NavigateTo(dir);
             selectedFile = editPath;
         }
         else
@@ -277,6 +375,156 @@
         if (e.Key == "Enter")
             GoToPath();
     }
+
+    // ── Keyboard navigation ──
+
+    private void OnListKeyDown(KeyboardEventArgs e)
+    {
+        if (showDrives) return;
+        var totalItems = directories.Count + (Mode == FileBrowserMode.File ? sortedFiles.Count : 0);
+        if (totalItems == 0) return;
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                focusedIndex = Math.Min(focusedIndex + 1, totalItems - 1);
+                UpdateSelectionFromFocus();
+                break;
+            case "ArrowUp":
+                focusedIndex = Math.Max(focusedIndex - 1, 0);
+                UpdateSelectionFromFocus();
+                break;
+            case "Home":
+                focusedIndex = 0;
+                UpdateSelectionFromFocus();
+                break;
+            case "End":
+                focusedIndex = totalItems - 1;
+                UpdateSelectionFromFocus();
+                break;
+            case "Enter":
+                ActivateFocusedItem();
+                break;
+            case "Backspace":
+                GoUp();
+                break;
+        }
+    }
+
+    private void UpdateSelectionFromFocus()
+    {
+        if (focusedIndex < 0) return;
+        if (focusedIndex < directories.Count) return; // don't auto-select folders
+        var fileIndex = focusedIndex - directories.Count;
+        if (fileIndex >= 0 && fileIndex < sortedFiles.Count)
+            selectedFile = sortedFiles[fileIndex].FullPath;
+    }
+
+    private void ActivateFocusedItem()
+    {
+        if (focusedIndex < 0) return;
+        if (focusedIndex < directories.Count)
+        {
+            NavigateTo(directories[focusedIndex].FullPath);
+        }
+        else
+        {
+            var fileIndex = focusedIndex - directories.Count;
+            if (fileIndex >= 0 && fileIndex < sortedFiles.Count)
+            {
+                selectedFile = sortedFiles[fileIndex].FullPath;
+                Submit();
+            }
+        }
+    }
+
+    // ── Sorting ──
+
+    private enum SortField { Name, Date, Size }
+
+    private void SetSort(SortField field)
+    {
+        sortField = field;
+        ApplySorting();
+    }
+
+    private void ApplySorting()
+    {
+        sortedFiles = sortField switch
+        {
+            SortField.Date => files.OrderByDescending(f => f.Modified).ToList(),
+            SortField.Size => files.OrderByDescending(f => f.SizeBytes).ToList(),
+            _ => files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList()
+        };
+    }
+
+    // ── Filter ──
+
+    private void OnFilterKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(activeFilter))
+            activeFilter = "*.*";
+        NavigateTo(currentPath);
+    }
+
+    // ── New Folder ──
+
+    private void ToggleNewFolder()
+    {
+        showNewFolderInput = !showNewFolderInput;
+        newFolderName = "";
+    }
+
+    private void OnNewFolderKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") CreateNewFolder();
+        else if (e.Key == "Escape") showNewFolderInput = false;
+    }
+
+    private void CreateNewFolder()
+    {
+        if (string.IsNullOrWhiteSpace(newFolderName) || string.IsNullOrEmpty(currentPath)) return;
+        try
+        {
+            var newPath = Path.Combine(currentPath, newFolderName.Trim());
+            Directory.CreateDirectory(newPath);
+            showNewFolderInput = false;
+            newFolderName = "";
+            NavigateTo(newPath);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to create folder: {ex.Message}";
+        }
+    }
+
+    // ── Bookmarks ──
+
+    private void BuildBookmarks()
+    {
+        var s = SettingsService.Settings;
+        bookmarks.Clear();
+        AddBookmark("Engines", s.EngineDefsFolder);
+        AddBookmark("PGN", s.PgnOutputFolder);
+        AddBookmark("Openings", s.OpeningsFolder);
+        AddBookmark("Tournament", s.TournamentConfigFolder);
+        AddBookmark("Neural Nets", s.NeuralNetFolder);
+        AddBookmark("Puzzles", s.PuzzleConfigFolder);
+    }
+
+    private void AddBookmark(string label, string path)
+    {
+        if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+            bookmarks.Add((label, path));
+    }
+
+    // ── Click handlers ──
 
     private void OnDirectoryClick(DirectoryDisplayItem dir) => NavigateTo(dir.FullPath);
 
@@ -324,13 +572,29 @@
         return !string.IsNullOrEmpty(selectedFile);
     }
 
+    // ── Submit / Cancel ──
+
     private void Submit()
     {
-        var settings = SettingsService.Settings;
-        settings.LastBrowsedPath = currentPath;
-        SettingsService.Save(settings);
+        SaveBrowseState();
         MudDialog.Close(DialogResult.Ok(Mode == FileBrowserMode.Folder ? currentPath : selectedFile));
     }
+
+    private void SaveBrowseState()
+    {
+        var s = SettingsService.Settings;
+        var recent = (s.RecentBrowsePaths ?? [])
+            .Where(p => !string.Equals(p, currentPath, StringComparison.OrdinalIgnoreCase))
+            .Take(9)
+            .Prepend(currentPath)
+            .Where(p => !string.IsNullOrEmpty(p))
+            .ToArray();
+
+        s.LastBrowsedPath = currentPath;
+        s.RecentBrowsePaths = recent;
+        SettingsService.Save(s);
+    }
+
     private void Cancel() => MudDialog.Cancel();
 
     private static string FormatSize(long bytes)

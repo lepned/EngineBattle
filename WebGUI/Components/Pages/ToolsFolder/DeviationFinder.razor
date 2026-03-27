@@ -4,11 +4,12 @@
 @using WebGUI.Components.Layout
 @using WebGUI.Components.Layout.ChessboardLayout
 @using WebGUI.Services
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 @inject ILogger<DeviationFinder> logger
 @inject NotifierService Notifier
-
-<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
 
 <PageTitle>Move deviation page</PageTitle>
 
@@ -17,7 +18,7 @@
   <div class="tool-subtitle">Find and visualize move deviations across PGN games</div>
 
   <div class="tool-controls">
-    <label for="fileInput" class="tool-upload-btn">Load PGN file</label>
+    <button class="tool-upload-btn" @onclick="BrowsePgnFile">Load PGN file</button>
     <div class="tool-input-group" style="margin-bottom:0; min-width:220px;">
       <label>Reference player name</label>
       <input type="text" class="tool-input" style="width:100%" @bind="refPlayer" />
@@ -156,7 +157,6 @@
       );
   private List<MoveDeviation> deviationListCritical = new();
   private List<MoveDeviation> deviationListAll = new();
-  IBrowserFile browserFile;
   private string resultDescription1;
   private string resultDescription2;
   private string fileName;
@@ -257,24 +257,30 @@
     return deviatorColor == "w" ? res : -res;
   }
 
-  private async Task OpenPGNFile(InputFileChangeEventArgs e)
+  private async Task BrowsePgnFile()
   {
-    var pgnName = e.File.Name;
+    var initialDir = SettingsService.Settings.PgnOutputFolder;
+    var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+    {
+      { x => x.InitialPath, initialDir },
+      { x => x.FileFilter, "*.pgn" },
+      { x => x.Mode, FileBrowserMode.File }
+    };
+    var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+    var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select PGN File", parameters, options);
+    var result = await dialog.Result;
+    if (result == null || result.Canceled) return;
+    var filePath = (string)result.Data!;
+
+    var pgnName = Path.GetFileName(filePath);
     fileName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, pgnName);
     deviationListCritical.Clear();
     deviationListAll.Clear();
     resultDescription1 = "";
     resultDescription2 = "";
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
 
-    var games = FullPGNParser.parsePgnFile(fullPath).ToList();
+    var games = FullPGNParser.parsePgnFile(filePath).ToList();
     var comparList = ConvertCsvStringToList(comparePlayers);
     var deviations =
       isFindMoveAllDifferencesEnabled ?
@@ -307,9 +313,7 @@
     logger.LogInformation(resultDescription1);
     logger.LogInformation(resultDescription2);
     logger.LogInformation("Done with calculation");
-    File.Delete(fullPath);
     currentPage = 0;
-    await Task.CompletedTask;
   }
 
 

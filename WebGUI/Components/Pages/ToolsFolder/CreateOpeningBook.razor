@@ -5,10 +5,6 @@
 @inject IDialogService DialogService
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
-<InputFile id="pgnCreateInput" OnChange="@CreateOpeningBookFromPgnAsync" hidden />
-<InputFile id="bookEvalInput" OnChange="@EvaluateAndSortOpeningBookAsync" hidden />
-<InputFile id="epdToPgnInput" OnChange="@ConvertEpdToPgnAsync" hidden />
-<InputFile id="pgnShuffleInput" OnChange="@ShufflePgnOpeningBookAsync" hidden />
 
 <PageTitle>Opening Book</PageTitle>
 
@@ -46,7 +42,7 @@
       <label>Output file path</label>
       <input type="text" class="tool-input" style="width:100%" @bind="pgnOpeningFullName" />
     </div>
-    <label for="pgnCreateInput" class="tool-upload-btn">Load PGN file</label>
+    <button class="tool-upload-btn" @onclick="BrowseCreateOpeningBookPgnFile">Load PGN file</button>
   </div>
 
   <div class="tool-section">
@@ -60,7 +56,7 @@
                        OnClick="@(() => BrowseFolder(v => epdToPgnFileName = v, epdToPgnFileName))" />
       </div>
     </div>
-    <label for="epdToPgnInput" class="tool-upload-btn">Load EPD file</label>
+    <button class="tool-upload-btn" @onclick="BrowseEpdToPgnFile">Load EPD file</button>
   </div>
 
   <div class="tool-section">
@@ -98,7 +94,7 @@
       </div>
     </div>
     <div style="margin-top:12px;">
-      <label for="bookEvalInput" class="tool-upload-btn">Pick, evaluate and sort opening book</label>
+      <button class="tool-upload-btn" @onclick="BrowseEvaluateAndSortFile">Pick, evaluate and sort opening book</button>
     </div>
   </div>
 
@@ -113,7 +109,7 @@
                        OnClick="@(() => BrowseFolder(v => shuffleOutputPath = v, shuffleOutputPath))" />
       </div>
     </div>
-    <label for="pgnShuffleInput" class="tool-upload-btn">Pick PGN file</label>
+    <button class="tool-upload-btn" @onclick="BrowseShufflePgnFile">Pick PGN file</button>
   </div>
 </div>
 
@@ -131,36 +127,38 @@
 	private string maxEvalDiff = "50";
 	private string nodes = "1000";
 	private string numberOfOpenings = "500";
-	IBrowserFile browserFile;
-
 	private void GenerateChess960Positions()
 	{
 		ChessUtilities.Chess960.writeChess960PositionsToFile(chess960Path, numberOfPositions);
 	}
 
-	private async Task EvaluateAndSortOpeningBookAsync(InputFileChangeEventArgs e)
+	private async Task BrowseEvaluateAndSortFile()
 	{
-		var pgnName = e.File.Name;
-		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		var nOpenings = GetRequestedOpeningCount();
-		await using (FileStream fs = new(fullPath, FileMode.Create))
+		var initialDir = SettingsService.Settings.OpeningsFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
 		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.pgn;*.epd" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select PGN or EPD File", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return;
+		var filePath = (string)result.Data!;
+
+		var pgnName = Path.GetFileName(filePath);
+		logger.LogInformation("File opened {File}", pgnName);
+		var nOpenings = GetRequestedOpeningCount();
 		if (pgnName.ToLower().EndsWith(".pgn"))
 		{
-			var games = FullPGNParser.parsePgnFile(fullPath).Take(nOpenings).ToList();
+			var games = FullPGNParser.parsePgnFile(filePath).Take(nOpenings).ToList();
 			WriteEvaluatedPgnOpenings(pgnName, games);
-			File.Delete(fullPath);
 		}
 		else if (pgnName.ToLower().EndsWith(".epd"))
 		{
-			var positions = EPDExtractor.readEPDs(fullPath).Take(nOpenings).ToList();
+			var positions = EPDExtractor.readEPDs(filePath).Take(nOpenings).ToList();
 			WriteEvaluatedEpdOpenings(pgnName, positions);
-			File.Delete(fullPath);
 		}
 		else
 		{
@@ -338,22 +336,17 @@
 		ChessUtilities.Chess960.writeChess960DoublePositionsToFile(chess960Path, numberOfPositions);
 	}
 
-	private async Task ShufflePgnOpeningBookAsync(InputFileChangeEventArgs e)
+	private async Task BrowseShufflePgnFile()
 	{
-		var pgnName = e.File.Name;
+		var filePath = await BrowsePgnFile();
+		if (filePath == null) return;
+
+		var pgnName = Path.GetFileName(filePath);
 		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
-		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
-		var games = FullPGNParser.parsePgnFileWithRaw(fullPath);
-		var filePath = Path.Combine(shuffleOutputPath, $"Shuffled_{pgnName}");
-		PGNHelper.shufflePgnGames(filePath, games);
-		logger.LogInformation("Opening book was shuffled and written to path", filePath);
-		File.Delete(fullPath);
+		var games = FullPGNParser.parsePgnFileWithRaw(filePath);
+		var outputPath = Path.Combine(shuffleOutputPath, $"Shuffled_{pgnName}");
+		PGNHelper.shufflePgnGames(outputPath, games);
+		logger.LogInformation("Opening book was shuffled and written to path", outputPath);
 	}
 
 	private int GetRequestedOpeningCount()
@@ -369,44 +362,43 @@
 		}
 	}
 
-	private async Task CreateOpeningBookFromPgnAsync(InputFileChangeEventArgs e)
+	private async Task BrowseCreateOpeningBookPgnFile()
 	{
-		var pgnName = e.File.Name;
-		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
-		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
+		var filePath = await BrowsePgnFile();
+		if (filePath == null) return;
 
-		var games = FullPGNParser.parsePgnFile(fullPath);
+		var pgnName = Path.GetFileName(filePath);
+		logger.LogInformation("PGN file opened {File}", pgnName);
+		var games = FullPGNParser.parsePgnFile(filePath);
 		PGNWriter.writeOpeningPgnFile(games, pgnOpeningFullName);
 		logger.LogInformation("Opening book created: analyzed {GameCount} games. Written to {Path}", games.Count(), pgnOpeningFullName);
-		File.Delete(fullPath);
 	}
 
-	private async Task ConvertEpdToPgnAsync(InputFileChangeEventArgs e)
+	private async Task BrowseEpdToPgnFile()
 	{
-		var pgnName = e.File.Name;
-		logger.LogInformation("EPD file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
+		var initialDir = SettingsService.Settings.OpeningsFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
 		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.epd" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select EPD File", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return;
+		var filePath = (string)result.Data!;
 
-		var fileNameWithoutExt = Path.GetFileNameWithoutExtension(fullPath);
+		var epdName = Path.GetFileName(filePath);
+		logger.LogInformation("EPD file opened {File}", epdName);
+
+		var fileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
 		var directory = Path.GetDirectoryName(epdToPgnFileName);
 		var newFilePath = Path.Combine(directory, fileNameWithoutExt + ".pgn");
 
-		var games = EPDExtractor.readEPDs(fullPath).ToList();
+		var games = EPDExtractor.readEPDs(filePath).ToList();
 		PGNWriter.writeOpeningPgnFromEPD(games, newFilePath);
 		logger.LogInformation("Opening book written to path", newFilePath);
-		File.Delete(fullPath);
 	}
 
 	protected override Task OnInitializedAsync()
@@ -423,6 +415,22 @@
 			shuffleOutputPath = s.OpeningsFolder;
 		}
 		return base.OnInitializedAsync();
+	}
+
+	private async Task<string> BrowsePgnFile()
+	{
+		var initialDir = SettingsService.Settings.PgnOutputFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.pgn" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select PGN File", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return null;
+		return (string)result.Data!;
 	}
 
 	private async Task BrowseFolder(Action<string> setter, string currentValue)

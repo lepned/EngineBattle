@@ -1,5 +1,5 @@
 .settings-container {
-    max-width: 1100px;
+    max-width: 1500px;
     margin: 2rem auto;
     padding: 0 1.5rem;
 }
@@ -20,7 +20,7 @@
 /* Grid layout */
 .settings-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 1rem;
 }
 
@@ -28,7 +28,7 @@
     grid-column: 1 / -1;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 700px) {
     .settings-grid {
         grid-template-columns: 1fr;
     }
@@ -52,16 +52,77 @@
     color: var(--mud-palette-text-primary);
 }
 
+.settings-section.collapsed {
+    padding: 0.5rem 1.25rem;
+    align-self: start;
+}
+
+.settings-section.collapsed h4 {
+    margin: 0;
+}
+
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.collapsible-header:hover {
+    color: var(--mud-palette-primary);
+}
+
+.collapse-indicator {
+    font-size: 0.8rem;
+    opacity: 0.6;
+}
+
+/* Help section */
+.settings-help {
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.settings-help.collapsed {
+    padding: 0.5rem 1.25rem;
+}
+
+.settings-help.collapsed h4 {
+    margin: 0;
+}
+
+.settings-help-content {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--mud-palette-text-secondary);
+    line-height: 1.6;
+}
+
+.settings-help-content p {
+    margin: 0.3rem 0;
+}
+
+.settings-help-content code {
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.82rem;
+}
+
 .section-hint {
     font-size: 0.75rem;
     color: var(--mud-palette-text-secondary);
     margin-bottom: 0.85rem;
 }
 
-/* Internal 2-col grid for folders */
+/* Internal grid for folders */
 .folders-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 0 1.5rem;
 }
 

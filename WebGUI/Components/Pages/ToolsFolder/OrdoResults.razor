@@ -5,8 +5,6 @@
 @inject IDialogService DialogService
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
-<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
-
 <PageTitle>Ordo Ratings</PageTitle>
 
 <div class="tool-page">
@@ -20,16 +18,15 @@
 		</div>
 		<div class="tool-input-group">
 			<label>Full path to the Ordo executable</label>
-			<div style="display:flex; gap:4px; align-items:center;">
-				<input class="tool-input" style="width:100%" @bind="executablePath" />
-				<MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
-							   OnClick="@(() => BrowseFile(v => executablePath = v, executablePath, "*.exe"))" />
+			<div style="display:flex; align-items:stretch;">
+				<input class="tool-input" style="width:100%; border-right:none; border-top-right-radius:0; border-bottom-right-radius:0;" @bind="executablePath" />
+				<button class="browse-btn" title="Browse" @onclick="@(() => BrowseFile(v => executablePath = v, executablePath, "*.exe"))"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
 			</div>
 		</div>
 	</div>
 
 	<div class="tool-controls">
-		<label for="fileInput" class="tool-upload-btn">Load pgn file</label>
+		<button class="tool-upload-btn" @onclick="BrowsePgnFile">Load pgn file</button>
 	</div>
 
 	<div class="file-name">@fileOpenName</div>
@@ -86,7 +83,6 @@
 
 	private List<PlayerResult> engineLineData = new();
 	private string fileOpenName = "";
-	IBrowserFile browserFile;
 	private Int64 testDuration = 0;
 	private string refEngine = string.Empty;
 	private string executablePath = "";
@@ -127,19 +123,25 @@
 		return higher;
 	}
 
-	private async Task OpenPGNFile(InputFileChangeEventArgs e)
+	private async Task BrowsePgnFile()
 	{
+		var initialDir = SettingsService.Settings.PgnOutputFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.pgn" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return;
+		var fullPath = (string)result.Data!;
+
 		engineLineData.Clear();
-		var pgnName = e.File.Name;
+		var pgnName = Path.GetFileName(fullPath);
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
-		var env = AppPaths.BaseDir;
-		var fullPath = Path.Combine(env, pgnName);
-		await using (FileStream fs = new(fullPath, FileMode.Create))
-		{
-			browserFile = e.File;
-			await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-		}
 		var games = FullPGNParser.parsePgnFile(fullPath).ToList();
 		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = DeviationAnalysis.analyzeDeviations(games);
 		GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
@@ -179,9 +181,7 @@
 			logger.LogInformation(crossTableConsole);
 		}
 		logger.LogInformation("Done with calculation");
-		File.Delete(fullPath);
 		StateHasChanged();
-		await Task.CompletedTask;
 	}
 
 	private string FormatNodes(double nodes)

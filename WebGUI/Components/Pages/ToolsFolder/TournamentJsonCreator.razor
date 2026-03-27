@@ -23,16 +23,14 @@
         </div>
     }
 
-    <InputFile id="loadTournamentFile" OnChange="LoadAndActivateFromFile" hidden accept=".json" />
-
     @* ── Load Existing ── *@
     <div class="settings-section">
         <h4>Load Existing Tournament</h4>
         <div class="section-hint">Pick an existing tournament.json to preview, edit, and activate.</div>
-        <label class="upload-label" for="loadTournamentFile">
+        <button class="upload-label" @onclick="BrowseTournamentFile">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
             Pick tournament.json
-        </label>
+        </button>
     </div>
 
     <div class="main-grid">
@@ -571,15 +569,26 @@
         }
     }
 
-    private async Task LoadAndActivateFromFile(InputFileChangeEventArgs e)
+    private async Task BrowseTournamentFile()
     {
+        var initialDir = SettingsService.Settings.TournamentConfigFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
+        var filePath = (string)result.Data!;
+
         statusMessage = "";
 
         try
         {
-            using var stream = e.File.OpenReadStream(maxAllowedSize: 1024 * 1024);
-            using var reader = new StreamReader(stream);
-            var content = await reader.ReadToEndAsync();
+            var content = await File.ReadAllTextAsync(filePath);
 
             // Pretty-print
             try
@@ -590,7 +599,7 @@
             catch { }
 
             var (errors, warnings) = ValidateTournamentJson(content);
-            await ShowPreviewDialog(e.File.Name, content, errors, warnings);
+            await ShowPreviewDialog(Path.GetFileName(filePath), content, errors, warnings);
         }
         catch (Exception ex)
         {

@@ -221,10 +221,11 @@ let writeCrossEngineFiles (outputFolder: string) (dateStr: string) (allScores: S
         for eng in r.Engines do
             match Map.tryFind eng r.UniquelySolved with
             | Some puzzles when not puzzles.IsEmpty ->
+                let nn = r.ScoresByEngine.[eng].NeuralNet
                 let lines =
                     puzzles |> List.choose (fun p ->
                         getSolvedPuzzleEpd p |> Option.map (fun (fen, bm, uciCorrect) ->
-                            $"{fen} bm {bm}; id \"Lichess id {p.PuzzleId}\"; other \"{uciCorrect}\""))
+                            $"{fen} bm {bm}; id \"Lichess id {p.PuzzleId}, engine {eng} (nn:{nn})\"; other \"{uciCorrect}\""))
                 totalUniqSolved <- totalUniqSolved + writeSection swUS (solvedHeader eng) lines
             | _ -> ()
 
@@ -232,10 +233,11 @@ let writeCrossEngineFiles (outputFolder: string) (dateStr: string) (allScores: S
         for eng in r.Engines do
             match Map.tryFind eng r.UniquelyFailed with
             | Some puzzles when not puzzles.IsEmpty ->
+                let nn = r.ScoresByEngine.[eng].NeuralNet
                 let lines =
                     puzzles |> List.choose (fun (p, policyStr) ->
                         getFailedPuzzleEpd p policyStr |> Option.map (fun (fen, bm, am, bmP, amP, uciCorrect, uciPlayed) ->
-                            $"{fen} bm {bm}; am {am}; id \"Lichess id {p.PuzzleId}, policy value for bestmove {bm}={bmP} and move played {am}={amP}\"; other \"{uciCorrect},{uciPlayed}\""))
+                            $"{fen} bm {bm}; am {am}; id \"Lichess id {p.PuzzleId}, engine {eng} (nn:{nn}), policy value for bestmove {bm}={bmP} and move played {am}={amP}\"; other \"{uciCorrect},{uciPlayed}\""))
                 totalUniqFailed <- totalUniqFailed + writeSection swUF (failedHeader eng) lines
             | _ -> ()
 

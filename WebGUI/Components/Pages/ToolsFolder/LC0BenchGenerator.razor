@@ -1,39 +1,44 @@
 ﻿@page "/benchGenerator"
 @inject ILogger<LC0BenchGenerator> logger
-
-<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
+@using WebGUI.Services
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <PageTitle>Tools.BenchLC0</PageTitle>
 
 <MudText Class="mt-4 ml-4 pt-4 pl-4" Typo="Typo.h4">Create benchmark commands based on engine.json file</MudText>
 
-<MudFab Class="ml-3 mt-4" HtmlTag="label" Color="Color.Default" Label="Pick engine.json file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+<MudFab Class="ml-3 mt-4" Color="Color.Default" Label="Pick engine.json file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" OnClick="BrowseEngineJsonFile" />
 <MudTextField Lines=10 T="string" Typo="Typo.h6" Text="@benchmark" @bind-value="benchmark"></MudTextField>
 
 @code {
 
-  IBrowserFile browserFile;
   private string benchmark;
 
-  private async Task OpenPGNFile(InputFileChangeEventArgs e)
+  private async Task BrowseEngineJsonFile()
   {
-    var pgnName = e.File.Name;
-    logger.LogInformation("PGN file opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
+    var initialDir = SettingsService.Settings.EngineDefsFolder;
+    var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
     {
-      browserFile = e.File;
-      await browserFile.OpenReadStream().CopyToAsync(fs);      
-    }
+      { x => x.InitialPath, initialDir },
+      { x => x.FileFilter, "*.json" },
+      { x => x.Mode, FileBrowserMode.File }
+    };
+    var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+    var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+    var result = await dialog.Result;
+    if (result == null || result.Canceled) return;
+    var filePath = (string)result.Data!;
 
-    var selectedConfig = JSON.readSingleEngineConfig(fullPath);
+    var fileName = Path.GetFileName(filePath);
+    logger.LogInformation("Engine JSON file opened {File}", fileName);
+
+    var selectedConfig = JSON.readSingleEngineConfig(filePath);
     var res = EngineProtocol.Engine.createLC0BenchmarkString(selectedConfig);
-    var msg = $"File selected: {pgnName} \nEngine name: {selectedConfig.Name}\n\n{res}";
+    var msg = $"File selected: {fileName} \nEngine name: {selectedConfig.Name}\n\n{res}";
     benchmark = msg;
     logger.LogCritical(msg);
-    File.Delete(fullPath);
-    await Task.CompletedTask;
   }
 
   protected override Task OnInitializedAsync()

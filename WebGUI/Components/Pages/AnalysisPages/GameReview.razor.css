@@ -34,18 +34,7 @@
     background: rgba(255,255,255,0.12);
 }
 
-.gr-engine-tag {
-    font-size: 0.8rem;
-    color: #90CAF9;
-    background: rgba(144, 202, 249, 0.1);
-    border: 1px solid rgba(144, 202, 249, 0.25);
-    border-radius: 4px;
-    padding: 2px 8px;
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+
 
 .gr-progress-text {
     font-size: 0.75rem;
@@ -56,7 +45,7 @@
 
 .gr-main {
     display: grid;
-    grid-template-columns: minmax(300px, 1fr) minmax(300px, 1.2fr) minmax(220px, 0.8fr);
+    grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 0.9fr) minmax(220px, 0.8fr);
     gap: 8px;
     flex: 1;
     min-height: 0;
@@ -81,47 +70,6 @@
     flex-direction: column;
     gap: 6px;
     overflow-y: auto;
-}
-
-/* Move List */
-.gr-movelist {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: 6px;
-    background: rgba(0,0,0,0.2);
-    border-radius: 4px;
-    font-size: 0.82rem;
-    max-height: 250px;
-    overflow-y: auto;
-}
-
-.gr-movenum {
-    color: #888;
-    font-size: 0.75rem;
-    margin-left: 4px;
-}
-
-.gr-move {
-    cursor: pointer;
-    padding: 1px 3px;
-    border-radius: 3px;
-    transition: background 0.1s;
-}
-
-.gr-move:hover {
-    background: rgba(255,255,255,0.1);
-}
-
-.gr-move-selected {
-    background: rgba(255,212,0,0.2) !important;
-    outline: 1px solid rgba(255,212,0,0.4);
-}
-
-.gr-badge {
-    font-weight: bold;
-    font-size: 0.7rem;
-    margin-left: 1px;
 }
 
 /* Classification colors */
@@ -207,13 +155,6 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-}
-
-.gr-pv {
-    font-family: monospace;
-    font-size: 0.78rem;
-    color: #999;
-    word-break: break-all;
 }
 
 /* Stats Cards */

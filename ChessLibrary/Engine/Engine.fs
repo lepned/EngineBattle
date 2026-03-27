@@ -24,12 +24,31 @@ open ChessLibrary.WinboardIntegration
 module Engine =
 
   // Define a class to manage the chess engine process and communicate with it 
-  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool)  =
+  type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool, ?logToFile: bool)  =
       let logDebug (text: string) = logger.LogDebug text
       let logInformation (text: string) = logger.LogInformation text
       let logWarning (text: string) = logger.LogWarning text
       let logError (text: string) = logger.LogError text
       let logCritical (text: string) = logger.LogCritical text
+
+      let engineLogWriter =
+          if defaultArg logToFile false then
+              let dir = Path.Combine(Environment.CurrentDirectory, "logs")
+              if not (Directory.Exists dir) then Directory.CreateDirectory(dir) |> ignore
+              let safeName = config.Name.Replace(" ", "_").Replace("/", "_").Replace("\\", "_")
+              let ts = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss")
+              let path = Path.Combine(dir, $"engine_{safeName}_{ts}.log")
+              logInformation $"Engine I/O logging to: {path}"
+              Some (new StreamWriter(path, append = true, AutoFlush = true))
+          else
+              None
+
+      let logIO (direction: string) (text: string) =
+          match engineLogWriter with
+          | Some sw ->
+              let ts = DateTime.Now.ToString("HH:mm:ss.fff")
+              sw.WriteLine($"[{ts}] {direction} {text}")
+          | None -> ()
 
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
@@ -297,6 +316,7 @@ module Engine =
 
                 for cmd in winboardCmds do
                     logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" s cmd name)
+                    logIO ">>>" cmd
                     // For engines without ping support: add delay after time/otim and before go
                     // to ensure time commands are processed before engine starts searching
                     if cmd.StartsWith "go" then
@@ -307,6 +327,7 @@ module Engine =
             | None ->
                 // Normal UCI
                 engineProcess.StandardInput.WriteLine(s)
+                logIO ">>>" s
                 logDebug (sprintf "Writing to %s: %s" name s)
     
       let assignbackend (option:string) =
@@ -330,7 +351,7 @@ module Engine =
     
       let analysisCommands =
         [
-          //sprintf "setoption name %s value %d" "SmartPruningFactor" 0
+          sprintf "setoption name %s value %d" "MoveOverheadMs" 0
           sprintf "setoption name %s value %d" "MultiPV" 20
         ]
 
@@ -405,6 +426,7 @@ module Engine =
           
           engineProcess.OutputDataReceived.Add(fun args ->
               if not (String.IsNullOrEmpty args.Data) then
+                logIO "<<<" args.Data
                 match winboardHandler with
                 | Some handler ->
                     // Translate Winboard output to UCI
@@ -627,6 +649,9 @@ module Engine =
                 try
                     engineProcess.Close()
                     engineProcess.Dispose()
+                    match engineLogWriter with
+                    | Some sw -> sw.Dispose()
+                    | None -> ()
                     printfn "Engine %s has been shut down." name
                 with
                 | :? System.ObjectDisposedException ->
@@ -1402,16 +1427,16 @@ module EngineHelper =
           let cmds = createInitialUCICommands config
           new ChessEngine(config, cmds, logger)
 
-  let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : ChessEngineWithUCIProcessing =     
+  let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : ChessEngineWithUCIProcessing =
       let validation = Configuration.Validation.validateChessEngineCmds config
       match validation with
-      |Configuration.Validation.Errors errors -> 
+      |Configuration.Validation.Errors errors ->
         for error in errors do
           ConsoleUtils.printInColor ConsoleColor.Red error
         failwith "Engine could not be created"
-      |Configuration.Validation.Ok -> 
+      |Configuration.Validation.Ok ->
           let cmds = createInitialUCICommands config
-          new ChessEngineWithUCIProcessing(callback, config, cmds, logger, writeToConsole) 
+          new ChessEngineWithUCIProcessing(callback, config, cmds, logger, writeToConsole, logToFile = true)
 
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {

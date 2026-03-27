@@ -5,7 +5,12 @@ public class OverlaySetting
 {
   private readonly ConcurrentDictionary<string, OverlaySettings> _overlaySettings = new();
 
-  public double MinPolicyThreshold { get; set; } = 0.05;
+  public double MinPolicyThreshold { get; set; }
+
+  public OverlaySetting(GlobalSettingsService settingsService)
+  {
+    MinPolicyThreshold = settingsService.Settings.MinPolicyThreshold;
+  }
   // Add or update overlay settings for a component by ID
   public void SetOverlaySetting(string componentId, OverlaySettings setting)
   {

@@ -1,8 +1,9 @@
 @page "/results/engine-speed"
 @page "/speed"
 @inject ILogger<SpeedCalculator> logger
-
-<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <PageTitle>Engine Speed</PageTitle>
 
@@ -11,7 +12,7 @@
   <div class="tool-subtitle">NPS, depth and node statistics per engine and game</div>
 
   <div class="tool-controls">
-    <label for="fileInput" class="tool-upload-btn">Load pgn file</label>
+    <button class="tool-upload-btn" @onclick="BrowsePgnFile">Load pgn file</button>
     <div class="tool-input-group" style="margin-bottom:0">
       <label>Min move time (secs)</label>
       <input type="number" class="tool-input" style="width:120px" @bind="minMoveTimeInSecs" min="0" step="1" />
@@ -116,7 +117,6 @@
   private List<SummaryEngineStat> averageSpeedTable = new();
   private List<EngineStatsPerGame> allGamesSpeedTable = new();
   private string fileOpenName = "";
-  IBrowserFile browserFile;
 
   // View state
   private ViewMode activeView = ViewMode.Median;
@@ -217,20 +217,26 @@
   private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
   private void ResetPage() { currentPage = 0; }
 
-  private async Task OpenPGNFile(InputFileChangeEventArgs e)
+  private async Task BrowsePgnFile()
   {
-    var pgnName = e.File.Name;
+    var initialDir = SettingsService.Settings.PgnOutputFolder;
+    var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+    {
+      { x => x.InitialPath, initialDir },
+      { x => x.FileFilter, "*.pgn" },
+      { x => x.Mode, FileBrowserMode.File }
+    };
+    var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+    var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select PGN File", parameters, options);
+    var result = await dialog.Result;
+    if (result == null || result.Canceled) return;
+    var filePath = (string)result.Data!;
+
+    var pgnName = Path.GetFileName(filePath);
     fileOpenName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var fullPath = Path.Combine(env, pgnName);
-    await using (FileStream fs = new(fullPath, FileMode.Create))
-    {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 300000).CopyToAsync(fs);
-    }
 
-    var games = FullPGNParser.parsePgnFile(fullPath).ToList();
+    var games = FullPGNParser.parsePgnFile(filePath).ToList();
     var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games,minMoveTimeInSecs);
     var minMoveTimeInMs = minMoveTimeInSecs * 1000;
     medianSpeedTable =
@@ -268,9 +274,7 @@
 
     currentPage = 0;
     logger.LogInformation("Done with calculation");
-    File.Delete(fullPath);
     StateHasChanged();
-    await Task.CompletedTask;
   }
 
   private string FormatNodes(double nodes)

@@ -174,7 +174,7 @@ let isSacrifice (board: Board) (uciMove: string) : bool =
         let fenAfter = testBoard.FEN()
         let whiteAfter, blackAfter = countMaterial fenAfter
         let materialAfter = if isWhite then whiteAfter else blackAfter
-        let opponentBefore = if isWhite then blackBefore else blackAfter
+        let opponentBefore = if isWhite then blackBefore else whiteBefore
         let opponentAfter = if isWhite then blackAfter else whiteAfter
 
         // Sacrifice: our material dropped by more than what we captured
@@ -225,47 +225,63 @@ let computePlayerStats (playerName: string) (moves: MoveAnalysisResult array) (c
 // Engine Position Analysis (MultiPV)
 // ──────────────────────────────────────────────────────────────
 
-/// Analyze a single position with MultiPV. Returns array of MultiPVResult (one per PV line)
-/// plus the bestmove string from the engine.
-let analyzePosition (engine: ChessEngine) (positionCmd: string) (isWhite: bool) (config: GameReviewConfig) : MultiPVResult array * string =
-    engine.UciNewGame()
-    engine.Position positionCmd
+/// Mutable callback dispatcher for per-search result accumulation.
+type EngineUpdateDispatcher() =
+    member val Handler : Action<EngineUpdate> = Action<EngineUpdate>(fun _ -> ()) with get, set
+
+/// Analyze a single position with MultiPV using ChessEngineWithUCIProcessing.
+/// The dispatcher's Handler is swapped per-search to accumulate results.
+let analyzePosition
+    (engine: ChessEngineWithUCIProcessing)
+    (dispatcher: EngineUpdateDispatcher)
+    (positionCmd: string)
+    (_isWhite: bool)
+    (config: GameReviewConfig)
+    : MultiPVResult array * string =
+
+    // Match EnginePanel pattern: Stop → Position → isready → Go
+    // UciNewGame only for Nodes mode (time mode skips it, matching Play() in AnalysisManager)
+    engine.SendUCICommand(UCICommand.Stop)
+    if config.SearchMode = Nodes then
+        engine.SendUCICommand(UCICommand.UciNewGame)
+    engine.SendUCICommand(UCICommand.PositionWithMoves positionCmd)
     let ok = engine.WaitForReadyOk()
-    if not ok then [||], ""
+    if not ok then
+        printfn "Engine did not respond to isready"
+        [||], ""
     else
 
-    // Send go command
-    match config.SearchMode with
-    | Time -> engine.Go(config.TimePerMove)
-    | Nodes -> engine.GoNodes(config.Nodes)
-    | Depth -> engine.Write(sprintf "go depth %d" config.Depth)
-
-    // Collect MultiPV results — keep only the latest info per multipv index
     let pvResults = Collections.Generic.Dictionary<int, MultiPVResult>()
     let mutable bestMoveStr = ""
-    let mutable cont = true
+    let done' = new ManualResetEventSlim(false)
 
-    while cont do
-        let line = engine.ReadLine()
-        if String.IsNullOrEmpty line then ()
-        elif line.StartsWith "bestmove" then
-            let parts = line.Split(' ')
-            bestMoveStr <- if parts.Length > 1 then parts.[1] else ""
-            cont <- false
-        elif line.StartsWith "info" && line.Contains "depth" then
-            match EngineProtocol.Regex.getEssentialData line isWhite with
-            | Some (d, eval, nodes, _nps, pvLine, _tbHits, _wdl, _sd, mPv) ->
-                let pvIndex = if mPv = 0 then 1 else mPv
-                let bestMove =
-                    if String.IsNullOrEmpty pvLine then ""
-                    else pvLine.Split(' ').[0]
-                pvResults.[pvIndex] <-
-                    { Eval = eval
-                      BestMove = bestMove
-                      PV = pvLine
-                      Depth = d
-                      Nodes = nodes }
-            | None -> ()
+    dispatcher.Handler <- Action<EngineUpdate>(fun update ->
+        match update with
+        | EngineUpdate.Status status ->
+            let pvIndex = if status.MultiPV = 0 then 1 else status.MultiPV
+            let uciPV = status.PVLongSAN
+            let bestMove =
+                if String.IsNullOrEmpty uciPV then ""
+                else uciPV.Split(' ').[0]
+            pvResults.[pvIndex] <-
+                { Eval = status.Eval
+                  BestMove = bestMove
+                  PV = uciPV
+                  Depth = status.Depth
+                  Nodes = status.Nodes }
+        | EngineUpdate.BestMove bm ->
+            bestMoveStr <- bm.Move
+            done'.Set()
+        | _ -> ())
+
+    match config.SearchMode with
+    | Time -> engine.SendUCICommand(UCICommand.GoMoveTime config.TimePerMove)
+    | Nodes -> engine.SendUCICommand(UCICommand.GoNodes config.Nodes)
+    | Depth -> engine.SendUCICommand(UCICommand.RawCommand(sprintf "go depth %d" config.Depth))
+
+    let completed = done'.Wait(30000) // 30s timeout safety net
+    if not completed then printfn "Search timed out for position: %s" positionCmd
+    done'.Dispose()
 
     let results =
         pvResults
@@ -282,7 +298,8 @@ let analyzePosition (engine: ChessEngine) (positionCmd: string) (isWhite: bool) 
 /// Analyze a complete game with an engine. Returns per-move analysis results.
 /// progressCallback receives (currentMove, totalMoves).
 let analyzeGameWithEngine
-    (engine: ChessEngine)
+    (engine: ChessEngineWithUCIProcessing)
+    (dispatcher: EngineUpdateDispatcher)
     (game: PgnGame)
     (config: GameReviewConfig)
     (progressCallback: int -> int -> unit)
@@ -300,7 +317,9 @@ let analyzeGameWithEngine
 
     // Set MultiPV
     if config.MultiPV > 1 then
-        engine.Write(sprintf "setoption name MultiPV value %d" config.MultiPV)
+        engine.SendUCICommand(UCICommand.RawCommand(sprintf "setoption name MultiPV value %d" config.MultiPV))
+
+    engine.WaitForReadyOk() |> ignore
 
     // Single-pass: analyze each position BEFORE the move is played, then play the move.
     // Collect: white-perspective eval, MultiPV data, bestmove, and UCI notation per move.
@@ -333,7 +352,7 @@ let analyzeGameWithEngine
             else
                 // Analyze position before this move
                 let posCmd = board.PositionWithMoves()
-                let pvResults, bestMove = analyzePosition engine posCmd isWhite config
+                let pvResults, bestMove = analyzePosition engine dispatcher posCmd isWhite config
 
                 let bestEval =
                     if pvResults.Length > 0 then pvResults.[0].Eval
@@ -353,7 +372,7 @@ let analyzeGameWithEngine
         progressCallback (totalMoves + 1) (totalMoves + 1)
         let isWhite = board.Position.STM = 0uy
         let posCmd = board.PositionWithMoves()
-        let pvResults, _ = analyzePosition engine posCmd isWhite config
+        let pvResults, _ = analyzePosition engine dispatcher posCmd isWhite config
         let finalEval =
             if pvResults.Length > 0 then pvResults.[0].Eval
             else EvalType.NA
@@ -361,7 +380,7 @@ let analyzeGameWithEngine
 
     // Reset MultiPV to 1
     if config.MultiPV > 1 then
-        engine.Write("setoption name MultiPV value 1")
+        engine.SendUCICommand(UCICommand.RawCommand "setoption name MultiPV value 1")
 
     // Build MoveAnalysisResult for each move
     let results = ResizeArray<MoveAnalysisResult>()
@@ -369,7 +388,8 @@ let analyzeGameWithEngine
     replayBoard.LoadFen startFen
     replayBoard.StartPosition <- startFen
 
-    for i in 0 .. totalMoves - 1 do
+    let analyzedMoves = min totalMoves (min whiteEvals.Count pvDataPerMove.Count)
+    for i in 0 .. analyzedMoves - 1 do
         let move = game.Mainline.[i]
         let isWhite = replayBoard.Position.STM = 0uy
         let ply = i

@@ -1,11 +1,13 @@
 ﻿@using WebGUI
+@using WebGUI.Services
 
 @using System.Text
 
 @inject ILogger<EpdFileVisualization> Logger
+@inject IDialogService DialogService
+@inject GlobalSettingsService SettingsService
 
-<InputFile id="fileInput" OnChange="@OpenCSVFile" hidden />
-<MudFab Class="ml-3 mb-3 mt-6" HtmlTag="label" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+<MudFab Class="ml-3 mb-3 mt-6" Color="Color.Default" Label="Load EPD-file" Size="Size.Large" StartIcon="@Icons.Material.Filled.DownloadForOffline" OnClick="BrowseEpdFile" />
 <MudPaper >
   <MudGrid>
     @foreach (var epd in EPDs)
@@ -21,7 +23,6 @@
 @code {
 
   private List<EPDTypes.EPDEntry> EPDs = new();
-  IBrowserFile browserFile;
 
   string GetHeader(EPDTypes.EPDEntry EPD)
   {
@@ -50,20 +51,23 @@
     return msgBuilder.ToString();
   }
 
-  private async Task OpenCSVFile(InputFileChangeEventArgs e)
+  private async Task BrowseEpdFile()
   {
-    var pgnName = e.File.Name;
-    Logger.LogInformation("CSV file opened {File}", pgnName);
-    var env = AppPaths.BaseDir;
-    var path = Path.Combine(env, pgnName);
-    await using (FileStream fs = new(path, FileMode.Create))
+    var initialDir = SettingsService.Settings.OpeningsFolder;
+    var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
     {
-      browserFile = e.File;
-      await browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 1024 * 2L).CopyToAsync(fs);
-    }
+      { x => x.InitialPath, initialDir },
+      { x => x.FileFilter, "*.epd" },
+      { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+    };
+    var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+    var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select File", parameters, options);
+    var result = await dialog.Result;
+    if (result == null || result.Canceled) return;
+    var filePath = (string)result.Data!;
 
-    EPDs = EPDExtractor.readEPDs(path).Take(100).ToList();
-    File.Delete(path);    
+    Logger.LogInformation("EPD file opened {File}", Path.GetFileName(filePath));
+    EPDs = EPDExtractor.readEPDs(filePath).Take(100).ToList();
   }
 }
 

@@ -1,5 +1,6 @@
 @page "/analysis/game-review"
 
+@using WebGUI.Components.Layout
 @using WebGUI.Components.Layout.ChessboardLayout
 @using WebGUI.Plotting
 @using WebGUI.Services
@@ -7,6 +8,8 @@
 @using System.Globalization
 @using Microsoft.FSharp.Core
 @using static ChessLibrary.GameAccuracyAnalysis
+@using static ChessLibrary.PGNTypes
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -16,58 +19,22 @@
 @inject GameReviewService ReviewService
 @inject JavaScriptInteropService JsInteropService
 @inject GlobalSettingsService SettingsService
+@inject AnalysisNavigationService AnalysisNav
 
 <PageTitle>Game Review</PageTitle>
 
-<InputFile id="pgnFileInput" OnChange="@OpenPGNFile" hidden />
-<InputFile id="engineFileInput" OnChange="@OpenEngineFile" hidden />
 
 <div class="game-review">
     @* ── Toolbar ── *@
     <div class="gr-toolbar">
-        <label class="gr-toolbar-btn" for="pgnFileInput" title="Load PGN file">
+        <button class="gr-toolbar-btn" @onclick="BrowsePGNFile" title="Load PGN file">
             <MudIcon Icon="@Icons.Material.Filled.FileOpen" Size="Size.Small" /> PGN
-        </label>
-        <label class="gr-toolbar-btn" for="engineFileInput" title="Load engine config JSON">
-            <MudIcon Icon="@Icons.Material.Filled.Memory" Size="Size.Small" /> Engine
-        </label>
-
-        @if (!string.IsNullOrEmpty(engineName))
-        {
-            <span class="gr-engine-tag">@engineName</span>
-        }
-
-        <div class="gr-mode-select">
-            <MudSelect T="SearchMode" @bind-Value="searchMode" Dense="true" Margin="Margin.Dense"
-                       Variant="Variant.Outlined" Label="Mode" Style="width:110px">
-                <MudSelectItem Value="SearchMode.Time">Time</MudSelectItem>
-                <MudSelectItem Value="SearchMode.Nodes">Nodes</MudSelectItem>
-                <MudSelectItem Value="SearchMode.Depth">Depth</MudSelectItem>
-            </MudSelect>
-        </div>
-
-        <div class="gr-limit-input">
-            @if (searchMode == SearchMode.Time)
-            {
-                <MudNumericField T="int" @bind-Value="timePerMove" Label="ms/move" Min="100" Max="60000"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" Style="width:100px" />
-            }
-            else if (searchMode == SearchMode.Nodes)
-            {
-                <MudNumericField T="int" @bind-Value="nodes" Label="Nodes" Min="1000" Max="100000000"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" Style="width:120px" />
-            }
-            else
-            {
-                <MudNumericField T="int" @bind-Value="depth" Label="Depth" Min="1" Max="99"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" Style="width:80px" />
-            }
-        </div>
+        </button>
 
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
                    OnClick="StartAnalysis" Disabled="@(isAnalyzing || currentGame == null || engineConfig == null)"
                    StartIcon="@Icons.Material.Filled.PlayArrow">
-            Analyze
+            Analyze All
         </MudButton>
 
         <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
@@ -103,38 +70,27 @@
 
     @* ── Main Content ── *@
     <div class="gr-main">
-        @* ── Left: Board + Move List ── *@
+        @* ── Left: EnginePanel ── *@
         <div class="gr-left">
+            <EnginePanel @ref="enginePanel" FEN="@fen" ChessBoard="@board"
+                         Id="grEngine" Engine="engineConfig"
+                         OnNewEngineLoaded="OnNewEngineLoaded" />
+        </div>
+
+        @* ── Center: Board + Annotated Move List ── *@
+        <div class="gr-center">
             <Chessboard @ref="chessBoardRazor" FENposition="@fen" ShowFenField="true"
-                        ShowChessNavButtons="true" ShowMoveList="false"
-                        MakeMoveListClickable="false"
+                        ShowChessNavButtons="true" ShowMoveList="true"
+                        MakeMoveListClickable="true"
                         ChessBoard="@board"
                         OnMoveMadeOnBoard="OnBoardNavigated"
                         OnNewFENOnBoard="OnBoardNavigated"
                         DetectedOpeningName="@openingName"
                         DetectedOpeningECO="@openingECO" />
-
-            @if (analysisResult != null)
-            {
-                <div class="gr-movelist">
-                    @foreach (var move in analysisResult.Moves)
-                    {
-                        @if (move.Color == "w")
-                        {
-                            <span class="gr-movenum">@move.MoveNumber.</span>
-                        }
-                        <span class="gr-move @GetMoveClass(move.Classification) @(move.Ply == selectedPly ? "gr-move-selected" : "")"
-                              @onclick="async () => await SelectMove(move.Ply)"
-                              title="@($"{move.Classification} | Accuracy: {move.MoveAccuracy:F0}% | WP loss: {move.WinProbLoss*100:F1}%")">
-                            @move.San<span class="gr-badge">@GetBadge(move.Classification)</span>
-                        </span>
-                    }
-                </div>
-            }
         </div>
 
-        @* ── Center: Chart + Move Detail ── *@
-        <div class="gr-center">
+        @* ── Right: Stats + Chart + Game List ── *@
+        <div class="gr-right">
             @if (isAnalyzing && currentGame != null)
             {
                 <div class="gr-game-info">
@@ -149,38 +105,6 @@
 
             <div @ref="chartElement" class="gr-chart" style="@(analysisResult == null ? "display:none" : "")"></div>
 
-            @if (analysisResult != null && selectedMove != null)
-            {
-                <div class="gr-move-detail">
-                    <div class="gr-detail-header">
-                        <span class="gr-detail-move @GetMoveClass(selectedMove.Classification)">
-                            @(selectedMove.Color == "w" ? $"{selectedMove.MoveNumber}." : $"{selectedMove.MoveNumber}...")@selectedMove.San
-                        </span>
-                        <span class="gr-detail-chip @GetMoveClass(selectedMove.Classification)">@selectedMove.Classification</span>
-                    </div>
-                    <div class="gr-detail-body">
-                        @if (!string.IsNullOrEmpty(selectedMove.BestMoveSan) && selectedMove.BestMove != selectedMove.UciMove)
-                        {
-                            <div>Best: <strong>@selectedMove.BestMoveSan</strong></div>
-                        }
-                        <div>Eval: @selectedMove.EvalBefore</div>
-                        <div>WP: @($"{selectedMove.WinProbBefore*100:F1}%") → @($"{selectedMove.WinProbAfter*100:F1}%")</div>
-                        <div>Accuracy: @($"{selectedMove.MoveAccuracy:F0}%")</div>
-                        @if (selectedMove.Depth > 0)
-                        {
-                            <div>Depth: @selectedMove.Depth | Nodes: @FormatNodes(selectedMove.Nodes)</div>
-                        }
-                        @if (!string.IsNullOrEmpty(selectedMove.PV))
-                        {
-                            <div class="gr-pv">PV: @GetSanPV(selectedMove)</div>
-                        }
-                    </div>
-                </div>
-            }
-        </div>
-
-        @* ── Right: Stats + Game List ── *@
-        <div class="gr-right">
             @if (analysisResult != null)
             {
                 <div class="gr-stats-card">
@@ -206,7 +130,35 @@
                         </div>
                     </div>
                 </div>
+            }
 
+            @if (analysisResult != null && selectedMove != null)
+            {
+                <div class="gr-move-detail">
+                    <div class="gr-detail-header">
+                        <span class="gr-detail-move @GetMoveClass(selectedMove.Classification)">
+                            @(selectedMove.Color == "w" ? $"{selectedMove.MoveNumber}." : $"{selectedMove.MoveNumber}...")@selectedMove.San
+                        </span>
+                        <span class="gr-detail-chip @GetMoveClass(selectedMove.Classification)">@selectedMove.Classification</span>
+                    </div>
+                    <div class="gr-detail-body">
+                        @if (!string.IsNullOrEmpty(selectedMove.BestMoveSan) && selectedMove.BestMove != selectedMove.UciMove)
+                        {
+                            <div>Best: <strong>@selectedMove.BestMoveSan</strong></div>
+                        }
+                        <div>Eval: @selectedMove.EvalBefore</div>
+                        <div>WP: @($"{selectedMove.WinProbBefore*100:F1}%") → @($"{selectedMove.WinProbAfter*100:F1}%")</div>
+                        <div>Accuracy: @($"{selectedMove.MoveAccuracy:F0}%")</div>
+                        @if (selectedMove.Depth > 0)
+                        {
+                            <div>Depth: @selectedMove.Depth | Nodes: @FormatNodes(selectedMove.Nodes)</div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (analysisResult != null)
+            {
                 <div class="gr-stats-card">
                     <h4>Classifications</h4>
                     <table class="gr-class-table">
@@ -278,6 +230,7 @@
     // Engine
     private EngineConfig engineConfig;
     private string engineName = "";
+    private WebGUI.Components.Layout.EnginePanel enginePanel;
 
     // PGN / Games
     private List<PgnGame> games;
@@ -294,7 +247,7 @@
     // Search config
     private SearchMode searchMode = SearchMode.Time;
     private int timePerMove = 1000;
-    private int nodes = 1000000;
+    private int nodes = 5000;
     private int depth = 18;
 
     // Move selection
@@ -321,6 +274,19 @@
         if (firstRender)
         {
             chessModule = await JsInteropService.ImportModuleAsync(JS);
+
+            // Load Game Review defaults from settings
+            var s = SettingsService.Settings;
+            searchMode = s.ReviewSearchMode switch
+            {
+                "Nodes" => SearchMode.Nodes,
+                "Depth" => SearchMode.Depth,
+                _ => SearchMode.Time
+            };
+            timePerMove = s.ReviewTimePerMove;
+            nodes = s.ReviewNodes;
+            depth = s.ReviewDepth;
+
             if (engineConfig == null)
             {
                 var path = SettingsService.Settings.DefaultEnginePath;
@@ -330,35 +296,54 @@
                     {
                         engineConfig = Configuration.JSON.readSingleEngineConfig(path);
                         engineName = engineConfig?.Name ?? "";
-                        StateHasChanged();
                     }
-                    catch { /* stale/invalid path */ }
+                    catch (Exception ex) { logger.LogWarning(ex, "Failed to load default engine from {Path}", path); }
                 }
             }
+
+            // Restore state from round-trip navigation
+            if (AnalysisNav.ReviewGames != null)
+            {
+                games = AnalysisNav.ReviewGames;
+                var savedAnalysis = AnalysisNav.ReviewAnalysisResult;
+                if (!string.IsNullOrEmpty(AnalysisNav.ReviewEngineName))
+                    engineName = AnalysisNav.ReviewEngineName;
+                var navPly = AnalysisNav.ReviewSelectedPly;
+                var navGame = AnalysisNav.ReviewCurrentGame;
+                AnalysisNav.ClearReviewState();
+
+                if (navGame != null)
+                {
+                    await SelectGame(navGame); // this resets analysisResult to null
+                    analysisResult = savedAnalysis; // restore after SelectGame
+
+                    // Re-render the accuracy chart
+                    if (analysisResult != null && analysisResult.Moves.Length > 0)
+                    {
+                        accuracyPlot = new AccuracyPlot(chessModule, chartElement);
+                        await accuracyPlot.RenderAsync(analysisResult);
+                    }
+
+                    if (navPly >= 0 && gameFens != null && navPly < gameFens.Length)
+                        await SelectMove(navPly);
+                }
+            }
+
+            StateHasChanged();
         }
     }
 
     // ── File Loading ──
 
-    private async Task OpenPGNFile(InputFileChangeEventArgs e)
+    private async Task BrowsePGNFile()
     {
+        var path = await BrowseFileDialog(SettingsService.Settings.PgnOutputFolder, "*.pgn", "Select PGN File");
+        if (path == null) return;
         try
         {
-            var file = e.File;
-            using var stream = file.OpenReadStream(maxAllowedSize: 300 * 1024 * 1024);
-            using var reader = new StreamReader(stream);
-            var content = await reader.ReadToEndAsync();
-
-            var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
-            await File.WriteAllTextAsync(tempPath, content);
-
-            var parsed = FullPGNParser.parsePgnFile(tempPath);
-            games = parsed.ToList();
-
+            games = FullPGNParser.parsePgnFile(path).ToList();
             if (games.Count > 0)
-            {
                 await SelectGame(games[0]);
-            }
             analysisResult = null;
             StateHasChanged();
         }
@@ -368,26 +353,26 @@
         }
     }
 
-    private async Task OpenEngineFile(InputFileChangeEventArgs e)
+    private async Task<string> BrowseFileDialog(string initialDir, string filter, string title)
     {
-        try
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
         {
-            var file = e.File;
-            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
-            using var reader = new StreamReader(stream);
-            var content = await reader.ReadToEndAsync();
+            { x => x.InitialPath, initialDir },
+            { x => x.FileFilter, filter },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>(title, parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return null;
+        return (string)result.Data!;
+    }
 
-            var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
-            await File.WriteAllTextAsync(tempPath, content);
-
-            engineConfig = Configuration.JSON.readSingleEngineConfig(tempPath);
-            engineName = engineConfig?.Name ?? "";
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error loading engine config");
-        }
+    private async void OnNewEngineLoaded(EngineConfigEventArgs args)
+    {
+        engineConfig = args.EngineConfig;
+        engineName = engineConfig?.Name ?? "";
+        await InvokeAsync(StateHasChanged);
     }
 
     // ── Game Selection ──
@@ -422,6 +407,119 @@
 
     // ── Analysis ──
 
+    private PgnGame BuildGameWithVariations(PgnGame game, GameAnalysisResult analysis)
+    {
+        // Clone mainline and attach engine PV as variations where the engine disagrees
+        var newMainline = new List<PlyMove>();
+        foreach (var ply in game.Mainline)
+        {
+            var newPly = new PlyMove(ply.Ply, ply.MoveNumber, ply.Color, ply.San, ply.Comment,
+                                     ply.Nags, new List<List<PlyMove>>(ply.Variations));
+            newMainline.Add(newPly);
+        }
+
+        foreach (var move in analysis.Moves)
+        {
+            if (string.IsNullOrEmpty(move.PV)) continue;
+            if (move.Ply < 0 || move.Ply >= newMainline.Count) continue;
+
+            // Add eval comment to mainline move
+            var evalStr = FormatEval(move.BestEval);
+            var mainPly = newMainline[move.Ply];
+            var classSymbol = GetClassSymbol(move.Classification);
+            if (!string.IsNullOrEmpty(classSymbol) || !string.IsNullOrEmpty(evalStr))
+            {
+                var comment = $"{classSymbol} {evalStr} acc={move.MoveAccuracy:F0}%".Trim();
+                mainPly.Comment = string.IsNullOrEmpty(mainPly.Comment) ? comment : $"{mainPly.Comment} {comment}";
+            }
+
+            // Only add variation if engine's best move differs from played move
+            if (move.BestMove == move.UciMove) continue;
+
+            var pvMoves = move.PV.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (pvMoves.Length == 0) continue;
+
+            try
+            {
+                var variationLine = BuildVariationLine(move, pvMoves);
+                if (variationLine != null && variationLine.Count > 0)
+                {
+                    mainPly.Variations.Add(variationLine);
+                    logger.LogInformation("Added variation at ply {Ply}: {San} → {BestSan} ({Count} moves)",
+                        move.Ply, move.San, move.BestMoveSan, variationLine.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Failed to build variation at ply {Ply}: {Error}", move.Ply, ex.Message);
+            }
+        }
+
+        return new PgnGame(game.GameNumber, game.GameMetaData, newMainline,
+                           game.RootVariations, game.Comments, game.Fen, game.Raw);
+    }
+
+    private List<PlyMove> BuildVariationLine(MoveAnalysisResult move, string[] pvMoves)
+    {
+        var tempBoard = new Chess.Board();
+        string fen;
+        if (move.Ply == 0)
+            fen = string.IsNullOrWhiteSpace(currentGame?.Fen) ? Chess.startPos : currentGame.Fen;
+        else if (gameFens != null && move.Ply - 1 < gameFens.Length)
+            fen = gameFens[move.Ply - 1];
+        else
+            fen = Chess.startPos;
+
+        tempBoard.LoadFen(fen);
+
+        var line = new List<PlyMove>();
+        var currentPly = move.Ply;
+
+        foreach (var uciMove in pvMoves)
+        {
+            try
+            {
+                var sanCountBefore = tempBoard.SanMovesPlayed.Count;
+                tempBoard.PlayUciMove(uciMove);
+                if (tempBoard.SanMovesPlayed.Count <= sanCountBefore) break;
+
+                var san = tempBoard.SanMovesPlayed[tempBoard.SanMovesPlayed.Count - 1];
+                var moveNumber = (currentPly / 2) + 1;
+                var color = currentPly % 2 == 0 ? "w" : "b";
+                var comment = line.Count == 0 ? $"{FormatEval(move.BestEval)} d={move.Depth}" : "";
+
+                line.Add(new PlyMove(currentPly, moveNumber, color, san, comment,
+                                     Microsoft.FSharp.Collections.ListModule.Empty<int>(),
+                                     new List<List<PlyMove>>()));
+                currentPly++;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("PV conversion failed at ply {Ply} move '{Move}': {Error}", currentPly, uciMove, ex.Message);
+                break;
+            }
+        }
+
+        return line;
+    }
+
+    private static string GetClassSymbol(MoveClassification c)
+    {
+        if (c.IsBrilliant) return "!!";
+        if (c.IsGreat) return "!";
+        if (c.IsInaccuracy) return "?!";
+        if (c.IsMistake) return "?";
+        if (c.IsBlunder) return "??";
+        return "";
+    }
+
+    private static string FormatEval(EvalType eval)
+    {
+        if (eval.IsCP) return $"{((EvalType.CP)eval).Info / 100.0:+0.00;-0.00}";
+        if (eval.IsMate) return $"M{((EvalType.Mate)eval).Info}";
+        return "";
+    }
+
     private async Task StartAnalysis()
     {
         if (currentGame == null || engineConfig == null || isAnalyzing) return;
@@ -432,18 +530,19 @@
         progressPercent = 0;
         analysisResult = null;
         accuracyPlot = null;
+        analysisCts?.Dispose();
         analysisCts = new CancellationTokenSource();
 
         // Clear previous chart
         if (chessModule != null)
         {
-            try { await chessModule.InvokeVoidAsync("clearQPlot", chartElement, new { }); } catch { }
+            try { await chessModule.InvokeVoidAsync("clearQPlot", chartElement, new { }); }
+            catch (Exception ex) { logger.LogDebug(ex, "Failed to clear Q-value plot"); }
         }
 
         StateHasChanged();
 
-        var config = GameReviewConfig.Default;
-        config = new GameReviewConfig(searchMode, timePerMove, nodes, depth, 3, true);
+        var config = new GameReviewConfig(searchMode, timePerMove, nodes, depth, 3, true);
 
         var progress = new Progress<(int current, int total)>(p =>
         {
@@ -459,12 +558,29 @@
         try
         {
             analysisResult = await ReviewService.AnalyzeGameAsync(
-                currentGame, engineConfig, config, progress, analysisCts.Token);
+                currentGame, engineConfig, config, progress, analysisCts.Token,
+                update => enginePanel?.HandleUpdate(update));
 
             if (analysisResult != null && analysisResult.Moves.Length > 0)
             {
                 accuracyPlot = new AccuracyPlot(chessModule, chartElement);
                 await accuracyPlot.RenderAsync(analysisResult);
+
+                // Rebuild game with engine PV lines as variations and reload into board
+                var annotatedGame = BuildGameWithVariations(currentGame, analysisResult);
+                var startFen = string.IsNullOrWhiteSpace(annotatedGame.Fen) ? Chess.startPos : annotatedGame.Fen;
+                board.ResetBoardStateFromFen(startFen);
+                board.LoadPGNGameWithVariations(annotatedGame);
+                gameFens = board.MovesAndFenPlayed.Select(m => m.FenAfterMove).ToArray();
+                fen = startFen;
+
+                if (chessBoardRazor != null)
+                {
+                    await chessBoardRazor.OnNotifyMoveAndFen(board.MovesAndFenPlayed.Count > 0
+                        ? board.MovesAndFenPlayed[board.MovesAndFenPlayed.Count - 1]
+                        : MoveAndFen.FirstEntry);
+                }
+
                 await SelectMove(0);
             }
         }
@@ -479,6 +595,8 @@
         finally
         {
             isAnalyzing = false;
+            analysisCts?.Dispose();
+            analysisCts = null;
             StateHasChanged();
         }
     }
@@ -612,11 +730,21 @@
         }
         sb.AppendLine(currentGame.GameMetaData.Result);
 
-        var fileName = $"review_{analysisResult.WhitePlayer}_vs_{analysisResult.BlackPlayer}.pgn";
-        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var base64 = Convert.ToBase64String(bytes);
-        await JS.InvokeVoidAsync("eval",
-            $"{{ var a=document.createElement('a'); a.href='data:text/plain;base64,{base64}'; a.download='{fileName}'; a.click(); }}");
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var cleanWhite = new string(analysisResult.WhitePlayer.Where(c => !invalidChars.Contains(c)).ToArray());
+        var cleanBlack = new string(analysisResult.BlackPlayer.Where(c => !invalidChars.Contains(c)).ToArray());
+        var fileName = $"review_{cleanWhite}_vs_{cleanBlack}.pgn";
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("eval",
+                $"(function(){{ var a=document.createElement('a'); a.href='data:text/plain;base64,{base64}'; a.download='{fileName.Replace("'", "\\'")}'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }})()");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to export annotated PGN");
+        }
     }
 
     // ── Helpers ──
@@ -693,50 +821,6 @@
         return hasMoves ? $"{accuracy:F1}%" : "—";
     }
 
-    private string GetSanPV(MoveAnalysisResult move)
-    {
-        if (string.IsNullOrEmpty(move.PV)) return "";
-        try
-        {
-            var pvBoard = new Chess.Board();
-            // Set up position before this move
-            if (move.Ply < gameFens.Length)
-            {
-                var fenBefore = move.Ply > 0 ? gameFens[move.Ply - 1] :
-                    (string.IsNullOrWhiteSpace(currentGame?.Fen) ? Chess.startPos : currentGame.Fen);
-                pvBoard.LoadFen(fenBefore);
-            }
-            else return move.PV;
-
-            var uciMoves = move.PV.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var sb = new StringBuilder();
-            int moveNum = move.MoveNumber;
-            bool isWhite = move.Color == "w";
-
-            foreach (var uci in uciMoves)
-            {
-                if (isWhite)
-                    sb.Append($"{moveNum}.");
-                else if (sb.Length == 0)
-                    sb.Append($"{moveNum}...");
-
-                var san = pvBoard.GetSanFromUci(uci.Trim());
-                sb.Append(san != null && OptionModule.IsSome(san) ? san.Value : uci);
-                sb.Append(' ');
-
-                try { pvBoard.PlayUciMove(uci.Trim()); } catch { break; }
-
-                if (!isWhite) moveNum++;
-                isWhite = !isWhite;
-            }
-            return sb.ToString().Trim();
-        }
-        catch
-        {
-            return move.PV;
-        }
-    }
-
     private static string FormatNodes(long n)
     {
         if (n >= 1_000_000_000) return $"{n / 1_000_000_000.0:F1}G";
@@ -747,7 +831,10 @@
 
     public async ValueTask DisposeAsync()
     {
-        CancelAnalysis();
-        analysisCts?.Dispose();
+        ReviewService.Cancel();
+        try { analysisCts?.Cancel(); } catch (ObjectDisposedException) { }
+        try { analysisCts?.Dispose(); } catch (ObjectDisposedException) { }
+        analysisCts = null;
+        await ValueTask.CompletedTask;
     }
 }

@@ -581,6 +581,7 @@ let performValueNetworkTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency: int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) =
 
     let concurrencyLevel = max 1 concurrency
@@ -601,6 +602,8 @@ let performValueNetworkTest
             for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
             puzzleCh.Writer.Complete()
 
+            let mutable processedCount = 0
+            let total = puzzles.Length
             let resultsBag = ConcurrentBag<PuzzleResult>()
             let worker (agent: MailboxProcessor<EngineMsg>) = async {
                 let mutable keepGoing = true
@@ -609,6 +612,8 @@ let performValueNetworkTest
                     if ok then
                         let! result = runPuzzleViaAgent agent true puzzle
                         resultsBag.Add(result)
+                        let count = Interlocked.Increment(&processedCount)
+                        if count % 10 = 0 || count = total then onProgress count
                     else
                         keepGoing <- false
             }
@@ -665,6 +670,7 @@ let performPolicyOrSearchTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) =
 
     let concurrency = max 1 concurrency
@@ -680,6 +686,8 @@ let performPolicyOrSearchTest
         for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
         puzzleCh.Writer.Complete()
 
+        let mutable processedCount = 0
+        let total = puzzles.Length
         let resultsBag = ConcurrentBag<PuzzleResult>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
@@ -688,6 +696,8 @@ let performPolicyOrSearchTest
                 if ok then
                     let! result = runPuzzleViaAgent agent false puzzle
                     resultsBag.Add(result)
+                    let count = Interlocked.Increment(&processedCount)
+                    if count % 10 = 0 || count = total then onProgress count
                 else
                     keepGoing <- false
         }
@@ -748,6 +758,7 @@ let performSolveTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) =
 
     let concurrency = max 1 concurrency
@@ -763,6 +774,8 @@ let performSolveTest
         for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
         puzzleCh.Writer.Complete()
 
+        let mutable processedCount = 0
+        let total = puzzles.Length
         let resultsBag = ConcurrentBag<PuzzleResult>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
@@ -771,6 +784,8 @@ let performSolveTest
                 if ok then
                     let! result = runSolvePuzzleViaAgent agent puzzle
                     resultsBag.Add(result)
+                    let count = Interlocked.Increment(&processedCount)
+                    if count % 10 = 0 || count = total then onProgress count
                 else
                     keepGoing <- false
         }
@@ -828,6 +843,7 @@ let performPolicyMultiTopNTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) : Score list =
 
     let concurrency = max 1 concurrency
@@ -843,6 +859,8 @@ let performPolicyMultiTopNTest
         for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
         puzzleCh.Writer.Complete()
 
+        let mutable processedCount = 0
+        let total = puzzles.Length
         let resultsBag = ConcurrentBag<CsvPuzzleData * float * Map<int, bool>>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
@@ -851,6 +869,8 @@ let performPolicyMultiTopNTest
                 if ok then
                     let! result = runPuzzleViaAgentMultiTopN agent topNs puzzle
                     resultsBag.Add(result)
+                    let count = Interlocked.Increment(&processedCount)
+                    if count % 10 = 0 || count = total then onProgress count
                 else
                     keepGoing <- false
         }
@@ -869,15 +889,15 @@ let performPolicyMultiTopNTest
         let avgRating =
           if allResults.Length = 0 then 0.0
           else allResults |> Array.averageBy (fun (p, _, _) -> p.Rating)
-        let avgKLD =
-          if allResults.Length = 0 then 0.0
-          else allResults |> Array.averageBy (fun (_, kld, _) -> kld)
         let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
 
         // Produce one Score per topN threshold
         topNs |> List.map (fun topN ->
             let correct = allResults |> Array.filter (fun (_, _, m) -> m.[topN])
             let failed  = allResults |> Array.filter (fun (_, _, m) -> not m.[topN])
+            let avgKLD =
+              if correct.Length = 0 then 0.0
+              else correct |> Array.averageBy (fun (_, kld, _) -> kld)
             let w, d, l = correct.Length, 0, failed.Length
 
             let diffElo = EloCalculator.eloDiffWDL w d l
@@ -914,6 +934,7 @@ let performPolicyTopNTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) =
 
     let concurrency = max 1 concurrency
@@ -928,6 +949,8 @@ let performPolicyTopNTest
         for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
         puzzleCh.Writer.Complete()
 
+        let mutable processedCount = 0
+        let total = puzzles.Length
         let resultsBag = ConcurrentBag<PuzzleResult>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
@@ -936,6 +959,8 @@ let performPolicyTopNTest
                 if ok then
                     let! result = runPuzzleViaAgentTopN agent topN puzzle
                     resultsBag.Add(result)
+                    let count = Interlocked.Increment(&processedCount)
+                    if count % 10 = 0 || count = total then onProgress count
                 else
                     keepGoing <- false
         }
@@ -963,8 +988,8 @@ let performPolicyTopNTest
         let perf    = avg + diffElo
         let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
         let avgKLD =
-          if results.Length = 0 then 0.0
-          else results |> Array.averageBy (fun r -> r.KLD)
+          if correct.Length = 0 then 0.0
+          else correct |> Array.averageBy (fun r -> r.KLD)
         let typeLabel = if topN = 1 then "Policy" else sprintf "pTop%d" topN
         if topN = 1 then
           printfn "\nPolicy network rating performance: %.0f (avg %.0f + Δ%.0f) Nodes 1 Theme: %s  AvgKLD: %.4f" perf avg diffElo theme avgKLD
@@ -998,6 +1023,7 @@ let performValueMultiTopNTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) : Score list =
 
     let concurrency = max 1 concurrency
@@ -1013,6 +1039,8 @@ let performValueMultiTopNTest
         for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
         puzzleCh.Writer.Complete()
 
+        let mutable processedCount = 0
+        let total = puzzles.Length
         let resultsBag = ConcurrentBag<CsvPuzzleData * Map<int, bool>>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
@@ -1021,6 +1049,8 @@ let performValueMultiTopNTest
                 if ok then
                     let! result = runPuzzleViaAgentValueMultiTopN agent topNs puzzle
                     resultsBag.Add(result)
+                    let count = Interlocked.Increment(&processedCount)
+                    if count % 10 = 0 || count = total then onProgress count
                 else
                     keepGoing <- false
         }
@@ -1080,6 +1110,7 @@ let performValueTopNTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (onProgress: int -> unit)
   (ct: CancellationToken) =
 
     let concurrency = max 1 concurrency
@@ -1094,6 +1125,8 @@ let performValueTopNTest
         for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
         puzzleCh.Writer.Complete()
 
+        let mutable processedCount = 0
+        let total = puzzles.Length
         let resultsBag = ConcurrentBag<PuzzleResult>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
@@ -1102,6 +1135,8 @@ let performValueTopNTest
                 if ok then
                     let! result = runPuzzleViaAgentValueTopN agent topN puzzle
                     resultsBag.Add(result)
+                    let count = Interlocked.Increment(&processedCount)
+                    if count % 10 = 0 || count = total then onProgress count
                 else
                     keepGoing <- false
         }
@@ -1213,58 +1248,66 @@ let runTest
             let avg = puzzles |> Array.averageBy (fun p -> p.Rating)
             printfn "\nRating group %d (avg %.0f), theme \"%s\"" rating avg themeLabel
 
-            if hasSearch && nodes > 0 then
-              let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel ct
-              sendU (PuzzleResult score)
-              results.Add score
-            if hasSolve && nodes > 0 then
-              let score = performSolveTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel ct
-              sendU (PuzzleResult score)
-              results.Add score
-            // Run merged policy topN tests (single pass over puzzles)
-            if policyTopNs.Length > 0 && hasLiveStats && not ct.IsCancellationRequested then
-              let scores = performPolicyMultiTopNTest policyTopNs engine puzzles theme input.NumberOfPuzzlesInParallel ct
-              for score in scores do
+            let total = puzzles.Length
+            let mkProgress testType processed = sendU (Progress(processed, total, $"{engine.Name} — {testType}"))
+
+            try
+              if hasSearch && nodes > 0 then
+                let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress "Search") ct
                 sendU (PuzzleResult score)
                 results.Add score
-            elif policyTopNs.Length > 0 && not hasLiveStats then
-              RuntimeUtilities.ConsoleUtils.yellowConsole $"\nSkipping policy TopN tests: engine '{engine.Name}' does not support LogLiveStats (requires Lc0/Ceres)"
-            // Run merged value topN tests (single pass over puzzles)
-            if valueTopNs.Length > 0 && hasLiveStats && not ct.IsCancellationRequested then
-              let scores = performValueMultiTopNTest valueTopNs engine puzzles theme input.NumberOfPuzzlesInParallel ct
-              for score in scores do
+              if hasSolve && nodes > 0 then
+                let score = performSolveTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress "Solve") ct
                 sendU (PuzzleResult score)
                 results.Add score
-            // run each remaining sub-test (skip Policy/PolicyTopN/ValueTopN, already handled)
-            for test in toRun do
-              if ct.IsCancellationRequested then () else
-              match test with
-              | Value when hasLiveStats ->
-                  let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel ct
+              // Run merged policy topN tests (single pass over puzzles)
+              if policyTopNs.Length > 0 && hasLiveStats && not ct.IsCancellationRequested then
+                let topNLabel = policyTopNs |> List.map string |> String.concat "," |> sprintf "Policy [%s]"
+                let scores = performPolicyMultiTopNTest policyTopNs engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress topNLabel) ct
+                for score in scores do
                   sendU (PuzzleResult score)
                   results.Add score
-
-              | Policy -> ()       // already handled in merged multi-topN
-              | PolicyTopN _ -> () // already handled in merged multi-topN
-              | ValueTopN _ -> ()  // already handled in merged multi-topN
-
-              | Search node when node > 1 ->
-                  let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel ct
+              elif policyTopNs.Length > 0 && not hasLiveStats then
+                RuntimeUtilities.ConsoleUtils.yellowConsole $"\nSkipping policy TopN tests: engine '{engine.Name}' does not support LogLiveStats (requires Lc0/Ceres)"
+              // Run merged value topN tests (single pass over puzzles)
+              if valueTopNs.Length > 0 && hasLiveStats && not ct.IsCancellationRequested then
+                let vTopNLabel = valueTopNs |> List.map string |> String.concat "," |> sprintf "Value [%s]"
+                let scores = performValueMultiTopNTest valueTopNs engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress vTopNLabel) ct
+                for score in scores do
                   sendU (PuzzleResult score)
                   results.Add score
+              // run each remaining sub-test (skip Policy/PolicyTopN/ValueTopN, already handled)
+              for test in toRun do
+                if ct.IsCancellationRequested then () else
+                match test with
+                | Value when hasLiveStats ->
+                    let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress "Value") ct
+                    sendU (PuzzleResult score)
+                    results.Add score
 
-              | Search node when node <= 1 ->
-                  printfn "  → Skipping Search test with %d nodes (requires node count higher than 1)" node
+                | Policy -> ()       // already handled in merged multi-topN
+                | PolicyTopN _ -> () // already handled in merged multi-topN
+                | ValueTopN _ -> ()  // already handled in merged multi-topN
 
-              | Solve node when node > 1 ->
-                  let score = performSolveTest node engine puzzles theme input.NumberOfPuzzlesInParallel ct
-                  sendU (PuzzleResult score)
-                  results.Add score
+                | Search node when node > 1 ->
+                    let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress $"Search {node}n") ct
+                    sendU (PuzzleResult score)
+                    results.Add score
 
-              | Solve node when node <= 1 ->
-                  printfn "  → Skipping Solve test with %d nodes (requires node count higher than 1)" node
+                | Search node when node <= 1 ->
+                    printfn "  → Skipping Search test with %d nodes (requires node count higher than 1)" node
 
-              | _ -> ()  // skip if node = empty/zero or Value if not lc0/ceres
+                | Solve node when node > 1 ->
+                    let score = performSolveTest node engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress $"Solve {node}n") ct
+                    sendU (PuzzleResult score)
+                    results.Add score
+
+                | Solve node when node <= 1 ->
+                    printfn "  → Skipping Solve test with %d nodes (requires node count higher than 1)" node
+
+                | _ -> ()  // skip if node = empty/zero or Value if not lc0/ceres
+            with ex ->
+              sendU (LichessError (sprintf "Engine '%s' failed: %s" engine.Name ex.Message))
 
             // partial timing
             let elapsed = System.Diagnostics.Stopwatch.GetElapsedTime start
