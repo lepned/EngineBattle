@@ -21,7 +21,7 @@
 
 <div class="tool-page">
   <h1>ERET Puzzle Tests</h1>
-  <div class="tool-subtitle">Engine accuracy testing with EPD position suites</div>
+  <div class="tool-subtitle">Engine accuracy testing with EPD position suites — <a href="/tools/eret-creator">Create config</a></div>
 
   <div class="tool-controls">
     <div class="tool-input-group" style="margin-bottom:0">
@@ -150,14 +150,11 @@
 </div>
 
 @code {
-    private Chess.Board chess = new();
     private string puzzleFileName = string.Empty;
     private List<ERETResults> Scores = new();
     int failedNumber = 3;
     int solvedNumber = 3;
     private string fullPath = string.Empty;
-    private string finalMessage = "";
-    private EPDTypes.EPDEntry epd = EPDTypes.EPDEntry.Empty;
     private string outputFileFolder = string.Empty;
     private int eretProcessed = 0;
     private int eretTotal = 0;
@@ -220,37 +217,57 @@
 
     private async void Update(ERET update)
     {
+        try
+        {
         switch (update)
         {
             case ERET.Start player:
-                eretProcessed = 0;
-                eretErrorMessage = "";
+                await InvokeAsync(() =>
+                {
+                    eretProcessed = 0;
+                    eretErrorMessage = "";
+                    StateHasChanged();
+                });
                 break;
 
             case ERET.Puzzle p:
-                eretProcessed++;
-                await InvokeAsync(StateHasChanged);
+                await InvokeAsync(() =>
+                {
+                    eretProcessed++;
+                    StateHasChanged();
+                });
                 break;
 
             case ERET.EretError err:
-                eretErrorMessage = err.Item;
-                isProcessing = false;
-                await InvokeAsync(StateHasChanged);
+                await InvokeAsync(() =>
+                {
+                    eretErrorMessage = err.Item;
+                    isProcessing = false;
+                    StateHasChanged();
+                });
                 break;
 
             case ERET.PlayerResult pRes:
-                Scores.Add(pRes.Item);
-                var playerPerf = $"\nPlayer: {pRes.Item.PlayerName} - Accuracy: {pRes.Item.Accuracy:P1} - Total: {pRes.Item.FailedPuzzles.Count + pRes.Item.CorrectPuzzles.Count} - Desc: {pRes.Item.Desc}\n";
-                logger.LogInformation(playerPerf);
-                await InvokeAsync(StateHasChanged);
+                logger.LogInformation("\nPlayer: {Name} - Accuracy: {Acc} - Total: {Total} - Desc: {Desc}",
+                    pRes.Item.PlayerName, pRes.Item.Accuracy.ToString("P1"),
+                    pRes.Item.FailedPuzzles.Count + pRes.Item.CorrectPuzzles.Count, pRes.Item.Desc);
+                await InvokeAsync(() =>
+                {
+                    Scores.Add(pRes.Item);
+                    StateHasChanged();
+                });
                 break;
 
             case ERET.AllResults allRes:
                 try
                 {
                     var eretResults = allRes.Item.ToList();
-                    Scores.Clear();
-                    Scores.AddRange(eretResults);
+                    await InvokeAsync(() =>
+                    {
+                        Scores.Clear();
+                        Scores.AddRange(eretResults);
+                        StateHasChanged();
+                    });
                     var normalizedFolder = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
                     var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
                     var fileName = Path.Combine(normalizedFolder, $"failedEretPuzzles_{datePart}.epd");
@@ -261,26 +278,27 @@
                             var boardBm = new Chess.Board();
                             var boardAm = new Chess.Board();
                             PuzzleRunners.writeToFile(data, eretResults, sw, boardBm, boardAm);
-                            Console.WriteLine($"Failed puzzles written to {fileName}");
+                            logger.LogInformation("Failed puzzles written to {Path}", fileName);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
                     logger.LogError("Failed to write results to file: {Message}", ex.Message);
-                    finalMessage = "Failed to write results to file. Check console for details.";
                 }
                 finally
                 {
-                    isProcessing = false;
-                    await InvokeAsync(StateHasChanged);
+                    await InvokeAsync(() =>
+                    {
+                        isProcessing = false;
+                        StateHasChanged();
+                    });
                 }
                 break;
 
             case ERET.ResultsInConsole resConsole:
                 var table = resConsole.Item;
-                Console.WriteLine(Environment.NewLine);
-                Console.WriteLine(table);
+                logger.LogInformation("\n{Table}", table);
                 var escaped = Configuration.JSONParser.escapeString(outputFileFolder);
 
                 if (Directory.Exists(escaped))
@@ -290,15 +308,19 @@
                     try
                     {
                         File.WriteAllText(outputPath, table);
-                        Console.WriteLine($"Console summary written to {outputPath}");
+                        logger.LogInformation("Console summary written to {Path}", outputPath);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Failed to write results to file: {ex.Message}");
-                        finalMessage = "Failed to write results to file. Check console for details.";
+                        logger.LogError("Failed to write results to file: {Message}", ex.Message);
                     }
                 }
                 break;
+        }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Update callback failed: {Message}", ex.Message);
         }
     }
 
@@ -322,18 +344,18 @@
 
         data = Configuration.JSONParser.loadEretConfig(fullPath);
         puzzleFileName = Path.GetFileName(data.PuzzleFile);
-        finalMessage = $"Running tests on {puzzleFileName}";
-        eretTotal = data.SampleSize * data.Engines.Count;
         eretProcessed = 0;
         eretErrorMessage = "";
         cts?.Dispose();
         cts = new CancellationTokenSource();
-        await InvokeAsync(StateHasChanged);
         outputFileFolder = data.FailedPuzzlesOutputFolder;
         // Build engine configs
         var engineConfigs = data.Engines
           .SelectMany(e => Configuration.JSONParser.mapToEngPuzzleConfig(data.EngineFolder, e))
           .ToList();
+
+        eretTotal = data.SampleSize * engineConfigs.Count;
+        await InvokeAsync(StateHasChanged);
 
         List<ERETResults> results = new();
 
@@ -360,11 +382,12 @@
               {
                   logger.LogError("Eret failed to start/run - ");
                   logger.LogError(ex.Message);
-                  throw;
+                  eretErrorMessage = $"Error: {ex.Message}";
               }
           });
 
-        finalMessage = $"Finished running tests on {puzzleFileName}";
+        isProcessing = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void CancelRun()

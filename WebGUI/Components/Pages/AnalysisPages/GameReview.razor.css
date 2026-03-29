@@ -126,8 +126,8 @@
 /* Chart */
 .gr-chart {
     width: 100%;
-    min-height: 280px;
-    max-height: 350px;
+    min-height: 140px;
+    max-height: 160px;
 }
 
 /* Move Detail */
@@ -135,6 +135,9 @@
     background: rgba(0,0,0,0.2);
     border-radius: 6px;
     padding: 8px 12px;
+    min-height: 150px;
+    max-height: 150px;
+    overflow: hidden;
 }
 
 .gr-detail-header {

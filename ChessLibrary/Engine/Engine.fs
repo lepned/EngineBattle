@@ -145,8 +145,6 @@ module Engine =
                 else
                     ok <- true
                     cont <- false
-            if ok then
-                printfn "%s responded with uciMode %s" config.Name uciMode
             return ok
         } |> Async.RunSynchronously
 
@@ -162,7 +160,12 @@ module Engine =
               evalList.[0] 
             else 
               if fullEvalList.Length > 0 then fullEvalList[0] else MiscTypes.EvalType.CP 0.0
-          let pv = Player1PV
+          let pv =
+            if String.IsNullOrEmpty(Player1PV) then
+              let moveNum = moveBoard.MoveNumber()
+              let prefix = if moveBoard.Position.STM = 0uy then sprintf "%d." moveNum else sprintf "%d..." moveNum
+              prefix + shortSan
+            else Player1PV
           let fen = BoardHelper.posToFen moveBoard.Position
           let moveDetail = 
             {

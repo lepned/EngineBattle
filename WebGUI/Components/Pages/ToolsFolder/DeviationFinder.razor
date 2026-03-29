@@ -280,14 +280,22 @@
     resultDescription1 = "";
     resultDescription2 = "";
 
-    var games = FullPGNParser.parsePgnFile(filePath).ToList();
+    List<ChessLibrary.PGNTypes.PgnGame> games;
+    try
+    {
+        games = FullPGNParser.parsePgnFile(filePath).ToList();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+        return;
+    }
     var comparList = ConvertCsvStringToList(comparePlayers);
     var deviations =
       isFindMoveAllDifferencesEnabled ?
         DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList) :
         DeviationAnalysis.findAllDeviationsForAllPlayers(games);
 
-    DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList);
     deviationListAll.AddRange(deviations);
     var critical = deviations.Where(e => e.Result != e.DevRes);
     deviationListCritical.AddRange(critical);

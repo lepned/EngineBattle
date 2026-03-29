@@ -293,9 +293,10 @@ namespace WebGUI.Plotting
                   SetNChartData(list, numberOfLines, qDiff),
                   SetQChartData(list, numberOfLines, qDiff));
             }
+            catch (ObjectDisposedException) { }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
             catch (Exception ex)
             {
-                // Handle the exception here
                 Console.WriteLine($"An error occurred in {nameof(UpdateLogLiveCharts)}: {ex.Message}");
             }
         }

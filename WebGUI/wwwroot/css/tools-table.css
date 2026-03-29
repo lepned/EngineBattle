@@ -475,3 +475,187 @@
     border-radius: 3px;
     transition: width 0.3s ease;
 }
+
+.puzzle-themes-details {
+    margin: 0 0 12px 0;
+}
+
+.puzzle-themes-details summary {
+    cursor: pointer;
+    color: #8b9cd0;
+    font-size: 0.85rem;
+    user-select: none;
+}
+
+.puzzle-themes-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.puzzle-theme-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    background: #2a2a3e;
+    color: #b0b8d0;
+    border: 1px solid #3a3a52;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.puzzle-theme-chip:hover {
+    background: #3a3a58;
+    color: #d4d4e0;
+}
+
+.pgn-tools-compact .tool-section {
+    margin: 8px 0;
+    padding: 14px 20px;
+}
+
+.pgn-tools-compact .tool-section p,
+.pgn-tools-compact .tool-section-desc {
+    margin: 4px 0;
+}
+
+.oob-grid {
+    display: grid;
+    grid-template-columns: auto 1fr 100px 110px 24px;
+    gap: 0;
+    border: 1px solid #3a3a52;
+    border-radius: 4px;
+    overflow: hidden;
+    max-width: 760px;
+    line-height: 1.4;
+}
+
+.oob-grid-header {
+    background: #22223a;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #8b9cd0;
+    border-bottom: 1px solid #3a3a52;
+}
+
+.oob-grid-cell {
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #2e2e44;
+    background: #2a2a3e;
+    min-height: 0;
+}
+
+.oob-grid-cell:nth-last-child(-n+5) {
+    border-bottom: none;
+}
+
+.oob-engine-name {
+    font-weight: 600;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.oob-engine-file {
+    font-size: 0.73rem;
+    color: #9898ac;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oob-nodes-input {
+    width: 100% !important;
+    text-align: right;
+    padding: 4px 6px !important;
+    font-size: 0.85rem !important;
+}
+
+.oob-mode-select {
+    width: 100% !important;
+    padding: 3px 4px !important;
+    font-size: 0.8rem !important;
+    background: #1e1e2e;
+    color: #e0e0e0;
+    border: 1px solid #3a3a52;
+    border-radius: 3px;
+}
+
+.oob-remove-cell {
+    justify-content: center;
+    padding: 0 !important;
+}
+
+.oob-remove-btn {
+    background: none;
+    border: none;
+    color: #9898ac;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.oob-remove-btn:hover {
+    color: #ef5350;
+}
+
+/* FRC Popover */
+.frc-popover {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background: #2a2a3e;
+    border: 1px solid #3a3a52;
+    border-radius: 6px;
+    padding: 10px 12px;
+    z-index: 100;
+    min-width: 180px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.frc-popover-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #8b9cd0;
+    margin-bottom: 6px;
+}
+
+.frc-popover input {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 0.85rem;
+    text-align: center;
+    background: #1e1e2e;
+    color: #e0e0e0;
+    border: 1px solid #3a3a52;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.frc-popover-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.frc-popover-btn {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    background: #333348;
+    color: #c0c8e8;
+    border: 1px solid #3a3a52;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.frc-popover-btn:hover {
+    background: #3a3a58;
+}

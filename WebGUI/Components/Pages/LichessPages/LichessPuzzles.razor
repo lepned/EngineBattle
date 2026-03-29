@@ -8,6 +8,7 @@
 @using WebGUI.Components.Layout.VisualizationLayout
 @using static ChessLibrary.PuzzleTypes
 @using static ChessLibrary.Configuration.JSONParser
+@using static ChessLibrary.Configuration.PuzzleTheme
 
 @implements IAsyncDisposable
 
@@ -20,7 +21,17 @@
 
 <div class="tool-page">
   <h1>Lichess Puzzles</h1>
-  <div class="tool-subtitle">Run policy, value, search and solve tests from your puzzle config</div>
+  <div class="tool-subtitle">Run policy, value, search and solve tests from your puzzle config — <a href="/tools/puzzle-creator">Create config</a></div>
+
+  <details class="puzzle-themes-details">
+    <summary>Available puzzle themes</summary>
+    <div class="puzzle-themes-list">
+      @foreach (var theme in getLocalThemes())
+      {
+        <span class="puzzle-theme-chip" title="@theme.Description" @onclick="() => AddTheme(theme.Category)">@theme.Category</span>
+      }
+    </div>
+  </details>
 
   <div class="tool-controls">
     <button class="tool-action-btn" @onclick="Draw" disabled="@disableDraw">Draw themes</button>
@@ -208,8 +219,8 @@
                       <DeferredContent>
                         <ChildContent>
                           <PuzzleBanner Score="@item"
-                                        NumberOfFailedPussles="@failedNumber"
-                                        NumberOfSolvedPussles="@solvedNumber" />
+                                        NumberOfFailedPuzzles="@failedNumber"
+                                        NumberOfSolvedPuzzles="@solvedNumber" />
                         </ChildContent>
                       </DeferredContent>
                     </div>
@@ -226,7 +237,6 @@
 
 
 @code {
-    private Chess.Board chess = new();
     private string puzzleFileName = string.Empty;
     private CsvPuzzleData[] puzzles = Array.Empty<CsvPuzzleData>();
     private List<Score> PolicyScores = new();
@@ -246,7 +256,6 @@
     private string fullPath = string.Empty;
     private bool disableRun = false;
     private bool disableDraw = false;
-    private string endOfRun = string.Empty;
     private string selectedType = "All";
     private string selectedEngine = "All";
     private HashSet<int> expandedScoreIds = new HashSet<int>();
@@ -379,40 +388,49 @@
 
     private async void Update(Lichess update)
     {
-        switch (update)
+        try
         {
-            case Lichess.PuzzleResult pRes:
-                var res = pRes.Item;
-                if (res.Type.Contains("Policy") || res.Type.StartsWith("pTop"))
-                    PolicyScores.Add(pRes.Item);
-                else if (res.Type.Contains("Value") || res.Type.StartsWith("vTop"))
-                    ValueScores.Add(pRes.Item);
-                else if (res.Type == "Solve")
-                    SolveScores.Add(pRes.Item);
-                else
-                    SearchScores.Add(pRes.Item);
+            await InvokeAsync(() =>
+            {
+                switch (update)
+                {
+                    case Lichess.PuzzleResult pRes:
+                        var res = pRes.Item;
+                        if (res.Type.Contains("Policy") || res.Type.StartsWith("pTop"))
+                            PolicyScores.Add(pRes.Item);
+                        else if (res.Type.Contains("Value") || res.Type.StartsWith("vTop"))
+                            ValueScores.Add(pRes.Item);
+                        else if (res.Type == "Solve")
+                            SolveScores.Add(pRes.Item);
+                        else
+                            SearchScores.Add(pRes.Item);
 
-                // Auto-select first tab with data
-                if (!ActiveTabs.Contains(activeScoreTab))
-                    activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
-                break;
-            case Lichess.Done msg:
-                endOfRun = ": " + msg.Item;
-                progressProcessed = 0;
-                progressTotal = 0;
-                progressEngine = "";
-                break;
-            case Lichess.Progress prog:
-                progressProcessed = prog.Processed;
-                progressTotal = prog.Total;
-                progressEngine = prog.Label;
-                break;
-            case Lichess.LichessError err:
-                errorMessage = err.Item;
-                disableRun = false;
-                break;
+                        // Auto-select first tab with data
+                        if (!ActiveTabs.Contains(activeScoreTab))
+                            activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
+                        break;
+                    case Lichess.Done msg:
+                        progressProcessed = 0;
+                        progressTotal = 0;
+                        progressEngine = "";
+                        break;
+                    case Lichess.Progress prog:
+                        progressProcessed = prog.Processed;
+                        progressTotal = prog.Total;
+                        progressEngine = prog.Label;
+                        break;
+                    case Lichess.LichessError err:
+                        errorMessage = err.Item;
+                        disableRun = false;
+                        break;
+                }
+                StateHasChanged();
+            });
         }
-        await InvokeAsync(StateHasChanged);
+        catch (Exception ex)
+        {
+            logger.LogWarning("Update callback failed: {Message}", ex.Message);
+        }
     }
 
     private void Draw()
@@ -421,39 +439,24 @@
         StateHasChanged();
     }
 
-    private CsvPuzzleData[] ParseCsv(string filePath, bool random)
+    private void AddTheme(string theme)
     {
-        var records = new List<CsvPuzzleData>();
-        var lines = File.ReadAllLines(filePath);
-
-        foreach (var line in lines.Skip(1))
+        var lower = theme.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(Filter))
         {
-            var fields = line.Split(',');
-            var puzzleId = fields[0].GetHashCode();
-            var fen = fields[1];
-            var moves = fields[2];
-            var rating = int.Parse(fields[3]);
-            var ratingDeviation = int.Parse(fields[4]);
-            var popularity = int.Parse(fields[5]);
-            var nbPlays = int.Parse(fields[6]);
-            var themes = fields[7];
-            var gameUrl = fields[8];
-            var openingTags = fields[9];
-            var fens = new List<string>();
-            var posList = new List<PuzzleTypes.Position>();
-            var record = CsvPuzzleData.Create(puzzleId, fen, moves, rating, ratingDeviation, popularity, nbPlays, themes, gameUrl, openingTags, line, posList, fens, 0);
-            records.Add(record);
+            Filter = lower;
         }
-
-        var recordsArray = records.ToArray();
-        if (random)
-            System.Random.Shared.Shuffle(recordsArray);
-        return recordsArray;
+        else
+        {
+            var existing = Filter.Split(',').Select(e => e.Trim().ToLowerInvariant()).Where(e => e.Length > 0).ToHashSet();
+            if (!existing.Contains(lower))
+                Filter = $"{Filter},{lower}";
+        }
+        StateHasChanged();
     }
 
     private void StartOfRun()
     {
-        endOfRun = ": started";
         disableRun = true;
         progressProcessed = 0;
         progressTotal = 0;
@@ -468,13 +471,11 @@
     {
         try
         {
-            Array.Clear(puzzles);
-            puzzles = null;
-
-            PolicyScores?.Clear();
-            ValueScores?.Clear();
-            SearchScores?.Clear();
-            SolveScores?.Clear();
+            if (puzzles != null)
+            {
+                Array.Clear(puzzles);
+                puzzles = null;
+            }
 
             PolicyScores = new List<Score>();
             ValueScores = new List<Score>();
@@ -484,13 +485,6 @@
             expandedScoreIds.Clear();
 
             await InvokeAsync(StateHasChanged);
-            await Task.Delay(50);
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
-
-            await Task.Yield();
         }
         catch (Exception ex)
         {
@@ -506,6 +500,42 @@
         progressTotal = 0;
         progressEngine = "";
         StateHasChanged();
+    }
+
+    private void PreloadConfigFilter()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath)) return;
+
+            var data = loadPuzzleConfig(normalizePath(fullPath));
+
+            if (!string.IsNullOrWhiteSpace(data.PuzzleFilter))
+            {
+                if (string.IsNullOrWhiteSpace(Filter))
+                {
+                    Filter = data.PuzzleFilter;
+                }
+                else
+                {
+                    Filter = $"{data.PuzzleFilter},{Filter}";
+                }
+
+                Filter = string.Join(",", Filter.Split(',')
+                    .Select(e => e.Trim())
+                    .Select(e => e.ToLowerInvariant())
+                    .Where(e => !string.IsNullOrWhiteSpace(e))
+                    .Distinct());
+
+                logger.LogInformation("Pre-loaded puzzle filter from config: {Filter}", Filter);
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Failed to pre-load config filter: {Message}", ex.Message);
+        }
     }
 
     private async Task BrowseAndRunConfig()
@@ -525,6 +555,7 @@
         fullPath = (string)result.Data!;
         logger.LogInformation("Selected file {File}", fullPath);
 
+        PreloadConfigFilter();
         StartOfRun();
         await Run(null);
 
@@ -563,10 +594,16 @@
         sb.AppendLine($"Puzzle file name: {puzzleFile}\n");
         var allScores = PolicyScores.Concat(ValueScores).Concat(SearchScores).Concat(SolveScores).ToList();
 
+        if (allScores.Count == 0)
+        {
+            sb.AppendLine("No results.\n```");
+            return sb.ToString();
+        }
+
         int maxEngineWidth = Math.Max("Engine".Length, allScores.Max(s => s.Engine.Length));
         int maxNeuralNetWidth = Math.Max("Neural net".Length, allScores.Max(s => s.NeuralNet.Length));
         int maxPerfWidth = Math.Max("Perf".Length, allScores.Max(s => s.PlayerRecord.Rating.ToString("F0").Length));
-        int maxAccuracyWidth = Math.Max("Accuracy".Length, allScores.Max(s => ((decimal)s.Correct / s.TotalNumber).ToString("P1").Length));
+        int maxAccuracyWidth = Math.Max("Accuracy".Length, allScores.Max(s => (s.TotalNumber > 0 ? ((decimal)s.Correct / s.TotalNumber).ToString("P1") : "N/A").Length));
         int maxTotalWidth = Math.Max("Total".Length, allScores.Max(s => s.TotalNumber.ToString().Length));
         int maxAvgRatingWidth = Math.Max("AvgR".Length, allScores.Max(s => s.RatingAvg.ToString("F0").Length));
         int maxTypeWidth = Math.Max("Type".Length, allScores.Max(s => s.Type.Length));
@@ -689,14 +726,9 @@
             {
                 var data = loadPuzzleConfig(normalizePath(fullPathName));
                 puzzleFileName = Path.GetFileName(data.PuzzleFile);
-                if (!string.IsNullOrWhiteSpace(data.PuzzleFilter) && !string.IsNullOrWhiteSpace(Filter))
-                {
-                    data.PuzzleFilter = $"{data.PuzzleFilter},{Filter}";
-                }
-                else if (string.IsNullOrWhiteSpace(data.PuzzleFilter))
-                {
-                    data.PuzzleFilter = Filter;
-                }
+
+                // Filter already contains merged config + UI value from PreloadConfigFilter
+                data.PuzzleFilter = Filter;
                 await InvokeAsync(StateHasChanged);
 
                 if (!string.IsNullOrWhiteSpace(data.PuzzleFilter))

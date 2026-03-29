@@ -236,13 +236,22 @@
     fileOpenName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
 
-    var games = FullPGNParser.parsePgnFile(filePath).ToList();
+    List<ChessLibrary.PGNTypes.PgnGame> games;
+    try
+    {
+        games = FullPGNParser.parsePgnFile(filePath).ToList();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+        return;
+    }
     var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games,minMoveTimeInSecs);
     var minMoveTimeInMs = minMoveTimeInSecs * 1000;
     medianSpeedTable =
       allRes.Where(e => e.Median )
       .OrderByDescending(e => e.AvgNPS).ToList();
-    var avgSpeedTable =
+    averageSpeedTable =
       allRes.Where(e => e.Median == false)
           .OrderByDescending(e => e.AvgNPS).ToList();
 
@@ -253,13 +262,10 @@
     logger.LogInformation(summary);
 
     logger.LogInformation("\nAverage speed calculated\n");
-    var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(avgSpeedTable);
+    var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(averageSpeedTable);
     logger.LogInformation(avgSummary);
 
     StateHasChanged();
-    averageSpeedTable =
-      allRes.Where(e => e.Median == false)
-      .OrderByDescending(e => e.AvgNPS).ToList();
 
     var allIndividualGames =
       PGNStatistics.calculateMedianAndAvgSpeedPerGameInPgnFile(games)

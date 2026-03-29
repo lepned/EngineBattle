@@ -35,10 +35,10 @@
 	public Score Score { get; set; }
 
 	[Parameter]
-	public int NumberOfFailedPussles { get; set; }
+	public int NumberOfFailedPuzzles { get; set; }
 
 	[Parameter]
-	public int NumberOfSolvedPussles { get; set; }
+	public int NumberOfSolvedPuzzles { get; set; }
 
 	private List<(CsvPuzzleData, string)> FailedPuzzles => Score.FailedPuzzles
 		.Select(tuple => (tuple.Item1, tuple.Item2))
@@ -53,9 +53,9 @@
 			// Default value when there's no second part or it can't be parsed
 			return tuple.Item1.Rating;
 		})
-		.Take(NumberOfFailedPussles)
+		.Take(NumberOfFailedPuzzles)
 		.ToList();
 	
 
-	private List<CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.OrderByDescending(e => e.Rating).Take(NumberOfSolvedPussles).ToList();
+	private List<CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.OrderByDescending(e => e.Rating).Take(NumberOfSolvedPuzzles).ToList();
 }

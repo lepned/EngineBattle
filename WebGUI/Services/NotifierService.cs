@@ -48,34 +48,29 @@ namespace WebGUI.Services
     public async Task NotifyEngineToReset(bool resetEngine)
     {
       if (ResetEngine != null)
-        ResetEngine?.Invoke(resetEngine);
-      await Task.CompletedTask;
+        await ResetEngine.Invoke(resetEngine);
     }
 
     public async Task NotifyFullScreenRequested(bool isFullScreenRequested)
     {
       if (IsFullScreenRequested != null)
-        IsFullScreenRequested?.Invoke(isFullScreenRequested);
-      await Task.CompletedTask;
+        await IsFullScreenRequested.Invoke(isFullScreenRequested);
     }
     public async Task NotifyUpdateRequested(int size)
     {
       if (UpdateRequested != null)
-        UpdateRequested?.Invoke(size);
-      await Task.CompletedTask;
+        await UpdateRequested.Invoke(size);
     }
 
     public async Task RefreshNavMenu(bool refreshNavMenu)
     {
       if (RefreshNavMenuRequested != null)
-        RefreshNavMenuRequested?.Invoke(refreshNavMenu);
-      await Task.CompletedTask;
+        await RefreshNavMenuRequested.Invoke(refreshNavMenu);
     }
     public async Task NotifyDarkMode(bool isDarkMode)
     {
       if (IsDarkMode != null)
-        IsDarkMode?.Invoke(isDarkMode);
-      await Task.CompletedTask;
+        await IsDarkMode.Invoke(isDarkMode);
     }
     public async Task UpdateFen(string fen)
     {
@@ -109,7 +104,7 @@ namespace WebGUI.Services
 
     public async Task UpdateFenMoveToBoard(MoveAndFen input)
     {
-      if (NotifyFenToBoard != null)
+      if (NotifyFenAndMove != null)
         await NotifyFenAndMove?.Invoke(input);
     }
 

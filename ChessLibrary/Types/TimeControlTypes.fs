@@ -142,6 +142,25 @@ module TimeControlTypes =
       | WithMoves (_, incr, wMoves, bMoves) -> createTimeControlWithMovesToGo wTime bTime incr incr wMoves bMoves
       | Nodes nodes -> createNodes nodes
 
+    type SearchLimit =
+      | NodeLimit of nodes: int
+      | TimeLimit of ms: int
+      with
+        member x.Label =
+            match x with
+            | NodeLimit n ->
+                if n >= 1000000 then sprintf "%.1fM nodes" (float n / 1000000.0)
+                elif n >= 1000 then sprintf "%.1fK nodes" (float n / 1000.0)
+                else sprintf "%d nodes" n
+            | TimeLimit ms ->
+                if ms >= 60000 then sprintf "%.1fmin" (float ms / 60000.0)
+                elif ms >= 1000 then sprintf "%.1fs" (float ms / 1000.0)
+                else sprintf "%dms" ms
+        member x.Value =
+            match x with
+            | NodeLimit n -> n
+            | TimeLimit ms -> ms
+
     let uciTimePart (time: UnionType) wTime bTime =
       match time with
       | FixedTime _ -> createTimeControl wTime bTime

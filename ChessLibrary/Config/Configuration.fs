@@ -834,6 +834,8 @@ module JSONParser =
             []
 
 module PuzzleTheme =
+  open System.Xml.Linq
+  open PuzzleTypes
 
   let puzzleThemes = """<?xml version="1.0" encoding="UTF-8"?>
   <resources>
@@ -963,3 +965,16 @@ module PuzzleTheme =
     <string name="puzzleDownloadInformation">These puzzles are in the public domain, and can be downloaded from %s.</string>
   </resources>
   """
+
+  let getLocalThemes () : PuzzleCategory list =
+      let doc = XDocument.Parse(puzzleThemes)
+      doc.Descendants(XName.Get "string")
+      |> Seq.choose (fun element ->
+          let nameAttr = element.Attribute(XName.Get "name")
+          match nameAttr with
+          | null -> None
+          | attr when attr.Value.EndsWith "Description" ->
+              let category = attr.Value.Replace("Description", "")
+              Some { Category = category; Description = element.Value }
+          | _ -> None)
+      |> Seq.toList

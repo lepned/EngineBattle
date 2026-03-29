@@ -78,10 +78,7 @@
   public async ValueTask DisposeAsync()
   {
     notify.IsFullScreenRequested -= Notify_IsFullScreenRequested;
-    if (_chessModule != null)
-    {
-      await _chessModule.DisposeAsync();
-    }
+    await ValueTask.CompletedTask;
   }
  
 }

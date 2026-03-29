@@ -231,7 +231,16 @@
     fileOpenName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
 
-    var games = FullPGNParser.parsePgnFile(filePath).ToList();
+    List<ChessLibrary.PGNTypes.PgnGame> games;
+    try
+    {
+        games = FullPGNParser.parsePgnFile(filePath).ToList();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+        return;
+    }
     logger.LogInformation("PGN file parsed {File}", pgnName);
 
     var bookExitSpeed = PGNStatistics.calculateMedianAndAvgBookExitSpeedSummaryInPgnFile(games);

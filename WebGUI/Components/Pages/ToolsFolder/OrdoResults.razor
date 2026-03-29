@@ -54,11 +54,12 @@
 				</tr>
 			</thead>
 			<tbody>
-				@foreach (var item in engineLineData)
+				@for (int i = 0; i < engineLineData.Count; i++)
 				{
+					var item = engineLineData[i];
 					<tr>
 						<td>@item.Player</td>
-						<td>@item.Elo</td>
+						<td>@FormatElo(item, i)</td>
 						<td>@item.Error.ToString("F0")</td>
 						<td>@item.Points</td>
 						<td>@item.Played</td>
@@ -86,41 +87,19 @@
 	private Int64 testDuration = 0;
 	private string refEngine = string.Empty;
 	private string executablePath = "";
+	string FormatElo(PlayerResult p, int index)
+	{
+		if (engineLineData.Count == 2 && index == 0) return "0";
+		if (Double.IsNaN(p.Elo)) return "---";
+		return p.Elo.ToString("F0");
+	}
+
 	string FormatSpeedWithEps(PlayerResult p)
 	{
 		var baseSpeed = GameAnalysis.Formatting.formatNPS(p.MedSpeed);
 		if (p.EPS > 0.0)
 			return $"{baseSpeed} ({GameAnalysis.Formatting.formatEPS(p.EPS)})";
 		return baseSpeed;
-	}
-
-	string CheckForNanAndInfinity(double value)
-	{
-		//if positive infinity return the + infinity symbol
-		if (double.IsPositiveInfinity(value))
-		{
-			return "∞";
-		}
-
-		//if negative infinity return the - infinity symbol
-		if (double.IsNegativeInfinity(value))
-		{
-			return "∞";
-		}
-
-		//if NaN return the three dashes
-		if (double.IsNaN(value))
-		{
-			return "---";
-		}
-
-		return value.ToString("F0");
-	}
-
-	bool isChallenger(PlayerResult data)
-	{
-		var higher = engineLineData.Any(e => (double)e.Played * 1.5 < data.Played);
-		return higher;
 	}
 
 	private async Task BrowsePgnFile()
@@ -142,7 +121,16 @@
 		var pgnName = Path.GetFileName(fullPath);
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
-		var games = FullPGNParser.parsePgnFile(fullPath).ToList();
+		List<ChessLibrary.PGNTypes.PgnGame> games;
+		try
+		{
+			games = FullPGNParser.parsePgnFile(fullPath).ToList();
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+			return;
+		}
 		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = DeviationAnalysis.analyzeDeviations(games);
 		GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
 		var pentaDefault = Statistics.Pentanomial.formatPerEngineDefault(games);
@@ -183,33 +171,6 @@
 		logger.LogInformation("Done with calculation");
 		StateHasChanged();
 	}
-
-	private string FormatNodes(double nodes)
-	{
-		if (nodes > 1_000_000_000)
-		{
-			var giga = nodes / 1_000_000_000;
-			return giga.ToString("F2") + "G"; //G
-		}
-
-		else if (nodes > 1_000_000)
-		{
-			var mill = nodes / 1_000_000;
-			return mill.ToString("F2") + "M"; //M
-		}
-
-		else if (nodes > 1_000)
-		{
-			var mill = nodes / 1_000;
-			return mill.ToString("F1") + "K"; //K
-		}
-
-		else
-		{
-			return nodes.ToString("F1"); //nps
-		}
-	}
-
 
 	protected override Task OnInitializedAsync()
 	{

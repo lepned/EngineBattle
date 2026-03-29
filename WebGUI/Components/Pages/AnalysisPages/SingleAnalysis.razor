@@ -44,11 +44,20 @@
             </svg>
             EPD
         </button>
-        <div class="sa-toolbar-frc">
-            <label class="sa-toolbar-btn">FRC</label>
-            <input type="number" min="0" max="959" @bind="frcInput"
-                   @onkeydown="OnFrcKeyDown" placeholder="0-959" title="Enter FRC position ID (0-959)" />
-            <label class="sa-toolbar-btn" @onclick="LoadFrcPosition" title="Load FRC position">Load</label>
+        <div style="position:relative;">
+            <button class="sa-toolbar-btn" @onclick="ToggleFrcPopover" title="Chess960 position loader">960@(frcPositionId.HasValue ? $" #{frcPositionId}" : "")</button>
+            @if (showFrcPopover)
+            {
+                <div class="frc-popover">
+                    <div class="frc-popover-title">FRC Position</div>
+                    <input type="number" min="0" max="959" @bind="frcInput" @bind:event="oninput"
+                           @onkeydown="OnFrcKeyDown" placeholder="0-959" />
+                    <div class="frc-popover-actions">
+                        <button class="frc-popover-btn" @onclick="LoadFrcPosition">Load</button>
+                        <button class="frc-popover-btn" @onclick="LoadRandomFrcPosition">Random</button>
+                    </div>
+                </div>
+            }
         </div>
         <button class="sa-toolbar-btn" @onclick="SetAsDefaultEngine" disabled="@(string.IsNullOrEmpty(engineConfigPath))"
                 title="Set current engine as default">
@@ -290,10 +299,11 @@
                 Engine = Configuration.JSON.readSingleEngineConfig(s.DefaultEnginePath);
                 engineConfigPath = s.DefaultEnginePath;
             }
-            catch { }
+            catch (Exception ex) { logger.LogWarning("Failed to load default engine: {Message}", ex.Message); }
         }
     }
     private string engineConfigPath = "";
+    private bool showFrcPopover;
     private string openingAndVariation = "";
     private string lastAutoDetectedOpening = "";
     bool pgnFileLoaded = false;
@@ -313,14 +323,12 @@
     private DotNetObjectReference<SingleAnalysis> _pgnPasteDotNetRef;
     private bool _pgnPasteRegistered = false;
     private HashSet<PGNTypes.PgnGame> selectedItems = new();
-    public CultureInfo currentCulture = CultureInfo.CurrentCulture;
     private string moveHistory = string.Empty;
     private string pgnName = "";
     private List<PGNTypes.PgnGame> games = new();
     private List<EPDTypes.EPDEntry> epdGames = new();
     private Chess.Board board = new();
     HotKeysContext keyContext;
-    private string fullPath = string.Empty;
     private int chartLines = 4;
     private string searchString = "";
     private string detectedOpeningName = "";
@@ -505,22 +513,38 @@
         UpdateDetectedOpening();
         moveHistory = board.GetMoveHistoryWithVariations();
         var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
-        await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
+        if (chessBoardRazor != null)
+            await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
         StateHasChanged();
     }
 
     private async Task SaveGameToPGN(MouseEventArgs args)
     {
-        logger.LogInformation("File saved to {path}", gamesPath);
-        var sb = new StringBuilder();
-        sb.AppendLine();
-        sb.AppendLine($"[Event \"Single Engine Analysis\"]");
-        sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
-        sb.AppendLine($"[FEN \"{board.StartPosition}\"]");
-        sb.AppendLine();
-        var moveHistory = board.GetMoveHistoryWithVariations();
-        sb.AppendLine(moveHistory);
-        File.AppendAllText(gamesPath, sb.ToString());
+        try
+        {
+            if (string.IsNullOrWhiteSpace(gamesPath))
+            {
+                logger.LogWarning("No games path configured in settings");
+                return;
+            }
+            var dir = Path.GetDirectoryName(gamesPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+            var sb = new StringBuilder();
+            sb.AppendLine();
+            sb.AppendLine($"[Event \"Single Engine Analysis\"]");
+            sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+            sb.AppendLine($"[FEN \"{board.StartPosition}\"]");
+            sb.AppendLine();
+            var moveHistory = board.GetMoveHistoryWithVariations();
+            sb.AppendLine(moveHistory);
+            File.AppendAllText(gamesPath, sb.ToString());
+            logger.LogInformation("File saved to {path}", gamesPath);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to save game to {path}", gamesPath);
+        }
         await Task.CompletedTask;
     }
 
@@ -532,11 +556,16 @@
 
     private void WriteAnalysisToFile(string path, EnginePanel page)
     {
-        var variations = page.dataList;
+        var variations = page?.dataList;
+        if (variations == null)
+        {
+            logger.LogWarning("No data to save, engine panel not available");
+            return;
+        }
         var sbVariations = new StringBuilder();
         var engineName = page?.Engine?.Name ?? "Unknown Engine";
-        var first = page.dataList.FirstOrDefault();
-        var nodes = first.Value == null ? 0 : page.dataList.FirstOrDefault().Value.Nodes;
+        var first = variations.FirstOrDefault();
+        var nodes = first.Value == null ? 0 : variations.FirstOrDefault().Value.Nodes;
         var formatNodes = nodes.ToString("N0");
         if (variations.Count == 0)
         {
@@ -582,10 +611,17 @@
 
     private async Task SaveAnalysis(MouseEventArgs args)
     {
-        var directory = Path.GetDirectoryName(gamesPath);
-        var filenameWithoutExt = Path.GetFileNameWithoutExtension(gamesPath);
-        var path = Path.Combine(directory, filenameWithoutExt + "_analysis.pgn");
-        WriteAnalysisToFile(path, analysisWithEngine);
+        try
+        {
+            var directory = Path.GetDirectoryName(gamesPath);
+            var filenameWithoutExt = Path.GetFileNameWithoutExtension(gamesPath);
+            var path = Path.Combine(directory, filenameWithoutExt + "_analysis.pgn");
+            WriteAnalysisToFile(path, analysisWithEngine);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Failed to save analysis: {Message}", ex.Message);
+        }
         await Task.CompletedTask;
     }
 
@@ -619,6 +655,7 @@
         gameIndex = games.IndexOf(game);
         currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
 
+        if (chessModule == null) return;
         chart = new GamePgnChart(chessModule, pgnChart, game, "Evaluation", "Score");
 
         switch (selectedChart)
@@ -698,7 +735,10 @@
         epdFileLoaded = true;
         pgnFileLoaded = false;
         pgnName = Path.GetFileName(path);
-        epdGames = EPDExtractor.readEPDs(path).Take(5000).ToList();
+        var allEpds = EPDExtractor.readEPDs(path).ToList();
+        if (allEpds.Count > 5000)
+            logger.LogWarning("EPD file contains {Total} entries, truncated to 5000", allEpds.Count);
+        epdGames = allEpds.Take(5000).ToList();
         gameIndex = 0;
         StateHasChanged();
     }
@@ -710,7 +750,10 @@
         epdFileLoaded = false;
         pgnFileLoaded = true;
         pgnName = Path.GetFileName(path);
-        games = FullPGNParser.parsePgnFile(path).Take(4000).ToList();
+        var allGames = FullPGNParser.parsePgnFile(path).ToList();
+        if (allGames.Count > 4000)
+            logger.LogWarning("PGN file contains {Total} games, truncated to 4000", allGames.Count);
+        games = allGames.Take(4000).ToList();
         gameIndex = 0;
         StateHasChanged();
     }
@@ -733,8 +776,11 @@
     public async void OnUCIReceived(List<string> config)
     {
         uciInfo = config;
-        var content = string.Join("\n", uciInfo);
-        await chessModule.InvokeVoidAsync("openNewWindowAndWriteContent", content);
+        if (chessModule != null)
+        {
+            var content = string.Join("\n", uciInfo);
+            await chessModule.InvokeVoidAsync("openNewWindowAndWriteContent", content);
+        }
     }
 
     public async void OnNewFENOnBoard(string newFen)
@@ -798,7 +844,8 @@
 
     public async void OnEngineMoveMade(string move)
     {
-        chessBoardRazor.UpdateVariationsDisplay();
+        if (chessBoardRazor != null)
+            chessBoardRazor.UpdateVariationsDisplay();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         await Notifier.UpdateFen(fen);
@@ -866,6 +913,8 @@
         frcInput = frcPositionId;
     }
 
+    private void ToggleFrcPopover() { showFrcPopover = !showFrcPopover; }
+
     private async Task LoadFrcPosition()
     {
         if (frcInput.HasValue && frcInput >= 0 && frcInput <= 959)
@@ -880,9 +929,16 @@
                 frcPositionId = frcInput;
                 UpdateDetectedOpening();
                 await Notifier.UpdateFenToBoard(fen);
+                showFrcPopover = false;
                 StateHasChanged();
             }
         }
+    }
+
+    private async Task LoadRandomFrcPosition()
+    {
+        frcInput = Random.Shared.Next(0, 960);
+        await LoadFrcPosition();
     }
 
     private async Task OnFrcKeyDown(KeyboardEventArgs e)
@@ -929,7 +985,7 @@
                 await OpenPGNGame(navGame);
 
                 // Navigate to the specific ply
-                if (navPly > 0 && navPly < board.MovesAndFenPlayed.Count)
+                if (navPly > 0 && navPly < board.MovesAndFenPlayed.Count && chessBoardRazor != null)
                 {
                     var moveAndFen = board.MovesAndFenPlayed[navPly];
                     fen = moveAndFen.FenAfterMove;
@@ -951,15 +1007,19 @@
                 await chessModule.InvokeVoidAsync("unregisterGlobalPgnPaste");
             }
         }
-        catch { }
+        catch (Exception ex) { logger.LogWarning("Error during dispose cleanup: {Message}", ex.Message); }
 
-        if (_pgnPasteRegistered)
+        if (_pgnPasteRegistered && _pgnPasteDotNetRef != null)
         {
             _pgnPasteDotNetRef.Dispose();
             _pgnPasteRegistered = false;
         }
 
-        keyContext?.DisposeAsync();
-        await ValueTask.CompletedTask;
+        try
+        {
+            if (keyContext != null) await keyContext.DisposeAsync();
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
     }
 }

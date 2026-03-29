@@ -202,7 +202,8 @@
 				<div>
 					<CyclingTables Results="@results"
 								   Pairings="@pairings"
-								   FontSize=@layoutOptions.Fonts.PairingsFont
+								   FontSizePairing=@layoutOptions.Fonts.PairingsFont
+								   FontSizeLatestGames=@layoutOptions.Fonts.LatestGamesFont
 								   TableHeight=@pairingTableHeight
 								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec
 								   HeaderSuffix="@swissRoundLabel" />
@@ -366,6 +367,7 @@
 	private ElementReference livePlotReference;
 	private ElementReference liveQPlotReference;
 	private IJSObjectReference chessModule;
+	private DotNetObjectReference<Tournaments> dotNetRef;
 	private LivePlot evalList;
 	private LivePlot nodeList;
 	private LivePlot npsList;
@@ -1048,9 +1050,9 @@
 				status.SD,
 				status.TBhits,
 				status.WDL,
-				Engine1.PV,
-				Engine1.PVLongSAN,
-				Engine1.MultiPV);
+				Engine2.PV,
+				Engine2.PVLongSAN,
+				Engine2.MultiPV);
 		}
 	}
 
@@ -2646,8 +2648,8 @@
 		if (firstRender)
 		{
 			chessModule = await JsInteropService.ImportModuleAsync(JS);
-			var dotNetObjectRef = DotNetObjectReference.Create(this);
-			await chessModule.InvokeVoidAsync("registerResizeEvent", dotNetObjectRef);
+			dotNetRef = DotNetObjectReference.Create(this);
+			await chessModule.InvokeVoidAsync("registerResizeEvent", dotNetRef);
 			Notifier.IsFullScreenRequested += OnFullScreenRequested;
 
 			keyContext = HotKeys.CreateContext()
@@ -2826,12 +2828,12 @@
         TournamentSvc.Unsubscribe();
         Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;
-        keyContext?.DisposeAsync();
+        if (keyContext != null) await keyContext.DisposeAsync();
+        dotNetRef?.Dispose();
 		if (timer != null)
 			timer.Dispose();
         if (oneSecondTimer != null)
             oneSecondTimer.Dispose();
-        await ValueTask.CompletedTask;
     }
 
     private sealed class CupBracketState

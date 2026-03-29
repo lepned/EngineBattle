@@ -42,6 +42,40 @@ let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async 
    return (res, move)
  }
 
+let bestMoveByEvalWithTimeAsync (timeInMs:int) (engine: ChessEngine) (fen: string) = async {
+   let cmd = sprintf "position fen %s" fen
+   engine.UciNewGame()
+   engine.SetMoveOverhead("overhead", 0)
+   engine.Position cmd
+   engine.Go timeInMs
+
+   let mutable cont = true
+   let mutable infoDepth = ""
+   let mutable move = ""
+
+   while cont do
+     let! line = engine.ReadLineAsync() |> Async.AwaitTask
+     if line.StartsWith "bestmove" then
+       move <- line
+       cont <- false
+     elif line.StartsWith "info depth" then
+       infoDepth <- line
+
+   let res =
+     match Regex.parseEvalRegex infoDepth with
+     |CP cp -> cp
+     |Mate mate -> float mate * 1000.
+     |_-> failwith "error parsing eval"
+
+   return (res, move)
+ }
+
+let bestMoveByEvalForLimit (limit: TimeControlTypes.TimeControlCommands.SearchLimit) (engine: ChessEngine) (fen: string) = async {
+    match limit with
+    | TimeControlTypes.TimeControlCommands.SearchLimit.NodeLimit nodes -> return! bestMoveByEvalAsync nodes engine fen
+    | TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms -> return! bestMoveByEvalWithTimeAsync ms engine fen
+}
+
 let bestMoveByEval (nodes:int) (engine: ChessEngine) (fen: string) =
   let cmd = sprintf "position fen %s" fen
   engine.UciNewGame()
@@ -461,7 +495,7 @@ let onlyUniqueOpenings (pgns:seq<PgnGame>) =
       processedGames
 
 
-let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList : ResizeArray<EngineConfig>) (epds:ResizeArray<EPDEntry>) (minEvalScore: string) (maxEvalScore : string) (maxEvalDiff : string) =
+let performPositionEvalTestOnEpdPositions (limits : ResizeArray<TimeControlTypes.TimeControlCommands.SearchLimit>) (engineList : ResizeArray<EngineConfig>) (epds:ResizeArray<EPDEntry>) (minEvalScore: string) (maxEvalScore : string) (maxEvalDiff : string) (progress: System.Action<int, int>) (ct: System.Threading.CancellationToken) =
   try
       let minEvalScore = if String.IsNullOrWhiteSpace(minEvalScore) then None else Some minEvalScore
       let maxEvalScore = if String.IsNullOrWhiteSpace(maxEvalScore) then None else Some maxEvalScore
@@ -469,7 +503,7 @@ let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList
           if String.IsNullOrWhiteSpace(maxEvalDiff) then
               None
           else
-              if nodes.Count = 1 then Some 10000 else int maxEvalDiff |> Some
+              if limits.Count = 1 then Some 10000 else int maxEvalDiff |> Some
 
       let board = Board()
       let engines = engineList |> Seq.map(fun e -> EngineHelper.createEngine (e, None)) |> Seq.toArray
@@ -487,10 +521,10 @@ let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList
           let ok = engine.WaitForReadyOk() // wait for readyok
           if not ok then
               failwith "Engine did not respond to isready command."
-      let filtered =
-        try
-          [
-            for id, epd in epds |> Seq.indexed do
+      let filtered = ResizeArray()
+      try
+          for id, epd in epds |> Seq.indexed do
+            if not ct.IsCancellationRequested then
               let fen = epd.FEN
               board.LoadFen fen
               let evals =
@@ -498,53 +532,45 @@ let performPositionEvalTestOnEpdPositions (nodes : ResizeArray<int>) (engineList
                   |> Array.chunkBySize chunkSize
                   |> Array.collect(fun chunk ->
                       chunk |> Array.mapi(fun idx eng -> async {
-                      let! (eval, move) = bestMoveByEvalAsync nodes[idx] eng fen
-                      return (eval, move), nodes[idx], eng.Name
+                      let! (eval, move) = bestMoveByEvalForLimit limits[idx] eng fen
+                      return (eval, move), limits[idx], eng.Name
                       }))
-                  |> Async.Parallel  // Run all async operations in parallel
-                  |> Async.RunSynchronously  // Wait for all to complete
-                  |> Array.map(fun ((eval, move), n, name) -> abs eval, move, n, name)
+                  |> Async.Parallel
+                  |> Async.RunSynchronously
+                  |> Array.map(fun ((eval, move), limit, name) -> abs eval, move, limit, name)
 
+              if progress <> null then progress.Invoke(id + 1, epds.Count)
               let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
               let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min
               let evalDiff = maxEval - minEval
-              //make sure all evals are within the range
               let maxEvalDiff =
                   match maxEvalDiff with
                   |Some maxEvalDiff -> maxEvalDiff
                   |None -> 10000
               let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= min && eval <= max) && evalDiff < maxEvalDiff
 
-              let formatNodes n =
-                  if n >= 1000000 then
-                      sprintf "%.1fM" (float n / 1000000.0)
-                  elif n >= 1000 then
-                      sprintf "%.1fK" (float n / 1000.0)
-                  else
-                      sprintf "%d" n
               if passes then
                 let evalAndMoveSummary =
                   evals
-                  |> Array.map(fun (eval,m,nodes, name) ->
-                          let nodes = formatNodes nodes
-                          sprintf "%s eval: %.0f (%s nodes), %s" name eval nodes m )
+                  |> Array.map(fun (eval,m,limit, name) ->
+                          sprintf "%s eval: %.0f (%s), %s" name eval limit.Label m )
                   |> String.concat ", "
-                let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
+                let summary = evalAndMoveSummary + (if limits.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
                 printfn "Position %d with fen %s passed:\n %s" (id + 1) epd.FEN summary
                 let posEvaluation = EPDTypes.EpdEvaluationResult.Create(epd, maxEval, evalDiff, maxMove, maxEng, summary)
-                yield posEvaluation  ]
+                filtered.Add(posEvaluation)
         finally
           for engine in engines do
               try engine.StopProcess() with _ -> ()
       filtered
-      |> List.sortByDescending(fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
+      |> Seq.sortByDescending(fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
       |> ResizeArray
   with
   | ex ->
       printfn "Error in performPositionEvalTestOnEpdPositions: %s" ex.Message
       ResizeArray()
 
-let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : ResizeArray<EngineConfig>) (pgns:ResizeArray<PgnGame>) (minEvalScore: string) (maxEvalScore : string) (maxEvalDiff : string) =
+let performPositionEvalTestOnPgnGames (limits : ResizeArray<TimeControlTypes.TimeControlCommands.SearchLimit>) (engineList : ResizeArray<EngineConfig>) (pgns:ResizeArray<PgnGame>) (minEvalScore: string) (maxEvalScore : string) (maxEvalDiff : string) (progress: System.Action<int, int>) (ct: System.Threading.CancellationToken) =
   try
       let minEvalScore = if String.IsNullOrWhiteSpace(minEvalScore) then None else Some minEvalScore
       let maxEvalScore = if String.IsNullOrWhiteSpace(maxEvalScore) then None else Some maxEvalScore
@@ -552,7 +578,7 @@ let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : R
           if String.IsNullOrWhiteSpace(maxEvalDiff) then
               None
           else
-              if nodes.Count = 1 then Some 10000 else int maxEvalDiff |> Some
+              if limits.Count = 1 then Some 10000 else int maxEvalDiff |> Some
 
       let minEv, maxEv =
           match minEvalScore, maxEvalScore with
@@ -570,62 +596,52 @@ let performPositionEvalTestOnPgnGames (nodes : ResizeArray<int>) (engineList : R
           let ok = engine.WaitForReadyOk() // wait for readyok
           if not ok then
               failwith "Engine did not respond to isready command."
-      let filtered =
-        try
-          [
-              for pgnIdx, pgn in openings |> Seq.indexed do
-                  board.ResetBoardState()
-                  board.LoadFen pgn.Fen
-                  let moves = DeviationAnalysis.movesFromPgn pgn
-                  for move in moves do
-                      board.PlaySanMove move
-                  let fen = board.FEN()
-                  //throttled parallelism of evaluation
-                  let evals =
-                      engines
-                      |> Array.chunkBySize chunkSize
-                      |> Array.collect(fun chunk ->
-                          chunk |> Array.mapi(fun idx eng -> async {
-                          let! (eval, move) = bestMoveByEvalAsync nodes[idx] eng fen
-                          return (eval, move), nodes[idx], eng.Name
-                         }))
-                      |> Async.Parallel  // Run all async operations in parallel
-                      |> Async.RunSynchronously  // Wait for all to complete
-                      |> Array.map(fun ((eval, move), n, name) -> abs eval, move, n, name)
+      let filtered = ResizeArray()
+      try
+          for pgnIdx, pgn in openings |> Seq.indexed do
+            if not ct.IsCancellationRequested then
+              board.ResetBoardState()
+              board.LoadFen pgn.Fen
+              let moves = DeviationAnalysis.movesFromPgn pgn
+              for move in moves do
+                  board.PlaySanMove move
+              let fen = board.FEN()
+              let evals =
+                  engines
+                  |> Array.chunkBySize chunkSize
+                  |> Array.collect(fun chunk ->
+                      chunk |> Array.mapi(fun idx eng -> async {
+                      let! (eval, move) = bestMoveByEvalForLimit limits[idx] eng fen
+                      return (eval, move), limits[idx], eng.Name
+                     }))
+                  |> Async.Parallel
+                  |> Async.RunSynchronously
+                  |> Array.map(fun ((eval, move), limit, name) -> abs eval, move, limit, name)
 
-                  let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
-                  let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min
-                  let evalDiff = maxEval - minEval
-                  //make sure all evals are within the range
-                  let maxEvalDiff =
-                      match maxEvalDiff with
-                      |Some maxEvalDiff -> maxEvalDiff
-                      |None -> 10000
-                  let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= minEv && eval <= maxEv) && evalDiff < maxEvalDiff
-                  //format number of nodes for all numbers like millions, billions etc.
-                  let formatNodes n =
-                      if n >= 1000000 then
-                          sprintf "%.1fM" (float n / 1000000.0)
-                      elif n >= 1000 then
-                          sprintf "%.1fK" (float n / 1000.0)
-                      else
-                          sprintf "%d" n
-                  if passes then
-                      let evalAndMoveSummary =
-                          evals
-                          |> Array.map(fun (eval,m,nodes, name) ->
-                              let nodes = formatNodes nodes
-                              sprintf "%s eval: %.0f (%s), %s" name eval nodes m )
-                          |> String.concat ", "
-                      let summary = evalAndMoveSummary + (if nodes.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
-                      printfn "Position %d with fen %s passed:\n %s" (pgnIdx + 1) fen summary
-                      let posEvaluation = PgnEvaluationResult.Create(pgn, maxEval,evalDiff, maxMove, maxEng, summary)
-                      yield posEvaluation ]
+              if progress <> null then progress.Invoke(pgnIdx + 1, openings.Count)
+              let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
+              let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min
+              let evalDiff = maxEval - minEval
+              let maxEvalDiff =
+                  match maxEvalDiff with
+                  |Some maxEvalDiff -> maxEvalDiff
+                  |None -> 10000
+              let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= minEv && eval <= maxEv) && evalDiff < maxEvalDiff
+              if passes then
+                  let evalAndMoveSummary =
+                      evals
+                      |> Array.map(fun (eval,m,limit, name) ->
+                          sprintf "%s eval: %.0f (%s), %s" name eval limit.Label m )
+                      |> String.concat ", "
+                  let summary = evalAndMoveSummary + (if limits.Count = 1 then "" else (sprintf " max evalDiff: %.1f" evalDiff))
+                  printfn "Position %d with fen %s passed:\n %s" (pgnIdx + 1) fen summary
+                  let posEvaluation = PgnEvaluationResult.Create(pgn, maxEval,evalDiff, maxMove, maxEng, summary)
+                  filtered.Add(posEvaluation)
         finally
           for engine in engines do
               try engine.StopProcess() with _ -> ()
       filtered
-      |> List.sortByDescending (fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
+      |> Seq.sortByDescending (fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
       |> ResizeArray
   with
   | ex ->

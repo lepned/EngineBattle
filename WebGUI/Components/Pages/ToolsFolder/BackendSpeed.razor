@@ -5,6 +5,7 @@
 @inject ILogger<BackendSpeed> logger
 @inject IJSRuntime JSRuntime
 @inject JavaScriptInteropService JsInteropService
+@implements IAsyncDisposable
 @inject GlobalSettingsService SettingsService
 @inject IDialogService DialogService
 
@@ -210,7 +211,16 @@
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
 
-		var games = FullPGNParser.parsePgnFile(filePath).ToList();
+		List<ChessLibrary.PGNTypes.PgnGame> games;
+		try
+		{
+			games = FullPGNParser.parsePgnFile(filePath).ToList();
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+			return;
+		}
 		logger.LogInformation("PGN file parsed {File}", pgnName);
 
 		// keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
@@ -338,18 +348,14 @@
 
 	public async ValueTask DisposeAsync()
 	{
-		if (chessModule is not null)
-		{
-			try
-			{
-				await chessModule.DisposeAsync();
-			}
-			catch { }
-		}
+		await ValueTask.CompletedTask;
 	}
 	protected override async Task OnAfterRenderAsync(bool firstRender)
 	{
-		chessModule = await JsInteropService.ImportModuleAsync(JSRuntime);
+		if (firstRender)
+		{
+			chessModule = await JsInteropService.ImportModuleAsync(JSRuntime);
+		}
 		await base.OnAfterRenderAsync(firstRender);
 	}
 }

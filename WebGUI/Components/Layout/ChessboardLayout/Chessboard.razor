@@ -688,6 +688,8 @@
 					await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
 				}
 			}
+			catch (ObjectDisposedException) { }
+			catch (Microsoft.JSInterop.JSDisconnectedException) { }
 			catch (JSException jsEx)
 			{
 				logger.LogError(jsEx, "JavaScript error in addPolicyCircles.");
@@ -885,13 +887,15 @@
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
-	{		
+	{
 		if (firstRender)
 		{
 			fen = FENposition;
 			await PrepareChessboard();
 		}
 
+		try
+		{
 		if (_pendingScrollToCurrentMove && chessJSmodule is not null)
 		{
 			_pendingScrollToCurrentMove = false;
@@ -926,7 +930,9 @@
 			moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
 			StateHasChanged();
 		}
-		await Task.CompletedTask;
+		}
+		catch (ObjectDisposedException) { }
+		catch (Microsoft.JSInterop.JSDisconnectedException) { }
 	}
 
 	protected override async Task OnInitializedAsync()

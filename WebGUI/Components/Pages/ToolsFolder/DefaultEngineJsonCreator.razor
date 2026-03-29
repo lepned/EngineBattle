@@ -189,6 +189,10 @@
             {
                 var config = CoreTypes.EngineConfig.EmptyWithPath(enginePath);
                 var engine = EngineHelper.createEngine(config, null);
+                using var reg = cts.Token.Register(() =>
+                {
+                    try { engine.StopProcess(); } catch { }
+                });
                 try
                 {
                     engine.StartProcess();

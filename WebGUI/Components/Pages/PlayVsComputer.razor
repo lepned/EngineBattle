@@ -79,7 +79,7 @@
                                 </div>
                             }
                         }
-                        else
+                        else if (customLimitMode == "Nodes")
                         {
                             <div class="pvc-field">
                                 <label for="customNodes">Node Limit</label>
@@ -1030,13 +1030,9 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    public void Dispose()
-    {
-        StopClock();
-    }
-
     public async ValueTask DisposeAsync()
     {
+        StopClock();
         analyzer?.Quit();
         logger.LogInformation("Disposing engines in {page}", "play-vs-computer page");
         await Task.CompletedTask;

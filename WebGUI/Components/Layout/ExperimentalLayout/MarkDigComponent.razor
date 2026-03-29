@@ -15,11 +15,16 @@
     {
         var filePath = Path.Combine(Environment.ContentRootPath, "wwwroot", FileName);
 
-        // Read the markdown file content
-        markdownContent = File.ReadAllText(filePath);
-        var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-        markdownContent = Markdig.Markdown.ToHtml(markdownContent, pipeline);
-		await Task.CompletedTask;
+        try
+        {
+            var raw = await File.ReadAllTextAsync(filePath);
+            var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+            markdownContent = Markdig.Markdown.ToHtml(raw, pipeline);
+        }
+        catch (FileNotFoundException)
+        {
+            markdownContent = $"<p>Documentation file not found: {FileName}</p>";
+        }
     }
 }
 

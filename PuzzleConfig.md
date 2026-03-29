@@ -35,6 +35,8 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
 - **SampleSize**: The number of puzzles to sample from the puzzle file.
 - **Nodes**: Global comma-separated node limit per puzzle (eg., "10, 100" will run 10 and 100 nodes search). This applies to all engines in addition to individual engine `Nodes` settings. Default empty.
 - **Concurrency**: The number of concurrent engine instances to use for testing.
+- **Failed**: Number of failed puzzles to display in results, ordered by rating. Default 0.
+- **Solved**: Number of solved puzzles to display in results, ordered by rating. Default 0.
 - **FailedPuzzlesOutputFolder**: The folder where failed puzzles and summary will be saved.
 
 ## PuzzleConfig.json Example - Copy This as Template
@@ -42,7 +44,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
 ```
 {
   "PuzzleFile": "C:/Dev/Chess/Puzzles/lichess_db_April_2025.csv",
-  "Type": "policy, policy3, policy5, value3, search",
+  "Type": "policy, policy3, value",
   "MaxRating": 3500,
   "MinRating": 0,
   "RatingGroups": "2500, 2700",
@@ -75,6 +77,8 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   "SampleSize": 1000,
   "Nodes": "",
   "Concurrency" : 1,
+  "Failed": 5,
+  "Solved": 5,
   "FailedPuzzlesOutputFolder": "C:/Dev/Chess/Puzzles"
 }
 ```

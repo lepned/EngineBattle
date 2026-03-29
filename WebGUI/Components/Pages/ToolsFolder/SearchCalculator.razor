@@ -85,7 +85,7 @@
             @if (activeView == ViewMode.PerMove)
             {
               <td>@item.TimeLeftMs</td>
-              <td>@(((double)item.MoveTimeMs / (double)(item.TimeLeftMs + item.MoveTimeMs)).ToString("P2"))</td>
+              <td>@((item.TimeLeftMs + item.MoveTimeMs > 0 ? (double)item.MoveTimeMs / (double)(item.TimeLeftMs + item.MoveTimeMs) : 0.0).ToString("P2"))</td>
             }
           </tr>
         }
@@ -192,7 +192,7 @@
       "MT" => sortAscending ? items.OrderBy(x => x.MoveTimeMs) : items.OrderByDescending(x => x.MoveTimeMs),
       "TopP" => sortAscending ? items.OrderBy(x => x.TopPMovePercent) : items.OrderByDescending(x => x.TopPMovePercent),
       "TL" => sortAscending ? items.OrderBy(x => x.TimeLeftMs) : items.OrderByDescending(x => x.TimeLeftMs),
-      "TR" => sortAscending ? items.OrderBy(x => (double)x.MoveTimeMs / (x.TimeLeftMs + x.MoveTimeMs)) : items.OrderByDescending(x => (double)x.MoveTimeMs / (x.TimeLeftMs + x.MoveTimeMs)),
+      "TR" => sortAscending ? items.OrderBy(x => x.TimeLeftMs + x.MoveTimeMs > 0 ? (double)x.MoveTimeMs / (x.TimeLeftMs + x.MoveTimeMs) : 0.0) : items.OrderByDescending(x => x.TimeLeftMs + x.MoveTimeMs > 0 ? (double)x.MoveTimeMs / (x.TimeLeftMs + x.MoveTimeMs) : 0.0),
       _ => items
     };
     return items;
@@ -226,8 +226,16 @@
     fileOpenName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
 
-    var games = FullPGNParser.parsePgnFile(filePath).ToList();
-    var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, 0);
+    List<ChessLibrary.PGNTypes.PgnGame> games;
+    try
+    {
+        games = FullPGNParser.parsePgnFile(filePath).ToList();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+        return;
+    }
 
     var summaryOfLogLiveStats =
       PGNStatistics.calculateNodeRatioPerPGNfile(games)

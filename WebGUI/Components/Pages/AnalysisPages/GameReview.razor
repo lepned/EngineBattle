@@ -74,6 +74,8 @@
         <div class="gr-left">
             <EnginePanel @ref="enginePanel" FEN="@fen" ChessBoard="@board"
                          Id="grEngine" Engine="engineConfig"
+                         Nodes="@nodes"
+                         IsReviewing="@isAnalyzing"
                          OnNewEngineLoaded="OnNewEngineLoaded" />
         </div>
 
@@ -132,9 +134,9 @@
                 </div>
             }
 
-            @if (analysisResult != null && selectedMove != null)
-            {
-                <div class="gr-move-detail">
+            <div class="gr-move-detail">
+              @if (analysisResult != null && selectedMove != null)
+              {
                     <div class="gr-detail-header">
                         <span class="gr-detail-move @GetMoveClass(selectedMove.Classification)">
                             @(selectedMove.Color == "w" ? $"{selectedMove.MoveNumber}." : $"{selectedMove.MoveNumber}...")@selectedMove.San
@@ -142,10 +144,7 @@
                         <span class="gr-detail-chip @GetMoveClass(selectedMove.Classification)">@selectedMove.Classification</span>
                     </div>
                     <div class="gr-detail-body">
-                        @if (!string.IsNullOrEmpty(selectedMove.BestMoveSan) && selectedMove.BestMove != selectedMove.UciMove)
-                        {
-                            <div>Best: <strong>@selectedMove.BestMoveSan</strong></div>
-                        }
+                        <div>Best: <strong>@(!string.IsNullOrEmpty(selectedMove.BestMoveSan) && selectedMove.BestMove != selectedMove.UciMove ? selectedMove.BestMoveSan : selectedMove.San)</strong></div>
                         <div>Eval: @selectedMove.EvalBefore</div>
                         <div>WP: @($"{selectedMove.WinProbBefore*100:F1}%") → @($"{selectedMove.WinProbAfter*100:F1}%")</div>
                         <div>Accuracy: @($"{selectedMove.MoveAccuracy:F0}%")</div>
@@ -154,8 +153,8 @@
                             <div>Depth: @selectedMove.Depth | Nodes: @FormatNodes(selectedMove.Nodes)</div>
                         }
                     </div>
-                </div>
-            }
+              }
+            </div>
 
             @if (analysisResult != null)
             {
@@ -542,15 +541,30 @@
 
         StateHasChanged();
 
-        var config = new GameReviewConfig(searchMode, timePerMove, nodes, depth, 3, true);
+        // Sync search settings from EnginePanel
+        var mode = enginePanel != null && enginePanel.IsTimeMode
+            ? GameAccuracyAnalysis.SearchMode.Time
+            : GameAccuracyAnalysis.SearchMode.Nodes;
+        var time = enginePanel != null ? (int)enginePanel.CurrentTimeMs : timePerMove;
+        var nodeCount = enginePanel != null ? (int)enginePanel.CurrentNodes : nodes;
 
-        var progress = new Progress<(int current, int total)>(p =>
+        var config = new GameReviewConfig(mode, time, nodeCount, depth, 3, true);
+
+        var progress = new Progress<(int current, int total)>(async p =>
         {
-            InvokeAsync(() =>
+            await InvokeAsync(async () =>
             {
                 progressCurrent = p.current;
                 progressTotal = p.total;
                 progressPercent = progressTotal > 0 ? (double)progressCurrent / progressTotal * 100.0 : 0;
+
+                if (gameFens != null && p.current > 0 && p.current <= gameFens.Length && chessBoardRazor != null)
+                {
+                    fen = gameFens[p.current - 1];
+                    await chessBoardRazor.SetPositionDirect(fen);
+                    if (enginePanel != null) await enginePanel.ResetChartData();
+                }
+
                 StateHasChanged();
             });
         });
@@ -637,14 +651,17 @@
 
         fen = board.FEN();
 
-        // Find which ply matches the current board position
+        // Find which mainline ply matches the current board position
         var ply = -1;
-        for (int i = 0; i < board.MovesAndFenPlayed.Count; i++)
+        if (gameFens != null)
         {
-            if (board.MovesAndFenPlayed[i].FenAfterMove == fen)
+            for (int i = 0; i < gameFens.Length; i++)
             {
-                ply = i;
-                break;
+                if (gameFens[i] == fen)
+                {
+                    ply = i;
+                    break;
+                }
             }
         }
 
@@ -791,6 +808,12 @@
 
     private string GetSearchModeLabel()
     {
+        if (enginePanel != null)
+        {
+            return enginePanel.IsTimeMode
+                ? $"Time {(int)enginePanel.CurrentTimeMs}ms"
+                : $"Nodes {FormatNodes((long)enginePanel.CurrentNodes)}";
+        }
         if (searchMode.IsTime) return $"Time {timePerMove}ms";
         if (searchMode.IsNodes) return $"Nodes {FormatNodes(nodes)}";
         if (searchMode.IsDepth) return $"Depth {depth}";
@@ -835,6 +858,5 @@
         try { analysisCts?.Cancel(); } catch (ObjectDisposedException) { }
         try { analysisCts?.Dispose(); } catch (ObjectDisposedException) { }
         analysisCts = null;
-        await ValueTask.CompletedTask;
     }
 }

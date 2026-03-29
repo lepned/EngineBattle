@@ -1,0 +1,491 @@
+@page "/tools/book-evaluation"
+@inject ILogger<BookEvaluation> logger
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+
+<PageTitle>Book Evaluation</PageTitle>
+
+<div class="tool-page">
+  <h1>Out-of-Book Evaluation</h1>
+  <div class="tool-subtitle">Evaluate positions from an existing opening book using engines to filter and sort by eval balance</div>
+
+  @if (!string.IsNullOrEmpty(statusMessage))
+  {
+    <div style="margin:8px 0; font-weight:500; color:@(isError ? "#ef5350" : "#8b9cd0")">@statusMessage</div>
+  }
+
+  <div class="tool-section">
+    <h2>Engines</h2>
+
+    <div class="oob-grid">
+      <div class="oob-grid-header">Engine</div>
+      <div class="oob-grid-header">Config</div>
+      <div class="oob-grid-header">Mode</div>
+      <div class="oob-grid-header">Value</div>
+      <div class="oob-grid-header"></div>
+      @foreach (var eng in oobEngines)
+      {
+        <div class="oob-grid-cell oob-engine-name" title="@eng.FilePath">@eng.Config.Name</div>
+        <div class="oob-grid-cell oob-engine-file">@Path.GetFileName(eng.FilePath)</div>
+        <div class="oob-grid-cell">
+          <select class="tool-input oob-mode-select" value="@eng.Mode" @onchange="@(e => { if (Enum.TryParse<SearchMode>(e.Value?.ToString(), out var m)) { eng.Mode = m; eng.SearchValue = m == SearchMode.Time ? 3000 : 10000; } })">
+            <option value="@SearchMode.Nodes">Nodes</option>
+            <option value="@SearchMode.Time">Time ms</option>
+          </select>
+        </div>
+        <div class="oob-grid-cell"><input type="text" class="tool-input oob-nodes-input" value="@eng.SearchValue.ToString("N0")" @onchange="@(e => { if (int.TryParse(e.Value?.ToString()?.Replace(",","").Replace(" ",""), out var n) && n > 0) eng.SearchValue = n; })" /></div>
+        <div class="oob-grid-cell oob-remove-cell"><button class="oob-remove-btn" @onclick="@(() => RemoveEngine(eng))" title="Remove">&times;</button></div>
+      }
+    </div>
+
+    <button class="tool-action-btn" style="margin-top:6px;" @onclick="BrowseAndAddEngine" disabled="@isProcessing">+ Add Engine</button>
+  </div>
+
+  <div class="tool-section">
+    <h2>Parameters</h2>
+    <div class="tool-controls">
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Number of openings</label>
+        <input type="text" class="tool-input" style="width:120px" @bind="numberOfOpenings" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Min eval (cp)</label>
+        <input type="text" class="tool-input" style="width:100px" @bind="minEvalScore" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Max eval (cp)</label>
+        <input type="text" class="tool-input" style="width:100px" @bind="maxEvalScore" />
+      </div>
+      <div class="tool-input-group" style="margin-bottom:0">
+        <label>Max eval diff (cp)</label>
+        <input type="text" class="tool-input" style="width:100px" @bind="maxEvalDiff" />
+      </div>
+    </div>
+
+    <div class="tool-input-group" style="max-width:500px; margin-top:8px;">
+      <label>Output folder</label>
+      <div style="display:flex; gap:4px; align-items:center;">
+        <input type="text" class="tool-input" style="width:100%" @bind="outputFolder" />
+        <MudIconButton Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                       OnClick="@(() => BrowseFolder(v => outputFolder = v, outputFolder))" />
+      </div>
+    </div>
+  </div>
+
+  <div class="tool-section">
+    <h2>Run</h2>
+    <p>Output saved as <code>BookEval_&lt;book&gt;_&lt;engines&gt;.epd/.pgn</code> in the output folder.</p>
+    <div class="tool-controls">
+      <button class="tool-upload-btn" @onclick="BrowseOpeningBookFile" disabled="@isProcessing">Pick opening book</button>
+      @if (!string.IsNullOrEmpty(oobSelectedFile))
+      {
+        <span class="file-name" style="margin:0;">@Path.GetFileName(oobSelectedFile)</span>
+      }
+    </div>
+    <div style="margin-top:8px; display:flex; gap:16px;">
+      <button class="tool-action-btn" @onclick="EvaluateAndSortFile" disabled="@(isProcessing || string.IsNullOrEmpty(oobSelectedFile))">Evaluate and sort</button>
+      @if (isProcessing)
+      {
+        <button class="tool-cancel-btn" @onclick="CancelRun">Stop</button>
+      }
+    </div>
+    @if (isProcessing)
+    {
+      <div class="puzzle-progress" style="margin-top:8px;">
+        <div class="puzzle-progress-header">
+          <span class="puzzle-progress-label">@processingLabel</span>
+          @if (progressTotal > 0)
+          {
+            <span class="puzzle-progress-count">@progressProcessed / @progressTotal</span>
+          }
+        </div>
+        <div class="puzzle-progress-track">
+          <div class="puzzle-progress-fill" style="width:@(progressTotal > 0 ? $"{(double)progressProcessed / progressTotal * 100:F1}%" : "0%")"></div>
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (lastResult != null)
+  {
+    <div class="tool-section">
+      <h2>Results</h2>
+      <div class="tool-table-container" style="max-width:700px;">
+        <table class="tool-table">
+          <tbody>
+            <tr><td>Source file</td><td>@lastResult.SourceFile</td></tr>
+            <tr><td>Positions analyzed</td><td>@lastResult.TotalAnalyzed.ToString("N0")</td></tr>
+            <tr><td>Positions passed</td><td>@lastResult.Passed.ToString("N0")</td></tr>
+            <tr><td>Pass rate</td><td>@(lastResult.TotalAnalyzed > 0 ? ((double)lastResult.Passed / lastResult.TotalAnalyzed).ToString("P1") : "N/A")</td></tr>
+            <tr><td>Engines</td><td>@lastResult.Engines</td></tr>
+            <tr><td>Eval range</td><td>@lastResult.EvalRange</td></tr>
+            <tr><td>Max eval diff</td><td>@lastResult.MaxDiff cp</td></tr>
+            <tr><td>Duration</td><td>@lastResult.Duration</td></tr>
+            <tr><td>Output file</td><td style="word-break:break-all;">@lastResult.OutputPath</td></tr>
+            @if (lastResult.WasCancelled)
+            {
+              <tr><td>Status</td><td style="color:#ef5350;">Cancelled (partial results saved)</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>
+
+@code {
+
+	private string minEvalScore = "80";
+	private string maxEvalScore = "100";
+	private string maxEvalDiff = "40";
+	private string numberOfOpenings = "500";
+	private string outputFolder = "";
+	private bool isProcessing;
+	private string processingLabel = "";
+	private string statusMessage = "";
+	private bool isError;
+	private int progressProcessed;
+	private int progressTotal;
+	private CancellationTokenSource cts;
+	private EvalResult lastResult;
+
+	private class EvalResult
+	{
+		public string SourceFile { get; set; }
+		public int TotalAnalyzed { get; set; }
+		public int Passed { get; set; }
+		public string Engines { get; set; }
+		public string EvalRange { get; set; }
+		public string MaxDiff { get; set; }
+		public string Duration { get; set; }
+		public string OutputPath { get; set; }
+		public bool WasCancelled { get; set; }
+	}
+	private List<OobEngineEntry> oobEngines = new();
+	private string oobSelectedFile = "";
+
+	private enum SearchMode { Nodes, Time }
+
+	private class OobEngineEntry
+	{
+		public CoreTypes.EngineConfig Config { get; set; }
+		public string FilePath { get; set; } = "";
+		public SearchMode Mode { get; set; } = SearchMode.Nodes;
+		public int SearchValue { get; set; } = 10000;
+
+		public TimeControlTypes.TimeControlCommands.SearchLimit ToSearchLimit() => Mode switch
+		{
+			SearchMode.Time => TimeControlTypes.TimeControlCommands.SearchLimit.NewTimeLimit(SearchValue),
+			_ => TimeControlTypes.TimeControlCommands.SearchLimit.NewNodeLimit(SearchValue)
+		};
+	}
+
+	private void SetStatus(string message, bool error = false)
+	{
+		statusMessage = message;
+		isError = error;
+	}
+
+	private void CancelRun()
+	{
+		cts?.Cancel();
+	}
+
+	private void OnProgress(int processed, int total)
+	{
+		progressProcessed = processed;
+		progressTotal = total;
+		InvokeAsync(StateHasChanged);
+	}
+
+	private (List<CoreTypes.EngineConfig> candidates, List<TimeControlTypes.TimeControlCommands.SearchLimit> limits, string label)? ResolveEnginesAndLimits()
+	{
+		if (oobEngines.Count == 0)
+		{
+			SetStatus("No engines configured. Add at least one engine.", true);
+			return null;
+		}
+
+		if (oobEngines.Any(e => e.SearchValue <= 0))
+		{
+			SetStatus("All search values must be positive integers.", true);
+			return null;
+		}
+
+		var candidates = oobEngines.Select(e => e.Config).ToList();
+		var limits = oobEngines.Select(e => e.ToSearchLimit()).ToList();
+		var label = string.Join(", ", oobEngines.Select(e =>
+		{
+			var suffix = e.Mode == SearchMode.Time ? "ms" : "N";
+			return $"{e.Config.Name} ({e.SearchValue:N0}{suffix})";
+		}));
+		return (candidates, limits, label);
+	}
+
+	private async Task BrowseAndAddEngine()
+	{
+		var initialDir = SettingsService.Settings.EngineDefsFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.json" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Engine Config", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return;
+		var filePath = (string)result.Data!;
+
+		try
+		{
+			var config = Configuration.JSON.readSingleEngineConfig(filePath);
+			if (oobEngines.Any(e => e.FilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase)))
+			{
+				SetStatus($"{config.Name} is already in the list.", true);
+				return;
+			}
+			oobEngines.Add(new OobEngineEntry { Config = config, FilePath = filePath, Mode = SearchMode.Nodes, SearchValue = 10000 });
+			SetStatus($"Added {config.Name}");
+		}
+		catch (Exception ex)
+		{
+			SetStatus($"Failed to load engine config: {ex.Message}", true);
+		}
+	}
+
+	private void RemoveEngine(OobEngineEntry entry)
+	{
+		oobEngines.Remove(entry);
+	}
+
+	private async Task BrowseOpeningBookFile()
+	{
+		var initialDir = SettingsService.Settings.OpeningsFolder;
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, initialDir },
+			{ x => x.FileFilter, "*.pgn;*.epd" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select PGN or EPD File", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled) return;
+
+		oobSelectedFile = (string)result.Data!;
+		logger.LogInformation("Opening book selected: {File}", Path.GetFileName(oobSelectedFile));
+		SetStatus($"Selected: {Path.GetFileName(oobSelectedFile)}");
+	}
+
+	private async Task EvaluateAndSortFile()
+	{
+		if (string.IsNullOrEmpty(oobSelectedFile) || !File.Exists(oobSelectedFile))
+		{
+			SetStatus("Please pick an opening book file first.", true);
+			return;
+		}
+
+		if (string.IsNullOrEmpty(outputFolder))
+		{
+			SetStatus("Please set an output folder.", true);
+			return;
+		}
+
+		var fileName = Path.GetFileName(oobSelectedFile);
+		SetStatus("");
+		lastResult = null;
+		isProcessing = true;
+		progressProcessed = 0;
+		progressTotal = 0;
+		processingLabel = $"Evaluating positions from {fileName}...";
+		cts?.Dispose();
+		cts = new CancellationTokenSource();
+		StateHasChanged();
+
+		try
+		{
+			var nOpenings = GetRequestedOpeningCount();
+			if (fileName.ToLower().EndsWith(".pgn"))
+			{
+				var games = FullPGNParser.parsePgnFile(oobSelectedFile).Take(nOpenings).ToList();
+				await Task.Run(() => WriteEvaluatedPgnOpenings(fileName, games));
+			}
+			else if (fileName.ToLower().EndsWith(".epd"))
+			{
+				var positions = EPDExtractor.readEPDs(oobSelectedFile).Take(nOpenings).ToList();
+				await Task.Run(() => WriteEvaluatedEpdOpenings(fileName, positions));
+			}
+			else
+			{
+				SetStatus("File type not supported. Use .pgn or .epd files.", true);
+			}
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(ex, "Failed to evaluate opening book");
+			SetStatus($"Error: {ex.Message}", true);
+		}
+		finally
+		{
+			isProcessing = false;
+			StateHasChanged();
+		}
+	}
+
+	private void WriteEvaluatedEpdOpenings(string epdName, List<EPDTypes.EPDEntry> positions)
+	{
+		var resolved = ResolveEnginesAndLimits();
+		if (resolved == null) return;
+		var (candidates, limits, concatenatedString) = resolved.Value;
+
+		var totalSw = System.Diagnostics.Stopwatch.StartNew();
+		var outPutDir = Path.Combine(outputFolder, "BookEvals");
+		var filePath = Path.Combine(outPutDir, $"BookEval_{epdName}_{concatenatedString}.epd");
+		logger.LogInformation("Sorting openings based on Eval with use of {Engines} started...", concatenatedString);
+		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnEpdPositions(limits, candidates, positions, minEvalScore, maxEvalScore, maxEvalDiff, OnProgress, cts.Token);
+
+		if (!Directory.Exists(outPutDir))
+			Directory.CreateDirectory(outPutDir);
+
+		using (FileStream stream = File.Create(filePath))
+		{
+			using (StreamWriter fs = new StreamWriter(stream))
+			{
+				foreach (var epd in positionEvalsWithMoves)
+				{
+					var theSame = epd.EPD.FEN == epd.EPD.Id?.Value;
+					var summary = theSame ?
+						$"{epd.EPD.FEN}; id \"opening analysis by EB\"; other \"{epd.Summary}\";" :
+						$"{epd.EPD.FEN}; id \"{epd.EPD.Id?.Value}\"; other \"{epd.Summary}\";";
+					fs.WriteLine(summary);
+				}
+			}
+		}
+
+		totalSw.Stop();
+		lastResult = new EvalResult
+		{
+			SourceFile = epdName,
+			TotalAnalyzed = positions.Count,
+			Passed = positionEvalsWithMoves.Count,
+			Engines = concatenatedString,
+			EvalRange = $"{minEvalScore} – {maxEvalScore}",
+			MaxDiff = maxEvalDiff,
+			Duration = FormatHms(totalSw.Elapsed),
+			OutputPath = filePath,
+			WasCancelled = cts.Token.IsCancellationRequested
+		};
+		logger.LogInformation("Evaluated {File}: {Passed}/{Total} passed. Written to {Path}", epdName, positionEvalsWithMoves.Count, positions.Count, filePath);
+		SetStatus(lastResult.WasCancelled ? "Cancelled — partial results saved." : "Evaluation complete.");
+	}
+
+	private void WriteEvaluatedPgnOpenings(string pgnName, List<PGNTypes.PgnGame> games)
+	{
+		var resolved = ResolveEnginesAndLimits();
+		if (resolved == null) return;
+		var (candidates, limits, concatenatedString) = resolved.Value;
+
+		var totalSw = System.Diagnostics.Stopwatch.StartNew();
+		var outPutDir = Path.Combine(outputFolder, "BookEvals");
+		var filePath = Path.Combine(outPutDir, $"BookEval_{pgnName}_{concatenatedString}.pgn");
+		logger.LogInformation("Sorting openings based on Eval with use of {Engines} started...", concatenatedString);
+		var positionEvalsWithMoves = PuzzleEngineAnalysis.performPositionEvalTestOnPgnGames(limits, candidates, games, minEvalScore, maxEvalScore, maxEvalDiff, OnProgress, cts.Token);
+
+		if (!Directory.Exists(outPutDir))
+			Directory.CreateDirectory(outPutDir);
+
+		using (FileStream stream = File.Create(filePath))
+		{
+			using (StreamWriter fs = new StreamWriter(stream))
+			{
+				foreach (var pgn in positionEvalsWithMoves)
+				{
+					var eval = $"[MaxEval \"{pgn.MaxEval} by {pgn.MaxEngine}, {pgn.MaxMove}\"]";
+					var raw = pgn.Pgn.Raw.TrimStart(new char[] { ' ', '\r', '\n' });
+					raw = raw.TrimEnd(new char[] { ' ', '\r', '\n' });
+					var lastBracketIndex = raw.LastIndexOf("]");
+					string summary;
+					if (lastBracketIndex >= 0)
+					{
+						var headers = raw.Substring(0, lastBracketIndex + 1);
+						var moves = raw.Substring(lastBracketIndex + 1);
+						summary = $"{headers}\n{eval}{moves}\n";
+					}
+					else
+					{
+						summary = $"{eval}\n{raw}\n";
+					}
+					fs.WriteLine(summary);
+				}
+			}
+		}
+
+		totalSw.Stop();
+		lastResult = new EvalResult
+		{
+			SourceFile = pgnName,
+			TotalAnalyzed = games.Count,
+			Passed = positionEvalsWithMoves.Count,
+			Engines = concatenatedString,
+			EvalRange = $"{minEvalScore} – {maxEvalScore}",
+			MaxDiff = maxEvalDiff,
+			Duration = FormatHms(totalSw.Elapsed),
+			OutputPath = filePath,
+			WasCancelled = cts.Token.IsCancellationRequested
+		};
+		logger.LogInformation("Evaluated {File}: {Passed}/{Total} passed. Written to {Path}", pgnName, positionEvalsWithMoves.Count, games.Count, filePath);
+		SetStatus(lastResult.WasCancelled ? "Cancelled — partial results saved." : "Evaluation complete.");
+	}
+
+	private string FormatHms(TimeSpan ts)
+	{
+		int hours = (int)ts.TotalHours;
+		int minutes = ts.Minutes;
+		int seconds = ts.Seconds;
+		return $"{hours}h {minutes}m {seconds}s";
+	}
+
+	private int GetRequestedOpeningCount()
+	{
+		if (int.TryParse(numberOfOpenings, out int nOpenings))
+			return nOpenings;
+		logger.LogError("Failed to parse numberOfOpenings: {NumberOfOpenings}", numberOfOpenings);
+		return 10;
+	}
+
+	protected override Task OnInitializedAsync()
+	{
+		var s = SettingsService.Settings;
+		if (!string.IsNullOrEmpty(s.OpeningsFolder))
+			outputFolder = s.OpeningsFolder;
+
+		foreach (var path in new[] { s.DefaultEnginePath, s.SecondaryEnginePath })
+		{
+			if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+			try
+			{
+				var config = Configuration.JSON.readSingleEngineConfig(path);
+				if (!string.IsNullOrEmpty(config.Name))
+					oobEngines.Add(new OobEngineEntry { Config = config, FilePath = path, Mode = SearchMode.Nodes, SearchValue = 10000 });
+			}
+			catch { }
+		}
+
+		return base.OnInitializedAsync();
+	}
+
+	private async Task BrowseFolder(Action<string> setter, string currentValue)
+	{
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, currentValue },
+			{ x => x.Mode, FileBrowserMode.Folder }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+		var result = await dialog.Result;
+		if (result != null && !result.Canceled) { setter((string)result.Data!); StateHasChanged(); }
+	}
+}

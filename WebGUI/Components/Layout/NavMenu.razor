@@ -1,4 +1,5 @@
-﻿@inject NotifierService Notifier
+﻿@implements IAsyncDisposable
+@inject NotifierService Notifier
 <MudNavMenu Bordered="true" Rounded="true" Color="Color.Primary">
 
 	<MudNavLink Href="/" Icon="@Icons.Material.Filled.Dashboard">Home</MudNavLink>
@@ -41,7 +42,6 @@
 		<MudNavLink Href="/results/backend-metrics" Icon="@Icons.Material.Filled.Analytics">Backend metrics</MudNavLink>
 		<MudNavLink Href="/results/search-metrics" Icon="@Icons.Material.Filled.Search">Search metrics</MudNavLink>
 		<MudNavLink Href="/results/move-deviation" Icon="@Icons.Material.Filled.Compare">Move deviation</MudNavLink>
-		<MudNavLink Href="/results/pgn-utilities" Icon="@Icons.Material.Filled.Handyman">PGN utilities</MudNavLink>
 	</MudNavGroup>
 
 	<MudDivider Class="my-1" />
@@ -51,7 +51,8 @@
 		<MudNavLink Href="/tools/tournament-creator" Icon="@Icons.Material.Filled.PostAdd">Tournament creator</MudNavLink>
 		<MudNavLink Href="/tools/puzzle-creator" Icon="@Icons.Material.Filled.Extension">Lichess puzzle creator</MudNavLink>
 		<MudNavLink Href="/tools/eret-creator" Icon="@Icons.Material.Filled.Science">ERET creator</MudNavLink>
-		<MudNavLink Href="/tools/opening-book" Icon="@Icons.Material.Filled.MenuBook">Opening book creator</MudNavLink>
+		<MudNavLink Href="/tools/book-evaluation" Icon="@Icons.Material.Filled.TrendingUp">Book evaluation</MudNavLink>
+		<MudNavLink Href="/tools/pgn-tools" Icon="@Icons.Material.Filled.MenuBook">PGN tools</MudNavLink>
 		<MudNavLink Href="/tools/epd-visualizer" Icon="@Icons.Material.Filled.GridOn">EPD visualizer</MudNavLink>
 	</MudNavGroup>
 
@@ -67,7 +68,6 @@
 
 @code {
 	private bool shouldBeVisible;
-	private bool setupVisible;
 
 	protected override void OnInitialized()
 	{
@@ -75,7 +75,6 @@
 		var currentDirectory = Directory.GetCurrentDirectory();
 		var fullPath = Path.Combine(currentDirectory, relativePath);
 		shouldBeVisible = File.Exists(fullPath);
-		setupVisible = !shouldBeVisible;
 	}
 
 	async Task RefreshNavMenu(bool refresh)
