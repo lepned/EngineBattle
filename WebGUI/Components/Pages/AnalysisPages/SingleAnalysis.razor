@@ -877,18 +877,30 @@
     {
         if (string.IsNullOrEmpty(engineConfigPath)) return;
         var s = SettingsService.Settings;
+        var chartLines = analysisWithEngine?.CurrentChartLines ?? s.ChartLines;
+        var multiPV = Math.Max(s.DefaultMultiPV, chartLines);
         var updated = new GlobalSettings
         {
             EngineDefsFolder = s.EngineDefsFolder, OpeningsFolder = s.OpeningsFolder,
             PgnOutputFolder = s.PgnOutputFolder, TournamentConfigFolder = s.TournamentConfigFolder,
             TablebaseFolder = s.TablebaseFolder, NeuralNetFolder = s.NeuralNetFolder,
+            PuzzleConfigFolder = s.PuzzleConfigFolder,
             AnalysisGamesPath = s.AnalysisGamesPath, OrdoExePath = s.OrdoExePath,
             LastBrowsedPath = s.LastBrowsedPath, RecentBrowsePaths = s.RecentBrowsePaths, StartupPage = s.StartupPage,
             DefaultEnginePath = engineConfigPath,
             SecondaryEnginePath = s.SecondaryEnginePath,
-            DefaultSearchTimeMs = s.DefaultSearchTimeMs, DefaultSearchNodes = s.DefaultSearchNodes,
-            ChartLines = s.ChartLines, PolicyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter,
+            DefaultSearchMode = analysisWithEngine?.IsTimeMode == true ? "Time" : "Nodes",
+            DefaultSearchTimeMs = analysisWithEngine?.CurrentTimeMs ?? s.DefaultSearchTimeMs,
+            DefaultSearchNodes = (int)(analysisWithEngine?.CurrentNodes ?? s.DefaultSearchNodes),
+            ChartLines = chartLines, DefaultMultiPV = multiPV,
+            PolicyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter,
             CombineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves,
+            MinPolicyThreshold = s.MinPolicyThreshold,
+            ReviewSearchMode = s.ReviewSearchMode, ReviewTimePerMove = s.ReviewTimePerMove,
+            ReviewNodes = s.ReviewNodes, ReviewDepth = s.ReviewDepth,
+            BrilliantPVGap = s.BrilliantPVGap, GreatPVGap = s.GreatPVGap,
+            ExcellentMaxWPLoss = s.ExcellentMaxWPLoss, GoodMaxWPLoss = s.GoodMaxWPLoss,
+            InaccuracyMaxWPLoss = s.InaccuracyMaxWPLoss, MistakeMaxWPLoss = s.MistakeMaxWPLoss,
             DelayBetweenGamesSec = s.DelayBetweenGamesSec, MoveOverheadMs = s.MoveOverheadMs,
         };
         SettingsService.Save(updated);

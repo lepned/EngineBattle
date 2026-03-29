@@ -54,6 +54,11 @@
         @if (analysisResult != null)
         {
             <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                       OnClick="BrowseExportFolder" StartIcon="@Icons.Material.Filled.FolderOpen"
+                       title="@(!string.IsNullOrEmpty(exportFolder) ? exportFolder : "Pick export folder")">
+                @(!string.IsNullOrEmpty(exportFolder) ? Path.GetFileName(exportFolder.TrimEnd('/','\\')) : "Folder")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
                        OnClick="ExportAnnotatedPGN" StartIcon="@Icons.Material.Filled.Download">
                 Export
             </MudButton>
@@ -182,6 +187,28 @@
                     </table>
                 </div>
 
+                @if (GetCriticalMoves().Length > 0)
+                {
+                    <div class="gr-stats-card">
+                        <h4>Critical Moves (@GetCriticalMoves().Length)</h4>
+                        <div class="gr-critical-list">
+                            @foreach (var move in GetCriticalMoves())
+                            {
+                                <div class="gr-critical-row @(selectedMove == move ? "gr-game-selected" : "")"
+                                     @onclick="() => SelectMove(move.Ply)">
+                                    <span class="gr-detail-chip @GetMoveClass(move.Classification)">@GetBadge(move.Classification)</span>
+                                    <span class="gr-critical-move">@(move.Color == "w" ? $"{move.MoveNumber}." : $"{move.MoveNumber}...")@move.San</span>
+                                    @if (!string.IsNullOrEmpty(move.BestMoveSan) && move.BestMove != move.UciMove)
+                                    {
+                                        <span class="gr-critical-best">@move.BestMoveSan</span>
+                                    }
+                                    <span class="gr-critical-acc">@($"{move.MoveAccuracy:F0}%")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
                 <div class="gr-stats-card">
                     <h4>Phase Breakdown</h4>
                     <table class="gr-phase-table">
@@ -243,6 +270,9 @@
     private double progressPercent;
     private CancellationTokenSource analysisCts;
 
+    // Export
+    private string exportFolder = "";
+
     // Search config
     private SearchMode searchMode = SearchMode.Time;
     private int timePerMove = 1000;
@@ -276,6 +306,7 @@
 
             // Load Game Review defaults from settings
             var s = SettingsService.Settings;
+            exportFolder = s.PgnOutputFolder;
             searchMode = s.ReviewSearchMode switch
             {
                 "Nodes" => SearchMode.Nodes,
@@ -321,6 +352,7 @@
                     {
                         accuracyPlot = new AccuracyPlot(chessModule, chartElement);
                         await accuracyPlot.RenderAsync(analysisResult);
+                        await chessModule.InvokeVoidAsync("triggerResizeEvent");
                     }
 
                     if (navPly >= 0 && gameFens != null && navPly < gameFens.Length)
@@ -350,6 +382,20 @@
         {
             logger.LogError(ex, "Error loading PGN file");
         }
+    }
+
+    private async Task BrowseExportFolder()
+    {
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, !string.IsNullOrEmpty(exportFolder) ? exportFolder : SettingsService.Settings.PgnOutputFolder },
+            { x => x.Mode, FileBrowserMode.Folder }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Export Folder", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+            exportFolder = (string)result.Data!;
     }
 
     private async Task<string> BrowseFileDialog(string initialDir, string filter, string title)
@@ -548,7 +594,12 @@
         var time = enginePanel != null ? (int)enginePanel.CurrentTimeMs : timePerMove;
         var nodeCount = enginePanel != null ? (int)enginePanel.CurrentNodes : nodes;
 
-        var config = new GameReviewConfig(mode, time, nodeCount, depth, 3, true);
+        var s = SettingsService.Settings;
+        var thresholds = new GameAccuracyAnalysis.ClassificationThresholds(
+            s.BrilliantPVGap, s.GreatPVGap,
+            s.ExcellentMaxWPLoss, s.GoodMaxWPLoss,
+            s.InaccuracyMaxWPLoss, s.MistakeMaxWPLoss);
+        var config = new GameReviewConfig(mode, time, nodeCount, depth, 3, true, thresholds);
 
         var progress = new Progress<(int current, int total)>(async p =>
         {
@@ -579,6 +630,7 @@
             {
                 accuracyPlot = new AccuracyPlot(chessModule, chartElement);
                 await accuracyPlot.RenderAsync(analysisResult);
+                await chessModule.InvokeVoidAsync("triggerResizeEvent");
 
                 // Rebuild game with engine PV lines as variations and reload into board
                 var annotatedGame = BuildGameWithVariations(currentGame, analysisResult);
@@ -619,7 +671,12 @@
     {
         if (currentGame == null) return;
 
-        var result = ReviewService.AnalyzeGameFromAnnotations(currentGame);
+        var qs = SettingsService.Settings;
+        var qThresholds = new GameAccuracyAnalysis.ClassificationThresholds(
+            qs.BrilliantPVGap, qs.GreatPVGap,
+            qs.ExcellentMaxWPLoss, qs.GoodMaxWPLoss,
+            qs.InaccuracyMaxWPLoss, qs.MistakeMaxWPLoss);
+        var result = ReviewService.AnalyzeGameFromAnnotations(currentGame, qThresholds);
         if (result == null)
         {
             await DialogService.ShowMessageBox("No annotations",
@@ -630,8 +687,11 @@
         analysisResult = result;
         if (analysisResult.Moves.Length > 0)
         {
+            // Variations are already in the loaded PGN game (exported with PGN variation syntax).
+            // Just render the accuracy chart — no need to rebuild variations.
             accuracyPlot = new AccuracyPlot(chessModule, chartElement);
             await accuracyPlot.RenderAsync(analysisResult);
+            await chessModule.InvokeVoidAsync("triggerResizeEvent");
             await SelectMove(0);
         }
         StateHasChanged();
@@ -742,8 +802,61 @@
             };
             sb.Append(nag);
 
-            // Add eval comment
-            sb.Append($" {{wv={move.EvalBefore}, acc={move.MoveAccuracy:F0}%}} ");
+            // Add analysis comment with full data for reload
+            var comment = $"wv={move.EvalBefore}, acc={move.MoveAccuracy:F0}%";
+            var clsName = move.Classification switch
+            {
+                var c when c.IsBook => "Book", var c when c.IsForced => "Forced",
+                var c when c.IsBrilliant => "Brilliant", var c when c.IsGreat => "Great",
+                var c when c.IsBest => "Best", var c when c.IsExcellent => "Excellent",
+                var c when c.IsGood => "Good", var c when c.IsInaccuracy => "Inaccuracy",
+                var c when c.IsMistake => "Mistake", var c when c.IsBlunder => "Blunder",
+                _ => "Best"
+            };
+            comment += $", cls={clsName}";
+            comment += $", wpl={move.WinProbLoss:F4}, cpl={move.CentipawnLoss:F1}";
+            if (!string.IsNullOrEmpty(move.BestMove))
+                comment += $", bm={move.BestMove}";
+            if (!string.IsNullOrEmpty(move.BestMoveSan))
+                comment += $", bms={move.BestMoveSan}";
+            if (move.Depth > 0)
+                comment += $", d={move.Depth}";
+            if (move.Nodes > 0)
+                comment += $", n={move.Nodes}";
+            var hasVariation = !string.IsNullOrEmpty(move.PV) && move.BestMove != move.UciMove;
+            if (!string.IsNullOrEmpty(move.PV) && !hasVariation)
+                comment += $", pv={move.PV}";
+            sb.Append($" {{{comment}}} ");
+
+            // Write PGN variation when engine's best move differs from played move
+            if (!string.IsNullOrEmpty(move.PV) && move.BestMove != move.UciMove)
+            {
+                var pvMoves = move.PV.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (pvMoves.Length > 0)
+                {
+                    try
+                    {
+                        var variationLine = BuildVariationLine(move, pvMoves);
+                        if (variationLine != null && variationLine.Count > 0)
+                        {
+                            sb.Append("(");
+                            foreach (var vm in variationLine)
+                            {
+                                if (vm.Color == "w")
+                                    sb.Append($"{vm.MoveNumber}. ");
+                                else if (vm == variationLine[0])
+                                    sb.Append($"{vm.MoveNumber}... ");
+                                sb.Append(vm.San);
+                                if (!string.IsNullOrEmpty(vm.Comment))
+                                    sb.Append($" {{{vm.Comment}}}");
+                                sb.Append(' ');
+                            }
+                            sb.Append(") ");
+                        }
+                    }
+                    catch { /* variation build failed — skip */ }
+                }
+            }
         }
         sb.AppendLine(currentGame.GameMetaData.Result);
 
@@ -753,10 +866,20 @@
         var fileName = $"review_{cleanWhite}_vs_{cleanBlack}.pgn";
         try
         {
-            var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-            var base64 = Convert.ToBase64String(bytes);
-            await JS.InvokeVoidAsync("eval",
-                $"(function(){{ var a=document.createElement('a'); a.href='data:text/plain;base64,{base64}'; a.download='{fileName.Replace("'", "\\'")}'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }})()");
+            if (!string.IsNullOrEmpty(exportFolder) && Directory.Exists(exportFolder))
+            {
+                var filePath = Path.Combine(exportFolder, fileName);
+                await File.WriteAllTextAsync(filePath, sb.ToString());
+                logger.LogInformation("Game review exported to {path}", filePath);
+                await DialogService.ShowMessageBox("Exported", $"Saved to {filePath}");
+            }
+            else
+            {
+                var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+                var base64 = Convert.ToBase64String(bytes);
+                await JS.InvokeVoidAsync("eval",
+                    $"(function(){{ var a=document.createElement('a'); a.href='data:text/plain;base64,{base64}'; a.download='{fileName.Replace("'", "\\'")}'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }})()");
+            }
         }
         catch (Exception ex)
         {
@@ -765,6 +888,11 @@
     }
 
     // ── Helpers ──
+
+    private MoveAnalysisResult[] GetCriticalMoves() =>
+        analysisResult?.Moves.Where(m =>
+            m.Classification.IsInaccuracy || m.Classification.IsMistake || m.Classification.IsBlunder).ToArray()
+        ?? Array.Empty<MoveAnalysisResult>();
 
     private static string GetMoveClass(MoveClassification cls)
     {

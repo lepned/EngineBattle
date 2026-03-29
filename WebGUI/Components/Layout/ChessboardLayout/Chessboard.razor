@@ -838,7 +838,7 @@
 		{
 			await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, false);
 		}
-		await InvokeAsync(StateHasChanged);
+		await ScrollToCurrentMove();
 	}
 
 	public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)

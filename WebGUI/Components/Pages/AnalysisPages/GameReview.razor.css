@@ -278,3 +278,41 @@
 .gr-game-selected {
     background: rgba(255,212,0,0.1);
 }
+
+.gr-critical-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.gr-critical-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    border-radius: 3px;
+}
+
+.gr-critical-row:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.gr-critical-move {
+    font-weight: 600;
+    min-width: 60px;
+}
+
+.gr-critical-best {
+    color: var(--mud-palette-text-secondary);
+    font-style: italic;
+}
+
+.gr-critical-best::before {
+    content: "→ ";
+}
+
+.gr-critical-acc {
+    margin-left: auto;
+    color: var(--mud-palette-text-secondary);
+}

@@ -24,6 +24,7 @@ public class GlobalSettings
     public string SecondaryEnginePath { get; set; } = "";
 
     // Analysis defaults
+    public string DefaultSearchMode { get; set; } = "Nodes";  // Nodes, Time
     public double DefaultSearchTimeMs { get; set; } = 3000;
     public int DefaultSearchNodes { get; set; } = 100000;
     public int ChartLines { get; set; } = 4;
@@ -37,6 +38,14 @@ public class GlobalSettings
     public int ReviewTimePerMove { get; set; } = 1000;
     public int ReviewNodes { get; set; } = 5000;
     public int ReviewDepth { get; set; } = 18;
+
+    // Game Review classification thresholds (win probability loss, 0-1 scale)
+    public double BrilliantPVGap { get; set; } = 0.15;
+    public double GreatPVGap { get; set; } = 0.10;
+    public double ExcellentMaxWPLoss { get; set; } = 0.02;
+    public double GoodMaxWPLoss { get; set; } = 0.05;
+    public double InaccuracyMaxWPLoss { get; set; } = 0.10;
+    public double MistakeMaxWPLoss { get; set; } = 0.20;
 
     // Tournament defaults
     public int DelayBetweenGamesSec { get; set; } = 20;

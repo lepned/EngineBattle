@@ -206,11 +206,18 @@
         <div class="section-hint">Default values for engine analysis sessions.</div>
         <div class="number-row">
             <div class="field-group">
-                <label>Search Time (ms)</label>
+                <label>Mode</label>
+                <select @bind="defaultSearchMode">
+                    <option value="Nodes">Nodes</option>
+                    <option value="Time">Time</option>
+                </select>
+            </div>
+            <div class="field-group">
+                <label>Time (ms)</label>
                 <input type="number" @bind="defaultSearchTimeMs" min="100" max="600000" />
             </div>
             <div class="field-group">
-                <label>Search Nodes</label>
+                <label>Nodes</label>
                 <input type="number" @bind="defaultSearchNodes" min="1" max="1000000000" />
             </div>
         </div>
@@ -278,6 +285,35 @@
                     <input type="number" @bind="reviewDepth" min="1" max="100" />
                 </div>
             </div>
+            <div class="section-hint" style="margin-top:0.7rem">Classification thresholds (win probability, 0-1 scale)</div>
+            <div class="number-row">
+                <div class="field-group">
+                    <label>Brilliant PV gap</label>
+                    <input type="number" @bind="brilliantPVGap" min="0" max="1" step="0.01" />
+                </div>
+                <div class="field-group">
+                    <label>Great PV gap</label>
+                    <input type="number" @bind="greatPVGap" min="0" max="1" step="0.01" />
+                </div>
+                <div class="field-group">
+                    <label>Excellent</label>
+                    <input type="number" @bind="excellentMaxWPLoss" min="0" max="1" step="0.01" />
+                </div>
+            </div>
+            <div class="number-row">
+                <div class="field-group">
+                    <label>Good</label>
+                    <input type="number" @bind="goodMaxWPLoss" min="0" max="1" step="0.01" />
+                </div>
+                <div class="field-group">
+                    <label>Inaccuracy</label>
+                    <input type="number" @bind="inaccuracyMaxWPLoss" min="0" max="1" step="0.01" />
+                </div>
+                <div class="field-group">
+                    <label>Mistake</label>
+                    <input type="number" @bind="mistakeMaxWPLoss" min="0" max="1" step="0.01" />
+                </div>
+            </div>
         }
     </div>
 
@@ -314,6 +350,7 @@
     private string puzzleConfigFolder = "";
     private string analysisGamesPath = "";
     private string ordoExePath = "";
+    private string defaultSearchMode = "Nodes";
     private double defaultSearchTimeMs = 3000;
     private int defaultSearchNodes = 100000;
     private int delayBetweenGamesSec = 20;
@@ -332,6 +369,12 @@
     private int reviewTimePerMove = 1000;
     private int reviewNodes = 5000;
     private int reviewDepth = 18;
+    private double brilliantPVGap = 0.15;
+    private double greatPVGap = 0.10;
+    private double excellentMaxWPLoss = 0.02;
+    private double goodMaxWPLoss = 0.05;
+    private double inaccuracyMaxWPLoss = 0.10;
+    private double mistakeMaxWPLoss = 0.20;
     private bool showGameReview = true;
     private bool showHelp = false;
 
@@ -357,6 +400,7 @@
         ordoExePath = s.OrdoExePath;
         defaultEnginePath = s.DefaultEnginePath;
         secondaryEnginePath = s.SecondaryEnginePath;
+        defaultSearchMode = s.DefaultSearchMode;
         defaultSearchTimeMs = s.DefaultSearchTimeMs;
         defaultSearchNodes = s.DefaultSearchNodes;
         chartLines = s.ChartLines;
@@ -371,6 +415,12 @@
         reviewTimePerMove = s.ReviewTimePerMove;
         reviewNodes = s.ReviewNodes;
         reviewDepth = s.ReviewDepth;
+        brilliantPVGap = s.BrilliantPVGap;
+        greatPVGap = s.GreatPVGap;
+        excellentMaxWPLoss = s.ExcellentMaxWPLoss;
+        goodMaxWPLoss = s.GoodMaxWPLoss;
+        inaccuracyMaxWPLoss = s.InaccuracyMaxWPLoss;
+        mistakeMaxWPLoss = s.MistakeMaxWPLoss;
     }
 
     private void SaveSettings()
@@ -392,6 +442,7 @@
                 RecentBrowsePaths = SettingsService.Settings.RecentBrowsePaths,
                 DefaultEnginePath = defaultEnginePath ?? "",
                 SecondaryEnginePath = secondaryEnginePath ?? "",
+                DefaultSearchMode = defaultSearchMode ?? "Nodes",
                 DefaultSearchTimeMs = defaultSearchTimeMs,
                 DefaultSearchNodes = defaultSearchNodes,
                 ChartLines = chartLines,
@@ -406,6 +457,12 @@
                 ReviewTimePerMove = reviewTimePerMove,
                 ReviewNodes = reviewNodes,
                 ReviewDepth = reviewDepth,
+                BrilliantPVGap = brilliantPVGap,
+                GreatPVGap = greatPVGap,
+                ExcellentMaxWPLoss = excellentMaxWPLoss,
+                GoodMaxWPLoss = goodMaxWPLoss,
+                InaccuracyMaxWPLoss = inaccuracyMaxWPLoss,
+                MistakeMaxWPLoss = mistakeMaxWPLoss,
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -432,6 +489,7 @@
         ordoExePath = defaults.OrdoExePath;
         defaultEnginePath = defaults.DefaultEnginePath;
         secondaryEnginePath = defaults.SecondaryEnginePath;
+        defaultSearchMode = defaults.DefaultSearchMode;
         defaultSearchTimeMs = defaults.DefaultSearchTimeMs;
         defaultSearchNodes = defaults.DefaultSearchNodes;
         chartLines = defaults.ChartLines;
@@ -446,6 +504,12 @@
         reviewTimePerMove = defaults.ReviewTimePerMove;
         reviewNodes = defaults.ReviewNodes;
         reviewDepth = defaults.ReviewDepth;
+        brilliantPVGap = defaults.BrilliantPVGap;
+        greatPVGap = defaults.GreatPVGap;
+        excellentMaxWPLoss = defaults.ExcellentMaxWPLoss;
+        goodMaxWPLoss = defaults.GoodMaxWPLoss;
+        inaccuracyMaxWPLoss = defaults.InaccuracyMaxWPLoss;
+        mistakeMaxWPLoss = defaults.MistakeMaxWPLoss;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }

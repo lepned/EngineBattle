@@ -433,6 +433,7 @@
     public bool IsTimeMode => searchMode == SearchMode.Time;
     public double CurrentNodes => numberOfNodes;
     public double CurrentTimeMs => numberOfTimeMs;
+    public int CurrentChartLines => cpChartLines;
     private string GetLimitLabel() => searchMode == SearchMode.Nodes ? "Node limit" : "Time (ms)";
     private bool timeMode
     {
@@ -1722,6 +1723,8 @@
     {
         numberOfTimeMs = SettingsService.Settings.DefaultSearchTimeMs;
         numberOfNodes = Math.Max(1, SettingsService.Settings.DefaultSearchNodes);
+        if (string.Equals(SettingsService.Settings.DefaultSearchMode, "Time", StringComparison.OrdinalIgnoreCase))
+            searchMode = SearchMode.Time;
         MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
         Notifier.NotifyFen += OnNotifyFen;
 
@@ -1815,6 +1818,7 @@
             searchInProgress = false;
             ChessBoard.inAnalysisMode = true;
             ChartLines = SettingsService.Settings.ChartLines;
+            cpChartLines = ChartLines;
             numberOfLines = Math.Max(1, SettingsService.Settings.DefaultMultiPV);
             if (Nodes > 0) numberOfNodes = Nodes;
             Qdiff = 2;

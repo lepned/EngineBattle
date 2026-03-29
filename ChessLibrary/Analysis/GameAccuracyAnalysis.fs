@@ -14,15 +14,26 @@ open ChessLibrary.Engine
 
 type SearchMode = Time | Nodes | Depth
 
+type ClassificationThresholds =
+    { BrilliantPVGap: float; GreatPVGap: float
+      ExcellentMaxWPLoss: float; GoodMaxWPLoss: float
+      InaccuracyMaxWPLoss: float; MistakeMaxWPLoss: float }
+    static member Default =
+        { BrilliantPVGap = 0.15; GreatPVGap = 0.10
+          ExcellentMaxWPLoss = 0.02; GoodMaxWPLoss = 0.05
+          InaccuracyMaxWPLoss = 0.10; MistakeMaxWPLoss = 0.20 }
+
 type GameReviewConfig =
     { SearchMode: SearchMode
       TimePerMove: int   // ms
       Nodes: int
       Depth: int
       MultiPV: int       // default 3
-      SkipBookMoves: bool }
+      SkipBookMoves: bool
+      Thresholds: ClassificationThresholds }
     static member Default =
-        { SearchMode = Time; TimePerMove = 1000; Nodes = 1000000; Depth = 18; MultiPV = 3; SkipBookMoves = true }
+        { SearchMode = Time; TimePerMove = 1000; Nodes = 1000000; Depth = 18; MultiPV = 3; SkipBookMoves = true
+          Thresholds = ClassificationThresholds.Default }
 
 type MoveClassification =
     | Book
@@ -126,17 +137,17 @@ let calculateMoveAccuracy (wpLoss: float) : float =
     max 0.0 (min 100.0 raw)
 
 /// Classify a move based on WP loss, whether it matches engine's best, multi-PV gap, and sacrifice.
-let classifyMove (wpLoss: float) (isBestMove: bool) (isForced: bool) (pvGap: float option) (isSacrifice: bool) : MoveClassification =
+let classifyMove (t: ClassificationThresholds) (wpLoss: float) (isBestMove: bool) (isForced: bool) (pvGap: float option) (isSacrifice: bool) : MoveClassification =
     if isForced then Forced
     elif isBestMove then
         match pvGap with
-        | Some gap when gap > 0.15 && isSacrifice -> Brilliant
-        | Some gap when gap > 0.10 -> Great
+        | Some gap when gap > t.BrilliantPVGap && isSacrifice -> Brilliant
+        | Some gap when gap > t.GreatPVGap -> Great
         | _ -> Best
-    elif wpLoss < 0.02 then Excellent
-    elif wpLoss < 0.05 then Good
-    elif wpLoss < 0.10 then Inaccuracy
-    elif wpLoss < 0.20 then Mistake
+    elif wpLoss < t.ExcellentMaxWPLoss then Excellent
+    elif wpLoss < t.GoodMaxWPLoss then Good
+    elif wpLoss < t.InaccuracyMaxWPLoss then Inaccuracy
+    elif wpLoss < t.MistakeMaxWPLoss then Mistake
     else Blunder
 
 // ──────────────────────────────────────────────────────────────
@@ -403,30 +414,63 @@ let analyzeGameWithEngine
 
         let uciMove = if i < uciMoves.Count then uciMoves.[i] else ""
 
-        let evalBefore = whiteEvals.[i]
+        let pvData = pvDataPerMove.[i]
+        let evalBefore = whiteEvals.[i]  // PV1 eval (best) at this position
         let evalAfter =
             if i + 1 < whiteEvals.Count then whiteEvals.[i + 1]
             else EvalType.NA
 
-        // Compute WP from the moving side's perspective
+        // Find which PV line the played move matches
+        let matchedPVIndex =
+            if pvData.Length > 0 && not (String.IsNullOrEmpty uciMove) then
+                pvData |> Array.tryFindIndex (fun pv -> pv.BestMove = uciMove)
+            else None
+
+        // Multi-PV based WP loss: compare played move against best from same position
         let stmEvalBefore = if isWhite then evalBefore else flipEval evalBefore
-        let stmEvalAfter = if isWhite then evalAfter else flipEval evalAfter
+        let wpBest = evalToWinProb stmEvalBefore ply
 
-        let wpBefore = evalToWinProb stmEvalBefore ply
-        let wpAfter = evalToWinProb stmEvalAfter (ply + 1)
-        let wpLoss = max 0.0 (wpBefore - wpAfter)
+        let wpLoss, wpBefore, wpAfter =
+            match matchedPVIndex with
+            | Some 0 ->
+                // Played the best move — no loss from move choice
+                let stmAfter = if isWhite then evalAfter else flipEval evalAfter
+                let wpA = evalToWinProb stmAfter (ply + 1)
+                0.0, wpBest, wpA
+            | Some idx ->
+                // Played a lower PV line — compare within same position's analysis
+                let matchedEval = if isWhite then pvData.[idx].Eval else flipEval pvData.[idx].Eval
+                let wpPlayed = evalToWinProb matchedEval ply
+                let loss = max 0.0 (wpBest - wpPlayed)
+                loss, wpBest, wpPlayed
+            | None ->
+                // Move not in any PV — fallback to sequential comparison
+                let stmAfter = if isWhite then evalAfter else flipEval evalAfter
+                let wpA = evalToWinProb stmAfter (ply + 1)
+                let loss = max 0.0 (wpBest - wpA)
+                loss, wpBest, wpA
 
-        // Centipawn loss
+        // Centipawn loss (matching the multi-PV approach)
         let cpLoss =
-            match stmEvalBefore, stmEvalAfter with
-            | CP before, CP after -> max 0.0 ((before - after) * 100.0)
-            | _ -> wpLoss * 500.0  // rough approximation for mate evals
+            match matchedPVIndex with
+            | Some 0 -> 0.0
+            | Some idx ->
+                let bestCp = if isWhite then evalBefore else flipEval evalBefore
+                let playedCp = if isWhite then pvData.[idx].Eval else flipEval pvData.[idx].Eval
+                match bestCp, playedCp with
+                | CP b, CP p -> max 0.0 ((b - p) * 100.0)
+                | _ -> wpLoss * 500.0
+            | None ->
+                let stmAfter = if isWhite then evalAfter else flipEval evalAfter
+                match stmEvalBefore, stmAfter with
+                | CP before, CP after -> max 0.0 ((before - after) * 100.0)
+                | _ -> wpLoss * 500.0
 
         let moveAccuracy = calculateMoveAccuracy wpLoss
 
         // Best move info
         let bestMoveUci = bestMoves.[i]
-        let isBestMove = not (String.IsNullOrEmpty bestMoveUci) && uciMove = bestMoveUci
+        let isBestMove = matchedPVIndex = Some 0
         let bestMoveSan =
             if String.IsNullOrEmpty bestMoveUci then ""
             else
@@ -435,7 +479,6 @@ let analyzeGameWithEngine
                 | None -> bestMoveUci
 
         // Multi-PV gap for Brilliant/Great detection
-        let pvData = pvDataPerMove.[i]
         let pvGap =
             if pvData.Length >= 2 then
                 let pv1Eval = if isWhite then pvData.[0].Eval else flipEval pvData.[0].Eval
@@ -455,7 +498,7 @@ let analyzeGameWithEngine
         let classification =
             if isBookMove then Book
             elif legalMoves <= 1 then Forced
-            else classifyMove wpLoss isBestMove false pvGap sacrifice
+            else classifyMove config.Thresholds wpLoss isBestMove false pvGap sacrifice
 
         let depth = if pvData.Length > 0 then pvData.[0].Depth else 0
         let nodes = if pvData.Length > 0 then pvData.[0].Nodes else 0L
@@ -502,9 +545,116 @@ let analyzeGameWithEngine
 // Quick Analysis from PGN Annotations
 // ──────────────────────────────────────────────────────────────
 
-/// Analyze a game using existing eval annotations in PGN comments (wv= fields).
-/// No engine needed. Cannot detect Brilliant/Great (no multi-PV data).
-let analyzeGameFromAnnotations (game: PgnGame) : GameAnalysisResult option =
+let parseClassification (s: string) =
+    match s.Trim() with
+    | "Book" -> Some Book | "Forced" -> Some Forced
+    | "Brilliant" | "!!" -> Some Brilliant | "Great" | "!" -> Some Great
+    | "Best" -> Some Best | "Excellent" -> Some Excellent | "Good" -> Some Good
+    | "Inaccuracy" | "?!" -> Some Inaccuracy | "Mistake" | "?" -> Some Mistake
+    | "Blunder" | "??" -> Some Blunder
+    | _ -> None
+
+/// Extract a named field value from a comment string like "wv=0.45, cls=Best, bm=e2e4"
+let private extractField (comment: string) (fieldName: string) : string option =
+    let prefix = fieldName + "="
+    let idx = comment.IndexOf(prefix, StringComparison.Ordinal)
+    if idx < 0 then None
+    else
+        let start = idx + prefix.Length
+        // pv= consumes everything to the end (it contains spaces)
+        if fieldName = "pv" then
+            Some (comment.Substring(start).Trim())
+        else
+            let endIdx = comment.IndexOf(',', start)
+            let value = if endIdx < 0 then comment.Substring(start) else comment.Substring(start, endIdx - start)
+            Some (value.Trim())
+
+let private tryParseFloat (s: string) = match Double.TryParse(s, Globalization.NumberStyles.Any, Globalization.CultureInfo.InvariantCulture) with true, v -> Some v | _ -> None
+let private tryParseInt (s: string) = match Int32.TryParse(s) with true, v -> Some v | _ -> None
+let private tryParseInt64 (s: string) = match Int64.TryParse(s) with true, v -> Some v | _ -> None
+
+let private parseEvalFromString (s: string) =
+    let s = s.Trim()
+    if s = "None" then EvalType.NA
+    elif s.StartsWith("-M") then match tryParseInt (s.Substring(2)) with Some m -> Mate (-m) | None -> NA
+    elif s.StartsWith("M") then match tryParseInt (s.Substring(1)) with Some m -> Mate m | None -> NA
+    else match tryParseFloat s with Some v -> CP v | None -> NA
+
+/// Check if a comment contains rich review annotations (cls= field)
+let private hasRichAnnotation (comment: string) =
+    not (String.IsNullOrEmpty comment) && comment.Contains("cls=")
+
+/// Reload a game review from rich PGN annotations (exported by Game Review).
+/// Reads stored classification, accuracy, wpLoss, etc. directly without recomputation.
+let private analyzeFromRichAnnotations (game: PgnGame) : GameAnalysisResult option =
+    let totalMoves = game.Mainline.Count
+    if totalMoves = 0 then None
+    else
+
+    let board = Board()
+    let startFen = if String.IsNullOrWhiteSpace game.Fen then startPosition else game.Fen
+    board.LoadFen startFen
+    board.StartPosition <- startFen
+
+    let results = ResizeArray<MoveAnalysisResult>()
+    let mutable hasData = false
+
+    for i in 0 .. totalMoves - 1 do
+        let move = game.Mainline.[i]
+        let isWhite = board.Position.STM = 0uy
+        let ply = i
+        let comment = if move.Comment = null then "" else move.Comment
+
+        let uciMove = board.GetUciFromSan(move.San) |> Option.defaultValue ""
+
+        let cls = extractField comment "cls" |> Option.bind parseClassification |> Option.defaultValue Best
+        let acc = extractField comment "acc" |> Option.bind (fun s -> tryParseFloat (s.TrimEnd('%'))) |> Option.defaultValue 100.0
+        let wpl = extractField comment "wpl" |> Option.bind tryParseFloat |> Option.defaultValue 0.0
+        let cpl = extractField comment "cpl" |> Option.bind tryParseFloat |> Option.defaultValue 0.0
+        let evalBefore = extractField comment "wv" |> Option.map parseEvalFromString |> Option.defaultValue NA
+        let bestMove = extractField comment "bm" |> Option.defaultValue ""
+        let bestMoveSan = extractField comment "bms" |> Option.defaultValue ""
+        let depth = extractField comment "d" |> Option.bind tryParseInt |> Option.defaultValue 0
+        let nodes = extractField comment "n" |> Option.bind tryParseInt64 |> Option.defaultValue 0L
+        let pv = extractField comment "pv" |> Option.defaultValue ""
+
+        if hasRichAnnotation comment then hasData <- true
+
+        // Recompute WP before/after from eval (cheap to derive)
+        let stmEval = if isWhite then evalBefore else flipEval evalBefore
+        let wpBefore = evalToWinProb stmEval ply
+        let wpAfter = wpBefore - wpl  // Approximate from stored loss
+
+        results.Add(
+            { Ply = ply; MoveNumber = move.MoveNumber; Color = move.Color
+              San = move.San; UciMove = uciMove
+              Classification = cls; EvalBefore = evalBefore
+              BestMove = bestMove; BestMoveSan = bestMoveSan; BestEval = evalBefore
+              SecondBestEval = None
+              WinProbBefore = wpBefore; WinProbAfter = wpAfter; WinProbLoss = wpl
+              CentipawnLoss = cpl; MoveAccuracy = acc
+              Depth = depth; Nodes = nodes; PV = pv })
+
+        try board.PlaySanMove move.San with _ -> ()
+
+    if not hasData then None
+    else
+        let movesArray = results.ToArray()
+        let annotator =
+            match game.GameMetaData.OtherTags |> Seq.tryFind (fun kv -> kv.Key = "Annotator") with
+            | Some kv -> kv.Value
+            | None -> "PGN Annotations"
+        Some
+            { Moves = movesArray
+              WhiteStats = computePlayerStats (game.GameMetaData.White) movesArray "w"
+              BlackStats = computePlayerStats (game.GameMetaData.Black) movesArray "b"
+              WhitePlayer = game.GameMetaData.White
+              BlackPlayer = game.GameMetaData.Black
+              AnalysisEngine = annotator
+              AnalysisDate = DateTime.UtcNow }
+
+/// Legacy: analyze from basic wv= annotations using sequential eval comparison.
+let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (game: PgnGame) : GameAnalysisResult option =
     let board = Board()
     let startFen =
         if String.IsNullOrWhiteSpace game.Fen then startPosition
@@ -526,19 +676,16 @@ let analyzeGameFromAnnotations (game: PgnGame) : GameAnalysisResult option =
         let isBlack = replayBoard.Position.STM <> 0uy
         let player = if isBlack then game.GameMetaData.Black else game.GameMetaData.White
         let stat = Annotation.getEngineStatData player isBlack move.Comment
-        // stat.wv is already from white's perspective (Annotation negates for black)
         let eval =
             if stat.n = 0L && stat.d = 0 && stat.wv = 0.0 then EvalType.NA
             else CP stat.wv
         whiteEvals.Add(eval)
         try replayBoard.PlaySanMove move.San with _ -> ()
 
-    // Check if we have any actual evals
     let hasEvals = whiteEvals |> Seq.exists (fun e -> e <> EvalType.NA)
     if not hasEvals then None
     else
 
-    // Build move analysis results
     let results = ResizeArray<MoveAnalysisResult>()
     let board2 = Board()
     board2.LoadFen startFen
@@ -548,7 +695,6 @@ let analyzeGameFromAnnotations (game: PgnGame) : GameAnalysisResult option =
         let move = game.Mainline.[i]
         let isWhite = board2.Position.STM = 0uy
         let ply = i
-
         let legalMoves = board2.GetLegalMoves() |> Seq.length
 
         let isBookMove =
@@ -562,57 +708,46 @@ let analyzeGameFromAnnotations (game: PgnGame) : GameAnalysisResult option =
             if i + 1 < whiteEvals.Count then whiteEvals.[i + 1]
             else EvalType.NA
 
+        let hasEvalGap = evalBefore = EvalType.NA || evalAfter = EvalType.NA
         let stmEvalBefore = if isWhite then evalBefore else flipEval evalBefore
         let stmEvalAfter = if isWhite then evalAfter else flipEval evalAfter
 
         let wpBefore = evalToWinProb stmEvalBefore ply
         let wpAfter = evalToWinProb stmEvalAfter (ply + 1)
-        let wpLoss = max 0.0 (wpBefore - wpAfter)
+        let wpLoss = if hasEvalGap then 0.0 else max 0.0 (wpBefore - wpAfter)
 
         let cpLoss =
-            match stmEvalBefore, stmEvalAfter with
-            | CP before, CP after -> max 0.0 ((before - after) * 100.0)
-            | _ -> wpLoss * 500.0
+            if hasEvalGap then 0.0
+            else
+                match stmEvalBefore, stmEvalAfter with
+                | CP before, CP after -> max 0.0 ((before - after) * 100.0)
+                | _ -> wpLoss * 500.0
 
         let moveAccuracy = calculateMoveAccuracy wpLoss
 
-        // No multi-PV data from annotations — can't detect Brilliant/Great
-        // Mark all non-losing moves as Best if WP loss < 2%, otherwise classify by WP loss
         let classification =
             if isBookMove then Book
             elif legalMoves <= 1 then Forced
-            elif evalBefore = EvalType.NA || evalAfter = EvalType.NA then Good
-            elif wpLoss < 0.02 then Best  // Cannot distinguish Best from Excellent without bestmove
-            elif wpLoss < 0.05 then Good
-            elif wpLoss < 0.10 then Inaccuracy
-            elif wpLoss < 0.20 then Mistake
+            elif hasEvalGap then Best
+            elif wpLoss < thresholds.ExcellentMaxWPLoss then Best
+            elif wpLoss < thresholds.GoodMaxWPLoss then Good
+            elif wpLoss < thresholds.InaccuracyMaxWPLoss then Inaccuracy
+            elif wpLoss < thresholds.MistakeMaxWPLoss then Mistake
             else Blunder
 
         results.Add(
-            { Ply = ply
-              MoveNumber = move.MoveNumber
-              Color = move.Color
-              San = move.San
-              UciMove = uciMove
-              Classification = classification
-              EvalBefore = evalBefore
-              BestMove = ""
-              BestMoveSan = ""
-              BestEval = evalBefore
+            { Ply = ply; MoveNumber = move.MoveNumber; Color = move.Color
+              San = move.San; UciMove = uciMove
+              Classification = classification; EvalBefore = evalBefore
+              BestMove = ""; BestMoveSan = ""; BestEval = evalBefore
               SecondBestEval = None
-              WinProbBefore = wpBefore
-              WinProbAfter = wpAfter
-              WinProbLoss = wpLoss
-              CentipawnLoss = cpLoss
-              MoveAccuracy = moveAccuracy
-              Depth = 0
-              Nodes = 0L
-              PV = "" })
+              WinProbBefore = wpBefore; WinProbAfter = wpAfter; WinProbLoss = wpLoss
+              CentipawnLoss = cpLoss; MoveAccuracy = moveAccuracy
+              Depth = 0; Nodes = 0L; PV = "" })
 
         try board2.PlaySanMove move.San with _ -> ()
 
     let movesArray = results.ToArray()
-
     Some
         { Moves = movesArray
           WhiteStats = computePlayerStats (game.GameMetaData.White) movesArray "w"
@@ -621,3 +756,14 @@ let analyzeGameFromAnnotations (game: PgnGame) : GameAnalysisResult option =
           BlackPlayer = game.GameMetaData.Black
           AnalysisEngine = "PGN Annotations"
           AnalysisDate = DateTime.UtcNow }
+
+/// Analyze a game from PGN annotations. Tries rich format (cls= fields) first,
+/// falls back to legacy sequential eval comparison for basic wv= annotations.
+let analyzeGameFromAnnotations (thresholds: ClassificationThresholds) (game: PgnGame) : GameAnalysisResult option =
+    let totalMoves = game.Mainline.Count
+    if totalMoves = 0 then None
+    else
+    // Check if any move has rich annotations
+    let hasRich = game.Mainline |> Seq.exists (fun m -> hasRichAnnotation m.Comment)
+    if hasRich then analyzeFromRichAnnotations game
+    else analyzeFromBasicAnnotations thresholds game

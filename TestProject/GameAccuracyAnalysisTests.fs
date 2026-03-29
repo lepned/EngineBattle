@@ -112,52 +112,52 @@ let ``calculateMoveAccuracy is clamped between 0 and 100`` () =
 
 [<Fact>]
 let ``classifyMove returns Forced when isForced`` () =
-    let cls = classifyMove 0.30 false true None false
+    let cls = classifyMove ClassificationThresholds.Default 0.30 false true None false
     Assert.Equal(Forced, cls)
 
 [<Fact>]
 let ``classifyMove returns Best for best move without gap`` () =
-    let cls = classifyMove 0.0 true false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.0 true false None false
     Assert.Equal(Best, cls)
 
 [<Fact>]
 let ``classifyMove returns Great for best move with 12 pct gap`` () =
-    let cls = classifyMove 0.0 true false (Some 0.12) false
+    let cls = classifyMove ClassificationThresholds.Default 0.0 true false (Some 0.12) false
     Assert.Equal(Great, cls)
 
 [<Fact>]
 let ``classifyMove returns Brilliant for best move with 16 pct gap and sacrifice`` () =
-    let cls = classifyMove 0.0 true false (Some 0.16) true
+    let cls = classifyMove ClassificationThresholds.Default 0.0 true false (Some 0.16) true
     Assert.Equal(Brilliant, cls)
 
 [<Fact>]
 let ``classifyMove returns Great not Brilliant without sacrifice`` () =
-    let cls = classifyMove 0.0 true false (Some 0.16) false
+    let cls = classifyMove ClassificationThresholds.Default 0.0 true false (Some 0.16) false
     Assert.Equal(Great, cls)
 
 [<Fact>]
 let ``classifyMove returns Excellent for < 2 pct WP loss`` () =
-    let cls = classifyMove 0.01 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.01 false false None false
     Assert.Equal(Excellent, cls)
 
 [<Fact>]
 let ``classifyMove returns Good for 2-5 pct WP loss`` () =
-    let cls = classifyMove 0.03 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.03 false false None false
     Assert.Equal(Good, cls)
 
 [<Fact>]
 let ``classifyMove returns Inaccuracy for 5-10 pct WP loss`` () =
-    let cls = classifyMove 0.07 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.07 false false None false
     Assert.Equal(Inaccuracy, cls)
 
 [<Fact>]
 let ``classifyMove returns Mistake for 10-20 pct WP loss`` () =
-    let cls = classifyMove 0.15 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.15 false false None false
     Assert.Equal(Mistake, cls)
 
 [<Fact>]
 let ``classifyMove returns Blunder for > 20 pct WP loss`` () =
-    let cls = classifyMove 0.25 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.25 false false None false
     Assert.Equal(Blunder, cls)
 
 // ──────────────────────────────────────────────────────────────
@@ -166,22 +166,22 @@ let ``classifyMove returns Blunder for > 20 pct WP loss`` () =
 
 [<Fact>]
 let ``classifyMove at exact boundary 0.02 returns Good not Excellent`` () =
-    let cls = classifyMove 0.02 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.02 false false None false
     Assert.Equal(Good, cls)
 
 [<Fact>]
 let ``classifyMove at exact boundary 0.05 returns Inaccuracy not Good`` () =
-    let cls = classifyMove 0.05 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.05 false false None false
     Assert.Equal(Inaccuracy, cls)
 
 [<Fact>]
 let ``classifyMove at exact boundary 0.10 returns Mistake not Inaccuracy`` () =
-    let cls = classifyMove 0.10 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.10 false false None false
     Assert.Equal(Mistake, cls)
 
 [<Fact>]
 let ``classifyMove at exact boundary 0.20 returns Blunder not Mistake`` () =
-    let cls = classifyMove 0.20 false false None false
+    let cls = classifyMove ClassificationThresholds.Default 0.20 false false None false
     Assert.Equal(Blunder, cls)
 
 // ──────────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ let ``MoveClassification ToString returns expected symbols`` () =
 [<Fact>]
 let ``analyzeGameFromAnnotations returns None for empty game`` () =
     let game = ChessLibrary.PGNTypes.PgnGame.Empty 1
-    let result = analyzeGameFromAnnotations game
+    let result = analyzeGameFromAnnotations ClassificationThresholds.Default game
     Assert.True(result.IsNone)
 
 [<Fact>]
@@ -300,7 +300,7 @@ let ``analyzeGameFromAnnotations returns None for game with no eval annotations`
     let game = ChessLibrary.PGNTypes.PgnGame.Empty 1
     game.Mainline.Add({ Ply = 0; MoveNumber = 1; Color = "w"; San = "e4"; Comment = ""; Nags = []; Variations = ResizeArray() })
     game.Mainline.Add({ Ply = 1; MoveNumber = 1; Color = "b"; San = "e5"; Comment = ""; Nags = []; Variations = ResizeArray() })
-    let result = analyzeGameFromAnnotations game
+    let result = analyzeGameFromAnnotations ClassificationThresholds.Default game
     Assert.True(result.IsNone)
 
 [<Fact>]
@@ -310,7 +310,7 @@ let ``analyzeGameFromAnnotations processes game with eval annotations`` () =
     game.Mainline.Add({ Ply = 0; MoveNumber = 1; Color = "w"; San = "e4"; Comment = "wv=0.20, d=20, n=1000000"; Nags = []; Variations = ResizeArray() })
     game.Mainline.Add({ Ply = 1; MoveNumber = 1; Color = "b"; San = "e5"; Comment = "wv=0.15, d=20, n=1000000"; Nags = []; Variations = ResizeArray() })
     game.Mainline.Add({ Ply = 2; MoveNumber = 2; Color = "w"; San = "Nf3"; Comment = "wv=0.30, d=20, n=1000000"; Nags = []; Variations = ResizeArray() })
-    let result = analyzeGameFromAnnotations game
+    let result = analyzeGameFromAnnotations ClassificationThresholds.Default game
     Assert.True(result.IsSome)
     let r = result.Value
     Assert.Equal(3, r.Moves.Length)

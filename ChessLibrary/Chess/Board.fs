@@ -1204,11 +1204,16 @@ type Board() =
       | _ ->
           let main = selectMainChild rootChildren
           let rootVariations = rootChildren |> List.filter (fun e -> e.Id <> main.Id)
-          emitLine main 0 true false true
+          // Emit first main move
+          if String.IsNullOrWhiteSpace main.San |> not then
+            addMoveToken main 0 true false
+          // Emit root variations immediately after first move
           for variation in rootVariations do
             addVariationBracket "(" variation 0
             emitLine variation 0 true true true
             addVariationBracket ")" variation 0
+          // Continue mainline from first move (don't re-emit it)
+          emitLine main 0 (rootVariations.Length > 0) false false
           tokens |> Seq.toList
    
     member this.GenerateMoves () =
