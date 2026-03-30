@@ -28,19 +28,19 @@
     @* ── Toolbar ── *@
     <div class="gr-toolbar">
         <button class="gr-toolbar-btn" @onclick="BrowsePGNFile" title="Load PGN file">
-            <MudIcon Icon="@Icons.Material.Filled.FileOpen" Size="Size.Small" /> PGN
+            <MudIcon Icon="@Icons.Material.Filled.FileOpen" Size="Size.Small" /> Load PGN
         </button>
 
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
                    OnClick="StartAnalysis" Disabled="@(isAnalyzing || currentGame == null || engineConfig == null)"
                    StartIcon="@Icons.Material.Filled.PlayArrow">
-            Analyze All
+            Review
         </MudButton>
 
         <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
                    OnClick="QuickAnalysis" Disabled="@(isAnalyzing || currentGame == null)"
                    StartIcon="@Icons.Material.Filled.FlashOn">
-            Quick
+            Quick Review
         </MudButton>
 
         @if (isAnalyzing)
@@ -56,11 +56,11 @@
             <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
                        OnClick="BrowseExportFolder" StartIcon="@Icons.Material.Filled.FolderOpen"
                        title="@(!string.IsNullOrEmpty(exportFolder) ? exportFolder : "Pick export folder")">
-                @(!string.IsNullOrEmpty(exportFolder) ? Path.GetFileName(exportFolder.TrimEnd('/','\\')) : "Folder")
+                @(!string.IsNullOrEmpty(exportFolder) ? Path.GetFileName(exportFolder.TrimEnd('/','\\')) : "Export Folder")
             </MudButton>
             <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
                        OnClick="ExportAnnotatedPGN" StartIcon="@Icons.Material.Filled.Download">
-                Export
+                Export PGN
             </MudButton>
         }
     </div>
@@ -98,7 +98,7 @@
 
         @* ── Right: Stats + Chart + Game List ── *@
         <div class="gr-right">
-            @if (isAnalyzing && currentGame != null)
+            @if (currentGame != null)
             {
                 <div class="gr-game-info">
                     <span class="gr-game-info-players">@DisplayPlayerName(currentGame.GameMetaData.White) vs @DisplayPlayerName(currentGame.GameMetaData.Black)</span>
@@ -146,7 +146,7 @@
                         <span class="gr-detail-move @GetMoveClass(selectedMove.Classification)">
                             @(selectedMove.Color == "w" ? $"{selectedMove.MoveNumber}." : $"{selectedMove.MoveNumber}...")@selectedMove.San
                         </span>
-                        <span class="gr-detail-chip @GetMoveClass(selectedMove.Classification)">@selectedMove.Classification</span>
+                        <span class="gr-detail-chip @GetMoveClass(selectedMove.Classification)">@GetClassificationName(selectedMove.Classification)</span>
                     </div>
                     <div class="gr-detail-body">
                         <div>Best: <strong>@(!string.IsNullOrEmpty(selectedMove.BestMoveSan) && selectedMove.BestMove != selectedMove.UciMove ? selectedMove.BestMoveSan : selectedMove.San)</strong></div>
@@ -187,12 +187,12 @@
                     </table>
                 </div>
 
-                @if (GetCriticalMoves().Length > 0)
+                @if (GetCriticalMoves() is var criticalMoves && criticalMoves.Length > 0)
                 {
                     <div class="gr-stats-card">
-                        <h4>Critical Moves (@GetCriticalMoves().Length)</h4>
+                        <h4>Critical Moves (@criticalMoves.Length)</h4>
                         <div class="gr-critical-list">
-                            @foreach (var move in GetCriticalMoves())
+                            @foreach (var move in criticalMoves)
                             {
                                 <div class="gr-critical-row @(selectedMove == move ? "gr-game-selected" : "")"
                                      @onclick="() => SelectMove(move.Ply)">
@@ -571,7 +571,7 @@
 
         isAnalyzing = true;
         progressCurrent = 0;
-        progressTotal = currentGame.Mainline.Count + 1;
+        progressTotal = currentGame.Mainline.Count;
         progressPercent = 0;
         analysisResult = null;
         accuracyPlot = null;
@@ -609,9 +609,10 @@
                 progressTotal = p.total;
                 progressPercent = progressTotal > 0 ? (double)progressCurrent / progressTotal * 100.0 : 0;
 
-                if (gameFens != null && p.current > 0 && p.current <= gameFens.Length && chessBoardRazor != null)
+                if (gameFens != null && p.current > 0 && chessBoardRazor != null)
                 {
-                    fen = gameFens[p.current - 1];
+                    // p.current fires before analyzing move p.current, so show the position before that move
+                    fen = p.current >= 2 ? gameFens[p.current - 2] : (string.IsNullOrWhiteSpace(currentGame?.Fen) ? Chess.startPos : currentGame.Fen);
                     await chessBoardRazor.SetPositionDirect(fen);
                     if (enginePanel != null) await enginePanel.ResetChartData();
                 }
@@ -664,6 +665,8 @@
             analysisCts?.Dispose();
             analysisCts = null;
             StateHasChanged();
+            if (chessModule != null)
+                await chessModule.InvokeVoidAsync("triggerResizeEvent");
         }
     }
 
@@ -823,9 +826,6 @@
                 comment += $", d={move.Depth}";
             if (move.Nodes > 0)
                 comment += $", n={move.Nodes}";
-            var hasVariation = !string.IsNullOrEmpty(move.PV) && move.BestMove != move.UciMove;
-            if (!string.IsNullOrEmpty(move.PV) && !hasVariation)
-                comment += $", pv={move.PV}";
             sb.Append($" {{{comment}}} ");
 
             // Write PGN variation when engine's best move differs from played move

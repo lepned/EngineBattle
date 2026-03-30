@@ -226,7 +226,9 @@
         recentPaths = SettingsService.Settings.RecentBrowsePaths ?? [];
         BuildBookmarks();
 
-        if (!string.IsNullOrEmpty(InitialPath) && Directory.Exists(InitialPath))
+        if (!string.IsNullOrEmpty(SettingsService.Settings.LastBrowsedPath) && Directory.Exists(SettingsService.Settings.LastBrowsedPath))
+            NavigateTo(SettingsService.Settings.LastBrowsedPath);
+        else if (!string.IsNullOrEmpty(InitialPath) && Directory.Exists(InitialPath))
             NavigateTo(InitialPath);
         else if (!string.IsNullOrEmpty(InitialPath) && File.Exists(InitialPath))
         {
@@ -234,8 +236,6 @@
             if (!string.IsNullOrEmpty(dir)) NavigateTo(dir);
             selectedFile = InitialPath;
         }
-        else if (!string.IsNullOrEmpty(SettingsService.Settings.LastBrowsedPath) && Directory.Exists(SettingsService.Settings.LastBrowsedPath))
-            NavigateTo(SettingsService.Settings.LastBrowsedPath);
         else
             ShowDriveList();
     }

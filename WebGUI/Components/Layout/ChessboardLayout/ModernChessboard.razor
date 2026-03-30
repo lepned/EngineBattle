@@ -1,0 +1,1003 @@
+@using Toolbelt.Blazor.HotKeys2;
+@using WebGUI.Services
+@using WebGUI
+@using static ChessLibrary.Chess
+@using Microsoft.AspNetCore.Components.Web
+@using WebGUI.Components.Layout.ChessboardLayout
+
+@implements IAsyncDisposable
+@implements IDisposable
+@inject HotKeys HotKeys
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject NotifierService Notifier
+@inject ILogger<ModernChessboard> logger
+@inject OverlaySetting OverlaySetting
+
+<InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
+
+<div class="modern-chessboard @(MoveListPosition == MoveListPosition.Right ? "mcb-right-layout" : "mcb-below-layout")">
+    <div class="mcb-board-area">
+        @if (ShowPlayerInfo)
+        {
+            <div class="mcb-player-info">@BlackPlayerInfo</div>
+        }
+
+        <div class="mcb-board-wrapper">
+            <div class="chessboard-root" @ref="board"></div>
+            <div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
+                <MudPaper Elevation="3" Class="pa-1">
+                    <MudStack Row="true" Spacing="0">
+                        <MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
+                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                            <img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
+                                 style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+                        </MudIconButton>
+                        <MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
+                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                            <img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+                        </MudIconButton>
+                        <MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
+                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                            <img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+                        </MudIconButton>
+                        <MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
+                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                            <img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+                        </MudIconButton>
+                    </MudStack>
+                </MudPaper>
+            </div>
+        </div>
+
+        @if (!String.IsNullOrEmpty(OpeningMoves))
+        {
+            <span class="mcb-opening-name" style=@openingStyle>@OpeningName</span>
+        }
+
+        @if (ShowPlayerInfo)
+        {
+            <div class="mcb-player-info">@WhitePlayerInfo</div>
+        }
+
+        @if (!String.IsNullOrEmpty(DetectedOpeningName))
+        {
+            <div class="mcb-detected-opening">
+                <strong>@DetectedOpeningECO</strong> @DetectedOpeningName
+            </div>
+        }
+
+        @if (ShowChessNavButtons)
+        {
+            <div class="mcb-nav-buttons">
+                <MudFab OnClick="StartOfGame" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowLeft" Size="MudBlazor.Size.Small" />
+                <MudFab OnClick="PreviousMove" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronLeft" Size="MudBlazor.Size.Small" />
+                <MudFab OnClick="PlayMoves" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.PlayArrow" Size="MudBlazor.Size.Small" />
+                <MudFab OnClick="NextMove" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ChevronRight" Size="MudBlazor.Size.Small" />
+                <MudFab OnClick="EndOfGame" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.KeyboardDoubleArrowRight" Size="MudBlazor.Size.Small" />
+                <MudTooltip Text="Flip board">
+                    <MudFab OnClick="RotateBoard" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.FlipCameraAndroid" Size="MudBlazor.Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Copy fen">
+                    <MudFab OnClick="WriteTextAsync" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.ContentCopy" Size="MudBlazor.Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Load fen">
+                    <MudFab OnClick="UpdateFenWithMovesInput" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.Refresh" Size="MudBlazor.Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Reset board state">
+                    <MudFab OnClick="ResetGameState" HtmlTag="label" Color="Color.Default" StartIcon="@Icons.Material.Filled.RestartAlt" Size="MudBlazor.Size.Small" />
+                </MudTooltip>
+            </div>
+        }
+
+        @if (ShowFenField)
+        {
+            <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
+                          FullWidth="false" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
+                          Immediate="true" Variant="Variant.Filled" />
+        }
+
+        @if (EnablePGNreader)
+        {
+            <MudFab HtmlTag="label" Color="Color.Default" Label="Load pgn file" StartIcon="@Icons.Material.Filled.DownloadForOffline" for="fileInput" />
+        }
+
+        @* Move list below board (default mode) *@
+        @if (ShowMoveList && MoveListPosition == MoveListPosition.Below)
+        {
+            <div id="moveListDiv" class="mcb-movelist-below" style=@moveListStyle>
+                @RenderInlineMoveList()
+            </div>
+        }
+    </div>
+
+    @* Move list panel to the right of the board *@
+    @if (ShowMoveList && MoveListPosition == MoveListPosition.Right)
+    {
+        <div class="mcb-movelist-panel">
+            <div id="moveListDiv" class="mcb-movelist-right">
+                <table class="mcb-move-table">
+                    @foreach (var pair in movePairs)
+                    {
+                        <tr class="@(IsCurrentMove(pair.WhiteToken) || IsCurrentMove(pair.BlackToken) ? "mcb-row-active" : "")">
+                            <td class="mcb-move-number">@pair.MoveNumber.</td>
+                            <td class="mcb-white-move @(IsCurrentMove(pair.WhiteToken) ? "mcb-current" : "")"
+                                @onclick="@(async () => { if (pair.WhiteToken != null) await OnInlineMoveClick(pair.WhiteToken); })"
+                                @oncontextmenu="@((MouseEventArgs e) => { if (pair.WhiteToken != null) ShowMoveActionMenu(pair.WhiteToken, e); })"
+                                @oncontextmenu:preventDefault>
+                                @if (pair.WhiteToken != null)
+                                {
+                                    <span id="@($"move-{pair.WhiteToken.Hash}")">@pair.WhiteToken.Text</span>
+                                    @if (!String.IsNullOrEmpty(pair.WhiteToken.Comment))
+                                    {
+                                        @WrapInlineComment(pair.WhiteToken.Comment)
+                                    }
+                                }
+                            </td>
+                            <td class="mcb-black-move @(IsCurrentMove(pair.BlackToken) ? "mcb-current" : "")"
+                                @onclick="@(async () => { if (pair.BlackToken != null) await OnInlineMoveClick(pair.BlackToken); })"
+                                @oncontextmenu="@((MouseEventArgs e) => { if (pair.BlackToken != null) ShowMoveActionMenu(pair.BlackToken, e); })"
+                                @oncontextmenu:preventDefault>
+                                @if (pair.BlackToken != null)
+                                {
+                                    <span id="@($"move-{pair.BlackToken.Hash}")">@pair.BlackToken.Text</span>
+                                    @if (!String.IsNullOrEmpty(pair.BlackToken.Comment))
+                                    {
+                                        @WrapInlineComment(pair.BlackToken.Comment)
+                                    }
+                                }
+                            </td>
+                        </tr>
+                        @if (pair.VariationTokens.Count > 0)
+                        {
+                            <tr class="mcb-variation-row">
+                                <td colspan="3">
+                                    @foreach (var tok in pair.VariationTokens)
+                                    {
+                                        if (tok.IsBracket)
+                                        {
+                                            <span class="mcb-bracket">@(tok.DisplayText + " ")</span>
+                                        }
+                                        else
+                                        {
+                                            var isCurrent = string.Equals(tok.Fen, fen, StringComparison.Ordinal);
+                                            <span id="@($"move-{tok.Hash}")"
+                                                  @onclick="@(() => OnInlineMoveClick(tok))"
+                                                  @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
+                                                  @oncontextmenu:preventDefault
+                                                  class="mcb-var-move @(isCurrent ? "mcb-current" : "")">
+                                                @($" {tok.DisplayText} ")
+                                                @if (!String.IsNullOrEmpty(tok.Comment))
+                                                {
+                                                    @WrapInlineComment(tok.Comment)
+                                                }
+                                            </span>
+                                        }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (showMoveActionDialog)
+    {
+        <div class="move-actions-backdrop" style="position:fixed; inset:0; z-index:1198;" @onclick="CloseMoveActionMenu"></div>
+        <MudPaper Elevation="6"
+                  Class="pa-2"
+                  Style="@($"position:fixed; z-index:1199; left:{actionDialogX}px; top:{actionDialogY}px; min-width:200px;")">
+            <MudText Typo="Typo.subtitle2">@($"{(string.IsNullOrWhiteSpace(selectedActionLabel) ? selectedActionSan : selectedActionLabel)} options")</MudText>
+            <MudDivider Class="my-2" />
+            <MudStack Spacing="1">
+                <MudButton Disabled="@string.IsNullOrWhiteSpace(selectedActionFen)" Variant="Variant.Text" Color="Color.Primary" OnClick="PromoteSelectedVariation">Promote to mainline</MudButton>
+                <MudButton Disabled="@string.IsNullOrWhiteSpace(selectedActionFen)" Variant="Variant.Text" Color="Color.Error" OnClick="DeleteEntireVariation">Remove variation</MudButton>
+                <MudButton Disabled="@string.IsNullOrWhiteSpace(selectedActionFen)" Variant="Variant.Text" Color="Color.Error" OnClick="DeleteSelectedVariationTail">Delete from here</MudButton>
+                <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="CloseMoveActionMenu">Cancel</MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    // ── Parameters ──
+    [Parameter] public bool ShowChessNavButtons { get; set; } = true;
+    [Parameter] public bool ShowMoveList { get; set; } = true;
+    [Parameter] public bool ShowFenField { get; set; } = true;
+    [Parameter] public bool ShowPlayerInfo { get; set; } = false;
+    [Parameter] public bool EnablePGNreader { get; set; } = false;
+    [Parameter] public bool MakeMoveListClickable { get; set; } = false;
+    [Parameter] public EventCallback OpenPGNFile { get; set; }
+    [Parameter] public RenderFragment BlackPlayerInfo { get; set; }
+    [Parameter] public RenderFragment WhitePlayerInfo { get; set; }
+    [Parameter] public string FENposition { get; set; }
+    [Parameter] public string OpeningName { get; set; }
+    [Parameter] public string OpeningMoves { get; set; }
+    [Parameter] public string DetectedOpeningName { get; set; }
+    [Parameter] public string DetectedOpeningECO { get; set; }
+    [Parameter] public EventCallback<string> OnMoveMadeOnBoard { get; set; }
+    [Parameter] public EventCallback<string> OnNewFENOnBoard { get; set; }
+    [Parameter] public EventCallback<bool> OnBoardFlipped { get; set; }
+    [Parameter] public Board ChessBoard { get; set; } = new();
+    [Parameter] public int MoveListFontSize { get; set; }
+    [Parameter] public int MoveListHeight { get; set; }
+    [Parameter] public MoveListPosition MoveListPosition { get; set; } = MoveListPosition.Below;
+
+    // ── Private state ──
+    private Board moveBoard = new Board();
+    private string pendingPromotionMove;
+    private int promotionButtonSize = 50;
+    private double promotionButtonSizePx => promotionButtonSize * 0.85;
+    private TaskCompletionSource<string> promotionTcs;
+    private int moveListFontSize = 8;
+    private int moveListHeight = 80;
+    private string openingStyle = $"font-size:15px";
+    private string moveListStyle = "font-size:18px; line-height: 25px; height: 150px; overflow-y: auto; overflow-x: hidden; white-space: normal; word-wrap: break-word;";
+    private string fenWithMoves;
+    private string fen = string.Empty;
+    private bool stopAutoPlay = true;
+    private string moveStr;
+    private string moveHeader;
+    private bool _pendingScrollToCurrentMove;
+    private DotNetObjectReference<ModernChessboard> objRef;
+    private ElementReference board;
+    private MudTextField<string> moveListTextField = new();
+    private IJSObjectReference chessJSmodule;
+    private IJSObjectReference chessGUI;
+    private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private string moveList = string.Empty;
+    private List<string> replayMoves = new();
+    private HotKeysContext keyContext;
+    private List<NNValues> firstNNMoves = new();
+    private List<NNValues> secondNNMoves = new();
+    private string currentId = string.Empty;
+    private long _positionGeneration;
+    private bool isBoardFlipped;
+    private double MinPolicyThreshold { get; set; }
+    private List<MoveAndFen> MoveList { get; set; }
+    private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
+    private List<VariationDisplay> VariationLines { get; set; } = new();
+    private record InlineToken(string Text, string DisplayText, string Fen, string Comment, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply);
+    private List<InlineToken> InlineTokens { get; set; } = new();
+    private bool showMoveActionDialog = false;
+    private string selectedActionSan = string.Empty;
+    private string selectedActionFen = string.Empty;
+    private string selectedActionLabel = string.Empty;
+    private double actionDialogX;
+    private double actionDialogY;
+    private string InlineMoveHistory { get; set; } = string.Empty;
+
+    // ── Move pairs for Right mode ──
+    private record MovePair(int MoveNumber, InlineToken WhiteToken, InlineToken BlackToken, List<InlineToken> VariationTokens);
+    private List<MovePair> movePairs = new();
+
+    // ── Inline move list rendering (Below mode) ──
+    private RenderFragment RenderInlineMoveList() => __builder =>
+    {
+        var tokens = InlineTokens.ToArray();
+        foreach (var tok in tokens)
+        {
+            if (tok.IsBracket)
+            {
+                <span>@(tok.DisplayText + " ")</span>
+            }
+            else
+            {
+                var isCurrent = string.Equals(tok.Fen, fen, StringComparison.Ordinal);
+                var isWhiteToMove = tok.Ply % 2 == 0;
+                <span id="@($"move-{tok.Hash}")"
+                      @onclick="@(() => OnInlineMoveClick(tok))"
+                      @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
+                      @oncontextmenu:preventDefault
+                      style="@(isCurrent ? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">
+                    @($" {tok.DisplayText} ")
+                    @if (!String.IsNullOrEmpty(tok.Comment))
+                    {
+                        @WrapInlineComment(tok.Comment)
+                        @(" ")
+                    }
+                </span>
+            }
+        }
+    };
+
+    private bool IsCurrentMove(InlineToken token) =>
+        token != null && string.Equals(token.Fen, fen, StringComparison.Ordinal);
+
+    private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
+
+    private string currentMoveColor => "font-weight:800; color:#8FD9FF; ";
+    private string whiteMoveColor => "font-weight:600; color:#EEF3FF;";
+    private string blackMoveColor => "font-weight:400; color:#A7B1C2; opacity:0.92;";
+    private static string commentStyle => "color:#7FCFA7; font-size:0.82em; opacity:0.90;";
+
+    private static MarkupString WrapInlineComment(string comment)
+    {
+        if (string.IsNullOrWhiteSpace(comment)) return default;
+        var trimmed = comment.Trim().Trim('{', '}').Trim();
+        var encoded = System.Net.WebUtility.HtmlEncode(trimmed);
+        var html = $"{{<span class=\"inline-move-comment\" style=\"{commentStyle}\">{encoded}</span>}}";
+        return new MarkupString(html);
+    }
+
+    // ── BuildMovePairs for Right mode ──
+    private void BuildMovePairs()
+    {
+        movePairs.Clear();
+        var tokens = InlineTokens;
+        int i = 0;
+        while (i < tokens.Count)
+        {
+            var tok = tokens[i];
+
+            // Skip brackets at top level — they're handled as variation tokens
+            if (tok.IsBracket) { i++; continue; }
+            if (tok.IsFromVariation) { i++; continue; }
+
+            // Expect a white move (even ply)
+            InlineToken white = null;
+            InlineToken black = null;
+            var variations = new List<InlineToken>();
+
+            if (tok.Ply % 2 == 0)
+            {
+                white = tok;
+                i++;
+            }
+            else
+            {
+                // Game starts with black move (e.g., from a FEN)
+                black = tok;
+                i++;
+                movePairs.Add(new MovePair(tok.Ply / 2 + 1, null, black, new List<InlineToken>()));
+                // Collect any variations after this move
+                CollectVariations(tokens, ref i, movePairs[movePairs.Count - 1].VariationTokens);
+                continue;
+            }
+
+            // Collect variations after white's move
+            CollectVariations(tokens, ref i, variations);
+
+            // Look for black's move
+            if (i < tokens.Count && !tokens[i].IsBracket && !tokens[i].IsFromVariation && tokens[i].Ply % 2 == 1)
+            {
+                black = tokens[i];
+                i++;
+                // Collect variations after black's move
+                CollectVariations(tokens, ref i, variations);
+            }
+
+            int moveNumber = white != null ? white.Ply / 2 + 1 : (black != null ? black.Ply / 2 + 1 : 1);
+            movePairs.Add(new MovePair(moveNumber, white, black, variations));
+        }
+    }
+
+    private void CollectVariations(List<InlineToken> tokens, ref int i, List<InlineToken> variations)
+    {
+        while (i < tokens.Count && tokens[i].IsBracket && tokens[i].DisplayText == "(")
+        {
+            int depth = 0;
+            while (i < tokens.Count)
+            {
+                var t = tokens[i];
+                variations.Add(t);
+                i++;
+                if (t.IsBracket && t.DisplayText == "(") depth++;
+                else if (t.IsBracket && t.DisplayText == ")") { depth--; if (depth == 0) break; }
+            }
+        }
+    }
+
+    // ── Promotion ──
+    private async Task SelectPromotion(string promotionPiece)
+    {
+        await chessJSmodule.InvokeVoidAsync("hidePromotionDialog");
+        if (promotionTcs != null) promotionTcs.TrySetResult(promotionPiece);
+    }
+
+    private Task ScrollToCurrentMove()
+    {
+        _pendingScrollToCurrentMove = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task<string> ShowPromotionDialog(string move, double x, double y, bool isWhite)
+    {
+        promotionTcs = new TaskCompletionSource<string>();
+        pendingPromotionMove = move;
+        await chessJSmodule.InvokeVoidAsync("showPromotionDialog", x, y, isWhite);
+        string promotionPiece = await promotionTcs.Task;
+        return move + promotionPiece;
+    }
+
+    // ── NN Overlay ──
+    private List<NNValues> GetNNValues(string id)
+    {
+        if (id == "nnInput1") return firstNNMoves;
+        else if (id == "nnInput2") return secondNNMoves;
+        return new List<NNValues>();
+    }
+
+    private async Task ClearOverlayOnPositionChange()
+    {
+        _positionGeneration++;
+        firstNNMoves.Clear();
+        secondNNMoves.Clear();
+        currentId = string.Empty;
+        if (chessJSmodule is not null)
+            await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+    }
+
+    // ── FEN handling ──
+    private async Task OnValueChanged(string value)
+    {
+        fenWithMoves = value;
+        fen = value;
+        await UpdateFenWithMovesInput();
+        UpdateVariationsDisplay();
+        StateHasChanged();
+    }
+
+    private async void OnItemClick(int index)
+    {
+        stopAutoPlay = true;
+        if (index != -1)
+        {
+            await ClearOverlayOnPositionChange();
+            var move = MoveList[index];
+            fen = move.FenAfterMove;
+            ChessBoard.LoadFen(fen);
+            await SetPosition(fen);
+            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+            UpdateVariationsDisplay();
+            await ScrollToCurrentMove();
+            StateHasChanged();
+        }
+    }
+
+    private void ScrollToEnd()
+    {
+        chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
+    }
+
+    // ── JS-invokable methods ──
+    [JSInvokable]
+    public bool isLegalMove(string moveStr)
+    {
+        var allMoves = ChessBoard.GetLegalMoves();
+        return allMoves.Any(e => e.Item1.Contains(moveStr));
+    }
+
+    [JSInvokable]
+    public string sideToMove() => ChessBoard.Position.STM == 0 ? "w" : "b";
+
+    [JSInvokable]
+    public string GetPositionFen() => ChessBoard.FEN();
+
+    [JSInvokable]
+    public bool isLegalPieceMove(string startSq)
+    {
+        var allMoves = ChessBoard.GetLegalMoves();
+        return allMoves.Any(e => e.Item1.Contains(startSq));
+    }
+
+    [JSInvokable]
+    public string GetMoveStr(string move)
+    {
+        var allMoves = ChessBoard.GetLegalMoves();
+        var res = allMoves.Where(e => e.Item1.Contains(move));
+        if (res.Count() > 1) return "promotion:" + move;
+        var m = res.FirstOrDefault(e => e.Item1.Contains(move));
+        return m?.Item1;
+    }
+
+    [JSInvokable]
+    public async Task UpdateNewMove(string move, bool invokeMove = true)
+    {
+        if (invokeMove)
+        {
+            var moveIsProvided = !string.IsNullOrEmpty(move);
+            if (moveIsProvided)
+            {
+                ChessBoard.PlayUciMove(move);
+                await ClearOverlayOnPositionChange();
+                await OnMoveMadeOnBoard.InvokeAsync(move);
+                firstNNMoves.Clear();
+                secondNNMoves.Clear();
+            }
+
+            fenWithMoves = ChessBoard.PositionWithMoves();
+            fen = ChessBoard.FEN();
+            var lastNNMoves = GetNNValues(currentId);
+            var lastFenMove = ChessBoard.MovesAndFenPlayed.Last();
+            await DisplayMoveAnnotation(lastNNMoves, currentId);
+            UpdateVariationsDisplay();
+            StateHasChanged();
+        }
+    }
+
+    // ── Engine / board operations ──
+    public async Task ResetEngine() => await Notifier.NotifyEngineToReset(true);
+
+    public async Task RotateBoard()
+    {
+        if (chessJSmodule is not null && chessGUI is not null)
+        {
+            await chessJSmodule.InvokeVoidAsync("rotateBoard", board);
+            var lastNNMoves = GetNNValues(currentId);
+            await DisplayMoveAnnotation(lastNNMoves, currentId);
+            isBoardFlipped = !isBoardFlipped;
+            if (OnBoardFlipped.HasDelegate)
+                await OnBoardFlipped.InvokeAsync(isBoardFlipped);
+        }
+    }
+
+    public async Task WriteTextAsync()
+    {
+        var fen = ChessBoard.FEN();
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", fen);
+    }
+
+    private async Task UpdateFenWithMovesInput()
+    {
+        try
+        {
+            stopAutoPlay = true;
+            if (!string.IsNullOrEmpty(fenWithMoves))
+            {
+                ChessBoard.ResetBoardState();
+                fenWithMoves = fenWithMoves.TrimStart().TrimEnd();
+                ChessBoard.PlayFenWithMoves(fenWithMoves);
+                fen = ChessBoard.FEN();
+                await ClearOverlayOnPositionChange();
+                await SetPosition(fen, false);
+                await OnNewFENOnBoard.InvokeAsync(fen);
+                UpdateVariationsDisplay();
+                await ScrollToCurrentMove();
+            }
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            logger.LogError("Error parsing FEN with moves: " + fenWithMoves);
+        }
+    }
+
+    private async Task PrepareChessboard()
+    {
+        objRef = DotNetObjectReference.Create(this);
+        chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+        if (String.IsNullOrEmpty(FENposition)) FENposition = startPos;
+        chessGUI = await chessJSmodule.InvokeAsync<IJSObjectReference>("addChessboardToElement", objRef, FENposition, board);
+        StateHasChanged();
+    }
+
+    public async Task ResetGameState()
+    {
+        stopAutoPlay = true;
+        moveStr = string.Empty;
+        moveHeader = string.Empty;
+        if (chessJSmodule is not null && chessGUI is not null)
+        {
+            moveList = string.Empty;
+            fen = startPos;
+            ChessBoard.ResetBoardState();
+            ChessBoard.LoadFen(fen);
+            await chessJSmodule.InvokeVoidAsync("setSimplePosition", board, startPos);
+        }
+        UpdateVariationsDisplay();
+        StateHasChanged();
+    }
+
+    private async Task SetPosition(string fen, bool withCallback = false)
+    {
+        if (chessJSmodule is not null && chessGUI is not null)
+        {
+            await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, withCallback);
+            moveList = string.Empty;
+        }
+        UpdateVariationsDisplay();
+    }
+
+    // ── Overlay display ──
+    private string FormatNodes(double nodes)
+    {
+        if (nodes > 1_000_000_000) return (nodes / 1_000_000_000).ToString("F1") + "B";
+        else if (nodes > 1_000_000) return (nodes / 1_000_000).ToString("F1") + "M";
+        else if (nodes > 1_000) return (nodes / 1_000).ToString("F1") + "K";
+        else return nodes.ToString("F0");
+    }
+
+    private List<object> GetDisplayData(List<NNValues> nnMoves, OverlaySettings overlay)
+    {
+        MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
+        var currentOverlaySetting = overlay;
+        if (!OverlaySetting.IsOverlaySettingsEnabled || nnMoves.Count == 0) return new List<object>();
+        var firstMove = nnMoves.FirstOrDefault();
+        if (firstMove.Nodes == 1) currentOverlaySetting = OverlaySettings.Policy;
+        var moves = nnMoves.Skip(1).ToList();
+
+        if (currentOverlaySetting == OverlaySettings.Policy)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
+        if (currentOverlaySetting == OverlaySettings.SearchPolicy)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1") }).ToList();
+        if (currentOverlaySetting == OverlaySettings.Q)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
+        if (currentOverlaySetting == OverlaySettings.V)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
+        if (currentOverlaySetting == OverlaySettings.QVDiff)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
+        if (currentOverlaySetting == OverlaySettings.E)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
+        if (currentOverlaySetting == OverlaySettings.Nodes)
+            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
+        return new List<object>();
+    }
+
+    private async Task DisplayMoveAnnotation(List<NNValues> moves, string id)
+    {
+        if (chessJSmodule is not null && chessGUI is not null)
+        {
+            var overlay = OverlaySetting.GetOverlaySetting(id);
+            var data = GetDisplayData(moves, overlay);
+            try
+            {
+                if (data.Count > 0) await chessJSmodule.InvokeVoidAsync("addPolicyCircles", board, data);
+                else await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+            }
+            catch (ObjectDisposedException) { }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
+            catch (JSException jsEx) { logger.LogError(jsEx, "JavaScript error in addPolicyCircles."); }
+            catch (Exception ex) { logger.LogError(ex, "Unexpected error in DisplayMoveAnnotation."); }
+        }
+    }
+
+    private async Task SetPositionAndMove(MoveAndFen input, bool withCallback = false, bool withAnnotation = false, bool invokeMove = true)
+    {
+        if (chessJSmodule is not null && chessGUI is not null)
+            await chessJSmodule.InvokeVoidAsync("makeSimpleMoveWithCallBack", objRef, board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove, invokeMove);
+    }
+
+    // ── Navigation ──
+    private async Task StartOfGame()
+    {
+        stopAutoPlay = true;
+        await ClearOverlayOnPositionChange();
+        var first = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
+        if (first != null)
+        {
+            await OnNotifyMoveAndFen(first);
+            await OnNewFENOnBoard.InvokeAsync(fen);
+        }
+        await ScrollToCurrentMove();
+    }
+
+    private async Task EndOfGame()
+    {
+        stopAutoPlay = true;
+        await ClearOverlayOnPositionChange();
+        ChessBoard.EndCurrentVariation();
+        var fenAndMove = ChessBoard.MovesAndFenPlayed.LastOrDefault();
+        if (fenAndMove != null)
+        {
+            await OnNotifyMoveAndFen(fenAndMove);
+            UpdateVariationsDisplay();
+            await OnNewFENOnBoard.InvokeAsync(fen);
+            await ScrollToCurrentMove();
+        }
+        StateHasChanged();
+    }
+
+    private async Task NextMove()
+    {
+        stopAutoPlay = true;
+        await ClearOverlayOnPositionChange();
+        var next = ChessBoard.TryGetNextMoveAndFen(fen);
+        if (next != null)
+        {
+            var move = next.Value;
+            fen = move.FenAfterMove;
+            ChessBoard.LoadFen(fen);
+            await SetPositionAndMove(move, invokeMove: false);
+            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+            UpdateVariationsDisplay();
+            await ScrollToCurrentMove();
+        }
+        StateHasChanged();
+    }
+
+    private async Task PreviousMove() => await StepBackInternal(true);
+
+    public async Task StepBack(bool notifyParent = true) => await StepBackInternal(notifyParent);
+
+    private async Task StepBackInternal(bool notifyParent)
+    {
+        stopAutoPlay = true;
+        await ClearOverlayOnPositionChange();
+        var prev = ChessBoard.TryGetPreviousMoveAndFen(fen);
+        if (prev != null)
+        {
+            var move = prev.Value;
+            fen = move.FenAfterMove;
+            ChessBoard.LoadFen(fen);
+            await SetPositionAndMove(move, invokeMove: false);
+            if (notifyParent && OnMoveMadeOnBoard.HasDelegate)
+                await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
+            UpdateVariationsDisplay();
+            await ScrollToCurrentMove();
+        }
+        StateHasChanged();
+    }
+
+    private async Task PlayMoves()
+    {
+        stopAutoPlay = false;
+        fen = ChessBoard.FEN();
+        while (!stopAutoPlay && ChessBoard.TryGetNextMoveAndFen(fen) != null)
+        {
+            await NextMove();
+            await Task.Delay(400);
+        }
+        stopAutoPlay = true;
+    }
+
+    // ── Public methods ──
+    public async Task OnReceivedFen(string newPos)
+    {
+        await ClearOverlayOnPositionChange();
+        fen = newPos;
+        await SetPosition(newPos, false);
+        UpdateVariationsDisplay();
+        StateHasChanged();
+    }
+
+    public async Task OnNotifyMoveAndFen(MoveAndFen input)
+    {
+        if (input == null) return;
+        if (fen != input.FenAfterMove)
+        {
+            await ClearOverlayOnPositionChange();
+            await SetPositionAndMove(input, invokeMove: true);
+            fen = input.FenAfterMove;
+            ChessBoard.LoadFen(fen);
+        }
+        UpdateVariationsDisplay();
+        await ScrollToCurrentMove();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task SetPositionDirect(string targetFen)
+    {
+        fen = targetFen;
+        if (chessJSmodule is not null && board.Context is not null)
+            await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, false);
+        await ScrollToCurrentMove();
+    }
+
+    public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
+    {
+        if (overlay == OverlaySettings.None)
+        {
+            if (id == currentId)
+            {
+                if (chessJSmodule is not null) await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+                currentId = string.Empty;
+            }
+        }
+        else
+        {
+            currentId = id;
+            var lastNNMoves = GetNNValues(id);
+            await DisplayMoveAnnotation(lastNNMoves, id);
+        }
+    }
+
+    public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
+    {
+        var genBefore = _positionGeneration;
+        var lastNNMoves = GetNNValues(id);
+        lastNNMoves.Clear();
+        lastNNMoves.AddRange(moves);
+        if (genBefore != _positionGeneration) { lastNNMoves.Clear(); return; }
+        if (OverlaySetting.GetOverlaySetting(id) == OverlaySettings.None) return;
+        if (string.IsNullOrEmpty(currentId)) currentId = id;
+        if (id == currentId) await DisplayMoveAnnotation(lastNNMoves, id);
+    }
+
+    // ── Lifecycle ──
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            fen = FENposition;
+            await PrepareChessboard();
+        }
+
+        try
+        {
+            if (_pendingScrollToCurrentMove && chessJSmodule is not null)
+            {
+                _pendingScrollToCurrentMove = false;
+                var tok = InlineTokens.FirstOrDefault(t => !t.IsBracket && string.Equals(t.Fen, fen, StringComparison.Ordinal));
+                var targetHash = tok is null ? ChessBoard.CurrentNodeHash : tok.Hash;
+                if (targetHash != 0UL)
+                    await chessJSmodule.InvokeVoidAsync("scrollToMoveListElement", "moveListDiv", $"move-{targetHash}");
+                else
+                    await chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
+            }
+
+            if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
+            {
+                moveListFontSize = MoveListFontSize;
+                moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
+                openingStyle = $"font-size:{moveListFontSize}px";
+                StateHasChanged();
+            }
+
+            if (MoveListHeight > 0 && MoveListHeight != moveListHeight)
+            {
+                moveListHeight = MoveListHeight;
+                moveListStyle = $"font-size:{moveListFontSize}px; line-height: 25px; height: {MoveListHeight}px;";
+                StateHasChanged();
+            }
+        }
+        catch (ObjectDisposedException) { }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        this.keyContext = this.HotKeys.CreateContext()
+            .Add(Key.ArrowRight, (Func<Task>)(async () => await NextMove()), "Next move")
+            .Add(Key.ArrowLeft, (Func<Task>)(async () => await PreviousMove()), "Prev move")
+            .Add(Key.P, (Func<Task>)(async () => await PlayMoves()), "Play moves")
+            .Add(Key.R, (Func<Task>)(async () => await RotateBoard()), "Rotate board")
+            .Add(Key.Home, (Func<Task>)(async () => await StartOfGame()), "Start of game")
+            .Add(Key.End, (Func<Task>)(async () => await EndOfGame()), "End of game");
+        await base.OnInitializedAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        Notifier.NotifyFenToBoard += OnReceivedFen;
+        Notifier.NotifyFen += OnReceivedFen;
+        Notifier.NotifyFenAndMove += OnNotifyMoveAndFen;
+        Notifier.NotifyMovesWithId += OnNotifyMoves;
+        Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
+        fenWithMoves = startPos;
+        fen = startPos;
+        UpdateVariationsDisplay();
+        base.OnInitialized();
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        try
+        {
+            if (chessGUI is not null) await chessGUI.DisposeAsync();
+            Dispose();
+        }
+        catch (Exception) { logger.LogError("Error disposing ModernChessboard component."); }
+    }
+
+    public void Dispose()
+    {
+        this.keyContext?.DisposeAsync();
+        Notifier.NotifyFenToBoard -= OnReceivedFen;
+        Notifier.NotifyFen -= OnReceivedFen;
+        Notifier.NotifyFenAndMove -= OnNotifyMoveAndFen;
+        Notifier.NotifyMovesWithId -= OnNotifyMoves;
+        Notifier.NotifyDisplaySettings -= OnNotifyOverlaySettings;
+        objRef?.Dispose();
+    }
+
+    public void UpdateVariationsDisplay()
+    {
+        VariationLines.Clear();
+        InlineMoveHistory = string.Empty;
+        InlineTokens.Clear();
+        var tokens = ChessBoard.InlineTokensFromGraph();
+        InlineTokens.AddRange(tokens.Select(t => new InlineToken(t.Text, t.DisplayText, t.Fen, t.Evaluation, t.MoveCoord, t.IsBracket, t.Hash, t.FromVariation, t.Ply)));
+        InlineMoveHistory = string.Join(" ", tokens.Where(t => !t.IsBracket).Select(t => t.DisplayText));
+
+        if (MoveListPosition == MoveListPosition.Right)
+            BuildMovePairs();
+    }
+
+    // ── Move action menu ──
+    private void ShowMoveActionMenu(InlineToken token, MouseEventArgs e)
+    {
+        if (token == null || token.IsBracket || string.IsNullOrWhiteSpace(token.Fen)) return;
+        selectedActionSan = token.Text;
+        selectedActionLabel = FormatMoveLabel(token);
+        selectedActionFen = token.Fen;
+        actionDialogX = e.ClientX;
+        actionDialogY = e.ClientY;
+        showMoveActionDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseMoveActionMenu()
+    {
+        showMoveActionDialog = false;
+        selectedActionLabel = string.Empty;
+    }
+
+    private async Task RefreshAfterGraphChange(bool updated, bool jumpToSelectedFen = false)
+    {
+        if (updated)
+        {
+            if (jumpToSelectedFen && !string.IsNullOrWhiteSpace(selectedActionFen))
+            {
+                ChessBoard.LoadFen(selectedActionFen);
+                fen = selectedActionFen;
+            }
+            else
+            {
+                fen = ChessBoard.FEN();
+            }
+            await SetPosition(fen);
+            await ScrollToCurrentMove();
+        }
+        CloseMoveActionMenu();
+    }
+
+    private string FormatMoveLabel(InlineToken token)
+    {
+        if (token == null || string.IsNullOrWhiteSpace(token.Text)) return string.Empty;
+        var moveNr = (token.Ply / 2) + 1;
+        return token.Ply % 2 == 0 ? $"{moveNr}. {token.Text}" : $"{moveNr}... {token.Text}";
+    }
+
+    private Task PromoteSelectedVariation()
+    {
+        var updated = ChessBoard.PromoteVariationToMainline(string.Empty, selectedActionFen);
+        return RefreshAfterGraphChange(updated, true);
+    }
+
+    private Task DeleteEntireVariation()
+    {
+        var updated = ChessBoard.RemoveVariationNode(selectedActionSan, selectedActionFen, true);
+        ChessBoard.EndCurrentVariation();
+        var moveFen = ChessBoard.MovesAndFenPlayed.LastOrDefault();
+        if (moveFen != null)
+        {
+            fen = moveFen.FenAfterMove;
+            selectedActionFen = moveFen.FenAfterMove;
+            ChessBoard.LoadFen(selectedActionFen);
+        }
+        return RefreshAfterGraphChange(updated, false);
+    }
+
+    private Task DeleteSelectedVariationTail()
+    {
+        var previous = ChessBoard.TryGetPreviousMoveAndFen(selectedActionFen);
+        var updated = ChessBoard.RemoveVariationTail(selectedActionSan, selectedActionFen);
+        if (updated && previous != null)
+        {
+            selectedActionFen = previous.Value.FenAfterMove;
+            fen = selectedActionFen;
+            ChessBoard.LoadFen(selectedActionFen);
+        }
+        return RefreshAfterGraphChange(updated, updated && previous != null);
+    }
+
+    private async Task OnInlineMoveClick(InlineToken token)
+    {
+        if (token == null || string.IsNullOrWhiteSpace(token.Fen)) return;
+        stopAutoPlay = true;
+        await ClearOverlayOnPositionChange();
+        ChessBoard.LoadFen(token.Fen);
+        var history = ChessBoard.GetMoveHistoryToCurrentFen(token.Fen);
+        fen = token.Fen;
+        UpdateVariationsDisplay();
+        await SetPosition(fen);
+        if (!string.IsNullOrWhiteSpace(token.MoveCoord))
+            await OnMoveMadeOnBoard.InvokeAsync(token.MoveCoord);
+        await ScrollToCurrentMove();
+        StateHasChanged();
+    }
+}

@@ -22,8 +22,9 @@
 }
 
 .play-vs-computer .pvc-topbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 16px;
     padding: 16px 18px;
     border-radius: 18px;
@@ -169,36 +170,46 @@
     color: var(--pvc-text);
 }
 
+.play-vs-computer .pvc-players-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--pvc-text);
+    padding: 2px 0;
+}
+
+.play-vs-computer .pvc-spacer {
+    flex: 1;
+}
+
+.play-vs-computer .pvc-engine-logo {
+    height: 20px;
+    width: auto;
+    object-fit: contain;
+}
+
+.play-vs-computer .pvc-inline-clock {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.1rem;
+}
+
+.play-vs-computer .pvc-thinking {
+    font-weight: 400;
+    font-style: italic;
+    color: var(--pvc-muted);
+    font-size: 0.85rem;
+}
+
 .play-vs-computer .pvc-panel h3 {
     margin: 0 0 10px;
     font-size: 1.05rem;
     font-weight: 600;
 }
 
-.play-vs-computer .pvc-clocks {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-}
-
-.play-vs-computer .pvc-clock {
-    background: rgba(14, 17, 26, 0.7);
-    border: 1px solid rgba(125, 132, 156, 0.2);
-    border-radius: 14px;
-    padding: 12px;
-}
-
-.play-vs-computer .pvc-clock p {
-    margin: 0;
-    color: var(--pvc-muted);
-    font-size: 0.8rem;
-}
-
-.play-vs-computer .pvc-clock strong {
-    display: block;
-    font-size: 1.4rem;
-    margin-top: 6px;
-}
 
 .play-vs-computer .pvc-results {
     width: 100%;
@@ -228,61 +239,4 @@
     gap: 10px;
 }
 
-.play-vs-computer ::deep .chessboard-root {
-    width: min(620px, 100%);
-    aspect-ratio: 1 / 1;
-    height: auto;
-    margin: 0 auto;
-}
 
-.play-vs-computer ::deep .board-container-41a68,
-.play-vs-computer ::deep .chessboard-21da3 {
-    width: 100%;
-    height: 100%;
-}
-
-.play-vs-computer .pvc-board-card ::deep .mud-grid {
-    width: min(620px, 100%);
-    margin: 0 auto;
-}
-
-@media (max-width: 1100px) {
-    .play-vs-computer .pvc-main {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 720px) {
-    .play-vs-computer .pvc-topbar {
-        grid-template-columns: 1fr;
-    }
-
-    .play-vs-computer .pvc-actions {
-        justify-content: flex-start;
-    }
-
-    .play-vs-computer .pvc-clocks {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Responsive Design */
-@media (max-width: 1100px) {
-    .pvc-main {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 720px) {
-    .pvc-topbar {
-        grid-template-columns: 1fr;
-    }
-
-    .pvc-actions {
-        justify-content: flex-start;
-    }
-
-    .pvc-clocks {
-        grid-template-columns: 1fr;
-    }
-}

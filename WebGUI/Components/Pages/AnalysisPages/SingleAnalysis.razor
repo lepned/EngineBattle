@@ -142,25 +142,28 @@
                 <div class="sa-game-info">@currentGame</div>
             }
 
-            <div class="sa-chart-section">
-                <div class="sa-chart-controls">
-                    <select class="sa-select" @bind="selectedChart" @bind:after="OnChartTypeChangedAsync">
-                        <option value="@CustomChartType.Evaluation">Evaluation</option>
-                        <option value="@CustomChartType.Nodes">Nodes</option>
-                        <option value="@CustomChartType.TimeUsage">Time Usage</option>
-                        <option value="@CustomChartType.NPS">NPS</option>
-                        <option value="@CustomChartType.EPS">EPS</option>
-                    </select>
-                    <div class="sa-field sa-field-inline">
-                        <input type="number" @bind="minMoveTimeInSecs" />
-                        <label>Min move time (sec)</label>
+            @if (pgnFileLoaded)
+            {
+                <div class="sa-chart-section">
+                    <div class="sa-chart-controls">
+                        <select class="sa-select" @bind="selectedChart" @bind:after="OnChartTypeChangedAsync">
+                            <option value="@CustomChartType.Evaluation">Evaluation</option>
+                            <option value="@CustomChartType.Nodes">Nodes</option>
+                            <option value="@CustomChartType.TimeUsage">Time Usage</option>
+                            <option value="@CustomChartType.NPS">NPS</option>
+                            <option value="@CustomChartType.EPS">EPS</option>
+                        </select>
+                        <div class="sa-field sa-field-inline">
+                            <input type="number" @bind="minMoveTimeInSecs" />
+                            <label>Min move time (sec)</label>
+                        </div>
+                        <span class="sa-chart-label">PGN Chart</span>
                     </div>
-                    <span class="sa-chart-label">PGN Chart</span>
+                    <div class="sa-chart-container">
+                        <div class="chart" @ref="pgnChart" style="height:100%;"></div>
+                    </div>
                 </div>
-                <div class="sa-chart-container">
-                    <div class="chart" @ref="pgnChart" style="height:100%;"></div>
-                </div>
-            </div>
+            }
 
             @if (pgnFileLoaded)
             {

@@ -75,6 +75,26 @@
         {
             <span class="da-toolbar-info" title="@pgnName">@pgnName</span>
         }
+        @if (pgnFileLoaded)
+        {
+            <button class="da-toolbar-btn" @onclick="OpenPGNDialog" title="View loaded PGN games">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                </svg>
+                PGN (@games.Count)
+            </button>
+        }
+        @if (epdFileLoaded)
+        {
+            <button class="da-toolbar-btn" @onclick="OpenEPDDialog" title="View loaded EPD positions">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                </svg>
+                EPD (@epdGames.Count)
+            </button>
+        }
     </div>
 
     <div class="da-main">
@@ -162,55 +182,29 @@
                 <div class="da-game-info">@currentGame</div>
             }
 
-            <div class="da-chart-section">
-                <div class="da-chart-controls">
-                    <select class="da-select" @bind="selectedChart" @bind:after="OnChartTypeChangedAsync">
-                        <option value="@CustomChartType.Evaluation">Evaluation</option>
-                        <option value="@CustomChartType.Nodes">Nodes</option>
-                        <option value="@CustomChartType.TimeUsage">Time Usage</option>
-                        <option value="@CustomChartType.NPS">NPS</option>
-                        <option value="@CustomChartType.EPS">EPS</option>
-                    </select>
-                    <div class="da-field da-field-inline">
-                        <input type="number" @bind="minMoveTimeInSecs" />
-                        <label>Min move time (sec)</label>
-                    </div>
-                    <span class="da-chart-label">PGN Chart</span>
-                </div>
-                <div class="da-chart-container">
-                    <div class="chart" @ref="pgnChart" style="height:100%;"></div>
-                </div>
-            </div>
-
             @if (pgnFileLoaded)
             {
-                <button class="da-dialog-btn" @onclick="OpenPGNDialog">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="8" y1="6" x2="21" y2="6"/>
-                        <line x1="8" y1="12" x2="21" y2="12"/>
-                        <line x1="8" y1="18" x2="21" y2="18"/>
-                        <line x1="3" y1="6" x2="3.01" y2="6"/>
-                        <line x1="3" y1="12" x2="3.01" y2="12"/>
-                        <line x1="3" y1="18" x2="3.01" y2="18"/>
-                    </svg>
-                    View PGN Games (@games.Count)
-                </button>
+                <div class="da-chart-section">
+                    <div class="da-chart-controls">
+                        <select class="da-select" @bind="selectedChart" @bind:after="OnChartTypeChangedAsync">
+                            <option value="@CustomChartType.Evaluation">Evaluation</option>
+                            <option value="@CustomChartType.Nodes">Nodes</option>
+                            <option value="@CustomChartType.TimeUsage">Time Usage</option>
+                            <option value="@CustomChartType.NPS">NPS</option>
+                            <option value="@CustomChartType.EPS">EPS</option>
+                        </select>
+                        <div class="da-field da-field-inline">
+                            <input type="number" @bind="minMoveTimeInSecs" />
+                            <label>Min move time (sec)</label>
+                        </div>
+                        <span class="da-chart-label">PGN Chart</span>
+                    </div>
+                    <div class="da-chart-container">
+                        <div class="chart" @ref="pgnChart" style="height:100%;"></div>
+                    </div>
+                </div>
             }
 
-            @if (epdFileLoaded)
-            {
-                <button class="da-dialog-btn" @onclick="OpenEPDDialog">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="8" y1="6" x2="21" y2="6"/>
-                        <line x1="8" y1="12" x2="21" y2="12"/>
-                        <line x1="8" y1="18" x2="21" y2="18"/>
-                        <line x1="3" y1="6" x2="3.01" y2="6"/>
-                        <line x1="3" y1="12" x2="3.01" y2="12"/>
-                        <line x1="3" y1="18" x2="3.01" y2="18"/>
-                    </svg>
-                    View EPD List (@epdGames.Count)
-                </button>
-            }
 
             @if (tbFilesLoaded)
             {

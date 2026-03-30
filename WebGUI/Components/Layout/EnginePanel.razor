@@ -37,6 +37,10 @@
         <div class="ep-cmd-input">
             <input type="text" @bind="text" placeholder="UCI command" title="Send a raw UCI command to the engine" />
             <button class="ep-btn secondary small" @onclick="DumpEngineStats">run</button>
+            <MudTooltip Text="Load UCI script (.txt) — one command per line, e.g. setoption name Cpuct value 1.32">
+                <MudIconButton Icon="@Icons.Material.Filled.Description" Size="Size.Small"
+                               OnClick="LoadUciScript" Disabled="@(analyzer == null)" Style="padding:2px;" />
+            </MudTooltip>
         </div>
         <label class="ep-switch">
             <span class="label-text @(searchMode == SearchMode.Nodes ? "active" : "")">Nodes</span>
@@ -108,6 +112,7 @@
             </svg>
             Engine
         </button>
+
     </div>
 
     <div class="ep-nn-info">
@@ -923,6 +928,41 @@
             logger.LogError(ex, "Failed to load engine.json file {File}", filePath);
             waitingForEngine = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task LoadUciScript()
+    {
+        if (analyzer == null) return;
+
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, SettingsService.Settings.EngineDefsFolder },
+            { x => x.FileFilter, "*.txt" },
+            { x => x.Mode, WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog.FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select UCI Script", parameters, options);
+        var result = await dialog.Result;
+        if (result == null || result.Canceled) return;
+
+        var filePath = (string)result.Data!;
+        try
+        {
+            var lines = await File.ReadAllLinesAsync(filePath);
+            int count = 0;
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
+                analyzer.DumpStats(trimmed);
+                count++;
+            }
+            logger.LogInformation("Loaded UCI script {File}: {Count} commands sent", filePath, count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load UCI script {File}", filePath);
         }
     }
 
@@ -1751,6 +1791,12 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (IsReviewing && cpChartLines != 3)
+        {
+            cpChartLines = 3;
+            ChartLines = 3;
+        }
+
         if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
         {
             logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);

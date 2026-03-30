@@ -49,7 +49,7 @@ let analyzeCrossEngine (scores: Score seq) : CrossEngineResult list =
                     e.FailedPuzzles |> Seq.map (fun (p, _) -> p.PuzzleId) |> Set.ofSeq)
                 |> Map.ofList
 
-            // Build puzzle lookup by PuzzleId
+            // Puzzle lookup for solved puzzles (any engine's data works since MovePlayed isn't needed)
             let puzzleLookup =
                 engines
                 |> Seq.collect (fun e ->
@@ -59,11 +59,11 @@ let analyzeCrossEngine (scores: Score seq) : CrossEngineResult list =
                 |> Seq.distinctBy fst
                 |> Map.ofSeq
 
-            // Failed puzzle move lookup: engine -> puzzleId -> movePlayed
-            let failedMoveLookup =
+            // Per-engine failed puzzle lookup: uses each engine's own data (with MovePlayed set)
+            let failedPuzzleLookup =
                 engines |> List.map (fun e ->
                     e.Engine,
-                    e.FailedPuzzles |> Seq.map (fun (p, m) -> p.PuzzleId, m) |> Map.ofSeq)
+                    e.FailedPuzzles |> Seq.map (fun (p, m) -> p.PuzzleId, (p, m)) |> Map.ofSeq)
                 |> Map.ofList
 
             // Uniquely solved: only engine X solved, all others failed
@@ -96,9 +96,7 @@ let analyzeCrossEngine (scores: Score seq) : CrossEngineResult list =
                         | sets -> sets |> List.fold Set.intersect myFailed
                     let puzzlesWithMoves =
                         unique |> Set.toList |> List.choose (fun id ->
-                            match Map.tryFind id puzzleLookup, Map.tryFind id (failedMoveLookup.[eng]) with
-                            | Some p, Some m -> Some (p, m)
-                            | _ -> None)
+                            Map.tryFind id failedPuzzleLookup.[eng])
                     eng, puzzlesWithMoves)
                 |> Map.ofList
 
@@ -111,13 +109,15 @@ let analyzeCrossEngine (scores: Score seq) : CrossEngineResult list =
                    | first :: rest -> rest |> List.fold Set.intersect first
             let failedByAll =
                 allFailedIds |> Set.toList |> List.choose (fun id ->
-                    match Map.tryFind id puzzleLookup with
+                    // Use any engine's failed puzzle data (all engines failed, so all have MovePlayed set)
+                    let puzzleData =
+                        engineNames |> List.tryPick (fun eng ->
+                            failedPuzzleLookup.[eng] |> Map.tryFind id |> Option.map fst)
+                    match puzzleData with
                     | Some p ->
                         let moves =
                             engineNames |> List.choose (fun eng ->
-                                match Map.tryFind id (failedMoveLookup.[eng]) with
-                                | Some m -> Some (eng, m)
-                                | None -> None)
+                                failedPuzzleLookup.[eng] |> Map.tryFind id |> Option.map (fun (_, m) -> eng, m))
                             |> Map.ofList
                         Some (p, moves)
                     | None -> None)
@@ -169,18 +169,18 @@ let private getFailedPuzzleEpd (puzzle: CsvPuzzleData) (policyStr: string) =
             None)
 
 /// Get FEN and best-move SAN for a solved puzzle command.
-/// Returns (fen, bmSan, uciCorrectMove).
+/// Returns (fen, bmSan, uciCorrectMove). Uses the last command (decisive move).
 let private getSolvedPuzzleEpd (puzzle: CsvPuzzleData) =
     let board = Board()
-    puzzle.Commands |> Seq.tryPick (fun cmd ->
+    let mutable result : (string * string * string) option = None
+    for cmd in puzzle.Commands do
         if not (String.IsNullOrWhiteSpace(cmd.CorrectMove)) && cmd.CorrectMove.Length >= 4 then
             board.PlayCommands(cmd.Command)
             let fen = board.FEN()
             board.PlayUciMove(cmd.CorrectMove)
             let bm = board.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue ""
-            Some (fen, bm, cmd.CorrectMove)
-        else
-            None)
+            result <- Some (fen, bm, cmd.CorrectMove)
+    result
 
 /// Write cross-engine analysis files. Only creates files that have content. Does nothing for single-engine runs.
 let writeCrossEngineFiles (outputFolder: string) (dateStr: string) (allScores: Score seq) =

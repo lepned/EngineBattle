@@ -32,6 +32,8 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                     | Ok reply ->
                         reply.Reply(true)
                     | NewGame reply ->
+                        engine.UciNewGame()
+                        engine.WaitForReadyOk() |> ignore
                         reply.Reply()
                     | BestMove (cmd, reply) ->
                         let mv = bestQPuzzleValueOnly engine cmd
@@ -158,9 +160,8 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
 
 //Per-puzzle async workflow
 let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (puzzle:CsvPuzzleData)  = async {
-    // Reset engine state between puzzles (policy/search only)
-    if not valueHead then
-        do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
+    // Reset engine state between puzzles
+    do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
 
     // 3b) Fresh board per puzzle
     let board = Board()

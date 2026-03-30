@@ -12,6 +12,8 @@
 @inject IDialogService DialogService
 @inject IJSRuntime JS
 @inject GlobalSettingsService SettingsService
+@inject NavigationManager navManager
+@inject AnalysisNavigationService AnalysisNav
 @implements IAsyncDisposable
 
 <PageTitle>Play vs Computer</PageTitle>
@@ -96,7 +98,7 @@
                 </div>
             </div>
             <div class="pvc-actions">
-                <button class="pvc-upload @(engineReady ? string.Empty : "warn")" @onclick="BrowseEngineJsonFile">Engine.json</button>
+                <button class="pvc-upload @(engineReady ? string.Empty : "warn")" @onclick="BrowseEngineJsonFile">Load Engine</button>
                 <button class="pvc-btn" @onclick="StartGame" disabled="@(!engineReady || engineInitializing)">Start Game</button>
                 <button class="pvc-btn secondary" @onclick="RestartGame" disabled="@(!engineReady || engineInitializing)">Restart</button>
                 <button class="pvc-btn secondary" @onclick="ForceComputerMove" disabled="@(!CanForceMove)">Force Move</button>
@@ -108,28 +110,36 @@
 
         <div class="pvc-main">
             <div class="pvc-board-card">
+                <div class="pvc-players-bar">
+                    @PlayerIcon(false)
+                    <span>@(Engine?.Name ?? "Computer")</span>
+                    @if (clockEnabled)
+                    {
+                        <span class="pvc-inline-clock">@FormatTime(humanIsWhite ? blackTime : whiteTime)</span>
+                    }
+                    @if (gameActive && IsEngineThinking())
+                    {
+                        <span class="pvc-thinking">thinking...</span>
+                    }
+                    <span class="pvc-spacer"></span>
+                    @if (clockEnabled)
+                    {
+                        <span class="pvc-inline-clock">@FormatTime(humanIsWhite ? whiteTime : blackTime)</span>
+                    }
+                    <span>You</span>
+                    @PlayerIcon(true)
+                </div>
                 <div class="pvc-status">
                     <span>@gameStatus</span>
                 </div>
-                <Chessboard @ref="chessboardRef" ShowFenField="false" FENposition="@fen" ShowChessNavButtons="true" ShowMoveList="true"
-                            MakeMoveListClickable="true" OnMoveMadeOnBoard="OnHumanMove" OnNewFENOnBoard="OnBoardFenChanged" OnBoardFlipped="OnBoardFlipped"
+                <ModernChessboard @ref="chessboardRef" ShowFenField="false" FENposition="@fen" ShowChessNavButtons="true" ShowMoveList="true"
+                            MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Right"
+                            OnMoveMadeOnBoard="OnHumanMove" OnNewFENOnBoard="OnBoardFenChanged" OnBoardFlipped="OnBoardFlipped"
                             ChessBoard="@board" />
             </div>
 
             <div class="pvc-panel">
-                <h3>Game</h3>
-                <div class="pvc-clocks">
-                    <div class="pvc-clock">
-                        <p>White (@WhitePlayerLabel)</p>
-                        <strong>@FormatTime(whiteTime)</strong>
-                    </div>
-                    <div class="pvc-clock">
-                        <p>Black (@BlackPlayerLabel)</p>
-                        <strong>@FormatTime(blackTime)</strong>
-                    </div>
-                </div>
-
-                <h3 style="margin-top:16px;">Results</h3>
+                <h3>Results</h3>
                 @if (gameResults.Count == 0)
                 {
                     <p class="pvc-muted">No games recorded yet.</p>
@@ -163,6 +173,7 @@
                 <div class="pvc-save">
                     <input type="text" placeholder="C:/dev/chess/mygames.pgn" @bind="gamesPath" />
                     <button class="pvc-btn secondary" @onclick="SaveGameToPgn">Save PGN</button>
+                    <button class="pvc-btn secondary" @onclick="ReviewGame" disabled="@(board.SanMovesPlayed.Count == 0)">Review Game</button>
                 </div>
             </div>
         </div>
@@ -218,7 +229,7 @@
     private int numberOfNodes = 1;
     private string gamesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "chess", "mygames.pgn");
     private readonly object clockLock = new object();
-    private Chessboard chessboardRef;
+    private ModernChessboard chessboardRef;
     private readonly List<GameResult> gameResults = new();
     private bool resultRecorded;
     private record GameResult(DateTime When, string Result, string Reason, string Moves, string FinalFen);
@@ -239,6 +250,17 @@
     }
     private string WhitePlayerLabel => humanIsWhite ? "You" : Engine?.Name ?? "Computer";
     private string BlackPlayerLabel => humanIsWhite ? Engine?.Name ?? "Computer" : "You";
+    private RenderFragment PlayerIcon(bool isHuman) => isHuman
+        ? @<MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
+        : !string.IsNullOrEmpty(Engine?.LogoPath)
+            ? @<img class="pvc-engine-logo" src="@Engine.LogoPath" alt="@(Engine.Name)" />
+            : @<MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" />;
+
+    private bool IsEngineThinking()
+    {
+        var whiteToMove = board.Position.STM == 0;
+        return humanIsWhite != whiteToMove;
+    }
 
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
 
@@ -584,7 +606,8 @@
                 var meta = game.GameMetaData;
                 var when = ParsePgnDate(meta.Date);
                 var moves = meta.Moves > 0 ? meta.Moves : (game.Mainline?.Count ?? 0);
-                var reason = GetTerminationTag(meta) ?? meta.Reason.ToString();
+                var reasonTag = GetTerminationTag(meta);
+                var reason = reasonTag ?? (meta.Result == "*" ? "" : meta.Reason.ToString());
                 var result = MapPgnResult(meta.Result);
                 loaded.Add(new GameResult(when, result, reason, moves.ToString(CultureInfo.InvariantCulture), game.Fen));
             }
@@ -635,20 +658,23 @@
             "1-0" => "White",
             "0-1" => "Black",
             "1/2-1/2" => "Draw",
-            "*" => "In progress",
+            "*" => "Unfinished",
             _ => string.IsNullOrWhiteSpace(result) ? "Unknown" : result
         };
     }
 
     private static string GetTerminationTag(ChessLibrary.PGNTypes.GameMetadata meta)
     {
-        if (meta.OtherTags == null || meta.OtherTags.IsEmpty)
-        {
+        if (meta == null || meta.OtherTags == null || meta.OtherTags.IsEmpty)
             return null;
-        }
 
-        var termination = meta.OtherTags.FirstOrDefault(t => t.Key.Equals("Termination", StringComparison.OrdinalIgnoreCase));
-        return string.IsNullOrWhiteSpace(termination.Value) ? null : termination.Value;
+        foreach (var tag in meta.OtherTags)
+        {
+            if (tag.Key != null && tag.Key.Equals("Termination", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(tag.Value))
+                return tag.Value;
+        }
+        return null;
     }
 
     private void StartClock()
@@ -989,6 +1015,30 @@
         }
 
         StateHasChanged();
+    }
+
+    private void ReviewGame()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[Event \"Play vs computer\"]");
+        sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
+        sb.AppendLine($"[White \"{WhitePlayerLabel}\"]");
+        sb.AppendLine($"[Black \"{BlackPlayerLabel}\"]");
+        sb.AppendLine($"[Result \"{(gameActive ? "*" : lastResultTag)}\"]");
+        sb.AppendLine($"[TimeControl \"{CurrentTimeControlTag()}\"]");
+        if (!string.IsNullOrWhiteSpace(lastResultReason))
+            sb.AppendLine($"[Termination \"{lastResultReason}\"]");
+        sb.AppendLine();
+        sb.AppendLine(board.GetMoveHistory());
+
+        var games = ChessLibrary.FullPGNParser.parsePgnString(sb.ToString());
+        var gameList = games.ToList();
+        if (gameList.Count > 0)
+        {
+            AnalysisNav.ReviewGames = gameList;
+            AnalysisNav.ReviewCurrentGame = gameList[0];
+            navManager.NavigateTo("/analysis/game-review");
+        }
     }
 
     private async Task SaveGameToPgn(MouseEventArgs args)

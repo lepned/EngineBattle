@@ -498,7 +498,7 @@ type Board() =
         | _ -> ()
     
     // Graph-aware callers expect a path command
-    member this.PositionWithMovesFromGraph() = 
+    member this.PositionWithMovesFromGraph() =
         updatePathFromCurrent()
         this.PositionWithMoves()
 
@@ -1555,9 +1555,8 @@ type Board() =
       |_ -> ()      
     
     member this.PlayFenWithMoves (fenMoves : string) =
-      this.ResetBoardState()
       let (fen, moves) = FEN.parseFENandMoves fenMoves
-      this.LoadFen fen
+      this.ResetBoardStateFromFen fen
       let normalizedFen = this.FEN()
       this.CurrentFEN <- normalizedFen
       this.StartPosition <- normalizedFen

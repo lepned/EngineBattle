@@ -1,0 +1,196 @@
+/* ── Below mode (default): single column, board centered ── */
+.mcb-below-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.mcb-below-layout .mcb-board-area {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* ── Right mode: board + move list side by side ── */
+.mcb-right-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 600px) minmax(0, 220px);
+    gap: 8px;
+    align-items: stretch;
+    justify-content: start;
+}
+
+.mcb-right-layout .mcb-board-area {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Board wrapper ── */
+.modern-chessboard .mcb-board-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+/* ── Board sizing (self-contained) ── */
+.modern-chessboard ::deep .chessboard-root {
+    width: 100%;
+    max-width: 600px;
+    aspect-ratio: 1 / 1;
+    height: auto;
+}
+
+.modern-chessboard ::deep .board-container-41a68,
+.modern-chessboard ::deep .chessboard-21da3 {
+    width: 100%;
+    height: 100%;
+}
+
+/* ── Player info ── */
+.modern-chessboard .mcb-player-info {
+    width: 100%;
+    margin: 2px 0;
+}
+
+/* ── Opening name ── */
+.modern-chessboard .mcb-opening-name {
+    text-align: center;
+}
+
+/* ── Detected opening ── */
+.modern-chessboard .mcb-detected-opening {
+    text-align: center;
+    font-size: 14px;
+    color: #8fa8c8;
+    opacity: 0.90;
+    padding: 2px 0;
+}
+
+/* ── Navigation buttons ── */
+.modern-chessboard .mcb-nav-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px 0;
+    max-width: 600px;
+}
+
+.modern-chessboard .mcb-nav-buttons ::deep .mud-fab-extended,
+.modern-chessboard .mcb-nav-buttons ::deep .mud-fab {
+    width: 36px;
+    height: 36px;
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+}
+
+/* ── Move list: Below mode (inline flow) ── */
+.modern-chessboard .mcb-movelist-below {
+    width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+/* ── Move list: Right mode (panel) ── */
+.modern-chessboard .mcb-movelist-panel {
+    background: rgba(30, 33, 44, 0.6);
+    border: 1px solid rgba(125, 132, 156, 0.18);
+    border-radius: 12px;
+    padding: 8px;
+    overflow-y: auto;
+    height: 0;
+    min-height: 100%;
+}
+
+/* ── Two-column move table ── */
+.mcb-move-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: clamp(0.7rem, 1.4vw, 0.95rem);
+    table-layout: fixed;
+}
+
+.mcb-move-table tr:nth-child(odd of :not(.mcb-variation-row)) {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.mcb-move-table td {
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.mcb-move-table .mcb-move-number {
+    color: #8fa8c8;
+    width: 28px;
+    text-align: center;
+    font-size: 0.82em;
+    cursor: default;
+    opacity: 0.7;
+    padding: 4px 4px;
+}
+
+.mcb-move-table .mcb-white-move,
+.mcb-move-table .mcb-black-move {
+    color: #d0d0d0;
+    font-weight: 500;
+    width: calc((100% - 28px) / 2);
+}
+
+.mcb-move-table .mcb-white-move:hover,
+.mcb-move-table .mcb-black-move:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mcb-move-table .mcb-current {
+    color: #fff !important;
+    font-weight: 700 !important;
+    background: rgba(100, 150, 220, 0.35);
+}
+
+.mcb-move-table .mcb-row-active {
+    background: rgba(100, 150, 220, 0.06);
+}
+
+/* ── Variation rows in table ── */
+.mcb-variation-row td {
+    font-size: 0.8em;
+    padding: 3px 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: #a0a8b8;
+    cursor: default;
+}
+
+.mcb-var-move {
+    cursor: pointer;
+    color: #a0a8b8;
+}
+
+.mcb-var-move:hover {
+    color: #EEF3FF;
+}
+
+.mcb-var-move.mcb-current {
+    color: #fff !important;
+    font-weight: 700;
+    background: rgba(100, 150, 220, 0.35);
+    border-radius: 3px;
+    padding: 1px 3px;
+}
+
+.mcb-bracket {
+    color: #8fa8c8;
+    opacity: 0.5;
+}
+
+/* ── Responsive: collapse Right mode to single column on narrow screens ── */
+@media (max-width: 800px) {
+    .mcb-right-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .mcb-movelist-panel {
+        max-height: 250px;
+    }
+}
