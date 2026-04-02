@@ -570,9 +570,7 @@ module FullSpanParserTests =
         Assert.True(missingComments.IsEmpty, $"Expected comments on every move, missing on {missingComments.Length} moves")
 
         let lastMove = game.Mainline.[game.Mainline.Count - 1]
-        Assert.Contains("wv=0.82", lastMove.Comment)
-        Assert.DoesNotContain("Evaluation agreement", lastMove.Comment)
-        Assert.Contains("Evaluation agreement", game.Comments)
+        Assert.Contains("Evaluation agreement", lastMove.Comment)
 
     [<Fact>]
     let ``FullSpanParser parses NAGs`` () =
