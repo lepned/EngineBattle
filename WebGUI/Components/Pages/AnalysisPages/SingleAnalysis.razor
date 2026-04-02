@@ -74,7 +74,8 @@
             <EnginePanel @ref="analysisWithEngine" FEN="@fen" OnUCIReceived="OnUCIReceived"
                          ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
                          Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
-                         PGNgames="games" Player=@searchString />
+                         PGNgames="games" Player=@searchString OnSearchCompleted="OnSearchCompleted"
+                         IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
         </div>
 
         <!-- Center Panel: Chessboard + Save -->
@@ -98,8 +99,9 @@
                 </div>
             </div>
             <div class="sa-board-wrapper">
-                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
-                            MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                <ModernChessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
+                            MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right" MoveEvals="@moveEvals"
+                            OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
@@ -319,7 +321,7 @@
     private EnginePanel analysisWithEngine;
     private bool showOverlayControls = false;
     private OverlaySettings selectedOverlay = OverlaySettings.None;
-    private Chessboard chessBoardRazor;
+    private ModernChessboard chessBoardRazor;
 
     private ElementReference pgnChart;
     private IJSObjectReference chessModule;
@@ -331,6 +333,8 @@
     private List<PGNTypes.PgnGame> games = new();
     private List<EPDTypes.EPDEntry> epdGames = new();
     private Chess.Board board = new();
+    private Dictionary<int, string> moveEvals = new();
+    private HashSet<ulong> analyzedPositions = new();
     HotKeysContext keyContext;
     private int chartLines = 4;
     private string searchString = "";
@@ -515,10 +519,27 @@
         UpdateFrcId(board.StartPosition);
         UpdateDetectedOpening();
         moveHistory = board.GetMoveHistoryWithVariations();
+        moveEvals = ExtractEvalsFromComments(game);
         var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
         if (chessBoardRazor != null)
             await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
         StateHasChanged();
+    }
+
+    private static Dictionary<int, string> ExtractEvalsFromComments(PGNTypes.PgnGame game)
+    {
+        var evals = new Dictionary<int, string>();
+        for (int i = 0; i < game.Mainline.Count; i++)
+        {
+            var move = game.Mainline[i];
+            if (string.IsNullOrEmpty(move.Comment)) continue;
+            var isBlack = move.Color == "b";
+            var player = isBlack ? game.GameMetaData.Black : game.GameMetaData.White;
+            var stat = Annotation.getEngineStatData(player, isBlack, move.Comment);
+            if (stat.d == 0 && stat.n == 0L && stat.wv == 0.0) continue;
+            evals[i] = $"{stat.wv:+0.0;-0.0}";
+        }
+        return evals;
     }
 
     private async Task SaveGameToPGN(MouseEventArgs args)
@@ -852,6 +873,18 @@
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         await Notifier.UpdateFen(fen);
+    }
+
+    private void OnSearchCompleted(string eval)
+    {
+        var ply = board.PlyCount - 1;
+        analyzedPositions.Add(board.CurrentNodeHash);
+        if (ply >= 0 && !string.IsNullOrEmpty(eval))
+        {
+            moveEvals[ply] = eval;
+            chessBoardRazor?.UpdateVariationsDisplay();
+            StateHasChanged();
+        }
     }
 
     public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)

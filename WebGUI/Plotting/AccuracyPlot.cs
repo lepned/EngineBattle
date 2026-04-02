@@ -41,6 +41,7 @@ public class AccuracyPlot
             var whiteWP = m.Color == "w" ? m.WinProbBefore : (1.0 - m.WinProbBefore);
             wpValues[i] = whiteWP * 100.0;
 
+
             markerColors[i] = GetClassificationColor(m.Classification);
             hoverTexts[i] = $"{m.MoveNumber}{(m.Color == "w" ? "." : "...")}{m.San} {m.Classification} ({m.MoveAccuracy:F0}%)";
         }

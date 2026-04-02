@@ -141,7 +141,7 @@ module Engine =
                     ok <- false
                     cont <- false
                 elif mode then
-                    do! Async.Sleep(200)
+                    do! Async.Sleep(10)
                 else
                     ok <- true
                     cont <- false
@@ -550,7 +550,7 @@ module Engine =
           if stderrBuffer.Count > 0 then
              for err in stderrBuffer do
                logDebug $"[STDERR {name}]: {err}"
-          let withLiveLog = configCmds |> Seq.exists (fun e -> e.Contains("LogLiveStats"))
+          let withLiveLog = optionsMap.ContainsKey("LogLiveStats")
           getAllDefaultOptions()
           callback(EngineUpdate.Ready (name, withLiveLog))
 

@@ -15,7 +15,7 @@
 /* ── Right mode: board + move list side by side ── */
 .mcb-right-layout {
     display: grid;
-    grid-template-columns: minmax(0, 600px) minmax(0, 220px);
+    grid-template-columns: minmax(0, 700px) minmax(0, 280px);
     gap: 8px;
     align-items: stretch;
     justify-content: start;
@@ -35,7 +35,7 @@
 /* ── Board sizing (self-contained) ── */
 .modern-chessboard ::deep .chessboard-root {
     width: 100%;
-    max-width: 600px;
+    max-width: 700px;
     aspect-ratio: 1 / 1;
     height: auto;
 }
@@ -72,7 +72,7 @@
     justify-content: center;
     gap: 2px;
     padding: 4px 0;
-    max-width: 600px;
+    max-width: 700px;
 }
 
 .modern-chessboard .mcb-nav-buttons ::deep .mud-fab-extended,
@@ -136,6 +136,7 @@
     color: #d0d0d0;
     font-weight: 500;
     width: calc((100% - 28px) / 2);
+    white-space: nowrap;
 }
 
 .mcb-move-table .mcb-white-move:hover,
@@ -151,6 +152,46 @@
 
 .mcb-move-table .mcb-row-active {
     background: rgba(100, 150, 220, 0.06);
+}
+
+/* ── Move classification colors ── */
+.mcb-move-brilliant { color: #1baca6 !important; }
+.mcb-move-great { color: #5c8bb0 !important; }
+.mcb-move-inaccuracy { color: #e6b800 !important; }
+.mcb-move-mistake { color: #e68a00 !important; }
+.mcb-move-blunder { color: #e05550 !important; }
+
+/* ── Annotation rows ── */
+.mcb-annotation-row td {
+    font-size: 0.75em;
+    padding: 1px 8px 3px;
+    opacity: 0.85;
+    line-height: 1.3;
+}
+.mcb-annotation-row.mcb-move-brilliant td { color: #1baca6; }
+.mcb-annotation-row.mcb-move-great td { color: #5c8bb0; }
+.mcb-annotation-row.mcb-move-inaccuracy td { color: #e6b800; }
+.mcb-annotation-row.mcb-move-mistake td { color: #e68a00; }
+.mcb-annotation-row.mcb-move-blunder td { color: #e05550; }
+
+/* ── Eval cells ── */
+.mcb-eval-cell {
+    color: #a0a8b8;
+    font-size: 0.82em;
+    text-align: right;
+    padding: 2px 5px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+    width: 48px;
+    min-width: 48px;
+}
+
+.mcb-inline-eval {
+    color: #d4a856;
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
 }
 
 /* ── Variation rows in table ── */

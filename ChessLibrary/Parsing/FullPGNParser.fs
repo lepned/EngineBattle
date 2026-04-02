@@ -256,13 +256,10 @@ let private parseMoveTextLine (line: string) =
                 while after < len && Char.IsWhiteSpace(spanLine[after]) do after <- after + 1
                 after >= len
 
-          if tailResultOnly then
+          // Always try to attach to the most recent move first
+          let attached = tryUpdateLastNodeComment comment
+          if not attached then
             pendingComment <- if pendingComment = "" then comment else pendingComment + " " + comment
-          else
-            // Attach to the most recent move if possible; otherwise store as pending
-            let attached = tryUpdateLastNodeComment comment
-            if not attached then
-              pendingComment <- if pendingComment = "" then comment else pendingComment + " " + comment
 
         // Variation start (
         elif c0 = '(' then

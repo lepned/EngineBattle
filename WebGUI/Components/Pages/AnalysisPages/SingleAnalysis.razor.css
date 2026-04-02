@@ -62,7 +62,7 @@
 /* Main Grid Layout - 3 columns */
 .single-analysis .sa-main {
     display: grid;
-    grid-template-columns: minmax(320px, 1.2fr) minmax(400px, 1.3fr) minmax(280px, 1fr);
+    grid-template-columns: minmax(320px, 1.0fr) minmax(480px, 1.5fr) minmax(280px, 1fr);
     gap: 20px;
     align-items: start;
 }

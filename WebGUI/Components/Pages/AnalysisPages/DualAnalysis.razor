@@ -102,7 +102,9 @@
         <div class="da-left">
             <EnginePanel @ref="analysisWithEngine1" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
                          OnEngineMoveMade="OnEngineMoveMade" Id="nnInput1" Engine="Engine1"
-                         OnNewEngineLoaded="OnNewEngineLoaded" />
+                         OnNewEngineLoaded="OnNewEngineLoaded"
+                         IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)"
+                         OnSearchCompleted="OnSearchCompleted" />
         </div>
 
         <!-- Center Panel: Chessboard -->
@@ -141,8 +143,10 @@
             }
 
             <div class="da-board-wrapper">                
-                <Chessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
-                            MakeMoveListClickable=true OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                <ModernChessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
+                            MakeMoveListClickable=true MoveListPosition="MoveListPosition.Below"
+                            MoveEvals="@moveEvals"
+                            OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
@@ -234,7 +238,9 @@
         <div class="da-right">
             <EnginePanel @ref="analysisWithEngine2" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
                          OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2"
-                         OnNewEngineLoaded="OnNewEngineLoaded" />
+                         OnNewEngineLoaded="OnNewEngineLoaded"
+                         IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)"
+                         OnSearchCompleted="OnSearchCompleted" />
         </div>
     </div>
 </div>
@@ -308,6 +314,8 @@
     private List<PGNTypes.PgnGame> games = new();
     private List<EPDTypes.EPDEntry> epdGames = new();
     private Chess.Board board = new();
+    private HashSet<ulong> analyzedPositions = new();
+    private Dictionary<int, string> moveEvals = new();
     private ElementReference pgnChart;
     HotKeysContext keyContext;
     private string fullPath = string.Empty;
@@ -317,7 +325,7 @@
     private string detectedOpeningName = "";
     private string detectedOpeningECO = "";
     private GamePgnChart chart;
-    private Chessboard chessBoardRazor;
+    private ModernChessboard chessBoardRazor;
     private readonly object _pgnPasteLock = new();
     private readonly Dictionary<string, PgnPasteBuffer> _pgnPasteBuffers = new();
     private DotNetObjectReference<DualAnalysis> _pgnPasteDotNetRef;
@@ -547,6 +555,8 @@
         board.StartPosition = startFen;
         board.LoadPGNGameWithVariations(game);
         fen = board.FEN();
+        moveEvals = ExtractEvalsFromComments(game);
+        analyzedPositions.Clear();
         UpdateFrcId(board.StartPosition);
         UpdateDetectedOpening();
         moveHistory = board.GetMoveHistoryWithVariations();
@@ -902,6 +912,34 @@
         fen = board.FEN();
         await Notifier.UpdateFen(fen);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnSearchCompleted(string eval)
+    {
+        analyzedPositions.Add(board.CurrentNodeHash);
+        var ply = board.PlyCount - 1;
+        if (ply >= 0 && !string.IsNullOrEmpty(eval))
+        {
+            moveEvals[ply] = eval;
+            chessBoardRazor?.UpdateVariationsDisplay();
+            StateHasChanged();
+        }
+    }
+
+    private static Dictionary<int, string> ExtractEvalsFromComments(PGNTypes.PgnGame game)
+    {
+        var evals = new Dictionary<int, string>();
+        for (int i = 0; i < game.Mainline.Count; i++)
+        {
+            var move = game.Mainline[i];
+            if (string.IsNullOrEmpty(move.Comment)) continue;
+            var isBlack = move.Color == "b";
+            var player = isBlack ? game.GameMetaData.Black : game.GameMetaData.White;
+            var stat = Annotation.getEngineStatData(player, isBlack, move.Comment);
+            if (stat.d == 0 && stat.n == 0L && stat.wv == 0.0) continue;
+            evals[i] = $"{stat.wv:+0.0;-0.0}";
+        }
+        return evals;
     }
 
     public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)

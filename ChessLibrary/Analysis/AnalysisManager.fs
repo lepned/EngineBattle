@@ -92,7 +92,6 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
       if board.AnyLegalMove() |> not then
         logger.LogInformation ("In searchNodes - no legal moves with FEN: " + fen)
       else
-        engine.SendUCICommand UciNewGame
         if not keepNodes then
           SearchDict.Clear()
         let graphCmds = board.PositionWithMovesFromGraph()
@@ -111,7 +110,6 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
       if moveBoard.AnyLegalMove() |> not then
         logger.LogInformation ("In searchNodesWithCommands - no legal moves with command: " + commands)
       else
-        engine.SendUCICommand UciNewGame
         if not keepNodes then
           SearchDict.Clear()
         printfn "Search command: %s" commands

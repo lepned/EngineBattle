@@ -93,7 +93,7 @@
         @if (ShowFenField)
         {
             <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
-                          FullWidth="false" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
+                          FullWidth="true" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
                           Immediate="true" Variant="Variant.Filled" />
         }
 
@@ -114,44 +114,68 @@
     @* Move list panel to the right of the board *@
     @if (ShowMoveList && MoveListPosition == MoveListPosition.Right)
     {
-        <div class="mcb-movelist-panel">
-            <div id="moveListDiv" class="mcb-movelist-right">
+        <div id="moveListDiv" class="mcb-movelist-panel">
+            <div class="mcb-movelist-right">
                 <table class="mcb-move-table">
                     @foreach (var pair in movePairs)
                     {
                         <tr class="@(IsCurrentMove(pair.WhiteToken) || IsCurrentMove(pair.BlackToken) ? "mcb-row-active" : "")">
                             <td class="mcb-move-number">@pair.MoveNumber.</td>
-                            <td class="mcb-white-move @(IsCurrentMove(pair.WhiteToken) ? "mcb-current" : "")"
+                            @{
+                                var wAnno = pair.WhiteToken != null && MoveAnnotations != null && MoveAnnotations.TryGetValue(pair.WhiteToken.Ply, out var wa) ? wa : null;
+                                var bAnno = pair.BlackToken != null && MoveAnnotations != null && MoveAnnotations.TryGetValue(pair.BlackToken.Ply, out var ba) ? ba : null;
+                            }
+                            <td class="mcb-white-move @(IsCurrentMove(pair.WhiteToken) ? "mcb-current" : "") @(wAnno?.CssClass ?? "")"
                                 @onclick="@(async () => { if (pair.WhiteToken != null) await OnInlineMoveClick(pair.WhiteToken); })"
                                 @oncontextmenu="@((MouseEventArgs e) => { if (pair.WhiteToken != null) ShowMoveActionMenu(pair.WhiteToken, e); })"
                                 @oncontextmenu:preventDefault>
                                 @if (pair.WhiteToken != null)
                                 {
-                                    <span id="@($"move-{pair.WhiteToken.Hash}")">@pair.WhiteToken.Text</span>
-                                    @if (!String.IsNullOrEmpty(pair.WhiteToken.Comment))
+                                    <span id="@($"move-{pair.WhiteToken.Hash}")" title="@(pair.WhiteToken.Comment ?? "")">@pair.WhiteToken.Text@(wAnno?.Symbol ?? "")</span>
+                                    @if (MoveEvals == null && MoveAnnotations == null && !String.IsNullOrEmpty(pair.WhiteToken.Comment))
                                     {
                                         @WrapInlineComment(pair.WhiteToken.Comment)
                                     }
                                 }
                             </td>
-                            <td class="mcb-black-move @(IsCurrentMove(pair.BlackToken) ? "mcb-current" : "")"
+                            @if (MoveEvals != null)
+                            {
+                                <td class="mcb-eval-cell">@(pair.WhiteToken != null && MoveEvals.TryGetValue(pair.WhiteToken.Ply, out var wEval) ? wEval : "")</td>
+                            }
+                            <td class="mcb-black-move @(IsCurrentMove(pair.BlackToken) ? "mcb-current" : "") @(bAnno?.CssClass ?? "")"
                                 @onclick="@(async () => { if (pair.BlackToken != null) await OnInlineMoveClick(pair.BlackToken); })"
                                 @oncontextmenu="@((MouseEventArgs e) => { if (pair.BlackToken != null) ShowMoveActionMenu(pair.BlackToken, e); })"
                                 @oncontextmenu:preventDefault>
                                 @if (pair.BlackToken != null)
                                 {
-                                    <span id="@($"move-{pair.BlackToken.Hash}")">@pair.BlackToken.Text</span>
-                                    @if (!String.IsNullOrEmpty(pair.BlackToken.Comment))
+                                    <span id="@($"move-{pair.BlackToken.Hash}")" title="@(pair.BlackToken.Comment ?? "")">@pair.BlackToken.Text@(bAnno?.Symbol ?? "")</span>
+                                    @if (MoveEvals == null && MoveAnnotations == null && !String.IsNullOrEmpty(pair.BlackToken.Comment))
                                     {
                                         @WrapInlineComment(pair.BlackToken.Comment)
                                     }
                                 }
                             </td>
+                            @if (MoveEvals != null)
+                            {
+                                <td class="mcb-eval-cell">@(pair.BlackToken != null && MoveEvals.TryGetValue(pair.BlackToken.Ply, out var bEval) ? bEval : "")</td>
+                            }
                         </tr>
+                        @if (wAnno != null && !string.IsNullOrEmpty(wAnno.BestMoveLine))
+                        {
+                            <tr class="mcb-annotation-row @(wAnno.CssClass)">
+                                <td colspan="@(MoveEvals != null ? 5 : 3)">@wAnno.Label @wAnno.BestMoveLine</td>
+                            </tr>
+                        }
+                        @if (bAnno != null && !string.IsNullOrEmpty(bAnno.BestMoveLine))
+                        {
+                            <tr class="mcb-annotation-row @(bAnno.CssClass)">
+                                <td colspan="@(MoveEvals != null ? 5 : 3)">@bAnno.Label @bAnno.BestMoveLine</td>
+                            </tr>
+                        }
                         @if (pair.VariationTokens.Count > 0)
                         {
                             <tr class="mcb-variation-row">
-                                <td colspan="3">
+                                <td colspan="@(MoveEvals != null ? 5 : 3)">
                                     @foreach (var tok in pair.VariationTokens)
                                     {
                                         if (tok.IsBracket)
@@ -224,6 +248,10 @@
     [Parameter] public int MoveListFontSize { get; set; }
     [Parameter] public int MoveListHeight { get; set; }
     [Parameter] public MoveListPosition MoveListPosition { get; set; } = MoveListPosition.Below;
+    [Parameter] public Dictionary<int, string> MoveEvals { get; set; }
+    [Parameter] public Dictionary<int, MoveAnnotation> MoveAnnotations { get; set; }
+
+    public record MoveAnnotation(string Symbol, string CssClass, string Label, string BestMoveLine);
 
     // ── Private state ──
     private Board moveBoard = new Board();
@@ -288,16 +316,12 @@
                 var isCurrent = string.Equals(tok.Fen, fen, StringComparison.Ordinal);
                 var isWhiteToMove = tok.Ply % 2 == 0;
                 <span id="@($"move-{tok.Hash}")"
+                      title="@(tok.Comment ?? "")"
                       @onclick="@(() => OnInlineMoveClick(tok))"
                       @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
                       @oncontextmenu:preventDefault
                       style="@(isCurrent ? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">
-                    @($" {tok.DisplayText} ")
-                    @if (!String.IsNullOrEmpty(tok.Comment))
-                    {
-                        @WrapInlineComment(tok.Comment)
-                        @(" ")
-                    }
+                    @($" {tok.DisplayText}")@if (MoveEvals != null && !tok.IsFromVariation && MoveEvals.TryGetValue(tok.Ply, out var inlineEval)){<span class="mcb-inline-eval"> @inlineEval</span>}@(" ")
                 </span>
             }
         }
@@ -775,6 +799,7 @@
         if (chessJSmodule is not null && board.Context is not null)
             await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, false);
         await ScrollToCurrentMove();
+        StateHasChanged();
     }
 
     public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)

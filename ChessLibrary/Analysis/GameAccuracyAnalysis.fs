@@ -15,25 +15,31 @@ open ChessLibrary.Engine
 type SearchMode = Time | Nodes | Depth
 
 type ClassificationThresholds =
-    { BrilliantPVGap: float; GreatPVGap: float
+    { BrilliantPVGap: float; GreatPVGap: float; BestMinPVGap: float
       ExcellentMaxWPLoss: float; GoodMaxWPLoss: float
       InaccuracyMaxWPLoss: float; MistakeMaxWPLoss: float }
     static member Default =
-        { BrilliantPVGap = 0.15; GreatPVGap = 0.10
-          ExcellentMaxWPLoss = 0.02; GoodMaxWPLoss = 0.05
-          InaccuracyMaxWPLoss = 0.10; MistakeMaxWPLoss = 0.20 }
+        { BrilliantPVGap = 0.15; GreatPVGap = 0.10; BestMinPVGap = 0.05
+          ExcellentMaxWPLoss = 0.02; GoodMaxWPLoss = 0.03
+          InaccuracyMaxWPLoss = 0.05; MistakeMaxWPLoss = 0.10 }
 
 type GameReviewConfig =
     { SearchMode: SearchMode
       TimePerMove: int   // ms
       Nodes: int
       Depth: int
-      MultiPV: int       // default 3
+      MultiPV: int       // default 5
       SkipBookMoves: bool
-      Thresholds: ClassificationThresholds }
+      Thresholds: ClassificationThresholds
+      AccuracyDecay: float        // exponential decay for accuracy curve (Lichess = 0.04354, steeper = harsher)
+      MicroLossBase: float        // base WP penalty for PV1 matches in easy positions (default 0.02)
+      MicroLossScale: float }     // how fast micro-loss shrinks with increasing PV gap (default 0.20)
     static member Default =
-        { SearchMode = Time; TimePerMove = 1000; Nodes = 1000000; Depth = 18; MultiPV = 3; SkipBookMoves = true
-          Thresholds = ClassificationThresholds.Default }
+        { SearchMode = Time; TimePerMove = 1000; Nodes = 1000000; Depth = 18; MultiPV = 5; SkipBookMoves = true
+          Thresholds = ClassificationThresholds.Default
+          AccuracyDecay = 0.085
+          MicroLossBase = 0.037
+          MicroLossScale = 0.20 }
 
 type MoveClassification =
     | Book
@@ -130,10 +136,11 @@ let evalToWinProb (eval: EvalType) (ply: int) : float =
     | NA -> 0.5
 
 /// Per-move accuracy from WP loss (0 to 1 scale).
-/// Returns 0-100. Formula: 103.1668 * exp(-0.04354 * wpLoss%) - 3.1669
-let calculateMoveAccuracy (wpLoss: float) : float =
+/// Returns 0-100. Formula: 103.1668 * exp(-decay * wpLoss%) - 3.1669
+/// Lichess uses decay = 0.04354. Higher values produce harsher (lower) accuracy scores.
+let calculateMoveAccuracy (decay: float) (wpLoss: float) : float =
     let wpLossPercent = wpLoss * 100.0
-    let raw = 103.1668 * exp(-0.04354 * wpLossPercent) - 3.1669
+    let raw = 103.1668 * exp(-decay * wpLossPercent) - 3.1669
     max 0.0 (min 100.0 raw)
 
 /// Classify a move based on WP loss, whether it matches engine's best, multi-PV gap, and sacrifice.
@@ -143,7 +150,8 @@ let classifyMove (t: ClassificationThresholds) (wpLoss: float) (isBestMove: bool
         match pvGap with
         | Some gap when gap > t.BrilliantPVGap && isSacrifice -> Brilliant
         | Some gap when gap > t.GreatPVGap -> Great
-        | _ -> Best
+        | Some gap when gap >= t.BestMinPVGap -> Best
+        | _ -> Excellent
     elif wpLoss < t.ExcellentMaxWPLoss then Excellent
     elif wpLoss < t.GoodMaxWPLoss then Good
     elif wpLoss < t.InaccuracyMaxWPLoss then Inaccuracy
@@ -198,13 +206,56 @@ let isSacrifice (board: Board) (uciMove: string) : bool =
 // Player Stats Computation
 // ──────────────────────────────────────────────────────────────
 
-let computePlayerStats (playerName: string) (moves: MoveAnalysisResult array) (color: string) : PlayerAccuracyStats =
+/// Harmonic mean of accuracies (values floored at 1.0 to avoid division by zero).
+/// A few bad moves tank the score much more than arithmetic mean.
+let private harmonicMeanAccuracy (accs: float array) : float =
+    if accs.Length = 0 then 0.0
+    else float accs.Length / (accs |> Array.sumBy (fun a -> 1.0 / max 1.0 a))
+
+/// Lichess-style game accuracy: (volatility-weighted mean + harmonic mean) / 2.
+/// allWinProbs = white-perspective WP for every move in the game (both colors, game order).
+/// moves = the classifiable moves for one player.
+let private gameAccuracy (allWinProbs: float array) (moves: MoveAnalysisResult array) : float =
+    if moves.Length = 0 then 0.0
+    else
+    let accs = moves |> Array.map (fun m -> m.MoveAccuracy)
+    let hm = harmonicMeanAccuracy accs
+
+    // Volatility-weighted mean using sliding windows of win%
+    if allWinProbs.Length < 2 then (Array.average accs + hm) / 2.0
+    else
+    let windowSize = allWinProbs.Length / 10 |> max 2 |> min 8
+    // Build per-move volatility weight from sliding windows over the full game
+    let volatilityWeights = Array.init allWinProbs.Length (fun i ->
+        let ws = max 0 (min i (allWinProbs.Length - windowSize))
+        let window = allWinProbs.[ws .. ws + windowSize - 1]
+        let mean = Array.average window
+        let variance = window |> Array.averageBy (fun x -> (x - mean) ** 2.0)
+        sqrt variance |> max 0.5 |> min 12.0)
+    // Map each player move to its volatility weight via Ply index
+    let moveWeights = moves |> Array.map (fun m ->
+        if m.Ply >= 0 && m.Ply < volatilityWeights.Length then volatilityWeights.[m.Ply]
+        else 0.5)
+    let totalW = Array.sum moveWeights
+    let wm =
+        if totalW < 0.001 then Array.average accs
+        else (Array.map2 (*) accs moveWeights |> Array.sum) / totalW
+
+    (wm + hm) / 2.0
+
+/// Phase accuracy uses harmonic mean only (phases are too short for meaningful volatility windows).
+let private phaseAccuracy (moves: MoveAnalysisResult array) (minMove: int) (maxMove: int) : float =
+    let phaseMoves = moves |> Array.filter (fun m -> m.MoveNumber >= minMove && m.MoveNumber <= maxMove)
+    if phaseMoves.Length = 0 then 0.0
+    else harmonicMeanAccuracy (phaseMoves |> Array.map (fun m -> m.MoveAccuracy))
+
+/// Compute player stats using Lichess-style aggregation (harmonic mean + volatility weighting).
+/// allWinProbs = white-perspective WP for every move in the game (both colors).
+let computePlayerStats (allWinProbs: float array) (playerName: string) (moves: MoveAnalysisResult array) (color: string) : PlayerAccuracyStats =
     let playerMoves = moves |> Array.filter (fun m -> m.Color = color)
     let classifiable = playerMoves |> Array.filter (fun m -> m.Classification <> Book && m.Classification <> Forced)
 
-    let accuracy =
-        if classifiable.Length = 0 then 0.0
-        else classifiable |> Array.averageBy (fun m -> m.MoveAccuracy)
+    let accuracy = gameAccuracy allWinProbs classifiable
 
     let acpl =
         if classifiable.Length = 0 then 0.0
@@ -216,21 +267,14 @@ let computePlayerStats (playerName: string) (moves: MoveAnalysisResult array) (c
         |> Array.map (fun (cls, ms) -> cls, ms.Length)
         |> Map.ofArray
 
-    let phaseAccuracy (minMove: int) (maxMove: int) =
-        let phaseMoves =
-            classifiable
-            |> Array.filter (fun m -> m.MoveNumber >= minMove && m.MoveNumber <= maxMove)
-        if phaseMoves.Length = 0 then 0.0
-        else phaseMoves |> Array.averageBy (fun m -> m.MoveAccuracy)
-
     { Player = playerName
       Accuracy = Math.Round(accuracy, 1)
       ACPL = Math.Round(acpl, 1)
       MoveCount = playerMoves.Length
       Classifications = classificationCounts
-      OpeningAccuracy = Math.Round(phaseAccuracy 1 15, 1)
-      MiddlegameAccuracy = Math.Round(phaseAccuracy 16 40, 1)
-      EndgameAccuracy = Math.Round(phaseAccuracy 41 Int32.MaxValue, 1) }
+      OpeningAccuracy = Math.Round(phaseAccuracy classifiable 1 15, 1)
+      MiddlegameAccuracy = Math.Round(phaseAccuracy classifiable 16 40, 1)
+      EndgameAccuracy = Math.Round(phaseAccuracy classifiable 41 Int32.MaxValue, 1) }
 
 // ──────────────────────────────────────────────────────────────
 // Engine Position Analysis (MultiPV)
@@ -356,12 +400,12 @@ let analyzeGameWithEngine
                 not (String.IsNullOrEmpty move.Comment) &&
                 move.Comment.ToLower().Contains("book")
 
-            if isBookMove || legalMoves <= 1 then
+            if isBookMove then
                 whiteEvals.Add(EvalType.NA)
                 pvDataPerMove.Add([||])
                 bestMoves.Add("")
             else
-                // Analyze position before this move
+                // Analyze position before this move (including forced moves)
                 let posCmd = board.PositionWithMoves()
                 let pvResults, bestMove = analyzePosition engine dispatcher posCmd isWhite config
 
@@ -430,13 +474,27 @@ let analyzeGameWithEngine
         let stmEvalBefore = if isWhite then evalBefore else flipEval evalBefore
         let wpBest = evalToWinProb stmEvalBefore ply
 
+        // PV gap between best and second-best (needed for micro-loss and classification)
+        let pvGapValue =
+            if pvData.Length >= 2 then
+                let pv1Eval = if isWhite then pvData.[0].Eval else flipEval pvData.[0].Eval
+                let pv2Eval = if isWhite then pvData.[1].Eval else flipEval pvData.[1].Eval
+                let wp1 = evalToWinProb pv1Eval ply
+                let wp2 = evalToWinProb pv2Eval ply
+                Some (wp1 - wp2)
+            else None
+
         let wpLoss, wpBefore, wpAfter =
             match matchedPVIndex with
             | Some 0 ->
-                // Played the best move — no loss from move choice
+                // Played the best move — apply micro-loss based on position difficulty
                 let stmAfter = if isWhite then evalAfter else flipEval evalAfter
                 let wpA = evalToWinProb stmAfter (ply + 1)
-                0.0, wpBest, wpA
+                let microLoss =
+                    match pvGapValue with
+                    | Some gap -> max 0.0 (config.MicroLossBase - gap * config.MicroLossScale)
+                    | None -> 0.0  // no PV gap data, give full credit
+                microLoss, wpBest, wpA
             | Some idx ->
                 // Played a lower PV line — compare within same position's analysis
                 let matchedEval = if isWhite then pvData.[idx].Eval else flipEval pvData.[idx].Eval
@@ -466,7 +524,7 @@ let analyzeGameWithEngine
                 | CP before, CP after -> max 0.0 ((before - after) * 100.0)
                 | _ -> wpLoss * 500.0
 
-        let moveAccuracy = calculateMoveAccuracy wpLoss
+        let moveAccuracy = calculateMoveAccuracy config.AccuracyDecay wpLoss
 
         // Best move info
         let bestMoveUci = bestMoves.[i]
@@ -478,15 +536,8 @@ let analyzeGameWithEngine
                 | Some san -> san
                 | None -> bestMoveUci
 
-        // Multi-PV gap for Brilliant/Great detection
-        let pvGap =
-            if pvData.Length >= 2 then
-                let pv1Eval = if isWhite then pvData.[0].Eval else flipEval pvData.[0].Eval
-                let pv2Eval = if isWhite then pvData.[1].Eval else flipEval pvData.[1].Eval
-                let wp1 = evalToWinProb pv1Eval ply
-                let wp2 = evalToWinProb pv2Eval ply
-                Some (wp1 - wp2)
-            else None
+        // Multi-PV gap for Brilliant/Great detection (already computed above)
+        let pvGap = pvGapValue
 
         // Sacrifice detection
         let sacrifice =
@@ -533,9 +584,13 @@ let analyzeGameWithEngine
 
     let movesArray = results.ToArray()
 
+    // White-perspective WP for volatility windows
+    let allWinProbs = movesArray |> Array.map (fun m ->
+        if m.Color = "w" then m.WinProbBefore else 1.0 - m.WinProbBefore)
+
     { Moves = movesArray
-      WhiteStats = computePlayerStats (game.GameMetaData.White) movesArray "w"
-      BlackStats = computePlayerStats (game.GameMetaData.Black) movesArray "b"
+      WhiteStats = computePlayerStats allWinProbs (game.GameMetaData.White) movesArray "w"
+      BlackStats = computePlayerStats allWinProbs (game.GameMetaData.Black) movesArray "b"
       WhitePlayer = game.GameMetaData.White
       BlackPlayer = game.GameMetaData.Black
       AnalysisEngine = engine.Name
@@ -626,7 +681,7 @@ let private analyzeFromRichAnnotations (game: PgnGame) : GameAnalysisResult opti
         let wpAfter = wpBefore - wpl  // Approximate from stored loss
 
         results.Add(
-            { Ply = ply; MoveNumber = move.MoveNumber; Color = move.Color
+            { Ply = ply; MoveNumber = move.MoveNumber; Color = if isWhite then "w" else "b"
               San = move.San; UciMove = uciMove
               Classification = cls; EvalBefore = evalBefore
               BestMove = bestMove; BestMoveSan = bestMoveSan; BestEval = evalBefore
@@ -640,21 +695,23 @@ let private analyzeFromRichAnnotations (game: PgnGame) : GameAnalysisResult opti
     if not hasData then None
     else
         let movesArray = results.ToArray()
+        let allWinProbs = movesArray |> Array.map (fun m ->
+            if m.Color = "w" then m.WinProbBefore else 1.0 - m.WinProbBefore)
         let annotator =
             match game.GameMetaData.OtherTags |> Seq.tryFind (fun kv -> kv.Key = "Annotator") with
             | Some kv -> kv.Value
             | None -> "PGN Annotations"
         Some
             { Moves = movesArray
-              WhiteStats = computePlayerStats (game.GameMetaData.White) movesArray "w"
-              BlackStats = computePlayerStats (game.GameMetaData.Black) movesArray "b"
+              WhiteStats = computePlayerStats allWinProbs (game.GameMetaData.White) movesArray "w"
+              BlackStats = computePlayerStats allWinProbs (game.GameMetaData.Black) movesArray "b"
               WhitePlayer = game.GameMetaData.White
               BlackPlayer = game.GameMetaData.Black
               AnalysisEngine = annotator
               AnalysisDate = DateTime.UtcNow }
 
 /// Legacy: analyze from basic wv= annotations using sequential eval comparison.
-let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (game: PgnGame) : GameAnalysisResult option =
+let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (decay: float) (game: PgnGame) : GameAnalysisResult option =
     let board = Board()
     let startFen =
         if String.IsNullOrWhiteSpace game.Fen then startPosition
@@ -686,6 +743,9 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
     if not hasEvals then None
     else
 
+    // Cross-engine games (e.g. TCEC): compare with same engine (i+2) to avoid eval scale noise
+    let isCrossEngine = game.GameMetaData.White <> game.GameMetaData.Black
+
     let results = ResizeArray<MoveAnalysisResult>()
     let board2 = Board()
     board2.LoadFen startFen
@@ -704,8 +764,9 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
         let uciMove = board2.GetUciFromSan(move.San) |> Option.defaultValue ""
 
         let evalBefore = whiteEvals.[i]
+        let evalAfterIdx = if isCrossEngine then i + 2 else i + 1
         let evalAfter =
-            if i + 1 < whiteEvals.Count then whiteEvals.[i + 1]
+            if evalAfterIdx < whiteEvals.Count then whiteEvals.[evalAfterIdx]
             else EvalType.NA
 
         let hasEvalGap = evalBefore = EvalType.NA || evalAfter = EvalType.NA
@@ -723,7 +784,7 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
                 | CP before, CP after -> max 0.0 ((before - after) * 100.0)
                 | _ -> wpLoss * 500.0
 
-        let moveAccuracy = calculateMoveAccuracy wpLoss
+        let moveAccuracy = calculateMoveAccuracy decay wpLoss
 
         let classification =
             if isBookMove then Book
@@ -736,7 +797,7 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
             else Blunder
 
         results.Add(
-            { Ply = ply; MoveNumber = move.MoveNumber; Color = move.Color
+            { Ply = ply; MoveNumber = move.MoveNumber; Color = if isWhite then "w" else "b"
               San = move.San; UciMove = uciMove
               Classification = classification; EvalBefore = evalBefore
               BestMove = ""; BestMoveSan = ""; BestEval = evalBefore
@@ -748,10 +809,12 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
         try board2.PlaySanMove move.San with _ -> ()
 
     let movesArray = results.ToArray()
+    let allWinProbs = movesArray |> Array.map (fun m ->
+        if m.Color = "w" then m.WinProbBefore else 1.0 - m.WinProbBefore)
     Some
         { Moves = movesArray
-          WhiteStats = computePlayerStats (game.GameMetaData.White) movesArray "w"
-          BlackStats = computePlayerStats (game.GameMetaData.Black) movesArray "b"
+          WhiteStats = computePlayerStats allWinProbs (game.GameMetaData.White) movesArray "w"
+          BlackStats = computePlayerStats allWinProbs (game.GameMetaData.Black) movesArray "b"
           WhitePlayer = game.GameMetaData.White
           BlackPlayer = game.GameMetaData.Black
           AnalysisEngine = "PGN Annotations"
@@ -759,11 +822,11 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
 
 /// Analyze a game from PGN annotations. Tries rich format (cls= fields) first,
 /// falls back to legacy sequential eval comparison for basic wv= annotations.
-let analyzeGameFromAnnotations (thresholds: ClassificationThresholds) (game: PgnGame) : GameAnalysisResult option =
+let analyzeGameFromAnnotations (thresholds: ClassificationThresholds) (decay: float) (game: PgnGame) : GameAnalysisResult option =
     let totalMoves = game.Mainline.Count
     if totalMoves = 0 then None
     else
     // Check if any move has rich annotations
     let hasRich = game.Mainline |> Seq.exists (fun m -> hasRichAnnotation m.Comment)
     if hasRich then analyzeFromRichAnnotations game
-    else analyzeFromBasicAnnotations thresholds game
+    else analyzeFromBasicAnnotations thresholds decay game

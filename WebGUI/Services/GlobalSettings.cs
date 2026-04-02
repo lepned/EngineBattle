@@ -39,13 +39,20 @@ public class GlobalSettings
     public int ReviewNodes { get; set; } = 5000;
     public int ReviewDepth { get; set; } = 18;
 
+    // Game Review accuracy curve & weighting
+    public int ReviewMultiPV { get; set; } = 5;                 // PV lines per position (more = better resolution, slower)
+    public double AccuracyDecay { get; set; } = 0.085;          // exponential decay (Lichess = 0.04354, higher = harsher)
+    public double MicroLossBase { get; set; } = 0.037;          // WP penalty for "best" moves in easy positions
+    public double MicroLossScale { get; set; } = 0.20;          // how fast micro-loss shrinks with PV gap
+
     // Game Review classification thresholds (win probability loss, 0-1 scale)
     public double BrilliantPVGap { get; set; } = 0.15;
+    public double BestMinPVGap { get; set; } = 0.05;
     public double GreatPVGap { get; set; } = 0.10;
     public double ExcellentMaxWPLoss { get; set; } = 0.02;
-    public double GoodMaxWPLoss { get; set; } = 0.05;
-    public double InaccuracyMaxWPLoss { get; set; } = 0.10;
-    public double MistakeMaxWPLoss { get; set; } = 0.20;
+    public double GoodMaxWPLoss { get; set; } = 0.03;
+    public double InaccuracyMaxWPLoss { get; set; } = 0.05;
+    public double MistakeMaxWPLoss { get; set; } = 0.10;
 
     // Tournament defaults
     public int DelayBetweenGamesSec { get; set; } = 20;

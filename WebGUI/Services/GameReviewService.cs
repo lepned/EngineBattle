@@ -67,9 +67,9 @@ public class GameReviewService : IAsyncDisposable
         }
     }
 
-    public GameAnalysisResult AnalyzeGameFromAnnotations(PgnGame game, ClassificationThresholds thresholds = null)
+    public GameAnalysisResult AnalyzeGameFromAnnotations(PgnGame game, ClassificationThresholds thresholds = null, double accuracyDecay = 0.065)
     {
-        var result = analyzeGameFromAnnotations(thresholds ?? ClassificationThresholds.Default, game);
+        var result = analyzeGameFromAnnotations(thresholds ?? ClassificationThresholds.Default, accuracyDecay, game);
         return OptionModule.IsSome(result) ? result.Value : null;
     }
 

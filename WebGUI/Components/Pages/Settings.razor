@@ -20,10 +20,9 @@
             <div class="settings-help-content">
                 <p><b>General</b> — Set your startup page and default engines. Default engines auto-load in analysis and review pages, saving you from re-browsing every session.</p>
                 <p><b>Paths & Tools</b> — PGN save path for analysis games and the Ordo rating tool path.</p>
-                <p><b>Folders</b> — Directory paths populate the file browser bookmarks and set initial browse locations. Configure these once and every file picker starts in the right place.</p>
                 <p><b>Analysis</b> — Search limits, chart lines, MultiPV, and policy thresholds. These defaults apply when opening analysis pages.</p>
-                <p><b>Game Review</b> — How deeply each move is analyzed during game review (mode, time, nodes, depth).</p>
-                <p><b>Tournament</b> — Delay between games (GPU cooling) and move overhead (communication buffer).</p>
+                <p><b>Game Review</b> — Search mode, time, nodes, depth for game review. Advanced settings control accuracy curve and classification thresholds.</p>
+                <p><b>Folders</b> — Directory paths populate the file browser bookmarks and set initial browse locations. Configure these once and every file picker starts in the right place.</p>
                 <p style="margin-bottom:0"><i>Click <b>Save</b> to persist changes. Settings are stored in <code>Data/globalSettings.json</code>.</i></p>
             </div>
         }
@@ -129,78 +128,6 @@
         </div>
     </div>
 
-    @* Folders (full width, internal multi-col) *@
-    <div class="settings-section span-full">
-        <h4>Folders</h4>
-        <div class="section-hint">Directory paths only — do not include filenames.</div>
-
-        <div class="folders-grid">
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Engine Definitions</label>
-                    <input type="text" @bind="engineDefsFolder" />
-                    <small>Engine .json config files</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => engineDefsFolder = v, engineDefsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Openings</label>
-                    <input type="text" @bind="openingsFolder" />
-                    <small>Opening books (.pgn/.epd)</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => openingsFolder = v, openingsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-
-            <div class="field-row">
-                <div class="field-group">
-                    <label>PGN Output</label>
-                    <input type="text" @bind="pgnOutputFolder" />
-                    <small>Folder for saving PGN files</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => pgnOutputFolder = v, pgnOutputFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Tournament Configs</label>
-                    <input type="text" @bind="tournamentConfigFolder" />
-                    <small>Tournament .json config files</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => tournamentConfigFolder = v, tournamentConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Tablebase</label>
-                    <input type="text" @bind="tablebaseFolder" />
-                    <small>Syzygy tablebase folder</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => tablebaseFolder = v, tablebaseFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Neural Networks</label>
-                    <input type="text" @bind="neuralNetFolder" />
-                    <small>Neural network weights</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => neuralNetFolder = v, neuralNetFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Puzzle Configs</label>
-                    <input type="text" @bind="puzzleConfigFolder" />
-                    <small>Puzzle and ERET config files</small>
-                </div>
-                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => puzzleConfigFolder = v, puzzleConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
-            </div>
-        </div>
-    </div>
-
-    @* Row 3: Analysis | Game Review | Tournament *@
     <div class="settings-section">
         <h4>Analysis</h4>
         <div class="section-hint">Default values for engine analysis sessions.</div>
@@ -284,53 +211,136 @@
                     <label>Depth</label>
                     <input type="number" @bind="reviewDepth" min="1" max="100" />
                 </div>
-            </div>
-            <div class="section-hint" style="margin-top:0.7rem">Classification thresholds (win probability, 0-1 scale)</div>
-            <div class="number-row">
                 <div class="field-group">
-                    <label>Brilliant PV gap</label>
-                    <input type="number" @bind="brilliantPVGap" min="0" max="1" step="0.01" />
-                </div>
-                <div class="field-group">
-                    <label>Great PV gap</label>
-                    <input type="number" @bind="greatPVGap" min="0" max="1" step="0.01" />
-                </div>
-                <div class="field-group">
-                    <label>Excellent</label>
-                    <input type="number" @bind="excellentMaxWPLoss" min="0" max="1" step="0.01" />
+                    <label>MultiPV</label>
+                    <input type="number" @bind="reviewMultiPV" min="2" max="20" />
                 </div>
             </div>
-            <div class="number-row">
-                <div class="field-group">
-                    <label>Good</label>
-                    <input type="number" @bind="goodMaxWPLoss" min="0" max="1" step="0.01" />
+            <details style="margin-top:0.7rem">
+                <summary class="section-hint" style="cursor:pointer">Advanced: Accuracy curve &amp; classification thresholds</summary>
+                <div class="section-hint" style="margin-top:0.5rem">Accuracy curve &amp; weighting</div>
+                <div class="number-row">
+                    <div class="field-group">
+                        <label>Accuracy Decay</label>
+                        <input type="number" @bind="accuracyDecay" min="0.01" max="0.20" step="0.005" />
+                    </div>
+                    <div class="field-group">
+                        <label>Micro-Loss Base</label>
+                        <input type="number" @bind="microLossBase" min="0" max="0.10" step="0.005" />
+                    </div>
+                    <div class="field-group">
+                        <label>Micro-Loss Scale</label>
+                        <input type="number" @bind="microLossScale" min="0" max="1.0" step="0.05" />
+                    </div>
                 </div>
-                <div class="field-group">
-                    <label>Inaccuracy</label>
-                    <input type="number" @bind="inaccuracyMaxWPLoss" min="0" max="1" step="0.01" />
+                <div class="section-hint" style="margin-top:0.7rem">Classification thresholds (win probability, 0-1 scale)</div>
+                <div class="number-row">
+                    <div class="field-group">
+                        <label>Brilliant PV gap</label>
+                        <input type="number" @bind="brilliantPVGap" min="0" max="1" step="0.01" />
+                    </div>
+                    <div class="field-group">
+                        <label>Great PV gap</label>
+                        <input type="number" @bind="greatPVGap" min="0" max="1" step="0.01" />
+                    </div>
+                    <div class="field-group">
+                        <label>Best min PV gap</label>
+                        <input type="number" @bind="bestMinPVGap" min="0" max="1" step="0.01" />
+                    </div>
+                    <div class="field-group">
+                        <label>Excellent</label>
+                        <input type="number" @bind="excellentMaxWPLoss" min="0" max="1" step="0.01" />
+                    </div>
                 </div>
-                <div class="field-group">
-                    <label>Mistake</label>
-                    <input type="number" @bind="mistakeMaxWPLoss" min="0" max="1" step="0.01" />
+                <div class="number-row">
+                    <div class="field-group">
+                        <label>Good</label>
+                        <input type="number" @bind="goodMaxWPLoss" min="0" max="1" step="0.01" />
+                    </div>
+                    <div class="field-group">
+                        <label>Inaccuracy</label>
+                        <input type="number" @bind="inaccuracyMaxWPLoss" min="0" max="1" step="0.01" />
+                    </div>
+                    <div class="field-group">
+                        <label>Mistake</label>
+                        <input type="number" @bind="mistakeMaxWPLoss" min="0" max="1" step="0.01" />
+                    </div>
                 </div>
-            </div>
+            </details>
         }
     </div>
 
-    <div class="settings-section">
-        <h4>Tournament</h4>
-        <div class="section-hint">Default values for tournament configuration.</div>
-        <div class="number-row">
-            <div class="field-group">
-                <label>Delay Between Games (sec)</label>
-                <input type="number" @bind="delayBetweenGamesSec" min="0" max="300" />
+    @* Folders (full width, internal multi-col) *@
+    <div class="settings-section span-full">
+        <h4>Folders</h4>
+        <div class="section-hint">Directory paths only — do not include filenames.</div>
+
+        <div class="folders-grid">
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Engine Definitions</label>
+                    <input type="text" @bind="engineDefsFolder" />
+                    <small>Engine .json config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => engineDefsFolder = v, engineDefsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
             </div>
-            <div class="field-group">
-                <label>Move Overhead (ms)</label>
-                <input type="number" @bind="moveOverheadMs" min="0" max="5000" />
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Openings</label>
+                    <input type="text" @bind="openingsFolder" />
+                    <small>Opening books (.pgn/.epd)</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => openingsFolder = v, openingsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>PGN Output</label>
+                    <input type="text" @bind="pgnOutputFolder" />
+                    <small>Folder for saving PGN files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => pgnOutputFolder = v, pgnOutputFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Tournament Configs</label>
+                    <input type="text" @bind="tournamentConfigFolder" />
+                    <small>Tournament .json config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => tournamentConfigFolder = v, tournamentConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Tablebase</label>
+                    <input type="text" @bind="tablebaseFolder" />
+                    <small>Syzygy tablebase folder</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => tablebaseFolder = v, tablebaseFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Neural Networks</label>
+                    <input type="text" @bind="neuralNetFolder" />
+                    <small>Neural network weights</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => neuralNetFolder = v, neuralNetFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Puzzle Configs</label>
+                    <input type="text" @bind="puzzleConfigFolder" />
+                    <small>Puzzle and ERET config files</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => puzzleConfigFolder = v, puzzleConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
             </div>
         </div>
     </div>
+
 
     </div> @* end settings-grid *@
 
@@ -369,7 +379,12 @@
     private int reviewTimePerMove = 1000;
     private int reviewNodes = 5000;
     private int reviewDepth = 18;
+    private int reviewMultiPV = 5;
+    private double accuracyDecay = 0.065;
+    private double microLossBase = 0.02;
+    private double microLossScale = 0.20;
     private double brilliantPVGap = 0.15;
+    private double bestMinPVGap = 0.05;
     private double greatPVGap = 0.10;
     private double excellentMaxWPLoss = 0.02;
     private double goodMaxWPLoss = 0.05;
@@ -415,7 +430,12 @@
         reviewTimePerMove = s.ReviewTimePerMove;
         reviewNodes = s.ReviewNodes;
         reviewDepth = s.ReviewDepth;
+        reviewMultiPV = s.ReviewMultiPV;
+        accuracyDecay = s.AccuracyDecay;
+        microLossBase = s.MicroLossBase;
+        microLossScale = s.MicroLossScale;
         brilliantPVGap = s.BrilliantPVGap;
+        bestMinPVGap = s.BestMinPVGap;
         greatPVGap = s.GreatPVGap;
         excellentMaxWPLoss = s.ExcellentMaxWPLoss;
         goodMaxWPLoss = s.GoodMaxWPLoss;
@@ -457,7 +477,12 @@
                 ReviewTimePerMove = reviewTimePerMove,
                 ReviewNodes = reviewNodes,
                 ReviewDepth = reviewDepth,
+                ReviewMultiPV = reviewMultiPV,
+                AccuracyDecay = accuracyDecay,
+                MicroLossBase = microLossBase,
+                MicroLossScale = microLossScale,
                 BrilliantPVGap = brilliantPVGap,
+                BestMinPVGap = bestMinPVGap,
                 GreatPVGap = greatPVGap,
                 ExcellentMaxWPLoss = excellentMaxWPLoss,
                 GoodMaxWPLoss = goodMaxWPLoss,
@@ -504,7 +529,12 @@
         reviewTimePerMove = defaults.ReviewTimePerMove;
         reviewNodes = defaults.ReviewNodes;
         reviewDepth = defaults.ReviewDepth;
+        reviewMultiPV = defaults.ReviewMultiPV;
+        accuracyDecay = defaults.AccuracyDecay;
+        microLossBase = defaults.MicroLossBase;
+        microLossScale = defaults.MicroLossScale;
         brilliantPVGap = defaults.BrilliantPVGap;
+        bestMinPVGap = defaults.BestMinPVGap;
         greatPVGap = defaults.GreatPVGap;
         excellentMaxWPLoss = defaults.ExcellentMaxWPLoss;
         goodMaxWPLoss = defaults.GoodMaxWPLoss;

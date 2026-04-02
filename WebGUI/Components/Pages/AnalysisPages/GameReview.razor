@@ -9,6 +9,7 @@
 @using Microsoft.FSharp.Core
 @using static ChessLibrary.GameAccuracyAnalysis
 @using static ChessLibrary.PGNTypes
+@using WebGUI.Components.Layout.ExperimentalLayout
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 @implements IAsyncDisposable
@@ -31,19 +32,43 @@
             <MudIcon Icon="@Icons.Material.Filled.FileOpen" Size="Size.Small" /> Load PGN
         </button>
 
+        @if (games != null && games.Count > 1)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                       OnClick="PrevGame" Disabled="@(isAnalyzing || reviewingAll || gameIndex <= 0)"
+                       StartIcon="@Icons.Material.Filled.ChevronLeft" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                       OnClick="OpenPGNDialog" Disabled="@(isAnalyzing || reviewingAll)"
+                       Style="min-width:auto; padding:4px 8px;">
+                @($"{gameIndex + 1} / {games.Count}")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                       OnClick="NextGame" Disabled="@(isAnalyzing || reviewingAll || gameIndex >= games.Count - 1)"
+                       StartIcon="@Icons.Material.Filled.ChevronRight" />
+        }
+
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                   OnClick="StartAnalysis" Disabled="@(isAnalyzing || currentGame == null || engineConfig == null)"
+                   OnClick="StartAnalysis" Disabled="@(isAnalyzing || reviewingAll || currentGame == null || engineConfig == null)"
                    StartIcon="@Icons.Material.Filled.PlayArrow">
             Review
         </MudButton>
 
+        @if (games != null && games.Count > 1)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Small"
+                       OnClick="ReviewAllGames" Disabled="@(isAnalyzing || reviewingAll || engineConfig == null)"
+                       StartIcon="@Icons.Material.Filled.PlaylistPlay">
+                Review All
+            </MudButton>
+        }
+
         <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
-                   OnClick="QuickAnalysis" Disabled="@(isAnalyzing || currentGame == null)"
+                   OnClick="QuickAnalysis" Disabled="@(isAnalyzing || reviewingAll || currentGame == null)"
                    StartIcon="@Icons.Material.Filled.FlashOn">
             Quick Review
         </MudButton>
 
-        @if (isAnalyzing)
+        @if (isAnalyzing || reviewingAll)
         {
             <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
                        OnClick="CancelAnalysis" StartIcon="@Icons.Material.Filled.Stop">
@@ -65,6 +90,14 @@
         }
     </div>
 
+    @* ── Review All Progress ── *@
+    @if (reviewingAll)
+    {
+        <div style="padding:4px 8px; font-size:0.85rem; color:var(--mud-palette-text-secondary);">
+            Reviewing game @(reviewAllCurrentGame + 1) of @(games.Count)...
+        </div>
+    }
+
     @* ── Progress Bar ── *@
     @if (isAnalyzing)
     {
@@ -80,20 +113,68 @@
             <EnginePanel @ref="enginePanel" FEN="@fen" ChessBoard="@board"
                          Id="grEngine" Engine="engineConfig"
                          Nodes="@nodes"
-                         IsReviewing="@isAnalyzing"
+                         IsReviewing="@(isAnalyzing || analysisResult == null)"
                          OnNewEngineLoaded="OnNewEngineLoaded" />
         </div>
 
         @* ── Center: Board + Annotated Move List ── *@
         <div class="gr-center">
-            <Chessboard @ref="chessBoardRazor" FENposition="@fen" ShowFenField="true"
+            <ModernChessboard @ref="chessBoardRazor" FENposition="@fen" ShowFenField="false"
                         ShowChessNavButtons="true" ShowMoveList="true"
                         MakeMoveListClickable="true"
+                        MoveListPosition="MoveListPosition.Right"
+                        MoveEvals="@moveEvals"
+                        MoveAnnotations="@moveAnnotations"
                         ChessBoard="@board"
                         OnMoveMadeOnBoard="OnBoardNavigated"
                         OnNewFENOnBoard="OnBoardNavigated"
                         DetectedOpeningName="@openingName"
                         DetectedOpeningECO="@openingECO" />
+
+            @if (analysisResult != null)
+            {
+                <div class="gr-below-board">
+                    <div>
+                        @if (GetCriticalMoves() is var criticalMoves && criticalMoves.Length > 0)
+                        {
+                            <div class="gr-stats-card gr-critical-card">
+                                <h4>Critical Moves (@criticalMoves.Length)</h4>
+                                <div class="gr-critical-list">
+                                    @foreach (var move in criticalMoves)
+                                    {
+                                        <div class="gr-critical-row"
+                                             @onclick="() => NavigateToPly(move.Ply)">
+                                            <span class="gr-detail-chip @GetMoveClass(move.Classification)">@GetBadge(move.Classification)</span>
+                                            <span class="gr-critical-move">@(move.Color == "w" ? $"{move.MoveNumber}." : $"{move.MoveNumber}...")@move.San</span>
+                                            @if (!string.IsNullOrEmpty(move.BestMoveSan) && move.BestMove != move.UciMove)
+                                            {
+                                                <span class="gr-critical-best">@move.BestMoveSan</span>
+                                            }
+                                            <span class="gr-critical-acc">@($"{move.MoveAccuracy:F0}%")</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="gr-stats-card gr-accuracy-card">
+                        <div class="gr-accuracy-row">
+                            <div class="gr-accuracy-item">
+                                <div class="gr-accuracy-circle" style="--pct:@analysisResult.WhiteStats.Accuracy; --ring-color:#90caf9;">
+                                    <span class="gr-accuracy-value">@($"{analysisResult.WhiteStats.Accuracy:F1}")</span>
+                                </div>
+                                <div class="gr-accuracy-label">@DisplayPlayerName(analysisResult.WhitePlayer, "White")</div>
+                            </div>
+                            <div class="gr-accuracy-item">
+                                <div class="gr-accuracy-circle" style="--pct:@analysisResult.BlackStats.Accuracy; --ring-color:#616161;">
+                                    <span class="gr-accuracy-value">@($"{analysisResult.BlackStats.Accuracy:F1}")</span>
+                                </div>
+                                <div class="gr-accuracy-label">@DisplayPlayerName(analysisResult.BlackPlayer, "Black")</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
         </div>
 
         @* ── Right: Stats + Chart + Game List ── *@
@@ -111,55 +192,6 @@
             }
 
             <div @ref="chartElement" class="gr-chart" style="@(analysisResult == null ? "display:none" : "")"></div>
-
-            @if (analysisResult != null)
-            {
-                <div class="gr-stats-card">
-                    <div class="gr-engine-info">
-                        @analysisResult.AnalysisEngine
-                        @if (analysisResult.AnalysisEngine != "PGN Annotations")
-                        {
-                            <span class="gr-engine-detail">@GetSearchModeLabel()</span>
-                        }
-                    </div>
-                    <div class="gr-accuracy-row">
-                        <div class="gr-accuracy-item">
-                            <div class="gr-accuracy-circle" style="--pct:@analysisResult.WhiteStats.Accuracy; --ring-color:#90caf9;">
-                                <span class="gr-accuracy-value">@($"{analysisResult.WhiteStats.Accuracy:F1}")</span>
-                            </div>
-                            <div class="gr-accuracy-label">@DisplayPlayerName(analysisResult.WhitePlayer, "White")</div>
-                        </div>
-                        <div class="gr-accuracy-item">
-                            <div class="gr-accuracy-circle" style="--pct:@analysisResult.BlackStats.Accuracy; --ring-color:#616161;">
-                                <span class="gr-accuracy-value">@($"{analysisResult.BlackStats.Accuracy:F1}")</span>
-                            </div>
-                            <div class="gr-accuracy-label">@DisplayPlayerName(analysisResult.BlackPlayer, "Black")</div>
-                        </div>
-                    </div>
-                </div>
-            }
-
-            <div class="gr-move-detail">
-              @if (analysisResult != null && selectedMove != null)
-              {
-                    <div class="gr-detail-header">
-                        <span class="gr-detail-move @GetMoveClass(selectedMove.Classification)">
-                            @(selectedMove.Color == "w" ? $"{selectedMove.MoveNumber}." : $"{selectedMove.MoveNumber}...")@selectedMove.San
-                        </span>
-                        <span class="gr-detail-chip @GetMoveClass(selectedMove.Classification)">@GetClassificationName(selectedMove.Classification)</span>
-                    </div>
-                    <div class="gr-detail-body">
-                        <div>Best: <strong>@(!string.IsNullOrEmpty(selectedMove.BestMoveSan) && selectedMove.BestMove != selectedMove.UciMove ? selectedMove.BestMoveSan : selectedMove.San)</strong></div>
-                        <div>Eval: @selectedMove.EvalBefore</div>
-                        <div>WP: @($"{selectedMove.WinProbBefore*100:F1}%") → @($"{selectedMove.WinProbAfter*100:F1}%")</div>
-                        <div>Accuracy: @($"{selectedMove.MoveAccuracy:F0}%")</div>
-                        @if (selectedMove.Depth > 0)
-                        {
-                            <div>Depth: @selectedMove.Depth | Nodes: @FormatNodes(selectedMove.Nodes)</div>
-                        }
-                    </div>
-              }
-            </div>
 
             @if (analysisResult != null)
             {
@@ -186,28 +218,6 @@
                         </tbody>
                     </table>
                 </div>
-
-                @if (GetCriticalMoves() is var criticalMoves && criticalMoves.Length > 0)
-                {
-                    <div class="gr-stats-card">
-                        <h4>Critical Moves (@criticalMoves.Length)</h4>
-                        <div class="gr-critical-list">
-                            @foreach (var move in criticalMoves)
-                            {
-                                <div class="gr-critical-row @(selectedMove == move ? "gr-game-selected" : "")"
-                                     @onclick="() => SelectMove(move.Ply)">
-                                    <span class="gr-detail-chip @GetMoveClass(move.Classification)">@GetBadge(move.Classification)</span>
-                                    <span class="gr-critical-move">@(move.Color == "w" ? $"{move.MoveNumber}." : $"{move.MoveNumber}...")@move.San</span>
-                                    @if (!string.IsNullOrEmpty(move.BestMoveSan) && move.BestMove != move.UciMove)
-                                    {
-                                        <span class="gr-critical-best">@move.BestMoveSan</span>
-                                    }
-                                    <span class="gr-critical-acc">@($"{move.MoveAccuracy:F0}%")</span>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                }
 
                 <div class="gr-stats-card">
                     <h4>Phase Breakdown</h4>
@@ -248,7 +258,7 @@
 @code {
     // ── State ──
     private Chess.Board board = new();
-    private Chessboard chessBoardRazor;
+    private ModernChessboard chessBoardRazor;
     private string fen = Chess.startPos;
     private string openingName = "";
     private string openingECO = "";
@@ -261,9 +271,17 @@
     // PGN / Games
     private List<PgnGame> games;
     private PgnGame currentGame;
+    private int gameIndex;
+    private HashSet<PgnGame> selectedItems = new();
+    private string searchString = "";
+    private Dictionary<int, GameAnalysisResult> allResults = new();
+    private bool reviewingAll;
+    private int reviewAllCurrentGame;
 
     // Analysis
     private GameAnalysisResult analysisResult;
+    private Dictionary<int, string> moveEvals = new();
+    private Dictionary<int, ModernChessboard.MoveAnnotation> moveAnnotations = new();
     private bool isAnalyzing;
     private int progressCurrent;
     private int progressTotal;
@@ -279,9 +297,6 @@
     private int nodes = 5000;
     private int depth = 18;
 
-    // Move selection
-    private int selectedPly = -1;
-    private MoveAnalysisResult selectedMove;
     private string[] gameFens; // Snapshot of FEN per ply, set once after game load
 
     // Chart
@@ -356,7 +371,7 @@
                     }
 
                     if (navPly >= 0 && gameFens != null && navPly < gameFens.Length)
-                        await SelectMove(navPly);
+                        await NavigateToPly(navPly);
                 }
             }
 
@@ -372,11 +387,18 @@
         if (path == null) return;
         try
         {
-            games = FullPGNParser.parsePgnFile(path).ToList();
-            if (games.Count > 0)
+            games = FullPGNParser.parsePgnFile(path).Take(4000).ToList();
+            allResults.Clear();
+            gameIndex = 0;
+
+            if (games.Count > 1)
+            {
+                await OpenPGNDialog();
+            }
+            else if (games.Count == 1)
+            {
                 await SelectGame(games[0]);
-            analysisResult = null;
-            StateHasChanged();
+            }
         }
         catch (Exception ex)
         {
@@ -425,9 +447,22 @@
     private async Task SelectGame(PgnGame game)
     {
         currentGame = game;
-        analysisResult = null;
-        selectedPly = -1;
-        selectedMove = null;
+
+        // Restore cached result if available, otherwise clear
+        gameIndex = games != null ? games.IndexOf(game) : 0;
+        if (gameIndex >= 0 && allResults.TryGetValue(gameIndex, out var cached))
+        {
+            analysisResult = cached;
+            moveEvals = BuildMoveEvals(cached.Moves);
+            moveAnnotations = BuildAnnotations(cached);
+        }
+        else
+        {
+            analysisResult = null;
+            moveAnnotations = new();
+            // Try to extract evals from PGN comments (computer match games)
+            moveEvals = ExtractEvalsFromComments(game);
+        }
 
         var startFen = string.IsNullOrWhiteSpace(game.Fen) ? Chess.startPos : game.Fen;
         board.ResetBoardStateFromFen(startFen);
@@ -450,6 +485,83 @@
         StateHasChanged();
     }
 
+    private async Task OpenPGNDialog()
+    {
+        if (games == null || games.Count == 0) return;
+        var parameters = new DialogParameters
+        {
+            ["Games"] = games,
+            ["SelectedItems"] = selectedItems,
+            ["SearchString"] = searchString
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraLarge,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            Position = DialogPosition.CenterRight
+        };
+        var dialog = await DialogService.ShowAsync<PGNGameListDialog>("Select Game for Review", parameters, options);
+        var result = await dialog.Result;
+        if (result?.Data is null || result.Canceled) return;
+        var (pgnGame, search) = ((PgnGame, string))result.Data;
+        searchString = search;
+        selectedItems.Clear();
+        selectedItems.Add(pgnGame);
+        await SelectGame(pgnGame);
+    }
+
+    private async Task PrevGame()
+    {
+        if (games == null || gameIndex <= 0) return;
+        gameIndex--;
+        selectedItems.Clear();
+        selectedItems.Add(games[gameIndex]);
+        await SelectGame(games[gameIndex]);
+    }
+
+    private async Task NextGame()
+    {
+        if (games == null || gameIndex >= games.Count - 1) return;
+        gameIndex++;
+        selectedItems.Clear();
+        selectedItems.Add(games[gameIndex]);
+        await SelectGame(games[gameIndex]);
+    }
+
+    private async Task ReviewAllGames()
+    {
+        if (games == null || games.Count == 0 || engineConfig == null) return;
+        reviewingAll = true;
+        analysisCts?.Dispose();
+        analysisCts = new CancellationTokenSource();
+        allResults.Clear();
+
+        try
+        {
+            for (int i = 0; i < games.Count; i++)
+            {
+                if (analysisCts.Token.IsCancellationRequested) break;
+
+                reviewAllCurrentGame = i;
+                gameIndex = i;
+                await SelectGame(games[i]);
+                await InvokeAsync(StateHasChanged);
+
+                await StartAnalysis();
+
+                if (analysisResult != null)
+                    allResults[i] = analysisResult;
+            }
+        }
+        finally
+        {
+            reviewingAll = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     // ── Analysis ──
 
     private PgnGame BuildGameWithVariations(PgnGame game, GameAnalysisResult analysis)
@@ -468,15 +580,9 @@
             if (string.IsNullOrEmpty(move.PV)) continue;
             if (move.Ply < 0 || move.Ply >= newMainline.Count) continue;
 
-            // Add eval comment to mainline move
-            var evalStr = FormatEval(move.BestEval);
+            // Clear raw engine comments — evals are shown in the move list columns
             var mainPly = newMainline[move.Ply];
-            var classSymbol = GetClassSymbol(move.Classification);
-            if (!string.IsNullOrEmpty(classSymbol) || !string.IsNullOrEmpty(evalStr))
-            {
-                var comment = $"{classSymbol} {evalStr} acc={move.MoveAccuracy:F0}%".Trim();
-                mainPly.Comment = string.IsNullOrEmpty(mainPly.Comment) ? comment : $"{mainPly.Comment} {comment}";
-            }
+            mainPly.Comment = "";
 
             // Only add variation if engine's best move differs from played move
             if (move.BestMove == move.UciMove) continue;
@@ -531,7 +637,7 @@
                 var san = tempBoard.SanMovesPlayed[tempBoard.SanMovesPlayed.Count - 1];
                 var moveNumber = (currentPly / 2) + 1;
                 var color = currentPly % 2 == 0 ? "w" : "b";
-                var comment = line.Count == 0 ? $"{FormatEval(move.BestEval)} d={move.Depth}" : "";
+                var comment = "";
 
                 line.Add(new PlyMove(currentPly, moveNumber, color, san, comment,
                                      Microsoft.FSharp.Collections.ListModule.Empty<int>(),
@@ -548,21 +654,71 @@
         return line;
     }
 
-    private static string GetClassSymbol(MoveClassification c)
+    private static string FormatEval(EvalType eval)
     {
-        if (c.IsBrilliant) return "!!";
-        if (c.IsGreat) return "!";
-        if (c.IsInaccuracy) return "?!";
-        if (c.IsMistake) return "?";
-        if (c.IsBlunder) return "??";
+        if (eval.IsCP) return $"{((EvalType.CP)eval).Info:+0.0;-0.0}";
+        if (eval.IsMate) return $"M{((EvalType.Mate)eval).Info}";
         return "";
     }
 
-    private static string FormatEval(EvalType eval)
+    private static Dictionary<int, string> BuildMoveEvals(MoveAnalysisResult[] moves) =>
+        moves.Where(m => !m.EvalBefore.IsNA)
+             .ToDictionary(m => m.Ply, m => FormatEval(m.EvalBefore));
+
+    private static Dictionary<int, string> ExtractEvalsFromComments(PgnGame game)
     {
-        if (eval.IsCP) return $"{((EvalType.CP)eval).Info / 100.0:+0.00;-0.00}";
-        if (eval.IsMate) return $"M{((EvalType.Mate)eval).Info}";
+        var evals = new Dictionary<int, string>();
+        for (int i = 0; i < game.Mainline.Count; i++)
+        {
+            var move = game.Mainline[i];
+            if (string.IsNullOrEmpty(move.Comment)) continue;
+            var isBlack = move.Color == "b";
+            var player = isBlack ? game.GameMetaData.Black : game.GameMetaData.White;
+            var stat = Annotation.getEngineStatData(player, isBlack, move.Comment);
+            if (stat.d == 0 && stat.n == 0L && stat.wv == 0.0) continue;
+            evals[i] = $"{stat.wv:+0.0;-0.0}";
+        }
+        return evals;
+    }
+
+    private static bool IsNotableClassification(MoveClassification cls) =>
+        cls.IsBrilliant || cls.IsGreat || cls.IsInaccuracy || cls.IsMistake || cls.IsBlunder;
+
+    private static string GetClassCss(MoveClassification cls)
+    {
+        if (cls.IsBrilliant) return "mcb-move-brilliant";
+        if (cls.IsGreat) return "mcb-move-great";
+        if (cls.IsInaccuracy) return "mcb-move-inaccuracy";
+        if (cls.IsMistake) return "mcb-move-mistake";
+        if (cls.IsBlunder) return "mcb-move-blunder";
         return "";
+    }
+
+    private static string GetClassLabel(MoveClassification cls)
+    {
+        if (cls.IsBrilliant) return "Brilliant.";
+        if (cls.IsGreat) return "Great move.";
+        if (cls.IsInaccuracy) return "Inaccuracy.";
+        if (cls.IsMistake) return "Mistake.";
+        if (cls.IsBlunder) return "Blunder.";
+        return "";
+    }
+
+    private static ModernChessboard.MoveAnnotation BuildAnnotation(MoveAnalysisResult m)
+    {
+        var symbol = GetBadge(m.Classification);
+        var label = GetClassLabel(m.Classification);
+        var bestInfo = "";
+        if (m.Classification.IsInaccuracy || m.Classification.IsMistake || m.Classification.IsBlunder)
+            bestInfo = !string.IsNullOrEmpty(m.BestMoveSan) ? $"{m.BestMoveSan} was best." : "";
+        return new ModernChessboard.MoveAnnotation(symbol, GetClassCss(m.Classification), label, bestInfo);
+    }
+
+    private static Dictionary<int, ModernChessboard.MoveAnnotation> BuildAnnotations(GameAnalysisResult result)
+    {
+        return result.Moves
+            .Where(m => IsNotableClassification(m.Classification))
+            .ToDictionary(m => m.Ply, BuildAnnotation);
     }
 
     private async Task StartAnalysis()
@@ -575,8 +731,13 @@
         progressPercent = 0;
         analysisResult = null;
         accuracyPlot = null;
+        moveEvals.Clear();
+        moveAnnotations.Clear();
         analysisCts?.Dispose();
         analysisCts = new CancellationTokenSource();
+
+        // Track last PV1 eval for live move list updates
+        EvalType liveEval = EvalType.NA;
 
         // Clear previous chart
         if (chessModule != null)
@@ -596,10 +757,10 @@
 
         var s = SettingsService.Settings;
         var thresholds = new GameAccuracyAnalysis.ClassificationThresholds(
-            s.BrilliantPVGap, s.GreatPVGap,
+            s.BrilliantPVGap, s.GreatPVGap, s.BestMinPVGap,
             s.ExcellentMaxWPLoss, s.GoodMaxWPLoss,
             s.InaccuracyMaxWPLoss, s.MistakeMaxWPLoss);
-        var config = new GameReviewConfig(mode, time, nodeCount, depth, 3, true, thresholds);
+        var config = new GameReviewConfig(mode, time, nodeCount, depth, s.ReviewMultiPV, true, thresholds, s.AccuracyDecay, s.MicroLossBase, s.MicroLossScale);
 
         var progress = new Progress<(int current, int total)>(async p =>
         {
@@ -608,6 +769,13 @@
                 progressCurrent = p.current;
                 progressTotal = p.total;
                 progressPercent = progressTotal > 0 ? (double)progressCurrent / progressTotal * 100.0 : 0;
+
+                // Record eval for the just-completed move
+                if (p.current >= 2 && liveEval != EvalType.NA)
+                {
+                    moveEvals[p.current - 2] = FormatEval(liveEval);
+                    liveEval = EvalType.NA;
+                }
 
                 if (gameFens != null && p.current > 0 && chessBoardRazor != null)
                 {
@@ -625,10 +793,23 @@
         {
             analysisResult = await ReviewService.AnalyzeGameAsync(
                 currentGame, engineConfig, config, progress, analysisCts.Token,
-                update => enginePanel?.HandleUpdate(update));
+                update =>
+                {
+                    enginePanel?.HandleUpdate(update);
+                    if (update.IsStatus)
+                    {
+                        var status = ((EngineUpdate.Status)update).Item;
+                        if (status.MultiPV <= 1)
+                            liveEval = status.Eval;
+                    }
+                });
 
             if (analysisResult != null && analysisResult.Moves.Length > 0)
             {
+                // Finalize evals and annotations from full analysis result
+                moveEvals = BuildMoveEvals(analysisResult.Moves);
+                moveAnnotations = BuildAnnotations(analysisResult);
+
                 accuracyPlot = new AccuracyPlot(chessModule, chartElement);
                 await accuracyPlot.RenderAsync(analysisResult);
                 await chessModule.InvokeVoidAsync("triggerResizeEvent");
@@ -648,7 +829,11 @@
                         : MoveAndFen.FirstEntry);
                 }
 
-                await SelectMove(0);
+                await NavigateToPly(0);
+
+                // Cache result for game navigation
+                if (games != null && gameIndex >= 0)
+                    allResults[gameIndex] = analysisResult;
             }
         }
         catch (OperationCanceledException)
@@ -676,10 +861,10 @@
 
         var qs = SettingsService.Settings;
         var qThresholds = new GameAccuracyAnalysis.ClassificationThresholds(
-            qs.BrilliantPVGap, qs.GreatPVGap,
+            qs.BrilliantPVGap, qs.GreatPVGap, qs.BestMinPVGap,
             qs.ExcellentMaxWPLoss, qs.GoodMaxWPLoss,
             qs.InaccuracyMaxWPLoss, qs.MistakeMaxWPLoss);
-        var result = ReviewService.AnalyzeGameFromAnnotations(currentGame, qThresholds);
+        var result = ReviewService.AnalyzeGameFromAnnotations(currentGame, qThresholds, qs.AccuracyDecay);
         if (result == null)
         {
             await DialogService.ShowMessageBox("No annotations",
@@ -690,83 +875,51 @@
         analysisResult = result;
         if (analysisResult.Moves.Length > 0)
         {
+            moveEvals = BuildMoveEvals(analysisResult.Moves);
+            moveAnnotations = BuildAnnotations(analysisResult);
+
             // Variations are already in the loaded PGN game (exported with PGN variation syntax).
             // Just render the accuracy chart — no need to rebuild variations.
             accuracyPlot = new AccuracyPlot(chessModule, chartElement);
             await accuracyPlot.RenderAsync(analysisResult);
             await chessModule.InvokeVoidAsync("triggerResizeEvent");
-            await SelectMove(0);
+            await NavigateToPly(0);
         }
         StateHasChanged();
     }
 
     private void CancelAnalysis()
     {
+        reviewingAll = false;
         ReviewService.Cancel();
         analysisCts?.Cancel();
     }
 
-    // ── Move Selection & Navigation ──
+    // ── Navigation ──
 
     private async void OnBoardNavigated(string _)
     {
         if (analysisResult == null) return;
-
         fen = board.FEN();
 
-        // Find which mainline ply matches the current board position
-        var ply = -1;
-        if (gameFens != null)
-        {
-            for (int i = 0; i < gameFens.Length; i++)
-            {
-                if (gameFens[i] == fen)
-                {
-                    ply = i;
-                    break;
-                }
-            }
-        }
+        var ply = gameFens != null
+            ? Array.IndexOf(gameFens, fen)
+            : -1;
 
-        if (ply >= 0 && ply < analysisResult.Moves.Length)
-        {
-            selectedPly = ply;
-            selectedMove = analysisResult.Moves[ply];
-
-            if (accuracyPlot != null)
-            {
-                await accuracyPlot.UpdateMoveIndicatorAsync(ply);
-            }
-        }
-        else
-        {
-            // Before first move (start position)
-            selectedPly = -1;
-            selectedMove = null;
-        }
+        if (ply >= 0 && accuracyPlot != null)
+            await accuracyPlot.UpdateMoveIndicatorAsync(ply);
 
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task SelectMove(int ply)
+    private async Task NavigateToPly(int ply)
     {
-        if (analysisResult == null || ply < 0 || ply >= analysisResult.Moves.Length) return;
-        if (gameFens == null || ply >= gameFens.Length) return;
-
-        selectedPly = ply;
-        selectedMove = analysisResult.Moves[ply];
+        if (gameFens == null || ply < 0 || ply >= gameFens.Length) return;
         fen = gameFens[ply];
-
         if (chessBoardRazor != null)
-        {
             await chessBoardRazor.SetPositionDirect(fen);
-        }
-
         if (accuracyPlot != null)
-        {
             await accuracyPlot.UpdateMoveIndicatorAsync(ply);
-        }
-
         StateHasChanged();
     }
 
@@ -793,17 +946,7 @@
 
             sb.Append(move.San);
 
-            // Add NAG
-            var nag = move.Classification switch
-            {
-                var c when c.IsBrilliant => " $3",
-                var c when c.IsGreat => " $1",
-                var c when c.IsInaccuracy => " $6",
-                var c when c.IsMistake => " $2",
-                var c when c.IsBlunder => " $4",
-                _ => ""
-            };
-            sb.Append(nag);
+            // Classification is stored in the comment (cls= field), no NAGs needed
 
             // Add analysis comment with full data for reload
             var comment = $"wv={move.EvalBefore}, acc={move.MoveAccuracy:F0}%";

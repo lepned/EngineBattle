@@ -79,9 +79,9 @@
     background: var(--ep-accent-gradient);
     color: #0c1122;
     border: none;
-    border-radius: 12px;
-    padding: 10px 16px;
-    font-size: 0.85rem;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
     font-weight: 600;
     letter-spacing: 0.02em;
     cursor: pointer;
@@ -194,6 +194,7 @@
     font-size: 0.7rem;
     color: var(--ep-muted);
     font-family: 'JetBrains Mono', 'Consolas', monospace;
+    margin-bottom: 12px;
 }
 
 /* Dropdown Menu */
@@ -259,9 +260,9 @@
 .engine-panel .ep-switch {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     color: var(--ep-text);
 }
 
@@ -270,10 +271,10 @@
 }
 
 .engine-panel .ep-switch .slider {
-    width: 42px;
-    height: 24px;
+    width: 32px;
+    height: 18px;
     background: rgba(100, 108, 130, 0.4);
-    border-radius: 12px;
+    border-radius: 9px;
     position: relative;
     transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -281,12 +282,12 @@
 .engine-panel .ep-switch .slider::before {
     content: '';
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: #fff;
-    top: 3px;
-    left: 3px;
+    top: 2px;
+    left: 2px;
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
@@ -296,14 +297,14 @@
 }
 
 .engine-panel .ep-switch input:checked + .slider::before {
-    transform: translateX(18px);
+    transform: translateX(14px);
 }
 
 /* Switch with labels on both sides */
 .engine-panel .ep-switch .label-text {
     color: var(--ep-muted);
     transition: color 0.2s ease;
-    font-size: 0.8rem;
+    font-size: 0.72rem;
 }
 
 .engine-panel .ep-switch .label-text.active {
@@ -360,10 +361,16 @@
 /* Limits Row */
 .engine-panel .ep-limits {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    margin-bottom: 16px;
+    margin-bottom: 2px;
+}
+
+.engine-panel .ep-toggle-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-self: flex-end;
 }
 
 /* Upload Button */
@@ -371,12 +378,12 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 14px;
+    padding: 5px 10px;
     border-radius: 999px;
     border: 1px dashed rgba(125, 132, 156, 0.45);
     color: var(--ep-muted);
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     transition: all 0.2s ease;
 }
 
@@ -402,6 +409,7 @@
 .engine-panel .ep-nn-info {
     font-size: 0.82rem;
     color: var(--ep-muted);
+    margin-top: 8px;
     margin-bottom: 14px;
     display: flex;
     flex-wrap: wrap;
