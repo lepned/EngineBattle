@@ -32,21 +32,25 @@
 
 ### Tournament Modes
 
-EngineBattle supports four tournament formats configured via `TournamentMode` in `tournament.json`:
+EngineBattle supports five tournament formats configured via `TournamentMode` in `tournament.json`:
 
 - **Round Robin (RR):** Every engine plays every other engine once (or twice in double round-robin).
 - **Gauntlet:** One or more challengers play against a pool of opponents for fast benchmarking.
 - **Cup:** Single-elimination knockout with configurable games per match and optional seeding.
 - **Swiss:** Pairings are based on score each round, scaling well for larger fields.
 - **Swiss (odd players):** If the player count is odd, one engine receives a bye each round (worth 1 point) and byes are not repeated when possible.
+- **Ladder:** Elimination-style climbing tournament where engines challenge upward by rating. The loser is eliminated and the winner keeps climbing until only one engine remains.
 
-See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [SwissMode.md](SwissMode.md) and [CupMode.md](CupMode.md) for mode-specific notes.
+See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [SwissMode.md](SwissMode.md), [CupMode.md](CupMode.md), and [LadderMode.md](LadderMode.md) for mode-specific notes.
 
 
 ### 🔍 Analysis Mode
 
-- **Intuitive Analysis Interface:** User-friendly interface for convenient position analysis, featuring search charts similar to those used in tournament mode. Includes overlay options to display additional informaiton for MCTS engines like Lc0 and Ceres
+- **Intuitive Analysis Interface:** User-friendly interface for convenient position analysis, featuring search charts similar to those used in tournament mode. Includes overlay options to display additional information for MCTS engines like Lc0 and Ceres.
 - **Dual-Engine Comparison:** Compare two engines simultaneously with side-by-side analysis, move lists, and detailed graphical evaluations.
+- **Game Review:** Lichess-style move-by-move accuracy analysis with win probability tracking, move classifications (Brilliant, Great, Best, Inaccuracy, Mistake, Blunder), critical moves panel, and annotated PGN export. Supports single-game and batch review.
+- **Focus Mode:** Restrict engine search to specific candidate moves for targeted position exploration.
+- **UCI Script Loading:** Load a text file of UCI commands to quickly configure engine parameters during analysis.
 
 ### 📚 PGN and EPD Tools
 
@@ -57,6 +61,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Chess960 Position Generation:** Quickly generate random Chess960 positions (EPD format) for diverse testing scenarios.
 - **Remove an engine from a PGN-file:** Remove a specific engine's games from a PGN file to clean up tournament results or resume a tournament without including that engine.
 - **Move Deviation Finder:** Easily identify and visualize deviations by chess engines compared to a reference engine in a PGN file, presented clearly with summary tables and visualized with chessboards.
+- **Out-of-Book Evaluation:** Evaluate opening positions right after book exits using one or more engines to filter out openings that are too drawish or too one-sided for engine matches.
 
 ### 📈 Visualization and Statistics
 
@@ -71,6 +76,10 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 
 - **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
 - **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (accessible via Tools > Test Canvas in the GUI menu).
+
+### ⚙️ Global Settings
+
+- **Persistent Preferences:** A dedicated settings page to configure default paths, search modes, MultiPV, analysis defaults, game review parameters, and more. Settings persist across sessions.
 
 ### 🎥 Streaming and Community Features
 

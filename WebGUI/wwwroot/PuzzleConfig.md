@@ -53,7 +53,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   "Engines": [
     {
       "Engine": {
-        "ConfigName": "SFDef.json"
+        "ConfigName": "SFDef.json",
         "Nodes": 10000
       }
     },

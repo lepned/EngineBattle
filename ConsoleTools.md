@@ -25,6 +25,26 @@ dotnet run -c Release -- <command> [arguments]
 dotnet run -c Release -- <command> <path-or-arguments>
 ```
 
+### Command Summary
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `tournamentjson` | `tournament`, `t` | Run a tournament from JSON config |
+| `puzzlejson` | `puzzle`, `p` | Run puzzle evaluation from JSON config |
+| `eretjson` | `eret` | Run ERET evaluation from JSON config |
+| `analyze` | `a` | Analyze a position with an engine |
+| `compare` | `cmp` | Compare two engines side-by-side |
+| `benchmark` | `bench`, `b` | Run engine benchmark |
+| `tune` | | Run Bayesian parameter tuner |
+| `redash` | | Regenerate BO dashboard from saved state |
+| `pgnsummary` | `pgn`, `ps` | Analyze PGN game terminations |
+| `elo` | `e` | Show Elo ratings and results from PGN |
+| `speed` | `sp` | Show speed statistics from PGN |
+| `validate` | `v` | Validate a tournament config without running |
+| `perft` | | Run perft move generation test |
+| `gui` | | Launch WebGUI |
+| `help` | `h` | Show help message |
+
 ---
 
 ## Commands
@@ -146,15 +166,19 @@ dotnet run -c Release -- gui help 5020
 - `/tournament` - Tournament runner and results
 - `/analysis/single` - Single engine analysis
 - `/analysis/dual` - Dual engine comparison
+- `/analysis/game-review` - Game review and accuracy analysis
 - `/EngineDef` - Engine definition overview
 - `/tournamentSetup` - Tournament setup
 - `/play-vs-computer` - Play against engine
 - `/LichessPuzzles` - Lichess puzzle tests
 - `/EretPuzzleTest` - ERET puzzle tests
+- `/tools/pgn-tools` - PGN and EPD tools
+- `/tools/book-evaluation` - Out-of-book position evaluation
 - `/help` - Help and documentation
 - `/speed` - Speed calculator
 - `/ordo` - Ordo rating results
 - `/deviationFinder` - Move deviation finder
+- `/settings` - Global settings
 
 **Description:**
 - Starts the WebGUI Blazor Server application
@@ -203,24 +227,203 @@ dotnet run -c Release -- perft 5 10
 
 ---
 
+### analyze
+
+Analyzes a single position with a chess engine. Accepts engine JSON configs or bare exe paths.
+
+**Aliases:** `a`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- analyze <engine> [fen] [options]
+```
+
+**Arguments:**
+- `engine`: Path to an engine definition JSON file or a bare engine executable
+- `fen` (optional): FEN string or `startpos` (default: `startpos`)
+
+**Options:**
+- `--fen S` — Set position (quoted FEN string)
+- `--moves M...` — Append UCI moves to position (e.g. `--moves d2d4 d7d5 c2c4`). Consumes all subsequent non-`--` arguments.
+- `--nodes N` — Search N nodes (default: 1000000)
+- `--movetime N` — Search for N milliseconds
+- `--depth N` — Search to depth N
+- `--args S` — Override engine command-line arguments (e.g. `dag-preview`)
+- `--uci K V` — Set any UCI option (repeatable, e.g. `--uci Backend onnx-trt`)
+- `--options` — Show all UCI options supported by the engine and exit
+
+**Examples:**
+```bash
+# Analyze with engine JSON config
+dotnet run -c Release -- a engine.json startpos --nodes 100000
+
+# Analyze with bare exe
+dotnet run -c Release -- a C:/path/to/engine.exe startpos --depth 15
+
+# Analyze specific position with UCI overrides
+dotnet run -c Release -- a engine.json "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1" --nodes 10000
+
+# Analyze with moves from startpos
+dotnet run -c Release -- a engine.json --moves d2d4 d7d5 c2c4 --depth 20
+
+# Show engine's UCI options
+dotnet run -c Release -- a engine.json --options
+```
+
+**Output:**
+- Raw UCI `info` lines with depth, eval, nodes, NPS, WDL, PV
+- `info string` lines (e.g. Lc0's LogLiveStats)
+- Raw `bestmove` line
+- Summary: depth, eval, nodes, NPS, time, TBHits, WDL, bestmove, PV (UCI + SAN notation)
+
+---
+
+### compare
+
+Side-by-side comparison of two engines across one or more positions. Creates both engines once and reuses them via `ucinewgame` between positions.
+
+**Aliases:** `cmp`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- compare <engine1> <engine2> [options]
+```
+
+**Arguments:**
+- `engine1`, `engine2`: Path to engine definition JSON files or bare engine executables
+
+**Options:**
+- `--fen S` — Set position (quoted FEN string)
+- `--positions F` — EPD file with multiple positions
+- `--nodes N` — Search N nodes (default: 1000000)
+- `--movetime N` — Search for N milliseconds
+- `--depth N` — Search to depth N
+- `--threshold CP` — Only display positions where eval diff >= CP (summary still counts all)
+- `--uci1 K V` — Set UCI option for engine 1 (repeatable)
+- `--uci2 K V` — Set UCI option for engine 2 (repeatable)
+
+**Examples:**
+```bash
+# Compare two engines on startpos
+dotnet run -c Release -- cmp engine1.json engine2.json --nodes 100000
+
+# Compare across multiple positions
+dotnet run -c Release -- cmp engine1.json engine2.json --positions test.epd --depth 20
+
+# Only show positions with large disagreements
+dotnet run -c Release -- cmp engine1.exe engine2.exe --positions test.epd --threshold 0.5
+```
+
+**Output:**
+- Table with FEN, per-engine eval and NPS, bestmove (agreed = single move, disagreed = `move1/move2`)
+- Summary: move agreement %, avg/max eval diff with position #, NPS ratio
+
+---
+
+### benchmark
+
+Runs engine benchmarks from a JSON configuration file.
+
+**Aliases:** `bench`, `b`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- benchmark <path-to-config.json>
+```
+
+---
+
+### tune
+
+Runs the Bayesian parameter tuner.
+
+**Syntax:**
+```bash
+dotnet run -c Release -- tune <path-to-tuner-config.json>
+```
+
+**Description:**
+- Bayesian optimization with GP surrogate (Matern 5/2 ARD kernel)
+- SPRT-based evaluation for each candidate
+- Multi-phase tuning with parameter subsets
+- Press Ctrl+C to gracefully stop
+
+**Configuration:** See [Console/ConsoleTuner.md](Console/ConsoleTuner.md) for full configuration reference.
+
+---
+
+### redash
+
+Regenerates the Bayesian optimizer HTML dashboard from a saved tuner state.
+
+**Syntax:**
+```bash
+dotnet run -c Release -- redash <path-to-tuner-config.json>
+```
+
+---
+
+### pgnsummary
+
+Analyzes PGN game terminations and displays a summary.
+
+**Aliases:** `pgn`, `ps`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- pgnsummary <path-to-pgn-file>
+```
+
+---
+
+### elo
+
+Shows Elo ratings, results, and standings from a PGN file.
+
+**Aliases:** `e`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- elo <path-to-pgn-file>
+```
+
+---
+
+### speed
+
+Shows speed statistics (NPS, nodes per move) from a PGN file.
+
+**Aliases:** `sp`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- speed <path-to-pgn-file>
+```
+
+---
+
+### validate
+
+Validates a tournament configuration file without running the tournament.
+
+**Aliases:** `v`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- validate <path-to-tournament.json>
+```
+
+---
+
 ### help
 
 Displays available commands and their usage.
 
+**Aliases:** `h`
+
 **Syntax:**
 ```bash
 dotnet run -c Release -- help
-```
-
-**Output:**
-```
-Help: Available commands are:
-  - perft <depth> <sampleSize>
-  - puzzlejson <path>
-  - eretjson <path>
-  - tournamentjson <configFile>
-  - gui [page] [port]  - Launch WebGUI (default: tournament page, port 5018)
-    Examples: gui, gui analysis/single, gui 5020, gui help 5020
 ```
 
 ---
@@ -298,3 +501,5 @@ Help: Available commands are:
 - [EretConfig.md](EretConfig.md) - ERET puzzle test configuration
 - [SwissMode.md](SwissMode.md) - Swiss tournament mode details
 - [CupMode.md](CupMode.md) - Knockout/Cup tournament mode details
+- [LadderMode.md](LadderMode.md) - Ladder tournament mode details
+- [Console/ConsoleTuner.md](Console/ConsoleTuner.md) - Bayesian tuner configuration
