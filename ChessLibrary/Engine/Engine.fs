@@ -340,17 +340,16 @@ module Engine =
           let rest = arr[startIdx+1..] |> String.concat " "
           backend <- rest      
 
-      let assignNetworkName (option:string) =      
+      let assignNetworkName (option:string) =
         if option.ToLower().Contains("weights") || option.ToLower().Contains("evalfile") then
           if String.IsNullOrEmpty ceresNetworkName |> not then
             network <- ceresNetworkName
           else
             let arr = option.Split(' ')
             let path = arr[arr.Length - 1]
-            if path.Contains("/") then
-              let nArr = path.Split('/')
-              let index = max 0 (nArr.Length - 1)
-              network <- nArr[index]
+            let name = Path.GetFileNameWithoutExtension path
+            if String.IsNullOrEmpty name |> not then
+              network <- name
     
       let analysisCommands =
         [

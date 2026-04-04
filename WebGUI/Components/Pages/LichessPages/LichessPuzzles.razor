@@ -105,7 +105,10 @@
       <table class="tool-table sortable">
         <thead>
           <tr>
-            <th @onclick='() => ScoreSortBy("Engine")'>Engine @ScoreSortIndicator("Engine")</th>
+            @if (ShowEngineColumn)
+            {
+              <th @onclick='() => ScoreSortBy("Engine")'>Engine @ScoreSortIndicator("Engine")</th>
+            }
             <th @onclick='() => ScoreSortBy("NeuralNet")'>Neural net @ScoreSortIndicator("NeuralNet")</th>
             <th @onclick='() => ScoreSortBy("Perf")'>Perf @ScoreSortIndicator("Perf")</th>
             <th @onclick='() => ScoreSortBy("Accuracy")'>Accuracy @ScoreSortIndicator("Accuracy")</th>
@@ -121,7 +124,10 @@
           @foreach (var item in GetPagedScoreItems())
           {
             <tr>
-              <td>@item.Engine</td>
+              @if (ShowEngineColumn)
+              {
+                <td>@item.Engine</td>
+              }
               <td>@item.NeuralNet</td>
               <td>@item.PlayerRecord.Rating.ToString("F0")</td>
               <td>@(item.TotalNumber > 0 ? ((decimal)item.Correct / item.TotalNumber).ToString("P1") : "N/A")</td>
@@ -184,7 +190,10 @@
           <thead>
             <tr>
               <th>Type</th>
-              <th>Engine</th>
+              @if (ShowEngineColumn)
+              {
+                <th>Engine</th>
+              }
               <th>Neural Net</th>
               <th>Theme</th>
               <th>Nodes</th>
@@ -199,7 +208,10 @@
               var itemId = item.GetHashCode();
               <tr>
                 <td>@item.Type</td>
-                <td>@item.Engine</td>
+                @if (ShowEngineColumn)
+                {
+                  <td>@item.Engine</td>
+                }
                 <td>@item.NeuralNet</td>
                 <td>@(string.IsNullOrEmpty(item.Filter) ? "None" : item.Filter)</td>
                 <td>@item.Nodes</td>
@@ -243,6 +255,7 @@
     private List<Score> ValueScores = new();
     private List<Score> SearchScores = new();
     private List<Score> SolveScores = new();
+    private bool ShowEngineColumn => SettingsService.Settings.ShowPuzzleEngineColumn;
     private string Filter { get; set; } = "";
     int failedNumber = 5;
     int solvedNumber = 5;
@@ -600,7 +613,8 @@
             return sb.ToString();
         }
 
-        int maxEngineWidth = Math.Max("Engine".Length, allScores.Max(s => s.Engine.Length));
+        bool showEng = ShowEngineColumn;
+        int maxEngineWidth = showEng ? Math.Max("Engine".Length, allScores.Max(s => s.Engine.Length)) : 0;
         int maxNeuralNetWidth = Math.Max("Neural net".Length, allScores.Max(s => s.NeuralNet.Length));
         int maxPerfWidth = Math.Max("Perf".Length, allScores.Max(s => s.PlayerRecord.Rating.ToString("F0").Length));
         int maxAccuracyWidth = Math.Max("Accuracy".Length, allScores.Max(s => (s.TotalNumber > 0 ? ((decimal)s.Correct / s.TotalNumber).ToString("P1") : "N/A").Length));
@@ -612,11 +626,12 @@
         int maxKLDWidth = Math.Max("KLD".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => s.AvgKLD > 0 ? s.AvgKLD.ToString("F4").Length : 1) : 1);
         string FormatKLD(Score s) => s.AvgKLD > 0 ? s.AvgKLD.ToString("F4") : "—";
         var sep = "  ";
-        string BaseRow(Score s) => $"{s.Engine.PadRight(maxEngineWidth)}{sep}{s.NeuralNet.PadRight(maxNeuralNetWidth)}{sep}{s.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}{sep}{(s.TotalNumber > 0 ? ((decimal)s.Correct / s.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}{sep}{s.TotalNumber.ToString().PadRight(maxTotalWidth)}{sep}{s.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}{sep}{s.Filter.PadRight(maxThemeWidth)}";
-        string BaseHeader() => $"{"Engine".PadRight(maxEngineWidth)}{sep}{"Neural net".PadRight(maxNeuralNetWidth)}{sep}{"Perf".PadRight(maxPerfWidth)}{sep}{"Accuracy".PadRight(maxAccuracyWidth)}{sep}{"Total".PadRight(maxTotalWidth)}{sep}{"AvgR".PadRight(maxAvgRatingWidth)}{sep}{"Theme".PadRight(maxThemeWidth)}";
+        string engCol(string val) => showEng ? $"{val.PadRight(maxEngineWidth)}{sep}" : "";
+        string BaseRow(Score s) => $"{engCol(s.Engine)}{s.NeuralNet.PadRight(maxNeuralNetWidth)}{sep}{s.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}{sep}{(s.TotalNumber > 0 ? ((decimal)s.Correct / s.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}{sep}{s.TotalNumber.ToString().PadRight(maxTotalWidth)}{sep}{s.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}{sep}{s.Filter.PadRight(maxThemeWidth)}";
+        string BaseHeader() => $"{engCol("Engine")}{"Neural net".PadRight(maxNeuralNetWidth)}{sep}{"Perf".PadRight(maxPerfWidth)}{sep}{"Accuracy".PadRight(maxAccuracyWidth)}{sep}{"Total".PadRight(maxTotalWidth)}{sep}{"AvgR".PadRight(maxAvgRatingWidth)}{sep}{"Theme".PadRight(maxThemeWidth)}";
 
         int sepWidth = 2;
-        int columns = 8;
+        int columns = showEng ? 8 : 7;
         int approximateWidth = maxEngineWidth + maxNeuralNetWidth + maxPerfWidth +
                               maxAccuracyWidth + maxTotalWidth + maxAvgRatingWidth +
                               maxThemeWidth + maxNodesWidth + (columns - 1) * sepWidth;
@@ -890,7 +905,8 @@
                         var boardAm = new Chess.Board();
                         foreach (var item in allScores)
                         {
-                            sw.WriteLine($"\n##Failed puzzles by {item.Engine} (nn:{item.NeuralNet}) - overall performance: {item.PlayerRecord.Rating.ToString("F0")} - Type: {item.Type} - Theme: {item.Filter} - Nodes: {item.Nodes}\n");
+                            var nnSuffix = !string.IsNullOrEmpty(item.NeuralNet) ? $" (nn:{item.NeuralNet})" : "";
+                            sw.WriteLine($"\n##Failed puzzles by {item.Engine}{nnSuffix} - overall performance: {item.PlayerRecord.Rating.ToString("F0")} - Type: {item.Type} - Theme: {item.Filter} - Nodes: {item.Nodes}\n");
                             var sorted = item.FailedPuzzles
                       .Select(tuple =>
                       {

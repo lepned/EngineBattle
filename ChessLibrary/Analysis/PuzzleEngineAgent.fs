@@ -627,8 +627,10 @@ let performValueNetworkTest
             let results = resultsBag.ToArray()
 
             let networkName =
-                if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-                else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+                let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+                if not (String.IsNullOrEmpty engineNet) then engineNet
+                elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+                else ""
 
             //Aggregate results
             let correct = results |> Array.filter (fun r -> r.WasCorrect)
@@ -711,8 +713,10 @@ let performPolicyOrSearchTest
         let results = resultsBag.ToArray()
 
         let networkName =
-            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            if not (String.IsNullOrEmpty engineNet) then engineNet
+            elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else ""
 
         //Aggregate results
         let correct = results |> Array.filter (fun r -> r.WasCorrect)
@@ -799,8 +803,10 @@ let performSolveTest
         let results = resultsBag.ToArray()
 
         let networkName =
-            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            if not (String.IsNullOrEmpty engineNet) then engineNet
+            elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else ""
 
         //Aggregate results
         let correct = results |> Array.filter (fun r -> r.WasCorrect)
@@ -884,8 +890,10 @@ let performPolicyMultiTopNTest
         let allResults = resultsBag.ToArray()
 
         let networkName =
-            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            if not (String.IsNullOrEmpty engineNet) then engineNet
+            elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else ""
 
         let avgRating =
           if allResults.Length = 0 then 0.0
@@ -974,8 +982,10 @@ let performPolicyTopNTest
         let results = resultsBag.ToArray()
 
         let networkName =
-            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            if not (String.IsNullOrEmpty engineNet) then engineNet
+            elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else ""
 
         let correct = results |> Array.filter (fun r -> r.WasCorrect)
         let failed  = results |> Array.filter (fun r -> not r.WasCorrect)
@@ -1064,8 +1074,10 @@ let performValueMultiTopNTest
         let allResults = resultsBag.ToArray()
 
         let networkName =
-            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            if not (String.IsNullOrEmpty engineNet) then engineNet
+            elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else ""
 
         let avgRating =
           if allResults.Length = 0 then 0.0
@@ -1150,8 +1162,10 @@ let performValueTopNTest
         let results = resultsBag.ToArray()
 
         let networkName =
-            if not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
-            else agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+            if not (String.IsNullOrEmpty engineNet) then engineNet
+            elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+            else ""
 
         let correct = results |> Array.filter (fun r -> r.WasCorrect)
         let failed  = results |> Array.filter (fun r -> not r.WasCorrect)

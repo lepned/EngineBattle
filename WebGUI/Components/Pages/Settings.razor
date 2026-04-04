@@ -339,6 +339,13 @@
                 <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => puzzleConfigFolder = v, puzzleConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
             </div>
         </div>
+        <div class="field-group">
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="showPuzzleEngineColumn" />
+                Show Engine Column in Puzzle Results
+            </label>
+            <small>When unchecked, only the neural net column is shown</small>
+        </div>
     </div>
 
 
@@ -374,6 +381,7 @@
     private bool combineWhiteAndBlackMoves = true;
     private int defaultMultiPV = 10;
     private double minPolicyThreshold = 0.05;
+    private bool showPuzzleEngineColumn = true;
 
     private string reviewSearchMode = "Time";
     private int reviewTimePerMove = 1000;
@@ -423,6 +431,7 @@
         combineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves;
         defaultMultiPV = s.DefaultMultiPV;
         minPolicyThreshold = s.MinPolicyThreshold;
+        showPuzzleEngineColumn = s.ShowPuzzleEngineColumn;
         delayBetweenGamesSec = s.DelayBetweenGamesSec;
         moveOverheadMs = s.MoveOverheadMs;
         startupPage = s.StartupPage;
@@ -470,6 +479,7 @@
                 CombineWhiteAndBlackMoves = combineWhiteAndBlackMoves,
                 DefaultMultiPV = defaultMultiPV,
                 MinPolicyThreshold = minPolicyThreshold,
+                ShowPuzzleEngineColumn = showPuzzleEngineColumn,
                 DelayBetweenGamesSec = delayBetweenGamesSec,
                 MoveOverheadMs = moveOverheadMs,
                 StartupPage = startupPage ?? "",
@@ -522,6 +532,7 @@
         combineWhiteAndBlackMoves = defaults.CombineWhiteAndBlackMoves;
         defaultMultiPV = defaults.DefaultMultiPV;
         minPolicyThreshold = defaults.MinPolicyThreshold;
+        showPuzzleEngineColumn = defaults.ShowPuzzleEngineColumn;
         delayBetweenGamesSec = defaults.DelayBetweenGamesSec;
         moveOverheadMs = defaults.MoveOverheadMs;
         startupPage = defaults.StartupPage;

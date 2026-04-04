@@ -58,6 +58,9 @@ public class GlobalSettings
     public int DelayBetweenGamesSec { get; set; } = 20;
     public int MoveOverheadMs { get; set; } = 100;
 
+    // Puzzle display
+    public bool ShowPuzzleEngineColumn { get; set; } = true;
+
     // App behavior
     public string StartupPage { get; set; } = "";
 }
