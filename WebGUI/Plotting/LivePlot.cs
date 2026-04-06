@@ -22,6 +22,16 @@ namespace WebGUI.Plotting
         {
             var start = MoveElements.Count > 0 ? MoveElements[0] : 1;
             var hasData = PlayerWhiteData.Count > 0 || PlayerBlackData.Count > 0;
+
+            // Compute a sensible dtick based on current move span so labels never need to auto-rotate.
+            // Mirrors the logic in chessInterop.js:updateLineEvalChartData.
+            var pointCount = Math.Max(PlayerWhiteData.Count, PlayerBlackData.Count);
+            var span = Math.Max(2, pointCount + 2);
+            var raw = span / 10.0;
+            var niceTicks = new[] { 1, 2, 5, 10, 20, 50, 100 };
+            var dtickValue = niceTicks.FirstOrDefault(n => n >= raw);
+            if (dtickValue == 0) dtickValue = niceTicks[^1];
+
             if (hasData)
                 return new
                 {
@@ -32,7 +42,8 @@ namespace WebGUI.Plotting
                     showzeroline = showZeroline,
                     color = whiteColor,
                     tick0 = 0,
-                    dtick = 1,
+                    dtick = dtickValue,
+                    tickangle = 0,
                     rangemode = "nonnegative",
                 };
             return new
@@ -44,7 +55,8 @@ namespace WebGUI.Plotting
                 showzeroline = showZeroline,
                 color = whiteColor,
                 tick0 = 0,
-                dtick = 1,
+                dtick = dtickValue,
+                tickangle = 0,
                 rangemode = "nonnegative",
                 range = new[] { start - 1, start + 11 },
             };
@@ -305,14 +317,13 @@ namespace WebGUI.Plotting
                     }
                 }
 
-                // FIX: start live updates once both sides have any positive value
+                // Sign-agnostic gate: flip to live-update path as soon as both sides have any data.
+                // The previous Any(e => e > 0) check never tripped in black-winning games (eval is from
+                // white POV, so both traces are entirely <= 0), which kept the chart on the full re-render
+                // path with a static dtick=1, eventually causing Plotly to auto-rotate x-axis labels 90°.
                 if (liveUpdateStarted == false)
                 {
-                    var bothPlayedAMove =
-                        PlayerWhiteData.Count > 0 && PlayerWhiteData.Any(e => e > 0) &&
-                        PlayerBlackData.Count > 0 && PlayerBlackData.Any(e => e > 0);
-
-                    if (bothPlayedAMove)
+                    if (PlayerWhiteData.Count > 0 && PlayerBlackData.Count > 0)
                         liveUpdateStarted = true;
                 }
             }
