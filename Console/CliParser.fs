@@ -31,7 +31,7 @@ type VerbResult =
     | Perft of depth:int * sampleSize:int
     | Analyze of AnalyzeParams
     | Compare of CompareParams
-    | PuzzleJson of path:string
+    | PuzzleJson of path:string * jsonOut:string option
     | Tournament of configFile:string
     | Eret of configFile: string
     | Benchmark of configFile:string
@@ -331,7 +331,20 @@ module CustomParser =
             | "puzzlejson" | "puzzle" | "p" -> // Handle the PuzzleFile verb
                 if index + 1 < args.Length then
                     let puzzleFile = args.[index + 1]
-                    parseArgs args (index + 2) (Verb (PuzzleJson puzzleFile) :: acc)
+                    // Optional flags after the config arg. Currently: --json <path>
+                    // Stops at the first unrecognized flag and lets the outer
+                    // parser handle whatever comes next, preserving existing
+                    // lenient behavior for unknown args.
+                    let mutable i = index + 2
+                    let mutable jsonOut = None
+                    let mutable scanning = true
+                    while scanning && i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--json" when i + 1 < args.Length ->
+                            jsonOut <- Some args.[i + 1]
+                            i <- i + 2
+                        | _ -> scanning <- false
+                    parseArgs args i (Verb (PuzzleJson (puzzleFile, jsonOut)) :: acc)
                 else failwith "Missing parameter for Puzzlejson"
             | "eretjson" | "eret" -> // Handle the eretjson verb
                 if index + 1 < args.Length then

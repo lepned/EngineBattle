@@ -770,10 +770,12 @@ module Program =
     with ex ->
         printfn "Error during comparison: %s" ex.Message
 
-  let runPuzzles (path:string) =
+  let runPuzzles (path:string) (jsonOut: string option) =
+    let startedUtc = DateTime.UtcNow
+    let runStopwatch = System.Diagnostics.Stopwatch.StartNew()
     let data = loadPuzzleConfig (normalizePath path)
     let normalizedPath = normalizePath data.PuzzleFile
-    printfn "Processing Lichess puzzle file: %s" path   
+    printfn "Processing Lichess puzzle file: %s" path
     let engineConfigs = 
         data.Engines 
         |> Seq.collect (mapToEngPuzzleConfig data.EngineFolder)
@@ -980,9 +982,32 @@ module Program =
         let tableFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.txt")
         //let tableFileName = Path.Combine(escaped, $"LichessPuzzleScore_{datePart}.txt")
         use tableWriter = new StreamWriter(tableFileName)
-        tableWriter.WriteLine(table)    
-  
-  let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensions.Logging.ILogger) =    
+        tableWriter.WriteLine(table)
+
+    // Optional structured JSON output for external tooling (e.g. Python tuner).
+    // See Console/PuzzleJsonSchema.md for the public schema contract.
+    match jsonOut with
+    | Some out ->
+        try
+            let result =
+                PuzzleJsonOutput.buildResult
+                    normalizedPath
+                    puzzles.Length
+                    data.SampleSize
+                    data.MinRating
+                    data.MaxRating
+                    data.PuzzleFilter
+                    data.RatingGroups
+                    startedUtc
+                    runStopwatch.Elapsed.TotalSeconds
+                    scores
+            PuzzleJsonOutput.writeToFile out result
+            printfn "  JSON results written: %s" out
+        with ex ->
+            RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON results to {out}: {ex.Message}"
+    | None -> ()
+
+  let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensions.Logging.ILogger) =
     let cts = new CancellationTokenSource()
     let exitEvent = new ManualResetEvent(false)
     Console.CancelKeyPress.Add(fun args ->
@@ -1197,8 +1222,8 @@ module Program =
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
-                | Verb (PuzzleJson path) -> 
-                    runPuzzles path          
+                | Verb (PuzzleJson (path, jsonOut)) ->
+                    runPuzzles path jsonOut
                 | Verb (Eret path) ->                     
                     runEretTest path
                 | Verb (Tournament configFile) ->
@@ -1313,7 +1338,9 @@ module Program =
                     printfn ""
                     printfn "Commands:"
                     printfn "  tournamentjson, tournament, t <config>  Run a tournament from JSON config"
-                    printfn "  puzzlejson, puzzle, p <config>          Run puzzle evaluation from JSON config"
+                    printfn "  puzzlejson, puzzle, p <config> [--json <path>]"
+                    printfn "                                          Run puzzle evaluation from JSON config"
+                    printfn "                                          --json <path>: write structured results JSON for tooling"
                     printfn "  eretjson, eret <config>                 Run ERET evaluation from JSON config"
                     printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
                     printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
