@@ -770,7 +770,7 @@
 
                 var concurrency = concurrencyOverride > 0 ? concurrencyOverride : data.Concurrency;
                 var puzzleInput = TypesDef.PuzzleInput.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
-                                  engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, concurrency);
+                                  engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, concurrency, data.IncludeFailedPuzzles);
 
                 var types = string.IsNullOrWhiteSpace(data.Type)
             ? new List<string>()

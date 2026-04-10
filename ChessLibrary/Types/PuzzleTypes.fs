@@ -35,7 +35,8 @@ module PuzzleTypes =
             FailedPuzzlesOutputFolder: string
             Failed: int
             Solved: int
-            mutable Concurrency: int    }
+            mutable Concurrency: int
+            IncludeFailedPuzzles: bool  }
 
     type EretConfig = {
         EngineFolder: string
@@ -243,6 +244,13 @@ module PuzzleTypes =
         ValueHead: bool
         Policy: string
         KLD: float
+        // Engine's rank (1-indexed) of the correct move at the puzzle command that
+        // produced KLD. 0 = no rank data (e.g. classical engine, no policy probed,
+        // value puzzles, solve test). Used for the rank-weighted KLD aggregate
+        // metric: only puzzles with EngineRank > 0 contribute to AvgRankWeightedKld.
+        EngineRank: int
+        MarginLoss: float
+        ValueLoss: float
       }
 
     type Score =
@@ -259,7 +267,18 @@ module PuzzleTypes =
         Nodes: int
         WithHistory: bool
         Type: string
-        AvgKLD: float }
+        AvgKLD: float
+        // Weighted avg of per-puzzle KLD using 1/engineRank as weight, over all
+        // puzzles with EngineRank > 0. 0.0 for non-policy tests. See PuzzleJsonSchema.md.
+        AvgRankWeightedKld: float
+        // Frontier-weighted KLD: peaks at rank 2-3 (near-misses), low at rank 1
+        // (already solved) and rank 6+ (too far). Targets accuracy/Elo frontier.
+        AvgFrontierKld: float
+        // Margin loss: -log(P_correct / (P_correct + P_best_competitor)).
+        // Measures how decisively the engine prefers the correct move over alternatives.
+        AvgMarginLoss: float
+        // Value head loss: |Q - expected_Q| from puzzle themes. Solved puzzles only.
+        AvgValueLoss: float }
         with
           static member empty =
             { Engine = ""
@@ -275,7 +294,11 @@ module PuzzleTypes =
               Nodes = 0
               WithHistory = false
               Type = ""
-              AvgKLD = 0.0 }
+              AvgKLD = 0.0
+              AvgRankWeightedKld = 0.0
+              AvgFrontierKld = 0.0
+              AvgMarginLoss = 0.0
+              AvgValueLoss = 0.0 }
 
     type Lichess =
       | PuzzleResult of Score

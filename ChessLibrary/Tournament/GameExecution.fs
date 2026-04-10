@@ -128,9 +128,11 @@ let playWithPondering
   let mutable moveInfoData = ChessMoveInfo.Empty
 
   callback(StartOfGame gameStartInfo)
-  let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
-  player1.AddSetOption engineOption
-  player2.AddSetOption engineOption
+  // Always send UCI_Chess960 so EB is authoritative about the variant,
+  // overriding any misconfigured engine.json setting.
+  let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+  player1.AddSetOption chess960Option
+  player2.AddSetOption chess960Option
   if tourny.MoveOverhead.Ticks > 0 then
       let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
       player1.SetMoveOverhead("overhead", ms)
@@ -642,11 +644,15 @@ let playGeneric
   let mutable moveInfoData = ChessMoveInfo.Empty
 
   callback(StartOfGame gameStartInfo)
+  
   if not skipEngineInit then
     try
-        let engineOption : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
-        player1.AddSetOption engineOption
-        player2.AddSetOption engineOption
+        // Send UCI_Chess960 so EB is authoritative about the variant,
+        // overriding any misconfigured engine.json.
+        let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+        player1.AddSetOption chess960Option
+        player2.AddSetOption chess960Option
+        
         if tourny.MoveOverhead.Ticks > 0 then
             let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
             player1.SetMoveOverhead("overhead", ms)

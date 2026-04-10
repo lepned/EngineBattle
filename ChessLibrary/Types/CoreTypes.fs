@@ -928,9 +928,10 @@ module TypesDef =
         nodes: string
         failed: int
         solved: int
-        NumberOfPuzzlesInParallel: int }
+        NumberOfPuzzlesInParallel: int
+        IncludeFailedPuzzles: bool }
       with
-        static member Create (puzzleData, maxRating, minRating, ratingGroup, puzzleFilter, engineConfigs, iterations, sampleSize, nodes, failed, solved, concurrency) =
+        static member Create (puzzleData, maxRating, minRating, ratingGroup, puzzleFilter, engineConfigs, iterations, sampleSize, nodes, failed, solved, concurrency, ?includeFailedPuzzles) =
           { puzzleData = puzzleData
             maxRating = maxRating
             minRating = minRating
@@ -942,4 +943,5 @@ module TypesDef =
             nodes = nodes
             failed = failed
             solved = solved
-            NumberOfPuzzlesInParallel = concurrency }
+            NumberOfPuzzlesInParallel = concurrency
+            IncludeFailedPuzzles = defaultArg includeFailedPuzzles false }

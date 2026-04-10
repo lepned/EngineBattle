@@ -64,12 +64,18 @@ The fields **always** emitted as integers (no float ambiguity) are: `schemaVersi
 | `playerRating` | float | Glicko-derived rating of the engine on this row's puzzles. |
 | `playerDeviation` | float | Glicko rating deviation. |
 | `playerVolatility` | float | Glicko volatility. |
-| `avgKLD` | float | Average Kullback-Leibler divergence between the engine's policy distribution and the correct-move target. **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
+| `avgKLD` | float | Cross-entropy of the engine's policy distribution against the puzzle's one-hot correct-move target, averaged over solved puzzles only. The per-puzzle metric is `-log(P_engine(correct_move))` (despite the historical "KLD" name, it's a cross-entropy on a one-hot target — the information content comes from the engine's distribution being shaped by softmax over all legal moves). **Lower is better.** Only meaningful for policy-type rows (`Policy`, `pTopN`); `0.0` otherwise. |
+| `avgRankWeightedKld` | float | Rank-weighted aggregate of per-puzzle cross-entropy using `1/rank` weights. Respects the `IncludeFailedPuzzles` config flag (solved-only by default, all puzzles when true). **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
 | `withHistory` | bool | Whether the engine was given prior moves as history (Lc0/Ceres only). |
 
 ## Recommended scalar signal for optimizers
 
-For black-box optimization (SPSA, BO, etc.) using policy-type results, **prefer `avgKLD` over `accuracy`** as the per-iteration scalar signal. KLD is continuous in the network's policy distribution and produces measurable per-step deltas even for tiny weight perturbations; top-1 `accuracy` is a step function and frequently produces zero gradient signal for small changes.
+For black-box optimization (SPSA, BO, etc.) using policy-type results, **prefer `avgKLD` or `avgRankWeightedKld` over `accuracy`** as the per-iteration scalar signal. Both metrics are continuous in the network's policy distribution and produce measurable per-step deltas even for tiny weight perturbations; top-1 `accuracy` is a step function and frequently produces zero gradient signal for small changes.
+
+Choosing between `avgKLD` and `avgRankWeightedKld`:
+
+- **`avgKLD`** is the historical metric. Averages the per-puzzle cross-entropy over solved puzzles only, with no rank weighting. Treats all solved puzzles equally regardless of how confidently the engine ranked the correct move.
+- **`avgRankWeightedKld`** is the search-relevance-aware variant. Includes all puzzles, weights by `1/rank`. Prioritizes optimization on puzzles where the engine already places the correct move at high rank (the moves search will actually visit). Improvements on these puzzles translate more directly to play strength than improvements on puzzles where the correct move is buried at rank 15+ (which search would never visit anyway). Recommended for policy SPSA when the goal is Elo gain rather than overall puzzle accuracy.
 
 ## Example output
 
@@ -102,6 +108,7 @@ For black-box optimization (SPSA, BO, etc.) using policy-type results, **prefer 
       "playerDeviation": 51.7,
       "playerVolatility": 0.06,
       "avgKLD": 0.4127,
+      "avgRankWeightedKld": 0.3415,
       "withHistory": false
     }
   ]
@@ -128,11 +135,16 @@ def primary_signal(data: dict, score_type: str = "Policy") -> dict:
     total   = sum(r["totalNumber"] for r in rows)
     correct = sum(r["correct"]     for r in rows)
     avg_kld = sum(r["avgKLD"] * r["totalNumber"] for r in rows) / total
+    # avgRankWeightedKld is additive — fall back to 0.0 for older puzzlejson outputs
+    avg_rank_wt_kld = sum(
+        r.get("avgRankWeightedKld", 0.0) * r["totalNumber"] for r in rows
+    ) / total
     return {
-        "accuracy": correct / total,
-        "kld":      avg_kld,
-        "elo":      rows[0]["playerRating"],
-        "n":        total,
+        "accuracy":         correct / total,
+        "kld":              avg_kld,
+        "rank_weighted_kld": avg_rank_wt_kld,
+        "elo":              rows[0]["playerRating"],
+        "n":                total,
     }
 ```
 

@@ -30,7 +30,19 @@ let private mkScore
       Nodes = nodes
       WithHistory = false
       Type = typ
-      AvgKLD = avgKLD }
+      AvgKLD = avgKLD
+      AvgRankWeightedKld = 0.0
+      AvgFrontierKld = 0.0
+      AvgMarginLoss = 0.0
+      AvgValueLoss = 0.0 }
+
+/// Helper that lets a test set both AvgKLD and AvgRankWeightedKld.
+let private mkScoreWithRankWtKld
+    (engine: string) (net: string) (typ: string) (nodes: int)
+    (correct: int) (total: int) (avgKLD: float) (avgRankWtKld: float)
+    (playerRating: float) : Score =
+    { mkScore engine net typ nodes correct total avgKLD playerRating with
+        AvgRankWeightedKld = avgRankWtKld }
 
 let private fixedStartedUtc = DateTime(2026, 4, 8, 19, 23, 45, DateTimeKind.Utc)
 
@@ -96,17 +108,46 @@ let ``buildResult clamps NaN and Infinity floats to zero`` () =
     let s =
         { mkScore "Eng" "" "Policy" 1 1 1 0.0 0.0 with
             AvgKLD = Double.NaN
+            AvgRankWeightedKld = Double.PositiveInfinity
             RatingAvg = Double.PositiveInfinity
             PlayerRecord = mkPlayer Double.NegativeInfinity Double.NaN Double.PositiveInfinity }
     let result =
         buildResult "p.csv" 0 0 0 0 "" "" fixedStartedUtc Double.NaN [ s ]
     let entry = result.Scores.[0]
     Assert.Equal(0.0, entry.AvgKLD)
+    Assert.Equal(0.0, entry.AvgRankWeightedKld)
     Assert.Equal(0.0, entry.RatingAvg)
     Assert.Equal(0.0, entry.PlayerRating)
     Assert.Equal(0.0, entry.PlayerDeviation)
     Assert.Equal(0.0, entry.PlayerVolatility)
     Assert.Equal(0.0, result.ElapsedSeconds)
+
+[<Fact>]
+let ``buildResult preserves AvgRankWeightedKld through to entry`` () =
+    let s =
+        mkScoreWithRankWtKld "Ceres" "C3-384" "Policy" 1 372 500
+            (* avgKLD *) 0.4127
+            (* avgRankWtKld *) 0.3415
+            (* playerRating *) 2104.2
+    let result =
+        buildResult "p.csv" 1000 500 0 3500 "" "" fixedStartedUtc 1.0 [ s ]
+    let entry = result.Scores.[0]
+    Assert.Equal(0.4127, entry.AvgKLD, 6)
+    Assert.Equal(0.3415, entry.AvgRankWeightedKld, 6)
+
+[<Fact>]
+let ``serialize emits avgRankWeightedKld in camelCase JSON`` () =
+    let s =
+        mkScoreWithRankWtKld "Eng" "Net" "Policy" 1 4 5 0.123 0.087 2000.0
+    let result =
+        buildResult "p.csv" 100 5 0 3500 "" "" fixedStartedUtc 1.0 [ s ]
+    let json = serialize result
+    use doc = JsonDocument.Parse(json)
+    let entry =
+        doc.RootElement
+            .GetProperty("scores").[0]
+    Assert.Equal(0.123, entry.GetProperty("avgKLD").GetDouble(), 6)
+    Assert.Equal(0.087, entry.GetProperty("avgRankWeightedKld").GetDouble(), 6)
 
 [<Fact>]
 let ``buildResult normalizes null strings to empty`` () =

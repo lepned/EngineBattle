@@ -40,6 +40,14 @@ type PuzzleScoreEntry =
       PlayerDeviation: float
       PlayerVolatility: float
       AvgKLD: float
+      // Weighted avg of per-puzzle KLD using 1/engineRank. 0.0 for non-policy tests.
+      AvgRankWeightedKld: float
+      // Frontier-weighted KLD: peaks at rank 2-3, low at rank 1 and 6+.
+      AvgFrontierKld: float
+      // Margin loss: pairwise comparison of P_correct vs P_best_competitor.
+      AvgMarginLoss: float
+      // Value head loss: |Q - expected_Q| from puzzle themes. Solved puzzles only.
+      AvgValueLoss: float
       WithHistory: bool }
 
 /// Top-level JSON document.
@@ -83,6 +91,10 @@ let toEntry (s: Score) : PuzzleScoreEntry =
       PlayerDeviation = safeFinite s.PlayerRecord.Deviation
       PlayerVolatility = safeFinite s.PlayerRecord.Volatility
       AvgKLD = safeFinite s.AvgKLD
+      AvgRankWeightedKld = safeFinite s.AvgRankWeightedKld
+      AvgFrontierKld = safeFinite s.AvgFrontierKld
+      AvgMarginLoss = safeFinite s.AvgMarginLoss
+      AvgValueLoss = safeFinite s.AvgValueLoss
       WithHistory = s.WithHistory }
 
 let private getEbVersion () =

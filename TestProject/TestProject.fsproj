@@ -26,6 +26,7 @@
 		<Compile Include="GpuAssignmentTests.fs" />
 		<Compile Include="SolvePuzzleTests.fs" />
 		<Compile Include="PuzzleJsonOutputTests.fs" />
+		<Compile Include="PuzzleLossMetricTests.fs" />
 		<Compile Include="GameAccuracyAnalysisTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>

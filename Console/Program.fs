@@ -798,7 +798,8 @@ module Program =
             data.Nodes,
             data.Failed,
             data.Solved,
-            data.Concurrency   )
+            data.Concurrency,
+            data.IncludeFailedPuzzles )
 
     let update (res: Lichess) =
         match res with

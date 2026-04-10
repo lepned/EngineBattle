@@ -397,7 +397,8 @@
             globalNodes,
             NormalizePath(failedFolder),
             failed, solved,
-            concurrency
+            concurrency,
+            false
         );
 
         return JsonSerializer.Serialize(config, JsonOpts);
