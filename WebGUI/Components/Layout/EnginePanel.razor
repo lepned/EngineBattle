@@ -1800,14 +1800,14 @@
             .Add(ModKey.Ctrl, Key.q, (Func<Task>)(async () => await DoQAnalysis()), "check Q-rank")
             .Add(ModCode.Ctrl | ModCode.Alt, Code.P, (() => CheckAllGamesAnalysis()), "check all games policy")
             .Add(ModCode.Ctrl | ModCode.Alt, Code.Q, (Func<Task>)(async () => await CheckAllGamesQAnalysis()), "check all games Q-rank")
-            .Add(Key.F1, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1; await Analyze(); })), "Analyze 1 node")
-            .Add(Key.F2, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000; await Analyze(); })), "Analyze 1_000 nodes")
-            .Add(Key.F3, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 10_000; await Analyze(); })), "Analyze 10_000 nodes")
-            .Add(Key.F4, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 100_000; await Analyze(); })), "Analyze 100_000 nodes")
-            .Add(Key.F5, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000_000; await Analyze(); })), "Analyze 1_000_000 nodes")
-            .Add(Key.F6, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 10_000_000; await Analyze(); })), "Analyze 10_000_000 nodes")
-            .Add(Key.F7, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 100_000_000; await Analyze(); })), "Analyze 100_000_000 nodes")
-            .Add(Key.F8, (Func<Task>)(async () => await InvokeAsync(async () => { numberOfNodes = 1_000_000_000; await Analyze(); })), "Analyze 1_000_000_000 nodes");
+            .Add(Key.F1, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 1; await Analyze(); })), "Analyze 1 node")
+            .Add(Key.F2, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 1_000; await Analyze(); })), "Analyze 1_000 nodes")
+            .Add(Key.F3, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 10_000; await Analyze(); })), "Analyze 10_000 nodes")
+            .Add(Key.F4, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 100_000; await Analyze(); })), "Analyze 100_000 nodes")
+            .Add(Key.F5, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 1_000_000; await Analyze(); })), "Analyze 1_000_000 nodes")
+            .Add(Key.F6, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 10_000_000; await Analyze(); })), "Analyze 10_000_000 nodes")
+            .Add(Key.F7, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 100_000_000; await Analyze(); })), "Analyze 100_000_000 nodes")
+            .Add(Key.F8, (Func<Task>)(async () => await InvokeAsync(async () => { searchMode = SearchMode.Nodes; numberOfNodes = 1_000_000_000; await Analyze(); })), "Analyze 1_000_000_000 nodes");
 
         return base.OnInitializedAsync();
     }

@@ -212,24 +212,30 @@ let findEngineRank (allNNValues: EngineTypes.NNValues list) (correctMove: string
     |> Option.map (fun i -> i + 1)
     |> Option.defaultValue 0
 
-/// Weighted average of KLD values using 1/rank as weight. Items with rank <= 0 are excluded.
+/// Weighted average of KLD values using 1/rank as weight.
+/// rank <= 0 (correct move not in the returned policy list) is folded in at
+/// effective rank 30 so the worst puzzles still contribute a gradient signal
+/// without dominating the mean.
 let computeRankWeightedKld (items: seq<float * int>) =
+    let beyondTopNRank = 30
     let mutable wSum = 0.0
     let mutable wKldSum = 0.0
     for (kld, rank) in items do
-        if rank > 0 then
-            let w = 1.0 / float rank
-            wSum <- wSum + w
-            wKldSum <- wKldSum + w * kld
+        let effectiveRank = if rank > 0 then rank else beyondTopNRank
+        let w = 1.0 / float effectiveRank
+        wSum <- wSum + w
+        wKldSum <- wKldSum + w * kld
     if wSum > 0.0 then wKldSum / wSum else 0.0
 
-/// Frontier-weighted KLD: weights peak at rank 2-3 (near-misses the engine almost solves),
-/// low weight at rank 1 (already correct) and rank 6+ (too far to flip with small changes).
-/// Targets the accuracy/Elo frontier where small policy improvements translate to actual
-/// move-selection changes under search. Items with rank <= 0 are excluded.
+/// Frontier-weighted KLD: weights peak at rank 2-3 (near-misses), low at rank 1
+/// (already solved) and rank 6+ (too far to flip). Targets the accuracy/Elo
+/// frontier where small policy improvements translate to move-selection changes.
+/// rank <= 0 (correct move not in the returned list) gets the same 0.02 floor
+/// as rank 11+, so worst-case puzzles contribute a small but nonzero weight.
 let computeFrontierWeightedKld (items: seq<float * int>) =
     let frontierWeight rank =
         match rank with
+        | r when r <= 0 -> 0.02  // correct move beyond top-N, same floor as deep ranks
         | 1 -> 0.3
         | 2 -> 1.0
         | 3 -> 0.8
@@ -240,10 +246,9 @@ let computeFrontierWeightedKld (items: seq<float * int>) =
     let mutable wSum = 0.0
     let mutable wKldSum = 0.0
     for (kld, rank) in items do
-        if rank > 0 then
-            let w = frontierWeight rank
-            wSum <- wSum + w
-            wKldSum <- wKldSum + w * kld
+        let w = frontierWeight rank
+        wSum <- wSum + w
+        wKldSum <- wKldSum + w * kld
     if wSum > 0.0 then wKldSum / wSum else 0.0
 
 /// Margin loss: -log(P_correct / (P_correct + P_best_competitor)).
@@ -265,11 +270,26 @@ let computeMarginLoss (allNNValues: EngineTypes.NNValues list) (correctMove: str
             | _ -> 0.01
         -log(correctP / (correctP + competitorP))
 
-/// Value head loss: one-sided quadratic penalty when Q is below the theme's threshold.
-/// Only penalizes UNDER-evaluation, not over (Q=0.9 on a crushing position is fine).
-/// Uses max(0, threshold - Q)² so bigger misses get disproportionately more loss.
-/// Equality is special: penalizes |Q| being far from zero in either direction.
-/// Only meaningful for SOLVED puzzles. Returns -1.0 sentinel for unsolved.
+/// Aggregated margin loss, weighted by solved status. Unsolved puzzles get
+/// `unsolvedWeight` x the weight of solved ones (default 2.0), amplifying the
+/// SPSA signal from puzzles the engine currently gets wrong. Degenerates to
+/// uniform mean when all puzzles share the same status. Replaced the old
+/// uniform average on 2026-04-11.
+let computeWeightedMarginLoss (items: seq<float * bool>) (unsolvedWeight: float) =
+    let mutable num = 0.0
+    let mutable den = 0.0
+    for (margin, solved) in items do
+        let w = if solved then 1.0 else unsolvedWeight
+        num <- num + w * margin
+        den <- den + w
+    if den > 0.0 then num / den else 0.0
+
+/// Value head loss: one-sided quadratic penalty when Q is below the theme
+/// threshold (mate 0.95, winning 0.85). No penalty for Q above threshold —
+/// more confidence on winning positions is always fine. Equality is two-sided
+/// with a ±0.3 dead zone around zero. Solved puzzles only (returns -1.0 sentinel
+/// when unsolved, caller filters these out). Thresholds calibrated 2026-04-11
+/// against manual Ceres testing at low node counts.
 let computeValueLoss (allNNValues: EngineTypes.NNValues list) (correctMove: string) (themes: string) (wasSolved: bool) =
     if not wasSolved || allNNValues.IsEmpty then -1.0  // sentinel: exclude from aggregation
     else
@@ -284,10 +304,12 @@ let computeValueLoss (allNNValues: EngineTypes.NNValues list) (correctMove: stri
             gap * gap
         else
             // Winning puzzles: one-sided, only penalize Q below threshold.
+            // Zero loss once Q >= threshold regardless of how much higher.
             let threshold =
-                if t.Contains("mate") then 0.9
-                elif t.Contains("crushing") then 0.7
-                else 0.3  // "advantage" or untagged
+                if t.Contains("mate") then 0.95
+                elif t.Contains("crushing") then 0.85
+                elif t.Contains("advantage") then 0.85
+                else 0.85  // untagged — treat as completely winning
             let gap = max 0.0 (threshold - q)
             gap * gap
 
@@ -984,11 +1006,13 @@ let performPolicyMultiTopNTest
             // includeFailedPuzzles — the frontier is defined by rank, not solved status.
             let avgFrontierKld =
               computeFrontierWeightedKld (allResults |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
-            // Margin loss uses ALL puzzles regardless of includeFailedPuzzles —
-            // it measures policy confidence at the decision boundary, not solve status.
+            // Margin loss uses all puzzles (solved + failed), weighted 2x on
+            // unsolved. Solved status is per-puzzle top-1 correctness.
             let avgMarginLoss =
-              if allResults.Length = 0 then 0.0
-              else allResults |> Array.averageBy (fun (_, _, ml, _, _, _) -> ml)
+              computeWeightedMarginLoss
+                (allResults |> Seq.map (fun (_, _, ml, _, _, correctPerTopN) ->
+                    ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
+                2.0
             // Value loss: |Q - expected_Q| from puzzle themes, solved puzzles only (vl >= 0).
             let validValueLosses = allResults |> Array.choose (fun (_, _, _, _, vl, _) -> if vl >= 0.0 then Some vl else None)
             let avgValueLoss =

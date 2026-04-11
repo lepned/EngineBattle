@@ -645,13 +645,13 @@ let playGeneric
 
   callback(StartOfGame gameStartInfo)
   
+  // Send UCI_Chess960 so EB is authoritative about the variant,
+  // overriding any misconfigured engine.json.
+  let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+  player1.AddSetOption chess960Option
+  player2.AddSetOption chess960Option
   if not skipEngineInit then
     try
-        // Send UCI_Chess960 so EB is authoritative about the variant,
-        // overriding any misconfigured engine.json.
-        let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
-        player1.AddSetOption chess960Option
-        player2.AddSetOption chess960Option
         
         if tourny.MoveOverhead.Ticks > 0 then
             let ms = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds |> int
