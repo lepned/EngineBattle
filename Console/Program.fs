@@ -838,6 +838,7 @@ module Program =
                     match t with
                     | "policy" -> [ PuzzleEngineAgent.SubTest.Policy ]
                     | "value"  -> [ PuzzleEngineAgent.SubTest.Value ]
+                    | "policyvalue" | "dual" -> [ PuzzleEngineAgent.SubTest.PolicyValue ]
                     | "search" -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Search
                     | "solve"  -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Solve
                     | t when t.StartsWith("policytop") ->

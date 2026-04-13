@@ -806,6 +806,10 @@
                                     case "value":
                                         subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.Value);
                                         break;
+                                    case "policyvalue":
+                                    case "dual":
+                                        subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.PolicyValue);
+                                        break;
                                     case "search":
                                         foreach (var n in nodeList)
                                             subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewSearch(n));

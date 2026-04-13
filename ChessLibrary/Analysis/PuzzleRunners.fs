@@ -64,6 +64,14 @@ let runValueAndPolicyHeadTest
   let testTypes = [ Value; Policy ]
   runTest input callback testTypes ct
 
+/// Policy + Value combo (single engine init, both heads evaluated on same engine)
+let runPolicyValueComboTest
+    (input    : PuzzleInput,
+     callback : Action<Lichess>,
+     ct       : CancellationToken)
+  =
+  runTest input callback [ PolicyValue ] ct
+
 /// Value + Search
 let runValueAndSearchTest
     (input    : PuzzleInput,

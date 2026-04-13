@@ -47,6 +47,9 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                         reply.Reply []
                     | ValueTopNEval (_, reply) ->
                         reply.Reply ("", [])
+                    | BestMoveValueHead (cmd, reply) ->
+                        let mv = bestQPuzzleValueOnly engine cmd
+                        reply.Reply mv
                     | SolvePuzzle (_, reply) ->
                         reply.Reply ("", "", ResizeArray())
                     | Network reply ->
@@ -60,6 +63,7 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                     | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
                     | EvalAllMovesValue (_, reply) -> reply.Reply []
                     | ValueTopNEval (_, reply) -> reply.Reply ("", [])
+                    | BestMoveValueHead (_, reply) -> reply.Reply ""
                     | SolvePuzzle (_, reply) -> reply.Reply ("", "", ResizeArray())
                     | NewGame reply -> reply.Reply()
                     | Ok reply -> reply.Reply(false)
@@ -133,6 +137,9 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
                 | ValueTopNEval (cmd, reply) ->
                     let mv, allNNValues = bestMoveAllPoliciesWithLegalMoveNodes engine cmd.Command
                     reply.Reply (mv, allNNValues)
+                | BestMoveValueHead (cmd, reply) ->
+                    let mv = bestQPuzzleValueOnly engine cmd
+                    reply.Reply mv
                 | SolvePuzzle (cmd, reply) ->
                     let bm, pv, nnValues = solvePuzzleSearch nodes engine cmd
                     reply.Reply (bm, pv, nnValues)
@@ -147,6 +154,7 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
                 | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
                 | EvalAllMovesValue (_, reply) -> reply.Reply []
                 | ValueTopNEval (_, reply) -> reply.Reply ("", [])
+                | BestMoveValueHead (_, reply) -> reply.Reply ""
                 | SolvePuzzle (_, reply) -> reply.Reply ("", "", ResizeArray())
                 | NewGame reply -> reply.Reply()
                 | Ok reply -> reply.Reply(false)
@@ -1234,9 +1242,229 @@ let performValueTopNTest
         shutdownAgents agents
 
 
+// Per-puzzle value-head workflow using BestMoveValueHead (for combo agent)
+let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzleData) = async {
+    do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
+    let board = Board()
+    let mutable correct    = true
+    let mutable movePlayed = ""
+    let mutable failedMove = ""
+
+    for cmd in puzzle.Commands do
+      if correct then
+        let! mv = agent.PostAndAsyncReply(fun ch -> BestMoveValueHead(cmd, ch))
+        movePlayed <- mv
+        let mutable solved = cmd.CorrectMove = mv
+        if not solved then
+          failedMove <- cmd.CorrectMove
+          board.PlayCommands cmd.Command
+          board.PlayUciMove mv
+          solved <- not (board.AnyLegalMove())
+        correct <- solved
+
+    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = movePlayed} else el) |> Seq.toList
+    let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }
+    return
+      { PuzzleData = puzzleWithMove
+        WasCorrect = correct
+        MovePlayed = movePlayed
+        FailedMove = failedMove
+        ValueHead = true
+        Policy = ""
+        KLD = 0.0
+        EngineRank = 0
+        MarginLoss = 0.0
+        ValueLoss = 0.0
+      }
+  }
+
+// Combo test: runs policy AND value evaluation on the SAME engine instance.
+// Creates one set of policy agents, runs policy evaluation first, then value
+// evaluation second, and shuts down only once. Saves engine init overhead
+// compared to running performPolicyMultiTopNTest + performValueNetworkTest
+// which each create separate engine instances.
+let performPolicyValueTest
+  (engineCfg:EngineConfig)
+  (puzzles:CsvPuzzleData[])
+  (theme:string)
+  (concurrency : int)
+  (includeFailedPuzzles : bool)
+  (onProgress: int -> unit)
+  (ct: CancellationToken) : Score list =
+
+    let concurrency = max 1 concurrency
+    let agents =
+        [| for _ in 1 .. concurrency do
+            startPolicyEngineAgent engineCfg 1 |]
+
+    try
+        let ok = agents |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Ok ch)) |> Async.Parallel |> Async.RunSynchronously
+        if ok |> Array.exists (fun x -> not x) then
+            []
+        else
+            let networkName =
+                let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
+                if not (String.IsNullOrEmpty engineNet) then engineNet
+                elif not (String.IsNullOrEmpty engineCfg.NetworkPath) then engineCfg.NetworkPath
+                else ""
+
+            let total = puzzles.Length
+            let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
+
+            // ---- Pass 1: Policy evaluation ----
+            printfn "Starting combo policy+value test with %d concurrent agents..." concurrency
+            printfn "  Pass 1/2: Policy evaluation..."
+            let puzzleCh = Channel.CreateUnbounded<CsvPuzzleData>()
+            for p in puzzles do puzzleCh.Writer.TryWrite(p) |> ignore
+            puzzleCh.Writer.Complete()
+
+            let mutable processedCount = 0
+            let policyResultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * Map<int, bool>>()
+            let policyWorker (agent: MailboxProcessor<EngineMsg>) = async {
+                let mutable keepGoing = true
+                while keepGoing && not ct.IsCancellationRequested do
+                    let ok, puzzle = puzzleCh.Reader.TryRead()
+                    if ok then
+                        let! result = runPuzzleViaAgentMultiTopN agent [1] puzzle
+                        policyResultsBag.Add(result)
+                        let count = Interlocked.Increment(&processedCount)
+                        if count % 10 = 0 || count = total then onProgress count
+                    else
+                        keepGoing <- false
+            }
+
+            [| for agent in agents -> policyWorker agent |]
+            |> Async.Parallel
+            |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
+            |> ignore
+
+            let policyResults = policyResultsBag.ToArray()
+
+            // Build Policy Score
+            let avgRating =
+              if policyResults.Length = 0 then 0.0
+              else policyResults |> Array.averageBy (fun (p, _, _, _, _, _) -> p.Rating)
+
+            let correct = policyResults |> Array.filter (fun (_, _, _, _, _, m) -> m.[1])
+            let failed  = policyResults |> Array.filter (fun (_, _, _, _, _, m) -> not m.[1])
+            let kldSource = if includeFailedPuzzles then policyResults else correct
+            let avgKLD =
+              if kldSource.Length = 0 then 0.0
+              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _) -> kld)
+            let avgRankWeightedKld =
+              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
+            let avgFrontierKld =
+              computeFrontierWeightedKld (policyResults |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
+            let avgMarginLoss =
+              computeWeightedMarginLoss
+                (policyResults |> Seq.map (fun (_, _, ml, _, _, correctPerTopN) ->
+                    ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
+                2.0
+            let validValueLosses = policyResults |> Array.choose (fun (_, _, _, _, vl, _) -> if vl >= 0.0 then Some vl else None)
+            let avgValueLoss =
+              if validValueLosses.Length = 0 then 0.0
+              else validValueLosses |> Array.average
+            let pw, pd, pl = correct.Length, 0, failed.Length
+            let diffElo = EloCalculator.eloDiffWDL pw pd pl
+            let error   = EloCalculator.calculateEloError pw pd pl
+            let perf    = avgRating + diffElo
+            printfn "\nPolicy rating performance: %.0f (avg %.0f + Δ%.0f) Theme: %s  AvgKLD: %.4f" perf avgRating diffElo theme avgKLD
+            let policyScore =
+                {
+                  Engine = engineCfg.Name
+                  NeuralNet = networkName
+                  TotalNumber = policyResults.Length
+                  Correct = pw
+                  Wrong = pl
+                  RatingAvg = avgRating
+                  Filter = if theme.Trim() = "" then "none" else theme.Trim()
+                  PlayerRecord = {Rating = perf; Deviation = error; Volatility = 0.0}
+                  FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _) -> p, ""))
+                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _) -> p))
+                  Nodes = 1
+                  WithHistory = false
+                  Type = "Policy"
+                  AvgKLD = avgKLD
+                  AvgRankWeightedKld = avgRankWeightedKld
+                  AvgFrontierKld = avgFrontierKld
+                  AvgMarginLoss = avgMarginLoss
+                  AvgValueLoss = avgValueLoss
+                }
+
+            // ---- Pass 2: Value evaluation (same agents, same engine) ----
+            if ct.IsCancellationRequested then [policyScore]
+            else
+                printfn "  Pass 2/2: Value evaluation..."
+                // Reset agents for value pass
+                for agent in agents do
+                    agent.PostAndAsyncReply(fun ch -> NewGame ch) |> Async.RunSynchronously
+
+                let puzzleCh2 = Channel.CreateUnbounded<CsvPuzzleData>()
+                for p in puzzles do puzzleCh2.Writer.TryWrite(p) |> ignore
+                puzzleCh2.Writer.Complete()
+
+                processedCount <- 0
+                let valueResultsBag = ConcurrentBag<PuzzleResult>()
+                let valueWorker (agent: MailboxProcessor<EngineMsg>) = async {
+                    let mutable keepGoing = true
+                    while keepGoing && not ct.IsCancellationRequested do
+                        let ok, puzzle = puzzleCh2.Reader.TryRead()
+                        if ok then
+                            let! result = runPuzzleViaAgentValueHead agent puzzle
+                            valueResultsBag.Add(result)
+                            let count = Interlocked.Increment(&processedCount)
+                            if count % 10 = 0 || count = total then onProgress count
+                        else
+                            keepGoing <- false
+                }
+
+                [| for agent in agents -> valueWorker agent |]
+                |> Async.Parallel
+                |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
+                |> ignore
+
+                let valueResults = valueResultsBag.ToArray()
+                let vCorrect = valueResults |> Array.filter (fun r -> r.WasCorrect)
+                let vFailed  = valueResults |> Array.filter (fun r -> not r.WasCorrect)
+                let vw, vd, vl = vCorrect.Length, 0, vFailed.Length
+                let vDiffElo = EloCalculator.eloDiffWDL vw vd vl
+                let vError   = EloCalculator.calculateEloError vw vd vl
+                let vAvg =
+                  if valueResults.Length = 0 then 0.0
+                  else valueResults |> Array.averageBy (fun r -> r.PuzzleData.Rating)
+                let vPerf = vAvg + vDiffElo
+                printfn "\nValue rating performance: %.0f (avg %.0f + Δ%.0f) Theme: %s" vPerf vAvg vDiffElo theme
+                let valueScore =
+                    {
+                      Engine = engineCfg.Name
+                      NeuralNet = networkName
+                      TotalNumber = valueResults.Length
+                      Correct = vw
+                      Wrong = vl
+                      RatingAvg = vAvg
+                      Filter = if theme.Trim() = "" then "none" else theme.Trim()
+                      PlayerRecord = {Rating = vPerf; Deviation = vError; Volatility = 0.0}
+                      FailedPuzzles = ResizeArray (vFailed |> Array.map (fun r -> r.PuzzleData, r.Policy))
+                      CorrectPuzzles = ResizeArray (vCorrect |> Array.map (fun r -> r.PuzzleData))
+                      Nodes = 1
+                      WithHistory = false
+                      Type = "Value"
+                      AvgKLD = 0.0
+                      AvgRankWeightedKld = 0.0
+                      AvgFrontierKld = 0.0
+                      AvgMarginLoss = 0.0
+                      AvgValueLoss = 0.0
+                    }
+
+                [policyScore; valueScore]
+    finally
+        shutdownAgents agents
+
+
 type SubTest =
     | Value
     | Policy
+    | PolicyValue
     | PolicyTopN of n:int
     | ValueTopN of n:int
     | Search of node:int
@@ -1323,7 +1551,16 @@ let runTest
                 for score in scores do
                   sendU (PuzzleResult score)
                   results.Add score
-              // run each remaining sub-test (skip Policy/PolicyTopN/ValueTopN, already handled)
+              // Run combo policy+value test (single engine init)
+              let hasPolicyValue = toRun |> List.exists (function PolicyValue -> true | _ -> false)
+              if hasPolicyValue && hasLiveStats && not ct.IsCancellationRequested then
+                let scores = performPolicyValueTest engine puzzles theme input.NumberOfPuzzlesInParallel input.IncludeFailedPuzzles (mkProgress "PolicyValue") ct
+                for score in scores do
+                  sendU (PuzzleResult score)
+                  results.Add score
+              elif hasPolicyValue && not hasLiveStats then
+                RuntimeUtilities.ConsoleUtils.yellowConsole $"\nSkipping PolicyValue combo test: engine '{engine.Name}' does not support LogLiveStats (requires Lc0/Ceres)"
+              // run each remaining sub-test (skip Policy/PolicyTopN/ValueTopN/PolicyValue, already handled)
               for test in toRun do
                 if ct.IsCancellationRequested then () else
                 match test with
@@ -1335,6 +1572,7 @@ let runTest
                 | Policy -> ()       // already handled in merged multi-topN
                 | PolicyTopN _ -> () // already handled in merged multi-topN
                 | ValueTopN _ -> ()  // already handled in merged multi-topN
+                | PolicyValue -> ()  // already handled above
 
                 | Search node when node > 1 ->
                     let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress $"Search {node}n") ct
