@@ -419,7 +419,12 @@ let writeRawPgnGamesAdjustedToFile (filePath: string) (games: PgnGame seq) =
                           sprintf "[Round \"%s.%d\"]" r idx)
               | None -> game.Raw
 
-          File.AppendAllText(filePath, newRaw)
+          // Ensure each game ends with a double newline (PGN standard:
+          // blank line separates games). Raw content may not have trailing
+          // newlines, causing the next game's headers to appear on the
+          // last line of the previous game.
+          let trimmed = newRaw.TrimEnd()
+          File.AppendAllText(filePath, trimmed + "\n\n")
 
 let removePlayerFromPGN (playerToRemove : string, games : PgnGame seq, fileName : string ) =
   let playerToLower = playerToRemove.Trim().ToLower()
