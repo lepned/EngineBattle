@@ -471,7 +471,7 @@ module TypesDef =
     type WinOption = { MinWinMove: int; MinWinScore: float; WinMoveLength: int }
     type TableBaseAdjudication = {TablebaseDirectory:string; UseTBAdjudication: bool; TBMen: int }
     type Adjudication = { DrawOption: DrawOption; WinOption: WinOption; TBAdj: TableBaseAdjudication }
-    type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool }
+    type Opening = { OpeningsPath: string option; OpeningsTwice: bool; OpeningsPly: int; RandomOpenings: bool; Seed: int }
     type CupOptions =
       { RoundPairIncrements: int list
         SeedingStrategy: string
@@ -881,7 +881,7 @@ module TypesDef =
           OrdoExePath = String.Empty
           TimeControl = Unchecked.defaultof<TimeControl>
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
-          Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false }
+          Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false; Seed = 0 }
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }

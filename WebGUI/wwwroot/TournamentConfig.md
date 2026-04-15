@@ -54,6 +54,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **OpeningsPly**: Number of plies for openings.
 - **OpeningsTwice**: Use openings twice.
 - **RandomOpenings**: True to randomize opening order for Round Robin and Gauntlet modes. Cup and Swiss modes have their own RandomOpenings in CupOptions/SwissOptions.
+- **Seed**: Integer seed for the opening shuffle. Has effect only when `RandomOpenings = true`. **Default: 0** (what you get if you omit the field). The seed does not depend on engine names or the PGN path, so the shuffle is stable across engine-list changes and reproducible across machines for the same book. Set `Seed` to any integer you like to pick a different shuffle for a particular tournament. The effective seed is logged at tournament start.
 
 ### Cup Options
 
@@ -191,7 +192,9 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
   "Opening": {
     "OpeningsPath": "C:/Dev/Chess/Openings/sufi25.pgn",
     "OpeningsPly": 100,
-    "OpeningsTwice": true
+    "OpeningsTwice": true,
+    "RandomOpenings": false,
+    "Seed": 12345
   },
   "CupOptions": {
     "RoundPairIncrements": [1,2,3],

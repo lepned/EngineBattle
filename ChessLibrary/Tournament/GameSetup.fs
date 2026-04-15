@@ -70,7 +70,9 @@ let logPosition (logger: ILogger) (board: Board) : unit =
 // Round Text Computation
 // ============================================================================
 
-/// Compute round text, preferring pair.RoundNr if set
+/// Compute round text, preferring `pair.RoundNr` when the Scheduler has
+/// already stamped one (Gauntlet / RoundRobin path). Falls back to the
+/// opening-based formula for legacy Swiss/Cup/Ladder paths.
 let computeRoundTextFromPairing
     (pair: Pairing)
     (openingsAlreadyPlayed: int)
@@ -79,7 +81,7 @@ let computeRoundTextFromPairing
     if String.IsNullOrWhiteSpace pair.RoundNr |> not then
         pair.RoundNr
     else
-        $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+        GameHelpers.computeRoundText pair.Opening.GameNumber openingsAlreadyPlayed liveGamesPlayed
 
 /// Count openings already played with same hash
 let countOpeningsAlreadyPlayed (gamesAlreadyPlayed: PgnGame[]) (openingHash: string) : int =

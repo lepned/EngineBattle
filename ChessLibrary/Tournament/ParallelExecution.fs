@@ -75,6 +75,19 @@ let parallelTournamentRun
       let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
       let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
 
+      // The new Scheduler expects the book to already be sized for the chosen
+      // distribution. For Gauntlet + Spread (= RandomOpenings=true) with more
+      // than one opponent, that means `rounds × numOpp` distinct openings; for
+      // Gauntlet + Shared and all non-Gauntlet modes, just `rounds` openings.
+      let numOpps = rest.Length
+      let gauntletDistribution =
+          if tourny.Opening.RandomOpenings then Scheduler.Spread else Scheduler.Shared
+      let effectiveBookSize =
+          if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 then
+              tourny.Rounds * numOpps
+          else
+              tourny.Rounds
+
       let mutable epdBook = false
       let games =
           match tourny.Opening.OpeningsPath with
@@ -82,18 +95,23 @@ let parallelTournamentRun
           if File.Exists path |> not then
               if tourny.VerboseLogging then
                   logger.LogError($"Opening file {path} does not exist")
-              [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
+              [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
           elif path.ToLower().Contains ".epd" then
               epdBook <- true
-              let all = EPDExtractor.parseEPDFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
+              let all = EPDExtractor.parseEPDFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
               all
           else
-              let all = ChessLibrary.FullPGNParser.parsePgnFile path |> Seq.truncate tourny.Rounds |> Seq.toArray
+              let all = ChessLibrary.FullPGNParser.parsePgnFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
               if tourny.VerboseLogging then
                   logger.LogInformation $"Total number of openings in PGN = {all.Length}"
               all
           |_ ->
-              [| for i = 1 to tourny.Rounds do yield PGNTypes.PgnGame.Empty i |]
+              [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
+
+      if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 && games.Length < effectiveBookSize then
+          ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow
+              (sprintf "Warning: Gauntlet with %d opponents and %d rounds needs %d openings to avoid wrap, but the book only has %d. Some openings will be reused and engines may play them more than expected."
+                  numOpps tourny.Rounds effectiveBookSize games.Length)
 
       let gamesAlreadyPlayed =
           let fileExists = File.Exists tourny.PgnOutPath
@@ -111,29 +129,49 @@ let parallelTournamentRun
           else
               [||]
       let gamesToPlay =
-          let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
-          if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
+          let openings = games |> Seq.truncate effectiveBookSize |> Seq.toList
+          if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpeningsForTournament tourny.Opening openings
           else openings
 
+      // Build one ScheduleConfig and reuse it for both total-plan and diff.
+      let scheduleCfg : Scheduler.ScheduleConfig =
+          if isGauntlet then
+              { Mode = Scheduler.Gauntlet
+                Challengers = challengers
+                Opponents = rest
+                Openings = gamesToPlay
+                Rounds = tourny.Rounds
+                OpeningsTwice = tourny.Opening.OpeningsTwice
+                PreventDeviation = tourny.PreventMoveDeviation
+                Distribution = gauntletDistribution }
+          else
+              { Mode = Scheduler.RoundRobin
+                Challengers = tourny.EngineSetup.Engines
+                Opponents = []
+                Openings = gamesToPlay
+                Rounds = tourny.Rounds
+                OpeningsTwice = tourny.Opening.OpeningsTwice
+                PreventDeviation = tourny.PreventMoveDeviation
+                Distribution = Scheduler.Shared }
+      let plan =
+          if isGauntlet
+          then ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg
+          else ChessLibrary.Scheduler.RoundRobin.generate scheduleCfg
+      let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
+      let priorPairs = gamesAlreadyPlayed.Length / gamesPerPair
       let allPairings =
-          if isGauntlet then
-              if tourny.Opening.OpeningsTwice then
-                  PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers rest gamesToPlay
-              else
-                  PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers rest gamesToPlay
-          else
-              if tourny.Opening.OpeningsTwice then
-                  PairingHelper.generateAllRoundRobinDoubleRounds tourny.EngineSetup.Engines gamesToPlay
-              else
-                  PairingHelper.generateAllRoundRobinSingleRounds tourny.EngineSetup.Engines gamesToPlay
+          plan
+          |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
+          |> ChessLibrary.Scheduler.Diff.toPairings
       let gamesLeftToPlay =
-          if isGauntlet then
-              PairingHelper.filterByPlayCount allPairings gamesAlreadyPlayed
-          else
-              let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
-              [ for p in allPairings do
-                  if PairingHelper.hasPlayedBefore p playedSet |> not then
-                      yield p ]
+          let afterDiff = ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
+          let afterLimits =
+              if isGauntlet
+              then ChessLibrary.Scheduler.Diff.enforceGameLimits challengers rest tourny.Rounds tourny.Opening.OpeningsTwice gamesAlreadyPlayed afterDiff
+              else afterDiff
+          afterLimits
+          |> ChessLibrary.Scheduler.Diff.applyPairLabels priorPairs gamesPerPair
+          |> ChessLibrary.Scheduler.Diff.toPairings
 
       if tourny.VerboseLogging then
           PairingHelper.printAllOpeningPairs logger gamesLeftToPlay

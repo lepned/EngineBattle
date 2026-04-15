@@ -57,7 +57,17 @@
 		<!-- Engine protocol (depends on types) -->
 		<Compile Include="Engine\EngineProtocol.fs" />
 
-		<!-- Tournament pairing (depends on types, parser) -->
+		<!-- Scheduler types and shared helpers (moved from TournamentPairing) -->
+		<Compile Include="Tournament\Scheduler\Types.fs" />
+		<Compile Include="Tournament\Scheduler\Shared.fs" />
+		<Compile Include="Tournament\Scheduler\Gauntlet.fs" />
+		<Compile Include="Tournament\Scheduler\RoundRobin.fs" />
+		<Compile Include="Tournament\Scheduler\Swiss.fs" />
+		<Compile Include="Tournament\Scheduler\Cup.fs" />
+		<Compile Include="Tournament\Scheduler\Ladder.fs" />
+		<Compile Include="Tournament\Scheduler\Diff.fs" />
+
+		<!-- Tournament pairing (depends on types, parser, Scheduler.Shared) -->
 		<Compile Include="Tournament\TournamentPairing.fs" />
 
 		<!-- Analysis - GameAnalysis (depends on types, statistics, protocol) -->

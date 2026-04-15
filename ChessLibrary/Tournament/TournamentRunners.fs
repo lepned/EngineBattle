@@ -64,24 +64,52 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
   board.LoadFen Chess.startPos
   let mutable results = List.empty<Result>
 
-  // Load openings, games already played, and reference games using helpers
+  // Load openings, games already played, and reference games using helpers.
+  // The new Scheduler produces a correctly-sized plan for the chosen
+  // distribution (Spread for RandomOpenings=true, Shared otherwise), so
+  // the runner just needs to load enough openings to cover it.
   let challengers = tourny.EngineSetup.Engines |> List.take tourny.Challengers
   let opponents = tourny.EngineSetup.Engines |> List.skip tourny.Challengers
-  let (games, epdBook) = loadOpenings tourny.Opening.OpeningsPath tourny.Rounds
+  let numOpps = opponents.Length
+  let distribution =
+    if tourny.Opening.RandomOpenings then Scheduler.Spread else Scheduler.Shared
+  let effectiveBookSize =
+    match distribution with
+    | Scheduler.Spread when numOpps > 1 -> tourny.Rounds * numOpps
+    | _ -> tourny.Rounds
+  let (games, epdBook) = loadOpenings tourny.Opening.OpeningsPath effectiveBookSize
+  if distribution = Scheduler.Spread && numOpps > 1 && games.Length < effectiveBookSize then
+    ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow
+      (sprintf "Warning: Gauntlet with %d opponents and %d rounds needs %d openings to avoid wrap, but the book only has %d. Some openings will be reused and engines may play them more than expected."
+        numOpps tourny.Rounds effectiveBookSize games.Length)
   let gamesAlreadyPlayed = loadGamesAlreadyPlayed tourny.PgnOutPath
   let referencGamesPlayed = loadReferenceGames tourny.ReferencePGNPath
 
-  let roundsToPlay =
-    let openings = games |> Seq.truncate tourny.Rounds |> Seq.toList
-    if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
+  let schedulerOpenings =
+    let openings = games |> Seq.truncate effectiveBookSize |> Seq.toList
+    if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpeningsForTournament tourny.Opening openings
     else openings
+  let scheduleCfg : Scheduler.ScheduleConfig =
+    { Mode = Scheduler.Gauntlet
+      Challengers = challengers
+      Opponents = opponents
+      Openings = schedulerOpenings
+      Rounds = tourny.Rounds
+      OpeningsTwice = tourny.Opening.OpeningsTwice
+      PreventDeviation = tourny.PreventMoveDeviation
+      Distribution = distribution }
+  let plan = ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg
+  let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
+  let priorPairs = gamesAlreadyPlayed.Length / gamesPerPair
   let pairings =
-    if tourny.Opening.OpeningsTwice then
-      PairingHelper.gauntletDoubleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers opponents roundsToPlay
-    else
-      PairingHelper.gauntletSingleRound tourny.PreventMoveDeviation tourny.Opening.RandomOpenings tourny.Rounds challengers opponents roundsToPlay
+    plan
+    |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
+    |> ChessLibrary.Scheduler.Diff.toPairings
   let gamesLeftToPlay =
-    PairingHelper.filterByPlayCount pairings gamesAlreadyPlayed
+    ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
+    |> ChessLibrary.Scheduler.Diff.enforceGameLimits challengers opponents tourny.Rounds tourny.Opening.OpeningsTwice gamesAlreadyPlayed
+    |> ChessLibrary.Scheduler.Diff.applyPairLabels priorPairs gamesPerPair
+    |> ChessLibrary.Scheduler.Diff.toPairings
 
   PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
   let totalGames = pairings.Length
@@ -116,10 +144,9 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
       if cts.IsCancellationRequested then
         sbDev.Clear() |> ignore
       else
-        // Compute round text (gauntlet uses live games from gamesLeftToPlay)
-        let openingsAlreadyPlayed = countOpeningsAlreadyPlayed gamesAlreadyPlayed pair.OpeningHash
-        let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
-        let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+        // Round label was pre-computed by the Scheduler via `applyPairLabels`
+        // (seeded from PGN history), so just use it as-is.
+        let roundTxt = pair.RoundNr
 
         // Execute game with full setup using helper
         let result = executeGameWithSetup logger tourny board pair epdBook sb cts replayDicts replayList pgnGameWriterAgent tryGetUserAdjudication callback roundTxt
@@ -157,20 +184,28 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
 
   let gamesToPlay =
     let openings = games |> Seq.truncate (tourny.Rounds) |> Seq.toList
-    if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpenings (PairingHelper.tournamentSalt tourny.PgnOutPath tourny.EngineSetup.Engines) openings
+    if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpeningsForTournament tourny.Opening openings
     else openings
+  let scheduleCfg : Scheduler.ScheduleConfig =
+    { Mode = Scheduler.RoundRobin
+      Challengers = tourny.EngineSetup.Engines
+      Opponents = []
+      Openings = gamesToPlay
+      Rounds = tourny.Rounds
+      OpeningsTwice = tourny.Opening.OpeningsTwice
+      PreventDeviation = tourny.PreventMoveDeviation
+      Distribution = Scheduler.Shared }
+  let plan = ChessLibrary.Scheduler.RoundRobin.generate scheduleCfg
+  let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
+  let priorPairs = gamesAlreadyPlayed.Length / gamesPerPair
   let pairings =
-    if tourny.Opening.OpeningsTwice then
-      PairingHelper.generateAllRoundRobinDoubleRounds tourny.EngineSetup.Engines gamesToPlay
-    else
-     PairingHelper.generateAllRoundRobinSingleRounds tourny.EngineSetup.Engines gamesToPlay
-  let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
+    plan
+    |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
+    |> ChessLibrary.Scheduler.Diff.toPairings
   let gamesLeftToPlay =
-    [
-      for p in pairings do
-      if PairingHelper.hasPlayedBefore p playedSet |> not then
-        yield p
-    ]
+    ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
+    |> ChessLibrary.Scheduler.Diff.applyPairLabels priorPairs gamesPerPair
+    |> ChessLibrary.Scheduler.Diff.toPairings
 
   PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
   let totalGames = pairings.Length
@@ -224,10 +259,9 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
             engine1 <- eng1
             engine2 <- eng2
 
-          // Compute round text
-          let openingsAlreadyPlayed = countOpeningsAlreadyPlayed gamesAlreadyPlayed pair.OpeningHash
-          let liveGamesPlayed = gamesLeftToPlay |> Seq.truncate gameNr |> Seq.filter(fun e -> e.OpeningHash = pair.OpeningHash) |> Seq.length
-          let roundTxt = $"{pair.Opening.GameNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+          // Round label was pre-computed by the Scheduler via `applyPairLabels`
+          // (seeded from PGN history), so just use it as-is.
+          let roundTxt = pair.RoundNr
           callback (Update.RoundNr roundTxt)
 
           // Execute game with exception handling

@@ -48,7 +48,11 @@ namespace WebGUI.Services
       Hardware = tourny.Hardware();
       TCText = tourny.TimeControlText();
       Game = tourny.CurrentGameNr == 0 ? "" : $"{tourny.CurrentGameNr}/{tourny.TotalGames}";
-      Round = GetRound(tourny);
+      // Round is set from the runner's live `Update.RoundNr` callback
+      // (pair.RoundNr, which is the Scheduler-assigned label). Leaving this
+      // blank here avoids a stale formula-derived value flashing in the
+      // banner between the constructor call and the next callback.
+      Round = "";
       UseDevCounter = tourny.PreventMoveDeviation && tourny.EngineSetup.EngineDefList.Length > 2;
       UseTBAdj = tourny.Adjudication.TBAdj.UseTBAdjudication;
       DevCounter = tourny.DeviationCounter;
@@ -65,21 +69,6 @@ namespace WebGUI.Services
     }
 
     public static string Duration(TimeSpan dur) => string.Format("{0:00}:{1:00}:{2:00}", dur.Days, dur.Hours, dur.Minutes);
-
-    private static string GetRound(TypesDef.Tournament.Tournament tourny)
-    {
-      if (tourny == null || tourny.TotalGames == 0 || tourny.CurrentGameNr == 0)
-        return "";
-      var tot = tourny.TotalGames;
-      var cur = tourny.CurrentGameNr;
-      var r = tourny.Rounds;
-      var ratio = Math.Max(1, tot / r);
-      //var rFract = Math.Max(cur * ratio, 1);
-      var subgame = cur % ratio;
-      var roundNr = cur <= ratio ? 1 : subgame == 0 ? cur / ratio : cur / ratio + 1;
-      var subNr = subgame == 0 ? ratio : subgame;
-      return $"{roundNr}.{subNr}";
-    }
 
     public static string GetTournamentEnd(TimeSpan duration)
     {

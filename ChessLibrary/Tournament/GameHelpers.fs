@@ -366,9 +366,13 @@ let formatOpeningMoves (openingMoves: PlyMove seq) : string =
             sprintf "%s" m.San)
     |> String.concat " "
 
-/// Compute round text from pairing and games played
+/// Compute an opening-based PGN `Round` label: `{openingNumber}.{N}` where
+/// N is 1 + (games already played at this opening, counting both PGN history
+/// and the queue segment that precedes the current pair). Used by the Swiss,
+/// Cup, and Ladder runners; Gauntlet and RoundRobin use the Scheduler's
+/// pair-based `applyPairLabels` instead.
 let computeRoundText (openingNumber: int) (openingsAlreadyPlayed: int) (liveGamesPlayed: int) : string =
-    $"{openingNumber}.{openingsAlreadyPlayed + liveGamesPlayed + 1}"
+    sprintf "%d.%d" openingNumber (openingsAlreadyPlayed + liveGamesPlayed + 1)
 
 /// Initialize board from pairing opening
 let initBoardFromOpening
