@@ -549,10 +549,8 @@
 
     private async Task LoadPgnGameWithVariations(PGNTypes.PgnGame game)
     {
-        board.ResetBoardState();
         var startFen = string.IsNullOrWhiteSpace(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
-        board.LoadFen(startFen);
-        board.StartPosition = startFen;
+        board.ResetBoardStateFromFen(startFen);
         board.LoadPGNGameWithVariations(game);
         fen = board.FEN();
         moveEvals = ExtractEvalsFromComments(game);
@@ -728,9 +726,7 @@
     private async Task OpenEPDGame(EPDTypes.EPDEntry epd)
     {
         epdDesc = $"{epd.ToString()} {epd.Other?.Value}";
-        board.ResetBoardState();
-        board.StartPosition = epd.FEN;
-        board.LoadFen(epd.FEN);
+        board.ResetBoardStateFromFen(epd.FEN);
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
         UpdateDetectedOpening();
@@ -1086,9 +1082,7 @@
             var fenOpt = ChessLibrary.ChessUtilities.Chess960.tryGetFenFromPositionId(frcInput.Value);
             if (FSharpOption<string>.get_IsSome(fenOpt))
             {
-                board.ResetBoardState();
-                board.LoadFen(fenOpt.Value);
-                board.StartPosition = fenOpt.Value;
+                board.ResetBoardStateFromFen(fenOpt.Value);
                 fen = board.FEN();
                 frcPositionId = frcInput;
                 UpdateDetectedOpening();

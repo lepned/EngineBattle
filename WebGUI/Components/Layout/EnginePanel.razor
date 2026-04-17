@@ -1624,9 +1624,7 @@
         var gameIndex = PGNgames.IndexOf(game);
         var currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
         var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
-        board.ResetBoardState();
-        board.StartPosition = fenP;
-        board.LoadFen(fenP);
+        board.ResetBoardStateFromFen(fenP);
         foreach (var ply in game.Mainline)
         {
             board.PlaySanMoveWithComments(ply.San, ply.Comment);

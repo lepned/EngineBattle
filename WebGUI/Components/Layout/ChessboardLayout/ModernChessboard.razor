@@ -690,13 +690,14 @@
     {
         stopAutoPlay = true;
         await ClearOverlayOnPositionChange();
-        var first = ChessBoard.MovesAndFenPlayed.FirstOrDefault();
-        if (first != null)
-        {
-            await OnNotifyMoveAndFen(first);
-            await OnNewFENOnBoard.InvokeAsync(fen);
-        }
+        var startFen = ChessBoard.StartPosition;
+        fen = startFen;
+        ChessBoard.LoadFen(startFen);
+        await SetPosition(startFen);
+        await OnNewFENOnBoard.InvokeAsync(fen);
+        UpdateVariationsDisplay();
         await ScrollToCurrentMove();
+        StateHasChanged();
     }
 
     private async Task EndOfGame()
