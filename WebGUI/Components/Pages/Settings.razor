@@ -150,11 +150,6 @@
         </div>
         <div class="number-row">
             <div class="field-group">
-                <label>Chart Lines</label>
-                <input type="number" @bind="chartLines" min="1" max="20" />
-                <small>CP chart lines to display</small>
-            </div>
-            <div class="field-group">
                 <label>MultiPV Lines</label>
                 <input type="number" @bind="defaultMultiPV" min="1" max="20" />
                 <small>Default engine PV lines</small>
@@ -376,7 +371,6 @@
 
     private string defaultEnginePath = "";
     private string secondaryEnginePath = "";
-    private int chartLines = 4;
     private string policyDistributionMinMaxFilter = "0.4,0.6";
     private bool combineWhiteAndBlackMoves = true;
     private int defaultMultiPV = 10;
@@ -426,7 +420,6 @@
         defaultSearchMode = s.DefaultSearchMode;
         defaultSearchTimeMs = s.DefaultSearchTimeMs;
         defaultSearchNodes = s.DefaultSearchNodes;
-        chartLines = s.ChartLines;
         policyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter;
         combineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves;
         defaultMultiPV = s.DefaultMultiPV;
@@ -474,7 +467,6 @@
                 DefaultSearchMode = defaultSearchMode ?? "Nodes",
                 DefaultSearchTimeMs = defaultSearchTimeMs,
                 DefaultSearchNodes = defaultSearchNodes,
-                ChartLines = chartLines,
                 PolicyDistributionMinMaxFilter = policyDistributionMinMaxFilter ?? "0.4,0.6",
                 CombineWhiteAndBlackMoves = combineWhiteAndBlackMoves,
                 DefaultMultiPV = defaultMultiPV,
@@ -527,7 +519,6 @@
         defaultSearchMode = defaults.DefaultSearchMode;
         defaultSearchTimeMs = defaults.DefaultSearchTimeMs;
         defaultSearchNodes = defaults.DefaultSearchNodes;
-        chartLines = defaults.ChartLines;
         policyDistributionMinMaxFilter = defaults.PolicyDistributionMinMaxFilter;
         combineWhiteAndBlackMoves = defaults.CombineWhiteAndBlackMoves;
         defaultMultiPV = defaults.DefaultMultiPV;

@@ -273,7 +273,6 @@
         var s = SettingsService.Settings;
         if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
             gamesPath = s.AnalysisGamesPath;
-        chartLines = s.ChartLines;
         if (Engine1 == null && !string.IsNullOrEmpty(s.DefaultEnginePath))
         {
             try
@@ -319,7 +318,6 @@
     private ElementReference pgnChart;
     HotKeysContext keyContext;
     private string fullPath = string.Empty;
-    private int chartLines = 4;
     private int minMoveTimeInSecs = 0;
     private string searchString = "";
     private string detectedOpeningName = "";
@@ -999,8 +997,7 @@
         if (string.IsNullOrEmpty(engine1ConfigPath) && string.IsNullOrEmpty(engine2ConfigPath)) return;
         var s = SettingsService.Settings;
         var panel = analysisWithEngine1 ?? analysisWithEngine2;
-        var chartLines = panel?.CurrentChartLines ?? s.ChartLines;
-        var multiPV = Math.Max(s.DefaultMultiPV, chartLines);
+        var multiPV = panel?.CurrentChartLines ?? s.DefaultMultiPV;
         var updated = new GlobalSettings
         {
             EngineDefsFolder = s.EngineDefsFolder, OpeningsFolder = s.OpeningsFolder,
@@ -1014,7 +1011,7 @@
             DefaultSearchMode = panel?.IsTimeMode == true ? "Time" : "Nodes",
             DefaultSearchTimeMs = panel?.CurrentTimeMs ?? s.DefaultSearchTimeMs,
             DefaultSearchNodes = (int)(panel?.CurrentNodes ?? s.DefaultSearchNodes),
-            ChartLines = chartLines, DefaultMultiPV = multiPV,
+            DefaultMultiPV = multiPV,
             PolicyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter,
             CombineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves,
             MinPolicyThreshold = s.MinPolicyThreshold,

@@ -27,7 +27,6 @@ public class GlobalSettings
     public string DefaultSearchMode { get; set; } = "Nodes";  // Nodes, Time
     public double DefaultSearchTimeMs { get; set; } = 3000;
     public int DefaultSearchNodes { get; set; } = 100000;
-    public int ChartLines { get; set; } = 4;
     public string PolicyDistributionMinMaxFilter { get; set; } = "0.4,0.6";
     public bool CombineWhiteAndBlackMoves { get; set; } = true;
     public int DefaultMultiPV { get; set; } = 10;

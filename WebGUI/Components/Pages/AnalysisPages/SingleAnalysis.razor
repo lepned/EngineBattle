@@ -296,7 +296,6 @@
         var s = SettingsService.Settings;
         if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
             gamesPath = s.AnalysisGamesPath;
-        chartLines = s.ChartLines;
         if (Engine == null && !string.IsNullOrEmpty(s.DefaultEnginePath))
         {
             try
@@ -336,7 +335,6 @@
     private Dictionary<int, string> moveEvals = new();
     private HashSet<ulong> analyzedPositions = new();
     HotKeysContext keyContext;
-    private int chartLines = 4;
     private string searchString = "";
     private string detectedOpeningName = "";
     private string detectedOpeningECO = "";
@@ -909,8 +907,7 @@
     {
         if (string.IsNullOrEmpty(engineConfigPath)) return;
         var s = SettingsService.Settings;
-        var chartLines = analysisWithEngine?.CurrentChartLines ?? s.ChartLines;
-        var multiPV = Math.Max(s.DefaultMultiPV, chartLines);
+        var multiPV = analysisWithEngine?.CurrentChartLines ?? s.DefaultMultiPV;
         var updated = new GlobalSettings
         {
             EngineDefsFolder = s.EngineDefsFolder, OpeningsFolder = s.OpeningsFolder,
@@ -924,7 +921,7 @@
             DefaultSearchMode = analysisWithEngine?.IsTimeMode == true ? "Time" : "Nodes",
             DefaultSearchTimeMs = analysisWithEngine?.CurrentTimeMs ?? s.DefaultSearchTimeMs,
             DefaultSearchNodes = (int)(analysisWithEngine?.CurrentNodes ?? s.DefaultSearchNodes),
-            ChartLines = chartLines, DefaultMultiPV = multiPV,
+            DefaultMultiPV = multiPV,
             PolicyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter,
             CombineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves,
             MinPolicyThreshold = s.MinPolicyThreshold,

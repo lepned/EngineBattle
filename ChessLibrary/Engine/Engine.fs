@@ -354,7 +354,6 @@ module Engine =
       let analysisCommands =
         [
           sprintf "setoption name %s value %d" "MoveOverheadMs" 0
-          sprintf "setoption name %s value %d" "MultiPV" 20
         ]
 
       let distribution = ResizeArray<NNValues>()

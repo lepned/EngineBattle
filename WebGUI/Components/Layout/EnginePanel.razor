@@ -215,30 +215,40 @@
     <div class="ep-charts" hidden="@(!showCharts)">
         <div class="ep-charts-controls">
             <div class="ep-slider" style="min-width:200px;">
-                <label>Chart lines: @numberOfLines</label>
-                <input type="range" min="1" max="20" step="1" @bind="numberOfLines" />
+                <label>PV lines: @numberOfLines</label>
+                <input type="range" min="1" max="20" step="1" @bind="numberOfLines" @bind:after="OnChartLinesChanged" />
             </div>
 
-            <label class="ep-switch">
-                <input type="checkbox" checked="@showNPlot" @onchange="OnChartToggleChanged" />
-                <span class="slider"></span>
-                @(showNPlot ? "N-plot" : "Q-plot")
-            </label>
+            <div class="ep-toggle-group" style="margin-left:8px;">
+                <button class="ep-upload @(chartView == ChartView.N ? "active" : "")"
+                        @onclick="@(() => SetChartView(ChartView.N))"
+                        title="Visit fraction over time">N</button>
+                <button class="ep-upload @(chartView == ChartView.Q ? "active" : "")"
+                        @onclick="@(() => SetChartView(ChartView.Q))"
+                        title="Q (eval) over time">Q</button>
+                <button class="ep-upload @(chartView == ChartView.Convergence ? "active" : "")"
+                        @onclick="@(() => SetChartView(ChartView.Convergence))"
+                        title="Q vs N — scatter of root children, with snapshot baseline">Q vs N</button>
+            </div>
+
         </div>
 
-        <div class="ep-chart-container" hidden="@(!showNPlot)" style="height:@GetChartHeight();">
+        <div class="ep-chart-container" hidden="@(chartView != ChartView.N)" style="height:@GetChartHeight();">
             <div class="chart" @ref="nPlotReference" style="height:100%;"></div>
         </div>
-        <div class="ep-chart-container" hidden="@showNPlot" style="height:@GetChartHeight();">
+        <div class="ep-chart-container" hidden="@(chartView != ChartView.Q)" style="height:@GetChartHeight();">
             <div class="chart" @ref="qPlotReference" style="height:100%;"></div>
+        </div>
+        <div class="ep-chart-container" hidden="@(chartView != ChartView.Convergence)" style="height:@GetChartHeight();">
+            <div class="chart" @ref="convergencePlotReference" style="height:100%;"></div>
         </div>
     </div>
 
     <div class="ep-charts" hidden="@(!showCpChart)">
         <div class="ep-charts-controls">
             <div class="ep-slider" style="min-width:200px;">
-                <label>Chart lines: @cpChartLines</label>
-                <input type="range" min="1" max="20" step="1" @bind="cpChartLines" />
+                <label>PV lines: @cpChartLines</label>
+                <input type="range" min="1" max="20" step="1" @bind="cpChartLines" @bind:after="OnChartLinesChanged" />
             </div>
         </div>
         <div class="ep-chart-container" style="height:@GetCpChartHeight();">
@@ -348,7 +358,6 @@
     [Parameter] public Func<bool> IsPositionAnalyzed { get; set; }
 
     [Parameter] public int Nodes { get; set; } = 0;
-    private int ChartLines = 3;
     private string zobristHash;
     private bool overlayDropdownOpen = false;
 
@@ -359,7 +368,10 @@
     }
 
     private string text = "dump-uci";
-    private bool showNPlot = true;
+    private enum ChartView { N, Q, Convergence }
+    private ChartView chartView = ChartView.N;
+    // Kept as a derived flag so existing rank-sequence visibility checks still work.
+    private bool showNPlot => chartView == ChartView.N;
     private string currentName = string.Empty;
     private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
     private NNValues currentPosition = NNValues.Empty;
@@ -384,6 +396,7 @@
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private ElementReference nPlotReference;
     private ElementReference qPlotReference;
+    private ElementReference convergencePlotReference;
     private SearchInfoPlot searchInfoPlot;
     private IJSObjectReference chessModule;
     private string tableHeader = "";
@@ -649,23 +662,53 @@
         );
     }
 
-    private async Task OnChartToggleChanged(ChangeEventArgs e)
+    private async Task SetChartView(ChartView view)
     {
-        showNPlot = (bool)(e.Value ?? false);
+        if (chartView == view) return;
+        chartView = view;
         StateHasChanged();
-        // Small delay to allow DOM to update visibility
+        // Allow DOM to update visibility before talking to Plotly.
         await Task.Delay(100);
-        if (!showNPlot && searchInfoPlot != null)
+        // Plotly's responsive handler doesn't re-fire on hidden→visible toggles, so explicitly
+        // resize the now-visible chart for every view (Q used to be skipped).
+        if (chessModule is not null)
         {
-            // Re-render the rank chart from scratch now that the Q-plot container is visible
-            await searchInfoPlot.ReRenderRankSequence();
-        }
-        else if (chessModule is not null)
-        {
-            var chartRef = showNPlot ? nPlotReference : qPlotReference;
+            var chartRef = view switch
+            {
+                ChartView.N => nPlotReference,
+                ChartView.Q => qPlotReference,
+                ChartView.Convergence => convergencePlotReference,
+                _ => nPlotReference,
+            };
             await chessModule.InvokeVoidAsync("resizePlot", chartRef);
         }
+        if (view == ChartView.Q && searchInfoPlot != null)
+        {
+            // Q-plot shares the rank-sequence overlay; re-render now that the container is visible.
+            await searchInfoPlot.ReRenderRankSequence();
+        }
+        // Re-render the now-visible chart from accumulated data. Plotly.newPlot into a hidden
+        // container produces an empty (0x0) chart that resize can't recover, so any chart that
+        // was hidden during prior live updates needs a fresh render once it becomes visible.
+        if (searchInfoPlot != null && NNInfoList.Count > 1)
+        {
+            var skipTopNode = NNInfoList.Skip(1).ToList();
+            var maxLines = Math.Min(numberOfLines, skipTopNode.Count);
+            switch (view)
+            {
+                case ChartView.N:
+                    await searchInfoPlot.SetNChartData(skipTopNode, maxLines, Qdiff);
+                    break;
+                case ChartView.Q:
+                    await searchInfoPlot.SetQChartData(skipTopNode, maxLines, Qdiff);
+                    break;
+                case ChartView.Convergence:
+                    await searchInfoPlot.SetConvergenceChart(skipTopNode, maxLines, Qdiff);
+                    break;
+            }
+        }
     }
+
 
 
     private string FormatNodes(double nodes)
@@ -799,6 +842,7 @@
             if (searchInfoPlot == null)
             {
                 searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+                searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
             }
             else
             {
@@ -1006,7 +1050,35 @@
             }
             newAnalyzer.Board = ChessBoard;
             analyzer = newAnalyzer;
+            ApplyChartLinesToMultiPV();
         }
+    }
+
+    // Whichever "Chart lines" slider is currently visible. showCharts is set for
+    // engines with LogLiveStats (Lc0/Ceres) which expose the numberOfLines slider;
+    // otherwise the cpChartLines slider is shown for AB engines.
+    private int ActiveChartLines => showCharts ? numberOfLines : cpChartLines;
+
+    private void ApplyChartLinesToMultiPV()
+    {
+        if (analyzer == null) return;
+        var option = EngineOption.Create("MultiPV", ActiveChartLines.ToString());
+        analyzer.AddSetoption(option);
+    }
+
+    private void TrimDataToChartLines()
+    {
+        var limit = ActiveChartLines;
+        var staleKeys = data.Keys.Where(k => k > limit).ToList();
+        foreach (var k in staleKeys) data.Remove(k);
+        dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
+    }
+
+    private async Task OnChartLinesChanged()
+    {
+        ApplyChartLinesToMultiPV();
+        TrimDataToChartLines();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task Analyze()
@@ -1024,6 +1096,7 @@
         if (searchInfoPlot == null)
         {
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
         }
         else
         {
@@ -1162,7 +1235,7 @@
                             await Notifier.MovesWithId(NNInfoList, Id);
                         var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
                         if (searchInfoPlot != null)
-                            await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff);
+                            await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff, includeConvergence: chartView == ChartView.Convergence);
                     }
                     break;
             }
@@ -1871,6 +1944,7 @@
             }
             searchInfoPlot?.Dispose();
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
             cpEvalPlot = new CpEvalPlot(chessModule, cpChartReference);
             if (string.IsNullOrEmpty(FEN) == false)
             {
@@ -1881,15 +1955,14 @@
             if (IsReviewing)
             {
                 var reviewPV = SettingsService.Settings.ReviewMultiPV;
-                ChartLines = reviewPV;
                 cpChartLines = reviewPV;
                 numberOfLines = reviewPV;
             }
             else
             {
-                ChartLines = SettingsService.Settings.ChartLines;
-                cpChartLines = ChartLines;
-                numberOfLines = Math.Max(1, SettingsService.Settings.DefaultMultiPV);
+                var defaultPV = Math.Max(1, SettingsService.Settings.DefaultMultiPV);
+                cpChartLines = defaultPV;
+                numberOfLines = defaultPV;
             }
             if (Nodes > 0) numberOfNodes = Nodes;
             Qdiff = 2;

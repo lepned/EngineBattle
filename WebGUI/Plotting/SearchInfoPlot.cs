@@ -20,7 +20,12 @@ namespace WebGUI.Plotting
         public string NN { get; set; }
         public Dictionary<string, List<double>> QvaluesDict { get; set; }
         public Dictionary<string, List<double>> NvaluesDict { get; set; }
+        // Absolute per-tick visit counts per move — drives the Q vs N convergence chart so each
+        // move appears as a continuous line through its (N, Q) trajectory across the search.
+        public Dictionary<string, List<double>> NAbsoluteValuesDict { get; set; }
         public Dictionary<int,double> PolicyDistribution { get; set; } = new Dictionary<int,double>();
+
+        public ElementReference ConvergenceChartElement { get; set; }
 
         private IJSObjectReference chessModule;
         ElementReference QchartElement;
@@ -53,6 +58,7 @@ namespace WebGUI.Plotting
             YTitle = yTitle;
             QvaluesDict = new Dictionary<string, List<double>>();
             NvaluesDict = new Dictionary<string, List<double>>();
+            NAbsoluteValuesDict = new Dictionary<string, List<double>>();
             NumberOfNodesSearched = new List<double>();
             FEN = fen;
             NN = net;
@@ -75,6 +81,7 @@ namespace WebGUI.Plotting
             YTitle = yTitle;
             QvaluesDict = new Dictionary<string, List<double>>();
             NvaluesDict = new Dictionary<string, List<double>>();
+            NAbsoluteValuesDict = new Dictionary<string, List<double>>();
             NumberOfNodesSearched = new List<double>();
             FEN = fen;
             NN = net;
@@ -98,6 +105,7 @@ namespace WebGUI.Plotting
             YTitle = yTitle;
             QvaluesDict = new Dictionary<string, List<double>>();
             NvaluesDict = new Dictionary<string, List<double>>();
+            NAbsoluteValuesDict = new Dictionary<string, List<double>>();
             NumberOfNodesSearched = new List<double>();
             margin = new
             {
@@ -122,7 +130,16 @@ namespace WebGUI.Plotting
             {
                 AddMoveToQDict(item);
                 AddMoveToNDict(item, nodeCount);
+                AddMoveToNAbsDict(item);
             }
+        }
+
+        public void AddMoveToNAbsDict(NNValues item)
+        {
+            if (!NAbsoluteValuesDict.ContainsKey(item.SANMove))
+                NAbsoluteValuesDict.Add(item.SANMove, new List<double> { item.Nodes });
+            else
+                NAbsoluteValuesDict[item.SANMove].Add(item.Nodes);
         }
 
         public void AddMoveToQDict(NNValues item)
@@ -169,6 +186,7 @@ namespace WebGUI.Plotting
         {
             QvaluesDict.Clear();
             NvaluesDict.Clear();
+            NAbsoluteValuesDict.Clear();
             NumberOfNodesSearched.Clear();
         }
 
@@ -177,6 +195,7 @@ namespace WebGUI.Plotting
         {
             QvaluesDict.Clear();
             NvaluesDict.Clear();
+            NAbsoluteValuesDict.Clear();
             NumberOfNodesSearched.Clear();
 
             if (chessModule is not null)
@@ -232,6 +251,7 @@ namespace WebGUI.Plotting
         {
             QvaluesDict.Clear();
             NvaluesDict.Clear();
+            NAbsoluteValuesDict.Clear();
             NumberOfNodesSearched.Clear();
 
             if (resetChartElement && chessModule is not null)
@@ -285,13 +305,23 @@ namespace WebGUI.Plotting
             }
         }
 
-        public async Task UpdateLogLiveCharts(List<NNValues> list, int numberOfLines, double qDiff)
+        public async Task UpdateLogLiveCharts(List<NNValues> list, int numberOfLines, double qDiff, bool includeConvergence = false)
         {
             try
             {
-                await Task.WhenAll(
-                  SetNChartData(list, numberOfLines, qDiff),
-                  SetQChartData(list, numberOfLines, qDiff));
+                if (includeConvergence)
+                {
+                    await Task.WhenAll(
+                      SetNChartData(list, numberOfLines, qDiff),
+                      SetQChartData(list, numberOfLines, qDiff),
+                      SetConvergenceChart(list, numberOfLines, qDiff));
+                }
+                else
+                {
+                    await Task.WhenAll(
+                      SetNChartData(list, numberOfLines, qDiff),
+                      SetQChartData(list, numberOfLines, qDiff));
+                }
             }
             catch (ObjectDisposedException) { }
             catch (Microsoft.JSInterop.JSDisconnectedException) { }
@@ -1298,6 +1328,139 @@ namespace WebGUI.Plotting
                 return moveFormatted;
             }
         }
+        // Color palette aligned with GetTrace() so a move keeps the same color across N/Q/Convergence views.
+        private static string ConvergenceColor(int idx) => idx switch
+        {
+            0 => "#1f77b4",
+            1 => "#ff7f0e",
+            2 => "#2ca02c",
+            3 => "#9467bd",
+            4 => "#ffbb78",
+            5 => "#7f7f7f",
+            6 => "#e377c2",
+            7 => "#17becf",
+            8 => "#bcbd22",
+            9 => "#8c564b",
+            10 => "#aec7e8",
+            11 => "#ff9896",
+            12 => "#98df8a",
+            13 => "#c5b0d5",
+            14 => "#f7b6d2",
+            15 => "#c49c94",
+            16 => "#dbdb8d",
+            17 => "#9edae5",
+            18 => "#393b79",
+            19 => "#e7969c",
+            _ => "#7f7f7f",
+        };
+
+        public async Task SetConvergenceChart(List<NNValues> list, int numberOfLines, double qDiff)
+        {
+            if (list == null || list.Count < 1 || numberOfLines <= 0) return;
+            if (chessModule is null || ConvergenceChartElement.Context is null) return;
+
+            // Pick the moves to plot: same selection rule as N-chart (top-N by visits, kept consistent so
+            // colors and ordering line up across N, Q, and Q-vs-N views).
+            var topQ = list.Max(e => e.Q);
+            var lowest = topQ - qDiff;
+            var moves = list
+                .Where(e => e != null && e.Q > lowest)
+                .OrderByDescending(e => e.Nodes)
+                .Take(Math.Min(list.Count, numberOfLines))
+                .ToList();
+
+            if (moves.Count == 0) return;
+
+            var traces = new List<object>();
+
+            for (int i = 0; i < moves.Count; i++)
+            {
+                var m = moves[i];
+                var color = ConvergenceColor(i);
+
+                // Legend label: drop N/Q (read off the axes); keep move, policy prior, and raw value.
+                string vPart = m.V != 0.0 ? $" V: {m.V:f2}" : "";
+                string label = $"{m.SANMove}, P: {m.P / 100:p1}{vPart}";
+
+                // Per-tick (N, Q) trajectory across the search. If lengths drift (shouldn't, but be
+                // defensive), trim to the shorter so we don't render bogus pairs.
+                if (!NAbsoluteValuesDict.TryGetValue(m.SANMove, out var nList)) continue;
+                if (!QvaluesDict.TryGetValue(m.SANMove, out var qList)) continue;
+                int len = Math.Min(nList.Count, qList.Count);
+                if (len == 0) continue;
+
+                var xs = new double[len];
+                var ys = new double[len];
+                for (int t = 0; t < len; t++)
+                {
+                    xs[t] = Math.Max(1.0, nList[t]); // log axis can't take 0
+                    ys[t] = qList[t];
+                }
+
+                traces.Add(new
+                {
+                    x = xs,
+                    y = ys,
+                    type = "scatter",
+                    mode = "lines",
+                    name = label,
+                    line = new { color = color, width = 1.5, shape = "spline" },
+                    hovertemplate = $"{m.SANMove}<br>N: %{{x:,.0f}}<br>Q: %{{y:.3f}}<extra></extra>",
+                });
+            }
+
+            if (traces.Count == 0) return;
+
+            // Log X with explicit clean SI tick labels (1, 10, 100, 1K, 10K, 100K, 1M, 10M).
+            // Per-move visit counts span 2-4 orders of magnitude in MCTS, so log is the only way
+            // to keep low-visit moves readable; explicit tickvals avoid Plotly's odd default labels.
+            var xaxis = new
+            {
+                type = "log",
+                showgrid = false,
+                zeroline = false,
+                autorange = true,
+                tickmode = "array",
+                tickvals = new double[] { 1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000 },
+                ticktext = new[] { "1", "10", "100", "1K", "10K", "100K", "1M", "10M", "100M" },
+                tickfont = new { size = fontSizeTickFont },
+                color = whiteColor,
+                automargin = true,
+            };
+
+            // Mirror the Q chart y-axis style.
+            var yaxis = new
+            {
+                gridcolor = whiteGridColor,
+                gridwidth = 1,
+                autorange = true,
+                automargin = true,
+                showgrid = true,
+                nticks = 6,
+                tickfont = new { size = fontSizeTickFont },
+                tickformat = ".2f",
+                color = whiteColor,
+            };
+
+            var layout = new
+            {
+                title = new
+                {
+                    text = $"Top {moves.Count} Q trajectories vs visits",
+                    font = new { size = fontSizeTitle, color = titleColor },
+                },
+                paper_bgcolor = "rgba(0,0,0,0)",
+                plot_bgcolor = "rgba(0,0,0,0)",
+                showlegend = true,
+                legend = new { font = new { size = fontSizeLegend - 2, color = titleColor } },
+                xaxis = xaxis,
+                yaxis = yaxis,
+                margin = margin,
+            };
+
+            await chessModule.InvokeVoidAsync("setNdataPlot", ConvergenceChartElement, layout, traces);
+        }
+
         public void Dispose()
         {
             //ResetPlot();
