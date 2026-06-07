@@ -194,7 +194,14 @@ let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (pu
           solved <- not (board.AnyLegalMove())
         correct <- solved
 
-    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = movePlayed} else el) |> Seq.toList
+    // Sentinel: when the engine returned an empty bestmove for a failed puzzle
+    // (e.g. the agent's exception handler fell back to ""), stamp "0000" so the
+    // EPD writer and visualizer can still identify the failing command instead
+    // of silently dropping the puzzle.
+    let stampedMovePlayed =
+        if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+        else movePlayed
+    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
     let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }
 
     //Return minimal puzzle result
@@ -367,6 +374,10 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
     // Track correctness per topN threshold
     let correct = System.Collections.Generic.Dictionary<int, bool>()
     for n in topNs do correct.[n] <- true
+    // Capture the first top-1 failure so EPD writer and UI visualizer can show
+    // the engine's wrong move (MovePlayed) on the correct board.
+    let mutable firstFailedCorrectMove = ""
+    let mutable firstFailedEngineMove = ""
 
     for cmd in puzzle.Commands do
         let! (mv, allNNValues) = agent.PostAndAsyncReply(fun ch -> BestMoveWithAllPolicies(cmd, ch))
@@ -395,9 +406,29 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
                 solved <- not (board.AnyLegalMove())
               // If mate fallback passed for maxTopN, it passes for all
             correct.[n] <- solved
+            // Guard on CorrectMove (always non-empty) so we capture the genuine FIRST top-1
+            // failure even when the engine returned an empty bestmove (mv = "").
+            if n = 1 && not solved && firstFailedCorrectMove = "" then
+                firstFailedCorrectMove <- cmd.CorrectMove
+                firstFailedEngineMove <- mv
 
     let avgValueLoss = if valueLosses.Count > 0 then valueLosses |> Seq.average else -1.0
-    return (puzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
+    let updatedPuzzle =
+        if firstFailedCorrectMove = "" then puzzle
+        else
+            // Sentinel "0000" when the engine returned an empty bestmove so the
+            // failing command is still identifiable downstream.
+            let stamped =
+                if System.String.IsNullOrEmpty firstFailedEngineMove then "0000"
+                else firstFailedEngineMove
+            let cmds =
+                puzzle.Commands
+                |> Seq.map (fun el ->
+                    if el.CorrectMove = firstFailedCorrectMove then { el with MovePlayed = stamped }
+                    else el)
+                |> Seq.toList
+            { puzzle with Commands = cmds }
+    return (updatedPuzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
   }
 
 /// Per-puzzle multi-topN value workflow: one per-child evaluation, check all thresholds.
@@ -472,7 +503,14 @@ let runPuzzleViaAgentValueTopN (agent:MailboxProcessor<EngineMsg>) (topN:int) (p
 
           correct <- solved
 
-    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = movePlayed} else el) |> Seq.toList
+    // Sentinel: when the engine returned an empty bestmove for a failed puzzle
+    // (e.g. the agent's exception handler fell back to ""), stamp "0000" so the
+    // EPD writer and visualizer can still identify the failing command instead
+    // of silently dropping the puzzle.
+    let stampedMovePlayed =
+        if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+        else movePlayed
+    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
     let puzzleWithMove = {puzzle with Commands = cmds; Index = 0}
 
     return
@@ -608,7 +646,14 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
                             movePlayed <- pvMove
                             failedAtIndex <- i
 
-        let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = movePlayed} else el) |> Seq.toList
+        // Sentinel: when the engine returned an empty bestmove for a failed puzzle
+        // (e.g. the agent's exception handler fell back to ""), stamp "0000" so the
+        // EPD writer and visualizer can still identify the failing command instead
+        // of silently dropping the puzzle.
+        let stampedMovePlayed =
+            if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+            else movePlayed
+        let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
         let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }
 
         // When the failure is at a later position (i > 0), the initial NNValues
@@ -1262,7 +1307,14 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
           solved <- not (board.AnyLegalMove())
         correct <- solved
 
-    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = movePlayed} else el) |> Seq.toList
+    // Sentinel: when the engine returned an empty bestmove for a failed puzzle
+    // (e.g. the agent's exception handler fell back to ""), stamp "0000" so the
+    // EPD writer and visualizer can still identify the failing command instead
+    // of silently dropping the puzzle.
+    let stampedMovePlayed =
+        if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+        else movePlayed
+    let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
     let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }
     return
       { PuzzleData = puzzleWithMove
