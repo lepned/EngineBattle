@@ -27,10 +27,40 @@ type CompareParams =
       UciOptions1: (string * string) list
       UciOptions2: (string * string) list }
 
+type PieceValuesParams =
+    { Engine: string
+      Fen: string
+      Moves: string list
+      Nodes: int option
+      MoveTime: int option
+      Depth: int option
+      UciOptions: (string * string) list }
+
+type PieceValueFitParams =
+    { Engine: string
+      Positions: string
+      Sample: int option
+      Nodes: int option
+      ByPhase: bool
+      Outcome: bool
+      PgnEval: bool
+      Player: string option
+      Bootstrap: int option
+      UciOptions: (string * string) list }
+
+type PvBatchParams =
+    { Template: string
+      NetFolder: string
+      Rounds: int option
+      Out: string option }
+
 type VerbResult =
     | Perft of depth:int * sampleSize:int
     | Analyze of AnalyzeParams
     | Compare of CompareParams
+    | PieceValues of PieceValuesParams
+    | PieceValueFit of PieceValueFitParams
+    | PvBatch of PvBatchParams
     | PuzzleJson of path:string * jsonOut:string option
     | Tournament of configFile:string
     | Eret of configFile: string
@@ -328,6 +358,82 @@ module CustomParser =
                               UciOptions1 = List.rev uci1; UciOptions2 = List.rev uci2 }
                     parseArgs args i (Verb (Compare p) :: acc)
                 else failwith "Missing parameters for Compare (requires: <engine1> <engine2>)"
+            | "piecevalues" | "pv" | "values" -> // Handle the PieceValues verb
+                if index + 1 < args.Length then
+                    let engine = args.[index + 1]
+                    // FEN is optional — if next arg is missing or starts with --, default to startpos
+                    let mutable fen, startIdx =
+                        if index + 2 < args.Length && not (args.[index + 2].StartsWith("--")) then
+                            args.[index + 2], index + 3
+                        else
+                            "startpos", index + 2
+                    let mutable i = startIdx
+                    let mutable nodes = None
+                    let mutable movetime = None
+                    let mutable depth = None
+                    let mutable moves = []
+                    let mutable uciOptions = []
+                    while i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--depth" -> depth <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--fen" -> fen <- args.[i + 1]; i <- i + 2
+                        | "--moves" ->
+                            i <- i + 1
+                            while i < args.Length && not (args.[i].StartsWith("--")) do
+                                moves <- args.[i] :: moves; i <- i + 1
+                            moves <- List.rev moves
+                        | "--uci" -> uciOptions <- (args.[i + 1], args.[i + 2]) :: uciOptions; i <- i + 3
+                        | unknown -> failwithf "Unknown piecevalues option: %s" unknown
+                    let p = { Engine = engine; Fen = fen; Moves = moves
+                              Nodes = nodes; MoveTime = movetime; Depth = depth
+                              UciOptions = List.rev uciOptions }
+                    parseArgs args i (Verb (PieceValues p) :: acc)
+                else failwith "Missing parameter for PieceValues (requires: <engine>)"
+            | "piecevaluefit" | "pvfit" -> // Handle the PieceValueFit verb (regression)
+                if index + 2 < args.Length then
+                    let engine = args.[index + 1]
+                    let positions = args.[index + 2]
+                    let mutable i = index + 3
+                    let mutable sample = None
+                    let mutable nodes = None
+                    let mutable byPhase = false
+                    let mutable outcome = false
+                    let mutable pgnEval = false
+                    let mutable player = None
+                    let mutable bootstrap = None
+                    let mutable uciOptions = []
+                    while i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--sample" -> sample <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--by-phase" | "--byphase" -> byPhase <- true; i <- i + 1
+                        | "--outcome" -> outcome <- true; i <- i + 1
+                        | "--pgneval" -> pgnEval <- true; i <- i + 1
+                        | "--player" -> player <- Some args.[i + 1]; i <- i + 2
+                        | "--bootstrap" | "--ci" -> bootstrap <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--uci" -> uciOptions <- (args.[i + 1], args.[i + 2]) :: uciOptions; i <- i + 3
+                        | unknown -> failwithf "Unknown pvfit option: %s" unknown
+                    let p = { Engine = engine; Positions = positions; Sample = sample
+                              Nodes = nodes; ByPhase = byPhase; Outcome = outcome; PgnEval = pgnEval
+                              Player = player; Bootstrap = bootstrap; UciOptions = List.rev uciOptions }
+                    parseArgs args i (Verb (PieceValueFit p) :: acc)
+                else failwith "Missing parameters for PieceValueFit (requires: <engine> <positions.epd>)"
+            | "pvbatch" -> // Batch piece-value analysis over a folder of nets
+                if index + 2 < args.Length then
+                    let template = args.[index + 1]
+                    let netFolder = args.[index + 2]
+                    let mutable i = index + 3
+                    let mutable rounds = None
+                    let mutable out = None
+                    while i < args.Length && args.[i].StartsWith("--") do
+                        match args.[i].ToLower() with
+                        | "--rounds" -> rounds <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--out" -> out <- Some args.[i + 1]; i <- i + 2
+                        | unknown -> failwithf "Unknown pvbatch option: %s" unknown
+                    parseArgs args i (Verb (PvBatch { Template = template; NetFolder = netFolder; Rounds = rounds; Out = out }) :: acc)
+                else failwith "Missing parameters for pvbatch (requires: <templateTournament.json> <netFolder>)"
             | "puzzlejson" | "puzzle" | "p" -> // Handle the PuzzleFile verb
                 if index + 1 < args.Length then
                     let puzzleFile = args.[index + 1]
