@@ -1,11 +1,13 @@
 module GameHelpersTests
 
+open System
 open Xunit
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.GameHelpers
 open ChessLibrary.GameSetup
 open ChessLibrary.GameReplay
+open ChessLibrary.TimeControlTypes
 
 // ============================================================================
 // Helper functions for creating test data
@@ -418,3 +420,50 @@ let ``getPositionWithMoves with custom FEN start position`` () =
     let result = getPositionWithMoves board
 
     Assert.Equal($"position fen {customFen} moves f1b5", result)
+
+// ============================================================================
+// Moves-to-go (repeating time control) tests
+// ============================================================================
+
+let private mkTc periodW periodB fixedSec incSec : TimeControl =
+    let cfg = { Id = 1
+                Fixed = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(float fixedSec))
+                Increment = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(float incSec))
+                NodeLimit = false
+                Nodes = 0 }
+    { TimeConfigs = [cfg]; WmovesToGo = periodW; BmovesToGo = periodB }
+
+[<Fact>]
+let ``MovesToGoPeriod is max of W and B`` () =
+    Assert.Equal(40, (mkTc 40 30 300 0).MovesToGoPeriod)
+    Assert.Equal(0, (mkTc 0 0 300 0).MovesToGoPeriod)
+
+[<Fact>]
+let ``GetTimeForMove counts moves-to-go down within a period`` () =
+    let tc = mkTc 20 20 30 0
+    let cfg = tc.GetTimeConfig 1
+    let mtgOf movesDone =
+        match tc.GetTimeForMove cfg movesDone with
+        | UnionType.WithMoves(_, _, w, _) -> w
+        | other -> failwithf "expected WithMoves, got %A" other
+    Assert.Equal(20, mtgOf 0)    // first move of a period
+    Assert.Equal(12, mtgOf 8)    // 8 completed -> 12 to go
+    Assert.Equal(1, mtgOf 19)    // last move of the period
+    Assert.Equal(20, mtgOf 20)   // wraps to a fresh period
+
+[<Fact>]
+let ``moves-to-go go-command emits a single valid movestogo`` () =
+    let tc = mkTc 20 20 30 0
+    let cfg = tc.GetTimeConfig 1
+    let union = tc.GetTimeForMove cfg 8
+    let cmd = TimeControlCommands.uciTimeCommand union (TimeOnly(0,0,30)) (TimeOnly(0,0,30))
+    Assert.Contains("movestogo 12", cmd)
+    Assert.DoesNotContain("movestogo 12 12", cmd)   // not the old invalid two-number form
+
+[<Fact>]
+let ``no moves-to-go produces a command without movestogo`` () =
+    let tc = mkTc 0 0 30 1
+    let cfg = tc.GetTimeConfig 1
+    let union = tc.GetTimeForMove cfg 5
+    let cmd = TimeControlCommands.uciTimeCommand union (TimeOnly(0,0,30)) (TimeOnly(0,0,30))
+    Assert.DoesNotContain("movestogo", cmd)

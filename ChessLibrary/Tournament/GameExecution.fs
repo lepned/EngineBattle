@@ -208,7 +208,14 @@ let playWithPondering
         if isWhite then GameHelpers.updateClocks duration wTime incr useNodes
         else GameHelpers.updateClocks duration bTime incr useNodes
       if isWhite then wTime <- currentTime else bTime <- currentTime
-      moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)
+      // Repeating moves-to-go: top up the mover's base time when it completes a period.
+      // board is pre-move here (MakeMove happens below), so NextMoveNumber() is the move just made.
+      let mtgPeriod = tourny.TimeControl.MovesToGoPeriod
+      if mtgPeriod > 0 && not useNodes && board.NextMoveNumber() % mtgPeriod = 0 then
+          let cfg = tourny.TimeControl.GetTimeConfig(currentPlaying.Config.TimeControlID)
+          if isWhite then wTime <- TimeOnly(wTime.Ticks + cfg.Fixed.Ticks)
+          else bTime <- TimeOnly(bTime.Ticks + cfg.Fixed.Ticks)
+      moveInfoData.tl <- int64 ((if isWhite then wTime else bTime).ToTimeSpan().TotalMilliseconds)
       moveInfoData.mt <- int64 duration.TotalMilliseconds
       moveInfoData.pcs <- byte piecesLeft
 
@@ -515,7 +522,9 @@ let playWithPondering
                       if timeConfig.NodeLimit then
                           currentPlaying.GoNodes timeConfig.Nodes
                       else
-                          currentPlaying.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
+                          // moves-to-go control sends a counting-down movestogo; harmless (GetTime) otherwise
+                          let movesDone = board.NextMoveNumber() - 1
+                          currentPlaying.Go(tourny.TimeControl.GetTimeForMove timeConfig movesDone, wTime, bTime)
                   moveTimer.Restart()
                   lastCheck <- 250L
 
@@ -775,7 +784,8 @@ let playGeneric
         elif timeConfig.NodeLimit then
           playing.GoNodes timeConfig.Nodes
         else
-          playing.Go(tourny.TimeControl.GetTime(timeConfig), wTime, bTime)
+          let movesDone = board.NextMoveNumber() - 1
+          playing.Go(tourny.TimeControl.GetTimeForMove timeConfig movesDone, wTime, bTime)
 
       let! lineOrAdj = readLineOrAdjudication playing ct
       match lineOrAdj with
@@ -879,6 +889,13 @@ let playGeneric
                   wTime <- currentTime
                 else
                   bTime <- currentTime
+                // Repeating moves-to-go: top up the mover's base time when it completes a period
+                // (board is pre-move here; MakeMove happens below).
+                let mtgPeriod = tourny.TimeControl.MovesToGoPeriod
+                if mtgPeriod > 0 && not useNodes && board.NextMoveNumber() % mtgPeriod = 0 then
+                    let cfg = tourny.TimeControl.GetTimeConfig(playing.Config.TimeControlID)
+                    if isWhite then wTime <- TimeOnly(wTime.Ticks + cfg.Fixed.Ticks)
+                    else bTime <- TimeOnly(bTime.Ticks + cfg.Fixed.Ticks)
                 let mutable posToCheck = board.Position
                 let piecesLeft = PositionOps.numberOfPieces &posToCheck
                 moveInfoData.tl <- int64 (currentTime.ToTimeSpan().TotalMilliseconds)

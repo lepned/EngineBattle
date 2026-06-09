@@ -135,8 +135,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
   - **Increment**: Increment time control in HH:MM:SS:MMM format.
   - **NodeLimit**: Enable or disable node limit.
   - **Nodes**: Number of nodes for the time control.
-- **WmovesToGo**: Number of white moves to go.
-- **BmovesToGo**: Number of black moves to go.
+- **WmovesToGo** / **BmovesToGo**: Moves per repeating time-control period (e.g. `40` = "40 moves, then more time"). `0` (default) = sudden-death/increment with no `movestogo`. When `> 0`, EB sends a counting-down UCI `movestogo` each move and tops up the base time (`Fixed`) at every period boundary, with the **same base repeating** each period. Symmetric only (both sides use `max(W,B)`); multi-stage controls such as `40/90 + 30/30` are not supported.
 
 
 ## Tournament.json example - copy this as template

@@ -73,23 +73,24 @@ module TimeControlTypes =
       member x.GetFixedtime(idx: int) =
         (x.GetTimeConfig idx).Fixed
       member x.GetTime (config: TimeConfig) =
+        // moves-to-go checked FIRST so a repeating control isn't shadowed by the increment cases
         match (config.Increment, config.Increment, x.WmovesToGo, x.BmovesToGo) with
+        | (_, _, w, b) when w > 0 || b > 0 ->
+            UnionType.WithMoves (config.Fixed, config.Increment, x.WmovesToGo, x.BmovesToGo)
         | (w, b, _, _) when w.Ticks = 0 && b.Ticks = 0 ->
             UnionType.FixedTime(config.Fixed)
         | (w, b, _, _) when w.Ticks > 0 || b.Ticks > 0 ->
             UnionType.WithIncrement(config.Fixed, config.Increment)
-        | (_, _, w, b) when w > 0 || b > 0 ->
-            UnionType.WithMoves (config.Fixed, config.Increment, x.WmovesToGo, x.BmovesToGo)
         | _ -> UnionType.Nodes(config.Nodes)
       member x.GetUnion(idx: int) =
         let config = x.GetTimeConfig idx
         match (config.Increment, config.Increment, x.WmovesToGo, x.BmovesToGo) with
+        | (_, _, w, b) when w > 0 || b > 0 ->
+            UnionType.WithMoves (config.Fixed, config.Increment, x.WmovesToGo, x.BmovesToGo)
         | (w, b, _, _) when w.Ticks = 0 && b.Ticks = 0 ->
             UnionType.FixedTime(config.Fixed)
         | (w, b, _, _) when w.Ticks > 0 || b.Ticks > 0 ->
             UnionType.WithIncrement(config.Fixed, config.Increment)
-        | (_, _, w, b) when w > 0 || b > 0 ->
-            UnionType.WithMoves (config.Fixed, config.Increment, x.WmovesToGo, x.BmovesToGo)
         | _ -> UnionType.Nodes(config.Nodes)
       member x.GetIncrementTime(idx: int) =
         (x.GetTimeConfig idx).Increment
@@ -101,6 +102,20 @@ module TimeControlTypes =
         let fixedMs = int (TimeSpan(config.Fixed.Ticks).TotalMilliseconds)
         let incrMs = int (TimeSpan(config.Increment.Ticks).TotalMilliseconds)
         (fixedMs + incrMs)
+      /// Moves per (repeating) time-control period; 0 = not a moves-to-go control.
+      /// Symmetric for now: both sides use max(W,B).
+      member x.MovesToGoPeriod = max x.WmovesToGo x.BmovesToGo
+      /// Like GetTime, but for a repeating moves-to-go control it bakes the COUNTDOWN
+      /// (moves left in the current period) into the WithMoves union, given how many
+      /// moves the side to move has already completed (e.g. board.NextMoveNumber() - 1).
+      member x.GetTimeForMove (config: TimeConfig) (movesDoneBySideToMove: int) =
+        let period = x.MovesToGoPeriod
+        if not config.NodeLimit && period > 0 && config.Fixed.Ticks > 0L then
+          let rem = period - (movesDoneBySideToMove % period)
+          let mtg = if rem <= 0 then period else rem
+          UnionType.WithMoves (config.Fixed, config.Increment, mtg, mtg)
+        else
+          x.GetTime config
 
   module TimeControlCommands =
     let createTimeControlWithIncrementWithPonder (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) : string =
@@ -127,7 +142,10 @@ module TimeControlTypes =
       let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
       let wincMs = int (TimeSpan(winc.Ticks).TotalMilliseconds)
       let bincMs = int (TimeSpan(binc.Ticks).TotalMilliseconds)
-      sprintf "go wtime %d btime %d winc %d binc %d movestogo %d %d" white black wincMs bincMs wmoves bmoves
+      // UCI movestogo is a SINGLE value for the side to move; wmoves==bmoves here
+      // (symmetric repeating period), so emit one (bmoves kept for signature compatibility).
+      ignore bmoves
+      sprintf "go wtime %d btime %d winc %d binc %d movestogo %d" white black wincMs bincMs wmoves
 
     let createNodes nodes =
       sprintf "go nodes %d" nodes
