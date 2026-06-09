@@ -61,6 +61,7 @@ type VerbResult =
     | PieceValues of PieceValuesParams
     | PieceValueFit of PieceValueFitParams
     | PvBatch of PvBatchParams
+    | PvCombo of pgn:string
     | PuzzleJson of path:string * jsonOut:string option
     | Tournament of configFile:string
     | Eret of configFile: string
@@ -434,6 +435,10 @@ module CustomParser =
                         | unknown -> failwithf "Unknown pvbatch option: %s" unknown
                     parseArgs args i (Verb (PvBatch { Template = template; NetFolder = netFolder; Rounds = rounds; Out = out }) :: acc)
                 else failwith "Missing parameters for pvbatch (requires: <templateTournament.json> <netFolder>)"
+            | "pvcombo" -> // Contextual (absolute-signature) material-imbalance report
+                if index + 1 < args.Length then
+                    parseArgs args (index + 2) (Verb (PvCombo args.[index + 1]) :: acc)
+                else failwith "Missing parameter for pvcombo (requires: <games.pgn>)"
             | "puzzlejson" | "puzzle" | "p" -> // Handle the PuzzleFile verb
                 if index + 1 < args.Length then
                     let puzzleFile = args.[index + 1]

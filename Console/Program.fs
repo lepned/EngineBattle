@@ -1246,6 +1246,107 @@ module Program =
           let stride = float arr.Length / float sample
           [| for i in 0 .. sample - 1 -> arr.[int (float i * stride)] |]
 
+  // ---- Combination / contextual material-imbalance measurement ----
+  // Matches positions by ABSOLUTE per-side material (not just the difference), so e.g.
+  // BN-vs-BB (bishop pair) is distinguished from bare B-vs-N. A signature gives an exact
+  // count for each INVOLVED piece type on each side; UNINVOLVED types must be equal across
+  // sides (which forces pawns level by construction). Type order: [P;N;B;R;Q].
+  let private pvSideCounts (squares: char[]) : int[] * int[] =
+      let w = Array.zeroCreate 5
+      let b = Array.zeroCreate 5
+      let idx c = match c with 'P' -> 0 | 'N' -> 1 | 'B' -> 2 | 'R' -> 3 | 'Q' -> 4 | _ -> -1
+      for c in squares do
+          match c with
+          | 'P' | 'N' | 'B' | 'R' | 'Q' -> let i = idx c in w.[i] <- w.[i] + 1
+          | 'p' | 'n' | 'b' | 'r' | 'q' -> let i = idx (System.Char.ToUpper c) in b.[i] <- b.[i] + 1
+          | _ -> ()
+      w, b
+
+  // Rows: (whiteCounts[5], blackCounts[5], z White-relative, wv option)
+  let private pvComboRows (path: string) : (int[] * int[] * float * float option)[] =
+      let rows = ResizeArray<int[] * int[] * float * float option>()
+      for g in ChessLibrary.FullPGNParser.parsePgnFile path do
+          let z = match g.GameMetaData.Result with "1-0" -> Some 1.0 | "0-1" -> Some -1.0 | "1/2-1/2" -> Some 0.0 | _ -> None
+          match z with
+          | None -> ()
+          | Some zz ->
+              try
+                  let board = ChessLibrary.Chess.Board()
+                  let startFen =
+                      if String.IsNullOrWhiteSpace g.GameMetaData.Fen then ChessLibrary.MiscTypes.startPosition
+                      else g.GameMetaData.Fen
+                  board.LoadFen startFen
+                  let mutable ply = 0
+                  for pm in g.Mainline do
+                      board.PlaySanMove pm.San
+                      ply <- ply + 1
+                      if ply >= 16 then
+                          let w, b = pvSideCounts (pvParseFenBoard (board.FEN()))
+                          rows.Add(w, b, zz, pvParseWv pm.Comment)
+              with _ -> ()
+      rows.ToArray()
+
+  // Does (w,b) match the signature with the A-side as White? Some = exact, None/None = equal.
+  let private pvSigMatch (wr: int option[]) (br: int option[]) (w: int[]) (b: int[]) : bool =
+      let mutable good = true
+      for t in 0 .. 4 do
+          match wr.[t], br.[t] with
+          | Some wv, Some bv -> if w.[t] <> wv || b.[t] <> bv then good <- false
+          | None, None -> if w.[t] <> b.[t] then good <- false
+          | _ -> good <- false
+      good
+
+  // +1 = White is the A-side, -1 = Black is the A-side (mirror), 0 = no match
+  let private pvComboOrient (wr: int option[]) (br: int option[]) (w: int[]) (b: int[]) : int =
+      if pvSigMatch wr br w b then 1
+      elif pvSigMatch wr br b w then -1
+      else 0
+
+  let private runPvCombo (pgn: string) =
+    try
+        let path = normalizePath pgn
+        if not (File.Exists path) then failwithf "PGN not found: %s" path
+        printfn "\nContextual material imbalances on:\n  %s\n" path
+        printf "Collecting positions ..."
+        let rows = pvComboRows path
+        printfn " %d positions past ply 16.\n" rows.Length
+
+        // build signature from involved (typeIndex, whiteCount, blackCount); P=0 N=1 B=2 R=3 Q=4
+        let sigOf (involved: (int * int * int) list) =
+            let wr = Array.create 5 None
+            let br = Array.create 5 None
+            for (t, wv, bv) in involved do wr.[t] <- Some wv; br.[t] <- Some bv
+            wr, br
+        let combos =
+            [ "B vs N",     sigOf [ (2,1,0); (1,0,1) ]                 // bare, context-free baseline
+              "R vs N",     sigOf [ (3,1,0); (1,0,1) ]
+              "R vs B",     sigOf [ (3,1,0); (2,0,1) ]
+              "BN vs BB",   sigOf [ (2,1,2); (1,1,0) ]                 // bishop pair: A=B+N, B=B+B
+              "BB vs NN",   sigOf [ (2,2,0); (1,0,2) ]                 // pair vs two knights
+              "BR vs BN",   sigOf [ (2,1,1); (3,1,0); (1,0,1) ]       // R vs N with a bishop each
+              "RN vs RB",   sigOf [ (3,1,1); (1,1,0); (2,0,1) ]       // N vs B with a rook each
+              "QN vs QB",   sigOf [ (4,1,1); (1,1,0); (2,0,1) ] ]     // N vs B with a queen each
+
+        printfn "  %-12s %8s %10s %9s" "matchup" "n" "outcome" "eval(pw)"
+        printfn "  %-12s %8s %10s %9s" "(A vs B)" "" "(+=A)" "(+=A)"
+        for (label, (wr, br)) in combos do
+            let acc = ResizeArray<float * float option>()
+            for (w, b, z, wv) in rows do
+                match pvComboOrient wr br w b with
+                | 1 -> acc.Add(z, wv)
+                | -1 -> acc.Add(-z, wv |> Option.map (fun v -> -v))
+                | _ -> ()
+            if acc.Count >= 20 then
+                let mz = acc |> Seq.averageBy fst
+                let evs = acc |> Seq.choose snd |> Array.ofSeq
+                let me = if evs.Length > 0 then Array.average evs else nan
+                printfn "  %-12s %8d %+10.3f %+9.2f" label acc.Count mz me
+            else
+                printfn "  %-12s %8d %10s %9s" label acc.Count "(few)" ""
+        printfn ""
+    with ex ->
+        printfn "Error during pvcombo: %s" ex.Message
+
   /// Side to move is in check (a tactical position — exclude from a quiet fit).
   let private pvInCheck (fen: string) : bool =
       let mutable pos = RuntimeUtilities.BoardHelper.getPosFromFen (Some fen)
@@ -2144,6 +2245,8 @@ module Program =
                     runPieceValueFit p
                 | Verb (PvBatch p) ->
                     runPvBatch p
+                | Verb (PvCombo pgn) ->
+                    runPvCombo pgn
                 | Verb (PuzzleJson (path, jsonOut)) ->
                     runPuzzles path jsonOut
                 | Verb (Eret path) ->                     
