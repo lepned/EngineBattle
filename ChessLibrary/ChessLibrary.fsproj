@@ -111,6 +111,7 @@
 
 		<!-- Tournament support modules (depend on engine, parser, etc.) -->
 		<Compile Include="Tournament\TournamentTypes.fs" />
+		<Compile Include="Tournament\LiveFeedWire.fs" />
 		<Compile Include="Tournament\TournamentState.fs" />
 		<Compile Include="Tournament\TablebaseProbe.fs" />
 		<Compile Include="Tournament\GameReplay.fs" />
