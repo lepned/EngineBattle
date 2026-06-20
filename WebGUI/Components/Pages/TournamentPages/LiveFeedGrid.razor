@@ -1,0 +1,202 @@
+@page "/tournament-grid"
+@using WebGUI.Services
+@using WebGUI.Components.Layout.TournamentLayout
+@using ChessLibrary
+@using static ChessLibrary.MiscTypes
+@implements IDisposable
+@inject JsonFeedService JsonFeedSvc
+@inject LiveFeedReplayer Replayer
+@inject NavigationManager Nav
+
+<PageTitle>Live games grid</PageTitle>
+
+<div class="grid-header">
+    <h3>@tournamentName</h3>
+    <span class="count">@games.Count game(s)</span>
+</div>
+
+@{
+    List<GameVM> tiles;
+    lock (sync) { tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList(); }
+}
+
+@if (tiles.Count == 0)
+{
+    <p class="hint">No games yet. Open <code>/tournament-grid?replay=PATH&amp;games=4&amp;speed=600</code> to replay a recording,
+        or start a live tournament with this page open.</p>
+}
+
+<div class="games-grid">
+    @foreach (var g in tiles)
+    {
+        <a class="game-tile @(g.Finished ? "done" : "")"
+           href="@($"/tournament-feed?game={Uri.EscapeDataString(g.GameId)}")" target="_blank"
+           title="Open this game in a focused view (new tab)">
+            <div class="tile-row">
+                <span class="nm">@g.Black</span>
+                <span class="ev">@g.BlackEval</span>
+            </div>
+            <MiniBoard Fen="@g.Fen" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="190" />
+            <div class="tile-row">
+                <span class="nm">@g.White</span>
+                <span class="ev">@g.WhiteEval</span>
+            </div>
+            <div class="tile-meta">
+                <span class="lm">@g.LastMove</span>
+                <span class="st">@(g.Finished ? g.Result : (g.MoveNr > 0 ? $"move {g.MoveNr}" : "starting…"))</span>
+            </div>
+        </a>
+    }
+</div>
+
+@code {
+    private readonly Dictionary<string, GameVM> games = new();
+    private readonly object sync = new();
+    private string tournamentName = "Live games";
+    private Action<string, TournamentTypes.Update> handler;
+    private volatile bool renderQueued;
+
+    protected override void OnInitialized()
+    {
+        handler = OnFeed;
+        JsonFeedSvc.SubscribeMulti(handler);
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var replay = GetQuery("replay");
+            if (!string.IsNullOrEmpty(replay))
+            {
+                var n = int.TryParse(GetQuery("games"), out var gx) ? gx : 4;
+                var speed = int.TryParse(GetQuery("speed"), out var ms) ? ms : 600;
+                _ = Replayer.ReplayGamesConcurrentlyAsync(replay, n, speed);
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private void OnFeed(string gameId, TournamentTypes.Update update)
+    {
+        lock (sync)
+        {
+            switch (update)
+            {
+                case TournamentTypes.Update.StartOfTournament sot:
+                    if (sot.Info.Tournament != null)
+                        tournamentName = sot.Info.Tournament.Value.Name;
+                    break;
+
+                case TournamentTypes.Update.StartOfGame sog:
+                    {
+                        var vm = Get(gameId);
+                        vm.White = sog.Game.WhitePlayer.Name;
+                        vm.Black = sog.Game.BlackPlayer.Name;
+                        vm.Fen = sog.Game.OpeningMovesAndFen.Count > 0
+                            ? sog.Game.OpeningMovesAndFen[sog.Game.OpeningMovesAndFen.Count - 1].FenAfterMove
+                            : sog.Game.StartPos;
+                        vm.FromSq = vm.ToSq = vm.LastMove = "";
+                        vm.WhiteEval = vm.BlackEval = "";
+                        vm.Result = "";
+                        vm.Finished = false;
+                        vm.Ply = 0;
+                        break;
+                    }
+
+                case TournamentTypes.Update.BestMove bm:
+                    {
+                        var vm = Get(gameId);
+                        vm.Fen = bm.Info.FEN;
+                        vm.FromSq = bm.Info.MoveAndFen.Move.FromSq;
+                        vm.ToSq = bm.Info.MoveAndFen.Move.ToSq;
+                        vm.LastMove = bm.Info.MoveAndFen.ShortSan;
+                        vm.Ply++;
+                        var ev = Eval(bm.Info.Eval);
+                        if (bm.Info.Player == vm.White) vm.WhiteEval = ev;
+                        else if (bm.Info.Player == vm.Black) vm.BlackEval = ev;
+                        break;
+                    }
+
+                case TournamentTypes.Update.Status st:
+                    {
+                        var vm = Get(gameId);
+                        var ev = Eval(st.Engine.Eval);
+                        if (st.Engine.PlayerName == vm.White) vm.WhiteEval = ev;
+                        else if (st.Engine.PlayerName == vm.Black) vm.BlackEval = ev;
+                        break;
+                    }
+
+                case TournamentTypes.Update.EndOfGame eog:
+                    {
+                        var vm = Get(gameId);
+                        vm.Result = eog.Result.Result;
+                        vm.Finished = true;
+                        break;
+                    }
+            }
+        }
+        ThrottledRender();
+    }
+
+    private GameVM Get(string id)
+    {
+        if (!games.TryGetValue(id, out var vm))
+        {
+            vm = new GameVM { GameId = id };
+            games[id] = vm;
+        }
+        return vm;
+    }
+
+    private async void ThrottledRender()
+    {
+        if (renderQueued) return;
+        renderQueued = true;
+        try
+        {
+            await Task.Delay(120);
+            renderQueued = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch { /* circuit disposed */ }
+    }
+
+    private static string Eval(EvalType e) => e == null || e.IsNA ? "" : e.ToString();
+
+    private string GetQuery(string key)
+    {
+        var q = new Uri(Nav.Uri).Query;
+        if (string.IsNullOrEmpty(q)) return null;
+        foreach (var part in q.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length == 2 && Uri.UnescapeDataString(kv[0]).Equals(key, StringComparison.OrdinalIgnoreCase))
+                return Uri.UnescapeDataString(kv[1]);
+        }
+        return null;
+    }
+
+    public void Dispose()
+    {
+        if (handler != null) JsonFeedSvc.UnsubscribeMulti(handler);
+        Replayer.Stop();
+    }
+
+    private sealed class GameVM
+    {
+        public string GameId { get; set; } = "";
+        public string White { get; set; } = "";
+        public string Black { get; set; } = "";
+        public string Fen { get; set; } = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        public string FromSq { get; set; } = "";
+        public string ToSq { get; set; } = "";
+        public string LastMove { get; set; } = "";
+        public string WhiteEval { get; set; } = "";
+        public string BlackEval { get; set; } = "";
+        public string Result { get; set; } = "";
+        public bool Finished { get; set; }
+        public int Ply { get; set; }
+        public int MoveNr => (Ply + 1) / 2;
+    }
+}

@@ -364,6 +364,10 @@
 	// internal engine runner. Same render path; the only differences are the update source and
 	// that runner-only operations are skipped (see LiveFeedContract.md).
 	private bool FeedMode => Nav.Uri.Contains("tournament-feed", StringComparison.OrdinalIgnoreCase);
+	// Focused feed view (?game=ID): subscribe to the demuxed stream filtered to one gameId.
+	private Action<string, TournamentTypes.Update> feedMultiHandler;
+	// True only when THIS page started a replay (so a focused view doesn't stop the grid's replay).
+	private bool startedReplay;
 	// Read a query-string value from the current URL (dependency-free). Used for the dev
 	// record/replay triggers: /tournament?record=PATH and /tournament-feed?replay=PATH[&speed=MS].
 	private string GetQuery(string key)
@@ -2790,13 +2794,29 @@
 					npsList = new LivePlot(chessModule, npsChart, whitePlayer, blackPlayer, "Speed (NPS)", "Nodes per sec");
 					epsList = new LivePlot(chessModule, epsChart, whitePlayer, blackPlayer, "Speed (EPS)", "NN eval per sec");
 					timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
-					// Subscribe last — after all state is ready for incoming feed events
-					JsonFeedSvc.Subscribe(Update);
+					// Subscribe last — after all state is ready for incoming feed events.
+					// ?game=ID focuses one game (from the grid): use the demuxed stream filtered to that
+					// gameId (plus global events, gameId ""). Otherwise take the whole single-game stream.
+					var gameFilter = GetQuery("game");
+					if (!string.IsNullOrEmpty(gameFilter))
+					{
+						feedMultiHandler = (gid, upd) =>
+						{
+							if (string.IsNullOrEmpty(gid) || gid == gameFilter)
+								Update(upd);
+						};
+						JsonFeedSvc.SubscribeMulti(feedMultiHandler);
+					}
+					else
+					{
+						JsonFeedSvc.Subscribe(Update);
+					}
 					// Dev/test: /tournament-feed?replay=PATH[&speed=MS] replays a recorded NDJSON file.
 					var replayPath = GetQuery("replay");
 					if (!string.IsNullOrEmpty(replayPath))
 					{
 						var speedMs = int.TryParse(GetQuery("speed"), out var ms) ? ms : 0;
+						startedReplay = true;
 						_ = Replayer.ReplayFileAsync(replayPath, speedMs);
 					}
 				}
@@ -2953,8 +2973,9 @@
     {
         TournamentSvc.Unsubscribe();
         TournamentSvc.StopRecording();
-        Replayer.Stop();
+        if (startedReplay) Replayer.Stop();
         JsonFeedSvc.Unsubscribe();
+        if (feedMultiHandler != null) JsonFeedSvc.UnsubscribeMulti(feedMultiHandler);
         Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;
         if (keyContext != null) await keyContext.DisposeAsync();
