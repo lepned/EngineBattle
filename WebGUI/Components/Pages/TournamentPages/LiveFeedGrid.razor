@@ -212,6 +212,13 @@
                         break;
                     }
 
+                case TournamentTypes.Update.PeriodicResults pr:
+                    // Catch-up: rebuild standings from the full results snapshot (sent on subscribe).
+                    results.Clear();
+                    results.AddRange(pr.results);
+                    standings = FeedStats.playerResultsFromResults(results);
+                    break;
+
                 case TournamentTypes.Update.Time tm:
                     {
                         var vm = Get(gameId);

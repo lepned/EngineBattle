@@ -1,5 +1,6 @@
 #nullable enable
 using ChessLibrary;
+using CoreTypes = ChessLibrary.TypesDef.CoreTypes;
 
 namespace WebGUI.Services
 {
@@ -18,6 +19,18 @@ namespace WebGUI.Services
         private Action<TournamentTypes.Update>? _subscriber;
         private readonly List<Action<string, TournamentTypes.Update>> _multiSubscribers = new();
         private readonly object _lock = new();
+
+        // Catch-up cache: lets a view opened mid-run reconstruct current state (LiveFeedContract.md §9.5).
+        private TournamentTypes.Update? _startOfTournament;
+        private readonly List<CoreTypes.Result> _results = new();                  // all results, for standings
+        private readonly Dictionary<string, GameSnap> _snaps = new();               // current game per stream key
+
+        private sealed class GameSnap
+        {
+            public TournamentTypes.Update? Start;                                    // last StartOfGame
+            public readonly Dictionary<string, TournamentTypes.Update> StatusByPlayer = new();
+            public TournamentTypes.Update? LastBestMove;
+        }
 
         public bool IsRunning { get; private set; }
 
@@ -40,7 +53,11 @@ namespace WebGUI.Services
         /// open view) so a grid and a focused tab don't clobber each other.</summary>
         public void SubscribeMulti(Action<string, TournamentTypes.Update> handler)
         {
-            lock (_lock) { if (!_multiSubscribers.Contains(handler)) _multiSubscribers.Add(handler); }
+            lock (_lock)
+            {
+                if (!_multiSubscribers.Contains(handler)) _multiSubscribers.Add(handler);
+                ReplaySnapshot(handler);   // bring a mid-run subscriber up to current state
+            }
         }
 
         public void UnsubscribeMulti(Action<string, TournamentTypes.Update> handler)
@@ -84,8 +101,17 @@ namespace WebGUI.Services
             return dispatched;
         }
 
-        /// <summary>Reset running state (e.g. before replaying a new stream).</summary>
-        public void Reset() => IsRunning = false;
+        /// <summary>Reset running state and catch-up cache (e.g. before replaying a new stream).</summary>
+        public void Reset()
+        {
+            lock (_lock)
+            {
+                IsRunning = false;
+                _startOfTournament = null;
+                _results.Clear();
+                _snaps.Clear();
+            }
+        }
 
         private void Dispatch(string gameId, TournamentTypes.Update update)
         {
@@ -101,7 +127,12 @@ namespace WebGUI.Services
 
             Action<TournamentTypes.Update>? single;
             Action<string, TournamentTypes.Update>[] multi;
-            lock (_lock) { single = _subscriber; multi = _multiSubscribers.ToArray(); }
+            lock (_lock)
+            {
+                UpdateCache(gameId, update);
+                single = _subscriber;
+                multi = _multiSubscribers.ToArray();
+            }
             try { single?.Invoke(update); }
             catch (Exception) { /* disposed component — ignore */ }
             foreach (var m in multi)
@@ -109,6 +140,58 @@ namespace WebGUI.Services
                 try { m(gameId, update); }
                 catch (Exception) { /* disposed component — ignore */ }
             }
+        }
+
+        // --- catch-up cache (called under _lock) ---
+
+        private GameSnap Snap(string key)
+        {
+            if (!_snaps.TryGetValue(key, out var s)) { s = new GameSnap(); _snaps[key] = s; }
+            return s;
+        }
+
+        private void UpdateCache(string key, TournamentTypes.Update update)
+        {
+            switch (update)
+            {
+                case TournamentTypes.Update.StartOfTournament:
+                    _startOfTournament = update;
+                    _results.Clear();
+                    _snaps.Clear();
+                    break;
+                case TournamentTypes.Update.StartOfGame:
+                    _snaps[key] = new GameSnap { Start = update };   // new game on this stream resets its snap
+                    break;
+                case TournamentTypes.Update.Status st:
+                    Snap(key).StatusByPlayer[st.Engine.PlayerName] = update;
+                    break;
+                case TournamentTypes.Update.BestMove:
+                    Snap(key).LastBestMove = update;
+                    break;
+                case TournamentTypes.Update.EndOfGame e:
+                    _results.Add(e.Result);
+                    break;
+            }
+        }
+
+        // Replay current state to a newly-subscribed view: tournament header, accumulated results
+        // (as PeriodicResults → standings), then each active game's start/status/last-move.
+        private void ReplaySnapshot(Action<string, TournamentTypes.Update> handler)
+        {
+            try
+            {
+                if (_startOfTournament != null)
+                    handler("", _startOfTournament);
+                if (_results.Count > 0)
+                    handler("", TournamentTypes.Update.NewPeriodicResults(new List<CoreTypes.Result>(_results)));
+                foreach (var (key, snap) in _snaps)
+                {
+                    if (snap.Start != null) handler(key, snap.Start);
+                    foreach (var st in snap.StatusByPlayer.Values) handler(key, st);
+                    if (snap.LastBestMove != null) handler(key, snap.LastBestMove);
+                }
+            }
+            catch (Exception) { /* subscriber tearing down — ignore */ }
         }
     }
 }
