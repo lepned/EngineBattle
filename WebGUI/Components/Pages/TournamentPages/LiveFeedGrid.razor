@@ -75,9 +75,9 @@
                 <span class="clk">@g.BlackTime</span>
                 <span class="ev">@g.BlackEval</span>
             </div>
-            <div class="pv">@g.BlackPV</div>
+            <div class="pv">@ShortPv(g.BlackPV)</div>
             <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@bs" />
-            <div class="pv">@g.WhitePV</div>
+            <div class="pv">@ShortPv(g.WhitePV)</div>
             <div class="tile-row">
                 <span class="nm">@g.White</span>
                 <span class="clk">@g.WhiteTime</span>
@@ -257,6 +257,15 @@
     }
 
     private static string Eval(EvalType e) => e == null || e.IsNA ? "" : e.ToString();
+
+    // Bound the PV to a sensible number of plies so it fits ~2 lines without any CSS clamp trick.
+    private const int PvMaxPlies = 14;
+    private static string ShortPv(string pv)
+    {
+        if (string.IsNullOrWhiteSpace(pv)) return "";
+        var toks = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return toks.Length <= PvMaxPlies ? pv : string.Join(' ', toks.Take(PvMaxPlies)) + " …";
+    }
 
     private static string FmtClock(TimeOnly t)
     {
