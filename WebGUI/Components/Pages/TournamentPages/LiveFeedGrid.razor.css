@@ -69,15 +69,15 @@ a.game-tile {
 .tile-row .ev { font-variant-numeric: tabular-nums; opacity: 0.9; flex: 0 0 auto; min-width: 3em; text-align: right; }
 
 .pv {
-    /* PV length is bounded in code (ShortPv) so a plain 2-line box fits without clamping/clipping */
+    /* single line, standard ellipsis truncation */
     font-family: ui-monospace, Consolas, monospace;
     font-size: 0.74rem;
     opacity: 0.8;
-    line-height: 1.35;
-    min-height: 2.7em;       /* reserve 2 lines so the board doesn't shift */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     padding: 3px 4px;
-    margin: 5px 0;
-    word-break: break-word;
+    margin: 4px 0;
 }
 
 .tile-meta {
