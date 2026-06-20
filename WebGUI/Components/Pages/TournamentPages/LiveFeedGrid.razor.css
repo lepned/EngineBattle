@@ -72,11 +72,12 @@ a.game-tile {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 0.74rem;
     opacity: 0.8;
-    line-height: 1.15;
-    min-height: 2.3em;
-    max-height: 2.3em;
+    line-height: 1.25;
+    min-height: 2.5em;
+    max-height: 2.5em;
     overflow: hidden;
-    padding: 1px 3px;
+    padding: 5px 4px;
+    margin: 3px 0;
 }
 
 .tile-meta {
