@@ -62,8 +62,12 @@ namespace WebGUI.Services
             if (parsed == null)
                 return false;
 
+            // Demux key namespaces the game by its source (server), so two servers using the same
+            // local gameId (e.g. slot "1") don't collide. "source/gameId", or just gameId when local.
             var gameId = LiveFeedWire.readGameId(json); // "" when absent (single/global game)
-            Dispatch(gameId, parsed.Value);
+            var source = LiveFeedWire.readSource(json);
+            var key = string.IsNullOrEmpty(source) ? gameId : source + "/" + gameId;
+            Dispatch(key, parsed.Value);
             return true;
         }
 

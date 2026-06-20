@@ -180,6 +180,31 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .WithStaticAssets();
+
+// Live-feed ingest endpoint: external runners POST NDJSON wire events here (one per line, or a
+// batch). The source (server) is taken from the X-Feed-Source header or the remote IP and stamped
+// onto each event so multiple servers' games stay distinct in one grid. See LiveFeedContract.md.
+app.MapPost("/api/livefeed", async (HttpContext ctx, JsonFeedService feed) =>
+{
+    var token = Environment.GetEnvironmentVariable("EB_LIVEFEED_TOKEN");
+    if (!string.IsNullOrEmpty(token) && ctx.Request.Headers["X-Feed-Token"] != token)
+        return Results.Unauthorized();
+
+    var source = ctx.Request.Headers["X-Feed-Source"].ToString();
+    if (string.IsNullOrEmpty(source))
+        source = ctx.Connection.RemoteIpAddress?.ToString() ?? "";
+
+    int n = 0;
+    using var reader = new StreamReader(ctx.Request.Body);
+    for (var line = await reader.ReadLineAsync(); line != null; line = await reader.ReadLineAsync())
+    {
+        if (string.IsNullOrWhiteSpace(line)) continue;
+        var stamped = string.IsNullOrEmpty(source) ? line : ChessLibrary.LiveFeedWire.withSource(source, line);
+        if (feed.Ingest(stamped)) n++;
+    }
+    return Results.Ok(new { ingested = n });
+});
+
 EnsureTournamentJsonIsLoaded();
 
 bool hasExplicitUrls = args.Any(a => a.StartsWith("--urls", StringComparison.OrdinalIgnoreCase))

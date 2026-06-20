@@ -195,8 +195,26 @@ let parallelTournamentRun
               with ex ->
                   logger.LogError("Failed to open live feed file {path}: {msg}", path, ex.Message)
                   None
+      let liveFeedHttpSink : LiveFeedHttpSink option =
+          match Environment.GetEnvironmentVariable "EB_LIVEFEED_URL" with
+          | null | "" -> None
+          | url ->
+              try
+                  logger.LogInformation("Live feed posting to {url}", url)
+                  Some (new LiveFeedHttpSink(url,
+                                             Environment.GetEnvironmentVariable "EB_LIVEFEED_SOURCE",
+                                             Environment.GetEnvironmentVariable "EB_LIVEFEED_TOKEN"))
+              with ex ->
+                  logger.LogError("Failed to init live feed URL sink {url}: {msg}", url, ex.Message)
+                  None
+      // Serialize once, fan out to file and/or HTTP sinks (no-op when neither is configured).
+      let emitFeed (gid: string) (u: Update) =
+          if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome then
+              let line = LiveFeedWire.withGameId gid (LiveFeedWire.serializeUpdate u)
+              liveFeedRecorder |> Option.iter (fun r -> r.RecordLine line)
+              liveFeedHttpSink |> Option.iter (fun s -> s.Send line)
       callback (Update.StartOfTournament startInfo)
-      liveFeedRecorder |> Option.iter (fun r -> r.RecordWithGameId("", Update.StartOfTournament startInfo))
+      emitFeed "" (Update.StartOfTournament startInfo)
 
       let replayList = ResizeArray<GameReplay>()
       let replayDicts =
@@ -371,11 +389,10 @@ let parallelTournamentRun
 
                           // Per-game callback: stamp this game's events with its GameNr for the live feed.
                           let gameCallback =
-                              match liveFeedRecorder with
-                              | Some r ->
+                              if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome then
                                   let gid = string slot
-                                  fun (u: Update) -> r.RecordWithGameId(gid, u); callback u
-                              | None -> callback
+                                  fun (u: Update) -> emitFeed gid u; callback u
+                              else callback
 
                           let! result =
                               let gametimer = Stopwatch.GetTimestamp()
@@ -499,6 +516,7 @@ let parallelTournamentRun
           return results |> Seq.toList
           finally
               liveFeedRecorder |> Option.iter (fun r -> r.Dispose())
+              liveFeedHttpSink |> Option.iter (fun s -> s.Dispose())
               // Safety net: stop any engine processes still running (no-op if teardown already stopped them)
               for eng in allEngines do
                   try

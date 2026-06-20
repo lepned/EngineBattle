@@ -99,4 +99,5 @@ a.game-tile {
     opacity: 0.95;
 }
 
+.tile-meta .src { opacity: 0.7; font-size: 0.72rem; white-space: nowrap; }
 .tile-meta .lm { flex: 1 1 auto; text-align: center; }

@@ -26,6 +26,10 @@ type LiveFeedRecorder(path: string) =
 
     member val Path = path
 
+    /// Append a pre-serialized wire line.
+    member _.RecordLine(line: string) =
+        lock sync (fun () -> writer.WriteLine line)
+
     /// Append one `Update` as a single wire-JSON line.
     member _.Record(update: Update) =
         let line = serializeUpdate update

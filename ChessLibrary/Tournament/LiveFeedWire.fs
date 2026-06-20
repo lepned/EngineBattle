@@ -553,3 +553,22 @@ let withGameId (gameId: string) (json: string) : string =
             o.ToJsonString()
         | _ -> json
     with _ -> json
+
+/// Read the envelope `source` (producer/server id, "" if absent). Set by the ingest endpoint from
+/// the connection, so games from different servers are distinguishable in one grid.
+let readSource (json: string) : string =
+    try
+        match JsonNode.Parse(json) with
+        | :? JsonObject as o -> getStr o "source" ""
+        | _ -> ""
+    with _ -> ""
+
+/// Return the wire line with its `source` field set/overridden.
+let withSource (source: string) (json: string) : string =
+    try
+        match JsonNode.Parse(json) with
+        | :? JsonObject as o ->
+            o["source"] <- js source
+            o.ToJsonString()
+        | _ -> json
+    with _ -> json

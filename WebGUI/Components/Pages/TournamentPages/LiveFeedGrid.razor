@@ -84,7 +84,11 @@
                 <span class="ev">@g.WhiteEval</span>
             </div>
             <div class="tile-meta">
-                <span class="gid" title="Board / game id">@g.GameId</span>
+                <span class="gid" title="Board / game id">@g.BoardId</span>
+                @if (!string.IsNullOrEmpty(g.Source))
+                {
+                    <span class="src" title="Source server">live from @g.Source</span>
+                }
                 <span class="lm">@g.LastMove</span>
                 <span class="st">@(g.Finished ? g.Result : (g.MoveNr > 0 ? $"move {g.MoveNr}" : "starting…"))</span>
             </div>
@@ -238,7 +242,10 @@
     {
         if (!games.TryGetValue(id, out var vm))
         {
-            vm = new GameVM { GameId = id };
+            var slash = id.IndexOf('/');
+            var src = slash < 0 ? "" : id.Substring(0, slash);
+            var board = slash < 0 ? id : id.Substring(slash + 1);
+            vm = new GameVM { GameId = id, Source = src, BoardId = board };
             games[id] = vm;
         }
         return vm;
@@ -297,7 +304,9 @@
 
     private sealed class GameVM
     {
-        public string GameId { get; set; } = "";
+        public string GameId { get; set; } = "";   // composite key: "source/board" or "board"
+        public string Source { get; set; } = "";    // server/producer (from ingest), "" if local
+        public string BoardId { get; set; } = "";   // local board/slot id
         public string White { get; set; } = "";
         public string Black { get; set; } = "";
         public string Fen { get; set; } = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

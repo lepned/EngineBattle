@@ -499,3 +499,61 @@ stay global. v0.1 producers may omit `gameId`; EB treats absence as one active g
 - Grid scaling and update throttling when many games stream high-frequency `Status`/`NNSeq` at once
   (per-game coalescing + only rendering visible/focused boards live).
 - Whether `gameId` should also tag `PeriodicResults` rows for incremental per-board standings.
+
+---
+
+## 9. Transport (external runner)
+
+Everything funnels through one chokepoint — `JsonFeedService.Ingest(jsonLine)` → parse → demux →
+views — so a transport is just a thin shim that delivers wire lines to `Ingest`. Implemented sinks:
+in-process bridge (internal runner), file record/replay/tail, and **HTTP POST** (below).
+
+### 9.1 HTTP ingest endpoint — `POST /api/livefeed`
+
+The WebGUI hosts `POST /api/livefeed`. The body is **NDJSON** (one wire event per line; batches
+allowed). The handler reads each line and calls `JsonFeedService.Ingest`.
+
+- **Batch + flush.** Producers should buffer and flush every ~200 ms (or N events), not one request
+  per event — the `Status`/`NNSeq` stream is high-frequency.
+- **Auth (optional).** If `EB_LIVEFEED_TOKEN` is set on the WebGUI, requests must send a matching
+  `X-Feed-Token` header (open on a trusted LAN; required otherwise).
+- **Returns** `{ "ingested": N }`.
+
+### 9.2 Source tagging (multi-server)
+
+The endpoint tags each event with a **source** so games from different servers stay distinct without
+the runner having to bake the host into `gameId`:
+
+- Source = `X-Feed-Source` header if the runner sets one (e.g. `rig-A`), else the remote IP
+  (`192.168.1.57`). The header wins (survives NAT/proxy).
+- EB stamps `source` into the envelope and **namespaces the demux key as `source/gameId`**, so two
+  servers both using local slot `1` become distinct tiles. The grid labels each tile `live from
+  <source>`. Runners therefore use **local** `gameId`s and need no awareness of other servers.
+- Many runners POST to one WebGUI → one unified grid across all servers.
+
+### 9.3 EB Console as a network producer
+
+The internal parallel runner (`ParallelExecution`) emits the feed when env vars are set (no-op
+otherwise):
+
+- `EB_LIVEFEED_FILE=<path>` — write NDJSON to a file (record / local tail).
+- `EB_LIVEFEED_URL=<url>` — POST NDJSON batches to a WebGUI's `/api/livefeed` (`LiveFeedHttpSink`).
+- `EB_LIVEFEED_SOURCE=<name>` — friendly source name sent as `X-Feed-Source` (else the WebGUI uses the IP).
+- `EB_LIVEFEED_TOKEN=<token>` — sent as `X-Feed-Token`.
+
+Both sinks can be active at once. This makes EB Console the first external producer over the wire:
+run a Console tournament on machine A with `EB_LIVEFEED_URL` pointing at the WebGUI on machine B, open
+`/tournament-grid` on B, and the games render live, labeled by source.
+
+### 9.4 WebSocket — optional (later)
+
+For lowest latency, a `ws://host/livefeed` endpoint can stream events (`receive → Ingest`), same
+demux/views. Add if HTTP batch latency proves insufficient.
+
+### 9.5 Late-join / catch-up — the main gap
+
+HTTP/WS are live streams with no history, so a grid opened mid-tournament misses earlier events. The
+fix is a **server-side state cache in `JsonFeedService`**: keep, per `gameId`, the last `StartOfGame`
++ latest `Status`/board + accumulated results + `StartOfTournament`, and replay that snapshot to a new
+subscriber before live events. This is the key robustness item for real multi-server monitoring (and
+makes the file-tail's "read from start" unnecessary). Not yet implemented.

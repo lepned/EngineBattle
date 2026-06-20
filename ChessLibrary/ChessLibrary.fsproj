@@ -114,6 +114,7 @@
 		<Compile Include="Tournament\LiveFeedWire.fs" />
 		<Compile Include="Tournament\FeedStats.fs" />
 		<Compile Include="Tournament\LiveFeedRecorder.fs" />
+		<Compile Include="Tournament\LiveFeedHttpSink.fs" />
 		<Compile Include="Tournament\TournamentState.fs" />
 		<Compile Include="Tournament\TablebaseProbe.fs" />
 		<Compile Include="Tournament\GameReplay.fs" />
