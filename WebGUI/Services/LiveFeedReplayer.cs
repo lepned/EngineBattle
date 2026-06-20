@@ -190,7 +190,57 @@ namespace WebGUI.Services
             return n;
         }
 
-        /// <summary>Stop an in-progress replay, if any.</summary>
+        /// <summary>
+        /// Tail a LIVE NDJSON feed file written by another process (e.g. an EB Console tournament
+        /// started with EB_LIVEFEED_FILE set). Reads from the start so no history is missed, then
+        /// follows appended lines until cancelled. Lines are already gameId-stamped, so
+        /// JsonFeedService demuxes them to the grid tiles. Cancels any prior replay/tail.
+        /// </summary>
+        public async Task TailFileAsync(string path, CancellationToken externalToken = default)
+        {
+            CancellationTokenSource cts;
+            lock (_lock)
+            {
+                _cts?.Cancel();
+                _cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
+                cts = _cts;
+            }
+
+            try
+            {
+                _feed.Reset();
+                while (!File.Exists(path))
+                    await Task.Delay(250, cts.Token); // wait for the producer to create the file
+
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(fs);
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(cts.Token);
+                    if (line == null)
+                    {
+                        await Task.Delay(150, cts.Token); // caught up — wait for more
+                        continue;
+                    }
+                    if (!string.IsNullOrWhiteSpace(line))
+                        _feed.Ingest(line);
+                }
+            }
+            catch (OperationCanceledException) { /* stopped by caller */ }
+            finally
+            {
+                lock (_lock)
+                {
+                    if (_cts == cts)
+                    {
+                        _cts.Dispose();
+                        _cts = null;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Stop an in-progress replay or tail, if any.</summary>
         public void Stop()
         {
             lock (_lock) { _cts?.Cancel(); }

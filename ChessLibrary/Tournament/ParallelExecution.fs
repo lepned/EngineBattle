@@ -183,7 +183,20 @@ let parallelTournamentRun
 
       let (tTime, gTime) = estimateTournamentAndGameTime (gamesLeftToPlay.Length) tourny gamesLeftToPlay
       let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
+      // Optional live feed recording (EB_LIVEFEED_FILE): tee gameId-stamped wire events for the
+      // multi-game grid view to tail live. No-op unless the env var is set.
+      let liveFeedRecorder : LiveFeedRecorder option =
+          match Environment.GetEnvironmentVariable "EB_LIVEFEED_FILE" with
+          | null | "" -> None
+          | path ->
+              try
+                  logger.LogInformation("Live feed recording to {path}", path)
+                  Some (new LiveFeedRecorder(path))
+              with ex ->
+                  logger.LogError("Failed to open live feed file {path}: {msg}", path, ex.Message)
+                  None
       callback (Update.StartOfTournament startInfo)
+      liveFeedRecorder |> Option.iter (fun r -> r.RecordWithGameId("", Update.StartOfTournament startInfo))
 
       let replayList = ResizeArray<GameReplay>()
       let replayDicts =
@@ -354,6 +367,14 @@ let parallelTournamentRun
                           let localWhiteDict = ReferenceGameReplay()
                           let localBlackDict = ReferenceGameReplay()
 
+                          // Per-game callback: stamp this game's events with its GameNr for the live feed.
+                          let gameCallback =
+                              match liveFeedRecorder with
+                              | Some r ->
+                                  let gid = string pair.GameNr
+                                  fun (u: Update) -> r.RecordWithGameId(gid, u); callback u
+                              | None -> callback
+
                           let! result =
                               let gametimer = Stopwatch.GetTimestamp()
                               async {
@@ -366,9 +387,9 @@ let parallelTournamentRun
                                                   if not (localWhiteDict.ContainsKey kvp.Key) then localWhiteDict[kvp.Key] <- kvp.Value
                                               for kvp in replayDicts.[pair.Black.Name] do
                                                   if not (localBlackDict.ContainsKey kvp.Key) then localBlackDict[kvp.Key] <- kvp.Value)
-                                          return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
+                                          return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) gameCallback
                                       else
-                                          return! playConsole sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) callback
+                                          return! playConsole sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) gameCallback
 
                                   with
                                   | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
@@ -475,6 +496,7 @@ let parallelTournamentRun
               ChessLibrary.PGNWriter.writeRawPgnGamesAdjustedToFile combined games
           return results |> Seq.toList
           finally
+              liveFeedRecorder |> Option.iter (fun r -> r.Dispose())
               // Safety net: stop any engine processes still running (no-op if teardown already stopped them)
               for eng in allEngines do
                   try

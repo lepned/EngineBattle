@@ -17,7 +17,10 @@ type LiveFeedRecorder(path: string) =
     do
         if not (String.IsNullOrEmpty dir) && not (Directory.Exists dir) then
             Directory.CreateDirectory dir |> ignore
-    let writer = new StreamWriter(path, false, UTF8Encoding(false))
+    // FileShare.ReadWrite so another process (the WebGUI grid) can tail the file live.
+    let writer =
+        let fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)
+        new StreamWriter(fs, UTF8Encoding(false))
     let sync = obj ()
     do writer.AutoFlush <- true
 
@@ -26,6 +29,11 @@ type LiveFeedRecorder(path: string) =
     /// Append one `Update` as a single wire-JSON line.
     member _.Record(update: Update) =
         let line = serializeUpdate update
+        lock sync (fun () -> writer.WriteLine line)
+
+    /// Append one `Update` as a wire-JSON line stamped with a gameId (for multi-game routing).
+    member _.RecordWithGameId(gameId: string, update: Update) =
+        let line = withGameId gameId (serializeUpdate update)
         lock sync (fun () -> writer.WriteLine line)
 
     member _.Dispose() =

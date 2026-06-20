@@ -22,8 +22,9 @@
 
 @if (tiles.Count == 0)
 {
-    <p class="hint">No games yet. Open <code>/tournament-grid?replay=PATH&amp;games=4&amp;speed=600</code> to replay a recording,
-        or start a live tournament with this page open.</p>
+    <p class="hint">No games yet.
+        <br />Live (EB Console with <code>EB_LIVEFEED_FILE</code> set): <code>/tournament-grid?tail=PATH</code>
+        <br />Replay a recording: <code>/tournament-grid?replay=PATH&amp;games=4&amp;speed=600</code></p>
 }
 
 <div class="games-grid" style="grid-template-columns: repeat(auto-fill, minmax(@(boardSize + 28)px, 1fr));">
@@ -69,12 +70,23 @@
     {
         if (firstRender)
         {
-            var replay = GetQuery("replay");
-            if (!string.IsNullOrEmpty(replay))
+            // Live tail of a feed file written by an external producer (e.g. EB Console with
+            // EB_LIVEFEED_FILE set) — events arrive in real time, already gameId-stamped.
+            var tail = GetQuery("tail");
+            if (!string.IsNullOrEmpty(tail))
             {
-                var n = int.TryParse(GetQuery("games"), out var gx) ? gx : 4;
-                var speed = int.TryParse(GetQuery("speed"), out var ms) ? ms : 600;
-                _ = Replayer.ReplayGamesConcurrentlyAsync(replay, n, speed);
+                _ = Replayer.TailFileAsync(tail);
+            }
+            else
+            {
+                // Replay a recording, splitting it into per-game segments played concurrently.
+                var replay = GetQuery("replay");
+                if (!string.IsNullOrEmpty(replay))
+                {
+                    var n = int.TryParse(GetQuery("games"), out var gx) ? gx : 4;
+                    var speed = int.TryParse(GetQuery("speed"), out var ms) ? ms : 600;
+                    _ = Replayer.ReplayGamesConcurrentlyAsync(replay, n, speed);
+                }
             }
         }
         return Task.CompletedTask;
