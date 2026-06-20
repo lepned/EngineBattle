@@ -16,12 +16,13 @@ namespace WebGUI.Services
     public class JsonFeedService : IUpdateFeed
     {
         private Action<TournamentTypes.Update>? _subscriber;
+        private Action<string, TournamentTypes.Update>? _multiSubscriber;
         private readonly object _lock = new();
 
         public bool IsRunning { get; private set; }
 
-        /// <summary>True when a feed view is currently subscribed (used to auto-engage the live bridge).</summary>
-        public bool HasSubscriber { get { lock (_lock) { return _subscriber != null; } } }
+        /// <summary>True when any feed view (single- or multi-game) is subscribed (used to auto-engage the live bridge).</summary>
+        public bool HasSubscriber { get { lock (_lock) { return _subscriber != null || _multiSubscriber != null; } } }
 
         public void Subscribe(Action<TournamentTypes.Update> handler)
         {
@@ -31,6 +32,19 @@ namespace WebGUI.Services
         public void Unsubscribe()
         {
             lock (_lock) { _subscriber = null; }
+        }
+
+        /// <summary>Subscribe to the demultiplexed stream: handler receives (gameId, update) for every
+        /// event, where gameId is the envelope stream key ("" for the single/global game). Used by the
+        /// multi-game grid view to route per-game events to per-game tiles.</summary>
+        public void SubscribeMulti(Action<string, TournamentTypes.Update> handler)
+        {
+            lock (_lock) { _multiSubscriber = handler; }
+        }
+
+        public void UnsubscribeMulti()
+        {
+            lock (_lock) { _multiSubscriber = null; }
         }
 
         /// <summary>
@@ -47,7 +61,8 @@ namespace WebGUI.Services
             if (parsed == null)
                 return false;
 
-            Dispatch(parsed.Value);
+            var gameId = LiveFeedWire.readGameId(json); // "" when absent (single/global game)
+            Dispatch(gameId, parsed.Value);
             return true;
         }
 
@@ -67,7 +82,7 @@ namespace WebGUI.Services
         /// <summary>Reset running state (e.g. before replaying a new stream).</summary>
         public void Reset() => IsRunning = false;
 
-        private void Dispatch(TournamentTypes.Update update)
+        private void Dispatch(string gameId, TournamentTypes.Update update)
         {
             switch (update)
             {
@@ -79,9 +94,12 @@ namespace WebGUI.Services
                     break;
             }
 
-            Action<TournamentTypes.Update>? handler;
-            lock (_lock) { handler = _subscriber; }
-            try { handler?.Invoke(update); }
+            Action<TournamentTypes.Update>? single;
+            Action<string, TournamentTypes.Update>? multi;
+            lock (_lock) { single = _subscriber; multi = _multiSubscriber; }
+            try { single?.Invoke(update); }
+            catch (Exception) { /* disposed component — ignore */ }
+            try { multi?.Invoke(gameId, update); }
             catch (Exception) { /* disposed component — ignore */ }
         }
     }

@@ -250,3 +250,27 @@ let ``malformed or unknown input returns None`` () =
     Assert.True((tryParseUpdate "[]").IsNone)
     Assert.True((tryParseUpdate "{}").IsNone)
     Assert.True((tryParseUpdate "null").IsNone)
+
+[<Fact>]
+let ``readType returns the event discriminator`` () =
+    Assert.Equal("BestMove", readType (serializeUpdate (Update.BestMove(bmi, status))))
+    Assert.Equal("Status", readType (serializeUpdate (Update.Status status)))
+    Assert.Equal("", readType "not json")
+
+[<Fact>]
+let ``withGameId stamps a gameId that readGameId recovers`` () =
+    let line = serializeUpdate (Update.Status status)
+    Assert.Equal("", readGameId line) // recordings have no gameId
+    let stamped = withGameId "game-3" line
+    Assert.Equal("game-3", readGameId stamped)
+    // overriding replaces, not duplicates
+    let restamped = withGameId "game-7" stamped
+    Assert.Equal("game-7", readGameId restamped)
+
+[<Fact>]
+let ``withGameId preserves the event payload`` () =
+    let line = serializeUpdate (Update.BestMove(bmi, status))
+    let stamped = withGameId "g1" line
+    match tryParseUpdate stamped with
+    | Some (Update.BestMove (i, _)) -> Assert.Equal("e2e4", i.Move)
+    | _ -> Assert.True(false, "stamped line should still parse as BestMove")

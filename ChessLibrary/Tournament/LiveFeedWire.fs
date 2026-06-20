@@ -521,3 +521,35 @@ let tryParseUpdate (json: string) : Update option =
             | _ -> None
         | _ -> None
     with _ -> None
+
+// ---------------------------------------------------------------------------------------------
+// Envelope helpers (gameId / type) — for multi-game routing (LiveFeedContract.md §1, §8).
+// gameId is envelope metadata, not part of the single-game `Update` type.
+// ---------------------------------------------------------------------------------------------
+
+/// Read the envelope `type` discriminator ("" if absent/malformed).
+let readType (json: string) : string =
+    try
+        match JsonNode.Parse(json) with
+        | :? JsonObject as o -> getStr o "type" ""
+        | _ -> ""
+    with _ -> ""
+
+/// Read the envelope `gameId` ("" if absent — treated as the single active game).
+let readGameId (json: string) : string =
+    try
+        match JsonNode.Parse(json) with
+        | :? JsonObject as o -> getStr o "gameId" ""
+        | _ -> ""
+    with _ -> ""
+
+/// Return the wire line with its `gameId` field set/overridden. Lets a replay driver tag
+/// recordings (which have no gameId) so several games can be routed to separate views.
+let withGameId (gameId: string) (json: string) : string =
+    try
+        match JsonNode.Parse(json) with
+        | :? JsonObject as o ->
+            o["gameId"] <- js gameId
+            o.ToJsonString()
+        | _ -> json
+    with _ -> json
