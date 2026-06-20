@@ -64,8 +64,20 @@ a.game-tile {
     padding: 2px 2px;
 }
 
-.tile-row .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile-row .ev { font-variant-numeric: tabular-nums; opacity: 0.9; }
+.tile-row .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
+.tile-row .clk { font-variant-numeric: tabular-nums; opacity: 0.85; flex: 0 0 auto; }
+.tile-row .ev { font-variant-numeric: tabular-nums; opacity: 0.9; flex: 0 0 auto; min-width: 3em; text-align: right; }
+
+.pv {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.74rem;
+    opacity: 0.8;
+    line-height: 1.15;
+    min-height: 2.3em;
+    max-height: 2.3em;
+    overflow: hidden;
+    padding: 1px 3px;
+}
 
 .tile-meta {
     display: flex;

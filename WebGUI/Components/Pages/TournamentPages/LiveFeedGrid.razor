@@ -72,11 +72,15 @@
            title="Open this game in a focused view (new tab)">
             <div class="tile-row">
                 <span class="nm">@g.Black</span>
+                <span class="clk">@g.BlackTime</span>
                 <span class="ev">@g.BlackEval</span>
             </div>
+            <div class="pv">@g.BlackPV</div>
             <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@bs" />
+            <div class="pv">@g.WhitePV</div>
             <div class="tile-row">
                 <span class="nm">@g.White</span>
+                <span class="clk">@g.WhiteTime</span>
                 <span class="ev">@g.WhiteEval</span>
             </div>
             <div class="tile-meta">
@@ -165,11 +169,14 @@
                         vm.White = sog.Game.WhitePlayer.Name;
                         vm.Black = sog.Game.BlackPlayer.Name;
                         vm.OpeningHash = sog.Game.OpeningHash;
+                        vm.WhiteTime = FmtClock(sog.Game.WhiteTime);
+                        vm.BlackTime = FmtClock(sog.Game.BlackTime);
                         vm.Fen = sog.Game.OpeningMovesAndFen.Count > 0
                             ? sog.Game.OpeningMovesAndFen[sog.Game.OpeningMovesAndFen.Count - 1].FenAfterMove
                             : sog.Game.StartPos;
                         vm.FromSq = vm.ToSq = vm.LastMove = "";
                         vm.WhiteEval = vm.BlackEval = "";
+                        vm.WhitePV = vm.BlackPV = "";
                         vm.Result = "";
                         vm.Finished = false;
                         vm.Ply = 0;
@@ -186,8 +193,8 @@
                         vm.LastMove = bm.Info.MoveAndFen.ShortSan;
                         vm.Ply++;
                         var ev = Eval(bm.Info.Eval);
-                        if (bm.Info.Player == vm.White) vm.WhiteEval = ev;
-                        else if (bm.Info.Player == vm.Black) vm.BlackEval = ev;
+                        if (bm.Info.Player == vm.White) { vm.WhiteEval = ev; vm.WhitePV = bm.Info.PV; vm.WhiteTime = FmtClock(bm.Info.TimeLeft); }
+                        else if (bm.Info.Player == vm.Black) { vm.BlackEval = ev; vm.BlackPV = bm.Info.PV; vm.BlackTime = FmtClock(bm.Info.TimeLeft); }
                         break;
                     }
 
@@ -195,8 +202,16 @@
                     {
                         var vm = Get(gameId);
                         var ev = Eval(st.Engine.Eval);
-                        if (st.Engine.PlayerName == vm.White) vm.WhiteEval = ev;
-                        else if (st.Engine.PlayerName == vm.Black) vm.BlackEval = ev;
+                        if (st.Engine.PlayerName == vm.White) { vm.WhiteEval = ev; vm.WhitePV = st.Engine.PV; }
+                        else if (st.Engine.PlayerName == vm.Black) { vm.BlackEval = ev; vm.BlackPV = st.Engine.PV; }
+                        break;
+                    }
+
+                case TournamentTypes.Update.Time tm:
+                    {
+                        var vm = Get(gameId);
+                        if (tm.Player == vm.White) vm.WhiteTime = FmtClock(tm.Time);
+                        else if (tm.Player == vm.Black) vm.BlackTime = FmtClock(tm.Time);
                         break;
                     }
 
@@ -243,6 +258,14 @@
 
     private static string Eval(EvalType e) => e == null || e.IsNA ? "" : e.ToString();
 
+    private static string FmtClock(TimeOnly t)
+    {
+        var ts = t.ToTimeSpan();
+        return ts.TotalHours >= 1
+            ? $"{(int)ts.TotalHours}:{ts.Minutes:00}:{ts.Seconds:00}"
+            : $"{ts.Minutes}:{ts.Seconds:00}";
+    }
+
     private string GetQuery(string key)
     {
         var q = new Uri(Nav.Uri).Query;
@@ -275,6 +298,10 @@
         public string LastMove { get; set; } = "";
         public string WhiteEval { get; set; } = "";
         public string BlackEval { get; set; } = "";
+        public string WhitePV { get; set; } = "";
+        public string BlackPV { get; set; } = "";
+        public string WhiteTime { get; set; } = "";
+        public string BlackTime { get; set; } = "";
         public string Result { get; set; } = "";
         public bool Finished { get; set; }
         public int Ply { get; set; }
