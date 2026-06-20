@@ -20,6 +20,7 @@
     private ElementReference boardEl;
     private IJSObjectReference chessJSmodule;
     private string lastFen;
+    private int lastSize;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -28,20 +29,29 @@
             chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
             await chessJSmodule.InvokeVoidAsync("createChessboard", boardEl, string.IsNullOrEmpty(Fen) ? StartPos : Fen);
             lastFen = Fen;
+            lastSize = Size;
         }
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (chessJSmodule is null || string.IsNullOrEmpty(Fen) || Fen == lastFen)
+        if (chessJSmodule is null)
             return;
         try
         {
-            if (!string.IsNullOrEmpty(FromSq) && !string.IsNullOrEmpty(ToSq))
-                await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardEl, Fen, Color, FromSq, ToSq, true);
-            else
-                await chessJSmodule.InvokeVoidAsync("setPosition2", boardEl, Fen);
-            lastFen = Fen;
+            if (Size != lastSize)
+            {
+                lastSize = Size;   // the div style already reflects @Size; refit the board to it
+                await chessJSmodule.InvokeVoidAsync("resizeChessboard2", boardEl);
+            }
+            if (!string.IsNullOrEmpty(Fen) && Fen != lastFen)
+            {
+                if (!string.IsNullOrEmpty(FromSq) && !string.IsNullOrEmpty(ToSq))
+                    await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardEl, Fen, Color, FromSq, ToSq, true);
+                else
+                    await chessJSmodule.InvokeVoidAsync("setPosition2", boardEl, Fen);
+                lastFen = Fen;
+            }
         }
         catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException or JSDisconnectedException)
         {

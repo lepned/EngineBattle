@@ -2,6 +2,7 @@
 @using WebGUI.Services
 @using WebGUI.Components.Layout.TournamentLayout
 @using ChessLibrary
+@using static ChessLibrary.PGNTypes
 @using static ChessLibrary.MiscTypes
 @implements IDisposable
 @inject JsonFeedService JsonFeedSvc
@@ -17,7 +18,43 @@
 
 @{
     List<GameVM> tiles;
-    lock (sync) { tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList(); }
+    List<PlayerResult> table;
+    string pento;
+    lock (sync)
+    {
+        tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList();
+        table = standings.OrderByDescending(x => x.Points).ThenByDescending(x => x.Elo).ToList();
+        pento = pentoLine;
+    }
+    // Board size: explicit ?size=N wins; otherwise scale to how many games run in parallel.
+    var bs = manualSize ?? AutoSize(tiles.Count);
+}
+
+@if (table.Count > 0)
+{
+    <table class="standings">
+        <thead>
+            <tr><th>#</th><th>Engine</th><th>Pts</th><th>Pl</th><th>W-D-L</th><th>Elo</th></tr>
+        </thead>
+        <tbody>
+            @{ var rank = 1; }
+            @foreach (var p in table)
+            {
+                <tr>
+                    <td>@(rank++)</td>
+                    <td class="eng">@p.Player</td>
+                    <td>@p.Points.ToString("0.0")</td>
+                    <td>@p.Played</td>
+                    <td>@p.Win-@p.Draw-@p.Loss</td>
+                    <td>@p.Elo.ToString("+0;-0;0") ±@p.Error.ToString("0")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (!string.IsNullOrEmpty(pento))
+    {
+        <div class="pento">@pento</div>
+    }
 }
 
 @if (tiles.Count == 0)
@@ -27,7 +64,7 @@
         <br />Replay a recording: <code>/tournament-grid?replay=PATH&amp;games=4&amp;speed=600</code></p>
 }
 
-<div class="games-grid" style="grid-template-columns: repeat(auto-fill, minmax(@(boardSize + 28)px, 1fr));">
+<div class="games-grid" style="grid-template-columns: repeat(auto-fill, minmax(@(bs + 28)px, 1fr));">
     @foreach (var g in tiles)
     {
         <a class="game-tile @(g.Finished ? "done" : "")" @key="g.GameId"
@@ -37,7 +74,7 @@
                 <span class="nm">@g.Black</span>
                 <span class="ev">@g.BlackEval</span>
             </div>
-            <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@boardSize" />
+            <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@bs" />
             <div class="tile-row">
                 <span class="nm">@g.White</span>
                 <span class="ev">@g.WhiteEval</span>
@@ -52,19 +89,34 @@
 
 @code {
     private readonly Dictionary<string, GameVM> games = new();
+    private readonly List<Result> results = new();          // accumulated across all games/slots
+    private List<PlayerResult> standings = new();
+    private readonly List<PgnGame> pentoGames = new();       // synthesized games for pentanomial
+    private string pentoLine = "";
     private readonly object sync = new();
     private string tournamentName = "Live games";
     private Action<string, TournamentTypes.Update> handler;
     private volatile bool renderQueued;
-    private int boardSize = 260;   // per-tile board size in px; tune with ?size=N
+    private int? manualSize;   // explicit ?size=N override; otherwise auto-scaled by parallel game count
 
     protected override void OnInitialized()
     {
         handler = OnFeed;
         JsonFeedSvc.SubscribeMulti(handler);
         if (int.TryParse(GetQuery("size"), out var s) && s >= 80 && s <= 700)
-            boardSize = s;
+            manualSize = s;
     }
+
+    // Board size scaled to how many games run in parallel (more games -> smaller boards).
+    private static int AutoSize(int games) => games switch
+    {
+        <= 1 => 420,
+        2 => 360,
+        <= 4 => 300,
+        <= 6 => 260,
+        <= 9 => 220,
+        _ => 190
+    };
 
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
@@ -101,6 +153,10 @@
                 case TournamentTypes.Update.StartOfTournament sot:
                     if (sot.Info.Tournament != null)
                         tournamentName = sot.Info.Tournament.Value.Name;
+                    results.Clear();
+                    standings = new();
+                    pentoGames.Clear();
+                    pentoLine = "";
                     break;
 
                 case TournamentTypes.Update.StartOfGame sog:
@@ -108,6 +164,7 @@
                         var vm = Get(gameId);
                         vm.White = sog.Game.WhitePlayer.Name;
                         vm.Black = sog.Game.BlackPlayer.Name;
+                        vm.OpeningHash = sog.Game.OpeningHash;
                         vm.Fen = sog.Game.OpeningMovesAndFen.Count > 0
                             ? sog.Game.OpeningMovesAndFen[sog.Game.OpeningMovesAndFen.Count - 1].FenAfterMove
                             : sog.Game.StartPos;
@@ -148,6 +205,12 @@
                         var vm = Get(gameId);
                         vm.Result = eog.Result.Result;
                         vm.Finished = true;
+                        results.Add(eog.Result);
+                        standings = FeedStats.playerResultsFromResults(results);
+                        // Pentanomial line for the 2-engine case (single matchup).
+                        pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, vm.OpeningHash));
+                        if (standings.Count == 2)
+                            pentoLine = FeedStats.pentanomialCompact(pentoGames);
                         break;
                     }
             }
@@ -208,6 +271,7 @@
         public string FromSq { get; set; } = "";
         public string ToSq { get; set; } = "";
         public string MoveColor { get; set; } = "w";
+        public string OpeningHash { get; set; } = "";
         public string LastMove { get; set; } = "";
         public string WhiteEval { get; set; } = "";
         public string BlackEval { get; set; } = "";

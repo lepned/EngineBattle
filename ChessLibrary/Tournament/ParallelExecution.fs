@@ -294,8 +294,10 @@ let parallelTournamentRun
           }
 
 
-          // 4) helper to play one pairing using borrowed engines
-          let playOne (pair: Pairing) = task {
+          // 4) helper to play one pairing using borrowed engines.
+          // `slot` is the worker/board index — used as the live-feed gameId so the grid shows a
+          // fixed set of boards (one tile per slot), reused as games finish and new ones start.
+          let playOne (slot: int) (pair: Pairing) = task {
               // Borrow engines in sorted name order to prevent ABBA deadlock.
               // With openingsTwice, consecutive pairings swap colors (A-white/B-black then B-white/A-black).
               // Two workers borrowing in white-then-black order can deadlock when they cross.
@@ -371,7 +373,7 @@ let parallelTournamentRun
                           let gameCallback =
                               match liveFeedRecorder with
                               | Some r ->
-                                  let gid = string pair.GameNr
+                                  let gid = string slot
                                   fun (u: Update) -> r.RecordWithGameId(gid, u); callback u
                               | None -> callback
 
@@ -448,7 +450,7 @@ let parallelTournamentRun
                           | true, pair ->
                               try
                                   logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
-                                  do! playOne pair
+                                  do! playOne i pair
                                   let gc = Interlocked.Increment(&gameCounter)
                                   if gc % 10 = 0 then
                                       let res = ResizeArray<Result>(results)

@@ -10,6 +10,7 @@ module ChessLibrary.FeedStats
 open System
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
+open ChessLibrary.PGNTypes
 open ChessLibrary.GameAnalysis
 
 let private challengersAndPlayers (tournament: Tournament) =
@@ -19,6 +20,21 @@ let private challengersAndPlayers (tournament: Tournament) =
         |> List.map _.Name
     let players = tournament.EngineSetup.Engines |> List.map _.Name
     challengers, players
+
+/// Standings computed purely from accumulated results (no tournament config / engine list needed)
+/// — for the multi-game grid view. Mirrors Runner.GetPlayerResultsFromPGN.
+let playerResultsFromResults (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =
+    PGNCalculator.getFullStatFromResults results |> ResizeArray
+
+/// Build a minimal PgnGame carrying just the fields pentanomial pairing needs (White/Black/Result/
+/// OpeningHash). Lets the feed view compute pentanomial without full PGN data.
+let pentanomialGame (white: string) (black: string) (result: string) (openingHash: string) : PgnGame =
+    { PgnGame.Empty 0 with
+        GameMetaData = { GameMetadata.Empty with White = white; Black = black; Result = result; OpeningHash = openingHash } }
+
+/// Compact pentanomial line for a single matchup (2 engines), from synthesized games.
+let pentanomialCompact (games: ResizeArray<PgnGame>) : string =
+    ChessLibrary.Statistics.Pentanomial.formatSingleMatchupCompact games
 
 /// Player standings (points, W/D/L, Elo, etc.) — mirrors Runner.GetPlayerResults.
 let playerResults (tournament: Tournament) (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =

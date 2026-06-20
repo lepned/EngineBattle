@@ -10,6 +10,29 @@
 
 .hint { padding: 0 12px; opacity: 0.8; }
 
+.standings {
+    margin: 4px 12px 8px;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.standings th, .standings td {
+    padding: 3px 10px;
+    text-align: right;
+    border-bottom: 1px solid #333;
+    font-variant-numeric: tabular-nums;
+}
+
+.standings th { opacity: 0.7; font-weight: 600; }
+.standings td.eng, .standings th:nth-child(2) { text-align: left; }
+
+.pento {
+    margin: 0 12px 8px;
+    font-size: 0.8rem;
+    opacity: 0.85;
+    font-family: ui-monospace, Consolas, monospace;
+}
+
 .games-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
