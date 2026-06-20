@@ -84,7 +84,19 @@ a.game-tile {
 .tile-meta {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     font-size: 0.8rem;
     opacity: 0.75;
     padding-top: 4px;
 }
+
+.tile-meta .gid {
+    font-weight: 600;
+    background: #2e2e2e;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 0 6px;
+    opacity: 0.95;
+}
+
+.tile-meta .lm { flex: 1 1 auto; text-align: center; }

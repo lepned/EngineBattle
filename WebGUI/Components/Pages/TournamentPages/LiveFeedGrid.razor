@@ -84,6 +84,7 @@
                 <span class="ev">@g.WhiteEval</span>
             </div>
             <div class="tile-meta">
+                <span class="gid" title="Board / game id">@g.GameId</span>
                 <span class="lm">@g.LastMove</span>
                 <span class="st">@(g.Finished ? g.Result : (g.MoveNr > 0 ? $"move {g.MoveNr}" : "starting…"))</span>
             </div>
