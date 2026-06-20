@@ -26,7 +26,7 @@
         or start a live tournament with this page open.</p>
 }
 
-<div class="games-grid">
+<div class="games-grid" style="grid-template-columns: repeat(auto-fill, minmax(@(boardSize + 28)px, 1fr));">
     @foreach (var g in tiles)
     {
         <a class="game-tile @(g.Finished ? "done" : "")" @key="g.GameId"
@@ -36,7 +36,7 @@
                 <span class="nm">@g.Black</span>
                 <span class="ev">@g.BlackEval</span>
             </div>
-            <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="190" />
+            <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@boardSize" />
             <div class="tile-row">
                 <span class="nm">@g.White</span>
                 <span class="ev">@g.WhiteEval</span>
@@ -55,11 +55,14 @@
     private string tournamentName = "Live games";
     private Action<string, TournamentTypes.Update> handler;
     private volatile bool renderQueued;
+    private int boardSize = 260;   // per-tile board size in px; tune with ?size=N
 
     protected override void OnInitialized()
     {
         handler = OnFeed;
         JsonFeedSvc.SubscribeMulti(handler);
+        if (int.TryParse(GetQuery("size"), out var s) && s >= 80 && s <= 700)
+            boardSize = s;
     }
 
     protected override Task OnAfterRenderAsync(bool firstRender)
