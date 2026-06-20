@@ -29,14 +29,14 @@
 <div class="games-grid">
     @foreach (var g in tiles)
     {
-        <a class="game-tile @(g.Finished ? "done" : "")"
+        <a class="game-tile @(g.Finished ? "done" : "")" @key="g.GameId"
            href="@($"/tournament-feed?game={Uri.EscapeDataString(g.GameId)}")" target="_blank"
            title="Open this game in a focused view (new tab)">
             <div class="tile-row">
                 <span class="nm">@g.Black</span>
                 <span class="ev">@g.BlackEval</span>
             </div>
-            <MiniBoard Fen="@g.Fen" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="190" />
+            <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="190" />
             <div class="tile-row">
                 <span class="nm">@g.White</span>
                 <span class="ev">@g.WhiteEval</span>
@@ -110,6 +110,7 @@
                         vm.Fen = bm.Info.FEN;
                         vm.FromSq = bm.Info.MoveAndFen.Move.FromSq;
                         vm.ToSq = bm.Info.MoveAndFen.Move.ToSq;
+                        vm.MoveColor = bm.Info.MoveAndFen.Move.Color;
                         vm.LastMove = bm.Info.MoveAndFen.ShortSan;
                         vm.Ply++;
                         var ev = Eval(bm.Info.Eval);
@@ -191,6 +192,7 @@
         public string Fen { get; set; } = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         public string FromSq { get; set; } = "";
         public string ToSq { get; set; } = "";
+        public string MoveColor { get; set; } = "w";
         public string LastMove { get; set; } = "";
         public string WhiteEval { get; set; } = "";
         public string BlackEval { get; set; } = "";

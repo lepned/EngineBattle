@@ -1,0 +1,51 @@
+@* Single image board for a multi-game grid tile. Modeled on PVboardDuo: the real JS chessboard
+   (createChessboard + setPVBoardWithSquareHighlighting), parameter-driven, no move list. One
+   instance per game (key by gameId in the grid). *@
+
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+
+<div @ref="boardEl" style="width:@(Size)px;height:@(Size)px;"></div>
+
+@code {
+    private const string StartPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    [Parameter] public string Fen { get; set; } = StartPos;
+    [Parameter] public string Color { get; set; } = "w";   // side that just moved (for highlight)
+    [Parameter] public string FromSq { get; set; } = "";
+    [Parameter] public string ToSq { get; set; } = "";
+    [Parameter] public int Size { get; set; } = 190;
+
+    private ElementReference boardEl;
+    private IJSObjectReference chessJSmodule;
+    private string lastFen;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
+            await chessJSmodule.InvokeVoidAsync("createChessboard", boardEl, string.IsNullOrEmpty(Fen) ? StartPos : Fen);
+            lastFen = Fen;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (chessJSmodule is null || string.IsNullOrEmpty(Fen) || Fen == lastFen)
+            return;
+        try
+        {
+            if (!string.IsNullOrEmpty(FromSq) && !string.IsNullOrEmpty(ToSq))
+                await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardEl, Fen, Color, FromSq, ToSq, true);
+            else
+                await chessJSmodule.InvokeVoidAsync("setPosition2", boardEl, Fen);
+            lastFen = Fen;
+        }
+        catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException or JSDisconnectedException)
+        {
+            // board torn down (tab closing) — ignore
+        }
+    }
+}
