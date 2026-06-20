@@ -625,10 +625,12 @@
 
 		CloseAllDialogs();
 
-		var players = tournament.EngineSetup.Engines.Count();
+		var players = tournament?.EngineSetup?.Engines?.Count() ?? 0;
 		var fontSize = layoutOptions.Fonts.CrossTableFont + 1;
 		var crossTable = (IsGauntletMode || players == 2) ? GauntletCrosstable(results) : table;
-		var size = (IsGauntletMode || players == 2) ? table.Count - crossTable.Count : table.Count;
+		crossTable ??= new List<CrossTableEntry>();
+		var tableCount = table?.Count ?? 0;
+		var size = (IsGauntletMode || players == 2) ? tableCount - crossTable.Count : tableCount;
 		var res = whitePlayer + " vs " + blackPlayer + ": " + gameResult;
 		var options = size switch
 		{
@@ -1684,7 +1686,17 @@
 				{
 					startTournyInfo = tournyStart.Info;
 					var games = tournyStart.Info.NumberOfGames;
-					tournament = tournyStart.Info.Tournament.Value;
+					var incomingTournament = tournyStart.Info.Tournament.Value;
+					if (FeedMode && incomingTournament.EngineSetup != null
+						&& (incomingTournament.EngineSetup.Engines == null || incomingTournament.EngineSetup.Engines.Length == 0)
+						&& tournament?.EngineSetup?.Engines != null && tournament.EngineSetup.Engines.Length > 0)
+					{
+						// EngineSetup.Engines (and other [JsonIgnore] fields) don't survive the wire — they
+						// are rebuilt from EngineDefList at load. Preserve the locally-loaded values.
+						incomingTournament.EngineSetup.Engines = tournament.EngineSetup.Engines;
+						incomingTournament.IsChess960 = tournament.IsChess960;
+					}
+					tournament = incomingTournament;
 					UpdateSwissRoundLabel();
 					if (pairingTableHeight > 0)
 					{

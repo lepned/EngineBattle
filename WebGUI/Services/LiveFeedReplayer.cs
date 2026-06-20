@@ -8,8 +8,10 @@ namespace WebGUI.Services
     /// LiveFeedContract.md §6) into the <see cref="JsonFeedService"/>, driving the feed view exactly
     /// as an external producer would. The "replay" half of the record-and-replay pipeline.
     ///
-    /// Each non-blank line is one wire event. An optional inter-event delay paces the replay so it is
-    /// watchable; with delay 0 it streams as fast as the UI can consume.
+    /// Each non-blank line is one wire event. <paramref name="perMoveDelayMs"/> paces the replay by
+    /// MOVE: the delay is applied after each committed move (BestMove); the rapid "thinking" events
+    /// (Status/NNSeq/Time/etc.) between moves stream with only a tiny delay so the search still
+    /// animates. With 0 it streams as fast as the UI can consume.
     /// </summary>
     public class LiveFeedReplayer
     {
@@ -28,8 +30,12 @@ namespace WebGUI.Services
         /// Replay a recorded NDJSON file. Cancels any replay already in progress. Runs to completion
         /// (or cancellation); returns the number of events dispatched.
         /// </summary>
-        public async Task<int> ReplayFileAsync(string path, int interEventDelayMs = 0, CancellationToken externalToken = default)
+        public async Task<int> ReplayFileAsync(string path, int perMoveDelayMs = 0, CancellationToken externalToken = default)
         {
+            // Between-move "thinking" events stream quickly so the search animates; the full delay is
+            // applied only at move boundaries so perMoveDelayMs reads as "seconds per move".
+            int betweenEventDelayMs = perMoveDelayMs <= 0 ? 0 : Math.Min(perMoveDelayMs, 20);
+
             if (!File.Exists(path))
                 throw new FileNotFoundException("Live-feed replay file not found.", path);
 
@@ -53,8 +59,13 @@ namespace WebGUI.Services
                     if (_feed.Ingest(line))
                     {
                         dispatched++;
-                        if (interEventDelayMs > 0)
-                            await Task.Delay(interEventDelayMs, cts.Token);
+                        if (perMoveDelayMs > 0)
+                        {
+                            var isMove = line.Contains("\"type\":\"BestMove\"", StringComparison.Ordinal);
+                            var delay = isMove ? perMoveDelayMs : betweenEventDelayMs;
+                            if (delay > 0)
+                                await Task.Delay(delay, cts.Token);
+                        }
                     }
                 }
             }
