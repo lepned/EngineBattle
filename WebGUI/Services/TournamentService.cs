@@ -8,7 +8,10 @@ namespace WebGUI.Services
         private Tournament.Manager.Runner? _runner;
         private Action<TournamentTypes.Update>? _subscriber;
         private LiveFeedRecorder? _recorder;
+        private readonly JsonFeedService _jsonFeed;
         private readonly object _lock = new();
+
+        public TournamentService(JsonFeedService jsonFeed) => _jsonFeed = jsonFeed;
 
         public bool IsRunning { get; private set; }
         public Tournament.Manager.Runner? CurrentRunner => _runner;
@@ -48,6 +51,15 @@ namespace WebGUI.Services
 
             try { recorder?.Record(update); }
             catch (Exception) { /* recording is best-effort */ }
+
+            // Live JSON bridge: when a feed view (/tournament-feed) is listening, drive it in real time
+            // through the wire contract (serialize -> JsonFeedService -> parse -> dispatch). This is the
+            // live end-to-end test path; it engages automatically only when a feed view is subscribed.
+            if (_jsonFeed.HasSubscriber)
+            {
+                try { _jsonFeed.Ingest(LiveFeedWire.serializeUpdate(update)); }
+                catch (Exception) { /* bridge is best-effort */ }
+            }
 
             try { handler?.Invoke(update); }
             catch (Exception) { /* disposed component — ignore */ }

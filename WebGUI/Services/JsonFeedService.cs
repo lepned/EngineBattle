@@ -20,6 +20,9 @@ namespace WebGUI.Services
 
         public bool IsRunning { get; private set; }
 
+        /// <summary>True when a feed view is currently subscribed (used to auto-engage the live bridge).</summary>
+        public bool HasSubscriber { get { lock (_lock) { return _subscriber != null; } } }
+
         public void Subscribe(Action<TournamentTypes.Update> handler)
         {
             lock (_lock) { _subscriber = handler; }
