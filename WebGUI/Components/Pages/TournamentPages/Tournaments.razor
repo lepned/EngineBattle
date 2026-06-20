@@ -1,4 +1,5 @@
 ﻿@page "/tournament"
+@page "/tournament-feed"
 @using System.Linq
 @using WebGUI.Components.Pages.Experimental
 @using WebGUI.Components.Pages
@@ -23,6 +24,8 @@
 @inject IWebHostEnvironment Environment
 @inject OpeningExplorerService openingExplorer
 @inject TournamentService TournamentSvc
+@inject JsonFeedService JsonFeedSvc
+@inject NavigationManager Nav
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -356,6 +359,18 @@
 	private EngineStatus Engine1 = EngineStatus.Empty;
 	private EngineStatus Engine2 = EngineStatus.Empty;
 	private ChessLibrary.Tournament.Manager.Runner runner => TournamentSvc.CurrentRunner;
+	// Feed mode: the page is driven by an external JSON feed (JsonFeedService) instead of the
+	// internal engine runner. Same render path; the only differences are the update source and
+	// that runner-only operations are skipped (see LiveFeedContract.md).
+	private bool FeedMode => Nav.Uri.Contains("tournament-feed", StringComparison.OrdinalIgnoreCase);
+	// Standings/crosstable: in feed mode compute purely from the tournament config + accumulated
+	// results (no runner); in internal mode delegate to the runner (unchanged behavior).
+	private List<PlayerResult> PlayerResults(List<Result> res)
+		=> FeedMode ? FeedStats.playerResults(tournament, res) : runner.GetPlayerResults(res);
+	private List<CrossTableEntry> Crosstable(List<Result> res)
+		=> FeedMode ? FeedStats.smallCrosstable(tournament, res) : runner.GenerateStatsCrosstable(res);
+	private List<CrossTableEntry> GauntletCrosstable(List<Result> res)
+		=> FeedMode ? FeedStats.bigCrosstable(tournament, res) : runner.GetGauntletCrosstable(res);
 	private EngineConfig WhiteEngineConfig = EngineConfig.Empty;
 	private EngineConfig BlackEngineConfig = EngineConfig.Empty;
 	private string moveHistory = string.Empty;
@@ -563,7 +578,7 @@
 	{
 		reason = "White wins by user";
 		gameResult = "1-0";
-		runner.AdjudicateGame(activeGameNr, "1-0");
+		runner?.AdjudicateGame(activeGameNr, "1-0");
 		timer?.Dispose();
 		oneSecondTimer?.Dispose();
 		await Task.CompletedTask;
@@ -573,7 +588,7 @@
 	{
 		reason = "Black wins by user";
 		gameResult = "0-1";
-		runner.AdjudicateGame(activeGameNr, "0-1");
+		runner?.AdjudicateGame(activeGameNr, "0-1");
 		timer?.Dispose();
 		oneSecondTimer?.Dispose();
 		await Task.CompletedTask;
@@ -582,7 +597,7 @@
 	{
 		reason = "Draw by user";
 		gameResult = "1/2-1/2";
-		runner.AdjudicateGame(activeGameNr, "1/2-1/2");
+		runner?.AdjudicateGame(activeGameNr, "1/2-1/2");
 		timer?.Dispose();
 		oneSecondTimer?.Dispose();
 		await Task.CompletedTask;
@@ -597,7 +612,7 @@
 
 		var players = tournament.EngineSetup.Engines.Count();
 		var fontSize = layoutOptions.Fonts.CrossTableFont + 1;
-		var crossTable = (IsGauntletMode || players == 2) ? runner.GetGauntletCrosstable(results) : table;
+		var crossTable = (IsGauntletMode || players == 2) ? GauntletCrosstable(results) : table;
 		var size = (IsGauntletMode || players == 2) ? table.Count - crossTable.Count : table.Count;
 		var res = whitePlayer + " vs " + blackPlayer + ": " + gameResult;
 		var options = size switch
@@ -1092,7 +1107,7 @@
 		Engine1.PlayerName = w.Name;
 		Engine2.PlayerName = b.Name;
 		ResetSpeedChartCycle();
-		if (tournament == null)
+		if (tournament == null && runner != null)
 			tournament = runner.Tournament();
 		tournamentDesc = tournament.MinSummary();
 		blackLogLive = b.Options.Keys.Contains("LogLiveStats");
@@ -1424,15 +1439,16 @@
 				if (oneSecondTimer != null)
 					oneSecondTimer.Dispose();
 				oneSecondTimer = null;
-				var summary = runner.GetPlayerResults(results);
+				var summary = PlayerResults(results);
 				scoreTable = summary;
-				table = runner.GenerateStatsCrosstable(results);
+				table = Crosstable(results);
 				GameAnalysis.OrdoHelper.populatePairData(summary, table);
 				var pgnGames = await UpdateSpeed(0);
-				GameAnalysis.PGNCalculator.populatePentanomialError(summary, pgnGames);
+				if (pgnGames.Count > 0)
+					GameAnalysis.PGNCalculator.populatePentanomialError(summary, pgnGames);
 				await InvokeAsync(StateHasChanged);
 				var resLog = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
-				if (summary.Count == 2)
+				if (summary.Count == 2 && pgnGames.Count > 0)
 					resLog += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGames);
 				Console.WriteLine(resLog);
 				if (tournament.VerboseLogging)
@@ -1581,7 +1597,7 @@
 							roundNumber = 1;
 					}
 
-					var gamesLeft = runner.GetAllPairings().Count;
+					var gamesLeft = runner != null ? runner.GetAllPairings().Count : Math.Max(0, totalNumberOfPairs - activeGameNr);
 					var gamesLeftForEstimate = IsLadderMode
 						? Math.Max(0, tournament.TotalGames - tournament.CurrentGameNr + 1)
 						: gamesLeft;
@@ -1594,10 +1610,16 @@
 						var timespan = TimeSpan.FromMilliseconds(timeLeft);
 						duration = TimeSpan.FromSeconds(Math.Round(timespan.TotalSeconds));
 					}
+					else if (runner == null || IsLadderMode)
+					{
+						// feed mode (no runner) or ladder: estimate from completed-game average
+						double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
+						duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
+					}
 					else
 					{
 						var allPairings = runner.GetAllPairings();
-						if (allPairings.Count == 0 || IsLadderMode)
+						if (allPairings.Count == 0)
 						{
 							double avgTimePerGame = results.Count == 0 ? 10000 : results.Average(e => e.GameTime);
 							duration = TimeSpan.FromMilliseconds(avgTimePerGame * gamesLeftForEstimate);
@@ -1654,25 +1676,35 @@
 						showPVBoard = layoutOptions.ShowPVBoard;
 						autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
 					}
-					results = runner.GetResults();
-					var players = runner.GetPlayerResults(results);
-					scoreTable = players;
-					table = runner.GenerateStatsCrosstable(results);
-					GameAnalysis.OrdoHelper.populatePairData(players, table);
-					System.Collections.Generic.List<PGNTypes.PgnGame> gameData = null;
-					if (results.Count > 0)
+					if (!FeedMode)
 					{
-						gameData = await UpdateSpeed(0);
+						results = runner.GetResults();
+						var players = runner.GetPlayerResults(results);
+						scoreTable = players;
+						table = runner.GenerateStatsCrosstable(results);
+						GameAnalysis.OrdoHelper.populatePairData(players, table);
+						System.Collections.Generic.List<PGNTypes.PgnGame> gameData = null;
+						if (results.Count > 0)
+						{
+							gameData = await UpdateSpeed(0);
+						}
+						gameData ??= runner.GetPGNGames();
+						GameAnalysis.PGNCalculator.populatePentanomialError(players, gameData);
+						var consoleInfo = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
+						if (players.Count == 2)
+							consoleInfo += Statistics.Pentanomial.formatSingleMatchupCompact(gameData);
+						Console.WriteLine(consoleInfo);
+						if (tournament.VerboseLogging)
+							logger.LogInformation(consoleInfo);
+						pairings = runner.GetLastestPairings();
 					}
-					gameData ??= runner.GetPGNGames();
-					GameAnalysis.PGNCalculator.populatePentanomialError(players, gameData);
-					var consoleInfo = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
-					if (players.Count == 2)
-						consoleInfo += Statistics.Pentanomial.formatSingleMatchupCompact(gameData);
-					Console.WriteLine(consoleInfo);
-					if (tournament.VerboseLogging)
-						logger.LogInformation(consoleInfo);
-					pairings = runner.GetLastestPairings();
+					else
+					{
+						// Feed mode: standings come from accumulated results; pairings arrive via PairingList events.
+						scoreTable = PlayerResults(results);
+						table = Crosstable(results);
+						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+					}
 					tournament.TotalGames = totalNumberOfPairs; //runner.TotalGames;
 					await InvokeAsync(StateHasChanged);
 				}
@@ -1685,7 +1717,15 @@
 			case TournamentTypes.Update.EndOfTournament tourny:
 				try
 				{
-					if (File.Exists(tourny.Info.PgnOutPath))
+					if (FeedMode)
+					{
+						// Feed mode: finalize standings from the accumulated results (no local PGN/runner).
+						tournament.TotalGames = totalNumberOfPairs;
+						scoreTable = PlayerResults(results);
+						table = Crosstable(results);
+						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+					}
+					else if (File.Exists(tourny.Info.PgnOutPath))
 					{
 						var pgnGamesEnd = runner.GetPGNGames();
 						var anyGameData = pgnGamesEnd.Any();
@@ -1757,7 +1797,8 @@
 				}
 				break;
 			case TournamentTypes.Update.PairingList list:
-				runner.Pairings = list.Pairings;
+				if (runner != null)
+					runner.Pairings = list.Pairings;
 				pairings = list.Pairings;
 				break;
 			case TournamentTypes.Update.TotalNumberOfPairs games:
@@ -1821,6 +1862,8 @@
 			await Task.Delay(delayInMs);
 		if (tournament.VerboseLogging)
 			logger.LogDebug("Speed update delay ended: " + DateTime.Now.ToString());
+		if (runner == null)
+			return new System.Collections.Generic.List<PGNTypes.PgnGame>();   // feed mode: no local PGN games
 		var games = runner.GetPGNGames();
 		GameAnalysis.PGNCalculator.populateSpeedMetrics(scoreTable, games);
 		return games;
@@ -1893,7 +1936,8 @@
 		Engine2.PlayerName = blackPlayer;
 		blackMoveTime = TimeLeftFormatted(TimeOnly.MinValue);
 		whiteMoveTime = TimeLeftFormatted(TimeOnly.MinValue);
-		pairings = runner.GetLastestPairings();
+		if (runner != null)
+			pairings = runner.GetLastestPairings();   // feed mode: pairings arrive via PairingList events
 		ResetGameState();
 		await PlayOpeningMoves(new List<MoveAndFen>(info.OpeningMovesAndFen));
 	}
@@ -2136,6 +2180,8 @@
 
 	private async Task StartTournamentFlow()
 	{
+		if (FeedMode)
+			return;   // feed mode is driven externally; never start a local engine tournament
 		await PrepareRun();
 		if (!await ConfirmCupResumeOrNew())
 			return;
@@ -2684,6 +2730,43 @@
 				// Subscribe last — after all state is ready for incoming updates
 				TournamentSvc.Subscribe(Update);
 			}
+			else if (FeedMode)
+			{
+				// Feed mode: driven by an external JSON feed. Load the local tournament.json only for
+				// layout/UI defaults; the actual tournament + games arrive via JsonFeedService events.
+				try
+				{
+					var r = TournamentSvc.GetConfigRunner(logger);
+					tournament = r.Tournament();
+					if (tournament == null || tournament.EngineSetup?.Engines == null || tournament.EngineSetup.Engines.Length == 0)
+					{
+						var loadErr = ChessLibrary.Tournament.Manager.lastLoadError;
+						tournamentLoadError = !string.IsNullOrEmpty(loadErr)
+							? loadErr
+							: "tournament.json could not be loaded. Feed mode uses it for layout defaults.";
+						StateHasChanged();
+						return;
+					}
+					results = new List<Result>();
+					scoreTable = new List<PlayerResult>();
+					table = new List<CrossTableEntry>();
+					// Charts must exist before incoming BestMove events
+					evalList = new LivePlot(chessModule, evalChart, whitePlayer, blackPlayer, "Eval in CP", "Centipawns");
+					nodeList = new LivePlot(chessModule, nodesChart, whitePlayer, blackPlayer, "Nodes per move", "Total nodes");
+					npsList = new LivePlot(chessModule, npsChart, whitePlayer, blackPlayer, "Speed (NPS)", "Nodes per sec");
+					epsList = new LivePlot(chessModule, epsChart, whitePlayer, blackPlayer, "Speed (EPS)", "NN eval per sec");
+					timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
+					// Subscribe last — after all state is ready for incoming feed events
+					JsonFeedSvc.Subscribe(Update);
+				}
+				catch (Exception ex)
+				{
+					tournamentLoadError = ex.Message;
+					logger.LogError(ex, "Failed to initialize feed mode");
+					StateHasChanged();
+					return;
+				}
+			}
 			else
 			{
 				// Normal init — create config-reading runner
@@ -2828,6 +2911,7 @@
     public async ValueTask DisposeAsync()
     {
         TournamentSvc.Unsubscribe();
+        JsonFeedSvc.Unsubscribe();
         Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;
         if (keyContext != null) await keyContext.DisposeAsync();
