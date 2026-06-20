@@ -259,7 +259,7 @@
     private static string Eval(EvalType e) => e == null || e.IsNA ? "" : e.ToString();
 
     // Bound the PV to a sensible number of plies so it fits ~2 lines without any CSS clamp trick.
-    private const int PvMaxPlies = 14;
+    private const int PvMaxPlies = 20;
     private static string ShortPv(string pv)
     {
         if (string.IsNullOrWhiteSpace(pv)) return "";
