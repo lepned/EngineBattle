@@ -32,10 +32,17 @@ a real internal game — see §6).
 ### Envelope
 
 ```jsonc
-{ "type": "<EventType>", /* ...event-specific fields... */ }
+{ "type": "<EventType>", "gameId": "<stream key>", /* ...event-specific fields... */ }
 ```
 
 Unknown `type` values and unknown fields MUST be ignored by EB (forward compatibility).
+
+**`gameId` (reserved; single-game in v0.1).** Identifies which concurrent game a *per-game* event
+belongs to, so a runner emitting many games in parallel can drive multiple independent views. See
+§8 (Parallel games). For v0.1, producers may omit `gameId` or send `"0"`; EB treats a missing
+`gameId` as the single active game. **Per-game** events carry `gameId`; **tournament-level** events
+(`StartOfTournament`, `PairingList`, `TotalNumberOfPairs`, `RoundNr`, `PeriodicResults`,
+`EndOfTournament`) are global and omit it.
 
 ---
 
@@ -324,19 +331,39 @@ is only needed if you want server-authoritative clocks.
 { "type": "Time", "player": "Engine A", "time": "00:04:30" }
 ```
 
-### 3.11 `NNSeq` — **Opt** (Lc0-style per-move NN stats)
+### 3.11 `NNSeq` — **Opt** (Lc0/Ceres NN search data) — *requires full legal-move set*
 
-Feeds the live search-info / Q-value plot. Only relevant for engines that report per-move policy/Q.
+Feeds the live search-info / policy plot and the Q-vs-N convergence chart. Maps to
+`ResizeArray<NNValues>`.
 
 ```jsonc
 {
   "type": "NNSeq",
+  "gameId": "0",
   "moves": [
     { "player": "Engine A", "sanMove": "e4", "lanMove": "e2e4",
-      "nodes": 1200000, "p": 0.34, "q": 0.18, "v": 0.20, "e": 0.0, "raw": "" }
+      "nodes": 1200000, "p": 0.34, "q": 0.18, "v": 0.20, "e": 0.0, "raw": "" },
+    { "player": "Engine A", "sanMove": "d4", "lanMove": "d2d4",
+      "nodes": 900000,  "p": 0.28, "q": 0.16, "v": 0.18, "e": 0.0, "raw": "" }
+    /* … one entry per LEGAL move in the position … */
   ]
 }
 ```
+
+Per-move fields: `p` policy prior, `q` action value, `v` raw value, `nodes` visits, `e` extra/raw
+eval, `raw` original engine line.
+
+**Completeness requirement.** `moves` MUST contain **every legal move** in the current position
+(or the event MUST be omitted entirely). The policy-distribution and Q-vs-N convergence
+visualizations integrate over the whole move set; a truncated top-k silently distorts the
+distribution and the convergence curves. Do not send a partial list.
+
+**Engine-class-specific & optional.** Only Lc0/Ceres-style neural engines expose this (verbose
+per-move stats — e.g. Lc0 `--show-hidden`/`VerboseMoveStats`, Ceres movestats). Plain UCI engines
+cannot produce it, so `NNSeq` is optional and the view degrades gracefully: when no `NNSeq` arrives,
+EB hides the NN charts (same gating as the internal `runWithLogLiveStats` path). Producers SHOULD
+coalesce — emit at a sensible cadence (e.g. per depth/iteration), never one event per UCI info line,
+since full legal-move arrays are large.
 
 ### 3.12 `Info` / `MessagesFromEngine` — **Opt**
 
@@ -437,3 +464,38 @@ involved.
 - **Tournament config minimality** — pin down the smallest `tournament` subset that yields correct
   standings for each `TournamentMode`.
 - **Time format** — lock `"HH:mm:ss"` vs `"HH:mm:ss.fff"` (recommend accepting both).
+
+---
+
+## 8. Parallel games (multi-view)
+
+A runner may play **many games concurrently** and stream them all at once, so a spectator can watch
+several boards in parallel or focus a single game. This is a v0.2 milestone; v0.1 stays single-game.
+The wire format reserves what's needed now so it never has to break.
+
+**Wire (already reserved):** every *per-game* event carries `gameId` (envelope, §1) — a stable
+stream key chosen by the runner (e.g. the game number, or a board/worker id). Tournament-level events
+stay global. v0.1 producers may omit `gameId`; EB treats absence as one active game.
+
+- A `gameId` identifies a **board/stream**, not a pairing — a given `gameId` runs one game to
+  completion (`StartOfGame … EndOfGame`), then may be **reused** for the next game on that board.
+  Treat `StartOfGame` as "(re)initialize the view for this `gameId`."
+- Per-game events: `StartOfGame`, `GameStarted`, `Status`, `PonderStatus`, `BestMove`, `Time`,
+  `NNSeq`, `EndOfGame`.
+
+**Consumer model (v0.2):**
+
+- `JsonFeedService` **demultiplexes by `gameId`** into a registry of per-game view-models, each owning
+  its board, clocks, engine panels, PVs, and charts.
+- The UI offers a **board grid** of active games plus a **focus selector**; focusing a game routes
+  that `gameId`'s stream into the existing single-game render path (the one selectable-source view
+  agreed for the internal test), so no rendering logic is duplicated for multi-view.
+- Tournament-level events (standings, pairings, rounds) update shared global state regardless of which
+  game is focused.
+
+**Open questions for v0.2:**
+
+- Lifecycle/GC of finished `gameId` views (keep last result visible vs. evict on `EndOfGame`).
+- Grid scaling and update throttling when many games stream high-frequency `Status`/`NNSeq` at once
+  (per-game coalescing + only rendering visible/focused boards live).
+- Whether `gameId` should also tag `PeriodicResults` rows for incremental per-board standings.
