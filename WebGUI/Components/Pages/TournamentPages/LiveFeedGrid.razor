@@ -262,7 +262,7 @@
     private const int PvMaxPlies = 20;
     private static string ShortPv(string pv)
     {
-        if (string.IsNullOrWhiteSpace(pv)) return "";
+        if (string.IsNullOrWhiteSpace(pv)) return "PV:";   // placeholder keeps the line height stable
         var toks = pv.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return toks.Length <= PvMaxPlies ? pv : string.Join(' ', toks.Take(PvMaxPlies)) + " …";
     }
