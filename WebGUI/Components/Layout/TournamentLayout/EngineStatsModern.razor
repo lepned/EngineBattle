@@ -8,7 +8,7 @@
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
     <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
-      <img src="@Engine1Logo" alt="@Engine1Name" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
+      <img src="@Engine1Logo" alt="@Engine1Name" title="@GetEngineOptionsTooltip(Engine1Config, Engine1Name)" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
     <h3 class="engine-name">@Engine1Name</h3>
     <span class="engine-version">@Engine1Version</span>
@@ -21,7 +21,7 @@
   <div class="engine-header-cell @(Engine1ToMove ? "" : "active")">
     <span class="side-label">Black</span>
     <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
-      <img src="@Engine2Logo" alt="@Engine2Name" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
+      <img src="@Engine2Logo" alt="@Engine2Name" title="@GetEngineOptionsTooltip(Engine2Config, Engine2Name)" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
     <h3 class="engine-name">@Engine2Name</h3>
     <span class="engine-version">@Engine2Version</span>
@@ -117,6 +117,12 @@
   public EngineStatus Engine2 { get; set; }
 
   [Parameter]
+  public EngineConfig Engine1Config { get; set; }
+
+  [Parameter]
+  public EngineConfig Engine2Config { get; set; }
+
+  [Parameter]
   public string Engine1TimeLeft { get; set; } = "00:00:00";
 
   [Parameter]
@@ -156,6 +162,14 @@
       var (w, h) = parsed.Value;
       return $"max-width: {w}px; max-height: {h}px;";
     }
+  }
+
+  private string GetEngineOptionsTooltip(EngineConfig cfg, string name)
+  {
+    if (cfg?.Options == null || cfg.Options.Count == 0)
+      return name;
+    var lines = cfg.Options.Select(kv => $"{kv.Key}: {kv.Value}");
+    return $"{name}\n\nUCI Options:\n{string.Join("\n", lines)}";
   }
 
   private string GetWDLString(WDLType wdlValue)
