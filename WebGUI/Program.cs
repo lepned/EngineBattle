@@ -147,6 +147,7 @@ builder.Services.AddSingleton<OpeningExplorerService>();
 builder.Services.AddSingleton<ShutdownTokenProvider>();
 builder.Services.AddSingleton<TournamentService>();
 builder.Services.AddSingleton<JsonFeedService>();
+builder.Services.AddSingleton<LiveFeedReplayer>();
 builder.Services.AddSingleton<GlobalSettingsService>();
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;

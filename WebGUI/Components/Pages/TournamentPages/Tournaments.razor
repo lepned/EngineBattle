@@ -25,6 +25,7 @@
 @inject OpeningExplorerService openingExplorer
 @inject TournamentService TournamentSvc
 @inject JsonFeedService JsonFeedSvc
+@inject LiveFeedReplayer Replayer
 @inject NavigationManager Nav
 
 
@@ -363,6 +364,20 @@
 	// internal engine runner. Same render path; the only differences are the update source and
 	// that runner-only operations are skipped (see LiveFeedContract.md).
 	private bool FeedMode => Nav.Uri.Contains("tournament-feed", StringComparison.OrdinalIgnoreCase);
+	// Read a query-string value from the current URL (dependency-free). Used for the dev
+	// record/replay triggers: /tournament?record=PATH and /tournament-feed?replay=PATH[&speed=MS].
+	private string GetQuery(string key)
+	{
+		var q = new Uri(Nav.Uri).Query;
+		if (string.IsNullOrEmpty(q)) return null;
+		foreach (var part in q.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+		{
+			var kv = part.Split('=', 2);
+			if (kv.Length == 2 && Uri.UnescapeDataString(kv[0]).Equals(key, StringComparison.OrdinalIgnoreCase))
+				return Uri.UnescapeDataString(kv[1]);
+		}
+		return null;
+	}
 	// Standings/crosstable: in feed mode compute purely from the tournament config + accumulated
 	// results (no runner); in internal mode delegate to the runner (unchanged behavior).
 	private List<PlayerResult> PlayerResults(List<Result> res)
@@ -2712,6 +2727,13 @@
 			//.Add(ModKey.Ctrl, Key.s, (() => SwapBothTables()), "Swap tables")
 			//.Add(ModKey.Ctrl, Key.b, (() => BenchmarkConfig()), "Create benchmark config")
 			//.Add(ModKey.Ctrl, Key.l, (() => OpenResultDialog()), "Show result");
+			if (!FeedMode)
+			{
+				// Dev/test: /tournament?record=PATH tees the internal Update stream to an NDJSON file.
+				var recordPath = GetQuery("record");
+				if (!string.IsNullOrEmpty(recordPath))
+					TournamentSvc.StartRecording(recordPath);
+			}
 			if (TournamentSvc.IsRunning && runner != null)
 			{
 				// Reconnect to a running tournament
@@ -2758,6 +2780,13 @@
 					timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
 					// Subscribe last — after all state is ready for incoming feed events
 					JsonFeedSvc.Subscribe(Update);
+					// Dev/test: /tournament-feed?replay=PATH[&speed=MS] replays a recorded NDJSON file.
+					var replayPath = GetQuery("replay");
+					if (!string.IsNullOrEmpty(replayPath))
+					{
+						var speedMs = int.TryParse(GetQuery("speed"), out var ms) ? ms : 0;
+						_ = Replayer.ReplayFileAsync(replayPath, speedMs);
+					}
 				}
 				catch (Exception ex)
 				{
@@ -2911,6 +2940,8 @@
     public async ValueTask DisposeAsync()
     {
         TournamentSvc.Unsubscribe();
+        TournamentSvc.StopRecording();
+        Replayer.Stop();
         JsonFeedSvc.Unsubscribe();
         Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;

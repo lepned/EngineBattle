@@ -7,18 +7,48 @@ namespace WebGUI.Services
     {
         private Tournament.Manager.Runner? _runner;
         private Action<TournamentTypes.Update>? _subscriber;
+        private LiveFeedRecorder? _recorder;
         private readonly object _lock = new();
 
         public bool IsRunning { get; private set; }
         public Tournament.Manager.Runner? CurrentRunner => _runner;
+
+        /// <summary>True while updates are being recorded to an NDJSON file.</summary>
+        public bool IsRecording { get { lock (_lock) { return _recorder != null; } } }
+
+        /// <summary>Start teeing every internal Update to an NDJSON file (the "record" half of the
+        /// live-feed record-and-replay pipeline). Replaces any prior recording.</summary>
+        public void StartRecording(string path)
+        {
+            lock (_lock)
+            {
+                _recorder?.Dispose();
+                _recorder = new LiveFeedRecorder(path);
+            }
+        }
+
+        /// <summary>Stop and flush the current recording, if any.</summary>
+        public void StopRecording()
+        {
+            lock (_lock)
+            {
+                _recorder?.Dispose();
+                _recorder = null;
+            }
+        }
 
         private void HandleUpdate(TournamentTypes.Update update)
         {
             if (update is TournamentTypes.Update.EndOfTournament)
                 IsRunning = false;
 
+            LiveFeedRecorder? recorder;
             Action<TournamentTypes.Update>? handler;
-            lock (_lock) { handler = _subscriber; }
+            lock (_lock) { recorder = _recorder; handler = _subscriber; }
+
+            try { recorder?.Record(update); }
+            catch (Exception) { /* recording is best-effort */ }
+
             try { handler?.Invoke(update); }
             catch (Exception) { /* disposed component — ignore */ }
         }

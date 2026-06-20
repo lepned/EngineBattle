@@ -1,0 +1,40 @@
+namespace ChessLibrary
+
+open System
+open System.IO
+open System.Text
+open ChessLibrary.TournamentTypes
+open ChessLibrary.LiveFeedWire
+
+/// Tees a tournament `Update` stream to an NDJSON file — one wire-JSON event per line. This is the
+/// "record" half of the live-feed record-and-replay pipeline (LiveFeedContract.md §6): run a normal
+/// internal tournament with recording on, then replay the file into JsonFeedService to validate the
+/// contract and the feed view. The file is also a valid external-producer stream.
+///
+/// Thread-safe: the internal runner raises updates from background threads.
+type LiveFeedRecorder(path: string) =
+    let dir = Path.GetDirectoryName(path)
+    do
+        if not (String.IsNullOrEmpty dir) && not (Directory.Exists dir) then
+            Directory.CreateDirectory dir |> ignore
+    let writer = new StreamWriter(path, false, UTF8Encoding(false))
+    let sync = obj ()
+    do writer.AutoFlush <- true
+
+    member val Path = path
+
+    /// Append one `Update` as a single wire-JSON line.
+    member _.Record(update: Update) =
+        let line = serializeUpdate update
+        lock sync (fun () -> writer.WriteLine line)
+
+    member _.Dispose() =
+        lock sync (fun () ->
+            try
+                writer.Flush()
+                writer.Dispose()
+            with _ ->
+                ())
+
+    interface IDisposable with
+        member this.Dispose() = this.Dispose()
