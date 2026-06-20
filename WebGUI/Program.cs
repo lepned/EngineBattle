@@ -146,6 +146,7 @@ builder.Services.AddSingleton<OpeningExplorerService>();
 // Register the shutdown token provider so UI/services can link the tournament
 builder.Services.AddSingleton<ShutdownTokenProvider>();
 builder.Services.AddSingleton<TournamentService>();
+builder.Services.AddSingleton<JsonFeedService>();
 builder.Services.AddSingleton<GlobalSettingsService>();
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;

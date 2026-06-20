@@ -3,7 +3,7 @@ using ChessLibrary;
 
 namespace WebGUI.Services
 {
-    public class TournamentService
+    public class TournamentService : IUpdateFeed
     {
         private Tournament.Manager.Runner? _runner;
         private Action<TournamentTypes.Update>? _subscriber;
