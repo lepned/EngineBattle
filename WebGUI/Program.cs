@@ -228,7 +228,11 @@ app.Lifetime.ApplicationStarted.Register(() =>
 {
     var startupPage = app.Services.GetRequiredService<GlobalSettingsService>().Settings.StartupPage;
     var page = string.IsNullOrEmpty(startupPage) ? "/" : startupPage;
-    var address = (app.Urls.FirstOrDefault() ?? "http://localhost:5000").TrimEnd('/') + page;
+    // The server may bind a wildcard host (0.0.0.0 / [::] / +) so other machines can reach it, but a
+    // browser can't open those — rewrite to localhost for the auto-launch.
+    var bound = (app.Urls.FirstOrDefault() ?? "http://localhost:5000").TrimEnd('/');
+    var browseHost = bound.Replace("://0.0.0.0", "://localhost").Replace("://[::]", "://localhost").Replace("://+", "://localhost");
+    var address = browseHost + page;
     try
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
