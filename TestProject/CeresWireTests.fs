@@ -32,7 +32,7 @@ let private tournamentInfoLine =
 [<Fact>]
 let ``gameStart maps to StartOfGame with names, startPos, round, and envelope`` () =
     match mapGameStart "rigA" "0" gameStartLine with
-    | Some(white, black, json) ->
+    | Some(white, black, _startFen, json) ->
         Assert.Equal("Stockfish 18", white)
         Assert.Equal("Ceres", black)
         Assert.Equal("0", readGameId json)
@@ -49,17 +49,21 @@ let ``gameStart maps to StartOfGame with names, startPos, round, and envelope`` 
     | None -> failwith "mapGameStart returned None"
 
 [<Fact>]
-let ``move maps to BestMove with eval/100, wdl*1000, player from side, envelope`` () =
-    match mapMove "rigA" "0" "Stockfish 18" "Ceres" moveLine with
-    | Some json ->
+let ``move maps to BestMove with eval/100, wdl*1000, SAN, envelope`` () =
+    // position before h4h5 (white to move; pawn on h4)
+    let beforeFen = "rn1qkbnr/pp2ppp1/2p3bp/3pP3/3P2PP/5P2/PPP5/RNBQKBNR w KQkq - 0 7"
+    match mapMove "rigA" "0" "Stockfish 18" "Ceres" beforeFen moveLine with
+    | Some(json, afterFen) ->
         Assert.Equal("0", readGameId json)
         Assert.Equal("rigA", readSource json)
+        Assert.StartsWith("rn1qkbnr/pp2ppp1/2p3bp/3pP2P", afterFen)
         match tryParseUpdate json with
         | Some(Update.BestMove(info, status)) ->
             Assert.Equal("Stockfish 18", info.Player)        // side "w" -> white
-            Assert.Equal("h4h5", info.Move)
+            Assert.Equal("h4h5", info.Move)                  // raw move stays UCI
+            Assert.Equal("h5", info.MoveAndFen.ShortSan)     // UCI -> SAN
             match info.Eval with
-            | CP v -> Assert.Equal(1.05, v, 3)               // 105 cp -> 1.05 pawns
+            | CP v -> Assert.Equal(1.05, v, 3)               // white move: 105 cp -> 1.05, no flip
             | other -> failwithf "expected CP, got %A" other
             Assert.Equal(13657466L, info.Nodes)
             Assert.Equal("00:00:58.833", info.TimeLeft.ToString("HH:mm:ss.fff"))
@@ -76,7 +80,27 @@ let ``move maps to BestMove with eval/100, wdl*1000, player from side, envelope`
     | None -> failwith "mapMove returned None"
 
 [<Fact>]
-let ``interim maps to Status (cp eval, black player)`` () =
+let ``black move eval is flipped to White perspective`` () =
+    // 1...e5 (black to move after 1.e4); CELT evalCp +20 (good for black mover) -> White persp. -0.20
+    let beforeFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+    let blackMove = """{"type":"move","threadId":0,"ply":1,"side":"b","lan":"e7e5","fen":"rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2","evalCp":20,"scoreQ":0.05,"moveTimeMs":900,"timeLeftMs":59000,"nodes":40000,"nps":44000.0,"eps":0,"depth":12,"selDepth":24,"piecesLeft":32,"wdl":{"w":0.30,"d":0.50,"l":0.20}}"""
+    match mapMove "rigA" "0" "White" "Black" beforeFen blackMove with
+    | Some(json, _) ->
+        match tryParseUpdate json with
+        | Some(Update.BestMove(info, status)) ->
+            Assert.Equal("Black", info.Player)
+            Assert.Equal("e5", info.MoveAndFen.ShortSan)
+            match info.Eval with
+            | CP v -> Assert.Equal(-0.20, v, 3)              // +20cp (black) -> -0.20 (white perspective)
+            | other -> failwithf "expected CP, got %A" other
+            match status.WDL with
+            | HasValue w -> Assert.Equal(200.0, w.Win, 1)    // black win 0.20 -> white win 200 per-mille
+            | NotFound -> failwith "expected WDL"
+        | other -> failwithf "expected BestMove, got %A" other
+    | None -> failwith "mapMove returned None"
+
+[<Fact>]
+let ``interim maps to Status (black eval flipped to White perspective)`` () =
     match mapInterim "rigB" "1" "Stockfish 18" "Ceres" interimCpLine with
     | Some json ->
         Assert.Equal("1", readGameId json)
@@ -84,7 +108,7 @@ let ``interim maps to Status (cp eval, black player)`` () =
         | Some(Update.Status s) ->
             Assert.Equal("Ceres", s.PlayerName)              // side "b" -> black
             match s.Eval with
-            | CP v -> Assert.Equal(-0.30, v, 3)
+            | CP v -> Assert.Equal(0.30, v, 3)               // -30cp (black) -> +0.30 (white perspective)
             | other -> failwithf "expected CP, got %A" other
             Assert.Equal(10, s.Depth)
         | other -> failwithf "expected Status, got %A" other
@@ -139,5 +163,5 @@ let ``tournamentInfo maps to StartOfTournament with name and players`` () =
 let ``celtType reads discriminator and mappers reject wrong type`` () =
     Assert.Equal("move", celtType moveLine)
     Assert.Equal("gameEnd", celtType gameEndLine)
-    Assert.True((mapMove "s" "0" "W" "B" gameEndLine).IsNone)        // wrong type -> None
+    Assert.True((mapMove "s" "0" "W" "B" "" gameEndLine).IsNone)     // wrong type -> None
     Assert.True((mapGameEnd "s" "0" moveLine).IsNone)

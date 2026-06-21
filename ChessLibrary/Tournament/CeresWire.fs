@@ -21,6 +21,7 @@ open System.Text.Json.Nodes
 open ChessLibrary.MiscTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.PGNTypes
+open ChessLibrary.Chess
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.TournamentTypes
@@ -104,10 +105,41 @@ let private moveDetailOf (lan: string) (side: string) =
       IsCastling = false
       Comments = "" }
 
-let private moveAndFenOf (lan: string) (side: string) (fen: string) =
+let private moveAndFenOf (lan: string) (side: string) (fen: string) (san: string) =
     { Move = moveDetailOf lan side
-      ShortSan = lan
+      ShortSan = san
       FenAfterMove = fen }
+
+/// Convert a UCI/long move to SAN given the position *before* the move; falls back to the UCI string.
+let private sanOfMove (beforeFen: string) (lan: string) : string =
+    try
+        if String.IsNullOrWhiteSpace beforeFen then lan
+        else
+            let mutable board = Board()
+            board.LoadFen(beforeFen)
+            match BoardUtils.tryGetTMoveFromUciNotation &board lan with
+            | Some tmove ->
+                let san = BoardUtils.getSanNotationFromTMove &board tmove
+                if String.IsNullOrEmpty san then lan else san
+            | None -> lan
+    with _ -> lan
+
+// EngineBattle shows evals from White's perspective; CELT eval is the mover's perspective, so
+// negate when Black moved. WDL win/loss swap likewise so it stays consistent with the eval.
+let private flipEval (side: string) (e: EvalType) =
+    if side = "b" then
+        match e with
+        | EvalType.CP v -> EvalType.CP(-v)
+        | EvalType.Mate m -> EvalType.Mate(-m)
+        | EvalType.NA -> EvalType.NA
+    else e
+
+let private flipWdl (side: string) (w: WDLType) =
+    if side = "b" then
+        match w with
+        | WDLType.HasValue x -> WDLType.HasValue { x with Win = x.Loss; Loss = x.Win }
+        | WDLType.NotFound -> WDLType.NotFound
+    else w
 
 let private emit (source: string) (gameId: string) (u: Update) : string =
     LiveFeedWire.serializeUpdate u
@@ -151,17 +183,19 @@ let mapTournamentInfo (source: string) (line: string) : string option =
         Some(emit source "" (Update.StartOfTournament info))
     | _ -> None
 
-/// "gameStart" -> StartOfGame. Returns (white, black, json) so the caller can cache the names
-/// (needed to attribute subsequent move/interim frames, which carry only a side).
-let mapGameStart (source: string) (gameId: string) (line: string) : (string * string * string) option =
+/// "gameStart" -> StartOfGame. Returns (white, black, startFen, json) so the caller can cache the
+/// names (needed to attribute move/interim frames, which carry only a side) and the starting FEN
+/// (needed to convert subsequent moves to SAN).
+let mapGameStart (source: string) (gameId: string) (line: string) : (string * string * string * string) option =
     match parseObj line with
     | Some o when getStr o "type" "" = "gameStart" ->
         let white = getStr o "whiteName" ""
         let black = getStr o "blackName" ""
+        let startFen = getStr o "startFEN" startPosition
         let g =
             { WhitePlayer = { EngineConfig.Empty with Name = white }
               BlackPlayer = { EngineConfig.Empty with Name = black }
-              StartPos = getStr o "startFEN" startPosition
+              StartPos = startFen
               OpeningMovesAndFen = ResizeArray()
               WhiteTime = timeOnlyMs (getInt o "whiteTimeMs" 0)
               BlackTime = timeOnlyMs (getInt o "blackTimeMs" 0)
@@ -169,18 +203,22 @@ let mapGameStart (source: string) (gameId: string) (line: string) : (string * st
               OpeningName = getStr o "openingName" ""
               CurrentGameNr = getInt o "roundNumber" 0
               OpeningHash = "" }
-        Some(white, black, emit source gameId (Update.StartOfGame g))
+        Some(white, black, startFen, emit source gameId (Update.StartOfGame g))
     | _ -> None
 
-/// "move" -> BestMove (advances the board). `white`/`black` are the cached names for this thread.
-let mapMove (source: string) (gameId: string) (white: string) (black: string) (line: string) : string option =
+/// "move" -> BestMove (advances the board). `white`/`black` are the cached names for this thread and
+/// `beforeFen` is the position before this move (for SAN). Returns (json, fenAfterMove) so the caller
+/// can track the position for the next move's SAN.
+let mapMove (source: string) (gameId: string) (white: string) (black: string) (beforeFen: string) (line: string) : (string * string) option =
     match parseObj line with
     | Some o when getStr o "type" "" = "move" ->
         let side = getStr o "side" "w"
         let player = if side = "w" then white else black
         let lan = getStr o "lan" ""
         let fen = getStr o "fen" startPosition
-        let ev = evalCp o
+        let ev = flipEval side (evalCp o)
+        let wdl = flipWdl side (wdlOf o)
+        let san = sanOfMove beforeFen lan
         let nodes = getI64 o "nodes" 0L
         let nps = getF64 o "nps" 0.0
         let info =
@@ -193,9 +231,9 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (l
               Nodes = nodes
               NPS = nps
               FEN = fen
-              PV = lan
+              PV = san
               LongPV = lan
-              MoveAndFen = moveAndFenOf lan side fen
+              MoveAndFen = moveAndFenOf lan side fen san
               MoveHistory = ""
               Move50 = 0
               R3 = 0
@@ -210,11 +248,11 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (l
               Depth = getInt o "depth" 0
               SD = getInt o "selDepth" 0
               TBhits = 0L
-              WDL = wdlOf o
-              PV = lan
+              WDL = wdl
+              PV = san
               PVLongSAN = lan
               MultiPV = 1 }
-        Some(emit source gameId (Update.BestMove(info, status)))
+        Some(emit source gameId (Update.BestMove(info, status)), fen)
     | _ -> None
 
 /// "interim" -> Status (transient mid-search thinking; does NOT advance the board).
@@ -225,14 +263,14 @@ let mapInterim (source: string) (gameId: string) (white: string) (black: string)
         let player = if side = "w" then white else black
         let status =
             { PlayerName = player
-              Eval = interimEval o
+              Eval = flipEval side (interimEval o)
               Nodes = getI64 o "nodes" 0L
               NPS = getF64 o "nps" 0.0
               EPS = getF64 o "eps" 0.0
               Depth = getInt o "depth" 0
               SD = getInt o "selDepth" 0
               TBhits = 0L
-              WDL = wdlOf o
+              WDL = flipWdl side (wdlOf o)
               PV = ""
               PVLongSAN = ""
               MultiPV = 1 }

@@ -28,8 +28,17 @@ namespace WebGUI.Services.Ceres
     {
         private readonly JsonFeedService _feed;
         private readonly List<CeresStreamClient> _clients = new();
-        private readonly ConcurrentDictionary<int, (string white, string black)> _names = new();
+        private readonly ConcurrentDictionary<int, GameState> _games = new();
         private string _source = "";
+
+        // Per-thread game context: engine names (to attribute move/interim, which carry only a side)
+        // and the last FEN (the position before the next move, used to render moves as SAN).
+        private sealed class GameState
+        {
+            public string White = "";
+            public string Black = "";
+            public string LastFen = "";
+        }
 
         public bool IsConnected { get; private set; }
         public string Status { get; private set; } = "Not connected";
@@ -68,7 +77,7 @@ namespace WebGUI.Services.Ceres
             {
                 try { await c.DisposeAsync(); } catch { }
             }
-            _names.Clear();
+            _games.Clear();
             if (IsConnected || Status != "Not connected")
                 SetStatus("Not connected", false);
         }
@@ -99,22 +108,23 @@ namespace WebGUI.Services.Ceres
                     if (gs != null)
                     {
                         var t = gs.Value;
-                        _names[threadId] = (t.Item1, t.Item2);
-                        json = t.Item3;
+                        _games[threadId] = new GameState { White = t.Item1, Black = t.Item2, LastFen = t.Item3 };
+                        json = t.Item4;
                     }
                     break;
 
                 case "move":
                 {
-                    var (w, b) = _names.TryGetValue(threadId, out var nm) ? nm : ("", "");
-                    json = Opt(CeresWire.mapMove(_source, gameId, w, b, line));
+                    var st = _games.TryGetValue(threadId, out var g) ? g : new GameState();
+                    var mv = CeresWire.mapMove(_source, gameId, st.White, st.Black, st.LastFen, line);
+                    if (mv != null) { json = mv.Value.Item1; st.LastFen = mv.Value.Item2; }
                     break;
                 }
 
                 case "interim":
                 {
-                    var (w, b) = _names.TryGetValue(threadId, out var nm) ? nm : ("", "");
-                    json = Opt(CeresWire.mapInterim(_source, gameId, w, b, line));
+                    var st = _games.TryGetValue(threadId, out var g) ? g : new GameState();
+                    json = Opt(CeresWire.mapInterim(_source, gameId, st.White, st.Black, line));
                     break;
                 }
 
