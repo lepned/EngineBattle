@@ -155,9 +155,10 @@ namespace WebGUI.Services
             switch (update)
             {
                 case TournamentTypes.Update.StartOfTournament:
+                    // Don't globally reset — multiple servers each send StartOfTournament and must not
+                    // wipe each other's cached state. Per-key snaps are replaced by their StartOfGame;
+                    // a full reset is done explicitly via Reset() (e.g. before a file replay).
                     _startOfTournament = update;
-                    _results.Clear();
-                    _snaps.Clear();
                     break;
                 case TournamentTypes.Update.StartOfGame:
                     _snaps[key] = new GameSnap { Start = update };   // new game on this stream resets its snap

@@ -160,12 +160,10 @@
             switch (update)
             {
                 case TournamentTypes.Update.StartOfTournament sot:
+                    // Just the header — do NOT clear results/standings: with multiple servers each sends
+                    // a StartOfTournament, and results accumulate across them (combined standings).
                     if (sot.Info.Tournament != null)
                         tournamentName = sot.Info.Tournament.Value.Name;
-                    results.Clear();
-                    standings = new();
-                    pentoGames.Clear();
-                    pentoLine = "";
                     break;
 
                 case TournamentTypes.Update.StartOfGame sog:
