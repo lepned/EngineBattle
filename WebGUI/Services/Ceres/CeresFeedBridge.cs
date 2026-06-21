@@ -38,6 +38,7 @@ namespace WebGUI.Services.Ceres
             public string White = "";
             public string Black = "";
             public string LastFen = "";
+            public string MoveHistory = "";   // running "N. e4 c6 …" SAN list for the move list
         }
 
         public bool IsConnected { get; private set; }
@@ -116,8 +117,8 @@ namespace WebGUI.Services.Ceres
                 case "move":
                 {
                     var st = _games.TryGetValue(threadId, out var g) ? g : new GameState();
-                    var mv = CeresWire.mapMove(_source, gameId, st.White, st.Black, st.LastFen, line);
-                    if (mv != null) { json = mv.Value.Item1; st.LastFen = mv.Value.Item2; }
+                    var mv = CeresWire.mapMove(_source, gameId, st.White, st.Black, st.LastFen, st.MoveHistory, line);
+                    if (mv != null) { json = mv.Value.Item1; st.LastFen = mv.Value.Item2; st.MoveHistory = mv.Value.Item3; }
                     break;
                 }
 

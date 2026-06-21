@@ -52,16 +52,18 @@ let ``gameStart maps to StartOfGame with names, startPos, round, and envelope`` 
 let ``move maps to BestMove with eval/100, wdl*1000, SAN, envelope`` () =
     // position before h4h5 (white to move; pawn on h4)
     let beforeFen = "rn1qkbnr/pp2ppp1/2p3bp/3pP3/3P2PP/5P2/PPP5/RNBQKBNR w KQkq - 0 7"
-    match mapMove "rigA" "0" "Stockfish 18" "Ceres" beforeFen moveLine with
-    | Some(json, afterFen) ->
+    match mapMove "rigA" "0" "Stockfish 18" "Ceres" beforeFen "" moveLine with
+    | Some(json, afterFen, history) ->
         Assert.Equal("0", readGameId json)
         Assert.Equal("rigA", readSource json)
         Assert.StartsWith("rn1qkbnr/pp2ppp1/2p3bp/3pP2P", afterFen)
+        Assert.Equal("7. h5", history)                       // white move 7 -> "N. SAN" token
         match tryParseUpdate json with
         | Some(Update.BestMove(info, status)) ->
             Assert.Equal("Stockfish 18", info.Player)        // side "w" -> white
             Assert.Equal("h4h5", info.Move)                  // raw move stays UCI
             Assert.Equal("h5", info.MoveAndFen.ShortSan)     // UCI -> SAN
+            Assert.Equal("7. h5", info.MoveHistory)          // running SAN list
             match info.Eval with
             | CP v -> Assert.Equal(1.05, v, 3)               // white move: 105 cp -> 1.05, no flip
             | other -> failwithf "expected CP, got %A" other
@@ -84,8 +86,9 @@ let ``black move eval is flipped to White perspective`` () =
     // 1...e5 (black to move after 1.e4); CELT evalCp +20 (good for black mover) -> White persp. -0.20
     let beforeFen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
     let blackMove = """{"type":"move","threadId":0,"ply":1,"side":"b","lan":"e7e5","fen":"rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2","evalCp":20,"scoreQ":0.05,"moveTimeMs":900,"timeLeftMs":59000,"nodes":40000,"nps":44000.0,"eps":0,"depth":12,"selDepth":24,"piecesLeft":32,"wdl":{"w":0.30,"d":0.50,"l":0.20}}"""
-    match mapMove "rigA" "0" "White" "Black" beforeFen blackMove with
-    | Some(json, _) ->
+    match mapMove "rigA" "0" "White" "Black" beforeFen "" blackMove with
+    | Some(json, _, history) ->
+        Assert.Equal("e5", history)                          // black move -> bare SAN (no number token)
         match tryParseUpdate json with
         | Some(Update.BestMove(info, status)) ->
             Assert.Equal("Black", info.Player)
@@ -163,5 +166,5 @@ let ``tournamentInfo maps to StartOfTournament with name and players`` () =
 let ``celtType reads discriminator and mappers reject wrong type`` () =
     Assert.Equal("move", celtType moveLine)
     Assert.Equal("gameEnd", celtType gameEndLine)
-    Assert.True((mapMove "s" "0" "W" "B" "" gameEndLine).IsNone)     // wrong type -> None
+    Assert.True((mapMove "s" "0" "W" "B" "" "" gameEndLine).IsNone) // wrong type -> None
     Assert.True((mapGameEnd "s" "0" moveLine).IsNone)

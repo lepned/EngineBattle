@@ -209,7 +209,7 @@ let mapGameStart (source: string) (gameId: string) (line: string) : (string * st
 /// "move" -> BestMove (advances the board). `white`/`black` are the cached names for this thread and
 /// `beforeFen` is the position before this move (for SAN). Returns (json, fenAfterMove) so the caller
 /// can track the position for the next move's SAN.
-let mapMove (source: string) (gameId: string) (white: string) (black: string) (beforeFen: string) (line: string) : (string * string) option =
+let mapMove (source: string) (gameId: string) (white: string) (black: string) (beforeFen: string) (priorHistory: string) (line: string) : (string * string * string) option =
     match parseObj line with
     | Some o when getStr o "type" "" = "move" ->
         let side = getStr o "side" "w"
@@ -219,6 +219,13 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (b
         let ev = flipEval side (evalCp o)
         let wdl = flipWdl side (wdlOf o)
         let san = sanOfMove beforeFen lan
+        // Running SAN move list: a "N. " number token before each White move, then the SAN.
+        // StreamingChessboard re-parses this string (number tokens vs SAN tokens) into the move list.
+        let moveNum =
+            let parts = beforeFen.Split(' ')
+            if parts.Length >= 6 then (match Int32.TryParse(parts.[parts.Length - 1]) with | true, n -> n | _ -> 1) else 1
+        let token = if side = "w" then sprintf "%d. %s" moveNum san else san
+        let newHistory = if String.IsNullOrEmpty priorHistory then token else priorHistory + " " + token
         let nodes = getI64 o "nodes" 0L
         let nps = getF64 o "nps" 0.0
         let info =
@@ -234,7 +241,7 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (b
               PV = san
               LongPV = lan
               MoveAndFen = moveAndFenOf lan side fen san
-              MoveHistory = ""
+              MoveHistory = newHistory
               Move50 = 0
               R3 = 0
               PiecesLeft = getInt o "piecesLeft" 32
@@ -252,7 +259,7 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (b
               PV = san
               PVLongSAN = lan
               MultiPV = 1 }
-        Some(emit source gameId (Update.BestMove(info, status)), fen)
+        Some(emit source gameId (Update.BestMove(info, status)), fen, newHistory)
     | _ -> None
 
 /// "interim" -> Status (transient mid-search thinking; does NOT advance the board).
