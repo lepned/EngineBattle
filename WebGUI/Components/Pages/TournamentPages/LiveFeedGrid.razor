@@ -7,6 +7,7 @@
 @implements IDisposable
 @inject JsonFeedService JsonFeedSvc
 @inject LiveFeedReplayer Replayer
+@inject WebGUI.Services.Ceres.CeresFeedBridge CeresBridge
 @inject NavigationManager Nav
 
 <PageTitle>Live games grid</PageTitle>
@@ -14,6 +15,18 @@
 <div class="grid-header">
     <h3>@tournamentName</h3>
     <span class="count">@games.Count game(s)</span>
+    <span class="ceres-connect">
+        <input type="text" placeholder="Ceres host:port (e.g. 192.168.0.50:7440)" @bind="ceresHostPort" />
+        @if (!CeresBridge.IsConnected)
+        {
+            <button @onclick="ConnectCeres">Connect</button>
+        }
+        else
+        {
+            <button @onclick="DisconnectCeres">Disconnect</button>
+        }
+        <span class="ceres-status">@CeresBridge.Status</span>
+    </span>
 </div>
 
 @{
@@ -108,13 +121,32 @@
     private volatile bool renderQueued;
     private int? manualSize;   // explicit ?size=N override; otherwise auto-scaled by parallel game count
 
+    private string ceresHostPort = "";
+
     protected override void OnInitialized()
     {
         handler = OnFeed;
         JsonFeedSvc.SubscribeMulti(handler);
+        CeresBridge.Changed += OnBridgeChanged;
         if (int.TryParse(GetQuery("size"), out var s) && s >= 80 && s <= 700)
             manualSize = s;
     }
+
+    private void OnBridgeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task ConnectCeres()
+    {
+        var hp = (ceresHostPort ?? "").Trim();
+        if (string.IsNullOrEmpty(hp)) return;
+        var parts = hp.Split(':', 2);
+        var host = parts[0].Trim();
+        var port = (parts.Length == 2 && int.TryParse(parts[1], out var p)) ? p : 7440;
+        if (string.IsNullOrEmpty(host)) return;
+        try { await CeresBridge.ConnectAsync(host, port); }
+        catch { /* status reflects failure via Changed */ }
+    }
+
+    private async Task DisconnectCeres() => await CeresBridge.DisconnectAsync();
 
     // Board size scaled to how many games run in parallel (more games -> smaller boards).
     private static int AutoSize(int games) => games switch
@@ -148,6 +180,14 @@
                     var speed = int.TryParse(GetQuery("speed"), out var ms) ? ms : 600;
                     _ = Replayer.ReplayGamesConcurrentlyAsync(replay, n, speed);
                 }
+            }
+
+            // Auto-connect to a Ceres broadcast: /tournament-grid?ceres=host:port
+            var ceres = GetQuery("ceres");
+            if (!string.IsNullOrEmpty(ceres))
+            {
+                ceresHostPort = ceres;
+                _ = ConnectCeres();
             }
         }
         return Task.CompletedTask;
@@ -304,6 +344,7 @@
     public void Dispose()
     {
         if (handler != null) JsonFeedSvc.UnsubscribeMulti(handler);
+        CeresBridge.Changed -= OnBridgeChanged;
         Replayer.Stop();
     }
 

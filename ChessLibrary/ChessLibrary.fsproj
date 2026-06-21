@@ -112,6 +112,7 @@
 		<!-- Tournament support modules (depend on engine, parser, etc.) -->
 		<Compile Include="Tournament\TournamentTypes.fs" />
 		<Compile Include="Tournament\LiveFeedWire.fs" />
+		<Compile Include="Tournament\CeresWire.fs" />
 		<Compile Include="Tournament\FeedStats.fs" />
 		<Compile Include="Tournament\LiveFeedRecorder.fs" />
 		<Compile Include="Tournament\LiveFeedHttpSink.fs" />

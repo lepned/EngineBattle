@@ -1,0 +1,267 @@
+module ChessLibrary.CeresWire
+
+// Maps Ceres's CELT/1.0 live-tournament wire schema (NDJSON; see the Ceres
+// Ceres.Features/Tournaments/Streaming namespace) onto EngineBattle's own Live Feed Contract.
+//
+// This lets EB consume a live Ceres tournament broadcast through the SAME pipeline as its own
+// feed: each CELT line is translated into an EB `Update`, serialized via `LiveFeedWire`
+// (guaranteeing valid contract JSON), and stamped with an envelope `gameId` (= Ceres threadId)
+// and `source` (= Ceres host) so it can be `JsonFeedService.Ingest`-ed and routed by the grid.
+//
+// CELT fields are camelCase (the publisher uses JsonNamingPolicy.CamelCase). Unit conversions:
+//   evalCp (centipawns)  -> EvalType.CP (pawns, /100)
+//   wdl {w,d,l} (0..1)   -> WDL per-mille (*1000), matching EB's own producer
+//   *Ms (milliseconds)   -> TimeOnly (HH:mm:ss.fff)
+// Known gaps (MVP): CELT carries top-moves but no PV string -> PV = played move only; moves are
+// UCI (no SAN); opening moves are not expanded (board starts at startFEN). Eval is mover's
+// perspective (matches EB's own feed).
+
+open System
+open System.Text.Json.Nodes
+open ChessLibrary.MiscTypes
+open ChessLibrary.EngineTypes
+open ChessLibrary.PGNTypes
+open ChessLibrary.TypesDef.CoreTypes
+open ChessLibrary.TypesDef.Tournament
+open ChessLibrary.TournamentTypes
+
+// ---------------------------------------------------------------------------------------------
+// CELT JSON readers (camelCase)
+// ---------------------------------------------------------------------------------------------
+
+let private parseObj (line: string) : JsonObject option =
+    try
+        match JsonNode.Parse(line) with
+        | :? JsonObject as o -> Some o
+        | _ -> None
+    with _ -> None
+
+let private getStr (o: JsonObject) (k: string) (d: string) =
+    match o[k] with
+    | null -> d
+    | n -> (try n.GetValue<string>() with _ -> d)
+
+let private getInt (o: JsonObject) (k: string) (d: int) =
+    match o[k] with
+    | null -> d
+    | n -> (try n.GetValue<int>() with _ -> (try int (n.GetValue<float>()) with _ -> d))
+
+let private getI64 (o: JsonObject) (k: string) (d: int64) =
+    match o[k] with
+    | null -> d
+    | n -> (try n.GetValue<int64>() with _ -> (try int64 (n.GetValue<float>()) with _ -> d))
+
+let private getF64 (o: JsonObject) (k: string) (d: float) =
+    match o[k] with
+    | null -> d
+    | n -> (try n.GetValue<float>() with _ -> d)
+
+let private getBool (o: JsonObject) (k: string) (d: bool) =
+    match o[k] with
+    | null -> d
+    | n -> (try n.GetValue<bool>() with _ -> d)
+
+let private getIntOpt (o: JsonObject) (k: string) : int option =
+    match o[k] with
+    | null -> None
+    | n -> (try Some(n.GetValue<int>()) with _ -> (try Some(int (n.GetValue<float>())) with _ -> None))
+
+// ---------------------------------------------------------------------------------------------
+// Value conversions
+// ---------------------------------------------------------------------------------------------
+
+let private timeOnlyMs (ms: int) =
+    let clamped = float (max 0 ms)
+    // clocks are well under 24h; guard against pathological values
+    let capped = min clamped (float (TimeSpan.FromHours(23.999).TotalMilliseconds))
+    TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds capped)
+
+let private evalCp (o: JsonObject) =
+    match getIntOpt o "evalCp" with
+    | Some cp -> EvalType.CP(float cp / 100.0)
+    | None -> EvalType.NA
+
+/// Interim eval: a forced mate takes precedence over the cp eval.
+let private interimEval (o: JsonObject) =
+    match getIntOpt o "mate" with
+    | Some m -> EvalType.Mate m
+    | None -> evalCp o
+
+let private wdlOf (o: JsonObject) : WDLType =
+    match o["wdl"] with
+    | :? JsonObject as w ->
+        WDLType.HasValue
+            { Win = getF64 w "w" 0.0 * 1000.0
+              Draw = getF64 w "d" 0.0 * 1000.0
+              Loss = getF64 w "l" 0.0 * 1000.0 }
+    | _ -> WDLType.NotFound
+
+let private moveDetailOf (lan: string) (side: string) =
+    { LongSan = lan
+      FromSq = (if lan.Length >= 2 then lan.Substring(0, 2) else "")
+      ToSq = (if lan.Length >= 4 then lan.Substring(2, 2) else "")
+      Color = side
+      IsCastling = false
+      Comments = "" }
+
+let private moveAndFenOf (lan: string) (side: string) (fen: string) =
+    { Move = moveDetailOf lan side
+      ShortSan = lan
+      FenAfterMove = fen }
+
+let private emit (source: string) (gameId: string) (u: Update) : string =
+    LiveFeedWire.serializeUpdate u
+    |> LiveFeedWire.withGameId gameId
+    |> LiveFeedWire.withSource source
+
+// ---------------------------------------------------------------------------------------------
+// Public API — one mapper per CELT type. Each returns contract JSON (stamped gameId + source),
+// or None when the line is not the expected type / malformed.
+// ---------------------------------------------------------------------------------------------
+
+/// Read the CELT `type` discriminator ("" if absent/malformed).
+let celtType (line: string) : string =
+    match parseObj line with
+    | Some o -> getStr o "type" ""
+    | None -> ""
+
+/// "tournamentInfo" -> StartOfTournament (header: name, mode, players). gameId is global ("").
+let mapTournamentInfo (source: string) (line: string) : string option =
+    match parseObj line with
+    | Some o when getStr o "type" "" = "tournamentInfo" ->
+        let players =
+            match o["players"] with
+            | :? JsonArray as a ->
+                [ for x in a do
+                      match x with
+                      | :? JsonObject as p -> yield getStr p "name" ""
+                      | _ -> () ]
+            | _ -> []
+        let engines = players |> List.map (fun name -> { EngineConfig.Empty with Name = name })
+        let t =
+            { Tournament.Empty with
+                Name = getStr o "name" ""
+                TournamentMode = getStr o "mode" "RR"
+                EngineSetup = { Engines = engines; EngineDefFolder = ""; EngineDefList = [] } }
+        let info =
+            { NumberOfGames = (getInt o "numGamePairs" 0) * 2
+              GameDurationInSec = TimeSpan.Zero
+              TournamentDurationSec = TimeSpan.Zero
+              Tournament = Some t }
+        Some(emit source "" (Update.StartOfTournament info))
+    | _ -> None
+
+/// "gameStart" -> StartOfGame. Returns (white, black, json) so the caller can cache the names
+/// (needed to attribute subsequent move/interim frames, which carry only a side).
+let mapGameStart (source: string) (gameId: string) (line: string) : (string * string * string) option =
+    match parseObj line with
+    | Some o when getStr o "type" "" = "gameStart" ->
+        let white = getStr o "whiteName" ""
+        let black = getStr o "blackName" ""
+        let g =
+            { WhitePlayer = { EngineConfig.Empty with Name = white }
+              BlackPlayer = { EngineConfig.Empty with Name = black }
+              StartPos = getStr o "startFEN" startPosition
+              OpeningMovesAndFen = ResizeArray()
+              WhiteTime = timeOnlyMs (getInt o "whiteTimeMs" 0)
+              BlackTime = timeOnlyMs (getInt o "blackTimeMs" 0)
+              WhiteToMove = getBool o "whiteToMove" true
+              OpeningName = getStr o "openingName" ""
+              CurrentGameNr = getInt o "roundNumber" 0
+              OpeningHash = "" }
+        Some(white, black, emit source gameId (Update.StartOfGame g))
+    | _ -> None
+
+/// "move" -> BestMove (advances the board). `white`/`black` are the cached names for this thread.
+let mapMove (source: string) (gameId: string) (white: string) (black: string) (line: string) : string option =
+    match parseObj line with
+    | Some o when getStr o "type" "" = "move" ->
+        let side = getStr o "side" "w"
+        let player = if side = "w" then white else black
+        let lan = getStr o "lan" ""
+        let fen = getStr o "fen" startPosition
+        let ev = evalCp o
+        let nodes = getI64 o "nodes" 0L
+        let nps = getF64 o "nps" 0.0
+        let info =
+            { Player = player
+              Move = lan
+              Ponder = ""
+              Eval = ev
+              TimeLeft = timeOnlyMs (getInt o "timeLeftMs" 0)
+              MoveTime = timeOnlyMs (getInt o "moveTimeMs" 0)
+              Nodes = nodes
+              NPS = nps
+              FEN = fen
+              PV = lan
+              LongPV = lan
+              MoveAndFen = moveAndFenOf lan side fen
+              MoveHistory = ""
+              Move50 = 0
+              R3 = 0
+              PiecesLeft = getInt o "piecesLeft" 32
+              AdjDrawML = 0 }
+        let status =
+            { PlayerName = player
+              Eval = ev
+              Nodes = nodes
+              NPS = nps
+              EPS = getF64 o "eps" 0.0
+              Depth = getInt o "depth" 0
+              SD = getInt o "selDepth" 0
+              TBhits = 0L
+              WDL = wdlOf o
+              PV = lan
+              PVLongSAN = lan
+              MultiPV = 1 }
+        Some(emit source gameId (Update.BestMove(info, status)))
+    | _ -> None
+
+/// "interim" -> Status (transient mid-search thinking; does NOT advance the board).
+let mapInterim (source: string) (gameId: string) (white: string) (black: string) (line: string) : string option =
+    match parseObj line with
+    | Some o when getStr o "type" "" = "interim" ->
+        let side = getStr o "side" "w"
+        let player = if side = "w" then white else black
+        let status =
+            { PlayerName = player
+              Eval = interimEval o
+              Nodes = getI64 o "nodes" 0L
+              NPS = getF64 o "nps" 0.0
+              EPS = getF64 o "eps" 0.0
+              Depth = getInt o "depth" 0
+              SD = getInt o "selDepth" 0
+              TBhits = 0L
+              WDL = wdlOf o
+              PV = ""
+              PVLongSAN = ""
+              MultiPV = 1 }
+        Some(emit source gameId (Update.Status status))
+    | _ -> None
+
+/// "gameEnd" -> EndOfGame (player1 = white, player2 = black, matching EB standings attribution).
+let mapGameEnd (source: string) (gameId: string) (line: string) : string option =
+    match parseObj line with
+    | Some o when getStr o "type" "" = "gameEnd" ->
+        let reason =
+            try
+                stringToResultReason (getStr o "reason" "XX")
+            with _ -> ResultReason.NotStarted
+        let r =
+            { Player1 = getStr o "whiteName" ""
+              Player2 = getStr o "blackName" ""
+              Moves = getInt o "moves" 0
+              Result = getStr o "result" "1/2-1/2"
+              Reason = reason
+              GameTime = getI64 o "gameTimeMs" 0L
+              OutOfOpeningEvals = [] }
+        Some(emit source gameId (Update.EndOfGame r))
+    | _ -> None
+
+/// "tournamentEnd" -> EndOfTournament. gameId is global ("").
+let mapTournamentEnd (source: string) (line: string) : string option =
+    match parseObj line with
+    | Some o when getStr o "type" "" = "tournamentEnd" ->
+        let t = { Tournament.Empty with Name = getStr o "name" "" }
+        Some(emit source "" (Update.EndOfTournament t))
+    | _ -> None

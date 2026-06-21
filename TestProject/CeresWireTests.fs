@@ -1,0 +1,143 @@
+module CeresWireTests
+
+open Xunit
+open ChessLibrary.MiscTypes
+open ChessLibrary.EngineTypes
+open ChessLibrary.TournamentTypes
+open ChessLibrary.LiveFeedWire
+open ChessLibrary.CeresWire
+
+// CELT/1.0 sample lines (camelCase, as the Ceres TournamentStreamPublisher emits them).
+
+let private gameStartLine =
+    """{"type":"gameStart","seq":1,"threadId":0,"gameSequenceNum":1,"openingIndex":0,"roundNumber":3,"whiteName":"Stockfish 18","blackName":"Ceres","initialFEN":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","startFEN":"rnbqkbnr/pp1ppppp/2p5/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 2","openingUci":"e2e4 c7c6","openingName":"Caro-Kann","whiteToMove":true,"whiteTimeMs":60000,"blackTimeMs":60000}"""
+
+let private moveLine =
+    """{"type":"move","seq":2,"threadId":0,"ply":13,"side":"w","lan":"h4h5","fen":"rn1qkbnr/pp2ppp1/2p3bp/3pP2P/3P2P1/5P2/PPP5/RNBQKBNR b KQkq - 0 7","evalCp":105,"scoreQ":0.21,"moveTimeMs":3166,"timeLeftMs":58833,"nodes":13657466,"nps":4321982.0,"eps":0,"depth":23,"selDepth":46,"mAvg":12.3,"piecesLeft":32,"instamove":false,"wdl":{"w":0.547,"d":0.453,"l":0.0},"top":[{"lan":"h4h5","n":1000,"p":45.0,"q":0.21,"wl":0.21,"d":0.45}]}"""
+
+let private interimCpLine =
+    """{"type":"interim","seq":3,"threadId":0,"ply":13,"side":"b","evalCp":-30,"scoreQ":-0.06,"nodes":50000,"nps":100000.0,"eps":0,"depth":10,"selDepth":20,"mAvg":0,"moveTimeMs":500,"timeLeftMs":59000,"wdl":{"w":0.4,"d":0.5,"l":0.1}}"""
+
+let private interimMateLine =
+    """{"type":"interim","seq":4,"threadId":0,"ply":40,"side":"w","evalCp":3000,"mate":5,"scoreQ":0.99,"nodes":80000,"nps":160000.0,"eps":0,"depth":15,"selDepth":30,"moveTimeMs":600,"timeLeftMs":58000}"""
+
+let private gameEndLine =
+    """{"type":"gameEnd","seq":40,"threadId":0,"whiteName":"Stockfish 18","blackName":"Ceres","result":"1-0","reason":"CM","moves":37,"plyCount":73,"gameTimeMs":176296}"""
+
+let private tournamentInfoLine =
+    """{"type":"tournamentInfo","seq":0,"threadId":-1,"id":"T","name":"Ceres vs SF","machineName":"rig","mode":"RR","numGamePairs":10,"threadCount":2,"players":[{"name":"Stockfish 18","description":"SF"},{"name":"Ceres","description":"net"}],"timeControl":{"kind":"secondsForAllMoves","valueMs":60000,"incrementMs":1000}}"""
+
+// ---------------------------------------------------------------------------------------------
+
+[<Fact>]
+let ``gameStart maps to StartOfGame with names, startPos, round, and envelope`` () =
+    match mapGameStart "rigA" "0" gameStartLine with
+    | Some(white, black, json) ->
+        Assert.Equal("Stockfish 18", white)
+        Assert.Equal("Ceres", black)
+        Assert.Equal("0", readGameId json)
+        Assert.Equal("rigA", readSource json)
+        match tryParseUpdate json with
+        | Some(Update.StartOfGame g) ->
+            Assert.Equal("Stockfish 18", g.WhitePlayer.Name)
+            Assert.Equal("Ceres", g.BlackPlayer.Name)
+            Assert.Equal(3, g.CurrentGameNr)
+            Assert.True(g.WhiteToMove)
+            Assert.StartsWith("rnbqkbnr/pp1ppppp", g.StartPos)
+            Assert.Equal("00:01:00.000", g.WhiteTime.ToString("HH:mm:ss.fff"))
+        | other -> failwithf "expected StartOfGame, got %A" other
+    | None -> failwith "mapGameStart returned None"
+
+[<Fact>]
+let ``move maps to BestMove with eval/100, wdl*1000, player from side, envelope`` () =
+    match mapMove "rigA" "0" "Stockfish 18" "Ceres" moveLine with
+    | Some json ->
+        Assert.Equal("0", readGameId json)
+        Assert.Equal("rigA", readSource json)
+        match tryParseUpdate json with
+        | Some(Update.BestMove(info, status)) ->
+            Assert.Equal("Stockfish 18", info.Player)        // side "w" -> white
+            Assert.Equal("h4h5", info.Move)
+            match info.Eval with
+            | CP v -> Assert.Equal(1.05, v, 3)               // 105 cp -> 1.05 pawns
+            | other -> failwithf "expected CP, got %A" other
+            Assert.Equal(13657466L, info.Nodes)
+            Assert.Equal("00:00:58.833", info.TimeLeft.ToString("HH:mm:ss.fff"))
+            Assert.Equal("h4", info.MoveAndFen.Move.FromSq)
+            Assert.Equal("h5", info.MoveAndFen.Move.ToSq)
+            Assert.Equal(23, status.Depth)
+            Assert.Equal(46, status.SD)
+            match status.WDL with
+            | HasValue w ->
+                Assert.Equal(547.0, w.Win, 1)                // 0.547 -> per-mille
+                Assert.Equal(453.0, w.Draw, 1)
+            | NotFound -> failwith "expected WDL"
+        | other -> failwithf "expected BestMove, got %A" other
+    | None -> failwith "mapMove returned None"
+
+[<Fact>]
+let ``interim maps to Status (cp eval, black player)`` () =
+    match mapInterim "rigB" "1" "Stockfish 18" "Ceres" interimCpLine with
+    | Some json ->
+        Assert.Equal("1", readGameId json)
+        match tryParseUpdate json with
+        | Some(Update.Status s) ->
+            Assert.Equal("Ceres", s.PlayerName)              // side "b" -> black
+            match s.Eval with
+            | CP v -> Assert.Equal(-0.30, v, 3)
+            | other -> failwithf "expected CP, got %A" other
+            Assert.Equal(10, s.Depth)
+        | other -> failwithf "expected Status, got %A" other
+    | None -> failwith "mapInterim returned None"
+
+[<Fact>]
+let ``interim with mate maps eval to Mate`` () =
+    match mapInterim "rigB" "0" "Stockfish 18" "Ceres" interimMateLine with
+    | Some json ->
+        match tryParseUpdate json with
+        | Some(Update.Status s) ->
+            match s.Eval with
+            | Mate m -> Assert.Equal(5, m)
+            | other -> failwithf "expected Mate, got %A" other
+        | other -> failwithf "expected Status, got %A" other
+    | None -> failwith "mapInterim returned None"
+
+[<Fact>]
+let ``gameEnd maps to EndOfGame with player1=white, player2=black`` () =
+    match mapGameEnd "rigA" "0" gameEndLine with
+    | Some json ->
+        Assert.Equal("0", readGameId json)
+        match tryParseUpdate json with
+        | Some(Update.EndOfGame r) ->
+            Assert.Equal("Stockfish 18", r.Player1)          // white
+            Assert.Equal("Ceres", r.Player2)                 // black
+            Assert.Equal("1-0", r.Result)
+            Assert.Equal(37, r.Moves)
+            Assert.Equal("CM", r.Reason.ToString())
+        | other -> failwithf "expected EndOfGame, got %A" other
+    | None -> failwith "mapGameEnd returned None"
+
+[<Fact>]
+let ``tournamentInfo maps to StartOfTournament with name and players`` () =
+    match mapTournamentInfo "rigA" tournamentInfoLine with
+    | Some json ->
+        Assert.Equal("", readGameId json)                    // global
+        match tryParseUpdate json with
+        | Some(Update.StartOfTournament i) ->
+            match i.Tournament with
+            | Some t ->
+                // Name/Mode survive the Tournament wire round-trip; EngineSetup.Engines is
+                // [<JsonIgnore>] so it does NOT (the grid derives standings from results, not the
+                // engine list, so this is by design).
+                Assert.Equal("Ceres vs SF", t.Name)
+                Assert.Equal("RR", t.TournamentMode)
+            | None -> failwith "expected Some Tournament"
+        | other -> failwithf "expected StartOfTournament, got %A" other
+    | None -> failwith "mapTournamentInfo returned None"
+
+[<Fact>]
+let ``celtType reads discriminator and mappers reject wrong type`` () =
+    Assert.Equal("move", celtType moveLine)
+    Assert.Equal("gameEnd", celtType gameEndLine)
+    Assert.True((mapMove "s" "0" "W" "B" gameEndLine).IsNone)        // wrong type -> None
+    Assert.True((mapGameEnd "s" "0" moveLine).IsNone)
