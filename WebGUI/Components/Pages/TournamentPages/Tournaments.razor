@@ -2802,8 +2802,13 @@
 					{
 						feedMultiHandler = (gid, upd) =>
 						{
+							// Live events arrive on the feed's background (bridge/replay) thread. Marshal
+							// Update onto this component's dispatcher so its render + board/chart JS interop
+							// run in the right context. (The catch-up snapshot already runs on the dispatcher
+							// during init — which is why it rendered the current position but live deltas did
+							// not until this wrap was added.)
 							if (string.IsNullOrEmpty(gid) || gid == gameFilter)
-								Update(upd);
+								_ = InvokeAsync(() => Update(upd));
 						};
 						JsonFeedSvc.SubscribeMulti(feedMultiHandler);
 					}

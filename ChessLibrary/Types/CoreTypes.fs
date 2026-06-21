@@ -631,6 +631,7 @@ module TypesDef =
                 sprintf "%.1fK nodes" (num / 1000.0)
 
         member x.TimeControlTextForPlayer (id:int) =
+          if obj.ReferenceEquals(box x.TimeControl, null) then "" else
           let tc = x.FindTimeControl id
           if tc.NodeLimit then
                   x.FormatNumberWithK tc.Nodes
@@ -641,6 +642,7 @@ module TypesDef =
             //    (tc.Increment.ToTimeSpan().TotalSeconds)
 
         member x.TimeControlTextForPlayers (id1:int, id2:int) =
+          if obj.ReferenceEquals(box x.TimeControl, null) then "" else
           let moreThanOneTC = id1 <> id2
           let formatNumberWithK (number: int) =
             if number < 1000 then
@@ -687,6 +689,9 @@ module TypesDef =
                 sprintf "%s + %s" fixedTimePart incrementTimePart
 
         member x.TimeControlText() =
+          // A tournament delivered over the live feed may carry no TimeControl (e.g. Tournament.Empty);
+          // don't NRE the UI over a missing time control.
+          if obj.ReferenceEquals(box x.TimeControl, null) then "No time control" else
           let moreThanOneTC = x.EngineSetup.Engines |> Seq.exists(fun e -> e.TimeControlID > 1)
           let engineConf = (x.EngineSetup.Engines |> Seq.tryHead)
           match engineConf with
