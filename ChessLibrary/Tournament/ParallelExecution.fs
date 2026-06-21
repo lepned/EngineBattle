@@ -185,27 +185,34 @@ let parallelTournamentRun
       let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
       // Optional live feed recording (EB_LIVEFEED_FILE): tee gameId-stamped wire events for the
       // multi-game grid view to tail live. No-op unless the env var is set.
+      // Live-feed settings come from tournament.json's LiveFeed section; an EB_LIVEFEED_* env var
+      // overrides the matching field. Missing section + no env var => no feed (normal tournament).
+      let liveFeedCfg = if obj.ReferenceEquals(box tourny.LiveFeed, null) then LiveFeedConfig.Empty else tourny.LiveFeed
+      let pickFeed (envName: string) (cfgVal: string) =
+          match Environment.GetEnvironmentVariable envName with
+          | null | "" -> (if isNull cfgVal then "" else cfgVal)
+          | v -> v
+      let feedFile   = pickFeed "EB_LIVEFEED_FILE"   liveFeedCfg.File
+      let feedUrl    = pickFeed "EB_LIVEFEED_URL"    liveFeedCfg.Url
+      let feedSource = pickFeed "EB_LIVEFEED_SOURCE" liveFeedCfg.Source
+      let feedToken  = pickFeed "EB_LIVEFEED_TOKEN"  liveFeedCfg.Token
       let liveFeedRecorder : LiveFeedRecorder option =
-          match Environment.GetEnvironmentVariable "EB_LIVEFEED_FILE" with
-          | null | "" -> None
-          | path ->
+          if String.IsNullOrEmpty feedFile then None
+          else
               try
-                  logger.LogInformation("Live feed recording to {path}", path)
-                  Some (new LiveFeedRecorder(path))
+                  logger.LogInformation("Live feed recording to {path}", feedFile)
+                  Some (new LiveFeedRecorder(feedFile))
               with ex ->
-                  logger.LogError("Failed to open live feed file {path}: {msg}", path, ex.Message)
+                  logger.LogError("Failed to open live feed file {path}: {msg}", feedFile, ex.Message)
                   None
       let liveFeedHttpSink : LiveFeedHttpSink option =
-          match Environment.GetEnvironmentVariable "EB_LIVEFEED_URL" with
-          | null | "" -> None
-          | url ->
+          if String.IsNullOrEmpty feedUrl then None
+          else
               try
-                  logger.LogInformation("Live feed posting to {url}", url)
-                  Some (new LiveFeedHttpSink(url,
-                                             Environment.GetEnvironmentVariable "EB_LIVEFEED_SOURCE",
-                                             Environment.GetEnvironmentVariable "EB_LIVEFEED_TOKEN"))
+                  logger.LogInformation("Live feed posting to {url}", feedUrl)
+                  Some (new LiveFeedHttpSink(feedUrl, feedSource, feedToken))
               with ex ->
-                  logger.LogError("Failed to init live feed URL sink {url}: {msg}", url, ex.Message)
+                  logger.LogError("Failed to init live feed URL sink {url}: {msg}", feedUrl, ex.Message)
                   None
       // Serialize once, fan out to file and/or HTTP sinks (no-op when neither is configured).
       let emitFeed (gid: string) (u: Update) =

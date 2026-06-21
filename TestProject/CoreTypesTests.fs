@@ -46,6 +46,26 @@ let ``EngineConfig Information returns correct string`` () =
     let info = config.Information 100.0
     Assert.Contains("Protocol=UCI", info)
 
+// Backward compat: a tournament.json with NO LiveFeed section must still deserialize.
+[<Fact>]
+let ``Tournament JSON without LiveFeed still deserializes (backward compat)`` () =
+    let json = """{ "Name":"old config", "TournamentMode":"RR", "Rounds":5 }"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    let t = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.Equal("old config", t.Name)
+    // missing LiveFeed => null; the runner treats null as "no feed" (normal tournament)
+    Assert.True(obj.ReferenceEquals(box t.LiveFeed, null))
+
+[<Fact>]
+let ``Tournament JSON with LiveFeed deserializes the section`` () =
+    let json = """{ "Name":"feed config", "TournamentMode":"RR",
+                    "LiveFeed": { "Url":"http://localhost:5018/api/livefeed", "Source":"rig-A", "File":"", "Token":"" } }"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    let t = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.False(obj.ReferenceEquals(box t.LiveFeed, null))
+    Assert.Equal("http://localhost:5018/api/livefeed", t.LiveFeed.Url)
+    Assert.Equal("rig-A", t.LiveFeed.Source)
+
 // Test for ResultReason
 [<Fact>]
 let ``ResultReason ToString returns correct abbreviation`` () =

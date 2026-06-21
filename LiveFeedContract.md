@@ -533,15 +533,21 @@ the runner having to bake the host into `gameId`:
 
 ### 9.3 EB Console as a network producer
 
-The internal parallel runner (`ParallelExecution`) emits the feed when env vars are set (no-op
-otherwise):
+The internal parallel runner (`ParallelExecution`) emits the feed from the `tournament.json`
+**`LiveFeed`** section (no-op when absent — fully backward compatible with older configs):
 
-- `EB_LIVEFEED_FILE=<path>` — write NDJSON to a file (record / local tail).
-- `EB_LIVEFEED_URL=<url>` — POST NDJSON batches to a WebGUI's `/api/livefeed` (`LiveFeedHttpSink`).
-- `EB_LIVEFEED_SOURCE=<name>` — friendly source name sent as `X-Feed-Source` (else the WebGUI uses the IP).
-- `EB_LIVEFEED_TOKEN=<token>` — sent as `X-Feed-Token`.
+```jsonc
+"LiveFeed": {
+  "Url":    "http://localhost:5018/api/livefeed",  // POST NDJSON batches here (blank => off)
+  "Source": "rig-A",                                // X-Feed-Source label (blank => WebGUI uses the IP)
+  "File":   "",                                     // also write NDJSON to this file (blank => off)
+  "Token":  ""                                       // X-Feed-Token auth, if required
+}
+```
 
-Both sinks can be active at once. This makes EB Console the first external producer over the wire:
+Each field can be **overridden at runtime** by the matching env var (`EB_LIVEFEED_URL` / `_SOURCE` /
+`_FILE` / `_TOKEN`) — handy for one-off runs without editing the config. Precedence: env var wins,
+else the config value, else off. `Url` and `File` sinks can both be active at once. This makes EB Console the first external producer over the wire:
 run a Console tournament on machine A with `EB_LIVEFEED_URL` pointing at the WebGUI on machine B, open
 `/tournament-grid` on B, and the games render live, labeled by source.
 

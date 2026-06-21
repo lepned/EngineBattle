@@ -496,6 +496,17 @@ module TypesDef =
         EngineDefList: string list }
     type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallelConsoleOnly: int; GPUs: int[] }
 
+    /// Optional live-feed output for streaming a tournament to the WebGUI grid (see
+    /// LiveFeedContract.md). All-empty / missing in JSON => no feed (normal tournament).
+    /// Env vars EB_LIVEFEED_URL / _SOURCE / _FILE / _TOKEN override these at runtime.
+    type LiveFeedConfig =
+      { Url: string       // POST wire events here, e.g. http://host:5018/api/livefeed
+        Source: string    // server label (X-Feed-Source); blank => WebGUI uses the remote IP
+        File: string      // also write NDJSON to this file (record / local tail)
+        Token: string }   // X-Feed-Token auth, if the WebGUI requires one
+      with
+        static member Empty = { Url = ""; Source = ""; File = ""; Token = "" }
+
     type Tournament =
       { Name: string
         Description: string
@@ -533,6 +544,7 @@ module TypesDef =
         EngineSetup: EngineSetup
         mutable LayoutOption: LayoutOption
         TimeControl: TimeControl
+        LiveFeed: LiveFeedConfig
         [<JsonIgnore>] mutable OpeningName: string
         [<JsonIgnore>] mutable TotalGames: int
         [<JsonIgnore>] mutable CurrentGameNr: int  }
@@ -880,6 +892,7 @@ module TypesDef =
           PauseAfterRound = 0
           OrdoExePath = String.Empty
           TimeControl = Unchecked.defaultof<TimeControl>
+          LiveFeed = LiveFeedConfig.Empty
           EngineSetup = {Engines = []; EngineDefFolder = ""; EngineDefList = [] }
           Opening = {OpeningsPath = None; OpeningsTwice = false; OpeningsPly = 0; RandomOpenings = false; Seed = 0 }
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
