@@ -197,6 +197,7 @@ let mapTournamentInfo (source: string) (line: string) : string option =
         let t =
             { Tournament.Empty with
                 Name = getStr o "name" ""
+                Description = getStr o "machineName" ""   // host machine (shown in the grid header)
                 TournamentMode = getStr o "mode" "RR"
                 EngineSetup = { Engines = engines; EngineDefFolder = ""; EngineDefList = [] }
                 TimeControl = (match toTimeControl o with Some tc -> tc | None -> Tournament.Empty.TimeControl) }

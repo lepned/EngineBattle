@@ -15,6 +15,8 @@
 <div class="grid-header">
     <h3>@tournamentName</h3>
     <span class="count">@games.Count game(s)</span>
+    @if (!string.IsNullOrEmpty(machine)) { <span class="hdr-meta" title="Host machine">@machine</span> }
+    @if (!string.IsNullOrEmpty(timeControl)) { <span class="hdr-meta" title="Time control">@timeControl</span> }
     <button class="reset-btn" @onclick="ResetAll" title="Clear standings and boards for a fresh tournament">Reset</button>
     <span class="ceres-connect">
         <input type="text" placeholder="Ceres host:port (e.g. 192.168.0.50:7440)" @bind="ceresHostPort" />
@@ -35,6 +37,7 @@
     List<PlayerResult> table;
     string pento;
     int pentoCovered, resultCount;
+    Dictionary<string, (string nodes, string nps, string eps)> spd;
     lock (sync)
     {
         tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList();
@@ -42,6 +45,13 @@
         pento = pentoLine;
         pentoCovered = pentoGames.Count;   // games we paired live (by opening hash)
         resultCount = results.Count;       // all games in standings (incl. global catch-up)
+        // Per-engine average speed (nodes/move, nps, eps) for the standings columns.
+        spd = speed.ToDictionary(kv => kv.Key, kv =>
+        {
+            var v = kv.Value;
+            if (v.N == 0) return ("", "", "");
+            return (Kfmt((double)v.Nodes / v.N), Kfmt(v.Nps / v.N), v.Eps > 0 ? Kfmt(v.Eps / v.N) : "");
+        });
     }
     // Pentanomial pairs by opening hash, which only the live per-game stream carries. On a mid-tournament
     // join the standings catch-up (global results) has no opening, so pento can't cover those games.
@@ -55,12 +65,14 @@
 {
     <table class="standings">
         <thead>
-            <tr><th>#</th><th>Engine</th><th>Pts</th><th>Pl</th><th>W-D-L</th><th>Elo</th></tr>
+            <tr><th>#</th><th>Engine</th><th>Pts</th><th>Pl</th><th>W-D-L</th><th>Elo</th>
+                <th title="Average nodes per move">Nodes</th><th title="Average nodes/sec">NPS</th><th title="Average evals/sec">EPS</th></tr>
         </thead>
         <tbody>
             @{ var rank = 1; }
             @foreach (var p in table)
             {
+                var s = spd.TryGetValue(p.Player, out var sv) ? sv : default;
                 <tr>
                     <td>@(rank++)</td>
                     <td class="eng">@p.Player</td>
@@ -68,17 +80,23 @@
                     <td>@p.Played</td>
                     <td>@p.Win-@p.Draw-@p.Loss</td>
                     <td>@p.Elo.ToString("+0;-0;0") ±@p.Error.ToString("0")</td>
+                    <td>@s.nodes</td>
+                    <td>@s.nps</td>
+                    <td>@s.eps</td>
                 </tr>
             }
         </tbody>
     </table>
-    @if (pentoReliable && !string.IsNullOrEmpty(pento))
+    @if (table.Count == 2)   // pentanomial is a 2-engine (paired-match) stat — not shown for round-robin
     {
-        <div class="pento">@pento</div>
-    }
-    else if (resultCount > 0)
-    {
-        <div class="pento pento-na">Pentanomial: n/a — joined mid-tournament (pairs unavailable for games played before connecting)</div>
+        @if (pentoReliable && !string.IsNullOrEmpty(pento))
+        {
+            <div class="pento">@pento</div>
+        }
+        else if (resultCount > 0)
+        {
+            <div class="pento pento-na">Pentanomial: n/a — joined mid-tournament (pairs unavailable for games played before connecting)</div>
+        }
     }
 }
 
@@ -101,8 +119,10 @@
                 <span class="ev">@g.BlackEval</span>
             </div>
             <div class="pv">@ShortPv(g.BlackPV)</div>
+            <div class="stats">@g.BlackStats</div>
             <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@bs" />
             <div class="pv">@ShortPv(g.WhitePV)</div>
+            <div class="stats">@g.WhiteStats</div>
             <div class="tile-row">
                 <span class="nm">@g.White</span>
                 <span class="clk">@g.WhiteTime</span>
@@ -132,6 +152,8 @@
     private string pentoLine = "";
     private readonly object sync = new();
     private string tournamentName = "Live games";
+    private string machine = "";        // host machine (from tournament meta)
+    private string timeControl = "";     // time control text (from tournament meta)
     private Action<string, TournamentTypes.Update> handler;
     private volatile bool renderQueued;
     private int? manualSize;   // explicit ?size=N override; otherwise auto-scaled by parallel game count
@@ -174,10 +196,13 @@
             seenStandings.Clear();
             seenPento.Clear();
             perThreadOrdinal.Clear();
+            speed.Clear();
             standings = new List<PlayerResult>();
             pentoGames.Clear();
             pentoLine = "";
             tournamentName = "Live games";
+            machine = "";
+            timeControl = "";
         }
         JsonFeedSvc.Reset();
         StateHasChanged();
@@ -238,7 +263,12 @@
                     // Just the header — do NOT clear results/standings: with multiple servers each sends
                     // a StartOfTournament, and results accumulate across them (combined standings).
                     if (sot.Info.Tournament != null)
-                        tournamentName = sot.Info.Tournament.Value.Name;
+                    {
+                        var t = sot.Info.Tournament.Value;
+                        tournamentName = t.Name;
+                        machine = t.Description ?? "";        // host machine carried in Description
+                        try { timeControl = t.TimeControlText() ?? ""; } catch { timeControl = ""; }
+                    }
                     break;
 
                 case TournamentTypes.Update.StartOfGame sog:
@@ -255,6 +285,7 @@
                         vm.FromSq = vm.ToSq = vm.LastMove = "";
                         vm.WhiteEval = vm.BlackEval = "";
                         vm.WhitePV = vm.BlackPV = "";
+                        vm.WhiteStats = vm.BlackStats = "";
                         vm.Result = "";
                         vm.Finished = false;
                         vm.Ply = 0;
@@ -271,8 +302,15 @@
                         vm.LastMove = bm.Info.MoveAndFen.ShortSan;
                         vm.Ply++;
                         var ev = Eval(bm.Info.Eval);
-                        if (bm.Info.Player == vm.White) { vm.WhiteEval = ev; vm.WhitePV = bm.Info.PV; vm.WhiteTime = FmtClock(bm.Info.TimeLeft); }
-                        else if (bm.Info.Player == vm.Black) { vm.BlackEval = ev; vm.BlackPV = bm.Info.PV; vm.BlackTime = FmtClock(bm.Info.TimeLeft); }
+                        var stats = FmtStats(bm.Status.Nodes, bm.Status.NPS, bm.Status.EPS);
+                        if (bm.Info.Player == vm.White) { vm.WhiteEval = ev; vm.WhitePV = bm.Info.PV; vm.WhiteTime = FmtClock(bm.Info.TimeLeft); vm.WhiteStats = stats; }
+                        else if (bm.Info.Player == vm.Black) { vm.BlackEval = ev; vm.BlackPV = bm.Info.PV; vm.BlackTime = FmtClock(bm.Info.TimeLeft); vm.BlackStats = stats; }
+                        // Per-engine speed for the standings table (one sample per completed move).
+                        if (!string.IsNullOrEmpty(bm.Info.Player) && bm.Status.Nodes > 0)
+                        {
+                            var sp = speed.TryGetValue(bm.Info.Player, out var sv) ? sv : (speed[bm.Info.Player] = new Speed());
+                            sp.Nodes += bm.Status.Nodes; sp.Nps += bm.Status.NPS; sp.Eps += bm.Status.EPS; sp.N++;
+                        }
                         break;
                     }
 
@@ -280,8 +318,9 @@
                     {
                         var vm = Get(gameId);
                         var ev = Eval(st.Engine.Eval);
-                        if (st.Engine.PlayerName == vm.White) { vm.WhiteEval = ev; vm.WhitePV = st.Engine.PV; }
-                        else if (st.Engine.PlayerName == vm.Black) { vm.BlackEval = ev; vm.BlackPV = st.Engine.PV; }
+                        var stats = FmtStats(st.Engine.Nodes, st.Engine.NPS, st.Engine.EPS);
+                        if (st.Engine.PlayerName == vm.White) { vm.WhiteEval = ev; vm.WhitePV = st.Engine.PV; vm.WhiteStats = stats; }
+                        else if (st.Engine.PlayerName == vm.Black) { vm.BlackEval = ev; vm.BlackPV = st.Engine.PV; vm.BlackStats = stats; }
                         break;
                     }
 
@@ -325,7 +364,7 @@
                                 perThreadOrdinal[boardId] = ord + 1;
                                 var pairKey = $"{boardId}#{ord / 2}";
                                 pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, pairKey));
-                                if (standings.Count == 2)
+                                if (standings.Count == 2)   // pentanomial only for a single 2-engine matchup (not RR)
                                     pentoLine = FeedStats.pentanomialCompact(pentoGames);
                             }
                         }
@@ -338,7 +377,7 @@
                             if (seenPento.Add(sig))
                             {
                                 pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, vm.OpeningHash));
-                                if (standings.Count == 2)
+                                if (standings.Count == 2)   // pentanomial only for a single 2-engine matchup (not RR)
                                     pentoLine = FeedStats.pentanomialCompact(pentoGames);
                             }
                         }
@@ -376,6 +415,23 @@
     }
 
     private static string Eval(EvalType e) => e == null || e.IsNA ? "" : e.ToString();
+
+    // Compact magnitude formatter: 31200 -> "31.2k", 4_300_000 -> "4.3M".
+    private static string Kfmt(double v) => v >= 1_000_000 ? $"{v / 1_000_000:0.0}M" : $"{v / 1_000:0.0}k";
+
+    // Per-engine search stats line for a tile: "N = 1,276,331  nps = 31.2k  eps = 24.7k".
+    // eps is omitted when the engine doesn't report it (e.g. classical engines).
+    private static string FmtStats(long nodes, double nps, double eps)
+    {
+        if (nodes <= 0 && nps <= 0) return "";
+        var s = $"N = {nodes:N0}  nps = {Kfmt(nps)}";
+        if (eps > 0) s += $"  eps = {Kfmt(eps)}";
+        return s;
+    }
+
+    // Running per-engine speed accumulator (summed over completed moves -> averaged for the table).
+    private sealed class Speed { public long Nodes; public double Nps; public double Eps; public int N; }
+    private readonly Dictionary<string, Speed> speed = new();
 
     // Bound the PV to a sensible number of plies so it fits ~2 lines without any CSS clamp trick.
     private const int PvMaxPlies = 20;
@@ -431,6 +487,8 @@
         public string BlackEval { get; set; } = "";
         public string WhitePV { get; set; } = "";
         public string BlackPV { get; set; } = "";
+        public string WhiteStats { get; set; } = "";   // "N = …  nps = …k  eps = …k"
+        public string BlackStats { get; set; } = "";
         public string WhiteTime { get; set; } = "";
         public string BlackTime { get; set; } = "";
         public string Result { get; set; } = "";
