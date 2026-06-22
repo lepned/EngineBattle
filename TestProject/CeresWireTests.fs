@@ -166,6 +166,48 @@ let ``tournamentInfo maps to StartOfTournament with name and players`` () =
         | other -> failwithf "expected StartOfTournament, got %A" other
     | None -> failwith "mapTournamentInfo returned None"
 
+// toTimeControl is private, so exercise it through mapTournamentInfo (+ the wire round-trip) and
+// assert the resulting TimeControl config. tcLine builds a tournamentInfo line with a given TC.
+let private tcLine (tcJson: string) =
+    sprintf """{"type":"tournamentInfo","threadId":-1,"name":"T","mode":"RR","numGamePairs":1,"threadCount":1,"players":[{"name":"A"},{"name":"B"}],"timeControl":%s}""" tcJson
+
+let private parseTC (line: string) =
+    match mapTournamentInfo "rig" line with
+    | Some json ->
+        match tryParseUpdate json with
+        | Some(Update.StartOfTournament i) ->
+            match i.Tournament with
+            | Some t -> t.TimeControl
+            | None -> failwith "no tournament"
+        | other -> failwithf "expected StartOfTournament, got %A" other
+    | None -> failwith "mapTournamentInfo returned None"
+
+[<Fact>]
+let ``toTimeControl maps secondsForAllMoves to fixed + increment`` () =
+    let cfg = (parseTC (tcLine """{"kind":"secondsForAllMoves","valueMs":60000,"incrementMs":1000}""")).GetTimeConfig 1
+    Assert.False(cfg.NodeLimit)
+    Assert.Equal(60.0, cfg.Fixed.ToTimeSpan().TotalSeconds, 1)
+    Assert.Equal(1.0, cfg.Increment.ToTimeSpan().TotalSeconds, 1)
+
+[<Fact>]
+let ``toTimeControl maps secondsPerMove to fixed, no increment`` () =
+    let cfg = (parseTC (tcLine """{"kind":"secondsPerMove","valueMs":1500}""")).GetTimeConfig 1
+    Assert.False(cfg.NodeLimit)
+    Assert.Equal(1.5, cfg.Fixed.ToTimeSpan().TotalSeconds, 2)
+    Assert.Equal(0.0, cfg.Increment.ToTimeSpan().TotalSeconds, 2)
+
+[<Fact>]
+let ``toTimeControl maps nodesPerMove to a node limit`` () =
+    let cfg = (parseTC (tcLine """{"kind":"nodesPerMove","nodes":800}""")).GetTimeConfig 1
+    Assert.True(cfg.NodeLimit)
+    Assert.Equal(800, cfg.Nodes)
+
+[<Fact>]
+let ``toTimeControl maps movesToGo`` () =
+    let tc = parseTC (tcLine """{"kind":"secondsForAllMoves","valueMs":120000,"incrementMs":0,"movesToGo":40}""")
+    Assert.Equal(40, tc.WmovesToGo)
+    Assert.Equal(40, tc.BmovesToGo)
+
 [<Fact>]
 let ``celtType reads discriminator and mappers reject wrong type`` () =
     Assert.Equal("move", celtType moveLine)
