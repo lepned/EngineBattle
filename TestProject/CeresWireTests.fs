@@ -190,11 +190,11 @@ let ``toTimeControl maps secondsForAllMoves to fixed + increment`` () =
     Assert.Equal(1.0, cfg.Increment.ToTimeSpan().TotalSeconds, 1)
 
 [<Fact>]
-let ``toTimeControl maps secondsPerMove to fixed, no increment`` () =
+let ``toTimeControl maps secondsPerMove to 1s fixed + per-move increment`` () =
     let cfg = (parseTC (tcLine """{"kind":"secondsPerMove","valueMs":1500}""")).GetTimeConfig 1
     Assert.False(cfg.NodeLimit)
-    Assert.Equal(1.5, cfg.Fixed.ToTimeSpan().TotalSeconds, 2)
-    Assert.Equal(0.0, cfg.Increment.ToTimeSpan().TotalSeconds, 2)
+    Assert.Equal(1.0, cfg.Fixed.ToTimeSpan().TotalSeconds, 2)        // 1s base
+    Assert.Equal(1.5, cfg.Increment.ToTimeSpan().TotalSeconds, 2)    // increment = per-move time
 
 [<Fact>]
 let ``toTimeControl maps nodesPerMove to a node limit`` () =

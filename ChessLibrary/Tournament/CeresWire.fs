@@ -157,7 +157,9 @@ let private toTimeControl (o: JsonObject) : TimeControl option =
             | "nodesPerMove" | "nodesForAllMoves" ->
                 { Id = 1; Fixed = timeOnlyMs 0; Increment = timeOnlyMs 0; NodeLimit = true; Nodes = nodes }
             | "secondsPerMove" ->
-                { Id = 1; Fixed = timeOnlyMs valueMs; Increment = timeOnlyMs 0; NodeLimit = false; Nodes = 0 }
+                // EB has no per-move (movetime) mode; model it as a small 1s fixed base + an increment
+                // equal to the per-move time, so each move effectively gets ~that time.
+                { Id = 1; Fixed = timeOnlyMs 1000; Increment = timeOnlyMs valueMs; NodeLimit = false; Nodes = 0 }
             | _ -> // secondsForAllMoves / other: fixed + increment
                 { Id = 1; Fixed = timeOnlyMs valueMs; Increment = timeOnlyMs incrMs; NodeLimit = false; Nodes = 0 }
         Some { TimeConfigs = [ config ]; WmovesToGo = movesToGo; BmovesToGo = movesToGo }
