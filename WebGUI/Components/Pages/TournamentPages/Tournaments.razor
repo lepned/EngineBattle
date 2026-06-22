@@ -1460,6 +1460,8 @@
 				if (oneSecondTimer != null)
 					oneSecondTimer.Dispose();
 				oneSecondTimer = null;
+				if (FeedMode)
+					FeedStats.ensureFeedEngines(tournament, results);   // fill roster from result names (no local config)
 				var summary = PlayerResults(results);
 				scoreTable = summary;
 				table = Crosstable(results);
@@ -1701,6 +1703,11 @@
 						incomingTournament.IsChess960 = tournament.IsChess960;
 					}
 					tournament = incomingTournament;
+					// Feed mode has no local roster: Engines is [JsonIgnore], so it arrives null over the
+					// wire. Guarantee a non-null list (populated from result player names as they accrue) so
+					// the UI's LINQ over Engines never NREs when there's no local tournament.json.
+					if (FeedMode)
+						FeedStats.ensureFeedEngines(tournament, results);
 					UpdateSwissRoundLabel();
 					if (pairingTableHeight > 0)
 					{
@@ -2778,12 +2785,11 @@
 					tournament = r.Tournament();
 					if (tournament == null || tournament.EngineSetup?.Engines == null || tournament.EngineSetup.Engines.Length == 0)
 					{
-						var loadErr = ChessLibrary.Tournament.Manager.lastLoadError;
-						tournamentLoadError = !string.IsNullOrEmpty(loadErr)
-							? loadErr
-							: "tournament.json could not be loaded. Feed mode uses it for layout defaults.";
-						StateHasChanged();
-						return;
+						// Feed mode does NOT require a local tournament.json — the real tournament (engines,
+						// layout, time control) arrives via the feed's StartOfTournament event, which replaces
+						// `tournament`. Fall back to defaults so the view loads even when the file is absent or
+						// has no engines (an external runner / Ceres broadcast supplies everything).
+						tournament = TypesDef.Tournament.Tournament.Empty;
 					}
 					results = new List<Result>();
 					scoreTable = new List<PlayerResult>();

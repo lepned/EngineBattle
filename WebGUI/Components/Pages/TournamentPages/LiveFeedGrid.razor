@@ -16,6 +16,7 @@
 <div class="grid-header">
     <h3>@tournamentName</h3>
     <span class="count">@games.Count game(s)</span>
+    @if (tournamentComplete) { <span class="done-badge" title="The tournament has finished (EndOfTournament received)">✔ Completed</span> }
     @if (!string.IsNullOrEmpty(machine)) { <span class="hdr-meta" title="Host machine">@machine</span> }
     @if (!string.IsNullOrEmpty(timeControl)) { <span class="hdr-meta" title="Time control">@timeControl</span> }
     <button class="reset-btn" @onclick="ResetAll" title="Clear standings and boards for a fresh tournament">Reset</button>
@@ -47,7 +48,7 @@
     List<PlayerResult> table;
     string pento;
     int pentoCovered, resultCount;
-    Dictionary<string, (string nodes, string nps, string eps)> spd;
+    Dictionary<string, (string nodes, string nps, string eps, string time)> spd;
     Dictionary<(string, string), (int w, int d, int l)> cross;
     lock (sync)
     {
@@ -57,12 +58,12 @@
         pento = pentoLine;
         pentoCovered = pentoGames.Count;   // games we paired live (by opening hash)
         resultCount = results.Count;       // all games in standings (incl. global catch-up)
-        // Per-engine average speed (nodes/move, nps, eps) for the standings columns.
+        // Per-engine average speed (nodes/move, nps, eps) + total think time for the standings columns.
         spd = speed.ToDictionary(kv => kv.Key, kv =>
         {
             var v = kv.Value;
-            if (v.N == 0) return ("", "", "");
-            return (Kfmt((double)v.Nodes / v.N), Kfmt(v.Nps / v.N), v.Eps > 0 ? Kfmt(v.Eps / v.N) : "");
+            if (v.N == 0) return ("", "", "", "");
+            return (Kfmt((double)v.Nodes / v.N), Kfmt(v.Nps / v.N), v.Eps > 0 ? Kfmt(v.Eps / v.N) : "", FmtDuration(v.Time));
         });
     }
     // Pentanomial pairs by opening hash, which only the live per-game stream carries. On a mid-tournament
@@ -78,7 +79,8 @@
     <table class="standings">
         <thead>
             <tr><th>#</th><th>Engine</th><th>Pts</th><th>Pl</th><th>W-D-L</th><th>Elo</th>
-                <th title="Average nodes per move">Nodes</th><th title="Average nodes/sec">NPS</th><th title="Average evals/sec">EPS</th></tr>
+                <th title="Average nodes per move">Nodes</th><th title="Average nodes/sec">NPS</th><th title="Average evals/sec">EPS</th>
+                <th title="Total think time used by this engine">Time</th></tr>
         </thead>
         <tbody>
             @{ var rank = 1; }
@@ -95,6 +97,7 @@
                     <td>@s.nodes</td>
                     <td>@s.nps</td>
                     <td>@s.eps</td>
+                    <td>@s.time</td>
                 </tr>
             }
         </tbody>
@@ -194,6 +197,7 @@
     private string tournamentName = "Live games";
     private string machine = "";        // host machine (from tournament meta)
     private string timeControl = "";     // time control text (from tournament meta)
+    private bool tournamentComplete;     // set on EndOfTournament; shows the "Completed" header badge
     private Action<string, TournamentTypes.Update> handler;
     private volatile bool renderQueued;
     private int? manualSize;   // explicit ?size=N override; otherwise auto-scaled by parallel game count
@@ -270,6 +274,7 @@
             tournamentName = "Live games";
             machine = "";
             timeControl = "";
+            tournamentComplete = false;
         }
         JsonFeedSvc.Reset();
         StateHasChanged();
@@ -329,6 +334,7 @@
                 case TournamentTypes.Update.StartOfTournament sot:
                     // Just the header — do NOT clear results/standings: with multiple servers each sends
                     // a StartOfTournament, and results accumulate across them (combined standings).
+                    tournamentComplete = false;   // a (re)start clears a stale "Completed" badge
                     if (sot.Info.Tournament != null)
                     {
                         var t = sot.Info.Tournament.Value;
@@ -336,6 +342,10 @@
                         machine = t.Description ?? "";        // host machine carried in Description
                         try { timeControl = t.TimeControlText() ?? ""; } catch { timeControl = ""; }
                     }
+                    break;
+
+                case TournamentTypes.Update.EndOfTournament:
+                    tournamentComplete = true;
                     break;
 
                 case TournamentTypes.Update.StartOfGame sog:
@@ -372,11 +382,12 @@
                         var stats = FmtStats(bm.Status.Nodes, bm.Status.NPS, bm.Status.EPS);
                         if (bm.Info.Player == vm.White) { vm.WhiteEval = ev; vm.WhitePV = bm.Info.PV; vm.WhiteTime = FmtClock(bm.Info.TimeLeft); vm.WhiteStats = stats; }
                         else if (bm.Info.Player == vm.Black) { vm.BlackEval = ev; vm.BlackPV = bm.Info.PV; vm.BlackTime = FmtClock(bm.Info.TimeLeft); vm.BlackStats = stats; }
-                        // Per-engine speed for the standings table (one sample per completed move).
+                        // Per-engine speed + cumulative think time for the standings table (one sample per move).
                         if (!string.IsNullOrEmpty(bm.Info.Player) && bm.Status.Nodes > 0)
                         {
                             var sp = speed.TryGetValue(bm.Info.Player, out var sv) ? sv : (speed[bm.Info.Player] = new Speed());
                             sp.Nodes += bm.Status.Nodes; sp.Nps += bm.Status.NPS; sp.Eps += bm.Status.EPS; sp.N++;
+                            sp.Time += bm.Info.MoveTime.ToTimeSpan();   // total time this engine has spent thinking
                         }
                         break;
                     }
@@ -422,14 +433,29 @@
                         var boardId = gameId.Substring(gameId.LastIndexOf('/') + 1);
                         if (boardId.StartsWith("r"))
                         {
-                            // Ceres global result, tagged "r{threadId}". Pair pentanomial by thread: each
-                            // thread plays an opening then its reverse back-to-back, so consecutive results
-                            // on a thread form a pair. No board tile (this is a results-only event).
-                            if (seenPento.Add(sig))
+                            // Ceres global result (results-only, no board tile). Two ways to pair pentanomial:
+                            //  - "r{threadId}~o{openingIndex}": Ceres sent the opening id -> pair by opening
+                            //    (robust to threads/parallelism/distribution).
+                            //  - "r{threadId}": older Ceres -> fall back to thread-ordinal adjacency (each
+                            //    thread plays an opening then its reverse back-to-back). Breaks under
+                            //    distributed runs where a coordinator emits finished pairs from many workers.
+                            var tilde = boardId.IndexOf('~');
+                            // When the opening id is present, fold it into the dedup key so two different
+                            // openings that share a ResultKey (common under node limits) aren't collapsed.
+                            var pentoKey = tilde >= 0 ? sig + "@" + boardId.Substring(tilde + 1) : sig;
+                            if (seenPento.Add(pentoKey))
                             {
-                                int ord = perThreadOrdinal.TryGetValue(boardId, out var c) ? c : 0;
-                                perThreadOrdinal[boardId] = ord + 1;
-                                var pairKey = $"{boardId}#{ord / 2}";
+                                string pairKey;
+                                if (tilde >= 0)
+                                {
+                                    pairKey = boardId.Substring(tilde + 1);   // "o{openingIndex}" — same for both colors
+                                }
+                                else
+                                {
+                                    int ord = perThreadOrdinal.TryGetValue(boardId, out var c) ? c : 0;
+                                    perThreadOrdinal[boardId] = ord + 1;
+                                    pairKey = $"{boardId}#{ord / 2}";
+                                }
                                 pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, pairKey));
                                 if (standings.Count == 2)   // pentanomial only for a single 2-engine matchup (not RR)
                                     pentoLine = FeedStats.pentanomialCompact(pentoGames);
@@ -497,7 +523,17 @@
     }
 
     // Running per-engine speed accumulator (summed over completed moves -> averaged for the table).
-    private sealed class Speed { public long Nodes; public double Nps; public double Eps; public int N; }
+    // Time is cumulative (total think time spent), shown as-is rather than averaged.
+    private sealed class Speed { public long Nodes; public double Nps; public double Eps; public int N; public TimeSpan Time; }
+
+    // Total think time used by an engine, compact: "8.4s", "1:23", "1:02:03".
+    private static string FmtDuration(TimeSpan t)
+    {
+        if (t <= TimeSpan.Zero) return "";
+        if (t.TotalHours >= 1) return $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}";
+        if (t.TotalMinutes >= 1) return $"{t.Minutes}:{t.Seconds:00}";
+        return $"{t.TotalSeconds:0.0}s";
+    }
     private readonly Dictionary<string, Speed> speed = new();
 
     // Head-to-head W-D-L matrix from the results: hh[(a,b)] = a's wins/draws/losses vs b.

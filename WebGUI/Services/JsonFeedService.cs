@@ -22,6 +22,7 @@ namespace WebGUI.Services
 
         // Catch-up cache: lets a view opened mid-run reconstruct current state (LiveFeedContract.md §9.5).
         private TournamentTypes.Update? _startOfTournament;
+        private TournamentTypes.Update? _endOfTournament;   // set once the tournament completes; replayed to late joiners
         private readonly List<CoreTypes.Result> _results = new();                  // all results, for standings
         private readonly List<string> _resultIds = new();                          // demux key per result (parallel to _results) — for pentanomial catch-up replay
         private readonly HashSet<string> _resultKeys = new();                      // dedup (a Ceres game arrives as both a per-thread gameEnd and a global gameResult)
@@ -39,6 +40,11 @@ namespace WebGUI.Services
         }
 
         public bool IsRunning { get; private set; }
+
+        /// <summary>True once an <c>EndOfTournament</c> has been seen — lets a view distinguish a
+        /// completed tournament from a live (or silently dropped) one. Survives until the next
+        /// <c>StartOfTournament</c> or an explicit <see cref="Reset"/>.</summary>
+        public bool IsCompleted { get { lock (_lock) { return _endOfTournament != null; } } }
 
         /// <summary>True when any feed view (single- or multi-game) is subscribed (used to auto-engage the live bridge).</summary>
         public bool HasSubscriber { get { lock (_lock) { return _subscriber != null || _multiSubscribers.Count > 0; } } }
@@ -114,6 +120,7 @@ namespace WebGUI.Services
             {
                 IsRunning = false;
                 _startOfTournament = null;
+                _endOfTournament = null;
                 _results.Clear();
                 _resultIds.Clear();
                 _resultKeys.Clear();
@@ -167,6 +174,10 @@ namespace WebGUI.Services
                     // wipe each other's cached state. Per-key snaps are replaced by their StartOfGame;
                     // a full reset is done explicitly via Reset() (e.g. before a file replay).
                     _startOfTournament = update;
+                    _endOfTournament = null;   // a (re)start clears any prior completion marker
+                    break;
+                case TournamentTypes.Update.EndOfTournament:
+                    _endOfTournament = update;   // remember completion so late joiners learn the tournament is over
                     break;
                 case TournamentTypes.Update.StartOfGame:
                     _snaps[key] = new GameSnap { Start = update };   // new game on this stream resets its snap
@@ -212,6 +223,10 @@ namespace WebGUI.Services
                     foreach (var st in snap.StatusByPlayer.Values) handler(key, st);
                     if (snap.LastBestMove != null) handler(key, snap.LastBestMove);
                 }
+                // Last: if the tournament already finished, tell the new subscriber so it renders the
+                // completed state instead of looking like a live-but-quiet feed.
+                if (_endOfTournament != null)
+                    handler("", _endOfTournament);
             }
             catch (Exception) { /* subscriber tearing down — ignore */ }
         }

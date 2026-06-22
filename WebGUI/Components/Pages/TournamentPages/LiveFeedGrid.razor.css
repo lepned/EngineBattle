@@ -16,6 +16,16 @@
     padding: 1px 8px;
 }
 
+.grid-header .done-badge {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #cfe7c9;
+    background: #244a2a;
+    border: 1px solid #3c6e44;
+    border-radius: 4px;
+    padding: 1px 8px;
+}
+
 .ceres-connect { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
 .ceres-connect input { width: 230px; padding: 3px 6px; font-size: 0.85rem; }
 .ceres-connect button { padding: 3px 10px; font-size: 0.85rem; cursor: pointer; }

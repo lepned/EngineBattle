@@ -512,6 +512,11 @@ let parallelTournamentRun
           // 8) collect results
           let res = ResizeArray<Result>(results)
           callback (Update.PeriodicResults res)
+          // Signal tournament completion over the live feed so a grid/feed viewer can show a
+          // distinct "Completed" state (vs a silently dropped feed). The internal callback's own
+          // EndOfTournament fires later in Tournament.fs — after these sinks are disposed — so we
+          // tee it here while the recorder/HTTP sinks are still alive. No-op when no feed is set.
+          emitFeed "" (Update.EndOfTournament tourny)
           let games = pgnAgent.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply))
           if ownsAgent then
               pgnAgent.Post(ChessLibrary.FullPGNParser.Dispose)

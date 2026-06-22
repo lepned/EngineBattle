@@ -182,6 +182,15 @@ let ``mapGameEnd tags global gameResult with r{threadId} for thread pairing`` ()
         | other -> failwithf "expected EndOfGame, got %A" other
     | None -> failwith "mapGameEnd returned None for gameResult"
 
+[<Fact>]
+let ``mapGameEnd tags gameResult with r{threadId}~o{openingIndex} when opening id present`` () =
+    // When Ceres sends openingIndex on the result, the consumer should pair pentanomial by opening
+    // (robust to threads/parallelism/distribution), so the envelope carries "r{threadId}~o{openingIndex}".
+    let gameResultLine = """{"type":"gameResult","threadId":1,"openingIndex":5,"whiteName":"Stockfish 18","blackName":"Ceres","result":"1-0","reason":"CM","moves":37,"plyCount":73,"gameTimeMs":176296}"""
+    match mapGameEnd "rigA" "" gameResultLine with
+    | Some json -> Assert.Equal("r1~o5", readGameId json)
+    | None -> failwith "mapGameEnd returned None for gameResult"
+
 // toTimeControl is private, so exercise it through mapTournamentInfo (+ the wire round-trip) and
 // assert the resulting TimeControl config. tcLine builds a tournamentInfo line with a given TC.
 let private tcLine (tcJson: string) =

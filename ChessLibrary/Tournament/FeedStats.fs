@@ -26,6 +26,23 @@ let private challengersAndPlayers (tournament: Tournament) =
 let playerResultsFromResults (results: ResizeArray<Result>) : ResizeArray<PlayerResult> =
     PGNCalculator.getFullStatFromResults results |> ResizeArray
 
+/// Feed mode has no local engine roster: `EngineSetup.Engines` is [<JsonIgnore>], so it arrives null
+/// over the wire. Ensure it's a non-null list (so the UI's LINQ over Engines never NREs) and, when
+/// empty, populate it from the distinct player names seen in the accumulated results — letting player
+/// counts / engine lookups work without a local tournament.json. No-op once a roster already exists
+/// (e.g. a real tournament.json was loaded and preserved).
+let ensureFeedEngines (t: Tournament) (results: ResizeArray<Result>) =
+    if not (obj.ReferenceEquals(t.EngineSetup, null)) then
+        let existing = if obj.ReferenceEquals(t.EngineSetup.Engines, null) then [] else t.EngineSetup.Engines
+        if List.isEmpty existing then
+            let names =
+                results
+                |> Seq.collect (fun r -> [ r.Player1; r.Player2 ])
+                |> Seq.filter (String.IsNullOrWhiteSpace >> not)
+                |> Seq.distinct
+                |> Seq.toList
+            t.EngineSetup.Engines <- names |> List.map (fun n -> { EngineConfig.Empty with Name = n })
+
 /// Build a minimal PgnGame carrying just the fields pentanomial pairing needs (White/Black/Result/
 /// OpeningHash). Lets the feed view compute pentanomial without full PGN data.
 let pentanomialGame (white: string) (black: string) (result: string) (openingHash: string) : PgnGame =

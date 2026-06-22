@@ -328,15 +328,26 @@ let mapGameEnd (source: string) (gameId: string) (line: string) : string option 
               Reason = reason
               GameTime = getI64 o "gameTimeMs" 0L
               OutOfOpeningEvals = [] }
-        // Global "gameResult" carries the producing thread id; tag the gameId "r{threadId}" so the
-        // consumer can pair pentanomial by thread (each thread plays an opening then its reverse,
-        // back-to-back). "r" marks it result-only (standings/pentanomial, no board tile). Per-thread
-        // "gameEnd" keeps the passed gameId (the board tile).
+        // Global "gameResult" tagging for the consumer's pentanomial pairing:
+        //  - If Ceres sends "openingIndex" on the result, tag "r{threadId}~o{openingIndex}" so the
+        //    consumer pairs the two colors of an opening by that id — robust to threads, parallelism,
+        //    and DISTRIBUTED runs (where a coordinator emits finished pairs from many workers and the
+        //    thread-ordinal "opening then reverse, back-to-back on one thread" assumption breaks).
+        //  - Otherwise fall back to "r{threadId}" (older Ceres without the field): the consumer pairs
+        //    by thread-ordinal adjacency.
+        // "r" marks the event result-only (standings/pentanomial, no board tile). Per-thread "gameEnd"
+        // keeps the passed gameId (the board tile).
         let effectiveGameId =
             if getStr o "type" "" = "gameResult" then
-                match getIntOpt o "threadId" with
-                | Some tid when tid >= 0 -> sprintf "r%d" tid
-                | _ -> gameId
+                let openTag =
+                    match getIntOpt o "openingIndex" with
+                    | Some oi when oi >= 0 -> Some(sprintf "o%d" oi)
+                    | _ -> None
+                match getIntOpt o "threadId", openTag with
+                | Some tid, Some ot when tid >= 0 -> sprintf "r%d~%s" tid ot
+                | Some tid, _ when tid >= 0 -> sprintf "r%d" tid
+                | _, Some ot -> sprintf "r~%s" ot
+                | _, _ -> gameId
             else gameId
         Some(emit source effectiveGameId (Update.EndOfGame r))
     | _ -> None
