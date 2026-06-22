@@ -21,8 +21,9 @@ namespace WebGUI.Services.Ceres
     /// result to <see cref="JsonFeedService"/> — so the existing grid / feed-mode / catch-up / standings
     /// render a Ceres tournament with no view changes.
     ///
-    /// Standings come from per-thread <c>gameEnd</c> frames; the duplicate global <c>gameResult</c>
-    /// frames are ignored to avoid double-counting.
+    /// Standings AND pentanomial come from the global <c>gameResult</c> stream (replayed in full on
+    /// connect, so they catch up on any join); pentanomial is paired by thread. Per-thread <c>gameEnd</c>
+    /// is not consumed (would double-count). A new tournament (different id/name) clears prior state.
     /// </summary>
     public sealed class CeresFeedBridge : IAsyncDisposable
     {
@@ -30,6 +31,7 @@ namespace WebGUI.Services.Ceres
         private readonly List<CeresStreamClient> _clients = new();
         private readonly ConcurrentDictionary<int, GameState> _games = new();
         private string _source = "";
+        private string? _lastTournamentKey;   // (id|name) of the current tournament — to detect a new one
 
         // Per-thread game context: engine names (to attribute move/interim, which carry only a side)
         // and the last FEN (the position before the next move, used to render moves as SAN).
@@ -104,6 +106,25 @@ namespace WebGUI.Services.Ceres
             switch (type)
             {
                 case "tournamentInfo":
+                    // A genuinely new tournament (different id/name) on the same long-lived bridge: clear
+                    // the previous tournament's standings/boards so they don't carry over. The same
+                    // identity on a transient reconnect is NOT reset (the snapshot rebuilds it); same-name
+                    // re-runs still use the grid's Reset button.
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+                        string tid = root.TryGetProperty("id", out var idEl) ? (idEl.GetString() ?? "") : "";
+                        string tnm = root.TryGetProperty("name", out var nmEl) ? (nmEl.GetString() ?? "") : "";
+                        string key = tid + "|" + tnm;
+                        if (_lastTournamentKey != null && _lastTournamentKey != key)
+                        {
+                            _feed.Reset();
+                            _games.Clear();
+                        }
+                        _lastTournamentKey = key;
+                    }
+                    catch { /* malformed meta — fall through and just map it */ }
                     json = Opt(CeresWire.mapTournamentInfo(_source, line));
                     break;
 

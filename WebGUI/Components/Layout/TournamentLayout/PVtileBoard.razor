@@ -21,6 +21,7 @@
     private IJSObjectReference chessJSmodule;
     private string lastFen;
     private int lastSize;
+    private bool needsResize;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -30,6 +31,16 @@
             await chessJSmodule.InvokeVoidAsync("createChessboard", boardEl, string.IsNullOrEmpty(Fen) ? StartPos : Fen);
             lastFen = Fen;
             lastSize = Size;
+            return;
+        }
+        // Refit AFTER render so the div's new width/height (@Size) is already applied in the DOM.
+        // Refitting in OnParametersSetAsync uses the stale size, leaving tiles cramped until a window
+        // resize. Size only changes when the parallel-game count changes, so this is rare.
+        if (needsResize && chessJSmodule is not null)
+        {
+            needsResize = false;
+            try { await chessJSmodule.InvokeVoidAsync("resizeChessboard2", boardEl); }
+            catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException or JSDisconnectedException) { }
         }
     }
 
@@ -41,8 +52,8 @@
         {
             if (Size != lastSize)
             {
-                lastSize = Size;   // the div style already reflects @Size; refit the board to it
-                await chessJSmodule.InvokeVoidAsync("resizeChessboard2", boardEl);
+                lastSize = Size;
+                needsResize = true;   // refit in OnAfterRenderAsync, once the new div size is in the DOM
             }
             if (!string.IsNullOrEmpty(Fen) && Fen != lastFen)
             {
