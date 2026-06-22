@@ -22,6 +22,7 @@ open ChessLibrary.MiscTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.Chess
+open ChessLibrary.TimeControlTypes
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.TournamentTypes
@@ -141,6 +142,27 @@ let private flipWdl (side: string) (w: WDLType) =
         | WDLType.NotFound -> WDLType.NotFound
     else w
 
+/// Map the CELT tournament-meta time control (kind/valueMs/incrementMs/nodes/movesToGo) to an EB
+/// TimeControl, so the feed tournament carries a real time control instead of a null one.
+let private toTimeControl (o: JsonObject) : TimeControl option =
+    match o["timeControl"] with
+    | :? JsonObject as tc ->
+        let kind = getStr tc "kind" "other"
+        let valueMs = getInt tc "valueMs" 0
+        let incrMs = getInt tc "incrementMs" 0
+        let nodes = getInt tc "nodes" 0
+        let movesToGo = getInt tc "movesToGo" 0
+        let config =
+            match kind with
+            | "nodesPerMove" | "nodesForAllMoves" ->
+                { Id = 1; Fixed = timeOnlyMs 0; Increment = timeOnlyMs 0; NodeLimit = true; Nodes = nodes }
+            | "secondsPerMove" ->
+                { Id = 1; Fixed = timeOnlyMs valueMs; Increment = timeOnlyMs 0; NodeLimit = false; Nodes = 0 }
+            | _ -> // secondsForAllMoves / other: fixed + increment
+                { Id = 1; Fixed = timeOnlyMs valueMs; Increment = timeOnlyMs incrMs; NodeLimit = false; Nodes = 0 }
+        Some { TimeConfigs = [ config ]; WmovesToGo = movesToGo; BmovesToGo = movesToGo }
+    | _ -> None
+
 let private emit (source: string) (gameId: string) (u: Update) : string =
     LiveFeedWire.serializeUpdate u
     |> LiveFeedWire.withGameId gameId
@@ -174,7 +196,8 @@ let mapTournamentInfo (source: string) (line: string) : string option =
             { Tournament.Empty with
                 Name = getStr o "name" ""
                 TournamentMode = getStr o "mode" "RR"
-                EngineSetup = { Engines = engines; EngineDefFolder = ""; EngineDefList = [] } }
+                EngineSetup = { Engines = engines; EngineDefFolder = ""; EngineDefList = [] }
+                TimeControl = (match toTimeControl o with Some tc -> tc | None -> Tournament.Empty.TimeControl) }
         let info =
             { NumberOfGames = (getInt o "numGamePairs" 0) * 2
               GameDurationInSec = TimeSpan.Zero

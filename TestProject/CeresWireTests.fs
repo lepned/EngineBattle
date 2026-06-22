@@ -158,6 +158,10 @@ let ``tournamentInfo maps to StartOfTournament with name and players`` () =
                 // engine list, so this is by design).
                 Assert.Equal("Ceres vs SF", t.Name)
                 Assert.Equal("RR", t.TournamentMode)
+                // TimeControl is now mapped from the CELT meta (secondsForAllMoves 60s+1s) and must
+                // survive the wire round-trip (non-null + real text, not the null-guard "").
+                Assert.False(obj.ReferenceEquals(box t.TimeControl, null))
+                Assert.False(System.String.IsNullOrEmpty(t.TimeControlTextForPlayer 1))
             | None -> failwith "expected Some Tournament"
         | other -> failwithf "expected StartOfTournament, got %A" other
     | None -> failwith "mapTournamentInfo returned None"
