@@ -15,6 +15,7 @@
 <div class="grid-header">
     <h3>@tournamentName</h3>
     <span class="count">@games.Count game(s)</span>
+    <button class="reset-btn" @onclick="ResetAll" title="Clear standings and boards for a fresh tournament">Reset</button>
     <span class="ceres-connect">
         <input type="text" placeholder="Ceres host:port (e.g. 192.168.0.50:7440)" @bind="ceresHostPort" />
         @if (!CeresBridge.IsConnected)
@@ -112,6 +113,8 @@
 @code {
     private readonly Dictionary<string, GameVM> games = new();
     private readonly List<Result> results = new();          // accumulated across all games/slots
+    private readonly HashSet<string> seenStandings = new(); // dedup results for standings (Ceres sends gameEnd + gameResult)
+    private readonly HashSet<string> seenPento = new();     // dedup results for pentanomial
     private List<PlayerResult> standings = new();
     private readonly List<PgnGame> pentoGames = new();       // synthesized games for pentanomial
     private string pentoLine = "";
@@ -147,6 +150,25 @@
     }
 
     private async Task DisconnectCeres() => await CeresBridge.DisconnectAsync();
+
+    // Fresh start: clear accumulated standings/boards (and the feed cache) so a new tournament
+    // doesn't continue the previous one's results.
+    private void ResetAll()
+    {
+        lock (sync)
+        {
+            games.Clear();
+            results.Clear();
+            seenStandings.Clear();
+            seenPento.Clear();
+            standings = new List<PlayerResult>();
+            pentoGames.Clear();
+            pentoLine = "";
+            tournamentName = "Live games";
+        }
+        JsonFeedSvc.Reset();
+        StateHasChanged();
+    }
 
     // Board size scaled to how many games run in parallel (more games -> smaller boards).
     private static int AutoSize(int games) => games switch
@@ -253,7 +275,10 @@
                 case TournamentTypes.Update.PeriodicResults pr:
                     // Catch-up: rebuild standings from the full results snapshot (sent on subscribe).
                     results.Clear();
-                    results.AddRange(pr.results);
+                    seenStandings.Clear();
+                    foreach (var r in pr.results)
+                        if (seenStandings.Add(JsonFeedService.ResultKey(r)))
+                            results.Add(r);
                     standings = FeedStats.playerResultsFromResults(results);
                     break;
 
@@ -267,15 +292,30 @@
 
                 case TournamentTypes.Update.EndOfGame eog:
                     {
-                        var vm = Get(gameId);
-                        vm.Result = eog.Result.Result;
-                        vm.Finished = true;
-                        results.Add(eog.Result);
-                        standings = FeedStats.playerResultsFromResults(results);
-                        // Pentanomial line for the 2-engine case (single matchup).
-                        pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, vm.OpeningHash));
-                        if (standings.Count == 2)
-                            pentoLine = FeedStats.pentanomialCompact(pentoGames);
+                        // Standings: dedup — a Ceres game arrives both as a per-thread gameEnd and a
+                        // global gameResult (the latter gives full catch-up on join). Count once.
+                        var sig = JsonFeedService.ResultKey(eog.Result);
+                        if (seenStandings.Add(sig))
+                        {
+                            results.Add(eog.Result);
+                            standings = FeedStats.playerResultsFromResults(results);
+                        }
+                        // Per-thread gameEnd (real board id) has the board/opening context -> tile + pentanomial.
+                        // The global gameResult carries an empty board id; after source-stamping its key is
+                        // "source/" (trailing slash) -> standings only, no tile (avoids a phantom board).
+                        var boardId = gameId.Substring(gameId.LastIndexOf('/') + 1);
+                        if (!string.IsNullOrEmpty(boardId))
+                        {
+                            var vm = Get(gameId);
+                            vm.Result = eog.Result.Result;
+                            vm.Finished = true;
+                            if (seenPento.Add(sig))
+                            {
+                                pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, vm.OpeningHash));
+                                if (standings.Count == 2)
+                                    pentoLine = FeedStats.pentanomialCompact(pentoGames);
+                            }
+                        }
                         break;
                     }
             }

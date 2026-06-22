@@ -23,6 +23,11 @@ namespace WebGUI.Services
         // Catch-up cache: lets a view opened mid-run reconstruct current state (LiveFeedContract.md §9.5).
         private TournamentTypes.Update? _startOfTournament;
         private readonly List<CoreTypes.Result> _results = new();                  // all results, for standings
+        private readonly HashSet<string> _resultKeys = new();                      // dedup (a Ceres game arrives as both a per-thread gameEnd and a global gameResult)
+
+        /// Stable per-game signature used to dedup result events from different streams.
+        public static string ResultKey(CoreTypes.Result r) =>
+            $"{r.Player1}|{r.Player2}|{r.Result}|{r.Moves}|{r.GameTime}";
         private readonly Dictionary<string, GameSnap> _snaps = new();               // current game per stream key
 
         private sealed class GameSnap
@@ -109,6 +114,7 @@ namespace WebGUI.Services
                 IsRunning = false;
                 _startOfTournament = null;
                 _results.Clear();
+                _resultKeys.Clear();
                 _snaps.Clear();
             }
         }
@@ -170,7 +176,8 @@ namespace WebGUI.Services
                     Snap(key).LastBestMove = update;
                     break;
                 case TournamentTypes.Update.EndOfGame e:
-                    _results.Add(e.Result);
+                    if (_resultKeys.Add(ResultKey(e.Result)))
+                        _results.Add(e.Result);
                     break;
             }
         }

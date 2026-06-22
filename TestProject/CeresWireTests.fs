@@ -166,6 +166,20 @@ let ``tournamentInfo maps to StartOfTournament with name and players`` () =
         | other -> failwithf "expected StartOfTournament, got %A" other
     | None -> failwith "mapTournamentInfo returned None"
 
+[<Fact>]
+let ``mapGameEnd accepts the global gameResult type (for full standings catch-up)`` () =
+    let gameResultLine = """{"type":"gameResult","threadId":-1,"whiteName":"Stockfish 18","blackName":"Ceres","result":"1-0","reason":"CM","moves":37,"plyCount":73,"gameTimeMs":176296}"""
+    match mapGameEnd "rigA" "" gameResultLine with
+    | Some json ->
+        Assert.Equal("", readGameId json)   // global result -> no tile
+        match tryParseUpdate json with
+        | Some(Update.EndOfGame r) ->
+            Assert.Equal("Stockfish 18", r.Player1)
+            Assert.Equal("Ceres", r.Player2)
+            Assert.Equal("1-0", r.Result)
+        | other -> failwithf "expected EndOfGame, got %A" other
+    | None -> failwith "mapGameEnd returned None for gameResult"
+
 // toTimeControl is private, so exercise it through mapTournamentInfo (+ the wire round-trip) and
 // assert the resulting TimeControl config. tcLine builds a tournamentInfo line with a given TC.
 let private tcLine (tcJson: string) =

@@ -57,6 +57,9 @@ namespace WebGUI.Services.Ceres
         {
             await DisconnectAsync();
             _source = host;
+            // NOTE: do NOT reset the feed here — connecting (incl. opening the grid via ?ceres=) must
+            // preserve the catch-up so joining an in-progress tournament shows the games already played.
+            // A fresh start is the explicit Reset button on the grid.
             SetStatus($"Connecting to {host}:{port}…", false);
 
             int threadCount = await GetThreadCountAsync(host, port);
@@ -129,15 +132,19 @@ namespace WebGUI.Services.Ceres
                     break;
                 }
 
-                case "gameEnd":
+                case "gameEnd":   // per-thread: drives the tile done-state + pentanomial (gameId set)
                     json = Opt(CeresWire.mapGameEnd(_source, gameId, line));
+                    break;
+
+                case "gameResult":   // global: full standings, replayed in full on connect for
+                                     // join-anytime catch-up (gameId "" — dedup'd vs gameEnd downstream)
+                    json = Opt(CeresWire.mapGameEnd(_source, "", line));
                     break;
 
                 case "tournamentEnd":
                     json = Opt(CeresWire.mapTournamentEnd(_source, line));
                     break;
 
-                // "gameResult" (global): ignored — the per-thread gameEnd already records the result.
                 // "hello" / "subscribed" / "directoryResponse": control frames, nothing to do.
             }
 

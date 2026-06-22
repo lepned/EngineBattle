@@ -309,10 +309,12 @@ let mapInterim (source: string) (gameId: string) (white: string) (black: string)
         Some(emit source gameId (Update.Status status))
     | _ -> None
 
-/// "gameEnd" -> EndOfGame (player1 = white, player2 = black, matching EB standings attribution).
+/// "gameEnd" (per-thread) or "gameResult" (global) -> EndOfGame (player1 = white, player2 = black,
+/// matching EB standings attribution). Same payload; the global "gameResult" stream is replayed in
+/// full on connect, which is what enables full-standings catch-up when joining mid-tournament.
 let mapGameEnd (source: string) (gameId: string) (line: string) : string option =
     match parseObj line with
-    | Some o when getStr o "type" "" = "gameEnd" ->
+    | Some o when (let t = getStr o "type" "" in t = "gameEnd" || t = "gameResult") ->
         let reason =
             try
                 stringToResultReason (getStr o "reason" "XX")

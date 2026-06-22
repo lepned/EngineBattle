@@ -13,6 +13,8 @@
 .ceres-connect button { padding: 3px 10px; font-size: 0.85rem; cursor: pointer; }
 .ceres-connect .ceres-status { opacity: 0.7; font-size: 0.8rem; }
 
+.reset-btn { padding: 3px 10px; font-size: 0.85rem; cursor: pointer; }
+
 .hint { padding: 0 12px; opacity: 0.8; }
 
 .standings {
