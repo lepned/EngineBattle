@@ -9,6 +9,7 @@
 @inject LiveFeedReplayer Replayer
 @inject WebGUI.Services.Ceres.CeresFeedBridge CeresBridge
 @inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 <PageTitle>Live games grid</PageTitle>
 
@@ -32,16 +33,27 @@
     </span>
 </div>
 
+@if (!string.IsNullOrEmpty(lanUrl))
+{
+    <div class="lan-url">
+        <span class="lan-label">Watch from another device (same Wi‑Fi):</span>
+        <a href="@lanUrl" target="_blank">@lanUrl</a>
+        <button class="copy-btn" @onclick="CopyLanUrl" title="Copy URL">Copy</button>
+    </div>
+}
+
 @{
     List<GameVM> tiles;
     List<PlayerResult> table;
     string pento;
     int pentoCovered, resultCount;
     Dictionary<string, (string nodes, string nps, string eps)> spd;
+    Dictionary<(string, string), (int w, int d, int l)> cross;
     lock (sync)
     {
         tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList();
         table = standings.OrderByDescending(x => x.Points).ThenByDescending(x => x.Elo).ToList();
+        cross = BuildCrosstable(results);
         pento = pentoLine;
         pentoCovered = pentoGames.Count;   // games we paired live (by opening hash)
         resultCount = results.Count;       // all games in standings (incl. global catch-up)
@@ -87,6 +99,34 @@
             }
         </tbody>
     </table>
+    @if (table.Count >= 3)   // head-to-head crosstable (W-D-L), useful for round-robin
+    {
+        <table class="crosstable">
+            <thead>
+                <tr><th>vs →</th>@foreach (var c in table) { <th>@c.Player</th> }</tr>
+            </thead>
+            <tbody>
+                @foreach (var rowEng in table)
+                {
+                    <tr>
+                        <td class="eng">@rowEng.Player</td>
+                        @foreach (var c in table)
+                        {
+                            @if (rowEng.Player == c.Player)
+                            {
+                                <td class="diag">—</td>
+                            }
+                            else
+                            {
+                                var v = cross.TryGetValue((rowEng.Player, c.Player), out var hv) ? hv : default;
+                                <td>@($"{v.w}-{v.d}-{v.l}")</td>
+                            }
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
     @if (table.Count == 2)   // pentanomial is a 2-engine (paired-match) stat — not shown for round-robin
     {
         @if (pentoReliable && !string.IsNullOrEmpty(pento))
@@ -158,7 +198,7 @@
     private volatile bool renderQueued;
     private int? manualSize;   // explicit ?size=N override; otherwise auto-scaled by parallel game count
 
-    private string ceresHostPort = "";
+    private string ceresHostPort = "localhost:7440";   // sensible default; remote servers can edit it
 
     protected override void OnInitialized()
     {
@@ -167,6 +207,33 @@
         CeresBridge.Changed += OnBridgeChanged;
         if (int.TryParse(GetQuery("size"), out var s) && s >= 80 && s <= 700)
             manualSize = s;
+        lanUrl = BuildLanUrl();
+    }
+
+    private string lanUrl = "";   // shareable URL for watching from another device on the LAN
+
+    // Server's LAN IPv4 via the default-route trick (picks the active adapter, not WSL/virtual).
+    private string BuildLanUrl()
+    {
+        try
+        {
+            string ip;
+            using (var sock = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork,
+                                                             System.Net.Sockets.SocketType.Dgram,
+                                                             System.Net.Sockets.ProtocolType.Udp))
+            {
+                sock.Connect("8.8.8.8", 65530);   // no packets sent; just resolves the outbound local IP
+                ip = ((System.Net.IPEndPoint)sock.LocalEndPoint!).Address.ToString();
+            }
+            int port = new Uri(Nav.BaseUri).Port;
+            return $"http://{ip}:{port}/tournament-grid?ceres=localhost:7440";
+        }
+        catch { return ""; }
+    }
+
+    private async Task CopyLanUrl()
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", lanUrl); } catch { /* clipboard unavailable */ }
     }
 
     private void OnBridgeChanged() => _ = InvokeAsync(StateHasChanged);
@@ -432,6 +499,26 @@
     // Running per-engine speed accumulator (summed over completed moves -> averaged for the table).
     private sealed class Speed { public long Nodes; public double Nps; public double Eps; public int N; }
     private readonly Dictionary<string, Speed> speed = new();
+
+    // Head-to-head W-D-L matrix from the results: hh[(a,b)] = a's wins/draws/losses vs b.
+    private static Dictionary<(string, string), (int w, int d, int l)> BuildCrosstable(IEnumerable<Result> results)
+    {
+        var hh = new Dictionary<(string, string), (int w, int d, int l)>();
+        void Add(string a, string b, int w, int d, int l)
+        {
+            hh.TryGetValue((a, b), out var c);
+            hh[(a, b)] = (c.w + w, c.d + d, c.l + l);
+        }
+        foreach (var r in results)
+        {
+            int ww = r.Result == "1-0" ? 1 : 0;
+            int dd = r.Result == "1/2-1/2" ? 1 : 0;
+            int ll = r.Result == "0-1" ? 1 : 0;
+            Add(r.Player1, r.Player2, ww, dd, ll);   // white vs black
+            Add(r.Player2, r.Player1, ll, dd, ww);   // black vs white
+        }
+        return hh;
+    }
 
     // Bound the PV to a sensible number of plies so it fits ~2 lines without any CSS clamp trick.
     private const int PvMaxPlies = 20;

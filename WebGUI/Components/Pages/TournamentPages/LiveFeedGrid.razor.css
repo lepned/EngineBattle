@@ -23,6 +23,18 @@
 
 .reset-btn { padding: 3px 10px; font-size: 0.85rem; cursor: pointer; }
 
+.lan-url {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 12px 8px;
+    font-size: 0.85rem;
+}
+.lan-url .lan-label { opacity: 0.7; }
+.lan-url a { font-family: ui-monospace, Consolas, monospace; color: #6cf; text-decoration: none; }
+.lan-url a:hover { text-decoration: underline; }
+.lan-url .copy-btn { padding: 1px 8px; font-size: 0.8rem; cursor: pointer; }
+
 .hint { padding: 0 12px; opacity: 0.8; }
 
 .standings {
@@ -40,6 +52,17 @@
 
 .standings th { opacity: 0.7; font-weight: 600; }
 .standings td.eng, .standings th:nth-child(2) { text-align: left; }
+
+.crosstable {
+    margin: 0 12px 8px;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+}
+.crosstable th, .crosstable td { padding: 3px 10px; text-align: center; border: 1px solid #333; }
+.crosstable th { opacity: 0.7; font-weight: 600; }
+.crosstable td.eng, .crosstable thead th:first-child { text-align: left; font-weight: 600; opacity: 0.85; }
+.crosstable td.diag { opacity: 0.4; }
 
 .pento {
     margin: 0 12px 8px;
