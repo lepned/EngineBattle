@@ -132,12 +132,11 @@ namespace WebGUI.Services.Ceres
                     break;
                 }
 
-                case "gameEnd":   // per-thread: drives the tile done-state + pentanomial (gameId set)
-                    json = Opt(CeresWire.mapGameEnd(_source, gameId, line));
-                    break;
-
-                case "gameResult":   // global: full standings, replayed in full on connect for
-                                     // join-anytime catch-up (gameId "" — dedup'd vs gameEnd downstream)
+                // Per-thread "gameEnd" is intentionally NOT consumed: the global "gameResult" carries the
+                // same payload plus the producing thread id, and drives BOTH standings and pentanomial
+                // (paired by thread). Consuming the per-thread frame too would double-count / split pairing.
+                case "gameResult":   // global: full standings + pentanomial; replayed in full on connect
+                                     // for join-anytime catch-up. mapGameEnd tags gameId "r{threadId}".
                     json = Opt(CeresWire.mapGameEnd(_source, "", line));
                     break;
 

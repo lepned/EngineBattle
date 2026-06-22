@@ -23,6 +23,7 @@ namespace WebGUI.Services
         // Catch-up cache: lets a view opened mid-run reconstruct current state (LiveFeedContract.md §9.5).
         private TournamentTypes.Update? _startOfTournament;
         private readonly List<CoreTypes.Result> _results = new();                  // all results, for standings
+        private readonly List<string> _resultIds = new();                          // demux key per result (parallel to _results) — for pentanomial catch-up replay
         private readonly HashSet<string> _resultKeys = new();                      // dedup (a Ceres game arrives as both a per-thread gameEnd and a global gameResult)
 
         /// Stable per-game signature used to dedup result events from different streams.
@@ -114,6 +115,7 @@ namespace WebGUI.Services
                 IsRunning = false;
                 _startOfTournament = null;
                 _results.Clear();
+                _resultIds.Clear();
                 _resultKeys.Clear();
                 _snaps.Clear();
             }
@@ -177,7 +179,10 @@ namespace WebGUI.Services
                     break;
                 case TournamentTypes.Update.EndOfGame e:
                     if (_resultKeys.Add(ResultKey(e.Result)))
+                    {
                         _results.Add(e.Result);
+                        _resultIds.Add(key);
+                    }
                     break;
             }
         }
@@ -192,6 +197,15 @@ namespace WebGUI.Services
                     handler("", _startOfTournament);
                 if (_results.Count > 0)
                     handler("", TournamentTypes.Update.NewPeriodicResults(new List<CoreTypes.Result>(_results)));
+                // Replay thread-tagged results ("…/rN") as individual EndOfGame events so a late joiner
+                // can rebuild pentanomial (paired by thread). Standings already covered above (dedup'd).
+                for (int i = 0; i < _results.Count; i++)
+                {
+                    var id = _resultIds[i];
+                    var board = id.Substring(id.LastIndexOf('/') + 1);
+                    if (board.StartsWith("r"))
+                        handler(id, TournamentTypes.Update.NewEndOfGame(_results[i]));
+                }
                 foreach (var (key, snap) in _snaps)
                 {
                     if (snap.Start != null) handler(key, snap.Start);

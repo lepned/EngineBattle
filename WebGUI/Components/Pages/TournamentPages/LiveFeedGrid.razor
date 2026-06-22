@@ -34,12 +34,19 @@
     List<GameVM> tiles;
     List<PlayerResult> table;
     string pento;
+    int pentoCovered, resultCount;
     lock (sync)
     {
         tiles = games.Values.OrderBy(x => x.GameId, StringComparer.Ordinal).ToList();
         table = standings.OrderByDescending(x => x.Points).ThenByDescending(x => x.Elo).ToList();
         pento = pentoLine;
+        pentoCovered = pentoGames.Count;   // games we paired live (by opening hash)
+        resultCount = results.Count;       // all games in standings (incl. global catch-up)
     }
+    // Pentanomial pairs by opening hash, which only the live per-game stream carries. On a mid-tournament
+    // join the standings catch-up (global results) has no opening, so pento can't cover those games.
+    // Show pento only when it covers (nearly) all standings games; otherwise it'd be misleading.
+    bool pentoReliable = pentoCovered > 0 && (resultCount - pentoCovered) <= Math.Max(2, tiles.Count);
     // Board size: explicit ?size=N wins; otherwise scale to how many games run in parallel.
     var bs = manualSize ?? AutoSize(tiles.Count);
 }
@@ -65,9 +72,13 @@
             }
         </tbody>
     </table>
-    @if (!string.IsNullOrEmpty(pento))
+    @if (pentoReliable && !string.IsNullOrEmpty(pento))
     {
         <div class="pento">@pento</div>
+    }
+    else if (resultCount > 0)
+    {
+        <div class="pento pento-na">Pentanomial: n/a — joined mid-tournament (pairs unavailable for games played before connecting)</div>
     }
 }
 
@@ -115,6 +126,7 @@
     private readonly List<Result> results = new();          // accumulated across all games/slots
     private readonly HashSet<string> seenStandings = new(); // dedup results for standings (Ceres sends gameEnd + gameResult)
     private readonly HashSet<string> seenPento = new();     // dedup results for pentanomial
+    private readonly Dictionary<string, int> perThreadOrdinal = new(); // results seen per thread -> pentanomial pairing
     private List<PlayerResult> standings = new();
     private readonly List<PgnGame> pentoGames = new();       // synthesized games for pentanomial
     private string pentoLine = "";
@@ -161,6 +173,7 @@
             results.Clear();
             seenStandings.Clear();
             seenPento.Clear();
+            perThreadOrdinal.Clear();
             standings = new List<PlayerResult>();
             pentoGames.Clear();
             pentoLine = "";
@@ -300,12 +313,25 @@
                             results.Add(eog.Result);
                             standings = FeedStats.playerResultsFromResults(results);
                         }
-                        // Per-thread gameEnd (real board id) has the board/opening context -> tile + pentanomial.
-                        // The global gameResult carries an empty board id; after source-stamping its key is
-                        // "source/" (trailing slash) -> standings only, no tile (avoids a phantom board).
                         var boardId = gameId.Substring(gameId.LastIndexOf('/') + 1);
-                        if (!string.IsNullOrEmpty(boardId))
+                        if (boardId.StartsWith("r"))
                         {
+                            // Ceres global result, tagged "r{threadId}". Pair pentanomial by thread: each
+                            // thread plays an opening then its reverse back-to-back, so consecutive results
+                            // on a thread form a pair. No board tile (this is a results-only event).
+                            if (seenPento.Add(sig))
+                            {
+                                int ord = perThreadOrdinal.TryGetValue(boardId, out var c) ? c : 0;
+                                perThreadOrdinal[boardId] = ord + 1;
+                                var pairKey = $"{boardId}#{ord / 2}";
+                                pentoGames.Add(FeedStats.pentanomialGame(eog.Result.Player1, eog.Result.Player2, eog.Result.Result, pairKey));
+                                if (standings.Count == 2)
+                                    pentoLine = FeedStats.pentanomialCompact(pentoGames);
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(boardId))
+                        {
+                            // Per-game tile (e.g. EB Console): tile done-state + pentanomial by opening hash.
                             var vm = Get(gameId);
                             vm.Result = eog.Result.Result;
                             vm.Finished = true;

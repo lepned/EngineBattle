@@ -40,6 +40,8 @@
     font-family: ui-monospace, Consolas, monospace;
 }
 
+.pento.pento-na { opacity: 0.55; font-style: italic; font-family: inherit; }
+
 .games-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));

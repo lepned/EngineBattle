@@ -327,7 +327,17 @@ let mapGameEnd (source: string) (gameId: string) (line: string) : string option 
               Reason = reason
               GameTime = getI64 o "gameTimeMs" 0L
               OutOfOpeningEvals = [] }
-        Some(emit source gameId (Update.EndOfGame r))
+        // Global "gameResult" carries the producing thread id; tag the gameId "r{threadId}" so the
+        // consumer can pair pentanomial by thread (each thread plays an opening then its reverse,
+        // back-to-back). "r" marks it result-only (standings/pentanomial, no board tile). Per-thread
+        // "gameEnd" keeps the passed gameId (the board tile).
+        let effectiveGameId =
+            if getStr o "type" "" = "gameResult" then
+                match getIntOpt o "threadId" with
+                | Some tid when tid >= 0 -> sprintf "r%d" tid
+                | _ -> gameId
+            else gameId
+        Some(emit source effectiveGameId (Update.EndOfGame r))
     | _ -> None
 
 /// "tournamentEnd" -> EndOfTournament. gameId is global ("").

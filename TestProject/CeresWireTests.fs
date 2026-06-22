@@ -167,11 +167,13 @@ let ``tournamentInfo maps to StartOfTournament with name and players`` () =
     | None -> failwith "mapTournamentInfo returned None"
 
 [<Fact>]
-let ``mapGameEnd accepts the global gameResult type (for full standings catch-up)`` () =
-    let gameResultLine = """{"type":"gameResult","threadId":-1,"whiteName":"Stockfish 18","blackName":"Ceres","result":"1-0","reason":"CM","moves":37,"plyCount":73,"gameTimeMs":176296}"""
+let ``mapGameEnd tags global gameResult with r{threadId} for thread pairing`` () =
+    // Global result carries the producing thread id -> gameId "r{threadId}" so the consumer pairs
+    // pentanomial by thread (each thread plays a pair back-to-back). "r" marks it results-only (no tile).
+    let gameResultLine = """{"type":"gameResult","threadId":1,"whiteName":"Stockfish 18","blackName":"Ceres","result":"1-0","reason":"CM","moves":37,"plyCount":73,"gameTimeMs":176296}"""
     match mapGameEnd "rigA" "" gameResultLine with
     | Some json ->
-        Assert.Equal("", readGameId json)   // global result -> no tile
+        Assert.Equal("r1", readGameId json)
         match tryParseUpdate json with
         | Some(Update.EndOfGame r) ->
             Assert.Equal("Stockfish 18", r.Player1)
