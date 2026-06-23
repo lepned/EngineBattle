@@ -914,7 +914,27 @@ module TypesDef =
           DelayBetweenGames = TimeOnly.MinValue
           MoveOverhead = TimeOnly.MinValue
           OpeningName = ""
-          LayoutOption = LayoutOption.Default
+          // Feed fallback (e.g. the Ceres feed, which carries no EB layout) uses Empty's layout —
+          // default it to a standings-focused broadcast view with the live PV board shown.
+          LayoutOption =
+            { LayoutOption.Default with
+                ShowPVBoard = true
+                OnlyShowStandings = true
+                // Broadcast-sized fonts (mirror the typical DFRC Test config, scaled down ~3pt) so the
+                // Ceres feed comes up readable rather than at the small UI defaults.
+                Fonts =
+                  { StandingsFont = 17
+                    PairingsFont = 13
+                    LatestGamesFont = 13
+                    CrossTableFont = 15
+                    CupBracketFont = 15
+                    SwissOverviewFont = 15
+                    LadderOverviewFont = 15
+                    MoveListFont = 14
+                    InfoBannerFont = 16
+                    TournamentDescFont = 15
+                    EnginesPanelFont = 20
+                    PVLabelFont = 14 } }
           TotalGames = 0
           CurrentGameNr = 0
         }

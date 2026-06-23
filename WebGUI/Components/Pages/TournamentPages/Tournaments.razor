@@ -222,7 +222,8 @@
 			<StreamingChessboard @ref="streamingBoard" ShowMoveList=true OpeningMoves="@openingMoves" MoveListHeight=@moveListHeight
 								 MoveHistory="@moveHistory" OpeningName="@currentOpeningInPlay" MoveListFontSize="@layoutOptions.Fonts.MoveListFont"
 								 OpeningSansForDeviation="@openingSansForDeviation"
-								 ReferenceSansForDeviation="@referenceSansForDeviation">
+								 ReferenceSansForDeviation="@referenceSansForDeviation"
+								 ShowCopyFen="@FeedMode">
 			</StreamingChessboard>
 			<div>
 				<div style=@pvStyleBlack class="pv-black-box pv">
@@ -382,10 +383,12 @@
 		}
 		return null;
 	}
-	// Standings/crosstable: in feed mode compute purely from the tournament config + accumulated
-	// results (no runner); in internal mode delegate to the runner (unchanged behavior).
+	// Standings/crosstable: in feed mode compute from the accumulated results (no runner); in internal
+	// mode delegate to the runner (unchanged behavior). Standings derive the roster from the results
+	// themselves (the actual fed players) — NOT the local wwwroot tournament.json roster, which the
+	// fed tournament's [JsonIgnore] Engines would otherwise be replaced by at StartOfTournament.
 	private List<PlayerResult> PlayerResults(List<Result> res)
-		=> FeedMode ? FeedStats.playerResults(tournament, res) : runner.GetPlayerResults(res);
+		=> FeedMode ? FeedStats.playerResultsFromResults(res) : runner.GetPlayerResults(res);
 	private List<CrossTableEntry> Crosstable(List<Result> res)
 		=> FeedMode ? FeedStats.smallCrosstable(tournament, res) : runner.GenerateStatsCrosstable(res);
 	private List<CrossTableEntry> GauntletCrosstable(List<Result> res)
@@ -1477,7 +1480,9 @@
 				if (tournament.VerboseLogging)
 					logger.LogInformation(resLog);
 
-				if (layoutOptions.ShowCrosstableBetweenGames)
+				// Don't pop the between-games crosstable/bracket dialog in feed mode — it's intrusive when
+				// just watching a fed tournament (and the layout flag here comes from the fed config).
+				if (!FeedMode && layoutOptions.ShowCrosstableBetweenGames)
 				{
 					if (IsCupMode)
 					{
@@ -1496,6 +1501,17 @@
 						await InvokeAsync(OpenDialog);
 					}
 				}
+				break;
+
+			case TournamentTypes.Update.PeriodicResults pr when FeedMode:
+				// Feed mode: the join catch-up (global gid) carries the full tournament results as a
+				// PeriodicResults -- load it so standings reflect the whole fed tournament, not just the
+				// focused game's own EndOfGame events (which is why the table was empty on the focus page).
+				results = new List<Result>(pr.results);
+				scoreTable = PlayerResults(results);
+				table = Crosstable(results);
+				GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
+				await InvokeAsync(StateHasChanged);
 				break;
 
 			case TournamentTypes.Update.BestMove b:

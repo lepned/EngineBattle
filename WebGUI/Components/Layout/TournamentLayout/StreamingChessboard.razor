@@ -21,6 +21,18 @@
 		<span style=@openingStyle class="mud-text">@(startPos)</span>
 	}
 
+	@* Feed-mode only: a small Copy-FEN control below the board (normal flow, so it scales with the board
+	   and needs no overlay positioning). Hidden in the internal /tournament streaming view. *@
+	@if (ShowCopyFen)
+	{
+		<MudItem sm=12 Class="d-flex align-center justify-center px-2 py-1" Style="gap:8px;">
+			<code title="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
+				  style="font-family:monospace; font-size:0.72rem; opacity:0.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">@(string.IsNullOrEmpty(fen) ? startPos : fen)</code>
+			<button title="Copy FEN to clipboard" @onclick="CopyFen"
+					style="flex:0 0 auto; font-size:0.85rem; line-height:1; cursor:pointer; padding:2px 7px; border:1px solid #555; border-radius:4px; background:#2e2e2e; color:#ddd;">@copyFenLabel</button>
+		</MudItem>
+	}
+
 	@if (ShowMoveList)
 	{
 		<MudItem Class="pa-2 mb-1" sm=12 md="12" lg="12">
@@ -138,6 +150,23 @@
 	private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	List<string> replayMoves = new List<string>();
 	private DotNetObjectReference<StreamingChessboard> dotNetRef;
+
+	// Feed-mode only (Tournaments.razor passes FeedMode): show a small Copy-FEN control below the board.
+	// Kept out of the internal /tournament streaming view so a stream stays uncluttered.
+	[Parameter] public bool ShowCopyFen { get; set; }
+	private string copyFenLabel = "⧉";
+
+	private async Task CopyFen()
+	{
+		var toCopy = string.IsNullOrEmpty(fen) ? startPos : fen;
+		try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", toCopy); }
+		catch { return; }   // clipboard unavailable / circuit disposing
+		copyFenLabel = "✓";
+		await InvokeAsync(StateHasChanged);
+		try { await Task.Delay(1200); } catch { }
+		copyFenLabel = "⧉";
+		try { await InvokeAsync(StateHasChanged); } catch { }
+	}
 
 
 	[JSInvokable]
