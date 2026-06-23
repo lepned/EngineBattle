@@ -104,7 +104,7 @@ let ``black move eval is flipped to White perspective`` () =
 
 [<Fact>]
 let ``interim maps to Status (black eval flipped to White perspective)`` () =
-    match mapInterim "rigB" "1" "Stockfish 18" "Ceres" interimCpLine with
+    match mapInterim "rigB" "1" "Stockfish 18" "Ceres" "" interimCpLine with
     | Some json ->
         Assert.Equal("1", readGameId json)
         match tryParseUpdate json with
@@ -119,13 +119,26 @@ let ``interim maps to Status (black eval flipped to White perspective)`` () =
 
 [<Fact>]
 let ``interim with mate maps eval to Mate`` () =
-    match mapInterim "rigB" "0" "Stockfish 18" "Ceres" interimMateLine with
+    match mapInterim "rigB" "0" "Stockfish 18" "Ceres" "" interimMateLine with
     | Some json ->
         match tryParseUpdate json with
         | Some(Update.Status s) ->
             match s.Eval with
             | Mate m -> Assert.Equal(5, m)
             | other -> failwithf "expected Mate, got %A" other
+        | other -> failwithf "expected Status, got %A" other
+    | None -> failwith "mapInterim returned None"
+
+[<Fact>]
+let ``interim pv (UCI) maps to PVLongSAN raw and numbered SAN PV`` () =
+    let startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    let line = """{"type":"interim","threadId":0,"ply":1,"side":"w","evalCp":20,"nodes":1000,"nps":2000.0,"depth":8,"selDepth":16,"pv":"e2e4 e7e5 g1f3"}"""
+    match mapInterim "rigB" "0" "SF" "Ceres" startFen line with
+    | Some json ->
+        match tryParseUpdate json with
+        | Some(Update.Status s) ->
+            Assert.Equal("e2e4 e7e5 g1f3", s.PVLongSAN)   // raw UCI line preserved (board playback)
+            Assert.Contains("e4", s.PV)                    // converted to SAN for display
         | other -> failwithf "expected Status, got %A" other
     | None -> failwith "mapInterim returned None"
 

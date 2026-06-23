@@ -33,6 +33,10 @@ namespace WebGUI.Services.Ceres
         private string _source = "";
         private string? _lastTournamentKey;   // (id|name) of the current tournament — to detect a new one
 
+        private readonly object _sync = new();
+        private CancellationTokenSource? _discoveryCts;
+        private Task? _discoveryLoop;
+
         // Per-thread game context: engine names (to attribute move/interim, which carry only a side)
         // and the last FEN (the position before the next move, used to render moves as SAN).
         private sealed class GameState
@@ -64,21 +68,54 @@ namespace WebGUI.Services.Ceres
             // A fresh start is the explicit Reset button on the grid.
             SetStatus($"Connecting to {host}:{port}…", false);
 
-            int threadCount = await GetThreadCountAsync(host, port);
-
+            _discoveryCts = new CancellationTokenSource();
             // Global: tournament meta + tournamentEnd (gameResult frames are ignored — see OnLine).
-            _clients.Add(StartClient(host, port, "global", -1));
-            // One subscription per game thread/slot.
-            for (int i = 0; i < Math.Max(1, threadCount); i++)
-                _clients.Add(StartClient(host, port, "thread", i));
+            lock (_sync) { _clients.Add(StartClient(host, port, "global", -1)); }
+            // Open the per-thread subscriptions once Ceres answers the probe. A connect made before
+            // Ceres is up (NN still loading) would otherwise read no thread count and miss boards; this
+            // retries until the publisher reports its (fixed) concurrency, then opens all subs and stops.
+            _discoveryLoop = Task.Run(() => OpenThreadSubsWhenReadyAsync(host, port, _discoveryCts.Token));
+        }
 
-            SetStatus($"Connected to {host}:{port} — {threadCount} game(s)", true);
+        // Wait — re-probing — until the publisher reports its thread count, then open one subscription
+        // per game thread and stop. threadCount is the tournament's fixed concurrency (known as soon as
+        // the publisher is up), so one successful probe suffices: a late-starting board's subscription
+        // is already open and simply waits for its frames. No perpetual polling. While the server is
+        // unreachable the loop keeps retrying and shows a "waiting" status (not a false "connected").
+        private async Task OpenThreadSubsWhenReadyAsync(string host, int port, CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                int count = await GetThreadCountAsync(host, port, ct);   // 0 if the publisher isn't reachable yet
+                if (count > 0)
+                {
+                    lock (_sync)
+                    {
+                        for (int i = 0; i < count; i++)
+                            _clients.Add(StartClient(host, port, "thread", i));
+                    }
+                    SetStatus($"Connected to {host}:{port} — {count} game(s)", true);
+                    return;
+                }
+                SetStatus($"Waiting for Ceres at {host}:{port}…", false);
+                try { await Task.Delay(TimeSpan.FromSeconds(3), ct); }
+                catch (OperationCanceledException) { break; }
+            }
         }
 
         public async Task DisconnectAsync()
         {
-            var clients = _clients.ToArray();
-            _clients.Clear();
+            try { _discoveryCts?.Cancel(); } catch { }
+            if (_discoveryLoop != null)
+            {
+                try { await _discoveryLoop; } catch { }
+                _discoveryLoop = null;
+            }
+            try { _discoveryCts?.Dispose(); } catch { }
+            _discoveryCts = null;
+
+            CeresStreamClient[] clients;
+            lock (_sync) { clients = _clients.ToArray(); _clients.Clear(); }
             foreach (var c in clients)
             {
                 try { await c.DisposeAsync(); } catch { }
@@ -149,7 +186,7 @@ namespace WebGUI.Services.Ceres
                 case "interim":
                 {
                     var st = _games.TryGetValue(threadId, out var g) ? g : new GameState();
-                    json = Opt(CeresWire.mapInterim(_source, gameId, st.White, st.Black, line));
+                    json = Opt(CeresWire.mapInterim(_source, gameId, st.White, st.Black, st.LastFen, line));
                     break;
                 }
 
@@ -173,15 +210,17 @@ namespace WebGUI.Services.Ceres
         }
 
         // Quick probe: connect, read the server's hello line, take its threadCount, disconnect.
-        private static async Task<int> GetThreadCountAsync(string host, int port)
+        // Returns 0 when the publisher isn't reachable yet (so the caller can keep waiting rather than
+        // assume a 1-game tournament).
+        private static async Task<int> GetThreadCountAsync(string host, int port, CancellationToken ct)
         {
             try
             {
                 using var client = new TcpClient { NoDelay = true };
-                await client.ConnectAsync(host, port);
+                await client.ConnectAsync(host, port, ct);   // cancellable: a black-holed remote host won't stall teardown
                 using var stream = client.GetStream();
                 using var reader = new StreamReader(stream, Encoding.UTF8);
-                var line = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                var line = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5), ct);
                 if (!string.IsNullOrEmpty(line))
                 {
                     using var doc = JsonDocument.Parse(line);
@@ -190,8 +229,8 @@ namespace WebGUI.Services.Ceres
                         return Math.Max(1, n);
                 }
             }
-            catch { /* fall through to default */ }
-            return 1;
+            catch { /* not reachable yet */ }
+            return 0;
         }
 
         private static string? Opt(FSharpOption<string> o) => o == null ? null : o.Value;

@@ -22,6 +22,7 @@ open ChessLibrary.MiscTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.Chess
+open ChessLibrary.MoveTypes
 open ChessLibrary.TimeControlTypes
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.TypesDef.Tournament
@@ -124,6 +125,24 @@ let private sanOfMove (beforeFen: string) (lan: string) : string =
                 if String.IsNullOrEmpty san then lan else san
             | None -> lan
     with _ -> lan
+
+// Reused to avoid allocating a Board + 256-move buffer on every interim frame (several per second per
+// game). mapInterim is invoked concurrently from the bridge's per-thread reader tasks, so these are
+// thread-local (one Board + buffer per thread, reset via LoadFen). getShortSanPVFromLongSanPVFast only
+// reads the board, so reuse is safe.
+let private pvBoard = new System.Threading.ThreadLocal<Board>(fun () -> Board())
+let private pvMoveBuf = new System.Threading.ThreadLocal<TMove[]>(fun () -> Array.zeroCreate 256)
+
+/// Convert a long/UCI PV line (space-separated coordinate moves) to numbered SAN, played from
+/// `beforeFen`. Returns "" on empty/error so the PV display just shows nothing rather than garbage.
+let private sanPvOfLine (beforeFen: string) (pv: string) : string =
+    try
+        if String.IsNullOrWhiteSpace beforeFen || String.IsNullOrWhiteSpace pv then ""
+        else
+            let mutable board = pvBoard.Value
+            board.LoadFen(beforeFen)
+            BoardUtils.getShortSanPVFromLongSanPVFast pvMoveBuf.Value &board pv
+    with _ -> ""
 
 // EngineBattle shows evals from White's perspective; CELT eval is the mover's perspective, so
 // negate when Black moved. WDL win/loss swap likewise so it stays consistent with the eval.
@@ -288,12 +307,17 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (b
         Some(emit source gameId (Update.BestMove(info, status)), fen, newHistory)
     | _ -> None
 
-/// "interim" -> Status (transient mid-search thinking; does NOT advance the board).
-let mapInterim (source: string) (gameId: string) (white: string) (black: string) (line: string) : string option =
+/// "interim" -> Status (transient mid-search thinking; does NOT advance the board). `beforeFen` is the
+/// position being searched (for converting the PV to SAN).
+let mapInterim (source: string) (gameId: string) (white: string) (black: string) (beforeFen: string) (line: string) : string option =
     match parseObj line with
     | Some o when getStr o "type" "" = "interim" ->
         let side = getStr o "side" "w"
         let player = if side = "w" then white else black
+        // Ceres (MCGS) interim frames carry the principal variation as space-separated UCI moves
+        // ("pv"); older Ceres omits it (""). PVLongSAN keeps the raw UCI line (board playback / arrow);
+        // PV is the numbered SAN for display. PV moves are absolute, so no Black-perspective flip.
+        let pvUci = getStr o "pv" ""
         let status =
             { PlayerName = player
               Eval = flipEval side (interimEval o)
@@ -304,8 +328,8 @@ let mapInterim (source: string) (gameId: string) (white: string) (black: string)
               SD = getInt o "selDepth" 0
               TBhits = 0L
               WDL = flipWdl side (wdlOf o)
-              PV = ""
-              PVLongSAN = ""
+              PV = sanPvOfLine beforeFen pvUci
+              PVLongSAN = pvUci
               MultiPV = 1 }
         Some(emit source gameId (Update.Status status))
     | _ -> None

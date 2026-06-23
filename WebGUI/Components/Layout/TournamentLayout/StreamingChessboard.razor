@@ -238,7 +238,11 @@
 	{
 		if (!ValidatePV(pvMove))
 		{
-			Logger.LogWarning($"Invalid PV move received in {nameof(UpdateLastPVMove)}: '{pvMove}'");
+			// An empty/blank PV is a legitimate "no PV available" state — e.g. the Ceres live feed
+			// carries only the played move, not a PV — so these arrive constantly. Only warn on a
+			// genuinely malformed non-empty value; otherwise this floods the console.
+			if (!string.IsNullOrWhiteSpace(pvMove))
+				Logger.LogWarning($"Invalid PV move received in {nameof(UpdateLastPVMove)}: '{pvMove}'");
 			return;
 		}
 		else if (withArrows && state.LastPV != pvMove)
@@ -276,7 +280,9 @@
 	{
 		if (!ValidatePV(ponderMove))
 		{
-			Logger.LogWarning($"Invalid PV move received: '{ponderMove}'");
+			// Empty/blank ponder is a normal "none available" state (no PV on the feed) — don't warn.
+			if (!string.IsNullOrWhiteSpace(ponderMove))
+				Logger.LogWarning($"Invalid PV move received: '{ponderMove}'");
 			await Task.CompletedTask;
 		}
 		else if ((state.LastPonderMove != ponderMove && ponderMove == state.LastPV) || state.LastFraction != frac)
