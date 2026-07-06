@@ -575,6 +575,12 @@ module Engine =
       member this.Config = config
       member this.Path = config.Path
       member this.GetUCICommands() = optionsMap
+      /// Engine's self-declared identity from the UCI handshake ("id name ..."),
+      /// or "" if not (yet) received. More reliable than config display Name or Path.
+      member _.UciIdName =
+        match UciOption.tryFindOption optionsMap "name" with
+        | Some { OptionType = UciOption.UciOptionType.IdAndAuthor(_, _, value) } -> value
+        | _ -> ""
       member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit
       member this.HasExited = engineProcess.HasExited
       
@@ -1205,6 +1211,12 @@ module Engine =
       member this.Path = config.Path
       member this.GetUCICommands() = this.Uci() //optionsMap
       member _.GetOptionsMap() = optionsMap
+      /// Engine's self-declared identity from the UCI handshake ("id name ..."),
+      /// or "" if not (yet) received. More reliable than config display Name or Path.
+      member _.UciIdName =
+        match UciOption.tryFindOption optionsMap "name" with
+        | Some { OptionType = UciOption.UciOptionType.IdAndAuthor(_, _, value) } -> value
+        | _ -> ""
     
       member this.Uci() =
         let cmd = "uci"        

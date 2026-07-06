@@ -245,7 +245,17 @@ let getPuzzleValueEngine config =
               failwith "Engine did not respond to isready command."
           Some engine
       else
-          None
+          // Not identifiable by path — probe the engine's self-declared UCI identity
+          // ("id name ..."). A Ceres binary at a path without "ceres" still supports
+          // 'go value'; this keeps validation rule-consistent with the execution check
+          // in bestQPuzzleValueOnly (UCI id first, path fallback).
+          let engine = EngineHelper.createEngineWithoutValidation(config, None)
+          let ok = engine.WaitForReadyOk()
+          if ok && engine.UciIdName.Contains("ceres", StringComparison.OrdinalIgnoreCase) then
+              Some engine
+          else
+              engine.Quit()
+              None
   with
       | ex ->
           let redMsg = sprintf "An error occurred while configuring value head engine for %s: \n\t%s\n" config.Name ex.Message
@@ -421,12 +431,15 @@ let bestQPuzzleValueOnly (engine:ChessEngine) (pos: Position) =
   let mutable cont = true
   let mutable infoString = ""
   engine.Position pos.Command
-  // Detect Ceres by executable PATH — the same rule getPuzzleValueEngine uses for
-  // validation. Detecting by display Name here caused a silent, year-class bug:
-  // any config whose cosmetic "Name" lacked the substring "ceres" passed validation
-  // (path-based) but then fell back to 'go nodes 1' below, making the Value test
-  // silently report the Policy result (Value Perf ≡ Policy Perf, digit-identical).
-  let isCeres = engine.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
+  // Detect Ceres primarily by the engine's SELF-DECLARED UCI identity ("id name ..."),
+  // falling back to the executable path (the rule getPuzzleValueEngine's validation
+  // uses). Never detect by config display Name: that caused a silent, year-class bug
+  // where any config whose cosmetic "Name" lacked the substring "ceres" passed
+  // validation (path-based) but fell back to 'go nodes 1' below, making the Value
+  // test silently report the Policy result (Value Perf ≡ Policy Perf, digit-identical).
+  let isCeres =
+    engine.UciIdName.Contains("ceres", StringComparison.OrdinalIgnoreCase)
+    || engine.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
   if isCeres then
     engine.GoValue()
   else
