@@ -200,10 +200,25 @@ let private probeDefaultOptionNames (config: EngineConfig) =
         HashSet<string>(options.Keys, StringComparer.OrdinalIgnoreCase))
 
 let getPuzzleValueEngine config =
-  let isLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
-  let isCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
+  let pathHasLc0 = config.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
+  let pathHasCeres = config.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
 
   try
+      // Classify the engine family: executable path first (free), otherwise probe the
+      // binary's self-declared UCI identity ("id name Lc0 v..." / "id name Ceres ...")
+      // once. Keeps validation rule-consistent with bestQPuzzleValueOnly and makes
+      // config display Names and install paths fully cosmetic for value testing.
+      let isLc0, isCeres =
+          if pathHasLc0 || pathHasCeres then
+              pathHasLc0, pathHasCeres
+          else
+              let probe = EngineHelper.createEngineWithoutValidation(config, None)
+              let ok = probe.WaitForReadyOk()
+              let idName = if ok then probe.UciIdName else ""
+              probe.Quit()
+              idName.Contains("lc0", StringComparison.OrdinalIgnoreCase),
+              idName.Contains("ceres", StringComparison.OrdinalIgnoreCase)
+
       if isLc0 then
           let optionNames = probeDefaultOptionNames config
           if optionNames.Contains "ValueOnly" then
@@ -245,17 +260,9 @@ let getPuzzleValueEngine config =
               failwith "Engine did not respond to isready command."
           Some engine
       else
-          // Not identifiable by path — probe the engine's self-declared UCI identity
-          // ("id name ..."). A Ceres binary at a path without "ceres" still supports
-          // 'go value'; this keeps validation rule-consistent with the execution check
-          // in bestQPuzzleValueOnly (UCI id first, path fallback).
-          let engine = EngineHelper.createEngineWithoutValidation(config, None)
-          let ok = engine.WaitForReadyOk()
-          if ok && engine.UciIdName.Contains("ceres", StringComparison.OrdinalIgnoreCase) then
-              Some engine
-          else
-              engine.Quit()
-              None
+          // Neither the path nor the probed UCI identity says Lc0 or Ceres:
+          // the engine has no supported value-test mode.
+          None
   with
       | ex ->
           let redMsg = sprintf "An error occurred while configuring value head engine for %s: \n\t%s\n" config.Name ex.Message

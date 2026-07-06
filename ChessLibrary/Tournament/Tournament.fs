@@ -192,9 +192,11 @@ module Manager =
         for engineConfig in tournament.EngineSetup.Engines do
           let isLc0 = engineConfig.Path.Contains("lc0", StringComparison.OrdinalIgnoreCase)
           match PuzzleEngineAnalysis.getPuzzleValueEngine engineConfig with
-          |Some engine -> 
-            if isLc0 then
-                let conf = engine.Config              
+          |Some engine ->
+            // Classify by the engine's self-declared UCI identity as well as path, so an
+            // Lc0 at a path without "lc0" still gets its ValueOnly-enabled config swapped in.
+            if isLc0 || engine.UciIdName.Contains("lc0", StringComparison.OrdinalIgnoreCase) then
+                let conf = engine.Config
                 tournament.EngineSetup.Engines <- tournament.EngineSetup.Engines |> List.map(fun e -> if e.Name = engineConfig.Name then conf else e)
             printfn "Value test engine found: %s" engine.Name
           |_ -> 
