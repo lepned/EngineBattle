@@ -421,7 +421,12 @@ let bestQPuzzleValueOnly (engine:ChessEngine) (pos: Position) =
   let mutable cont = true
   let mutable infoString = ""
   engine.Position pos.Command
-  let isCeres = engine.Name.ToLower().Contains "ceres"
+  // Detect Ceres by executable PATH — the same rule getPuzzleValueEngine uses for
+  // validation. Detecting by display Name here caused a silent, year-class bug:
+  // any config whose cosmetic "Name" lacked the substring "ceres" passed validation
+  // (path-based) but then fell back to 'go nodes 1' below, making the Value test
+  // silently report the Policy result (Value Perf ≡ Policy Perf, digit-identical).
+  let isCeres = engine.Path.Contains("ceres", StringComparison.OrdinalIgnoreCase)
   if isCeres then
     engine.GoValue()
   else
