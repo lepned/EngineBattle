@@ -92,6 +92,14 @@ module PGNTypes =
               MaxEngine = maxEngine
               Summary = summary }
 
+    /// Outcome of a book evaluation over PGN openings. Because transposed/duplicate
+    /// openings are dropped before evaluation, the pass rate must be computed against
+    /// UniqueEvaluated (not the raw input count) to be meaningful.
+    type PgnBookEvalOutcome =
+        { Results: ResizeArray<PgnEvaluationResult>
+          UniqueEvaluated: int
+          Removed: int }
+
     type GameResult =
       | WhiteWins
       | BlackWins

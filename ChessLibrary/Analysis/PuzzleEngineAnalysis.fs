@@ -658,13 +658,15 @@ let performPositionEvalTestOnPgnGames (limits : ResizeArray<TimeControlTypes.Tim
         finally
           for engine in engines do
               try engine.StopProcess() with _ -> ()
-      filtered
-      |> Seq.sortByDescending (fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
-      |> ResizeArray
+      let results =
+          filtered
+          |> Seq.sortByDescending (fun p -> if engines.Length > 1 then abs p.EvalDiff else  abs p.MaxEval)
+          |> ResizeArray
+      { Results = results; UniqueEvaluated = openings.Count; Removed = pgns.Count - openings.Count }
   with
   | ex ->
       printfn "Error in performPositionEvalTestOnPgnGames: %s" ex.Message
-      ResizeArray()
+      { Results = ResizeArray(); UniqueEvaluated = 0; Removed = 0 }
 
 let performQValueTestOnTB nodes (engineConf:EngineConfig) (puzzles:ResizeArray<TablebaseEPDEntry>) = task {
   let board = Board()
