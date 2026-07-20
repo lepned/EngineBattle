@@ -48,7 +48,8 @@
                 <div class="pv-board-wrapper">
                     <div class="pv-board-element">
                         <EbChessboard Fen="@displayFen1" SizePx="null" ShowCoordinates="false"
-                                      LastMoveFrom="@highlightFrom1" LastMoveTo="@highlightTo1" />
+                                      LastMoveFrom="@highlightFrom1" LastMoveTo="@highlightTo1"
+                                      LastMoveColor="@highlightColor1" />
                     </div>
                 </div>
 
@@ -109,7 +110,8 @@
                     <div class="pv-board-wrapper">
                         <div class="pv-board-element">
                             <EbChessboard Fen="@displayFen2" SizePx="null" ShowCoordinates="false"
-                                          LastMoveFrom="@highlightFrom2" LastMoveTo="@highlightTo2" />
+                                          LastMoveFrom="@highlightFrom2" LastMoveTo="@highlightTo2"
+                                          LastMoveColor="@highlightColor2" />
                         </div>
                     </div>
 
@@ -173,9 +175,11 @@
     private string displayFen1 = startPos;
     private string highlightFrom1;
     private string highlightTo1;
+    private string highlightColor1;
     private string displayFen2 = startPos;
     private string highlightFrom2;
     private string highlightTo2;
+    private string highlightColor2;
 
     // Chess boards for move parsing
     private Board chessBoard1 = new();
@@ -379,12 +383,15 @@
         var fen = fenList[index];
 
         // Move highlight only when not at the start position
-        string from = null, to = null;
+        string from = null, to = null, color = null;
         if (index > 0 && index - 1 < moveList.Count)
         {
             var move = moveList[index - 1];
             from = move.Substring(0, 2);
             to = move.Substring(2, 2);
+            // Mover color from whose turn it was before the move
+            var fenParts = fenList[index - 1].Split(' ');
+            color = fenParts.Length > 1 && fenParts[1] == "w" ? "w" : "b";
         }
 
         if (boardNum == 1)
@@ -392,12 +399,14 @@
             displayFen1 = fen;
             highlightFrom1 = from;
             highlightTo1 = to;
+            highlightColor1 = color;
         }
         else
         {
             displayFen2 = fen;
             highlightFrom2 = from;
             highlightTo2 = to;
+            highlightColor2 = color;
         }
         StateHasChanged();
     }

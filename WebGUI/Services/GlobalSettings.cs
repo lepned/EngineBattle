@@ -60,6 +60,13 @@ public class GlobalSettings
     // Puzzle display
     public bool ShowPuzzleEngineColumn { get; set; } = true;
 
+    // Board theme
+    public string BoardThemePreset { get; set; } = "eb-blue";   // preset key or "custom"
+    public string BoardCustomLightColor { get; set; } = "#B1D8DB";
+    public string BoardCustomDarkColor { get; set; } = "#619EB3";
+    public string BoardCustomHighlightColor { get; set; } = "#FAFAD2";
+    public string BoardPieceSet { get; set; } = "wikipedia";
+
     // App behavior
     public string StartupPage { get; set; } = "";
 }

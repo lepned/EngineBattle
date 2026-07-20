@@ -1,7 +1,14 @@
 # Chessboard Library Dependencies in EngineBattle WebGUI
 
-This document maps every piece of functionality in the WebGUI that depends on the current
-chessboard rendering library, as preparation for replacing it with something else.
+> **MIGRATION COMPLETE (July 2026).** Every board in the WebGUI now renders through the
+> native Blazor component `ChessboardLayout/EbChessboard.razor` — chessboard2, the
+> chessboard-1.0.0 files, and all board-rendering JS in chessInterop.js have been deleted.
+> What remains of chessInterop.js: `attachBoardDrag` (pointer tracking for drag & drop),
+> Plotly chart helpers, scrolling helpers, and the PGN paste bridge. Piece images live in
+> `wwwroot/pieces/wikipedia/*.svg` (cburnett set + LICENSE.md), following the
+> `pieces/{set}/` folder convention. This document is kept as the historical dependency
+> map that drove the migration, plus the requirements checklist EbChessboard was built
+> against (bottom of the page).
 
 ## Which library is actually in use?
 

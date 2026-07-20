@@ -26,7 +26,7 @@
         <div class="mcb-board-wrapper">
             <div class="chessboard-root" style="position:relative;" @ref="board">
                 <EbChessboard Fen="@fen" SizePx="null" Flipped="@isBoardFlipped" ShowCoordinates="true"
-                              LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo"
+                              LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
                               SelectedSquare="@selectedSquare"
                               Arrows="@overlayArrows" Circles="@overlayCircles" Labels="@overlayLabels"
                               OnSquareClicked="OnBoardSquareClicked" />
@@ -266,6 +266,7 @@
     // Board display state rendered declaratively by EbChessboard
     private string lastMoveFrom;
     private string lastMoveTo;
+    private string lastMoveColor;
     private string selectedSquare;
     private IReadOnlyList<EbArrow> overlayArrows = Array.Empty<EbArrow>();
     private IReadOnlyList<EbCircle> overlayCircles = Array.Empty<EbCircle>();
@@ -594,10 +595,17 @@
             var moveIsProvided = !string.IsNullOrEmpty(move);
             if (moveIsProvided)
             {
+                var mover = ChessBoard.Position.STM == 0 ? "w" : "b";
                 ChessBoard.PlayUciMove(move);
                 await ClearOverlayOnPositionChange();
+                // fen must be current BEFORE notifying the page: pages echo the fen back
+                // via Notifier -> OnReceivedFen, whose same-position guard must match or
+                // it clears the last-move highlight we just set.
+                fenWithMoves = ChessBoard.PositionWithMoves();
+                fen = ChessBoard.FEN();
                 lastMoveFrom = move.Substring(0, 2);
                 lastMoveTo = move.Substring(2, 2);
+                lastMoveColor = mover;
                 await OnMoveMadeOnBoard.InvokeAsync(move);
                 firstNNMoves.Clear();
                 secondNNMoves.Clear();
@@ -683,6 +691,7 @@
     private void ClearBoardMarkers()
     {
         lastMoveFrom = lastMoveTo = null;
+        lastMoveColor = null;
         selectedSquare = null;
         showPromotionDialog = false;
     }
@@ -737,11 +746,12 @@
         var data = GetDisplayData(moves, overlay);
         if (data.Count > 0)
         {
-            // Same visual language as the old JS setArrowSequence: faint black arrow,
-            // dark circle on the target square, value text on top.
-            overlayArrows = data.Select(d => new EbArrow(d.FromSq, d.ToSq, "black", 0.25, 0.5)).ToArray();
+            // Same visual language as the old JS setArrowSequence: faint black arrow
+            // (size 0.3), dark circle on the target square, fixed 12px yellow value text
+            // (old .square-overlay styling).
+            overlayArrows = data.Select(d => new EbArrow(d.FromSq, d.ToSq, "black", 0.25, 0.3)).ToArray();
             overlayCircles = data.Select(d => new EbCircle(d.ToSq, "#3C3C3C", 0.8, 0.45)).ToArray();
-            overlayLabels = data.Select(d => new EbSquareLabel(d.ToSq, d.Text, "#FFEB3B", "transparent")).ToArray();
+            overlayLabels = data.Select(d => new EbSquareLabel(d.ToSq, d.Text, "#FFEB3B", "transparent", 0.62, 12)).ToArray();
         }
         else
         {
@@ -757,6 +767,7 @@
         ClearBoardMarkers();
         lastMoveFrom = input.Move.FromSq;
         lastMoveTo = input.Move.ToSq;
+        lastMoveColor = input.Move.Color;
         if (invokeMove)
             await UpdateNewMove(input.Move.FromSq + input.Move.ToSq, true);
     }
@@ -846,16 +857,23 @@
     }
 
     // ── Public methods ──
-    public async Task OnReceivedFen(string newPos)
+    // Both are NotifierService event handlers invoked from engine/tournament threads,
+    // so the whole body must run on the dispatcher (UpdateNewMove renders directly).
+    public Task OnReceivedFen(string newPos) => InvokeAsync(async () =>
     {
+        // Pages echo the fen back via Notifier right after a move made on this board
+        // (OnMoveMadeOnBoard -> Notifier.UpdateFen). Same position = nothing to do —
+        // and clearing here would wipe the last-move highlight that was just set.
+        if (string.Equals(newPos, fen, StringComparison.Ordinal)) return;
+
         await ClearOverlayOnPositionChange();
         fen = newPos;
         await SetPosition(newPos, false);
         UpdateVariationsDisplay();
         StateHasChanged();
-    }
+    });
 
-    public async Task OnNotifyMoveAndFen(MoveAndFen input)
+    public Task OnNotifyMoveAndFen(MoveAndFen input) => InvokeAsync(async () =>
     {
         if (input == null) return;
         if (fen != input.FenAfterMove)
@@ -867,16 +885,16 @@
         }
         UpdateVariationsDisplay();
         await ScrollToCurrentMove();
-        await InvokeAsync(StateHasChanged);
-    }
+        StateHasChanged();
+    });
 
-    public async Task SetPositionDirect(string targetFen)
+    public Task SetPositionDirect(string targetFen) => InvokeAsync(async () =>
     {
         fen = targetFen;
         ClearBoardMarkers();
         await ScrollToCurrentMove();
         StateHasChanged();
-    }
+    });
 
     public async Task OnNotifyOverlaySettings(OverlaySettings overlay, string id)
     {

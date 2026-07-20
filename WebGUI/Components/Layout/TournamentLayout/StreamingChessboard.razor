@@ -12,7 +12,7 @@
 		<div class="mt-3 streaming-board" style="height:100%;">
 			<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
 						  SizePx="null" ShowCoordinates="false"
-						  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo"
+						  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
 						  Arrows="@BoardArrows" Labels="@BoardLabels" />
 		</div>
 	</MudItem>
@@ -159,6 +159,7 @@
 	// arrowOpp the opponent's expected move from the double-arrow comparison.
 	private string lastMoveFrom;
 	private string lastMoveTo;
+	private string lastMoveColor;
 	private EbArrow arrowMain;
 	private EbArrow arrowOpp;
 	private EbSquareLabel ponderLabel;
@@ -212,6 +213,7 @@
 		// A played move clears arrows and the ponder label (old setBoardWithSquareHighlighting semantics)
 		lastMoveFrom = input.Move.FromSq;
 		lastMoveTo = input.Move.ToSq;
+		lastMoveColor = input.Move.Color;
 		arrowMain = null;
 		arrowOpp = null;
 		ponderLabel = null;
@@ -224,7 +226,7 @@
 		{
 			fen = newFen;
 			startPos = newFen;
-			lastMoveFrom = lastMoveTo = null;
+			lastMoveFrom = lastMoveTo = lastMoveColor = null;
 			arrowMain = arrowOpp = null;
 			ponderLabel = null;
 			await Render();
@@ -307,7 +309,8 @@
 			state.LastPonderMove = ponderMove;
 			state.LastFraction = frac;
 			arrowMain = new EbArrow(fromSq, toSq, "#9D8989");
-			ponderLabel = new EbSquareLabel(toSq, text, textColor, bgColor);
+			// Legacy .circle-piece badge: 75% circle, yellow 2px border, fixed bold font
+			ponderLabel = new EbSquareLabel(toSq, text, textColor, bgColor, 0.75, 19, "2px solid yellow", 0.85);
 			await Render();
 		}
 	}

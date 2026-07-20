@@ -1,13 +1,11 @@
 @page "/boardtest"
 @using WebGUI.Components.Layout.ChessboardLayout
-@inject IJSRuntime JS
-@implements IAsyncDisposable
 
 <PageTitle>Native board test</PageTitle>
 
-<h3 style="margin:16px 0 4px 0;">Native chessboard prototype</h3>
+<h3 style="margin:16px 0 4px 0;">Native chessboard test page</h3>
 <p style="margin:0 0 16px 0; opacity:0.8;">
-    Side-by-side comparison of the new native Blazor board (left) and the current chessboard2 board (right).
+    Exercises the native EbChessboard: position, theming, coordinates, overlay and click-to-move.
 </p>
 
 <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; margin-bottom:20px;">
@@ -62,10 +60,6 @@
                 : "Click a piece, then a target square, to move it (free move, no legality check yet)")
         </p>
     </div>
-    <div>
-        <h4 style="margin:0 0 8px 0;">chessboard2 (current)</h4>
-        <div @ref="legacyBoard" style="width:@(sizePx)px;"></div>
-    </div>
 </div>
 
 @code {
@@ -79,8 +73,8 @@
     private bool flipped;
     private bool showCoordinates = true;
     private int sizePx = 400;
-    private string lightColor = "#f0d9b5";
-    private string darkColor = "#b58863";
+    private string lightColor = "#B1D8DB";
+    private string darkColor = "#619EB3";
     private string selectedSquare;
     private bool showArrowDemo;
     private bool showPolicyDemo;
@@ -112,9 +106,6 @@
             new EbSquareLabel("c3", "12%"),
         }
         : Array.Empty<EbSquareLabel>();
-
-    private ElementReference legacyBoard;
-    private IJSObjectReference chessJSmodule;
 
     private void SetStart() { fen = StartFen; lastFrom = lastTo = selectedSquare = null; }
     private void SetItalian() { fen = ItalianFen; lastFrom = "f8"; lastTo = "c5"; selectedSquare = null; }
@@ -183,27 +174,4 @@
         return rest.Length > 1 ? $"{sb} {rest[1]}" : sb.ToString();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            chessJSmodule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js");
-            await chessJSmodule.InvokeVoidAsync("createChessboard", legacyBoard, fen);
-        }
-        else if (chessJSmodule is not null)
-        {
-            await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting",
-                legacyBoard, fen, "w", lastFrom ?? "", lastTo ?? "", lastFrom is not null);
-            await chessJSmodule.InvokeVoidAsync("resizeChessboard2", legacyBoard);
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        try
-        {
-            if (chessJSmodule is not null) await chessJSmodule.DisposeAsync();
-        }
-        catch (JSDisconnectedException) { }
-    }
 }

@@ -4,11 +4,11 @@
 <div class="pv-board-container @GetContainerSizeClass()">
 	<div class="pv-board left-board @GetBoardSizeClass()">
 		<EbChessboard Fen="@whiteFen" SizePx="null" ShowCoordinates="false"
-					  LastMoveFrom="@whiteFrom" LastMoveTo="@whiteTo" />
+					  LastMoveFrom="@whiteFrom" LastMoveTo="@whiteTo" LastMoveColor="@whiteMoveColor" />
 	</div>
 	<div class="pv-board right-board @GetBoardSizeClass()">
 		<EbChessboard Fen="@blackFen" SizePx="null" ShowCoordinates="false"
-					  LastMoveFrom="@blackFrom" LastMoveTo="@blackTo" />
+					  LastMoveFrom="@blackFrom" LastMoveTo="@blackTo" LastMoveColor="@blackMoveColor" />
 	</div>
 </div>
 
@@ -33,9 +33,11 @@
 	private string whiteFen = EbChessboard.StartFen;
 	private string whiteFrom;
 	private string whiteTo;
+	private string whiteMoveColor;
 	private string blackFen = EbChessboard.StartFen;
 	private string blackFrom;
 	private string blackTo;
+	private string blackMoveColor;
 	private string currentBoardSize = "medium"; // "small", "medium", "large"
 
 	// Last fen received via parameters. Parameters only win when they actually change;
@@ -56,6 +58,7 @@
 			whiteFen = blackFen = input.FenAfterMove;
 			whiteFrom = blackFrom = input.Move.FromSq;
 			whiteTo = blackTo = input.Move.ToSq;
+			whiteMoveColor = blackMoveColor = input.Move.Color;
 			return InvokeAsync(StateHasChanged);
 		}
 		return Task.CompletedTask;
@@ -69,6 +72,7 @@
 			whiteFen = wf;
 			whiteFrom = WhiteMoveAndFen.Move.FromSq;
 			whiteTo = WhiteMoveAndFen.Move.ToSq;
+			whiteMoveColor = WhiteMoveAndFen.Move.Color;
 		}
 		if (BlackMoveAndFen?.FenAfterMove is { Length: > 0 } bf && bf != lastBlackParamFen)
 		{
@@ -76,6 +80,7 @@
 			blackFen = bf;
 			blackFrom = BlackMoveAndFen.Move.FromSq;
 			blackTo = BlackMoveAndFen.Move.ToSq;
+			blackMoveColor = BlackMoveAndFen.Move.Color;
 		}
 		if (!string.IsNullOrEmpty(BoardSize) && BoardSize != currentBoardSize)
 		{

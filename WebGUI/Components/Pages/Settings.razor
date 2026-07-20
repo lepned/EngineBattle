@@ -1,7 +1,9 @@
 @page "/settings"
 @inject GlobalSettingsService SettingsService
+@inject BoardThemeService BoardThemeSvc
 @inject IDialogService DialogService
 @using WebGUI.Services
+@using WebGUI.Components.Layout.ChessboardLayout
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <PageTitle>Settings</PageTitle>
@@ -343,6 +345,64 @@
         </div>
     </div>
 
+    @* Board theme *@
+    <div class="settings-section">
+        <h4>Board Theme</h4>
+        <div class="section-hint">Colors and piece set for every chessboard in the app.</div>
+
+        <div class="field-group">
+            <label>Theme</label>
+            <select @bind="boardThemePreset">
+                @foreach (var (key, name) in BoardThemeService.Presets)
+                {
+                    <option value="@key">@name</option>
+                }
+            </select>
+            <small>Pick a preset or Custom to choose your own colors</small>
+        </div>
+
+        @if (boardThemePreset == "custom")
+        {
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Light squares</label>
+                    <input type="color" @bind="boardCustomLight" @bind:event="oninput" />
+                </div>
+                <div class="field-group">
+                    <label>Dark squares</label>
+                    <input type="color" @bind="boardCustomDark" @bind:event="oninput" />
+                </div>
+                <div class="field-group">
+                    <label>Move highlight</label>
+                    <input type="color" @bind="boardCustomHighlight" @bind:event="oninput" />
+                </div>
+            </div>
+        }
+
+        <div class="field-group">
+            <label>Piece Set</label>
+            <select @bind="boardPieceSet">
+                @foreach (var set in pieceSets)
+                {
+                    <option value="@set">@set</option>
+                }
+            </select>
+            <small>Add your own set as a folder under wwwroot/pieces (wK.svg … bP.svg)</small>
+        </div>
+
+        <div class="field-group">
+            <label>Preview</label>
+            <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
+                          SizePx="250" ShowCoordinates="true"
+                          LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
+                          LightSquareColor="@PreviewTheme.LightSquare"
+                          DarkSquareColor="@PreviewTheme.DarkSquare"
+                          HighlightColor="@PreviewTheme.HighlightWhite"
+                          HighlightColorBlack="@PreviewTheme.HighlightBlack"
+                          PieceSet="@PreviewTheme.PieceSet" />
+            <small>Click Save to apply to all boards</small>
+        </div>
+    </div>
 
     </div> @* end settings-grid *@
 
@@ -398,8 +458,19 @@
     private string statusMessage = "";
     private string statusType = "info";
 
+    private string boardThemePreset = "eb-blue";
+    private string boardCustomLight = "#B1D8DB";
+    private string boardCustomDark = "#619EB3";
+    private string boardCustomHighlight = "#FAFAD2";
+    private string boardPieceSet = "wikipedia";
+    private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
+
+    private BoardTheme PreviewTheme =>
+        BoardThemeService.Preview(boardThemePreset, boardCustomLight, boardCustomDark, boardCustomHighlight, boardPieceSet);
+
     protected override void OnInitialized()
     {
+        pieceSets = BoardThemeSvc.GetAvailablePieceSets();
         LoadFromService();
     }
 
@@ -443,6 +514,11 @@
         goodMaxWPLoss = s.GoodMaxWPLoss;
         inaccuracyMaxWPLoss = s.InaccuracyMaxWPLoss;
         mistakeMaxWPLoss = s.MistakeMaxWPLoss;
+        boardThemePreset = string.IsNullOrEmpty(s.BoardThemePreset) ? "eb-blue" : s.BoardThemePreset;
+        boardCustomLight = s.BoardCustomLightColor;
+        boardCustomDark = s.BoardCustomDarkColor;
+        boardCustomHighlight = s.BoardCustomHighlightColor;
+        boardPieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
     }
 
     private void SaveSettings()
@@ -490,6 +566,11 @@
                 GoodMaxWPLoss = goodMaxWPLoss,
                 InaccuracyMaxWPLoss = inaccuracyMaxWPLoss,
                 MistakeMaxWPLoss = mistakeMaxWPLoss,
+                BoardThemePreset = boardThemePreset ?? "eb-blue",
+                BoardCustomLightColor = boardCustomLight ?? "#B1D8DB",
+                BoardCustomDarkColor = boardCustomDark ?? "#619EB3",
+                BoardCustomHighlightColor = boardCustomHighlight ?? "#FAFAD2",
+                BoardPieceSet = boardPieceSet ?? "wikipedia",
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -542,6 +623,11 @@
         goodMaxWPLoss = defaults.GoodMaxWPLoss;
         inaccuracyMaxWPLoss = defaults.InaccuracyMaxWPLoss;
         mistakeMaxWPLoss = defaults.MistakeMaxWPLoss;
+        boardThemePreset = defaults.BoardThemePreset;
+        boardCustomLight = defaults.BoardCustomLightColor;
+        boardCustomDark = defaults.BoardCustomDarkColor;
+        boardCustomHighlight = defaults.BoardCustomHighlightColor;
+        boardPieceSet = defaults.BoardPieceSet;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }

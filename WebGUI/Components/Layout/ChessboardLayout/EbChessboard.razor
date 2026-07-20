@@ -4,7 +4,10 @@
 @using System.IO
 @using System.Collections.Concurrent
 @using System.Globalization
+@using WebGUI.Services
+@implements IDisposable
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@inject BoardThemeService ThemeService
 
 <div class="eb-board" style="@RootStyle">
     @{ var board = ParseBoard(); }
@@ -21,7 +24,7 @@
             char piece = board[rank * 8 + file];
             string squareName = sq;
 
-            <div class="eb-sq @(isLight ? "light" : "dark") @(highlighted ? "eb-hl" : "") @(selected ? "eb-sel" : "")"
+            <div class="eb-sq @(isLight ? "light" : "dark") @(highlighted ? (LastMoveColor == "b" ? "eb-hl-b" : "eb-hl") : "") @(selected ? "eb-sel" : "")"
                  data-eb-sq="@sq" @onclick="() => HandleClick(squareName)">
                 @if (piece != default)
                 {
@@ -85,10 +88,22 @@
     [Parameter] public int? SizePx { get; set; } = 400;
     [Parameter] public bool Flipped { get; set; }
     [Parameter] public bool ShowCoordinates { get; set; } = true;
-    [Parameter] public string PieceSet { get; set; } = "wikipedia";
-    [Parameter] public string LightSquareColor { get; set; } = "#f0d9b5";
-    [Parameter] public string DarkSquareColor { get; set; } = "#b58863";
-    [Parameter] public string HighlightColor { get; set; } = "rgba(255, 213, 0, 0.45)";
+    // Colors and piece set default to the app-wide board theme (BoardThemeService,
+    // user-configurable on the Settings page). Explicit parameters override the theme.
+    // The highlight replaces the square color (as the pre-migration CSS did), and the
+    // shade depends on which side made the move (LastMoveColor "w"/"b").
+    [Parameter] public string PieceSet { get; set; }
+    [Parameter] public string LightSquareColor { get; set; }
+    [Parameter] public string DarkSquareColor { get; set; }
+    [Parameter] public string HighlightColor { get; set; }
+    [Parameter] public string HighlightColorBlack { get; set; }
+    [Parameter] public string LastMoveColor { get; set; }
+
+    private string EffLight => LightSquareColor ?? ThemeService.Current.LightSquare;
+    private string EffDark => DarkSquareColor ?? ThemeService.Current.DarkSquare;
+    private string EffHighlight => HighlightColor ?? ThemeService.Current.HighlightWhite;
+    private string EffHighlightBlack => HighlightColorBlack ?? ThemeService.Current.HighlightBlack;
+    private string EffPieceSet => PieceSet ?? ThemeService.Current.PieceSet;
     [Parameter] public string LastMoveFrom { get; set; }
     [Parameter] public string LastMoveTo { get; set; }
     [Parameter] public string SelectedSquare { get; set; }
@@ -102,9 +117,10 @@
 
     private string RootStyle =>
         (SizePx.HasValue ? $"width:{SizePx}px;" : "width:100%;") +
-        $"--eb-light-square:{LightSquareColor};" +
-        $"--eb-dark-square:{DarkSquareColor};" +
-        $"--eb-highlight:{HighlightColor};";
+        $"--eb-light-square:{EffLight};" +
+        $"--eb-dark-square:{EffDark};" +
+        $"--eb-highlight:{EffHighlight};" +
+        $"--eb-highlight-b:{EffHighlightBlack};";
 
     private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
 
@@ -137,17 +153,31 @@
 
     private string LabelChipStyle(EbSquareLabel l)
     {
-        // Font in container-query units so it scales in both fixed and fluid mode.
-        // Chip is 62% of a square (7.75cqi); shrink with the longest line and line count
-        // so the text always fits (~0.58em average glyph width for a semibold sans font).
-        const double chipCqi = 12.5 * 0.62;
-        var lines = SplitLabel(l.Text);
-        int maxLen = Math.Max(1, lines.Length == 0 ? 1 : lines.Max(s => s.Length));
-        int lineCount = Math.Max(1, lines.Length);
-        double fontCqi = Math.Min(
-            Math.Min(chipCqi * 0.42, chipCqi * 0.85 / (maxLen * 0.58)),
-            chipCqi * 0.95 / (lineCount * 1.15));
-        return $"background:{l.BgColor};color:{l.TextColor};font-size:{F(fontCqi)}cqi;";
+        string font;
+        if (l.FontPx.HasValue)
+        {
+            // Legacy fixed-pixel font (old .square-overlay / .circle-piece look)
+            font = $"{F(l.FontPx.Value)}px";
+        }
+        else
+        {
+            // Font in container-query units so it scales in both fixed and fluid mode.
+            // Shrink with the longest line and line count so the text always fits
+            // (~0.58em average glyph width for a bold sans font).
+            double chipCqi = 12.5 * l.SizePct;
+            var lines = SplitLabel(l.Text);
+            int maxLen = Math.Max(1, lines.Length == 0 ? 1 : lines.Max(s => s.Length));
+            int lineCount = Math.Max(1, lines.Length);
+            double fontCqi = Math.Min(
+                Math.Min(chipCqi * 0.42, chipCqi * 0.85 / (maxLen * 0.58)),
+                chipCqi * 0.95 / (lineCount * 1.15));
+            font = $"{F(fontCqi)}cqi";
+        }
+
+        var style = $"width:{F(l.SizePct * 100)}%;height:{F(l.SizePct * 100)}%;" +
+                    $"background:{l.BgColor};color:{l.TextColor};font-size:{font};opacity:{F(l.Opacity)};";
+        if (!string.IsNullOrEmpty(l.BorderCss)) style += $"border:{l.BorderCss};";
+        return style;
     }
 
     private (double x1, double y1, double x2, double y2, string head, double strokeW)? ArrowGeometry(EbArrow a)
@@ -159,8 +189,10 @@
         double len = Math.Sqrt(dx * dx + dy * dy);
         double ux = dx / len, uy = dy / len;
 
-        double strokeW = 0.16 * a.Width;
-        double headLen = 0.38, headW = 0.42;
+        // 0.17/0.33 match the pre-migration chessboard2 overrides
+        // (.arrow-line-a8dce height 17%, .arrow-head-38dfa height 33%).
+        double strokeW = 0.17 * a.Width;
+        double headLen = 0.33, headW = 0.45;
         double baseX = tipX - ux * headLen, baseY = tipY - uy * headLen;
         double px = -uy, py = ux;
 
@@ -195,13 +227,27 @@
 
     private string PieceSrc(char piece)
     {
+        var set = EffPieceSet;
         var name = (char.IsUpper(piece) ? "w" : "b") + char.ToUpperInvariant(piece);
-        var ext = pieceSetExtensions.GetOrAdd(PieceSet, set =>
+        var ext = pieceSetExtensions.GetOrAdd(set, s =>
         {
-            var dir = Path.Combine(Env.WebRootPath, "pieces", set);
+            var dir = Path.Combine(Env.WebRootPath, "pieces", s);
             return File.Exists(Path.Combine(dir, "wK.svg")) ? "svg" : "png";
         });
-        return $"pieces/{PieceSet}/{name}.{ext}";
+        return $"pieces/{set}/{name}.{ext}";
+    }
+
+    protected override void OnInitialized()
+    {
+        ThemeService.ThemeChanged += OnThemeChanged;
+    }
+
+    // Raised from the settings page's circuit; marshal to this component's dispatcher.
+    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        ThemeService.ThemeChanged -= OnThemeChanged;
     }
 
     private Task HandleClick(string square) =>

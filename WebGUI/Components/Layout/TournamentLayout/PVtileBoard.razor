@@ -7,13 +7,14 @@
               SizePx="@Size"
               ShowCoordinates="false"
               LastMoveFrom="@FromSq"
-              LastMoveTo="@ToSq" />
+              LastMoveTo="@ToSq"
+              LastMoveColor="@Color" />
 
 @code {
     private const string StartPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
     [Parameter] public string Fen { get; set; } = StartPos;
-    [Parameter] public string Color { get; set; } = "w";   // kept for API compatibility; highlight color is uniform
+    [Parameter] public string Color { get; set; } = "w";   // side that just moved (highlight shade)
     [Parameter] public string FromSq { get; set; } = "";
     [Parameter] public string ToSq { get; set; } = "";
     [Parameter] public int Size { get; set; } = 190;

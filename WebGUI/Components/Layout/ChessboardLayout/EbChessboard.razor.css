@@ -23,13 +23,14 @@
     background: var(--eb-dark-square);
 }
 
-/* Semi-transparent overlay so the highlight works on any square color/theme. */
-.eb-sq.eb-hl::after {
-    content: "";
-    position: absolute;
-    inset: 0;
+/* Last-move highlight replaces the square color, exactly like the pre-migration
+   .highlight-white/.highlight-black CSS did (same shade on light and dark squares). */
+.eb-sq.eb-hl {
     background: var(--eb-highlight);
-    pointer-events: none;
+}
+
+.eb-sq.eb-hl-b {
+    background: var(--eb-highlight-b);
 }
 
 /* Selected square (click-to-move source): inset ring that works on any theme. */
@@ -50,6 +51,7 @@
     z-index: 1;
     touch-action: none; /* allow pointer-event dragging on touch devices */
     -webkit-user-drag: none;
+    cursor: grab;
 }
 
 /* Arrows/circles/labels layer; sits above pieces, never intercepts input. */
@@ -75,16 +77,14 @@
     line-height: 1;
 }
 
+/* Size, colors, font, border and opacity come from the inline style (per-label). */
 .eb-label-chip {
-    width: 62%;
-    height: 62%;
     border-radius: 50%;
-    opacity: 0.9;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
+    font-weight: bold;
 }
 
 .eb-label-line {
