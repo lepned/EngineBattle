@@ -5,7 +5,7 @@ chessboard rendering library, as preparation for replacing it with something els
 
 ## Which library is actually in use?
 
-Two libraries ship in `wwwroot`, but only one is live:
+Only one chessboard library is live (a second one shipped historically):
 
 | Library | Files | Status |
 |---|---|---|
@@ -19,7 +19,8 @@ Piece images on the boards themselves are embedded as `data:image` URIs inside
 
 ```
 Blazor components (.razor)
-      │  IJSObjectReference (ESM import "./js/chessInterop.js?v=1.73.0")
+      │  IJSObjectReference (ESM import "./js/chessInterop.js?v=1.74.0" — bump the
+      │  version in JavaScriptInteropService.cs whenever chessInterop.js changes)
       ▼
 wwwroot/js/chessInterop.js   ← single interop layer, all board logic lives here
       │  Chessboard2(element, config)
@@ -43,7 +44,7 @@ A replacement library/component must cover all of this:
 | `Chessboard2(element, config)` — config: `position`, `showNotation`, `draggable`, `useAnimation`, `onDragStart`, `onDrop` | Board creation |
 | `board.position(fen, animate)` | Set position (animated for user moves, instant for live updates) |
 | `board.setPosition(fen)` | PV board updates (`setPVBoardWithSquareHighlighting`) |
-| `board.resize()` | Responsive layout (window resize, carousel, tile grids) |
+| `board.resize()` | Responsive layout (window resize, tile grids) |
 | `board.flip()` | Rotate board (`rotateBoard`) |
 | `board.clear()` | (No longer used — `clearBoard2` removed in cleanup) |
 | `board.addArrow({color, start, end, opacity, size})` / `addArrow('e2-e4', color)` → id; `board.removeArrow(id)` | Best-move / ponder / policy / puzzle-solution arrows |
@@ -153,10 +154,10 @@ on top of the board for policy-percentage labels — it measures square position
 ## Known bugs / quirks in the current integration
 
 1. **`createChessboard` doesn't set the position when the board already exists** — the
-   `if (fen)` / `else` branches at chessInterop.js:178-186 are inverted (with a fen it only
-   resizes; without a fen it calls `position(fen)` with `undefined`). PVBoardLive works around
-   this by calling `setPVBoardWithSquareHighlighting` instead (see comment at
-   PVBoardLive.razor:417).
+   `if (fen)` / `else` branches in the existing-board path (chessInterop.js:149-157, inside
+   `createChessboard`) are inverted: with a fen it only resizes; without a fen it calls
+   `position(fen)` with `undefined`. PVBoardLive works around this by calling
+   `setPVBoardWithSquareHighlighting` instead (see comment near PVBoardLive.razor:417).
 2. **Highlighting bypasses the library** — CSS classes are toggled on chessboard2's internal
    square elements via `[data-square-coord]`. Any replacement changes this contract.
 3. **State on DOM elements** — board instances and annotation IDs live as expando properties
@@ -169,7 +170,7 @@ on top of the board for policy-percentage labels — it measures square position
 A replacement (library or hand-rolled Blazor/JS component) must support:
 
 - [ ] Set position from FEN, with and without animation
-- [ ] Programmatic resize (responsive layouts, carousel, tile grid) and flip
+- [ ] Programmatic resize (responsive layouts, tile grid) and flip
 - [ ] Arrows with ids (add/remove individually): best move, ponder, two-engine compare, policy, puzzle solution/wrong move
 - [ ] Circles with ids (policy visualization)
 - [ ] Square highlighting (last move from/to, drag source) — API-based, not class-hacking
@@ -180,8 +181,9 @@ A replacement (library or hand-rolled Blazor/JS component) must support:
 - [ ] Static non-interactive thumbnails (puzzle/EPD boards)
 - [ ] Blazor Server friendly: ESM interop, no per-keystroke chatter, cheap updates at ~1 Hz live-PV rate
 
-Cleanup status (July 2026): the unused chessboardjs 1.0.0 library files, the dead
-`FenVisualization.razor` component, the unused interop exports, the legacy
-`Chessboard.razor` component, and the experimental CeresSuite/ChessPlayerAnalysis pages
-have all been removed. Only the promotion-dialog piece images and their LICENSE.md remain
-under `wwwroot/chessboardjs/`.
+Cleanup status (July 2026, commits `965053d` and `7dc7d60`): the unused chessboardjs 1.0.0
+library files, the dead `FenVisualization.razor` component, the unused interop exports, the
+legacy `Chessboard.razor` component, the experimental CeresSuite/ChessPlayerAnalysis pages,
+and the four unused board components (SimpleChessboard, SimplePVBoard, PVboards,
+PVboardCarousel) have all been removed. Only the promotion-dialog piece images and their
+LICENSE.md remain under `wwwroot/chessboardjs/`.
