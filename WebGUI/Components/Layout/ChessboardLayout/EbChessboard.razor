@@ -59,17 +59,16 @@
                     </g>
                 }
             }
-            @foreach (var l in Labels ?? Array.Empty<EbSquareLabel>())
-            {
-                var (cx, cy) = Center(l.Square);
-                var fontSize = LabelFontSize(l.Text);
-                <circle cx="@F(cx)" cy="@F(cy)" r="@F(LabelChipRadius)" fill="@l.BgColor" opacity="0.9" />
-                @* Razor reserves the <text> tag, so the SVG text element is emitted as markup. *@
-                @((MarkupString)($"<text x=\"{F(cx)}\" y=\"{F(cy)}\" fill=\"{l.TextColor}\" " +
-                    $"font-size=\"{F(fontSize)}\" font-weight=\"600\" text-anchor=\"middle\" " +
-                    $"dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(l.Text)}</text>"))
-            }
         </svg>
+        @* Labels are plain HTML, not SVG text: Blazor renders MarkupString content in the HTML
+           namespace even inside <svg>, which breaks SVG <text> rendering. HTML chips also give
+           predictable font layout. *@
+        @foreach (var l in Labels ?? Array.Empty<EbSquareLabel>())
+        {
+            <div class="eb-label" style="@LabelCellStyle(l.Square)">
+                <span class="eb-label-chip" style="@LabelChipStyle(l)">@l.Text</span>
+            </div>
+        }
     }
 </div>
 
@@ -121,14 +120,22 @@
         return (col + 0.5, row + 0.5);
     }
 
-    private const double LabelChipRadius = 0.3;
-
-    // Shrink the font with text length so the label always stays inside the chip
-    // (~0.58em average glyph width for a semibold sans font).
-    private static double LabelFontSize(string text)
+    private string LabelCellStyle(string sq)
     {
-        int len = Math.Max(1, text?.Length ?? 0);
-        return Math.Min(0.17, LabelChipRadius * 2 * 0.85 / (len * 0.58));
+        int file = sq[0] - 'a', rank = sq[1] - '1';
+        double col = Flipped ? 7 - file : file;
+        double row = Flipped ? rank : 7 - rank;
+        return $"left:{F(col * 12.5)}%;top:{F(row * 12.5)}%;";
+    }
+
+    private string LabelChipStyle(EbSquareLabel l)
+    {
+        // Chip is 62% of the square; shrink the font with text length so it always fits
+        // (~0.58em average glyph width for a semibold sans font).
+        double chipPx = SizePx / 8.0 * 0.62;
+        int len = Math.Max(1, l.Text?.Length ?? 0);
+        double fontPx = Math.Min(chipPx * 0.42, chipPx * 0.85 / (len * 0.58));
+        return $"background:{l.BgColor};color:{l.TextColor};font-size:{F(fontPx)}px;";
     }
 
     private (double x1, double y1, double x2, double y2, string head, double strokeW)? ArrowGeometry(EbArrow a)

@@ -59,6 +59,30 @@
     z-index: 3;
 }
 
+/* Square label chips (policy %, eval badges) — HTML overlay, one cell per square. */
+.eb-label {
+    position: absolute;
+    width: 12.5%;
+    height: 12.5%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 4;
+    line-height: 1;
+}
+
+.eb-label-chip {
+    width: 62%;
+    height: 62%;
+    border-radius: 50%;
+    opacity: 0.9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+}
+
 .eb-coord {
     position: absolute;
     font-size: 0.55em;
