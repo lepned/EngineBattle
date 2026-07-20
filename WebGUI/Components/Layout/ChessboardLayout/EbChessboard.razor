@@ -66,7 +66,12 @@
         @foreach (var l in Labels ?? Array.Empty<EbSquareLabel>())
         {
             <div class="eb-label" style="@LabelCellStyle(l.Square)">
-                <span class="eb-label-chip" style="@LabelChipStyle(l)">@l.Text</span>
+                <span class="eb-label-chip" style="@LabelChipStyle(l)">
+                    @foreach (var line in SplitLabel(l.Text))
+                    {
+                        <span class="eb-label-line">@line</span>
+                    }
+                </span>
             </div>
         }
     }
@@ -126,14 +131,22 @@
         return $"left:{F(col * 12.5)}%;top:{F(row * 12.5)}%;";
     }
 
+    // Multi-word labels (e.g. "P:15% N:40%") render one word per line inside the chip.
+    private static string[] SplitLabel(string text) =>
+        (text ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
     private string LabelChipStyle(EbSquareLabel l)
     {
         // Font in container-query units so it scales in both fixed and fluid mode.
-        // Chip is 62% of a square (7.75cqi); shrink with text length so it always fits
-        // (~0.58em average glyph width for a semibold sans font).
+        // Chip is 62% of a square (7.75cqi); shrink with the longest line and line count
+        // so the text always fits (~0.58em average glyph width for a semibold sans font).
         const double chipCqi = 12.5 * 0.62;
-        int len = Math.Max(1, l.Text?.Length ?? 0);
-        double fontCqi = Math.Min(chipCqi * 0.42, chipCqi * 0.85 / (len * 0.58));
+        var lines = SplitLabel(l.Text);
+        int maxLen = Math.Max(1, lines.Length == 0 ? 1 : lines.Max(s => s.Length));
+        int lineCount = Math.Max(1, lines.Length);
+        double fontCqi = Math.Min(
+            Math.Min(chipCqi * 0.42, chipCqi * 0.85 / (maxLen * 0.58)),
+            chipCqi * 0.95 / (lineCount * 1.15));
         return $"background:{l.BgColor};color:{l.TextColor};font-size:{F(fontCqi)}cqi;";
     }
 

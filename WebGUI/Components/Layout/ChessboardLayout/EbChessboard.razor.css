@@ -79,9 +79,16 @@
     border-radius: 50%;
     opacity: 0.9;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     font-weight: 600;
+}
+
+.eb-label-line {
+    display: block;
+    line-height: 1.1;
+    white-space: nowrap;
 }
 
 .eb-coord {
