@@ -84,13 +84,6 @@ export function triggerResizeEvent() {
   window.dispatchEvent(new Event('resize'));
 }
 
-// Resize all chessboards on the page
-export function resizeAllChessboards() {
-  document.querySelectorAll('.chessboard-root').forEach(el => {
-    if (el.board) el.board.resize();
-  });
-}
-
 export function updateCarouselHeight() {
   var carousel = document.querySelector('.myMudCarousel');
   var items = carousel.querySelectorAll('.mud-carousel-item');
@@ -112,28 +105,6 @@ export function openNewWindowAndWriteContent(content) {
   var newWindow = window.open("", "_blank");
   newWindow.document.write('<pre>' + content + '</pre>');
   newWindow.document.close();
-}
-
-export function setWidthAndHeight(board) {
-  const resizeHandler = () => board.resize();
-  window.addEventListener('resize', resizeHandler);
-
-  // Return an object with a dispose method for cleanup
-  return {
-    dispose: () => window.removeEventListener('resize', resizeHandler)
-  };
-}
-
-export function chessBoardToElementWithResizing(boardId, fen) {  
-  const element = document.getElementById(boardId);
-  createChessboard(element, fen);
-}
-
-export function resizeChessboard(board) {
-  // Your resize logic here
-  if (board) {
-    board.resize();
-  }
 }
 
 function clearHighlightSquaresForElement(element) {
@@ -197,32 +168,6 @@ export function resizeChessboard2(element) {
   else { console.log('element.board is null'); }
 }
 
-//resizing pv boards
-export function adjustElement(element, size) {
-  // Your resize logic here
-  if (element.board) {
-    //if element size is different from size, set the size to the element    
-    element.style.width = size + 'px';
-    element.style.height = size + 'px';
-    element.board.resize();
-    // }
-
-    element.style.border = '4px solid black';
-  }
-  else {
-    console.log('element.board is null');
-  }
-}
-
-//function to adjust all pv boards
-export function adjustAllPVboards(size) {
-  let allBoards = document.getElementsByClassName('pvBoard');
-  //loop through all boards and adjust the size
-  for (let board of allBoards) {
-    adjustElement(board, size);
-  }
-}
-
 // Exported function to set the position of the chessboard
 export function setPosition2(element, fen) {
   var config = {
@@ -238,18 +183,6 @@ export function setPosition2(element, fen) {
   }
   clearHighlightSquaresForElement(element);
   board.position(fen, false);
-}
-
-// Exported function to clear the chessboard
-export function clearBoard2(element) {
-  var config = {
-    showNotation: false,
-    position: 'start',
-    useAnimation: false
-  };
-  ensureChessboard(element, config);
-  element.board.clear();
-  clearHighlightSquaresForElement(element);
 }
 
 export function highlightSquare2(element, squareCoord, color, remove) {
@@ -291,48 +224,6 @@ export function setLabel(element, sq, text, textColor, bgColor) {
     const square = element.querySelector(`[data-square-coord="${sq}"]`);
     piece.style.color = textColor;
     piece.style.backgroundColor = bgColor;
-    square.appendChild(piece);
-  }
-}
-
-export function setCircleHighlighting(element, fen, fromSq, toSq, color) {
-
-  let board = element.board
-  //add fromSq to toSq arrow
-  if (board && fromSq && toSq) {
-    if (element.arrow2Id) {
-      board.removeArrow(element.arrow2Id);
-    }
-    if (element.circleId) {
-      board.removeCircle(element.circleId);
-    }
-    if (element.circleId2) {
-      board.removeCircle(element.circleId2);
-    }
-
-    removeCirclePieces();
-
-    element.board.position(fen, false);
-
-    element.circleId = board.addCircle({
-      color: color,
-      square: fromSq,
-      opacity: 0.2,
-      size: 0.8
-    })
-    element.circleId2 = board.addCircle({
-      color: color,
-      square: toSq,
-      opacity: 0.2,
-      size: 0.8
-    })
-
-    // Create a new piece with a label of toSq
-    var piece = document.createElement('div');
-    piece.className = 'circle-piece'; //maybe better name is : circle-annotation
-    piece.textContent = toSq + '%';
-    const square = element.querySelector(`[data-square-coord="${toSq}"]`);
-    //console.log(square);    
     square.appendChild(piece);
   }
 }
@@ -718,15 +609,6 @@ export function setPositionWithCallback(dotnetHelper, element, fen, withCallback
 
 export function addPolicyCircles(element, moves) {
   setArrowSequence(element, moves);  
-}
-
-export function makeSimpleMove2(element, color, fromSq, toSq, fen) {
-  let board = element.board;
-  board.position(fen, true);
-  clearHighlightSquaresForElement(element);
-  clearOverlayLabels(element);
-  highlightSquare2(element, fromSq, color, false);
-  highlightSquare2(element, toSq, color, false);
 }
 
 export function makeSimpleMoveWithCallBack(dotnetHelper, element, color, fromSq, toSq, fen, invokeMove) {
