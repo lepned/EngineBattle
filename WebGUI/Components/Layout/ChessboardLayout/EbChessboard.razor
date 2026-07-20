@@ -16,10 +16,11 @@
             string sq = SquareName(file, rank);
             bool isLight = (file + rank) % 2 == 1;
             bool highlighted = sq == LastMoveFrom || sq == LastMoveTo;
+            bool selected = sq == SelectedSquare;
             char piece = board[rank * 8 + file];
             string squareName = sq;
 
-            <div class="eb-sq @(isLight ? "light" : "dark") @(highlighted ? "eb-hl" : "")"
+            <div class="eb-sq @(isLight ? "light" : "dark") @(highlighted ? "eb-hl" : "") @(selected ? "eb-sel" : "")"
                  data-eb-sq="@sq" @onclick="() => HandleClick(squareName)">
                 @if (piece != default)
                 {
@@ -51,6 +52,7 @@
     [Parameter] public string HighlightColor { get; set; } = "rgba(255, 213, 0, 0.45)";
     [Parameter] public string LastMoveFrom { get; set; }
     [Parameter] public string LastMoveTo { get; set; }
+    [Parameter] public string SelectedSquare { get; set; }
     [Parameter] public EventCallback<string> OnSquareClicked { get; set; }
 
     // Coordinates add no value on small live-feed tiles; hide them below this size.

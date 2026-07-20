@@ -24,8 +24,8 @@
 
     <fieldset style="border:1px solid #666; border-radius:6px; padding:10px 14px;">
         <legend>Theme</legend>
-        <label style="margin-right:12px;">Light <input type="color" @bind="lightColor" /></label>
-        <label style="margin-right:12px;">Dark <input type="color" @bind="darkColor" /></label>
+        <label style="margin-right:12px;">Light <input type="color" @bind="lightColor" @bind:event="oninput" /></label>
+        <label style="margin-right:12px;">Dark <input type="color" @bind="darkColor" @bind:event="oninput" /></label>
         <label style="margin-right:12px;">
             <input type="checkbox" @bind="showCoordinates" /> Coordinates
         </label>
@@ -42,9 +42,12 @@
                       ShowCoordinates="@showCoordinates"
                       LightSquareColor="@lightColor" DarkSquareColor="@darkColor"
                       LastMoveFrom="@lastFrom" LastMoveTo="@lastTo"
+                      SelectedSquare="@selectedSquare"
                       OnSquareClicked="OnSquareClicked" />
         <p style="margin-top:8px; min-height:1.2em;">
-            @(string.IsNullOrEmpty(clickedSquare) ? "Click a square…" : $"Clicked: {clickedSquare}")
+            @(selectedSquare is not null
+                ? $"Selected {selectedSquare} — click a target square to move"
+                : "Click a piece, then a target square, to move it (free move, no legality check yet)")
         </p>
     </div>
     <div>
@@ -66,16 +69,77 @@
     private int sizePx = 400;
     private string lightColor = "#f0d9b5";
     private string darkColor = "#b58863";
-    private string clickedSquare;
+    private string selectedSquare;
 
     private ElementReference legacyBoard;
     private IJSObjectReference chessJSmodule;
 
-    private void SetStart() { fen = StartFen; lastFrom = lastTo = null; }
-    private void SetItalian() { fen = ItalianFen; lastFrom = "f8"; lastTo = "c5"; }
-    private void SetEndgame() { fen = EndgameFen; lastFrom = lastTo = null; }
+    private void SetStart() { fen = StartFen; lastFrom = lastTo = selectedSquare = null; }
+    private void SetItalian() { fen = ItalianFen; lastFrom = "f8"; lastTo = "c5"; selectedSquare = null; }
+    private void SetEndgame() { fen = EndgameFen; lastFrom = lastTo = selectedSquare = null; }
 
-    private void OnSquareClicked(string square) => clickedSquare = square;
+    // Click-to-move: first click selects a piece, second click moves it.
+    // Free movement for now — legality wiring against ChessLibrary comes with the
+    // ModernChessboard migration.
+    private void OnSquareClicked(string square)
+    {
+        var board = ParsePlacement(fen);
+        if (selectedSquare is null)
+        {
+            if (board[SquareIndex(square)] != default) selectedSquare = square;
+            return;
+        }
+        if (square == selectedSquare)
+        {
+            selectedSquare = null;
+            return;
+        }
+        board[SquareIndex(square)] = board[SquareIndex(selectedSquare)];
+        board[SquareIndex(selectedSquare)] = default;
+        fen = BuildFen(board, fen);
+        lastFrom = selectedSquare;
+        lastTo = square;
+        selectedSquare = null;
+    }
+
+    private static int SquareIndex(string sq) => (sq[1] - '1') * 8 + (sq[0] - 'a');
+
+    private static char[] ParsePlacement(string fen)
+    {
+        var b = new char[64];
+        var rows = fen.Split(' ')[0].Split('/');
+        if (rows.Length != 8) return b;
+        for (int i = 0; i < 8; i++)
+        {
+            int rank = 7 - i, file = 0;
+            foreach (var c in rows[i])
+            {
+                if (char.IsDigit(c)) file += c - '0';
+                else if (file < 8) b[rank * 8 + file++] = c;
+            }
+        }
+        return b;
+    }
+
+    private static string BuildFen(char[] board, string originalFen)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int rank = 7; rank >= 0; rank--)
+        {
+            int empty = 0;
+            for (int file = 0; file < 8; file++)
+            {
+                var piece = board[rank * 8 + file];
+                if (piece == default) { empty++; continue; }
+                if (empty > 0) { sb.Append(empty); empty = 0; }
+                sb.Append(piece);
+            }
+            if (empty > 0) sb.Append(empty);
+            if (rank > 0) sb.Append('/');
+        }
+        var rest = originalFen.Split(' ', 2);
+        return rest.Length > 1 ? $"{sb} {rest[1]}" : sb.ToString();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
