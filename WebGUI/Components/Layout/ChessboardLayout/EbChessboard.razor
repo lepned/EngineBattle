@@ -1,0 +1,106 @@
+@* Native Blazor chessboard — no JS dependency. Renders a FEN as a CSS grid with
+   theme support (piece sets, square colors, coordinates). See docs/ChessboardJsDependencies.md
+   for the full replacement requirements this component is built against. *@
+@using System.IO
+@using System.Collections.Concurrent
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+
+<div class="eb-board" style="@RootStyle">
+    @{ var board = ParseBoard(); }
+    @for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            int rank = Flipped ? row : 7 - row;
+            int file = Flipped ? 7 - col : col;
+            string sq = SquareName(file, rank);
+            bool isLight = (file + rank) % 2 == 1;
+            bool highlighted = sq == LastMoveFrom || sq == LastMoveTo;
+            char piece = board[rank * 8 + file];
+            string squareName = sq;
+
+            <div class="eb-sq @(isLight ? "light" : "dark") @(highlighted ? "eb-hl" : "")"
+                 data-eb-sq="@sq" @onclick="() => HandleClick(squareName)">
+                @if (piece != default)
+                {
+                    <img class="eb-piece" src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                }
+                @if (CoordinatesVisible && col == 0)
+                {
+                    <span class="eb-coord rank">@(rank + 1)</span>
+                }
+                @if (CoordinatesVisible && row == 7)
+                {
+                    <span class="eb-coord file">@((char)('a' + file))</span>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    public const string StartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    [Parameter] public string Fen { get; set; } = StartFen;
+    [Parameter] public int SizePx { get; set; } = 400;
+    [Parameter] public bool Flipped { get; set; }
+    [Parameter] public bool ShowCoordinates { get; set; } = true;
+    [Parameter] public string PieceSet { get; set; } = "wikipedia";
+    [Parameter] public string LightSquareColor { get; set; } = "#f0d9b5";
+    [Parameter] public string DarkSquareColor { get; set; } = "#b58863";
+    [Parameter] public string HighlightColor { get; set; } = "rgba(255, 213, 0, 0.45)";
+    [Parameter] public string LastMoveFrom { get; set; }
+    [Parameter] public string LastMoveTo { get; set; }
+    [Parameter] public EventCallback<string> OnSquareClicked { get; set; }
+
+    // Coordinates add no value on small live-feed tiles; hide them below this size.
+    private const int CoordinateMinSizePx = 200;
+
+    private bool CoordinatesVisible => ShowCoordinates && SizePx >= CoordinateMinSizePx;
+
+    private string RootStyle =>
+        $"width:{SizePx}px;" +
+        $"--eb-light-square:{LightSquareColor};" +
+        $"--eb-dark-square:{DarkSquareColor};" +
+        $"--eb-highlight:{HighlightColor};" +
+        $"font-size:{Math.Max(8, (int)(SizePx / 8 * 0.24))}px;";
+
+    private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
+
+    private char[] ParseBoard()
+    {
+        var b = new char[64];
+        var fen = Fen;
+        if (string.IsNullOrWhiteSpace(fen)) return b;
+        var rows = fen.Split(' ')[0].Split('/');
+        if (rows.Length != 8) return b;
+        for (int i = 0; i < 8; i++)
+        {
+            int rank = 7 - i, file = 0;
+            foreach (var c in rows[i])
+            {
+                if (char.IsDigit(c)) file += c - '0';
+                else if (file < 8) b[rank * 8 + file++] = c;
+            }
+        }
+        return b;
+    }
+
+    // Piece sets follow the folder convention wwwroot/pieces/{set}/wK.svg (or .png).
+    // The extension is probed once per set and cached for the app lifetime.
+    private static readonly ConcurrentDictionary<string, string> pieceSetExtensions = new();
+
+    private string PieceSrc(char piece)
+    {
+        var name = (char.IsUpper(piece) ? "w" : "b") + char.ToUpperInvariant(piece);
+        var ext = pieceSetExtensions.GetOrAdd(PieceSet, set =>
+        {
+            var dir = Path.Combine(Env.WebRootPath, "pieces", set);
+            return File.Exists(Path.Combine(dir, "wK.svg")) ? "svg" : "png";
+        });
+        return $"pieces/{PieceSet}/{name}.{ext}";
+    }
+
+    private Task HandleClick(string square) =>
+        OnSquareClicked.HasDelegate ? OnSquareClicked.InvokeAsync(square) : Task.CompletedTask;
+}

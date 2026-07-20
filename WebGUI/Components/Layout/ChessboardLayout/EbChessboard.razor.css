@@ -1,0 +1,68 @@
+.eb-board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    aspect-ratio: 1 / 1;
+    user-select: none;
+    border-radius: 3px;
+    overflow: hidden;
+    line-height: 0;
+}
+
+.eb-sq {
+    position: relative;
+}
+
+.eb-sq.light {
+    background: var(--eb-light-square);
+}
+
+.eb-sq.dark {
+    background: var(--eb-dark-square);
+}
+
+/* Semi-transparent overlay so the highlight works on any square color/theme. */
+.eb-sq.eb-hl::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--eb-highlight);
+    pointer-events: none;
+}
+
+.eb-piece {
+    width: 100%;
+    height: 100%;
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+
+.eb-coord {
+    position: absolute;
+    font-size: 0.55em;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.85;
+}
+
+.eb-coord.rank {
+    left: 3px;
+    top: 2px;
+}
+
+.eb-coord.file {
+    right: 3px;
+    bottom: 2px;
+}
+
+/* Coordinate text uses the opposite square color for contrast on any theme. */
+.eb-sq.light .eb-coord {
+    color: var(--eb-dark-square);
+}
+
+.eb-sq.dark .eb-coord {
+    color: var(--eb-light-square);
+}
