@@ -1,5 +1,6 @@
 .eb-board {
     position: relative;
+    container-type: inline-size;
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(8, 1fr);
@@ -85,12 +86,19 @@
 
 .eb-coord {
     position: absolute;
-    font-size: 0.55em;
+    font-size: 3cqi;
     font-weight: 600;
     line-height: 1;
     pointer-events: none;
     z-index: 2;
     opacity: 0.85;
+}
+
+/* Coordinates add no value on small live-feed tiles. */
+@container (max-width: 199px) {
+    .eb-coord {
+        display: none;
+    }
 }
 
 .eb-coord.rank {

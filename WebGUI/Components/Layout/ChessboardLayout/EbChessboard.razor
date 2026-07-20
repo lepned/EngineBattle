@@ -76,7 +76,8 @@
     public const string StartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
     [Parameter] public string Fen { get; set; } = StartFen;
-    [Parameter] public int SizePx { get; set; } = 400;
+    /// <summary>Board width in pixels; null fills the parent container (fluid).</summary>
+    [Parameter] public int? SizePx { get; set; } = 400;
     [Parameter] public bool Flipped { get; set; }
     [Parameter] public bool ShowCoordinates { get; set; } = true;
     [Parameter] public string PieceSet { get; set; } = "wikipedia";
@@ -91,17 +92,14 @@
     [Parameter] public IReadOnlyList<EbSquareLabel> Labels { get; set; }
     [Parameter] public EventCallback<string> OnSquareClicked { get; set; }
 
-    // Coordinates add no value on small live-feed tiles; hide them below this size.
-    private const int CoordinateMinSizePx = 200;
-
-    private bool CoordinatesVisible => ShowCoordinates && SizePx >= CoordinateMinSizePx;
+    // Small boards auto-hide coordinates via a container query in the scoped CSS.
+    private bool CoordinatesVisible => ShowCoordinates;
 
     private string RootStyle =>
-        $"width:{SizePx}px;" +
+        (SizePx.HasValue ? $"width:{SizePx}px;" : "width:100%;") +
         $"--eb-light-square:{LightSquareColor};" +
         $"--eb-dark-square:{DarkSquareColor};" +
-        $"--eb-highlight:{HighlightColor};" +
-        $"font-size:{Math.Max(8, (int)(SizePx / 8 * 0.24))}px;";
+        $"--eb-highlight:{HighlightColor};";
 
     private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
 
@@ -130,12 +128,13 @@
 
     private string LabelChipStyle(EbSquareLabel l)
     {
-        // Chip is 62% of the square; shrink the font with text length so it always fits
+        // Font in container-query units so it scales in both fixed and fluid mode.
+        // Chip is 62% of a square (7.75cqi); shrink with text length so it always fits
         // (~0.58em average glyph width for a semibold sans font).
-        double chipPx = SizePx / 8.0 * 0.62;
+        const double chipCqi = 12.5 * 0.62;
         int len = Math.Max(1, l.Text?.Length ?? 0);
-        double fontPx = Math.Min(chipPx * 0.42, chipPx * 0.85 / (len * 0.58));
-        return $"background:{l.BgColor};color:{l.TextColor};font-size:{F(fontPx)}px;";
+        double fontCqi = Math.Min(chipCqi * 0.42, chipCqi * 0.85 / (len * 0.58));
+        return $"background:{l.BgColor};color:{l.TextColor};font-size:{F(fontCqi)}cqi;";
     }
 
     private (double x1, double y1, double x2, double y2, string head, double strokeW)? ArrowGeometry(EbArrow a)

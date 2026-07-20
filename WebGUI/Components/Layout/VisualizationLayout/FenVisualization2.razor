@@ -1,10 +1,9 @@
-﻿@inject IJSRuntime JS
-@inject JavaScriptInteropService JsInteropService
-
+@using WebGUI.Components.Layout.ChessboardLayout
 
 <h3 class="mud-centerTxt mt-5">@boardHeader</h3>
-<div class="@Style" @ref="boardElement"></div>
-
+<div class="@Style">
+	<EbChessboard Fen="@FEN" SizePx="null" ShowCoordinates="false" Arrows="@arrows" />
+</div>
 
 
 @code {
@@ -17,42 +16,20 @@
 	[Parameter] public bool Solved { get; set; }
 	[Parameter] public string BoardId { get; set; }
 
-	private ElementReference boardElement;
 	private string boardHeader => $"Board {BoardNr}";
+	private IReadOnlyList<EbArrow> arrows = Array.Empty<EbArrow>();
 
-	protected override async Task OnAfterRenderAsync(bool firstRender)
+	protected override void OnParametersSet()
 	{
-		if (firstRender)
+		var arrowList = new List<EbArrow>();
+		if (!string.IsNullOrEmpty(Move) && Move.Length >= 4)
 		{
-			var chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-			var color = FEN.Contains("w") ? "w" : "b";
-			//validate Move here
-			if (Move.Length < 4)
-				return;
+			arrowList.Add(new EbArrow(Move.Substring(0, 2), Move.Substring(2, 2), "green"));
 
-			if (!boardElement.Equals(null))
-			{
-				var fromSq = Move.Substring(0, 2);
-				var toSq = Move.Substring(2, 2);
-				if (Solved)
-				{
-					await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, FEN, false, fromSq, toSq, null, null);
-				}
-				else
-				{
-					var wrongMovePlayed = !string.IsNullOrEmpty(MovePlayed) && MovePlayed.Length >= 4;
-					if (wrongMovePlayed)
-					{
-						var wrongFromSq = MovePlayed.Substring(0, 2);
-						var wrongToSq = MovePlayed.Substring(2, 2);
-						await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, FEN, false, fromSq, toSq, wrongFromSq, wrongToSq);
-					}
-					else
-					{
-						await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, FEN, false, fromSq, toSq, null, null);
-					}
-				}
-			}
+			var wrongMovePlayed = !Solved && !string.IsNullOrEmpty(MovePlayed) && MovePlayed.Length >= 4;
+			if (wrongMovePlayed)
+				arrowList.Add(new EbArrow(MovePlayed.Substring(0, 2), MovePlayed.Substring(2, 2), "crimson"));
 		}
+		arrows = arrowList;
 	}
 }

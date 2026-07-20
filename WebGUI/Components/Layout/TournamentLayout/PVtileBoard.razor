@@ -1,72 +1,20 @@
-@* Single image board for a multi-game grid tile. Modeled on PVboardDuo: the real JS chessboard
-   (createChessboard + setPVBoardWithSquareHighlighting), parameter-driven, no move list. One
-   instance per game (key by gameId in the grid). *@
+@* Single board for a multi-game grid tile. Native EbChessboard, parameter-driven, no move
+   list, no JS. One instance per game (key by gameId in the grid). *@
 
-@using Microsoft.JSInterop
-@inject IJSRuntime JS
-@inject JavaScriptInteropService JsInteropService
+@using WebGUI.Components.Layout.ChessboardLayout
 
-<div @ref="boardEl" style="width:@(Size)px;height:@(Size)px;"></div>
+<EbChessboard Fen="@(string.IsNullOrEmpty(Fen) ? StartPos : Fen)"
+              SizePx="@Size"
+              ShowCoordinates="false"
+              LastMoveFrom="@FromSq"
+              LastMoveTo="@ToSq" />
 
 @code {
     private const string StartPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
     [Parameter] public string Fen { get; set; } = StartPos;
-    [Parameter] public string Color { get; set; } = "w";   // side that just moved (for highlight)
+    [Parameter] public string Color { get; set; } = "w";   // kept for API compatibility; highlight color is uniform
     [Parameter] public string FromSq { get; set; } = "";
     [Parameter] public string ToSq { get; set; } = "";
     [Parameter] public int Size { get; set; } = 190;
-
-    private ElementReference boardEl;
-    private IJSObjectReference chessJSmodule;
-    private string lastFen;
-    private int lastSize;
-    private bool needsResize;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-            await chessJSmodule.InvokeVoidAsync("createChessboard", boardEl, string.IsNullOrEmpty(Fen) ? StartPos : Fen);
-            lastFen = Fen;
-            lastSize = Size;
-            return;
-        }
-        // Refit AFTER render so the div's new width/height (@Size) is already applied in the DOM.
-        // Refitting in OnParametersSetAsync uses the stale size, leaving tiles cramped until a window
-        // resize. Size only changes when the parallel-game count changes, so this is rare.
-        if (needsResize && chessJSmodule is not null)
-        {
-            needsResize = false;
-            try { await chessJSmodule.InvokeVoidAsync("resizeChessboard2", boardEl); }
-            catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException or JSDisconnectedException) { }
-        }
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        if (chessJSmodule is null)
-            return;
-        try
-        {
-            if (Size != lastSize)
-            {
-                lastSize = Size;
-                needsResize = true;   // refit in OnAfterRenderAsync, once the new div size is in the DOM
-            }
-            if (!string.IsNullOrEmpty(Fen) && Fen != lastFen)
-            {
-                if (!string.IsNullOrEmpty(FromSq) && !string.IsNullOrEmpty(ToSq))
-                    await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardEl, Fen, Color, FromSq, ToSq, true);
-                else
-                    await chessJSmodule.InvokeVoidAsync("setPosition2", boardEl, Fen);
-                lastFen = Fen;
-            }
-        }
-        catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException or JSDisconnectedException)
-        {
-            // board torn down (tab closing) — ignore
-        }
-    }
 }
