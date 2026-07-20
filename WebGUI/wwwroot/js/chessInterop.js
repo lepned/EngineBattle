@@ -147,14 +147,11 @@ export function createChessboard(element, fen) {
       element.circleId2 = null;
     }
     else {
+      clearHighlightSquaresForElement(element);
       if (fen) {
-        resizeChessboard2(element);
-      }
-      else {
-        clearHighlightSquaresForElement(element);
         element.board.position(fen, false);
-        resizeChessboard2(element);
       }
+      resizeChessboard2(element);
     }
   }
 }

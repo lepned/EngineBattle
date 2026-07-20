@@ -413,8 +413,7 @@
         }
         else
         {
-            // At starting position - use setPVBoardWithSquareHighlighting without highlighting
-            // (createChessboard has a bug where it doesn't set position when board already exists)
+            // At starting position - set position without highlighting
             await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardRef, fen, "", "", "", false);
         }        
         StateHasChanged();

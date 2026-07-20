@@ -19,7 +19,7 @@ Piece images on the boards themselves are embedded as `data:image` URIs inside
 
 ```
 Blazor components (.razor)
-      │  IJSObjectReference (ESM import "./js/chessInterop.js?v=1.74.0" — bump the
+      │  IJSObjectReference (ESM import "./js/chessInterop.js?v=1.74.1" — bump the
       │  version in JavaScriptInteropService.cs whenever chessInterop.js changes)
       ▼
 wwwroot/js/chessInterop.js   ← single interop layer, all board logic lives here
@@ -66,7 +66,7 @@ highlight/annotation APIs.
 
 | Function | What it does | Callers |
 |---|---|---|
-| `createChessboard(element, fen)` | Create board on element (or resize if it exists — see Known bugs) | PVBoardLive, PVtileBoard, PVboardDuo, StreamingChessboard, MoveDeviation |
+| `createChessboard(element, fen)` | Create board on element; if it already exists, clears highlights, sets position (when fen given) and resizes | PVBoardLive, PVtileBoard, PVboardDuo, StreamingChessboard, MoveDeviation |
 | `addChessboardToElement(dotnetHelper, fen, element)` | The full interactive board: draggable pieces, legality veto, promotion flow, from/to highlighting. .NET callbacks: `sideToMove`, `isLegalPieceMove`, `isLegalMove`, `GetMoveStr`, `GetPositionFen`, `UpdateNewMove`, `ShowPromotionDialog` | ModernChessboard |
 | `setPosition2(element, fen)` | Set position, clear arrows/highlights | PVtileBoard, StreamingChessboard |
 | `setPositionWithCallback(dotnetHelper, element, fen, withCallback)` | Animated position set + optional `UpdateNewMove` callback | ModernChessboard |
@@ -153,11 +153,12 @@ on top of the board for policy-percentage labels — it measures square position
 
 ## Known bugs / quirks in the current integration
 
-1. **`createChessboard` doesn't set the position when the board already exists** — the
-   `if (fen)` / `else` branches in the existing-board path (chessInterop.js:149-157, inside
-   `createChessboard`) are inverted: with a fen it only resizes; without a fen it calls
-   `position(fen)` with `undefined`. PVBoardLive works around this by calling
-   `setPVBoardWithSquareHighlighting` instead (see comment near PVBoardLive.razor:417).
+1. ~~`createChessboard` doesn't set the position when the board already exists~~ — **fixed
+   July 2026**: the existing-board path had inverted `if (fen)` / `else` branches (with a fen
+   it only resized; without one it called `position(undefined)`, a no-op getter). It now
+   clears highlights, sets the position when a fen is given, and resizes. PVBoardLive's
+   historical workaround (`setPVBoardWithSquareHighlighting` for the start position) still
+   works and remains in place.
 2. **Highlighting bypasses the library** — CSS classes are toggled on chessboard2's internal
    square elements via `[data-square-coord]`. Any replacement changes this contract.
 3. **State on DOM elements** — board instances and annotation IDs live as expando properties
