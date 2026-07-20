@@ -65,14 +65,14 @@ highlight/annotation APIs.
 
 | Function | What it does | Callers |
 |---|---|---|
-| `createChessboard(element, fen)` | Create board on element (or resize if it exists — see Known bugs) | SimplePVBoard, PVBoardLive, PVboardCarousel, PVtileBoard, PVboardDuo, StreamingChessboard, SimpleChessboard, MoveDeviation |
+| `createChessboard(element, fen)` | Create board on element (or resize if it exists — see Known bugs) | PVBoardLive, PVtileBoard, PVboardDuo, StreamingChessboard, MoveDeviation |
 | `addChessboardToElement(dotnetHelper, fen, element)` | The full interactive board: draggable pieces, legality veto, promotion flow, from/to highlighting. .NET callbacks: `sideToMove`, `isLegalPieceMove`, `isLegalMove`, `GetMoveStr`, `GetPositionFen`, `UpdateNewMove`, `ShowPromotionDialog` | ModernChessboard |
-| `setPosition2(element, fen)` | Set position, clear arrows/highlights | SimplePVBoard, PVboardCarousel, PVtileBoard, StreamingChessboard |
+| `setPosition2(element, fen)` | Set position, clear arrows/highlights | PVtileBoard, StreamingChessboard |
 | `setPositionWithCallback(dotnetHelper, element, fen, withCallback)` | Animated position set + optional `UpdateNewMove` callback | ModernChessboard |
 | `setSimplePosition(element, fen)` | Instant position set, clear annotations | ModernChessboard |
 | `makeSimpleMoveWithCallBack(dotnetHelper, element, color, fromSq, toSq, fen, invokeMove)` | Animated move + from/to highlight + optional callback | ModernChessboard |
-| `setBoardWithSquareHighlighting(element, fen, color, fromSq, toSq, withHighLight)` | Position + last-move square highlight; removes arrows/labels | StreamingChessboard, SimpleChessboard, MoveDeviation |
-| `setPVBoardWithSquareHighlighting(element, fen, color, fromSq, toSq, withHighLight)` | PV-board variant (uses `setPosition`, auto-creates board) | PVBoardLive, PVboardDuo, PVboardCarousel, PVtileBoard |
+| `setBoardWithSquareHighlighting(element, fen, color, fromSq, toSq, withHighLight)` | Position + last-move square highlight; removes arrows/labels | StreamingChessboard, MoveDeviation |
+| `setPVBoardWithSquareHighlighting(element, fen, color, fromSq, toSq, withHighLight)` | PV-board variant (uses `setPosition`, auto-creates board) | PVBoardLive, PVboardDuo, PVtileBoard |
 | `setArrowHighlighting(element, fromSq, toSq, color)` | Single best-move arrow | StreamingChessboard |
 | `setDoubleArrowHighlighting(element, fromSq, toSq, oppFromSq, oppToSq, color, oppColor)` | Both engines' expected moves as two arrows | StreamingChessboard |
 | `setPonderArrowHighlightingWithLabel(element, text, fromSq, toSq, arrowColor, textColor, bgColor)` | Ponder arrow + `.circle-piece` label chip on target square | StreamingChessboard |
@@ -80,7 +80,7 @@ highlight/annotation APIs.
 | `clearOverlayLabels(element)` | Remove all arrows, circles and overlay labels | ModernChessboard |
 | `rotateBoard(element)` | `board.flip()` + clear annotations | ModernChessboard |
 | `puzzleBoardToElement(element, fen, notation, fromSq, toSq, wFromSq, wToSq)` | Static puzzle board: green solution arrow + crimson wrong-move arrow | EPDVisualization, FenVisualization2 |
-| `resizeChessboard2(element)` | `board.resize()` | PVboardCarousel, PVtileBoard, StreamingChessboard |
+| `resizeChessboard2(element)` | `board.resize()` | PVtileBoard, StreamingChessboard |
 | `showPromotionDialog(x, y, isWhite)` / `hidePromotionDialog()` | Promotion picker; **loads piece PNGs from `chessboardjs/img/chesspieces/wikipedia/`** (the only live use of the old chessboardjs folder) | ModernChessboard |
 
 ### Internal to chessInterop.js only
@@ -113,7 +113,6 @@ on top of the board for policy-percentage labels — it measures square position
   **Tournaments** page (also live-feed mode). Last-move highlight, engine arrows,
   double arrows, ponder arrow with eval label.
 - **`TournamentLayout/PVboardDuo.razor`** — two PV boards (white/black engine) during live games.
-- **`TournamentLayout/PVboardCarousel.razor`** — PV board inside a MudCarousel.
 - **`TournamentLayout/PVtileBoard.razor`** — minimal PV tile used by **LiveFeedGrid**
   (many boards on one page — replacement must scale to dozens of instances).
 
@@ -121,8 +120,6 @@ on top of the board for policy-percentage labels — it measures square position
 
 - **`ChessboardLayout/PVBoardLive.razor`** — PV dialog (single/dual mode) opened from
   **EnginePanel** and **DualAnalysis**; navigable PV with square highlighting.
-- **`ChessboardLayout/SimplePVBoard.razor`** (+ wrapper `PVboards.razor`) — basic PV board.
-- **`ChessboardLayout/SimpleChessboard.razor`** — position + last-move highlight.
 
 ### Static visualization boards
 
@@ -132,12 +129,17 @@ on top of the board for policy-percentage labels — it measures square position
 - **`VisualizationLayout/FenVisualization2.razor`** — puzzle solution boards
   (**PuzzleVisualSolution**).
 - **`VisualizationLayout/MoveDeviation.razor`** — two boards side by side (played move vs
-  deviation), used by DeviationFinder flows.
+  deviation). Used by **DeviationFinder** via a **fully qualified tag**
+  (`<WebGUI.Components.Layout.VisualizationLayout.MoveDeviation ...>`) — searches for
+  `<MoveDeviation` will miss it.
 
-### Dead component
+### Dead components (deleted in the July 2026 cleanup)
 
 - **`VisualizationLayout/FenVisualization.razor`** — called JS functions that no longer
-  existed and had no references. **Deleted in the July 2026 cleanup.**
+  existed and had no references.
+- **`ChessboardLayout/SimpleChessboard.razor`**, **`ChessboardLayout/SimplePVBoard.razor`**
+  (+ wrapper `PVboards.razor`), **`TournamentLayout/PVboardCarousel.razor`** — no consumers
+  anywhere (verified including fully qualified tag names and `typeof`/`DynamicComponent`).
 
 ## CSS dependencies
 
