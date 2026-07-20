@@ -633,6 +633,87 @@ export function rotateBoard(element) {
   clearHighlightSquaresForElement(element);
   clearOverlayLabels(element);
 }
+// ── Native board drag & drop (EbChessboard) ─────────────────────────────
+// Pointer tracking only: a ghost image follows the pointer; all chess logic
+// (legality, promotion) stays in .NET. Drop reports fromSq/toSq via dotnetRef.
+export function attachBoardDrag(container, dotnetRef) {
+  let drag = null;
+
+  function squareAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const sq = el && el.closest ? el.closest('[data-eb-sq]') : null;
+    return sq ? sq.getAttribute('data-eb-sq') : null;
+  }
+
+  function moveGhost(ev) {
+    if (!drag) return;
+    drag.ghost.style.left = (ev.clientX - drag.w / 2) + 'px';
+    drag.ghost.style.top = (ev.clientY - drag.h / 2) + 'px';
+  }
+
+  function cleanup() {
+    if (!drag) return;
+    drag.ghost.remove();
+    if (drag.pieceEl.isConnected) drag.pieceEl.style.opacity = '';
+    window.removeEventListener('pointermove', moveGhost);
+    window.removeEventListener('pointerup', onPointerUp);
+    drag = null;
+  }
+
+  function onPointerUp(ev) {
+    if (!drag) return;
+    const fromSq = drag.fromSq;
+    cleanup();
+    const toSq = squareAt(ev.clientX, ev.clientY);
+    if (toSq && toSq !== fromSq) {
+      dotnetRef.invokeMethodAsync('OnBoardDragDrop', fromSq, toSq);
+    }
+  }
+
+  function onPointerDown(ev) {
+    if (drag || (ev.button !== undefined && ev.button !== 0)) return;
+    const pieceEl = ev.target.closest('.eb-piece');
+    if (!pieceEl) return;
+    const squareEl = pieceEl.closest('[data-eb-sq]');
+    if (!squareEl) return;
+    const fromSq = squareEl.getAttribute('data-eb-sq');
+    ev.preventDefault();
+
+    const rect = pieceEl.getBoundingClientRect();
+    const ghost = pieceEl.cloneNode(true);
+    ghost.style.position = 'fixed';
+    ghost.style.width = rect.width + 'px';
+    ghost.style.height = rect.height + 'px';
+    ghost.style.left = rect.left + 'px';
+    ghost.style.top = rect.top + 'px';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.zIndex = '10000';
+    ghost.style.opacity = '0.9';
+    document.body.appendChild(ghost);
+    pieceEl.style.opacity = '0.35';
+
+    drag = { fromSq, ghost, pieceEl, w: rect.width, h: rect.height };
+    moveGhost(ev);
+
+    // Legality of the drag source is decided in .NET; cancel the drag if refused.
+    dotnetRef.invokeMethodAsync('CanDragFrom', fromSq)
+      .then(ok => { if (!ok) cleanup(); })
+      .catch(() => cleanup());
+
+    window.addEventListener('pointermove', moveGhost);
+    window.addEventListener('pointerup', onPointerUp);
+  }
+
+  container.addEventListener('pointerdown', onPointerDown);
+
+  return {
+    dispose: () => {
+      cleanup();
+      container.removeEventListener('pointerdown', onPointerDown);
+    }
+  };
+}
+
 export function setLineChartData(chart, layout, config) {
   try {
     var data = [config.trace1, config.trace2, config.trace3];

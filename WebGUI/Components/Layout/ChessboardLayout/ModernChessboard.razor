@@ -24,29 +24,30 @@
         }
 
         <div class="mcb-board-wrapper">
-            <div class="chessboard-root" @ref="board"></div>
-            <div id="promotionDialog" class="promotion-dialog" style="display:none; position:absolute; z-index:1000;">
-                <MudPaper Elevation="3" Class="pa-1">
-                    <MudStack Row="true" Spacing="0">
-                        <MudIconButton OnClick="@(() => SelectPromotion("q"))" Size="Size.Small" Class="pa-0"
-                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                            <img src="chessboardjs/img/chesspieces/wikipedia/wQ.png" id="promoQ" alt="Queen"
-                                 style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-                        </MudIconButton>
-                        <MudIconButton OnClick="@(() => SelectPromotion("r"))" Size="Size.Small" Class="pa-0"
-                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                            <img src="chessboardjs/img/chesspieces/wikipedia/wR.png" id="promoR" alt="Rook" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-                        </MudIconButton>
-                        <MudIconButton OnClick="@(() => SelectPromotion("b"))" Size="Size.Small" Class="pa-0"
-                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                            <img src="chessboardjs/img/chesspieces/wikipedia/wB.png" id="promoB" alt="Bishop" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-                        </MudIconButton>
-                        <MudIconButton OnClick="@(() => SelectPromotion("n"))" Size="Size.Small" Class="pa-0"
-                                       Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                            <img src="chessboardjs/img/chesspieces/wikipedia/wN.png" id="promoN" alt="Knight" style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-                        </MudIconButton>
-                    </MudStack>
-                </MudPaper>
+            <div class="chessboard-root" style="position:relative;" @ref="board">
+                <EbChessboard Fen="@fen" SizePx="null" Flipped="@isBoardFlipped" ShowCoordinates="true"
+                              LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo"
+                              SelectedSquare="@selectedSquare"
+                              Arrows="@overlayArrows" Circles="@overlayCircles" Labels="@overlayLabels"
+                              OnSquareClicked="OnBoardSquareClicked" />
+                @if (showPromotionDialog)
+                {
+                    <div class="promotion-dialog" style="@PromotionDialogStyle">
+                        <MudPaper Elevation="3" Class="pa-1">
+                            <MudStack Row="true" Spacing="0">
+                                @foreach (var p in new[] { "q", "r", "b", "n" })
+                                {
+                                    var piece = p;
+                                    <MudIconButton OnClick="@(() => SelectPromotion(piece))" Size="Size.Small" Class="pa-0"
+                                                   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
+                                        <img src="@($"pieces/wikipedia/{(promotionIsWhite ? "w" : "b")}{piece.ToUpperInvariant()}.svg")" alt="@piece"
+                                             style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+                                    </MudIconButton>
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    </div>
+                }
             </div>
         </div>
 
@@ -258,7 +259,17 @@
     private string pendingPromotionMove;
     private int promotionButtonSize = 50;
     private double promotionButtonSizePx => promotionButtonSize * 0.85;
-    private TaskCompletionSource<string> promotionTcs;
+    private bool showPromotionDialog;
+    private bool promotionIsWhite = true;
+    private string promotionTargetSquare;
+
+    // Board display state rendered declaratively by EbChessboard
+    private string lastMoveFrom;
+    private string lastMoveTo;
+    private string selectedSquare;
+    private IReadOnlyList<EbArrow> overlayArrows = Array.Empty<EbArrow>();
+    private IReadOnlyList<EbCircle> overlayCircles = Array.Empty<EbCircle>();
+    private IReadOnlyList<EbSquareLabel> overlayLabels = Array.Empty<EbSquareLabel>();
     private int moveListFontSize = 8;
     private int moveListHeight = 80;
     private string openingStyle = $"font-size:15px";
@@ -273,7 +284,7 @@
     private ElementReference board;
     private MudTextField<string> moveListTextField = new();
     private IJSObjectReference chessJSmodule;
-    private IJSObjectReference chessGUI;
+    private IJSObjectReference dragHandle;
     private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private string moveList = string.Empty;
     private List<string> replayMoves = new();
@@ -415,10 +426,27 @@
     }
 
     // ── Promotion ──
+    // The dialog is positioned near the promotion target square in board percent
+    // (12.5% per square), so no pixel measuring is needed.
+    private string PromotionDialogStyle
+    {
+        get
+        {
+            int file = promotionTargetSquare[0] - 'a';
+            int rank = promotionTargetSquare[1] - '1';
+            double col = isBoardFlipped ? 7 - file : file;
+            double row = isBoardFlipped ? rank : 7 - rank;
+            col = Math.Min(col, 4);   // keep the four-button stack inside the board
+            return $"position:absolute; z-index:1000; left:{(col * 12.5).ToString(System.Globalization.CultureInfo.InvariantCulture)}%; top:{(row * 12.5).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
+        }
+    }
+
     private async Task SelectPromotion(string promotionPiece)
     {
-        await chessJSmodule.InvokeVoidAsync("hidePromotionDialog");
-        if (promotionTcs != null) promotionTcs.TrySetResult(promotionPiece);
+        showPromotionDialog = false;
+        var move = pendingPromotionMove + promotionPiece;
+        pendingPromotionMove = null;
+        await UpdateNewMove(move, true);
     }
 
     private Task ScrollToCurrentMove()
@@ -427,14 +455,12 @@
         return InvokeAsync(StateHasChanged);
     }
 
-    [JSInvokable]
-    public async Task<string> ShowPromotionDialog(string move, double x, double y, bool isWhite)
+    private void OpenPromotionDialog(string move)
     {
-        promotionTcs = new TaskCompletionSource<string>();
         pendingPromotionMove = move;
-        await chessJSmodule.InvokeVoidAsync("showPromotionDialog", x, y, isWhite);
-        string promotionPiece = await promotionTcs.Task;
-        return move + promotionPiece;
+        promotionTargetSquare = move.Substring(2, 2);
+        promotionIsWhite = ChessBoard.Position.STM == 0;
+        showPromotionDialog = true;
     }
 
     // ── NN Overlay ──
@@ -445,14 +471,16 @@
         return new List<NNValues>();
     }
 
-    private async Task ClearOverlayOnPositionChange()
+    private Task ClearOverlayOnPositionChange()
     {
         _positionGeneration++;
         firstNNMoves.Clear();
         secondNNMoves.Clear();
         currentId = string.Empty;
-        if (chessJSmodule is not null)
-            await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+        overlayArrows = Array.Empty<EbArrow>();
+        overlayCircles = Array.Empty<EbCircle>();
+        overlayLabels = Array.Empty<EbSquareLabel>();
+        return Task.CompletedTask;
     }
 
     // ── FEN handling ──
@@ -487,29 +515,20 @@
         chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
     }
 
-    // ── JS-invokable methods ──
-    [JSInvokable]
-    public bool isLegalMove(string moveStr)
+    // ── Move input (click-to-move and drag & drop both funnel into TryUserMove) ──
+    private bool isLegalMove(string moveStr)
     {
         var allMoves = ChessBoard.GetLegalMoves();
         return allMoves.Any(e => e.Item1.Contains(moveStr));
     }
 
-    [JSInvokable]
-    public string sideToMove() => ChessBoard.Position.STM == 0 ? "w" : "b";
-
-    [JSInvokable]
-    public string GetPositionFen() => ChessBoard.FEN();
-
-    [JSInvokable]
-    public bool isLegalPieceMove(string startSq)
+    private bool isLegalPieceMove(string startSq)
     {
         var allMoves = ChessBoard.GetLegalMoves();
         return allMoves.Any(e => e.Item1.Contains(startSq));
     }
 
-    [JSInvokable]
-    public string GetMoveStr(string move)
+    private string GetMoveStr(string move)
     {
         var allMoves = ChessBoard.GetLegalMoves();
         var res = allMoves.Where(e => e.Item1.Contains(move));
@@ -518,8 +537,57 @@
         return m?.Item1;
     }
 
+    private async Task OnBoardSquareClicked(string square)
+    {
+        if (showPromotionDialog) return;
+
+        if (selectedSquare is null)
+        {
+            if (isLegalPieceMove(square)) selectedSquare = square;
+        }
+        else if (square == selectedSquare)
+        {
+            selectedSquare = null;
+        }
+        else if (isLegalMove(selectedSquare + square))
+        {
+            await TryUserMove(selectedSquare, square);
+        }
+        else
+        {
+            selectedSquare = isLegalPieceMove(square) ? square : null;
+        }
+        StateHasChanged();
+    }
+
+    private async Task TryUserMove(string fromSq, string toSq)
+    {
+        selectedSquare = null;
+        var moveStr = fromSq + toSq;
+        if (!isLegalMove(moveStr)) return;
+
+        var resolved = GetMoveStr(moveStr);
+        if (resolved is null) return;
+        if (resolved.StartsWith("promotion:"))
+        {
+            OpenPromotionDialog(moveStr);
+            return;
+        }
+        await UpdateNewMove(resolved, true);
+    }
+
     [JSInvokable]
-    public async Task UpdateNewMove(string move, bool invokeMove = true)
+    public bool CanDragFrom(string square) => !showPromotionDialog && isLegalPieceMove(square);
+
+    [JSInvokable]
+    public Task OnBoardDragDrop(string fromSq, string toSq) =>
+        InvokeAsync(async () =>
+        {
+            await TryUserMove(fromSq, toSq);
+            StateHasChanged();
+        });
+
+    private async Task UpdateNewMove(string move, bool invokeMove = true)
     {
         if (invokeMove)
         {
@@ -528,6 +596,8 @@
             {
                 ChessBoard.PlayUciMove(move);
                 await ClearOverlayOnPositionChange();
+                lastMoveFrom = move.Substring(0, 2);
+                lastMoveTo = move.Substring(2, 2);
                 await OnMoveMadeOnBoard.InvokeAsync(move);
                 firstNNMoves.Clear();
                 secondNNMoves.Clear();
@@ -548,15 +618,10 @@
 
     public async Task RotateBoard()
     {
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            await chessJSmodule.InvokeVoidAsync("rotateBoard", board);
-            var lastNNMoves = GetNNValues(currentId);
-            await DisplayMoveAnnotation(lastNNMoves, currentId);
-            isBoardFlipped = !isBoardFlipped;
-            if (OnBoardFlipped.HasDelegate)
-                await OnBoardFlipped.InvokeAsync(isBoardFlipped);
-        }
+        isBoardFlipped = !isBoardFlipped;
+        if (OnBoardFlipped.HasDelegate)
+            await OnBoardFlipped.InvokeAsync(isBoardFlipped);
+        StateHasChanged();
     }
 
     public async Task WriteTextAsync()
@@ -595,7 +660,8 @@
         objRef = DotNetObjectReference.Create(this);
         chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
         if (String.IsNullOrEmpty(FENposition)) FENposition = startPos;
-        chessGUI = await chessJSmodule.InvokeAsync<IJSObjectReference>("addChessboardToElement", objRef, FENposition, board);
+        fen = FENposition;
+        dragHandle = await chessJSmodule.InvokeAsync<IJSObjectReference>("attachBoardDrag", board, objRef);
         StateHasChanged();
     }
 
@@ -604,26 +670,29 @@
         stopAutoPlay = true;
         moveStr = string.Empty;
         moveHeader = string.Empty;
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            moveList = string.Empty;
-            fen = startPos;
-            ChessBoard.ResetBoardState();
-            ChessBoard.LoadFen(fen);
-            await chessJSmodule.InvokeVoidAsync("setSimplePosition", board, startPos);
-        }
+        moveList = string.Empty;
+        fen = startPos;
+        ChessBoard.ResetBoardState();
+        ChessBoard.LoadFen(fen);
+        ClearBoardMarkers();
+        await ClearOverlayOnPositionChange();
         UpdateVariationsDisplay();
         StateHasChanged();
     }
 
-    private async Task SetPosition(string fen, bool withCallback = false)
+    private void ClearBoardMarkers()
     {
-        if (chessJSmodule is not null && chessGUI is not null)
-        {
-            await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, withCallback);
-            moveList = string.Empty;
-        }
+        lastMoveFrom = lastMoveTo = null;
+        selectedSquare = null;
+        showPromotionDialog = false;
+    }
+
+    private Task SetPosition(string fen, bool withCallback = false)
+    {
+        ClearBoardMarkers();
+        moveList = string.Empty;
         UpdateVariationsDisplay();
+        return Task.CompletedTask;
     }
 
     // ── Overlay display ──
@@ -635,54 +704,61 @@
         else return nodes.ToString("F0");
     }
 
-    private List<object> GetDisplayData(List<NNValues> nnMoves, OverlaySettings overlay)
+    private record OverlayEntry(string FromSq, string ToSq, string Text);
+
+    private List<OverlayEntry> GetDisplayData(List<NNValues> nnMoves, OverlaySettings overlay)
     {
         MinPolicyThreshold = OverlaySetting.MinPolicyThreshold * 100;
         var currentOverlaySetting = overlay;
-        if (!OverlaySetting.IsOverlaySettingsEnabled || nnMoves.Count == 0) return new List<object>();
+        if (!OverlaySetting.IsOverlaySettingsEnabled || nnMoves.Count == 0) return new List<OverlayEntry>();
         var firstMove = nnMoves.FirstOrDefault();
         if (firstMove.Nodes == 1) currentOverlaySetting = OverlaySettings.Policy;
-        var moves = nnMoves.Skip(1).ToList();
+        var moves = nnMoves.Skip(1).Where(e => e.P > MinPolicyThreshold).ToList();
 
-        if (currentOverlaySetting == OverlaySettings.Policy)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.P.ToString("F1") }).ToList();
-        if (currentOverlaySetting == OverlaySettings.SearchPolicy)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1") }).ToList();
-        if (currentOverlaySetting == OverlaySettings.Q)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.Q.ToString("F2") }).ToList();
-        if (currentOverlaySetting == OverlaySettings.V)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = e.V.ToString("F2") }).ToList();
-        if (currentOverlaySetting == OverlaySettings.QVDiff)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (e.Q - e.V).ToString("F2") }).ToList();
-        if (currentOverlaySetting == OverlaySettings.E)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = (2 * e.E).ToString("F2") }).ToList();
-        if (currentOverlaySetting == OverlaySettings.Nodes)
-            return moves.Where(e => e.P > MinPolicyThreshold).Select(e => (object)new { FromSq = e.LANMove.Substring(0, 2), toSq = e.LANMove.Substring(2, 2), text = FormatNodes(e.Nodes) }).ToList();
-        return new List<object>();
+        Func<NNValues, string> text = currentOverlaySetting switch
+        {
+            OverlaySettings.Policy => e => e.P.ToString("F1"),
+            OverlaySettings.SearchPolicy => e => (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1"),
+            OverlaySettings.Q => e => e.Q.ToString("F2"),
+            OverlaySettings.V => e => e.V.ToString("F2"),
+            OverlaySettings.QVDiff => e => (e.Q - e.V).ToString("F2"),
+            OverlaySettings.E => e => (2 * e.E).ToString("F2"),
+            OverlaySettings.Nodes => e => FormatNodes(e.Nodes),
+            _ => null
+        };
+        if (text is null) return new List<OverlayEntry>();
+
+        return moves.Select(e => new OverlayEntry(e.LANMove.Substring(0, 2), e.LANMove.Substring(2, 2), text(e))).ToList();
     }
 
     private async Task DisplayMoveAnnotation(List<NNValues> moves, string id)
     {
-        if (chessJSmodule is not null && chessGUI is not null)
+        var overlay = OverlaySetting.GetOverlaySetting(id);
+        var data = GetDisplayData(moves, overlay);
+        if (data.Count > 0)
         {
-            var overlay = OverlaySetting.GetOverlaySetting(id);
-            var data = GetDisplayData(moves, overlay);
-            try
-            {
-                if (data.Count > 0) await chessJSmodule.InvokeVoidAsync("addPolicyCircles", board, data);
-                else await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
-            }
-            catch (ObjectDisposedException) { }
-            catch (Microsoft.JSInterop.JSDisconnectedException) { }
-            catch (JSException jsEx) { logger.LogError(jsEx, "JavaScript error in addPolicyCircles."); }
-            catch (Exception ex) { logger.LogError(ex, "Unexpected error in DisplayMoveAnnotation."); }
+            // Same visual language as the old JS setArrowSequence: faint black arrow,
+            // dark circle on the target square, value text on top.
+            overlayArrows = data.Select(d => new EbArrow(d.FromSq, d.ToSq, "black", 0.25, 0.5)).ToArray();
+            overlayCircles = data.Select(d => new EbCircle(d.ToSq, "#3C3C3C", 0.8, 0.45)).ToArray();
+            overlayLabels = data.Select(d => new EbSquareLabel(d.ToSq, d.Text, "#FFEB3B", "transparent")).ToArray();
         }
+        else
+        {
+            overlayArrows = Array.Empty<EbArrow>();
+            overlayCircles = Array.Empty<EbCircle>();
+            overlayLabels = Array.Empty<EbSquareLabel>();
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task SetPositionAndMove(MoveAndFen input, bool withCallback = false, bool withAnnotation = false, bool invokeMove = true)
     {
-        if (chessJSmodule is not null && chessGUI is not null)
-            await chessJSmodule.InvokeVoidAsync("makeSimpleMoveWithCallBack", objRef, board, input.Move.Color, input.Move.FromSq, input.Move.ToSq, input.FenAfterMove, invokeMove);
+        ClearBoardMarkers();
+        lastMoveFrom = input.Move.FromSq;
+        lastMoveTo = input.Move.ToSq;
+        if (invokeMove)
+            await UpdateNewMove(input.Move.FromSq + input.Move.ToSq, true);
     }
 
     // ── Navigation ──
@@ -797,8 +873,7 @@
     public async Task SetPositionDirect(string targetFen)
     {
         fen = targetFen;
-        if (chessJSmodule is not null && board.Context is not null)
-            await chessJSmodule.InvokeVoidAsync("setPositionWithCallback", objRef, board, fen, false);
+        ClearBoardMarkers();
         await ScrollToCurrentMove();
         StateHasChanged();
     }
@@ -809,8 +884,11 @@
         {
             if (id == currentId)
             {
-                if (chessJSmodule is not null) await chessJSmodule.InvokeVoidAsync("clearOverlayLabels", board);
+                overlayArrows = Array.Empty<EbArrow>();
+                overlayCircles = Array.Empty<EbCircle>();
+                overlayLabels = Array.Empty<EbSquareLabel>();
                 currentId = string.Empty;
+                await InvokeAsync(StateHasChanged);
             }
         }
         else
@@ -903,7 +981,12 @@
     {
         try
         {
-            if (chessGUI is not null) await chessGUI.DisposeAsync();
+            if (dragHandle is not null)
+            {
+                try { await dragHandle.InvokeVoidAsync("dispose"); }
+                catch (Microsoft.JSInterop.JSDisconnectedException) { }
+                await dragHandle.DisposeAsync();
+            }
             Dispose();
         }
         catch (Exception) { logger.LogError("Error disposing ModernChessboard component."); }

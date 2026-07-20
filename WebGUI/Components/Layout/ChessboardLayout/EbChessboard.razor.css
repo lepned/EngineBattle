@@ -48,6 +48,8 @@
     display: block;
     position: relative;
     z-index: 1;
+    touch-action: none; /* allow pointer-event dragging on touch devices */
+    -webkit-user-drag: none;
 }
 
 /* Arrows/circles/labels layer; sits above pieces, never intercepts input. */
