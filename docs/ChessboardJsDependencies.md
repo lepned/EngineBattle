@@ -182,6 +182,23 @@ A replacement (library or hand-rolled Blazor/JS component) must support:
 - [ ] Static non-interactive thumbnails (puzzle/EPD boards)
 - [ ] Blazor Server friendly: ESM interop, no per-keystroke chatter, cheap updates at ~1 Hz live-PV rate
 
+Customization requirements (new in the replacement — not supported today):
+
+- [ ] Piece sets as a folder convention (`wwwroot/pieces/{set}/wK.svg` … `bP.svg`, SVG) with a
+      `PieceSet` parameter — users add their own set by dropping in a folder, no code changes.
+      Bundle 3-4 permissively licensed sets (cburnett matches the current default look).
+- [ ] Board theming via CSS custom properties on the board root (`--eb-light-square`,
+      `--eb-dark-square`, `--eb-highlight`, `--eb-arrow`, …) with presets + custom colors.
+      Highlights/circles must be semi-transparent overlays so they work on any theme.
+- [ ] Coordinates (a1-h8) as in-square edge labels, following board orientation on flip,
+      auto-hidden below a size threshold (small live-feed tiles).
+- [ ] One ThemeService persisted in GlobalSettings, editable on the Settings page with live
+      preview; all boards on a page follow the theme automatically.
+- [ ] Size-adaptive rendering: arrow stroke width, label chips, and badges scale with board
+      size; animation is a user toggle (also a perf knob with many boards).
+- [ ] Board frame/background follows the MudBlazor light/dark theme (square colors follow the
+      board theme).
+
 Cleanup status (July 2026, commits `965053d` and `7dc7d60`): the unused chessboardjs 1.0.0
 library files, the dead `FenVisualization.razor` component, the unused interop exports, the
 legacy `Chessboard.razor` component, the experimental CeresSuite/ChessPlayerAnalysis pages,
