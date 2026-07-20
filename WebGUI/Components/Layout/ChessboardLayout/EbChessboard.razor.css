@@ -1,4 +1,5 @@
 .eb-board {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(8, 1fr);
@@ -46,6 +47,16 @@
     display: block;
     position: relative;
     z-index: 1;
+}
+
+/* Arrows/circles/labels layer; sits above pieces, never intercepts input. */
+.eb-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 3;
 }
 
 .eb-coord {

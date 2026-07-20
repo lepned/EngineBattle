@@ -3,6 +3,7 @@
    for the full replacement requirements this component is built against. *@
 @using System.IO
 @using System.Collections.Concurrent
+@using System.Globalization
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <div class="eb-board" style="@RootStyle">
@@ -37,6 +38,38 @@
             </div>
         }
     }
+    @if (HasOverlay)
+    {
+        @* Overlay in square units: viewBox 0-8, so strokes, heads and text scale with board size. *@
+        <svg class="eb-overlay" viewBox="0 0 8 8" xmlns="http://www.w3.org/2000/svg">
+            @foreach (var c in Circles ?? Array.Empty<EbCircle>())
+            {
+                var (cx, cy) = Center(c.Square);
+                <circle cx="@F(cx)" cy="@F(cy)" r="@F(c.Size / 2)" fill="@c.Color" opacity="@F(c.Opacity)" />
+            }
+            @foreach (var a in Arrows ?? Array.Empty<EbArrow>())
+            {
+                var geo = ArrowGeometry(a);
+                if (geo is var (x1, y1, x2, y2, head, strokeW))
+                {
+                    <g opacity="@F(a.Opacity)">
+                        <line x1="@F(x1)" y1="@F(y1)" x2="@F(x2)" y2="@F(y2)"
+                              stroke="@a.Color" stroke-width="@F(strokeW)" stroke-linecap="round" />
+                        <polygon points="@head" fill="@a.Color" />
+                    </g>
+                }
+            }
+            @foreach (var l in Labels ?? Array.Empty<EbSquareLabel>())
+            {
+                var (cx, cy) = Center(l.Square);
+                <circle cx="@F(cx)" cy="@F(cy)" r="0.34" fill="@l.BgColor" opacity="0.9" />
+                @* Razor reserves the <text> tag, so the SVG text element is emitted as markup. *@
+                @((MarkupString)($"<text x=\"{F(cx)}\" y=\"{F(cy)}\" fill=\"{l.TextColor}\" " +
+                    "font-size=\"0.24\" font-weight=\"600\" text-anchor=\"middle\" " +
+                    $"dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(l.Text)}</text>"))
+            }
+        </svg>
+    }
 </div>
 
 @code {
@@ -53,6 +86,9 @@
     [Parameter] public string LastMoveFrom { get; set; }
     [Parameter] public string LastMoveTo { get; set; }
     [Parameter] public string SelectedSquare { get; set; }
+    [Parameter] public IReadOnlyList<EbArrow> Arrows { get; set; }
+    [Parameter] public IReadOnlyList<EbCircle> Circles { get; set; }
+    [Parameter] public IReadOnlyList<EbSquareLabel> Labels { get; set; }
     [Parameter] public EventCallback<string> OnSquareClicked { get; set; }
 
     // Coordinates add no value on small live-feed tiles; hide them below this size.
@@ -68,6 +104,41 @@
         $"font-size:{Math.Max(8, (int)(SizePx / 8 * 0.24))}px;";
 
     private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
+
+    private bool HasOverlay =>
+        (Arrows?.Count ?? 0) > 0 || (Circles?.Count ?? 0) > 0 || (Labels?.Count ?? 0) > 0;
+
+    // SVG attribute values must be culture-invariant (nb-NO would emit decimal commas).
+    private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>Center of a square in overlay units (0-8), respecting board orientation.</summary>
+    private (double x, double y) Center(string sq)
+    {
+        int file = sq[0] - 'a', rank = sq[1] - '1';
+        double col = Flipped ? 7 - file : file;
+        double row = Flipped ? rank : 7 - rank;
+        return (col + 0.5, row + 0.5);
+    }
+
+    private (double x1, double y1, double x2, double y2, string head, double strokeW)? ArrowGeometry(EbArrow a)
+    {
+        if (string.IsNullOrEmpty(a.From) || string.IsNullOrEmpty(a.To) || a.From == a.To) return null;
+        var (x1, y1) = Center(a.From);
+        var (tipX, tipY) = Center(a.To);
+        double dx = tipX - x1, dy = tipY - y1;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        double ux = dx / len, uy = dy / len;
+
+        double strokeW = 0.16 * a.Width;
+        double headLen = 0.38, headW = 0.42;
+        double baseX = tipX - ux * headLen, baseY = tipY - uy * headLen;
+        double px = -uy, py = ux;
+
+        string head = $"{F(tipX)},{F(tipY)} " +
+                      $"{F(baseX + px * headW / 2)},{F(baseY + py * headW / 2)} " +
+                      $"{F(baseX - px * headW / 2)},{F(baseY - py * headW / 2)}";
+        return (x1, y1, baseX, baseY, head, strokeW);
+    }
 
     private char[] ParseBoard()
     {

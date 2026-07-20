@@ -33,6 +33,17 @@
             Size <input type="range" min="120" max="640" step="20" @bind="sizePx" /> @sizePx px
         </label>
     </fieldset>
+
+    <fieldset style="border:1px solid #666; border-radius:6px; padding:10px 14px;">
+        <legend>Overlay (native board only)</legend>
+        <label style="margin-right:12px;">
+            <input type="checkbox" @bind="showArrowDemo" /> Engine arrows
+        </label>
+        <label>
+            <input type="checkbox" @bind="showPolicyDemo" /> Policy circles + labels
+        </label>
+        <div style="opacity:0.7; margin-top:4px;">Best shown with the Italian position.</div>
+    </fieldset>
 </div>
 
 <div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;">
@@ -43,6 +54,7 @@
                       LightSquareColor="@lightColor" DarkSquareColor="@darkColor"
                       LastMoveFrom="@lastFrom" LastMoveTo="@lastTo"
                       SelectedSquare="@selectedSquare"
+                      Arrows="@DemoArrows" Circles="@DemoCircles" Labels="@DemoLabels"
                       OnSquareClicked="OnSquareClicked" />
         <p style="margin-top:8px; min-height:1.2em;">
             @(selectedSquare is not null
@@ -70,6 +82,36 @@
     private string lightColor = "#f0d9b5";
     private string darkColor = "#b58863";
     private string selectedSquare;
+    private bool showArrowDemo;
+    private bool showPolicyDemo;
+
+    // Mirrors the real EB use cases: green best-move arrow, grey ponder arrow
+    // (StreamingChessboard), and policy-head circles with percentage chips
+    // (ModernChessboard's addPolicyCircles).
+    private IReadOnlyList<EbArrow> DemoArrows => showArrowDemo
+        ? new[]
+        {
+            new EbArrow("f3", "g5", "#15781B"),
+            new EbArrow("d8", "f6", "#9D8989", 0.6, 0.7),
+        }
+        : Array.Empty<EbArrow>();
+
+    private IReadOnlyList<EbCircle> DemoCircles => showPolicyDemo
+        ? new[]
+        {
+            new EbCircle("g5", "#3c3c3c", 0.5, 0.5),
+            new EbCircle("d4", "#3c3c3c", 0.35, 0.5),
+        }
+        : Array.Empty<EbCircle>();
+
+    private IReadOnlyList<EbSquareLabel> DemoLabels => showPolicyDemo
+        ? new[]
+        {
+            new EbSquareLabel("g5", "42%"),
+            new EbSquareLabel("d4", "27%"),
+            new EbSquareLabel("c3", "12%"),
+        }
+        : Array.Empty<EbSquareLabel>();
 
     private ElementReference legacyBoard;
     private IJSObjectReference chessJSmodule;
