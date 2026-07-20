@@ -4,8 +4,6 @@
 @using static ChessLibrary.Chess
 
 @inject HotKeys HotKeys
-@inject IJSRuntime JS
-@inject JavaScriptInteropService JsInteropService
 @implements IAsyncDisposable
 
 <div class="pv-live-overlay" @onclick="OnOverlayClick">
@@ -48,7 +46,10 @@
                 </div>
 
                 <div class="pv-board-wrapper">
-                    <div @ref="boardRef1" class="pv-board-element"></div>
+                    <div class="pv-board-element">
+                        <EbChessboard Fen="@displayFen1" SizePx="null" ShowCoordinates="false"
+                                      LastMoveFrom="@highlightFrom1" LastMoveTo="@highlightTo1" />
+                    </div>
                 </div>
 
                 <div class="pv-nav-row">
@@ -106,7 +107,10 @@
                     </div>
 
                     <div class="pv-board-wrapper">
-                        <div @ref="boardRef2" class="pv-board-element"></div>
+                        <div class="pv-board-element">
+                            <EbChessboard Fen="@displayFen2" SizePx="null" ShowCoordinates="false"
+                                          LastMoveFrom="@highlightFrom2" LastMoveTo="@highlightTo2" />
+                        </div>
                     </div>
 
                     <div class="pv-nav-row">
@@ -165,11 +169,13 @@
     private PVState state1 = new();
     private PVState state2 = new();
 
-    // Board references - direct JS approach like PVboardDuo
-    private ElementReference boardRef1;
-    private ElementReference boardRef2;
-    private IJSObjectReference chessJSmodule;
-    private bool boardsCreated = false;
+    // Board display state, rendered declaratively by EbChessboard
+    private string displayFen1 = startPos;
+    private string highlightFrom1;
+    private string highlightTo1;
+    private string displayFen2 = startPos;
+    private string highlightFrom2;
+    private string highlightTo2;
 
     // Chess boards for move parsing
     private Board chessBoard1 = new();
@@ -215,12 +221,29 @@
             state2 = State2 ?? new PVState();
         }
 
-        // Initial parse (just data, don't update board yet)
+        // Initial parse and board display
         ParsePV(1);
+        if (fenPositions1.Count > 0)
+        {
+            currentIndex1 = followMode1 ? fenPositions1.Count - 1 : 0;
+            UpdateBoardPosition(1);
+        }
         if (IsDualMode)
         {
             ParsePV(2);
+            if (fenPositions2.Count > 0)
+            {
+                currentIndex2 = followMode2 ? fenPositions2.Count - 1 : 0;
+                UpdateBoardPosition(2);
+            }
             UpdateDeviationIndex();
+        }
+
+        // Subscribe to live updates
+        state1.OnUpdate += OnState1Updated;
+        if (IsDualMode)
+        {
+            state2.OnUpdate += OnState2Updated;
         }
 
         // Set up throttled update timer
@@ -238,46 +261,6 @@
             .Add(Key.End, (Func<Task>)(async () => await GoToEnd(1)), "Go to end");
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            // Import JS module and create boards
-            chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-
-            // Create the chessboards using the same JS function as PVboardDuo
-            var startFen1 = fenPositions1.Count > 0 ? fenPositions1[0] : startPos;
-            await chessJSmodule.InvokeVoidAsync("createChessboard", boardRef1, startFen1);
-
-            if (IsDualMode)
-            {
-                var startFen2 = fenPositions2.Count > 0 ? fenPositions2[0] : startPos;
-                await chessJSmodule.InvokeVoidAsync("createChessboard", boardRef2, startFen2);
-            }
-
-            boardsCreated = true;
-
-            // Subscribe to updates after boards are ready
-            state1.OnUpdate += OnState1Updated;
-            if (IsDualMode)
-            {
-                state2.OnUpdate += OnState2Updated;
-            }
-
-            // Show initial position (end of PV if follow mode)
-            if (fenPositions1.Count > 0)
-            {
-                currentIndex1 = followMode1 ? fenPositions1.Count - 1 : 0;
-                await UpdateBoardPosition(1);
-            }
-            if (IsDualMode && fenPositions2.Count > 0)
-            {
-                currentIndex2 = followMode2 ? fenPositions2.Count - 1 : 0;
-                await UpdateBoardPosition(2);
-            }
-        }
-    }
-
     private void OnState1Updated()
     {
         pendingUpdate1 = true;
@@ -290,9 +273,7 @@
 
     private void OnUpdateTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
     {
-        if (!boardsCreated) return;
-
-        InvokeAsync(async () =>
+        InvokeAsync(() =>
         {
             bool needsRefresh = false;
 
@@ -303,7 +284,7 @@
                 if (fenPositions1.Count > 0)
                 {
                     currentIndex1 = fenPositions1.Count - 1;
-                    await UpdateBoardPosition(1);
+                    UpdateBoardPosition(1);
                 }
                 needsRefresh = true;
             }
@@ -320,7 +301,7 @@
                 if (fenPositions2.Count > 0)
                 {
                     currentIndex2 = fenPositions2.Count - 1;
-                    await UpdateBoardPosition(2);
+                    UpdateBoardPosition(2);
                 }
                 needsRefresh = true;
             }
@@ -387,35 +368,37 @@
         }
     }
 
-    private async Task UpdateBoardPosition(int boardNum)
+    private void UpdateBoardPosition(int boardNum)
     {
-        if (chessJSmodule == null || !boardsCreated) return;
-
         var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
         var moveList = boardNum == 1 ? uciMoves1 : uciMoves2;
         var index = boardNum == 1 ? currentIndex1 : currentIndex2;
-        var boardRef = boardNum == 1 ? boardRef1 : boardRef2;
 
         if (index < 0 || index >= fenList.Count) return;
 
         var fen = fenList[index];
 
-        // Get move info for highlighting (if not at start position)
+        // Move highlight only when not at the start position
+        string from = null, to = null;
         if (index > 0 && index - 1 < moveList.Count)
         {
             var move = moveList[index - 1];
-            var fromSq = move.Substring(0, 2);
-            var toSq = move.Substring(2, 2);
-            // Determine color from whose turn it was before the move
-            var fenParts = fenList[index - 1].Split(' ');
-            var color = fenParts.Length > 1 && fenParts[1] == "w" ? "w" : "b";
-            await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardRef, fen, color, fromSq, toSq, true);
+            from = move.Substring(0, 2);
+            to = move.Substring(2, 2);
+        }
+
+        if (boardNum == 1)
+        {
+            displayFen1 = fen;
+            highlightFrom1 = from;
+            highlightTo1 = to;
         }
         else
         {
-            // At starting position - set position without highlighting
-            await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", boardRef, fen, "", "", "", false);
-        }        
+            displayFen2 = fen;
+            highlightFrom2 = from;
+            highlightTo2 = to;
+        }
         StateHasChanged();
     }
 
@@ -447,12 +430,12 @@
         }
     }
 
-    private async Task GoToPosition(int boardNum, int index)
+    private Task GoToPosition(int boardNum, int index)
     {
         var fenList = boardNum == 1 ? fenPositions1 : fenPositions2;
 
         // Clamp index to valid range
-        if (fenList.Count == 0) return;
+        if (fenList.Count == 0) return Task.CompletedTask;
         index = Math.Max(0, Math.Min(index, fenList.Count - 1));
 
         if (boardNum == 1)
@@ -466,8 +449,8 @@
             totalMoves2 = fenList.Count - 1;
         }
 
-        await UpdateBoardPosition(boardNum);
-        StateHasChanged();
+        UpdateBoardPosition(boardNum);
+        return Task.CompletedTask;
     }
 
     private async Task GoToStart(int boardNum)
@@ -516,7 +499,7 @@
             followMode2 = value;
     }
 
-    private async Task ToggleFollow(int boardNum)
+    private Task ToggleFollow(int boardNum)
     {
         if (boardNum == 1)
         {
@@ -528,7 +511,7 @@
                 if (fenPositions1.Count > 0)
                 {
                     currentIndex1 = fenPositions1.Count - 1;
-                    await UpdateBoardPosition(1);
+                    UpdateBoardPosition(1);
                 }
             }
         }
@@ -542,7 +525,7 @@
                 if (fenPositions2.Count > 0)
                 {
                     currentIndex2 = fenPositions2.Count - 1;
-                    await UpdateBoardPosition(2);
+                    UpdateBoardPosition(2);
                 }
             }
         }
@@ -551,6 +534,7 @@
             UpdateDeviationIndex();
         }
         StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private async Task ToggleCompare()
