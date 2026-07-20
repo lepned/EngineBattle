@@ -62,10 +62,11 @@
             @foreach (var l in Labels ?? Array.Empty<EbSquareLabel>())
             {
                 var (cx, cy) = Center(l.Square);
-                <circle cx="@F(cx)" cy="@F(cy)" r="0.34" fill="@l.BgColor" opacity="0.9" />
+                var fontSize = LabelFontSize(l.Text);
+                <circle cx="@F(cx)" cy="@F(cy)" r="@F(LabelChipRadius)" fill="@l.BgColor" opacity="0.9" />
                 @* Razor reserves the <text> tag, so the SVG text element is emitted as markup. *@
                 @((MarkupString)($"<text x=\"{F(cx)}\" y=\"{F(cy)}\" fill=\"{l.TextColor}\" " +
-                    "font-size=\"0.24\" font-weight=\"600\" text-anchor=\"middle\" " +
+                    $"font-size=\"{F(fontSize)}\" font-weight=\"600\" text-anchor=\"middle\" " +
                     $"dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(l.Text)}</text>"))
             }
         </svg>
@@ -118,6 +119,16 @@
         double col = Flipped ? 7 - file : file;
         double row = Flipped ? rank : 7 - rank;
         return (col + 0.5, row + 0.5);
+    }
+
+    private const double LabelChipRadius = 0.3;
+
+    // Shrink the font with text length so the label always stays inside the chip
+    // (~0.58em average glyph width for a semibold sans font).
+    private static double LabelFontSize(string text)
+    {
+        int len = Math.Max(1, text?.Length ?? 0);
+        return Math.Min(0.17, LabelChipRadius * 2 * 0.85 / (len * 0.58));
     }
 
     private (double x1, double y1, double x2, double y2, string head, double strokeW)? ArrowGeometry(EbArrow a)
