@@ -7,7 +7,8 @@ public record BoardTheme(
     string HighlightWhite,
     string HighlightBlack,
     string PieceSet,
-    bool TournamentCoordinates = true);
+    bool TournamentCoordinates = true,
+    string CoordFontCss = "min(2cqi, 12px)");
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -56,6 +57,15 @@ public class BoardThemeService
         }
     }
 
+    /// <summary>Coordinate font size per setting key: proportional on small boards, capped on large.</summary>
+    public static string CoordSizeCss(string key) => key switch
+    {
+        "small" => "min(1.5cqi, 9px)",
+        "large" => "min(3cqi, 16px)",
+        "xlarge" => "min(4cqi, 22px)",
+        _ => "min(2cqi, 12px)",
+    };
+
     public static BoardTheme Resolve(GlobalSettings s)
     {
         var pieceSet = string.IsNullOrWhiteSpace(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
@@ -67,12 +77,12 @@ public class BoardThemeService
             return new BoardTheme(
                 s.BoardCustomLightColor ?? "#B1D8DB",
                 s.BoardCustomDarkColor ?? "#619EB3",
-                highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates);
+                highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates, CoordSizeCss(s.BoardCoordinateSize));
         }
 
         var key = presets.ContainsKey(s.BoardThemePreset ?? "") ? s.BoardThemePreset : "eb-blue";
         var p = presets[key];
-        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates);
+        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates, CoordSizeCss(s.BoardCoordinateSize));
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>

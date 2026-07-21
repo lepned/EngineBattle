@@ -101,6 +101,8 @@
     /// <summary>true/false forces coordinates on/off; null follows the user's
     /// tournament-board coordinates setting (Settings → Board Theme).</summary>
     [Parameter] public bool? ShowCoordinates { get; set; }
+    /// <summary>Coordinate font-size CSS override (settings-page live preview); null follows the theme.</summary>
+    [Parameter] public string CoordinateSizeCss { get; set; }
     // Colors and piece set default to the app-wide board theme (BoardThemeService,
     // user-configurable on the Settings page). Explicit parameters override the theme.
     // The highlight replaces the square color (as the pre-migration CSS did), and the
@@ -136,7 +138,8 @@
         $"--eb-light-square:{EffLight};" +
         $"--eb-dark-square:{EffDark};" +
         $"--eb-highlight:{EffHighlight};" +
-        $"--eb-highlight-b:{EffHighlightBlack};";
+        $"--eb-highlight-b:{EffHighlightBlack};" +
+        $"--eb-coord-size:{CoordinateSizeCss ?? ThemeService.Current.CoordFontCss};";
 
     private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
 

@@ -407,6 +407,17 @@
         </div>
 
         <div class="field-group">
+            <label>Coordinate Size</label>
+            <select @bind="boardCoordinateSize">
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
+                <option value="xlarge">Extra Large</option>
+            </select>
+            <small>Size of the a1–h8 coordinates on all boards</small>
+        </div>
+
+        <div class="field-group">
             <label>Preview</label>
             <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
                           SizePx="250" ShowCoordinates="true"
@@ -415,7 +426,8 @@
                           DarkSquareColor="@PreviewTheme.DarkSquare"
                           HighlightColor="@PreviewTheme.HighlightWhite"
                           HighlightColorBlack="@PreviewTheme.HighlightBlack"
-                          PieceSet="@PreviewTheme.PieceSet" />
+                          PieceSet="@PreviewTheme.PieceSet"
+                          CoordinateSizeCss="@BoardThemeService.CoordSizeCss(boardCoordinateSize)" />
             <small>Click Save to apply to all boards</small>
         </div>
     </div>
@@ -481,6 +493,7 @@
     private string boardPieceSet = "wikipedia";
     private bool boardAnimateMoves = true;
     private bool showTournamentBoardCoordinates = true;
+    private string boardCoordinateSize = "medium";
     private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
 
     private BoardTheme PreviewTheme =>
@@ -539,6 +552,7 @@
         boardPieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
         boardAnimateMoves = s.BoardAnimateMoves;
         showTournamentBoardCoordinates = s.ShowTournamentBoardCoordinates;
+        boardCoordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
     }
 
     private void SaveSettings()
@@ -593,6 +607,7 @@
                 BoardPieceSet = boardPieceSet ?? "wikipedia",
                 BoardAnimateMoves = boardAnimateMoves,
                 ShowTournamentBoardCoordinates = showTournamentBoardCoordinates,
+                BoardCoordinateSize = boardCoordinateSize ?? "medium",
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -652,6 +667,7 @@
         boardPieceSet = defaults.BoardPieceSet;
         boardAnimateMoves = defaults.BoardAnimateMoves;
         showTournamentBoardCoordinates = defaults.ShowTournamentBoardCoordinates;
+        boardCoordinateSize = defaults.BoardCoordinateSize;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }
