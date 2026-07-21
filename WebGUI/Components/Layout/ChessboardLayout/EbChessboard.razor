@@ -8,9 +8,10 @@
 @implements IDisposable
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @inject BoardThemeService ThemeService
+@inject GlobalSettingsService SettingsService
 
 <div class="eb-board" style="@RootStyle">
-    @{ var board = ParseBoard(); }
+    @{ var board = boardCells; }
     @for (int row = 0; row < 8; row++)
     {
         for (int col = 0; col < 8; col++)
@@ -28,7 +29,17 @@
                  data-eb-sq="@sq" @onclick="() => HandleClick(squareName)">
                 @if (piece != default)
                 {
-                    <img class="eb-piece" src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                    @if (animMoves.TryGetValue(sq, out var animFrom))
+                    {
+                        @* Keyed per animation so Blazor recreates the element and the CSS
+                           animation replays even when the destination square is reused. *@
+                        <img @key="@($"{sq}#{animVersion}")" class="eb-piece eb-anim" style="@AnimStyle(animFrom, sq)"
+                             src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                    }
+                    else
+                    {
+                        <img class="eb-piece" src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                    }
                 }
                 @if (CoordinatesVisible && col == 0)
                 {
@@ -107,6 +118,9 @@
     [Parameter] public string LastMoveFrom { get; set; }
     [Parameter] public string LastMoveTo { get; set; }
     [Parameter] public string SelectedSquare { get; set; }
+    /// <summary>Glide pieces to their destination when the position changes by a single move
+    /// (opt-in for interactive boards; also gated by the BoardAnimateMoves user setting).</summary>
+    [Parameter] public bool Animate { get; set; }
     [Parameter] public IReadOnlyList<EbArrow> Arrows { get; set; }
     [Parameter] public IReadOnlyList<EbCircle> Circles { get; set; }
     [Parameter] public IReadOnlyList<EbSquareLabel> Labels { get; set; }
@@ -235,6 +249,101 @@
             return File.Exists(Path.Combine(dir, "wK.svg")) ? "svg" : "png";
         });
         return $"pieces/{set}/{name}.{ext}";
+    }
+
+    // ── Move animation ──────────────────────────────────────────────────────
+    // The board is declarative (FEN in, grid out), so a move is detected by diffing
+    // the previous and new positions. Only single-move transitions animate; anything
+    // else (new game, jumping through a move list, orientation flip) snaps.
+
+    private char[] boardCells = new char[64];
+    private string prevFen;
+    private bool prevFlipped;
+    private bool suppressNextAnimation;
+    private readonly Dictionary<string, string> animMoves = new(); // to-square -> from-square
+    private int animVersion;
+
+    /// <summary>Skip the animation for the next position change — used after drag &amp; drop,
+    /// where the piece is already visually at its destination.</summary>
+    public void SuppressNextAnimation() => suppressNextAnimation = true;
+
+    protected override void OnParametersSet()
+    {
+        var newBoard = ParseBoard();
+        // Flipping mirrors the whole grid; a pending glide would replay with wrong offsets.
+        if (Flipped != prevFlipped) animMoves.Clear();
+        if (Fen != prevFen)
+        {
+            animMoves.Clear();
+            if (Animate && SettingsService.Settings.BoardAnimateMoves
+                && !suppressNextAnimation && prevFen != null && Flipped == prevFlipped)
+            {
+                foreach (var (from, to) in DiffSingleMove(boardCells, newBoard))
+                    animMoves[to] = from;
+                if (animMoves.Count > 0) animVersion++;
+            }
+            suppressNextAnimation = false;
+            prevFen = Fen;
+        }
+        prevFlipped = Flipped;
+        boardCells = newBoard;
+    }
+
+    /// <summary>If the two positions differ by exactly one move (incl. capture, promotion,
+    /// en passant, castling — and their reverses when stepping back), returns the gliding
+    /// pieces as (from, to) squares; otherwise returns an empty list.</summary>
+    private static List<(string from, string to)> DiffSingleMove(char[] oldB, char[] newB)
+    {
+        var moves = new List<(string, string)>();
+        var changed = new List<int>();
+        for (int i = 0; i < 64; i++)
+            if (oldB[i] != newB[i]) changed.Add(i);
+        // 2 = move/capture, 3 = en passant, 4 = castling; anything else is not one move.
+        if (changed.Count < 2 || changed.Count > 4) return moves;
+
+        var pairs = new List<(int from, int to)>();
+        foreach (var s in changed)
+        {
+            char moved = oldB[s];
+            if (moved == default) continue;
+            foreach (var d in changed)
+            {
+                if (d == s || newB[d] == default) continue;
+                bool samePiece = newB[d] == moved;
+                bool promotion = !samePiece && char.IsUpper(newB[d]) == char.IsUpper(moved)
+                                 && char.ToUpperInvariant(moved) == 'P' && (d / 8 == 0 || d / 8 == 7);
+                if (samePiece || promotion) pairs.Add((s, d));
+            }
+        }
+
+        static string Sq(int i) => SquareName(i % 8, i / 8);
+
+        if (pairs.Count == 1 && changed.Count <= 3)
+        {
+            moves.Add((Sq(pairs[0].from), Sq(pairs[0].to)));
+        }
+        else if (pairs.Count == 2 && changed.Count == 4)
+        {
+            // Castling: both pieces glide. Any other 2-pair diff (two independent moves) snaps.
+            char a = oldB[pairs[0].from], b = oldB[pairs[1].from];
+            var types = (char.ToUpperInvariant(a), char.ToUpperInvariant(b));
+            if (char.IsUpper(a) == char.IsUpper(b) && (types == ('K', 'R') || types == ('R', 'K')))
+            {
+                moves.Add((Sq(pairs[0].from), Sq(pairs[0].to)));
+                moves.Add((Sq(pairs[1].from), Sq(pairs[1].to)));
+            }
+        }
+        return moves;
+    }
+
+    /// <summary>Start offset of the glide, in percent of one square, in rendered orientation.</summary>
+    private string AnimStyle(string from, string to)
+    {
+        int ff = from[0] - 'a', fr = from[1] - '1';
+        int tf = to[0] - 'a', tr = to[1] - '1';
+        double dCol = (Flipped ? tf - ff : ff - tf) * 100;
+        double dRow = (Flipped ? fr - tr : tr - fr) * 100;
+        return $"--eb-dx:{F(dCol)}%;--eb-dy:{F(dRow)}%;";
     }
 
     protected override void OnInitialized()

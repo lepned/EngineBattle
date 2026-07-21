@@ -54,6 +54,32 @@
     cursor: grab;
 }
 
+/* Move animation: the arriving piece glides in from its source square.
+   --eb-dx/--eb-dy (percent of one square) are set inline by the component.
+   z-index lives in the keyframes so the glider rides above neighboring pieces
+   only while animating, then drops back below overlay and labels. */
+.eb-piece.eb-anim {
+    animation: eb-move 180ms ease-out;
+}
+
+@keyframes eb-move {
+    from {
+        transform: translate(var(--eb-dx), var(--eb-dy));
+        z-index: 6;
+    }
+
+    to {
+        transform: none;
+        z-index: 6;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .eb-piece.eb-anim {
+        animation: none;
+    }
+}
+
 /* Arrows/circles/labels layer; sits above pieces, never intercepts input. */
 .eb-overlay {
     position: absolute;

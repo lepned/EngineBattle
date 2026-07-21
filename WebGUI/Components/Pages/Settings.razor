@@ -391,6 +391,14 @@
         </div>
 
         <div class="field-group">
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="boardAnimateMoves" />
+                Animate Moves
+            </label>
+            <small>Pieces glide to their destination square on interactive boards</small>
+        </div>
+
+        <div class="field-group">
             <label>Preview</label>
             <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
                           SizePx="250" ShowCoordinates="true"
@@ -463,6 +471,7 @@
     private string boardCustomDark = "#619EB3";
     private string boardCustomHighlight = "#FAFAD2";
     private string boardPieceSet = "wikipedia";
+    private bool boardAnimateMoves = true;
     private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
 
     private BoardTheme PreviewTheme =>
@@ -519,6 +528,7 @@
         boardCustomDark = s.BoardCustomDarkColor;
         boardCustomHighlight = s.BoardCustomHighlightColor;
         boardPieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
+        boardAnimateMoves = s.BoardAnimateMoves;
     }
 
     private void SaveSettings()
@@ -571,6 +581,7 @@
                 BoardCustomDarkColor = boardCustomDark ?? "#619EB3",
                 BoardCustomHighlightColor = boardCustomHighlight ?? "#FAFAD2",
                 BoardPieceSet = boardPieceSet ?? "wikipedia",
+                BoardAnimateMoves = boardAnimateMoves,
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -628,6 +639,7 @@
         boardCustomDark = defaults.BoardCustomDarkColor;
         boardCustomHighlight = defaults.BoardCustomHighlightColor;
         boardPieceSet = defaults.BoardPieceSet;
+        boardAnimateMoves = defaults.BoardAnimateMoves;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }

@@ -66,6 +66,7 @@ public class GlobalSettings
     public string BoardCustomDarkColor { get; set; } = "#619EB3";
     public string BoardCustomHighlightColor { get; set; } = "#FAFAD2";
     public string BoardPieceSet { get; set; } = "wikipedia";
+    public bool BoardAnimateMoves { get; set; } = true;
 
     // App behavior
     public string StartupPage { get; set; } = "";

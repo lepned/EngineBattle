@@ -25,7 +25,8 @@
 
         <div class="mcb-board-wrapper">
             <div class="chessboard-root" style="position:relative;" @ref="board">
-                <EbChessboard Fen="@fen" SizePx="null" Flipped="@isBoardFlipped" ShowCoordinates="true"
+                <EbChessboard @ref="ebBoard" Fen="@fen" SizePx="null" Flipped="@isBoardFlipped" ShowCoordinates="true"
+                              Animate="true"
                               LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
                               SelectedSquare="@selectedSquare"
                               Arrows="@overlayArrows" Circles="@overlayCircles" Labels="@overlayLabels"
@@ -264,6 +265,7 @@
     private string promotionTargetSquare;
 
     // Board display state rendered declaratively by EbChessboard
+    private EbChessboard ebBoard;
     private string lastMoveFrom;
     private string lastMoveTo;
     private string lastMoveColor;
@@ -561,7 +563,7 @@
         StateHasChanged();
     }
 
-    private async Task TryUserMove(string fromSq, string toSq)
+    private async Task TryUserMove(string fromSq, string toSq, bool animate = true)
     {
         selectedSquare = null;
         var moveStr = fromSq + toSq;
@@ -574,6 +576,8 @@
             OpenPromotionDialog(moveStr);
             return;
         }
+        // Dropped pieces are already at their destination; gliding them in again looks broken.
+        if (!animate) ebBoard?.SuppressNextAnimation();
         await UpdateNewMove(resolved, true);
     }
 
@@ -584,7 +588,7 @@
     public Task OnBoardDragDrop(string fromSq, string toSq) =>
         InvokeAsync(async () =>
         {
-            await TryUserMove(fromSq, toSq);
+            await TryUserMove(fromSq, toSq, animate: false);
             StateHasChanged();
         });
 
