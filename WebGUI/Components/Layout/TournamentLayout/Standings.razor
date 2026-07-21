@@ -86,7 +86,7 @@
         }
         catch (JSException jsEx) when (jsEx.Message.Contains("Cannot set properties of undefined"))
         {
-            // Known animation timing issue with chessboard2.min.js - safe to ignore
+            // Historic guard from the chessboard2 era (animation timing race) - harmless to keep
             Console.WriteLine($"Suppressed known animation error in {identifier}: {jsEx.Message}");
         }
         catch (JSException jsEx)

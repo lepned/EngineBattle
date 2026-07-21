@@ -1,15 +1,14 @@
-﻿@using WebGUI.Components.Layout.ChessboardLayout
-
-@inject IJSRuntime JS
-@inject JavaScriptInteropService JsInteropService
+@using WebGUI.Components.Layout.ChessboardLayout
 
 
 <div class="pv-board-container @GetContainerSizeClass()">
 	<div class="pv-board left-board @GetBoardSizeClass()">
-		<div @ref="pvWhite"></div>
+		<EbChessboard Fen="@whiteFen" SizePx="null" ShowCoordinates="false"
+					  LastMoveFrom="@whiteFrom" LastMoveTo="@whiteTo" LastMoveColor="@whiteMoveColor" />
 	</div>
 	<div class="pv-board right-board @GetBoardSizeClass()">
-		<div @ref="pvBlack"></div>
+		<EbChessboard Fen="@blackFen" SizePx="null" ShowCoordinates="false"
+					  LastMoveFrom="@blackFrom" LastMoveTo="@blackTo" LastMoveColor="@blackMoveColor" />
 	</div>
 </div>
 
@@ -31,63 +30,61 @@
 	[Parameter]
 	public bool IsDeviation { get; set; }
 
-	ElementReference pvWhite;
-	ElementReference pvBlack;
-	private IJSObjectReference chessJSmodule;
+	private string whiteFen = EbChessboard.StartFen;
+	private string whiteFrom;
+	private string whiteTo;
+	private string whiteMoveColor;
+	private string blackFen = EbChessboard.StartFen;
+	private string blackFrom;
+	private string blackTo;
+	private string blackMoveColor;
+	private string currentBoardSize = "medium"; // "small", "medium", "large"
 
-	private string lastWhiteFen;
-	private string lastBlackFen;
-	private string currentBoardSize = "medium"; // "small", "medium", "large""
+	// Last fen received via parameters. Parameters only win when they actually change;
+	// otherwise a parent re-render would overwrite state set via SetPVMoveWithAnnotation
+	// (opening replay runs before the first engine move updates the parameters).
+	private string lastWhiteParamFen;
+	private string lastBlackParamFen;
 
 	private string GetBoardSizeClass() => $"board-{currentBoardSize.ToLowerInvariant()}";
 	private string GetContainerSizeClass() => $"container-{currentBoardSize.ToLowerInvariant()}";
 
-	private void SetBoardSize(string size)
+	//called during opening replay, which runs off the dispatcher thread -
+	//render must be marshalled via InvokeAsync
+	public Task SetPVMoveWithAnnotation(MoveAndFen input, bool clear)
 	{
-		currentBoardSize = size;
-		StateHasChanged();
-	}
-	//called after opening moves are played
-	public async Task SetPVMoveWithAnnotation(MoveAndFen input, bool clear)
-	{
-		await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvWhite, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
-		await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvBlack, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
-	}
-
-	protected override async Task OnParametersSetAsync()
-	{
-		if (chessJSmodule is not null)
+		if (input?.FenAfterMove is { Length: > 0 })
 		{
-			if (lastWhiteFen != WhiteMoveAndFen.FenAfterMove)
-			{
-				var input = WhiteMoveAndFen;
-				await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvWhite, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
-				lastWhiteFen = WhiteMoveAndFen.FenAfterMove;
-			}
-
-			if (lastBlackFen != BlackMoveAndFen.FenAfterMove)
-			{
-				var input = BlackMoveAndFen;
-				await chessJSmodule.InvokeVoidAsync("setPVBoardWithSquareHighlighting", pvBlack, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
-				lastBlackFen = BlackMoveAndFen.FenAfterMove;
-			}
+			whiteFen = blackFen = input.FenAfterMove;
+			whiteFrom = blackFrom = input.Move.FromSq;
+			whiteTo = blackTo = input.Move.ToSq;
+			whiteMoveColor = blackMoveColor = input.Move.Color;
+			return InvokeAsync(StateHasChanged);
 		}
-		if (BoardSize != currentBoardSize)
-		{
-			SetBoardSize(BoardSize);
-			StateHasChanged();
-		}
+		return Task.CompletedTask;
 	}
 
-	protected override async Task OnAfterRenderAsync(bool firstRender)
+	protected override void OnParametersSet()
 	{
-		if (firstRender)
+		if (WhiteMoveAndFen?.FenAfterMove is { Length: > 0 } wf && wf != lastWhiteParamFen)
 		{
-			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-			await chessJSmodule.InvokeVoidAsync("createChessboard", pvWhite, WhiteMoveAndFen.FenAfterMove);
-			await chessJSmodule.InvokeVoidAsync("createChessboard", pvBlack, BlackMoveAndFen.FenAfterMove);
-			lastWhiteFen = WhiteMoveAndFen.FenAfterMove;
-			lastBlackFen = BlackMoveAndFen.FenAfterMove;
+			lastWhiteParamFen = wf;
+			whiteFen = wf;
+			whiteFrom = WhiteMoveAndFen.Move.FromSq;
+			whiteTo = WhiteMoveAndFen.Move.ToSq;
+			whiteMoveColor = WhiteMoveAndFen.Move.Color;
+		}
+		if (BlackMoveAndFen?.FenAfterMove is { Length: > 0 } bf && bf != lastBlackParamFen)
+		{
+			lastBlackParamFen = bf;
+			blackFen = bf;
+			blackFrom = BlackMoveAndFen.Move.FromSq;
+			blackTo = BlackMoveAndFen.Move.ToSq;
+			blackMoveColor = BlackMoveAndFen.Move.Color;
+		}
+		if (!string.IsNullOrEmpty(BoardSize) && BoardSize != currentBoardSize)
+		{
+			currentBoardSize = BoardSize;
 		}
 	}
 }

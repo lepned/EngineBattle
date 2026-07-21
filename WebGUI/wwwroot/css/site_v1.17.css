@@ -175,57 +175,8 @@
   padding-bottom: 2px !important;
 }
 
-.circle-piece {
-  position: relative;
-  width: 75%;
-  height: 75%;
-  border-radius: 50%;
-  border: 2px solid yellow;
-  color: black;
-  text-align: center;
-  font-size: 1.2em;
-  font-weight: bold;
-  opacity: 0.85; /* 50% opacity */
-  /*background-color: rgba(144, 238, 144, 0.75);*/
-  margin: auto; /* Add this line to center the circle horizontally */
-  top: 50%; /* Add this line to center the circle vertically */
-  transform: translateY(-50%); /* Add this line to center the circle vertically */
-  display: flex; /* Add this line to enable flexbox */
-  justify-content: center; /* Add this line to align text horizontally */
-  align-items: center; /* Add this line to align text vertically */
-}
-
-
-.arrow-head-38dfa {
-  height: 33% !important;
-  opacity: 0.75; /* 50% opacity */
-}
-
-.arrow-line-a8dce {
-  height: 17% !important;
-}
-
-.square-4b72b.white-3b784 {
-  /*box-shadow: inset 0 0 3px 3px yellow;*/
-  background-color: #B1D8DB;
-  color: #B1D8DB
-  /*background-color: yellow;
-  border: 2px solid red;*/
-}
-
-.square-4b72b.black-b7cb6 {
-  /* box-shadow: inset 0 0 3px 3px blue;*/
-  background-color: #619EB3;
-  color: #619EB3
-}
-
 .left-alignment-table {
   text-align: left;
-}
-
-.myMudCarousel {
-  min-height: 100px; /* Adjust as needed */
-  height: auto;
 }
 
 .mud-carousel-item {
@@ -370,15 +321,6 @@
       color: white !important;
     }
 
-.chessboard {
-  max-height: 1000px;
-  max-width: 1000px
-}
-
-.chessboardHeader {
-  text-align: center;
-}
-
 .filterSelect {
   width: 50px;
 }
@@ -482,14 +424,6 @@
 }
 
 /* CSS class to highlight a square */
-.highlight-white {
-  background-color: rgba(250, 250, 210, 0.8) !important;
-}
-
-.highlight-black {
-  background-color: rgba(238, 232, 170, 0.8) !important;
-  /*background-color: rgba(255, 250, 205, 0.9) !important;*/
-}
 
 .highlight-wrong {
   box-shadow: inset 0 0 3px 3px #ff6347;

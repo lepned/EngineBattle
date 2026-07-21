@@ -1,5 +1,6 @@
-﻿@using WebGUI.Services
+@using WebGUI.Services
 @using WebGUI
+@using WebGUI.Components.Layout.ChessboardLayout
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject JavaScriptInteropService JsInteropService
@@ -8,7 +9,12 @@
 
 <MudGrid Justify="Justify.Center">
 	<MudItem sm=12>
-		<div class="mt-3 streaming-board" style="height:100%;" @ref="element"></div>
+		<div class="mt-3 streaming-board" style="height:100%;">
+			<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
+						  SizePx="null" ShowCoordinates="false"
+						  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
+						  Arrows="@BoardArrows" Labels="@BoardLabels" />
+		</div>
 	</MudItem>
 
 	@if (!String.IsNullOrEmpty(OpeningName))
@@ -60,10 +66,10 @@
 							}
 						}
 
-						else 
+						else
 						{
 							<span>@($"{token.Text} ")</span>
-						}						
+						}
 					}
 				}
 			</div>
@@ -145,11 +151,26 @@
 	private bool whiteToMove = true;
 	private ThreadSafeBoardState state = new();
 	private string fen;
-	private ElementReference element;
-	private IJSObjectReference chessJSmodule; //my own chessinterop.js
+	private IJSObjectReference chessJSmodule; //only used for move-list scrolling
 	private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-	List<string> replayMoves = new List<string>();
-	private DotNetObjectReference<StreamingChessboard> dotNetRef;
+
+	// Board overlay state, rendered declaratively by EbChessboard.
+	// arrowMain holds the expected/ponder move (the old shared ponderArrowId slot),
+	// arrowOpp the opponent's expected move from the double-arrow comparison.
+	private string lastMoveFrom;
+	private string lastMoveTo;
+	private string lastMoveColor;
+	private EbArrow arrowMain;
+	private EbArrow arrowOpp;
+	private EbSquareLabel ponderLabel;
+
+	private IReadOnlyList<EbArrow> BoardArrows =>
+		arrowMain is null && arrowOpp is null
+			? Array.Empty<EbArrow>()
+			: new[] { arrowMain, arrowOpp }.Where(a => a is not null).ToArray();
+
+	private IReadOnlyList<EbSquareLabel> BoardLabels =>
+		ponderLabel is null ? Array.Empty<EbSquareLabel>() : new[] { ponderLabel };
 
 	// Feed-mode only (Tournaments.razor passes FeedMode): show a small Copy-FEN control below the board.
 	// Kept out of the internal /tournament streaming view so a stream stays uncluttered.
@@ -168,44 +189,15 @@
 		try { await InvokeAsync(StateHasChanged); } catch { }
 	}
 
+	// Public entry points are called from tournament/notifier threads (off the dispatcher),
+	// so every render goes through InvokeAsync.
+	private Task Render() => InvokeAsync(StateHasChanged);
 
-	[JSInvokable]
-	public Task OnBrowserResize()
+	private Task SetPositionAndMove(MoveAndFen input)
 	{
-		StateHasChanged();
-		return Task.CompletedTask;
-	}
-
-	private async Task PrepareChessboard()
-	{
-		dotNetRef = DotNetObjectReference.Create(this);
-		chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-		await chessJSmodule.InvokeVoidAsync("createChessboard", element);
-		await chessJSmodule.InvokeVoidAsync("registerResizeEvent", dotNetRef);
-		StateHasChanged();
-	}
-
-	private async Task SetPosition(string fen)
-	{
-		if (chessJSmodule is not null)
+		if (input is null || input.Move is null || input.Move.LongSan.Length < 4)
 		{
-			await chessJSmodule.InvokeVoidAsync("setPosition2", element, fen);
-		}
-	}
-
-	private async Task SetArrowHighlighting(MoveAndFen input)
-	{
-		if (chessJSmodule is not null)
-		{
-			await chessJSmodule.InvokeVoidAsync("setArrowHighlighting", element, input.Move.FromSq, input.Move.ToSq, "#9D8989");
-		}
-	}
-
-	private async Task SetPositionAndMove(MoveAndFen input)
-	{
-		if (chessJSmodule is null || input is null || input.Move is null || input.Move.LongSan.Length < 4)
-		{
-			return;
+			return Task.CompletedTask;
 		}
 		// Guard rules:
 		bool validFrom = !string.IsNullOrEmpty(input.Move.FromSq) && input.Move.FromSq.Length == 2;
@@ -215,21 +207,17 @@
 		{
 			Logger.LogWarning("Invalid squares in SetPositionAndMove: From='{From}' To='{To}' LongSan='{LongSan}'",
 				input.Move.FromSq, input.Move.ToSq, input.Move?.LongSan);
-			return;
+			return Task.CompletedTask;
 		}
-		try
-		{
-			await chessJSmodule.InvokeVoidAsync("setBoardWithSquareHighlighting", element, input.FenAfterMove, input.Move.Color, input.Move.FromSq, input.Move.ToSq, true);
-		}
-		catch (TaskCanceledException) { /* ignore during teardown */ }
-		catch (JSException jsEx)
-		{
-			Logger.LogWarning(jsEx, "JS error in setBoardWithSquareHighlighting for {From}->{To}", input.Move.FromSq, input.Move.ToSq);
-		}
-		catch (Exception ex)
-		{
-			Logger.LogError(ex, "Unexpected error in SetPositionAndMove");
-		}
+
+		// A played move clears arrows and the ponder label (old setBoardWithSquareHighlighting semantics)
+		lastMoveFrom = input.Move.FromSq;
+		lastMoveTo = input.Move.ToSq;
+		lastMoveColor = input.Move.Color;
+		arrowMain = null;
+		arrowOpp = null;
+		ponderLabel = null;
+		return Render();
 	}
 
 	public async Task OnNewFen(string newFen)
@@ -238,13 +226,16 @@
 		{
 			fen = newFen;
 			startPos = newFen;
-			await SetPosition(fen);
+			lastMoveFrom = lastMoveTo = lastMoveColor = null;
+			arrowMain = arrowOpp = null;
+			ponderLabel = null;
+			await Render();
 		}
 	}
 
 	public async Task OnNotifyMoveAndFen(MoveAndFen input)
 	{
-		@if (fen != input.FenAfterMove)
+		if (fen != input.FenAfterMove)
 		{
 			fen = input.FenAfterMove;
 			state.Fen = fen;
@@ -277,27 +268,19 @@
 		else if (withArrows && state.LastPV != pvMove)
 		{
 			state.LastPV = pvMove;
-			if (chessJSmodule is not null)
+			var (fromSq, toSq) = (pvMove.Substring(0, 2), pvMove.Substring(2, 2));
+			if (ValidatePV(oppPvMove))
 			{
-				try
-				{
-					var (fromSq, toSq) = (pvMove.Substring(0, 2), pvMove.Substring(2, 2));
-					if (ValidatePV(oppPvMove))
-					{
-						var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
-						var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
-
-						await chessJSmodule.InvokeVoidAsync("setDoubleArrowHighlighting", element, fromSq, toSq, oppFromSq, oppToSq, color, oppColor);
-					}
-					else
-					{
-						await chessJSmodule.InvokeVoidAsync("setArrowHighlighting", element, fromSq, toSq, "#9D8989");
-					}
-				}
-				catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException)
-				{
-				}
+				var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
+				var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
+				arrowMain = new EbArrow(fromSq, toSq, color);
+				arrowOpp = new EbArrow(oppFromSq, oppToSq, oppColor);
 			}
+			else
+			{
+				arrowMain = new EbArrow(fromSq, toSq, "#9D8989");
+			}
+			await Render();
 		}
 		else
 		{
@@ -316,30 +299,26 @@
 		}
 		else if ((state.LastPonderMove != ponderMove && ponderMove == state.LastPV) || state.LastFraction != frac)
 		{
-			if (chessJSmodule is not null)
-			{
-				var (fromSq, toSq) = (ponderMove.Substring(0, 2), ponderMove.Substring(2, 2));
-				var text = $"P:{(policy / 100):P0} N:{frac:P0}";
-				var (_, color) = state.GetPieceAndColorOnSquare(toSq);
+			var (fromSq, toSq) = (ponderMove.Substring(0, 2), ponderMove.Substring(2, 2));
+			var text = $"P:{(policy / 100):P0} N:{frac:P0}";
+			var (_, color) = state.GetPieceAndColorOnSquare(toSq);
 
-				var noPiece = string.IsNullOrEmpty(color);
-				var textColor = noPiece ? "Black" : color == "w" ? "white" : "black"; //: "yellow";
-				var bgColor = noPiece ? "transparent" : color == "w" ? "black" : "white";
-				// if (!noPiece)
-				// {
-				//   Console.WriteLine($"Is piece on square {toSq} P: {piece} Color: {color}");
-				// }
-				state.LastPonderMove = ponderMove;
-				state.LastFraction = frac;
-				await chessJSmodule.InvokeVoidAsync("setPonderArrowHighlightingWithLabel", element, text, fromSq, toSq, "#9D8989", textColor, bgColor);
-			}
+			var noPiece = string.IsNullOrEmpty(color);
+			var textColor = noPiece ? "Black" : color == "w" ? "white" : "black";
+			var bgColor = noPiece ? "transparent" : color == "w" ? "black" : "white";
+			state.LastPonderMove = ponderMove;
+			state.LastFraction = frac;
+			arrowMain = new EbArrow(fromSq, toSq, "#9D8989");
+			// Legacy .circle-piece badge: 75% circle, yellow 2px border, fixed bold font
+			ponderLabel = new EbSquareLabel(toSq, text, textColor, bgColor, 0.75, 19, "2px solid yellow", 0.85);
+			await Render();
 		}
 	}
 
 	public async Task UpdateMoveHistory(string moveHistory)
 	{
 		MoveHistory = moveHistory;
-		StateHasChanged();
+		await Render();
 		await Task.Delay(200);
 		await ScrollToEnd();
 
@@ -366,7 +345,7 @@
 	{
 		if (firstRender)
 		{
-			await PrepareChessboard();
+			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
 		}
 		if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
 		{
@@ -386,9 +365,7 @@
 
 	private async Task OnFullScreenRequested(bool isFullScreen)
 	{
-		await Task.Delay(300);
-		await chessJSmodule.InvokeVoidAsync("resizeChessboard2", element);
-		StateHasChanged();
+		await Render();
 	}
 
 	protected override void OnInitialized()

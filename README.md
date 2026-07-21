@@ -359,5 +359,5 @@ This application uses the following libraries, which are licensed under their re
 - **Fathom** - [MIT License](https://github.com/basil00/Fathom/blob/master/LICENSE)
 - **Toolbelt.Blazor.HotKeys2** - [Mozilla Public License 2.0](https://github.com/jsakamoto/Toolbelt.Blazor.HotKeys/blob/master/LICENSE)
 - **CliWrap** - [MIT License](https://github.com/Tyrrrz/CliWrap/blob/master/License.txt)
-- **chessboardjs** - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
+- **Chess piece images** (cburnett/wikipedia set, from the chessboardjs project) - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
 - **plotly.js** - [MIT License](https://github.com/plotly/plotly.js/blob/master/LICENSE)

@@ -1,0 +1,255 @@
+@* Native Blazor chessboard — no JS dependency. Renders a FEN as a CSS grid with
+   theme support (piece sets, square colors, coordinates). See docs/ChessboardJsDependencies.md
+   for the full replacement requirements this component is built against. *@
+@using System.IO
+@using System.Collections.Concurrent
+@using System.Globalization
+@using WebGUI.Services
+@implements IDisposable
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@inject BoardThemeService ThemeService
+
+<div class="eb-board" style="@RootStyle">
+    @{ var board = ParseBoard(); }
+    @for (int row = 0; row < 8; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            int rank = Flipped ? row : 7 - row;
+            int file = Flipped ? 7 - col : col;
+            string sq = SquareName(file, rank);
+            bool isLight = (file + rank) % 2 == 1;
+            bool highlighted = sq == LastMoveFrom || sq == LastMoveTo;
+            bool selected = sq == SelectedSquare;
+            char piece = board[rank * 8 + file];
+            string squareName = sq;
+
+            <div class="eb-sq @(isLight ? "light" : "dark") @(highlighted ? (LastMoveColor == "b" ? "eb-hl-b" : "eb-hl") : "") @(selected ? "eb-sel" : "")"
+                 data-eb-sq="@sq" @onclick="() => HandleClick(squareName)">
+                @if (piece != default)
+                {
+                    <img class="eb-piece" src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                }
+                @if (CoordinatesVisible && col == 0)
+                {
+                    <span class="eb-coord rank">@(rank + 1)</span>
+                }
+                @if (CoordinatesVisible && row == 7)
+                {
+                    <span class="eb-coord file">@((char)('a' + file))</span>
+                }
+            </div>
+        }
+    }
+    @if (HasOverlay)
+    {
+        @* Overlay in square units: viewBox 0-8, so strokes, heads and text scale with board size. *@
+        <svg class="eb-overlay" viewBox="0 0 8 8" xmlns="http://www.w3.org/2000/svg">
+            @foreach (var c in Circles ?? Array.Empty<EbCircle>())
+            {
+                var (cx, cy) = Center(c.Square);
+                <circle cx="@F(cx)" cy="@F(cy)" r="@F(c.Size / 2)" fill="@c.Color" opacity="@F(c.Opacity)" />
+            }
+            @foreach (var a in Arrows ?? Array.Empty<EbArrow>())
+            {
+                var geo = ArrowGeometry(a);
+                if (geo is var (x1, y1, x2, y2, head, strokeW))
+                {
+                    <g opacity="@F(a.Opacity)">
+                        <line x1="@F(x1)" y1="@F(y1)" x2="@F(x2)" y2="@F(y2)"
+                              stroke="@a.Color" stroke-width="@F(strokeW)" stroke-linecap="round" />
+                        <polygon points="@head" fill="@a.Color" />
+                    </g>
+                }
+            }
+        </svg>
+        @* Labels are plain HTML, not SVG text: Blazor renders MarkupString content in the HTML
+           namespace even inside <svg>, which breaks SVG <text> rendering. HTML chips also give
+           predictable font layout. *@
+        @foreach (var l in Labels ?? Array.Empty<EbSquareLabel>())
+        {
+            <div class="eb-label" style="@LabelCellStyle(l.Square)">
+                <span class="eb-label-chip" style="@LabelChipStyle(l)">
+                    @foreach (var line in SplitLabel(l.Text))
+                    {
+                        <span class="eb-label-line">@line</span>
+                    }
+                </span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    public const string StartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    [Parameter] public string Fen { get; set; } = StartFen;
+    /// <summary>Board width in pixels; null fills the parent container (fluid).</summary>
+    [Parameter] public int? SizePx { get; set; } = 400;
+    [Parameter] public bool Flipped { get; set; }
+    [Parameter] public bool ShowCoordinates { get; set; } = true;
+    // Colors and piece set default to the app-wide board theme (BoardThemeService,
+    // user-configurable on the Settings page). Explicit parameters override the theme.
+    // The highlight replaces the square color (as the pre-migration CSS did), and the
+    // shade depends on which side made the move (LastMoveColor "w"/"b").
+    [Parameter] public string PieceSet { get; set; }
+    [Parameter] public string LightSquareColor { get; set; }
+    [Parameter] public string DarkSquareColor { get; set; }
+    [Parameter] public string HighlightColor { get; set; }
+    [Parameter] public string HighlightColorBlack { get; set; }
+    [Parameter] public string LastMoveColor { get; set; }
+
+    private string EffLight => LightSquareColor ?? ThemeService.Current.LightSquare;
+    private string EffDark => DarkSquareColor ?? ThemeService.Current.DarkSquare;
+    private string EffHighlight => HighlightColor ?? ThemeService.Current.HighlightWhite;
+    private string EffHighlightBlack => HighlightColorBlack ?? ThemeService.Current.HighlightBlack;
+    private string EffPieceSet => PieceSet ?? ThemeService.Current.PieceSet;
+    [Parameter] public string LastMoveFrom { get; set; }
+    [Parameter] public string LastMoveTo { get; set; }
+    [Parameter] public string SelectedSquare { get; set; }
+    [Parameter] public IReadOnlyList<EbArrow> Arrows { get; set; }
+    [Parameter] public IReadOnlyList<EbCircle> Circles { get; set; }
+    [Parameter] public IReadOnlyList<EbSquareLabel> Labels { get; set; }
+    [Parameter] public EventCallback<string> OnSquareClicked { get; set; }
+
+    // Small boards auto-hide coordinates via a container query in the scoped CSS.
+    private bool CoordinatesVisible => ShowCoordinates;
+
+    private string RootStyle =>
+        (SizePx.HasValue ? $"width:{SizePx}px;" : "width:100%;") +
+        $"--eb-light-square:{EffLight};" +
+        $"--eb-dark-square:{EffDark};" +
+        $"--eb-highlight:{EffHighlight};" +
+        $"--eb-highlight-b:{EffHighlightBlack};";
+
+    private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
+
+    private bool HasOverlay =>
+        (Arrows?.Count ?? 0) > 0 || (Circles?.Count ?? 0) > 0 || (Labels?.Count ?? 0) > 0;
+
+    // SVG attribute values must be culture-invariant (nb-NO would emit decimal commas).
+    private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>Center of a square in overlay units (0-8), respecting board orientation.</summary>
+    private (double x, double y) Center(string sq)
+    {
+        int file = sq[0] - 'a', rank = sq[1] - '1';
+        double col = Flipped ? 7 - file : file;
+        double row = Flipped ? rank : 7 - rank;
+        return (col + 0.5, row + 0.5);
+    }
+
+    private string LabelCellStyle(string sq)
+    {
+        int file = sq[0] - 'a', rank = sq[1] - '1';
+        double col = Flipped ? 7 - file : file;
+        double row = Flipped ? rank : 7 - rank;
+        return $"left:{F(col * 12.5)}%;top:{F(row * 12.5)}%;";
+    }
+
+    // Multi-word labels (e.g. "P:15% N:40%") render one word per line inside the chip.
+    private static string[] SplitLabel(string text) =>
+        (text ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+    private string LabelChipStyle(EbSquareLabel l)
+    {
+        string font;
+        if (l.FontPx.HasValue)
+        {
+            // Legacy fixed-pixel font (old .square-overlay / .circle-piece look)
+            font = $"{F(l.FontPx.Value)}px";
+        }
+        else
+        {
+            // Font in container-query units so it scales in both fixed and fluid mode.
+            // Shrink with the longest line and line count so the text always fits
+            // (~0.58em average glyph width for a bold sans font).
+            double chipCqi = 12.5 * l.SizePct;
+            var lines = SplitLabel(l.Text);
+            int maxLen = Math.Max(1, lines.Length == 0 ? 1 : lines.Max(s => s.Length));
+            int lineCount = Math.Max(1, lines.Length);
+            double fontCqi = Math.Min(
+                Math.Min(chipCqi * 0.42, chipCqi * 0.85 / (maxLen * 0.58)),
+                chipCqi * 0.95 / (lineCount * 1.15));
+            font = $"{F(fontCqi)}cqi";
+        }
+
+        var style = $"width:{F(l.SizePct * 100)}%;height:{F(l.SizePct * 100)}%;" +
+                    $"background:{l.BgColor};color:{l.TextColor};font-size:{font};opacity:{F(l.Opacity)};";
+        if (!string.IsNullOrEmpty(l.BorderCss)) style += $"border:{l.BorderCss};";
+        return style;
+    }
+
+    private (double x1, double y1, double x2, double y2, string head, double strokeW)? ArrowGeometry(EbArrow a)
+    {
+        if (string.IsNullOrEmpty(a.From) || string.IsNullOrEmpty(a.To) || a.From == a.To) return null;
+        var (x1, y1) = Center(a.From);
+        var (tipX, tipY) = Center(a.To);
+        double dx = tipX - x1, dy = tipY - y1;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        double ux = dx / len, uy = dy / len;
+
+        // 0.17/0.33 match the pre-migration chessboard2 overrides
+        // (.arrow-line-a8dce height 17%, .arrow-head-38dfa height 33%).
+        double strokeW = 0.17 * a.Width;
+        double headLen = 0.33, headW = 0.45;
+        double baseX = tipX - ux * headLen, baseY = tipY - uy * headLen;
+        double px = -uy, py = ux;
+
+        string head = $"{F(tipX)},{F(tipY)} " +
+                      $"{F(baseX + px * headW / 2)},{F(baseY + py * headW / 2)} " +
+                      $"{F(baseX - px * headW / 2)},{F(baseY - py * headW / 2)}";
+        return (x1, y1, baseX, baseY, head, strokeW);
+    }
+
+    private char[] ParseBoard()
+    {
+        var b = new char[64];
+        var fen = Fen;
+        if (string.IsNullOrWhiteSpace(fen)) return b;
+        var rows = fen.Split(' ')[0].Split('/');
+        if (rows.Length != 8) return b;
+        for (int i = 0; i < 8; i++)
+        {
+            int rank = 7 - i, file = 0;
+            foreach (var c in rows[i])
+            {
+                if (char.IsDigit(c)) file += c - '0';
+                else if (file < 8) b[rank * 8 + file++] = c;
+            }
+        }
+        return b;
+    }
+
+    // Piece sets follow the folder convention wwwroot/pieces/{set}/wK.svg (or .png).
+    // The extension is probed once per set and cached for the app lifetime.
+    private static readonly ConcurrentDictionary<string, string> pieceSetExtensions = new();
+
+    private string PieceSrc(char piece)
+    {
+        var set = EffPieceSet;
+        var name = (char.IsUpper(piece) ? "w" : "b") + char.ToUpperInvariant(piece);
+        var ext = pieceSetExtensions.GetOrAdd(set, s =>
+        {
+            var dir = Path.Combine(Env.WebRootPath, "pieces", s);
+            return File.Exists(Path.Combine(dir, "wK.svg")) ? "svg" : "png";
+        });
+        return $"pieces/{set}/{name}.{ext}";
+    }
+
+    protected override void OnInitialized()
+    {
+        ThemeService.ThemeChanged += OnThemeChanged;
+    }
+
+    // Raised from the settings page's circuit; marshal to this component's dispatcher.
+    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        ThemeService.ThemeChanged -= OnThemeChanged;
+    }
+
+    private Task HandleClick(string square) =>
+        OnSquareClicked.HasDelegate ? OnSquareClicked.InvokeAsync(square) : Task.CompletedTask;
+}

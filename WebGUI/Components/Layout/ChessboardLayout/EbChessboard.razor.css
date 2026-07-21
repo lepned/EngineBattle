@@ -1,0 +1,130 @@
+.eb-board {
+    position: relative;
+    container-type: inline-size;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    aspect-ratio: 1 / 1;
+    user-select: none;
+    border-radius: 3px;
+    overflow: hidden;
+    line-height: 0;
+}
+
+.eb-sq {
+    position: relative;
+}
+
+.eb-sq.light {
+    background: var(--eb-light-square);
+}
+
+.eb-sq.dark {
+    background: var(--eb-dark-square);
+}
+
+/* Last-move highlight replaces the square color, exactly like the pre-migration
+   .highlight-white/.highlight-black CSS did (same shade on light and dark squares). */
+.eb-sq.eb-hl {
+    background: var(--eb-highlight);
+}
+
+.eb-sq.eb-hl-b {
+    background: var(--eb-highlight-b);
+}
+
+/* Selected square (click-to-move source): inset ring that works on any theme. */
+.eb-sq.eb-sel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 0 3px rgba(20, 85, 30, 0.65);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.eb-piece {
+    width: 100%;
+    height: 100%;
+    display: block;
+    position: relative;
+    z-index: 1;
+    touch-action: none; /* allow pointer-event dragging on touch devices */
+    -webkit-user-drag: none;
+    cursor: grab;
+}
+
+/* Arrows/circles/labels layer; sits above pieces, never intercepts input. */
+.eb-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* Square label chips (policy %, eval badges) — HTML overlay, one cell per square. */
+.eb-label {
+    position: absolute;
+    width: 12.5%;
+    height: 12.5%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 4;
+    line-height: 1;
+}
+
+/* Size, colors, font, border and opacity come from the inline style (per-label). */
+.eb-label-chip {
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+.eb-label-line {
+    display: block;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.eb-coord {
+    position: absolute;
+    font-size: 3cqi;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.85;
+}
+
+/* Coordinates add no value on small live-feed tiles. */
+@container (max-width: 199px) {
+    .eb-coord {
+        display: none;
+    }
+}
+
+.eb-coord.rank {
+    left: 3px;
+    top: 2px;
+}
+
+.eb-coord.file {
+    right: 3px;
+    bottom: 2px;
+}
+
+/* Coordinate text uses the opposite square color for contrast on any theme. */
+.eb-sq.light .eb-coord {
+    color: var(--eb-dark-square);
+}
+
+.eb-sq.dark .eb-coord {
+    color: var(--eb-light-square);
+}

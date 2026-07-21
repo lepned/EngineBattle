@@ -1,13 +1,11 @@
-﻿@using System.Text
-@inject IJSRuntime JS
-@inject JavaScriptInteropService JsInteropService
-@inject ILogger<EPDVisualization> Logger
+@using System.Text
+@using WebGUI.Components.Layout.ChessboardLayout
 
 <MudText Typo="Typo.h6"> @header </MudText>
 <MudText Typo="Typo.subtitle1"> @subHeader</MudText>
 @if (EPD is not null)
 {
-	<div @ref=boardElement/>
+	<EbChessboard Fen="@EPD.FEN" SizePx="null" ShowCoordinates="false" Arrows="@arrows" />
 	<MudTextField T="string" Lines="2" Underline="false" Text="@EPD.FEN" Style="font-size:11px;" />
 }
 
@@ -17,9 +15,8 @@
 	[Parameter] public EPDTypes.EPDEntry EPD { get; set; }
 
 	private string subHeader = string.Empty;
-	private string header = string.Empty;	
-	private IJSObjectReference chessJSmodule; //my own chessinterop.js
-	private ElementReference boardElement;
+	private string header = string.Empty;
+	private IReadOnlyList<EbArrow> arrows = Array.Empty<EbArrow>();
 
 	string GetHeader(EPDTypes.EPDEntry epd)
 	{
@@ -33,76 +30,40 @@
 		{
 			msgBuilder.Append("AvoidMove: ").Append(epd.AvoidMove.Value.Trim());
 		}
-		else if (epd.Other != null)
-		{
-			if (!string.IsNullOrEmpty(epd.Other?.Value))
-			{
-				//msgBuilder.Append(epd.Other.Value);
-			}
-		}
 
 		return msgBuilder.ToString();
 	}
 
 	string GetSubHeader(EPDTypes.EPDEntry epd)
 	{
-		StringBuilder msgBuilder = new StringBuilder();
-
-		if (epd.Id != null)
-		{
-			msgBuilder.Append(epd.Id.Value);//.Append(": ");
-		}
-
-		// if (epd.Other != null)
-		// {
-		// 	if (!string.IsNullOrEmpty(epd.Other?.Value))
-		// 	{
-		// 		msgBuilder.Append(" : ");
-		// 		msgBuilder.Append(epd.Other.Value);
-		// 	}
-		// }
-
-		return msgBuilder.ToString();
+		return epd.Id != null ? epd.Id.Value : string.Empty;
 	}
 
-
-	protected override async Task OnAfterRenderAsync(bool firstRender)
+	protected override void OnParametersSet()
 	{
-		if (firstRender)
+		if (EPD is null) return;
+
+		var arrowList = new List<EbArrow>();
+		bool evalHeaderInUse = !string.IsNullOrEmpty(EPD.Other?.Value) && EPD.Other.Value.Contains("eval");
+
+		if (!string.IsNullOrEmpty(EPD.Other?.Value) && !evalHeaderInUse)
 		{
-			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
-
-			bool evalHeaderInUse = !string.IsNullOrEmpty(EPD.Other?.Value) && EPD.Other.Value.Contains("eval");
-			
-			if (!string.IsNullOrEmpty(EPD.Other?.Value) && !EPD.Other.Value.Contains("eval"))
+			var correctAndWrongMove = EPD.Other.Value.Split(",");
+			var correct = correctAndWrongMove[0].Trim();
+			if (correct.Length >= 4)
+				arrowList.Add(new EbArrow(correct.Substring(0, 2), correct.Substring(2, 2), "green"));
+			if (correctAndWrongMove.Length > 1)
 			{
-				var correctAndWrongMove = EPD.Other.Value.Split(",");
-				var correct = correctAndWrongMove[0].Trim();
-				var fromSq = correct.Substring(0, 2);
-				var toSq = correct.Substring(2, 2);
-				if (correctAndWrongMove.Length > 1)
-				{
-					var wrong = correctAndWrongMove[1].Trim();
-					var wrongFromSq = wrong.Substring(0, 2);
-					var wrongToSq = wrong.Substring(2, 2);
-					await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, EPD.FEN, false, fromSq, toSq, wrongFromSq, wrongToSq);
-				}
-				else
-				{
-					await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, EPD.FEN, false, fromSq, toSq, null, null);
-				}
+				var wrong = correctAndWrongMove[1].Trim();
+				if (wrong.Length >= 4)
+					arrowList.Add(new EbArrow(wrong.Substring(0, 2), wrong.Substring(2, 2), "crimson"));
 			}
-			else
-			{
-				await chessJSmodule.InvokeVoidAsync("puzzleBoardToElement", boardElement, EPD.FEN, false, null, null, null, null);
-			}
-
-			header = evalHeaderInUse ? "" : GetHeader(EPD);
-			subHeader = evalHeaderInUse ? EPD.Other.Value : GetSubHeader(EPD);
-			if (string.IsNullOrEmpty(header) && string.IsNullOrEmpty(subHeader))
-				header = "Header not found";
-			StateHasChanged();
 		}
-	}
+		arrows = arrowList;
 
+		header = evalHeaderInUse ? "" : GetHeader(EPD);
+		subHeader = evalHeaderInUse ? EPD.Other.Value : GetSubHeader(EPD);
+		if (string.IsNullOrEmpty(header) && string.IsNullOrEmpty(subHeader))
+			header = "Header not found";
+	}
 }
