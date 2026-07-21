@@ -1,12 +1,13 @@
 namespace WebGUI.Services;
 
-/// <summary>Resolved board colors and piece set applied by EbChessboard.</summary>
+/// <summary>Resolved board colors, piece set and board options applied by EbChessboard.</summary>
 public record BoardTheme(
     string LightSquare,
     string DarkSquare,
     string HighlightWhite,
     string HighlightBlack,
-    string PieceSet);
+    string PieceSet,
+    bool TournamentCoordinates = true);
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -66,12 +67,12 @@ public class BoardThemeService
             return new BoardTheme(
                 s.BoardCustomLightColor ?? "#B1D8DB",
                 s.BoardCustomDarkColor ?? "#619EB3",
-                highlight, highlight, pieceSet);
+                highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates);
         }
 
         var key = presets.ContainsKey(s.BoardThemePreset ?? "") ? s.BoardThemePreset : "eb-blue";
         var p = presets[key];
-        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet);
+        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates);
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>

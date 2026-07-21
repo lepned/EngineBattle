@@ -121,7 +121,9 @@
 
 .eb-coord {
     position: absolute;
-    font-size: 3cqi;
+    /* Deliberately discreet: scales with the board on small boards (PV duo),
+       capped at 12px so large boards never get big labels. */
+    font-size: min(2cqi, 12px);
     font-weight: 600;
     line-height: 1;
     pointer-events: none;

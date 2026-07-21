@@ -399,6 +399,14 @@
         </div>
 
         <div class="field-group">
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="showTournamentBoardCoordinates" />
+                Coordinates on Tournament Boards
+            </label>
+            <small>Show a1–h8 coordinates on live tournament and PV boards (small tiles always hide them)</small>
+        </div>
+
+        <div class="field-group">
             <label>Preview</label>
             <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
                           SizePx="250" ShowCoordinates="true"
@@ -472,6 +480,7 @@
     private string boardCustomHighlight = "#FAFAD2";
     private string boardPieceSet = "wikipedia";
     private bool boardAnimateMoves = true;
+    private bool showTournamentBoardCoordinates = true;
     private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
 
     private BoardTheme PreviewTheme =>
@@ -529,6 +538,7 @@
         boardCustomHighlight = s.BoardCustomHighlightColor;
         boardPieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
         boardAnimateMoves = s.BoardAnimateMoves;
+        showTournamentBoardCoordinates = s.ShowTournamentBoardCoordinates;
     }
 
     private void SaveSettings()
@@ -582,6 +592,7 @@
                 BoardCustomHighlightColor = boardCustomHighlight ?? "#FAFAD2",
                 BoardPieceSet = boardPieceSet ?? "wikipedia",
                 BoardAnimateMoves = boardAnimateMoves,
+                ShowTournamentBoardCoordinates = showTournamentBoardCoordinates,
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -640,6 +651,7 @@
         boardCustomHighlight = defaults.BoardCustomHighlightColor;
         boardPieceSet = defaults.BoardPieceSet;
         boardAnimateMoves = defaults.BoardAnimateMoves;
+        showTournamentBoardCoordinates = defaults.ShowTournamentBoardCoordinates;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }

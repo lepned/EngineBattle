@@ -98,7 +98,9 @@
     /// <summary>Board width in pixels; null fills the parent container (fluid).</summary>
     [Parameter] public int? SizePx { get; set; } = 400;
     [Parameter] public bool Flipped { get; set; }
-    [Parameter] public bool ShowCoordinates { get; set; } = true;
+    /// <summary>true/false forces coordinates on/off; null follows the user's
+    /// tournament-board coordinates setting (Settings → Board Theme).</summary>
+    [Parameter] public bool? ShowCoordinates { get; set; }
     // Colors and piece set default to the app-wide board theme (BoardThemeService,
     // user-configurable on the Settings page). Explicit parameters override the theme.
     // The highlight replaces the square color (as the pre-migration CSS did), and the
@@ -127,7 +129,7 @@
     [Parameter] public EventCallback<string> OnSquareClicked { get; set; }
 
     // Small boards auto-hide coordinates via a container query in the scoped CSS.
-    private bool CoordinatesVisible => ShowCoordinates;
+    private bool CoordinatesVisible => ShowCoordinates ?? ThemeService.Current.TournamentCoordinates;
 
     private string RootStyle =>
         (SizePx.HasValue ? $"width:{SizePx}px;" : "width:100%;") +

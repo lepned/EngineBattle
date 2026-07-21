@@ -67,6 +67,9 @@ public class GlobalSettings
     public string BoardCustomHighlightColor { get; set; } = "#FAFAD2";
     public string BoardPieceSet { get; set; } = "wikipedia";
     public bool BoardAnimateMoves { get; set; } = true;
+    // Coordinates on tournament boards (streaming, PV duo, tile boards). Default on:
+    // the pre-migration chessboard2 tournament boards showed them.
+    public bool ShowTournamentBoardCoordinates { get; set; } = true;
 
     // App behavior
     public string StartupPage { get; set; } = "";
