@@ -254,6 +254,29 @@ In order to use the console mode you need to start the application from the Cons
 
 There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel in the console mode. This setting is called `NumberOfGamesInParallelConsoleOnly` and can be set to any number you like. The default value is 2 but values up-to 4 games can be recommended for a strong GPU. If you run games in parallel 'PreventMoveDeviation' feature will be disabled, see below.
 
+Note that parallel play applies to Round Robin and Gauntlet tournaments; Cup, Swiss and Ladder modes manage their pairings round by round and always run sequentially.
+
+### Watching Parallel Games Live in the WebGUI
+
+Parallel console games do not have to run invisibly: the console runner can broadcast every game to the WebGUI's live grid, giving you one live board per concurrent game.
+
+1. Start the WebGUI as usual (`dotnet run --project WebGUI -c Release`).
+2. Add a `LiveFeed` section to your `tournament.json` (or set the `EB_LIVEFEED_URL` environment variable, which overrides the JSON):
+
+```json
+"LiveFeed": {
+  "Url": "http://localhost:5018/api/livefeed",
+  "Source": "",
+  "File": "",
+  "Token": ""
+}
+```
+
+3. Run the tournament in console mode as described above.
+4. Open `http://localhost:5018/tournament-grid` in the browser: one tile per concurrent game playing live, with standings and pentanomial stats filling in as games finish. Clicking a tile opens the full single-board live view for that game.
+
+The WebGUI does not have to run on the same machine as the tournament — point `Url` at the machine hosting the GUI instead of localhost. The `File` field can additionally record the feed to an NDJSON file for later replay. See `LiveFeedContract.md` for the full wire protocol, authentication token and replay options.
+
 ### PreventMoveDeviation Feature
 
 The **"PreventMoveDeviation"** feature is designed to enhance engine testing by enforcing a consistent move order across different game formats. Stockfish, for example, typically deviates from earlier games played in the same position—about twice per game—which can introduce inconsistencies in testing.

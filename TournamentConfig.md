@@ -46,7 +46,18 @@ This document provides an overview of the `tournament.json` configuration file u
 - **PolicyTest**: Enable or disable policy tests.
 - **ValueTest**: Enable or disable value tests - WIP.
 - **WriteToConsole**: Enable or disable writing to console - WIP.
-- **NumberOfGamesInParallelConsoleOnly**: Number of games to run in parallel in console mode.
+- **NumberOfGamesInParallelConsoleOnly**: Number of games to run in parallel in console mode. Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. Parallel play disables PreventMoveDeviation.
+
+### LiveFeed (optional)
+
+Broadcasts every game to a WebGUI for live viewing — with parallel console games this gives one live board per concurrent game on the `/tournament-grid` page. The section is a no-op when absent. Each field can be overridden at runtime by the matching `EB_LIVEFEED_*` environment variable.
+
+- **Url**: WebGUI ingest endpoint to POST wire events to, e.g. `http://localhost:5018/api/livefeed`. Blank = off.
+- **Source**: Server label shown in the grid; blank lets the WebGUI use the remote IP.
+- **File**: Also record the feed to this NDJSON file (for later replay). Blank = off.
+- **Token**: Authentication token, required only when the WebGUI host is started with the `EB_LIVEFEED_TOKEN` environment variable set (the values must match).
+
+See `LiveFeedContract.md` for the wire protocol and the README section *Watching Parallel Games Live in the WebGUI* for a walkthrough.
 
 ### Opening Options
 
