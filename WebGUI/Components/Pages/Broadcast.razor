@@ -46,9 +46,18 @@
                     <button class="bc-btn @(follow ? "primary" : "")" @onclick="ToggleFollow">
                         @(follow ? "Following live" : "Follow live")
                     </button>
+                    @if (SiblingRounds is { Count: > 1 } siblings)
+                    {
+                        <select class="bc-round-select" value="@Feed.RoundId" @onchange="SwitchRound" title="Switch round">
+                            @foreach (var r in siblings)
+                            {
+                                <option value="@r.RoundId">@r.RoundName @(r.Ongoing ? " (live)" : "")</option>
+                            }
+                        </select>
+                    }
                     @if (!follow && !g.Finished)
                     {
-                        <span class="bc-hint">exploring — live moves keep arriving in the background</span>
+                        <span class="bc-hint">exploring — stepping to the latest move resumes following</span>
                     }
                     @if (!g.Finished)
                     {
@@ -60,7 +69,8 @@
                                   ShowFenField=false ShowChessNavButtons=true ShowMoveList=true
                                   MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right"
                                   ShowPlayerInfo=true MoveEvals="@moveEvals"
-                                  OnMoveMadeOnBoard="OnUserMoveMade" OnBoardFlipped="f => boardFlipped = f">
+                                  OnMoveMadeOnBoard="OnUserMoveMade" OnNewFENOnBoard="OnBoardFenChanged"
+                                  OnBoardFlipped="f => boardFlipped = f">
                     <BoardLeft>
                         <EvalBar Cp="@kibCp" Mate="@kibMate" Flipped="@boardFlipped" />
                     </BoardLeft>
@@ -90,6 +100,15 @@
                         </div>
                     </WhitePlayerInfo>
                 </ModernChessboard>
+
+                @if (g.Plies.Count > 1)
+                {
+                    <div class="bc-evalchart">
+                        <MoveEvalChart Baseline="@BaselineEvals(g)" Engine="@EngineEvals(g)"
+                                       CurrentPly="@CurrentPlyIndex(g)" OnPlyClicked="JumpToPly"
+                                       EngineName="@(Engine?.Name ?? "engine")" />
+                    </div>
+                }
             </div>
 
             <div class="bc-games">
@@ -142,6 +161,10 @@
     private double? kibCp;
     private int? kibMate;
     private bool boardFlipped;
+
+    // Engine eval per ply index (white perspective, clamped to ±5) for the eval chart.
+    // Fills in as the kibitzer analyzes positions — live tip while following, gaps when browsing.
+    private readonly Dictionary<int, double> engineEvalByPly = new();
 
     private BroadcastGame Focus =>
         Feed.Games.FirstOrDefault(x => x.Key == focusKey) ?? OrderedGames.FirstOrDefault();
@@ -203,10 +226,83 @@
         officialRounds = await BroadcastState.FetchOfficialRoundsAsync();
     }
 
-    private void OnKibitzerEval((double? Cp, int? Mate) eval)
+    private void OnKibitzerEval((double? Cp, int? Mate, string Fen) eval)
     {
-        (kibCp, kibMate) = eval;
+        (kibCp, kibMate) = (eval.Cp, eval.Mate);
+        // Chart: attribute the eval to the position the search ran on (not whatever is
+        // on the board now — engine output can arrive just after a navigation). Start
+        // position and off-game exploration fens resolve to -1 and are not recorded.
+        if (Focus is { } g && !string.IsNullOrEmpty(eval.Fen))
+        {
+            var idx = g.Plies.FindIndex(p => p.Fen == eval.Fen);
+            var v = eval.Mate is int m ? (m > 0 ? 5.0 : -5.0) : eval.Cp;
+            if (idx >= 0 && v is double val) engineEvalByPly[idx] = Math.Clamp(val, -5.0, 5.0);
+        }
         StateHasChanged();
+    }
+
+    // ── Eval chart helpers ──
+    private int CurrentPlyIndex(BroadcastGame g) => g.Plies.FindIndex(p => p.Fen == fen);
+
+    /// <summary>Lichess server evals per ply ("0.18" / "#4" strings → white-perspective pawns, ±5).</summary>
+    private static List<double?> BaselineEvals(BroadcastGame g) =>
+        g.Plies.Select(p => ParseLichessEval(p.Eval)).ToList();
+
+    private List<double?> EngineEvals(BroadcastGame g)
+    {
+        var result = new List<double?>(g.Plies.Count);
+        for (int i = 0; i < g.Plies.Count; i++)
+            result.Add(engineEvalByPly.TryGetValue(i, out var v) ? v : null);
+        return result;
+    }
+
+    private static double? ParseLichessEval(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return null;
+        if (raw.StartsWith('#'))
+            return raw.Contains('-') ? -5.0 : 5.0;
+        return double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? Math.Clamp(v, -5.0, 5.0)
+            : null;
+    }
+
+    /// <summary>Chart click: jump the board (and engine) to the position after that ply.</summary>
+    private async Task JumpToPly(int ply)
+    {
+        var g = Focus;
+        if (g == null || ply < 0 || ply >= g.Plies.Count) return;
+        var targetFen = g.Plies[ply].Fen;
+        focusBoard.LoadFen(targetFen);
+        if (chessBoardRazor != null) await chessBoardRazor.SetPositionDirect(targetFen);
+        await AfterBoardNavigation();
+    }
+
+    // ── Round switcher ──
+    private List<OfficialRound> SiblingRounds
+    {
+        get
+        {
+            var current = officialRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
+            if (current == null || string.IsNullOrEmpty(current.TourId)) return new();
+            return officialRounds.Where(r => r.TourId == current.TourId).ToList();
+        }
+    }
+
+    private void SwitchRound(ChangeEventArgs e)
+    {
+        var roundId = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(roundId) || roundId == Feed.RoundId) return;
+        focusKey = "";
+        follow = true;
+        ResetEvalState();
+        Feed.Start(roundId);
+    }
+
+    private void ResetEvalState()
+    {
+        (kibCp, kibMate) = (null, null);
+        engineEvalByPly.Clear();
     }
 
     private void Start()
@@ -215,7 +311,7 @@
         if (string.IsNullOrWhiteSpace(target)) return;
         focusKey = "";
         follow = true;
-        (kibCp, kibMate) = (null, null);
+        ResetEvalState();
         Feed.Start(target);
     }
 
@@ -225,8 +321,8 @@
     {
         focusKey = key;
         follow = true;
-        // Neutral eval bar until the kibitzer reports on the newly focused game.
-        (kibCp, kibMate) = (null, null);
+        // Neutral eval bar + empty chart until the kibitzer reports on the new game.
+        ResetEvalState();
         await LoadFocusGameAsync();
     }
 
@@ -237,12 +333,20 @@
         if (follow) await LoadFocusGameAsync();
     }
 
-    /// <summary>A move made by the user on the board: switch to exploration mode; the
-    /// engine follows the user's line (ModernChessboard already updated the shared board).</summary>
-    private async Task OnUserMoveMade(string move)
+    /// <summary>A move made or navigated on the board (ModernChessboard already updated
+    /// the shared board): sync fen, adjust follow mode, notify the engine.</summary>
+    private async Task OnUserMoveMade(string move) => await AfterBoardNavigation();
+
+    /// <summary>Home/End navigation reports a bare fen instead of a move.</summary>
+    private async Task OnBoardFenChanged(string newFen) => await AfterBoardNavigation();
+
+    /// <summary>Shared post-navigation logic: browsing away from the live tip pauses
+    /// following; stepping back onto the tip resumes it (lichess-style).</summary>
+    private async Task AfterBoardNavigation()
     {
-        follow = false;
+        var g = Focus;
         fen = focusBoard.FEN();
+        follow = g != null && !g.Finished && fen == g.CurrentFen;
         if (fen != lastNotifiedFen)
         {
             lastNotifiedFen = fen;

@@ -1,0 +1,113 @@
+@using System.Globalization
+@using System.Text
+
+@* Move-by-move eval chart: local engine line vs lichess server-eval baseline.
+   Native SVG (theme-aware, no JS) — evals clamped to ±5 pawns, click to jump. *@
+@if (Count > 1)
+{
+    <div class="mec-wrap">
+        <svg class="mec-svg" viewBox="0 0 @W @H" preserveAspectRatio="none">
+            <line class="mec-zero" x1="0" y1="@Mid" x2="@W" y2="@Mid" />
+            @if (CurrentPly >= 0 && CurrentPly < Count)
+            {
+                <line class="mec-cursor" x1="@X(CurrentPly)" y1="0" x2="@X(CurrentPly)" y2="@H" />
+            }
+            @if (baselinePath.Length > 0)
+            {
+                <path class="mec-baseline" d="@baselinePath" />
+            }
+            @if (enginePath.Length > 0)
+            {
+                <path class="mec-engine" d="@enginePath" />
+            }
+            @foreach (var i in enginePoints)
+            {
+                <circle class="mec-engine-dot" cx="@X(i)" cy="@Y(Engine[i]!.Value)" r="4" />
+            }
+            @for (int i = 0; i < Count; i++)
+            {
+                var ply = i;
+                <rect class="mec-hit" x="@(X(ply) - HalfSlot)" y="0" width="@(2 * HalfSlot)" height="@H"
+                      @onclick="() => OnPlyClicked.InvokeAsync(ply)">
+                    <title>@SlotTitle(ply)</title>
+                </rect>
+            }
+        </svg>
+        <div class="mec-legend">
+            <span><span class="mec-swatch engine"></span>@EngineName</span>
+            @if (baselinePath.Length > 0 || Baseline.Any(v => v.HasValue))
+            {
+                <span><span class="mec-swatch baseline"></span>lichess</span>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Lichess server eval per ply (white perspective, pawns); null = not available.</summary>
+    [Parameter] public IReadOnlyList<double?> Baseline { get; set; } = Array.Empty<double?>();
+    /// <summary>Local engine eval per ply (white perspective, pawns); null = not analyzed yet.</summary>
+    [Parameter] public IReadOnlyList<double?> Engine { get; set; } = Array.Empty<double?>();
+    /// <summary>Currently viewed ply index (0-based, -1 = start position).</summary>
+    [Parameter] public int CurrentPly { get; set; } = -1;
+    [Parameter] public EventCallback<int> OnPlyClicked { get; set; }
+    [Parameter] public string EngineName { get; set; } = "engine";
+
+    private const double W = 1000;
+    private const double H = 200;
+    private const double Pad = 10;
+    private const double MaxEval = 5.0;
+    private static double Mid => H / 2;
+
+    private int Count => Math.Max(Baseline?.Count ?? 0, Engine?.Count ?? 0);
+    private double HalfSlot => Count > 1 ? W / (Count - 1) / 2 : W / 2;
+
+    private string baselinePath = "";
+    private string enginePath = "";
+    private List<int> enginePoints = new();
+
+    protected override void OnParametersSet()
+    {
+        Baseline ??= Array.Empty<double?>();
+        Engine ??= Array.Empty<double?>();
+        baselinePath = BuildPath(Baseline);
+        enginePath = BuildPath(Engine);
+        enginePoints = Enumerable.Range(0, Engine.Count).Where(i => Engine[i].HasValue).ToList();
+    }
+
+    private double X(int i) => Count > 1 ? i * W / (Count - 1) : 0;
+
+    private double Y(double eval)
+    {
+        var v = Math.Clamp(eval, -MaxEval, MaxEval);
+        return Pad + (H - 2 * Pad) * (1 - (v + MaxEval) / (2 * MaxEval));
+    }
+
+    /// <summary>Connects all available points in ply order (gaps are skipped, not broken).</summary>
+    private string BuildPath(IReadOnlyList<double?> vals)
+    {
+        var sb = new StringBuilder();
+        var started = false;
+        for (int i = 0; i < vals.Count; i++)
+        {
+            if (vals[i] is not double v) continue;
+            sb.Append(started ? " L " : "M ");
+            sb.Append(X(i).ToString("0.#", CultureInfo.InvariantCulture));
+            sb.Append(',');
+            sb.Append(Y(v).ToString("0.#", CultureInfo.InvariantCulture));
+            started = true;
+        }
+        // A single point draws nothing as a path; the engine dots cover that case.
+        return started && sb.ToString().Contains(" L ") ? sb.ToString() : "";
+    }
+
+    private string SlotTitle(int ply)
+    {
+        var moveNr = ply / 2 + 1;
+        var side = ply % 2 == 0 ? "" : "…";
+        var parts = new List<string> { $"move {moveNr}{side}" };
+        if (Engine.Count > ply && Engine[ply] is double e) parts.Add($"{EngineName} {e.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)}");
+        if (Baseline.Count > ply && Baseline[ply] is double b) parts.Add($"lichess {b.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)}");
+        return string.Join("  ·  ", parts);
+    }
+}

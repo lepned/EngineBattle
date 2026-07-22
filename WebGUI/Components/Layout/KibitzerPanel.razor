@@ -85,8 +85,9 @@
     [Parameter] public string Id { get; set; } = "nnInput1";
     [Parameter] public EngineConfig InitialEngine { get; set; }
     [Parameter] public string InitialEnginePath { get; set; }
-    /// <summary>White-perspective eval of the best line (pawns, or mate distance) — feeds an eval bar.</summary>
-    [Parameter] public EventCallback<(double? Cp, int? Mate)> OnEvalUpdated { get; set; }
+    /// <summary>White-perspective eval of the best line (pawns, or mate distance) plus the
+    /// FEN the search was started on — feeds an eval bar / eval chart.</summary>
+    [Parameter] public EventCallback<(double? Cp, int? Mate, string Fen)> OnEvalUpdated { get; set; }
 
     private record EngineFile(string Path, string Name);
 
@@ -112,6 +113,9 @@
     // (WaitForReadyOk can block for a long time on a crashed process).
     private int searchQueued;
     private string engineNote = "";
+    // FEN of the position the current search was started on; published with evals so
+    // consumers attribute them to the right move even when navigation is in flight.
+    private string lastSearchFen = "";
     private double? lastCp;
     private int? lastMate;
     private readonly CancellationTokenSource disposeCts = new();
@@ -279,8 +283,12 @@
                         engineNote = "engine exited — press ▶ to restart";
                         logger.LogWarning("Kibitzer engine process has exited");
                     }
-                    else if (ms <= 0) a.GoInfinite();
-                    else a.Play($"go movetime {ms}");
+                    else
+                    {
+                        lastSearchFen = ChessBoard.FEN();
+                        if (ms <= 0) a.GoInfinite();
+                        else a.Play($"go movetime {ms}");
+                    }
                 }
                 if (!running)
                     await InvokeAsync(StateHasChanged);
@@ -388,7 +396,8 @@
         if (!changed) return;
         lastCp = cp;
         lastMate = mate;
-        await InvokeAsync(() => OnEvalUpdated.InvokeAsync((cp, mate)));
+        var searchFen = lastSearchFen;
+        await InvokeAsync(() => OnEvalUpdated.InvokeAsync((cp, mate, searchFen)));
     }
 
     private async Task ApplyOverlaySetting()

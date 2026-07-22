@@ -39,8 +39,9 @@ namespace WebGUI.Services.Broadcast
         public string CurrentFen => Plies.Count > 0 ? Plies[^1].Fen : StartFen;
     }
 
-    /// <summary>An entry of the official-broadcasts picker.</summary>
-    public sealed record OfficialRound(string RoundId, string Label, bool Ongoing);
+    /// <summary>An entry of the official-broadcasts picker. TourId/RoundName group the
+    /// rounds of one tournament for the round switcher.</summary>
+    public sealed record OfficialRound(string RoundId, string Label, bool Ongoing, string TourId, string RoundName);
 
     /// <summary>
     /// Holds the live state of one lichess broadcast round: starts/stops the streaming
@@ -233,7 +234,9 @@ namespace WebGUI.Services.Broadcast
                     {
                         using var doc = System.Text.Json.JsonDocument.Parse(line);
                         var root = doc.RootElement;
-                        var tourName = root.GetProperty("tour").GetProperty("name").GetString() ?? "";
+                        var tour = root.GetProperty("tour");
+                        var tourName = tour.GetProperty("name").GetString() ?? "";
+                        var tourId = tour.TryGetProperty("id", out var tid) ? tid.GetString() ?? "" : "";
                         if (!root.TryGetProperty("rounds", out var rounds)) continue;
                         foreach (var round in rounds.EnumerateArray())
                         {
@@ -243,7 +246,7 @@ namespace WebGUI.Services.Broadcast
                             var finished = round.TryGetProperty("finished", out var f) && f.GetBoolean();
                             if (id.Length == 0) continue;
                             var label = $"{tourName} — {name}" + (ongoing ? "  (live)" : finished ? "  (finished)" : "");
-                            result.Add(new OfficialRound(id, label, ongoing));
+                            result.Add(new OfficialRound(id, label, ongoing, tourId, name));
                         }
                     }
                     catch { /* one malformed line must not kill the list */ }

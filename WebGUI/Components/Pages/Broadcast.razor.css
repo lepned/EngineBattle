@@ -144,6 +144,24 @@
     margin: 0.6rem 0;
 }
 
+/* Round switcher in the controls row */
+.bc-round-select {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 4px;
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+    font-size: 0.8rem;
+    font-family: inherit;
+    max-width: 220px;
+}
+
+/* Eval chart below the board — matches the board + move list width */
+.bc-evalchart {
+    margin-top: 0.6rem;
+    max-width: 1088px;
+}
+
 .bc-hint {
     font-size: 0.75rem;
     color: var(--mud-palette-text-secondary);
