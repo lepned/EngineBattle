@@ -1,9 +1,7 @@
 @page "/settings"
 @inject GlobalSettingsService SettingsService
-@inject BoardThemeService BoardThemeSvc
 @inject IDialogService DialogService
 @using WebGUI.Services
-@using WebGUI.Components.Layout.ChessboardLayout
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <PageTitle>Settings</PageTitle>
@@ -25,6 +23,7 @@
                 <p><b>Analysis</b> — Search limits, chart lines, MultiPV, and policy thresholds. These defaults apply when opening analysis pages.</p>
                 <p><b>Game Review</b> — Search mode, time, nodes, depth for game review. Advanced settings control accuracy curve and classification thresholds.</p>
                 <p><b>Folders</b> — Directory paths populate the file browser bookmarks and set initial browse locations. Configure these once and every file picker starts in the right place.</p>
+                <p><b>Board Appearance</b> — Themes, piece sets, coordinates and move animation moved to the <a href="/appearance">Board Appearance</a> page, where changes apply instantly with a live preview.</p>
                 <p style="margin-bottom:0"><i>Click <b>Save</b> to persist changes. Settings are stored in <code>Data/globalSettings.json</code>.</i></p>
             </div>
         }
@@ -345,91 +344,11 @@
         </div>
     </div>
 
-    @* Board theme *@
+    @* Board appearance lives on its own page (live preview, instant apply) *@
     <div class="settings-section">
-        <h4>Board Theme</h4>
-        <div class="section-hint">Colors and piece set for every chessboard in the app.</div>
-
-        <div class="field-group">
-            <label>Theme</label>
-            <select @bind="boardThemePreset">
-                @foreach (var (key, name) in BoardThemeService.Presets)
-                {
-                    <option value="@key">@name</option>
-                }
-            </select>
-            <small>Pick a preset or Custom to choose your own colors</small>
-        </div>
-
-        @if (boardThemePreset == "custom")
-        {
-            <div class="field-row">
-                <div class="field-group">
-                    <label>Light squares</label>
-                    <input type="color" @bind="boardCustomLight" @bind:event="oninput" />
-                </div>
-                <div class="field-group">
-                    <label>Dark squares</label>
-                    <input type="color" @bind="boardCustomDark" @bind:event="oninput" />
-                </div>
-                <div class="field-group">
-                    <label>Move highlight</label>
-                    <input type="color" @bind="boardCustomHighlight" @bind:event="oninput" />
-                </div>
-            </div>
-        }
-
-        <div class="field-group">
-            <label>Piece Set</label>
-            <select @bind="boardPieceSet">
-                @foreach (var set in pieceSets)
-                {
-                    <option value="@set">@set</option>
-                }
-            </select>
-            <small>Add your own set as a folder under wwwroot/pieces (wK.svg … bP.svg)</small>
-        </div>
-
-        <div class="field-group">
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="boardAnimateMoves" />
-                Animate Moves
-            </label>
-            <small>Pieces glide to their destination square on interactive boards</small>
-        </div>
-
-        <div class="field-group">
-            <label class="checkbox-label">
-                <input type="checkbox" @bind="showTournamentBoardCoordinates" />
-                Coordinates on Tournament Boards
-            </label>
-            <small>Show a1–h8 coordinates on live tournament and PV boards (small tiles always hide them)</small>
-        </div>
-
-        <div class="field-group">
-            <label>Coordinate Size</label>
-            <select @bind="boardCoordinateSize">
-                <option value="small">Small</option>
-                <option value="medium">Medium</option>
-                <option value="large">Large</option>
-                <option value="xlarge">Extra Large</option>
-            </select>
-            <small>Size of the a1–h8 coordinates on all boards</small>
-        </div>
-
-        <div class="field-group">
-            <label>Preview</label>
-            <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
-                          SizePx="250" ShowCoordinates="true"
-                          LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
-                          LightSquareColor="@PreviewTheme.LightSquare"
-                          DarkSquareColor="@PreviewTheme.DarkSquare"
-                          HighlightColor="@PreviewTheme.HighlightWhite"
-                          HighlightColorBlack="@PreviewTheme.HighlightBlack"
-                          PieceSet="@PreviewTheme.PieceSet"
-                          CoordinateSizeCss="@BoardThemeService.CoordSizeCss(boardCoordinateSize)" />
-            <small>Click Save to apply to all boards</small>
-        </div>
+        <h4>Board Appearance</h4>
+        <div class="section-hint">Themes, piece sets, coordinates and effects have their own page with a live preview.</div>
+        <a class="btn btn-outline" href="/appearance">Open Board Appearance</a>
     </div>
 
     </div> @* end settings-grid *@
@@ -486,22 +405,8 @@
     private string statusMessage = "";
     private string statusType = "info";
 
-    private string boardThemePreset = "eb-blue";
-    private string boardCustomLight = "#B1D8DB";
-    private string boardCustomDark = "#619EB3";
-    private string boardCustomHighlight = "#FAFAD2";
-    private string boardPieceSet = "wikipedia";
-    private bool boardAnimateMoves = true;
-    private bool showTournamentBoardCoordinates = true;
-    private string boardCoordinateSize = "medium";
-    private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
-
-    private BoardTheme PreviewTheme =>
-        BoardThemeService.Preview(boardThemePreset, boardCustomLight, boardCustomDark, boardCustomHighlight, boardPieceSet);
-
     protected override void OnInitialized()
     {
-        pieceSets = BoardThemeSvc.GetAvailablePieceSets();
         LoadFromService();
     }
 
@@ -545,20 +450,13 @@
         goodMaxWPLoss = s.GoodMaxWPLoss;
         inaccuracyMaxWPLoss = s.InaccuracyMaxWPLoss;
         mistakeMaxWPLoss = s.MistakeMaxWPLoss;
-        boardThemePreset = string.IsNullOrEmpty(s.BoardThemePreset) ? "eb-blue" : s.BoardThemePreset;
-        boardCustomLight = s.BoardCustomLightColor;
-        boardCustomDark = s.BoardCustomDarkColor;
-        boardCustomHighlight = s.BoardCustomHighlightColor;
-        boardPieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
-        boardAnimateMoves = s.BoardAnimateMoves;
-        showTournamentBoardCoordinates = s.ShowTournamentBoardCoordinates;
-        boardCoordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
     }
 
     private void SaveSettings()
     {
         try
         {
+            var cur = SettingsService.Settings;
             var settings = new GlobalSettings
             {
                 EngineDefsFolder = engineDefsFolder ?? "",
@@ -600,14 +498,17 @@
                 GoodMaxWPLoss = goodMaxWPLoss,
                 InaccuracyMaxWPLoss = inaccuracyMaxWPLoss,
                 MistakeMaxWPLoss = mistakeMaxWPLoss,
-                BoardThemePreset = boardThemePreset ?? "eb-blue",
-                BoardCustomLightColor = boardCustomLight ?? "#B1D8DB",
-                BoardCustomDarkColor = boardCustomDark ?? "#619EB3",
-                BoardCustomHighlightColor = boardCustomHighlight ?? "#FAFAD2",
-                BoardPieceSet = boardPieceSet ?? "wikipedia",
-                BoardAnimateMoves = boardAnimateMoves,
-                ShowTournamentBoardCoordinates = showTournamentBoardCoordinates,
-                BoardCoordinateSize = boardCoordinateSize ?? "medium",
+                // Appearance fields are owned by the /appearance page (instant apply);
+                // carry the current values through so this snapshot-save never clobbers them.
+                BoardThemePreset = cur.BoardThemePreset,
+                BoardCustomLightColor = cur.BoardCustomLightColor,
+                BoardCustomDarkColor = cur.BoardCustomDarkColor,
+                BoardCustomHighlightColor = cur.BoardCustomHighlightColor,
+                BoardPieceSet = cur.BoardPieceSet,
+                BoardAnimateMoves = cur.BoardAnimateMoves,
+                ShowTournamentBoardCoordinates = cur.ShowTournamentBoardCoordinates,
+                BoardCoordinateSize = cur.BoardCoordinateSize,
+                BoardCoordinateColor = cur.BoardCoordinateColor,
             };
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
@@ -660,14 +561,6 @@
         goodMaxWPLoss = defaults.GoodMaxWPLoss;
         inaccuracyMaxWPLoss = defaults.InaccuracyMaxWPLoss;
         mistakeMaxWPLoss = defaults.MistakeMaxWPLoss;
-        boardThemePreset = defaults.BoardThemePreset;
-        boardCustomLight = defaults.BoardCustomLightColor;
-        boardCustomDark = defaults.BoardCustomDarkColor;
-        boardCustomHighlight = defaults.BoardCustomHighlightColor;
-        boardPieceSet = defaults.BoardPieceSet;
-        boardAnimateMoves = defaults.BoardAnimateMoves;
-        showTournamentBoardCoordinates = defaults.ShowTournamentBoardCoordinates;
-        boardCoordinateSize = defaults.BoardCoordinateSize;
         statusMessage = "Reset to defaults — click Save to persist.";
         statusType = "info";
     }

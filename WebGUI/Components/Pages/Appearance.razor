@@ -1,0 +1,238 @@
+@page "/appearance"
+@inject GlobalSettingsService SettingsService
+@inject BoardThemeService BoardThemeSvc
+@using System.Text.Json
+@using WebGUI.Services
+@using WebGUI.Components.Layout.ChessboardLayout
+
+<PageTitle>Board Appearance</PageTitle>
+
+<div class="appearance-container">
+    <h2>Board Appearance</h2>
+    <div class="appearance-description">
+        Themes, piece sets, coordinates and effects for every chessboard in EngineBattle.
+        Changes apply immediately to all boards.
+    </div>
+
+    <div class="appearance-layout">
+        <div class="appearance-controls">
+
+            <div class="appearance-section">
+                <h4>Theme</h4>
+                <div class="preset-grid">
+                    @foreach (var (key, name, light, dark) in BoardThemeService.PresetSwatches)
+                    {
+                        <button class="preset-card @(themePreset == key ? "selected" : "")"
+                                @onclick="() => SelectPreset(key)">
+                            <span class="swatch">
+                                <span style="background:@light"></span><span style="background:@dark"></span>
+                                <span style="background:@dark"></span><span style="background:@light"></span>
+                            </span>
+                            <span class="preset-name">@name</span>
+                        </button>
+                    }
+                    <button class="preset-card @(themePreset == "custom" ? "selected" : "")"
+                            @onclick='() => SelectPreset("custom")'>
+                        <span class="swatch">
+                            <span style="background:@customLight"></span><span style="background:@customDark"></span>
+                            <span style="background:@customDark"></span><span style="background:@customLight"></span>
+                        </span>
+                        <span class="preset-name">Custom</span>
+                    </button>
+                </div>
+
+                @if (themePreset == "custom")
+                {
+                    <div class="color-row">
+                        <div class="color-field">
+                            <label>Light squares</label>
+                            <input type="color" value="@customLight"
+                                   @oninput="e => customLight = (string)e.Value" @onchange="Apply" />
+                        </div>
+                        <div class="color-field">
+                            <label>Dark squares</label>
+                            <input type="color" value="@customDark"
+                                   @oninput="e => customDark = (string)e.Value" @onchange="Apply" />
+                        </div>
+                        <div class="color-field">
+                            <label>Move highlight</label>
+                            <input type="color" value="@customHighlight"
+                                   @oninput="e => customHighlight = (string)e.Value" @onchange="Apply" />
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="appearance-section">
+                <h4>Pieces</h4>
+                <div class="pieceset-grid">
+                    @foreach (var set in pieceSets)
+                    {
+                        <button class="pieceset-card @(pieceSet == set ? "selected" : "")"
+                                @onclick="() => SelectPieceSet(set)">
+                            <span class="pieceset-thumbs">
+                                <img src="@BoardThemeSvc.PieceImg(set, "wK")" alt="wK" />
+                                <img src="@BoardThemeSvc.PieceImg(set, "bN")" alt="bN" />
+                            </span>
+                            <span class="pieceset-name">@set</span>
+                        </button>
+                    }
+                </div>
+                <small>Add your own set as a folder under wwwroot/pieces (wK.svg … bP.svg)</small>
+            </div>
+
+            <div class="appearance-section">
+                <h4>Coordinates</h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="tournamentCoordinates" @bind:after="Apply" />
+                        Coordinates on Tournament Boards
+                    </label>
+                    <small>Show a1–h8 on live tournament and PV boards (small tiles always hide them)</small>
+                </div>
+                <div class="field-group">
+                    <label>Size</label>
+                    <select @bind="coordinateSize" @bind:after="Apply">
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                        <option value="xlarge">Extra Large</option>
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label>Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="coordinateColorMode" @bind:after="OnCoordColorModeChanged">
+                            <option value="auto">Auto (contrast)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (coordinateColorMode == "custom")
+                        {
+                            <input type="color" value="@coordinateColor"
+                                   @oninput="e => coordinateColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Auto uses the opposite square color for contrast on any theme</small>
+                </div>
+            </div>
+
+            <div class="appearance-section">
+                <h4>Effects</h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="animateMoves" @bind:after="Apply" />
+                        Animate Moves
+                    </label>
+                    <small>Pieces glide to their destination square on interactive boards</small>
+                </div>
+            </div>
+
+            <div class="appearance-actions">
+                <button class="btn btn-outline" @onclick="ResetAppearance">Reset to Defaults</button>
+            </div>
+        </div>
+
+        <div class="appearance-preview">
+            <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
+                          SizePx="null" ShowCoordinates="true"
+                          LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
+                          LightSquareColor="@Preview.LightSquare"
+                          DarkSquareColor="@Preview.DarkSquare"
+                          HighlightColor="@Preview.HighlightWhite"
+                          HighlightColorBlack="@Preview.HighlightBlack"
+                          PieceSet="@Preview.PieceSet"
+                          CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
+                          CoordinateColorCss="@EffectiveCoordColor" />
+            <div class="preview-tiles">
+                <div class="preview-tile">
+                    <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
+                                  SizePx="170" ShowCoordinates="@tournamentCoordinates"
+                                  LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
+                                  LightSquareColor="@Preview.LightSquare"
+                                  DarkSquareColor="@Preview.DarkSquare"
+                                  HighlightColor="@Preview.HighlightWhite"
+                                  HighlightColorBlack="@Preview.HighlightBlack"
+                                  PieceSet="@Preview.PieceSet"
+                                  CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
+                                  CoordinateColorCss="@EffectiveCoordColor" />
+                    <small>Tournament tile (coordinates auto-hide below 200px)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string themePreset = "eb-blue";
+    private string customLight = "#B1D8DB";
+    private string customDark = "#619EB3";
+    private string customHighlight = "#FAFAD2";
+    private string pieceSet = "wikipedia";
+    private bool animateMoves = true;
+    private bool tournamentCoordinates = true;
+    private string coordinateSize = "medium";
+    private string coordinateColorMode = "auto";
+    private string coordinateColor = "#888888";
+    private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
+
+    private BoardTheme Preview =>
+        BoardThemeService.Preview(themePreset, customLight, customDark, customHighlight, pieceSet);
+
+    // Preview override: fixed color, or empty string = force auto (so previewing "Auto"
+    // works even before the change is persisted).
+    private string EffectiveCoordColor => coordinateColorMode == "custom" ? coordinateColor : "";
+
+    protected override void OnInitialized()
+    {
+        pieceSets = BoardThemeSvc.GetAvailablePieceSets();
+        var s = SettingsService.Settings;
+        themePreset = string.IsNullOrEmpty(s.BoardThemePreset) ? "eb-blue" : s.BoardThemePreset;
+        customLight = s.BoardCustomLightColor ?? "#B1D8DB";
+        customDark = s.BoardCustomDarkColor ?? "#619EB3";
+        customHighlight = s.BoardCustomHighlightColor ?? "#FAFAD2";
+        pieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
+        animateMoves = s.BoardAnimateMoves;
+        tournamentCoordinates = s.ShowTournamentBoardCoordinates;
+        coordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
+        coordinateColorMode = string.IsNullOrEmpty(s.BoardCoordinateColor) ? "auto" : "custom";
+        if (coordinateColorMode == "custom") coordinateColor = s.BoardCoordinateColor;
+    }
+
+    private void SelectPreset(string key) { themePreset = key; Apply(); }
+    private void SelectPieceSet(string set) { pieceSet = set; Apply(); }
+
+    private void OnCoordColorModeChanged() => Apply();
+
+    // Instant apply: persist only this page's fields on top of the CURRENT settings, so a
+    // concurrently edited Settings page is never clobbered (merge, not snapshot).
+    private void Apply()
+    {
+        var current = SettingsService.Settings;
+        var merged = JsonSerializer.Deserialize<GlobalSettings>(JsonSerializer.Serialize(current)) ?? new GlobalSettings();
+        merged.BoardThemePreset = themePreset;
+        merged.BoardCustomLightColor = customLight;
+        merged.BoardCustomDarkColor = customDark;
+        merged.BoardCustomHighlightColor = customHighlight;
+        merged.BoardPieceSet = pieceSet;
+        merged.BoardAnimateMoves = animateMoves;
+        merged.ShowTournamentBoardCoordinates = tournamentCoordinates;
+        merged.BoardCoordinateSize = coordinateSize;
+        merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
+        SettingsService.Save(merged);
+    }
+
+    private void ResetAppearance()
+    {
+        var d = new GlobalSettings();
+        themePreset = d.BoardThemePreset;
+        customLight = d.BoardCustomLightColor;
+        customDark = d.BoardCustomDarkColor;
+        customHighlight = d.BoardCustomHighlightColor;
+        pieceSet = d.BoardPieceSet;
+        animateMoves = d.BoardAnimateMoves;
+        tournamentCoordinates = d.ShowTournamentBoardCoordinates;
+        coordinateSize = d.BoardCoordinateSize;
+        coordinateColorMode = "auto";
+        Apply();
+    }
+}

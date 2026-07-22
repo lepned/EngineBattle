@@ -8,7 +8,8 @@ public record BoardTheme(
     string HighlightBlack,
     string PieceSet,
     bool TournamentCoordinates = true,
-    string CoordFontCss = "min(2cqi, 12px)");
+    string CoordFontCss = "min(2cqi, 12px)",
+    string CoordColor = "");
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -29,6 +30,10 @@ public class BoardThemeService
 
     public static IReadOnlyList<(string Key, string Name)> Presets { get; } =
         presets.Select(kv => (kv.Key, kv.Value.Name)).Concat(new[] { ("custom", "Custom") }).ToList();
+
+    /// <summary>Preset swatch colors for the appearance page's theme cards (excludes "custom").</summary>
+    public static IReadOnlyList<(string Key, string Name, string Light, string Dark)> PresetSwatches { get; } =
+        presets.Select(kv => (kv.Key, kv.Value.Name, kv.Value.Light, kv.Value.Dark)).ToList();
 
     private readonly GlobalSettingsService settingsService;
     private readonly string piecesRoot;
@@ -77,12 +82,14 @@ public class BoardThemeService
             return new BoardTheme(
                 s.BoardCustomLightColor ?? "#B1D8DB",
                 s.BoardCustomDarkColor ?? "#619EB3",
-                highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates, CoordSizeCss(s.BoardCoordinateSize));
+                highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates,
+                CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "");
         }
 
         var key = presets.ContainsKey(s.BoardThemePreset ?? "") ? s.BoardThemePreset : "eb-blue";
         var p = presets[key];
-        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates, CoordSizeCss(s.BoardCoordinateSize));
+        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
+            CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "");
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>
@@ -95,6 +102,13 @@ public class BoardThemeService
             BoardCustomHighlightColor = customHighlight,
             BoardPieceSet = pieceSet,
         });
+
+    /// <summary>Web path to a piece image, probing svg vs png per set (for gallery thumbnails).</summary>
+    public string PieceImg(string set, string piece)
+    {
+        var ext = File.Exists(Path.Combine(piecesRoot, set, "wK.svg")) ? "svg" : "png";
+        return $"pieces/{set}/{piece}.{ext}";
+    }
 
     /// <summary>Piece-set folders under wwwroot/pieces (drop in a folder with wK.svg..bP.svg to add one).</summary>
     public IReadOnlyList<string> GetAvailablePieceSets()

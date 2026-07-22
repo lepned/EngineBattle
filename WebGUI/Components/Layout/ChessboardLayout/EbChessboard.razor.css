@@ -148,11 +148,12 @@
     bottom: 2px;
 }
 
-/* Coordinate text uses the opposite square color for contrast on any theme. */
+/* Coordinate text: a user-chosen fixed color (--eb-coord-color) when set, otherwise
+   auto contrast via the opposite square color. */
 .eb-sq.light .eb-coord {
-    color: var(--eb-dark-square);
+    color: var(--eb-coord-color, var(--eb-dark-square));
 }
 
 .eb-sq.dark .eb-coord {
-    color: var(--eb-light-square);
+    color: var(--eb-coord-color, var(--eb-light-square));
 }

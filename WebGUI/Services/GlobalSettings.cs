@@ -69,7 +69,8 @@ public class GlobalSettings
     public bool BoardAnimateMoves { get; set; } = true;
     // Coordinates on tournament boards (streaming, PV duo, tile boards).
     public bool ShowTournamentBoardCoordinates { get; set; } = true;
-    public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large
+    public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge
+    public string BoardCoordinateColor { get; set; } = "";       // "" = auto (opposite square color)
 
     // App behavior
     public string StartupPage { get; set; } = "";
