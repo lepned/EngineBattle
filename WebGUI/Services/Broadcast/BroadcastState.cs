@@ -1,0 +1,167 @@
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using ChessLibrary;
+
+namespace WebGUI.Services.Broadcast
+{
+    /// <summary>One game of a broadcast round, updated as the stream re-sends its PGN.</summary>
+    public sealed class BroadcastGame
+    {
+        public string Key { get; init; } = "";      // Round|White|Black
+        public string Round { get; set; } = "";
+        public string White { get; set; } = "";
+        public string Black { get; set; } = "";
+        public string WhiteElo { get; set; } = "";
+        public string BlackElo { get; set; } = "";
+        public string Result { get; set; } = "*";
+        public List<string> SanMoves { get; set; } = new();
+        public string WhiteClock { get; set; } = "";
+        public string BlackClock { get; set; } = "";
+        public string RawPgn { get; set; } = "";
+        public DateTime LastUpdateUtc { get; set; }
+
+        public string LastMoveSan => SanMoves.Count > 0 ? SanMoves[^1] : "";
+        public bool Finished => Result is "1-0" or "0-1" or "1/2-1/2";
+    }
+
+    /// <summary>
+    /// Holds the live state of one lichess broadcast round: starts/stops the streaming
+    /// client, parses each re-sent game PGN (ChessLibrary parser), diffs it against the
+    /// known state and raises events. Reconnects and mid-join both work naturally because
+    /// the stream always carries each game's full PGN.
+    /// </summary>
+    public sealed class BroadcastState : IAsyncDisposable
+    {
+        private readonly object _lock = new();
+        private readonly Dictionary<string, BroadcastGame> _games = new();
+        private LichessBroadcastClient? _client;
+
+        public string RoundId { get; private set; } = "";
+        public string Status { get; private set; } = "idle";
+        public bool IsRunning { get; private set; }
+
+        /// <summary>Raised on any change (status or game update). May fire on a background thread.</summary>
+        public event Action? Changed;
+        /// <summary>Raised when a game gained moves or changed result: (game, newMoveCount).</summary>
+        public event Action<BroadcastGame, int>? GameUpdated;
+
+        public IReadOnlyList<BroadcastGame> Games
+        {
+            get { lock (_lock) return _games.Values.OrderBy(g => g.Key, StringComparer.Ordinal).ToList(); }
+        }
+
+        /// <summary>Accepts a bare round id or any lichess broadcast URL
+        /// (https://lichess.org/broadcast/{tour}/{round}/{roundId}[/...]).</summary>
+        public static string? ExtractRoundId(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            var s = input.Trim();
+            if (!s.Contains('/')) return s;
+            var noQuery = s.Split('?', '#')[0];
+            var segments = noQuery.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var idx = Array.FindIndex(segments, seg => seg.Equals("broadcast", StringComparison.OrdinalIgnoreCase));
+            // .../broadcast/{tourSlug}/{roundSlug}/{roundId}
+            if (idx >= 0 && segments.Length > idx + 3) return segments[idx + 3];
+            return segments.LastOrDefault();
+        }
+
+        public void Start(string roundIdOrUrl)
+        {
+            var roundId = ExtractRoundId(roundIdOrUrl);
+            if (string.IsNullOrEmpty(roundId)) { SetStatus("invalid round id/url"); return; }
+
+            _ = StopAsync().AsTask();
+            lock (_lock) _games.Clear();
+            RoundId = roundId;
+            IsRunning = true;
+            _client = new LichessBroadcastClient(roundId, OnGamePgn, SetStatus);
+            _client.Start();
+            SetStatus("connecting");
+        }
+
+        public async ValueTask StopAsync()
+        {
+            var client = _client;
+            _client = null;
+            IsRunning = false;
+            if (client != null)
+            {
+                await client.DisposeAsync();
+                SetStatus("stopped");
+            }
+        }
+
+        private void SetStatus(string status)
+        {
+            Status = status;
+            try { Changed?.Invoke(); } catch { }
+        }
+
+        private static readonly Regex ClkRegex = new(@"\[%clk\s+([0-9:.]+)\]", RegexOptions.Compiled);
+
+        private void OnGamePgn(string pgn)
+        {
+            PGNTypes.PgnGame parsed;
+            try { parsed = FullPGNParser.parseFullPgnGame(pgn); }
+            catch { return; }
+
+            var meta = parsed.GameMetaData;
+            if (string.IsNullOrEmpty(meta.White) && string.IsNullOrEmpty(meta.Black)) return;
+
+            var key = $"{meta.Round}|{meta.White}|{meta.Black}";
+            var san = parsed.Mainline.Select(m => m.San).Where(s => !string.IsNullOrEmpty(s)).ToList();
+
+            // Clocks: last [%clk] comment per color.
+            string whiteClock = "", blackClock = "";
+            foreach (var move in parsed.Mainline)
+            {
+                if (string.IsNullOrEmpty(move.Comment)) continue;
+                var m = ClkRegex.Match(move.Comment);
+                if (!m.Success) continue;
+                if (move.Color == "b") blackClock = m.Groups[1].Value; else whiteClock = m.Groups[1].Value;
+            }
+
+            string Tag(string k) => meta.OtherTags.FirstOrDefault(t => t.Key.Equals(k, StringComparison.OrdinalIgnoreCase))?.Value ?? "";
+
+            BroadcastGame game;
+            int newMoves;
+            bool changed;
+            lock (_lock)
+            {
+                if (!_games.TryGetValue(key, out var existing))
+                {
+                    existing = new BroadcastGame { Key = key };
+                    _games[key] = existing;
+                }
+                game = existing;
+
+                newMoves = Math.Max(0, san.Count - game.SanMoves.Count);
+                changed = newMoves > 0 || game.Result != meta.Result || game.SanMoves.Count != san.Count;
+
+                game.Round = meta.Round;
+                game.White = meta.White;
+                game.Black = meta.Black;
+                game.WhiteElo = Tag("WhiteElo");
+                game.BlackElo = Tag("BlackElo");
+                game.Result = string.IsNullOrEmpty(meta.Result) ? "*" : meta.Result;
+                game.SanMoves = san;
+                game.WhiteClock = whiteClock;
+                game.BlackClock = blackClock;
+                game.RawPgn = pgn;
+                game.LastUpdateUtc = DateTime.UtcNow;
+            }
+
+            if (changed)
+            {
+                try { GameUpdated?.Invoke(game, newMoves); } catch { }
+                try { Changed?.Invoke(); } catch { }
+            }
+        }
+
+        public async ValueTask DisposeAsync() => await StopAsync();
+    }
+}
