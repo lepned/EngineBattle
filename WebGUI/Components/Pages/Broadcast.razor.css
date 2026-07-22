@@ -1,0 +1,237 @@
+.bc-container {
+    max-width: 1400px;
+    margin: 1.5rem auto;
+    padding: 0 1.5rem;
+}
+
+.bc-container h2 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-description {
+    color: var(--mud-palette-text-secondary);
+    margin-bottom: 1rem;
+    font-size: 1rem;
+}
+
+/* Picker bar */
+.bc-picker {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.bc-picker select,
+.bc-picker input {
+    padding: 0.45rem 0.65rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 4px;
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+
+.bc-picker select {
+    max-width: 420px;
+}
+
+.bc-picker input {
+    flex: 1;
+    min-width: 240px;
+}
+
+.bc-status {
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* Buttons */
+.bc-btn {
+    padding: 0.45rem 0.9rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border: 1px solid var(--mud-palette-lines-default);
+    background: transparent;
+    color: var(--mud-palette-text-secondary);
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.bc-btn:hover {
+    background: var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-btn.primary {
+    background: var(--mud-palette-primary);
+    border-color: var(--mud-palette-primary);
+    color: #fff;
+}
+
+/* Focus board left, game tiles right */
+.bc-layout {
+    display: grid;
+    grid-template-columns: minmax(380px, 620px) 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+@media (max-width: 950px) {
+    .bc-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.bc-player {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.35rem 0.25rem;
+}
+
+.bc-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-elo {
+    font-weight: 400;
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+    margin-left: 0.35rem;
+}
+
+.bc-clock {
+    font-family: Consolas, monospace;
+    font-size: 0.95rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    color: var(--mud-palette-text-secondary);
+}
+
+.bc-clock.active {
+    background: rgba(102, 187, 106, 0.15);
+    color: #66bb6a;
+    font-weight: 600;
+}
+
+.bc-controls {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    margin: 0.6rem 0;
+}
+
+.bc-result {
+    margin-left: auto;
+    font-weight: 600;
+    color: var(--mud-palette-text-primary);
+}
+
+/* Move list: fixed rows (nr | white | black) flowing into book-style columns,
+   so a move pair never splits across lines. */
+.bc-movelist {
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 0.88rem;
+    background: var(--mud-palette-surface);
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    column-width: 9.5rem;
+    column-gap: 1.25rem;
+}
+
+.bc-moverow {
+    display: grid;
+    grid-template-columns: 2.1rem 1fr 1fr;
+    align-items: baseline;
+    break-inside: avoid;
+    line-height: 1.65;
+}
+
+.bc-movenr {
+    color: var(--mud-palette-text-secondary);
+    text-align: right;
+    padding-right: 0.4rem;
+}
+
+.bc-move {
+    cursor: pointer;
+    padding: 0 0.3rem;
+    border-radius: 3px;
+    color: var(--mud-palette-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bc-move:hover {
+    background: var(--mud-palette-lines-default);
+}
+
+.bc-move.current {
+    background: var(--mud-palette-primary);
+    color: #fff;
+}
+
+/* Game tiles */
+.bc-games {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.bc-tile {
+    cursor: pointer;
+    border: 2px solid var(--mud-palette-lines-default);
+    border-radius: 6px;
+    padding: 0.4rem;
+    background: var(--mud-palette-surface);
+    transition: border-color 0.15s;
+}
+
+.bc-tile:hover {
+    border-color: var(--mud-palette-primary-lighten);
+}
+
+.bc-tile.selected {
+    border-color: var(--mud-palette-primary);
+}
+
+.bc-tile.done {
+    opacity: 0.65;
+}
+
+.bc-tile-caption {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--mud-palette-text-secondary);
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.bc-tile-caption span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bc-tile-result {
+    color: var(--mud-palette-text-primary);
+    flex-shrink: 0;
+}
+
+.bc-waiting {
+    color: var(--mud-palette-text-secondary);
+}

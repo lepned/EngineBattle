@@ -8,6 +8,10 @@ using ChessLibrary;
 
 namespace WebGUI.Services.Broadcast
 {
+    /// <summary>One half-move of a broadcast game with the position it leads to.</summary>
+    public sealed record BroadcastPly(
+        string San, string Fen, string FromSq, string ToSq, string Color, string Clock);
+
     /// <summary>One game of a broadcast round, updated as the stream re-sends its PGN.</summary>
     public sealed class BroadcastGame
     {
@@ -19,6 +23,9 @@ namespace WebGUI.Services.Broadcast
         public string BlackElo { get; set; } = "";
         public string Result { get; set; } = "*";
         public List<string> SanMoves { get; set; } = new();
+        /// <summary>Per-ply board states from replaying the PGN; empty if replay failed.</summary>
+        public List<BroadcastPly> Plies { get; set; } = new();
+        public string StartFen { get; set; } = "";
         public string WhiteClock { get; set; } = "";
         public string BlackClock { get; set; } = "";
         public string RawPgn { get; set; } = "";
@@ -26,7 +33,11 @@ namespace WebGUI.Services.Broadcast
 
         public string LastMoveSan => SanMoves.Count > 0 ? SanMoves[^1] : "";
         public bool Finished => Result is "1-0" or "0-1" or "1/2-1/2";
+        public string CurrentFen => Plies.Count > 0 ? Plies[^1].Fen : StartFen;
     }
+
+    /// <summary>An entry of the official-broadcasts picker.</summary>
+    public sealed record OfficialRound(string RoundId, string Label, bool Ongoing);
 
     /// <summary>
     /// Holds the live state of one lichess broadcast round: starts/stops the streaming
@@ -127,6 +138,28 @@ namespace WebGUI.Services.Broadcast
 
             string Tag(string k) => meta.OtherTags.FirstOrDefault(t => t.Key.Equals(k, StringComparison.OrdinalIgnoreCase))?.Value ?? "";
 
+            // Replay the game to get per-ply FENs and from/to squares for board rendering.
+            var startFen = string.IsNullOrWhiteSpace(meta.Fen) ? Chess.startPos : meta.Fen;
+            var plies = new List<BroadcastPly>();
+            try
+            {
+                var board = new Chess.Board();
+                board.ResetBoardStateFromFen(startFen);
+                board.LoadPGNGameWithVariations(parsed);
+                int plyIdx = 0;
+                foreach (var maf in board.MovesAndFenPlayed)
+                {
+                    if (string.IsNullOrEmpty(maf.ShortSan)) continue; // initial-position sentinel
+                    var comment = plyIdx < parsed.Mainline.Count ? parsed.Mainline[plyIdx].Comment : "";
+                    var clk = string.IsNullOrEmpty(comment) ? Match.Empty : ClkRegex.Match(comment);
+                    plies.Add(new BroadcastPly(
+                        maf.ShortSan, maf.FenAfterMove, maf.Move.FromSq, maf.Move.ToSq, maf.Move.Color,
+                        clk.Success ? clk.Groups[1].Value : ""));
+                    plyIdx++;
+                }
+            }
+            catch { plies.Clear(); /* broadcast PGN glitch — keep SAN-only state */ }
+
             BroadcastGame game;
             int newMoves;
             bool changed;
@@ -149,6 +182,8 @@ namespace WebGUI.Services.Broadcast
                 game.BlackElo = Tag("BlackElo");
                 game.Result = string.IsNullOrEmpty(meta.Result) ? "*" : meta.Result;
                 game.SanMoves = san;
+                game.Plies = plies;
+                game.StartFen = startFen;
                 game.WhiteClock = whiteClock;
                 game.BlackClock = blackClock;
                 game.RawPgn = pgn;
@@ -163,5 +198,48 @@ namespace WebGUI.Services.Broadcast
         }
 
         public async ValueTask DisposeAsync() => await StopAsync();
+
+        private static readonly System.Net.Http.HttpClient ListHttp = CreateListHttp();
+
+        private static System.Net.Http.HttpClient CreateListHttp()
+        {
+            var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("EngineBattle/1.0 (broadcast viewer)");
+            return client;
+        }
+
+        /// <summary>Fetches the official broadcast list (ndjson) for the round picker.
+        /// Returns tour+round entries, ongoing rounds first. Empty list on any failure.</summary>
+        public static async Task<List<OfficialRound>> FetchOfficialRoundsAsync(int tournaments = 10)
+        {
+            var result = new List<OfficialRound>();
+            try
+            {
+                var body = await ListHttp.GetStringAsync($"https://lichess.org/api/broadcast?nb={tournaments}");
+                foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+                        var tourName = root.GetProperty("tour").GetProperty("name").GetString() ?? "";
+                        if (!root.TryGetProperty("rounds", out var rounds)) continue;
+                        foreach (var round in rounds.EnumerateArray())
+                        {
+                            var id = round.GetProperty("id").GetString() ?? "";
+                            var name = round.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                            var ongoing = round.TryGetProperty("ongoing", out var o) && o.GetBoolean();
+                            var finished = round.TryGetProperty("finished", out var f) && f.GetBoolean();
+                            if (id.Length == 0) continue;
+                            var label = $"{tourName} — {name}" + (ongoing ? "  (live)" : finished ? "  (finished)" : "");
+                            result.Add(new OfficialRound(id, label, ongoing));
+                        }
+                    }
+                    catch { /* one malformed line must not kill the list */ }
+                }
+            }
+            catch { /* offline or lichess down — picker just stays empty */ }
+            return result.OrderByDescending(r => r.Ongoing).ToList();
+        }
     }
 }

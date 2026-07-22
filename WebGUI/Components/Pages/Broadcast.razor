@@ -1,0 +1,224 @@
+@page "/broadcast"
+@inject WebGUI.Services.Broadcast.BroadcastState Feed
+@inject HotKeys HotKeys
+@implements IAsyncDisposable
+@using WebGUI.Services.Broadcast
+@using WebGUI.Components.Layout.ChessboardLayout
+@using Toolbelt.Blazor.HotKeys2
+
+<PageTitle>Lichess Broadcast</PageTitle>
+
+<div class="bc-container">
+    <h2>Lichess Broadcast</h2>
+    <div class="bc-description">
+        Watch live tournament games relayed by lichess. Pick an official broadcast round or paste
+        a broadcast round URL.
+    </div>
+
+    <div class="bc-picker">
+        <select @bind="selectedOfficial">
+            <option value="">— official broadcasts —</option>
+            @foreach (var r in officialRounds)
+            {
+                <option value="@r.RoundId">@r.Label</option>
+            }
+        </select>
+        <input placeholder="…or broadcast round URL / id" @bind="roundInput" @bind:event="oninput" />
+        @if (Feed.IsRunning)
+        {
+            <button class="bc-btn" @onclick="Stop">Stop</button>
+        }
+        else
+        {
+            <button class="bc-btn primary" @onclick="Start">Start</button>
+        }
+        <span class="bc-status">@Feed.Status</span>
+    </div>
+
+    @if (Focus is { } g)
+    {
+        <div class="bc-layout">
+            <div class="bc-focus">
+                <div class="bc-player top">
+                    <span class="bc-name">@g.Black <span class="bc-elo">@g.BlackElo</span></span>
+                    <span class="bc-clock @(BlackToMove(g) ? "active" : "")">@Clock(g.BlackClock)</span>
+                </div>
+                <EbChessboard Fen="@ViewFen" SizePx="null" Animate="true"
+                              LastMoveFrom="@ViewPlyMove?.FromSq" LastMoveTo="@ViewPlyMove?.ToSq"
+                              LastMoveColor="@ViewPlyMove?.Color" />
+                <div class="bc-player bottom">
+                    <span class="bc-name">@g.White <span class="bc-elo">@g.WhiteElo</span></span>
+                    <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")">@Clock(g.WhiteClock)</span>
+                </div>
+
+                <div class="bc-controls">
+                    <button class="bc-btn" @onclick="() => StepTo(-1)" title="Start">⏮</button>
+                    <button class="bc-btn" @onclick="() => StepBy(-1)" title="Back">◀</button>
+                    <button class="bc-btn" @onclick="() => StepBy(1)" title="Forward">▶</button>
+                    <button class="bc-btn" @onclick="() => StepTo(g.Plies.Count - 1)" title="Last">⏭</button>
+                    <button class="bc-btn @(follow ? "primary" : "")" @onclick="ToggleFollow">
+                        @(follow ? "Following live" : "Follow live")
+                    </button>
+                    <span class="bc-result">@(g.Finished ? g.Result : "")</span>
+                </div>
+
+                <div class="bc-movelist">
+                    @for (int i = 0; i < g.Plies.Count; i += 2)
+                    {
+                        var wIdx = i;
+                        var bIdx = i + 1;
+                        <div class="bc-moverow">
+                            <span class="bc-movenr">@(i / 2 + 1).</span>
+                            <span class="bc-move @(wIdx == viewPly ? "current" : "")"
+                                  @onclick="() => StepTo(wIdx)">@g.Plies[wIdx].San</span>
+                            @if (bIdx < g.Plies.Count)
+                            {
+                                <span class="bc-move @(bIdx == viewPly ? "current" : "")"
+                                      @onclick="() => StepTo(bIdx)">@g.Plies[bIdx].San</span>
+                            }
+                            else
+                            {
+                                <span></span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="bc-games">
+                @foreach (var game in Feed.Games)
+                {
+                    var last = game.Plies.Count > 0 ? game.Plies[^1] : null;
+                    <div class="bc-tile @(game.Key == focusKey ? "selected" : "") @(game.Finished ? "done" : "")"
+                         @onclick="() => SelectGame(game.Key)">
+                        <EbChessboard Fen="@game.CurrentFen" SizePx="170"
+                                      LastMoveFrom="@last?.FromSq" LastMoveTo="@last?.ToSq"
+                                      LastMoveColor="@last?.Color" />
+                        <div class="bc-tile-caption">
+                            <span>@Surname(game.White) – @Surname(game.Black)</span>
+                            <span class="bc-tile-result">@(game.Finished ? game.Result : $"{game.SanMoves.Count / 2 + game.SanMoves.Count % 2}. {game.LastMoveSan}")</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (Feed.IsRunning)
+    {
+        <p class="bc-waiting">Waiting for games…</p>
+    }
+</div>
+
+@code {
+    private string roundInput = "";
+    private string selectedOfficial = "";
+    private List<OfficialRound> officialRounds = new();
+
+    private string focusKey = "";
+    private int viewPly = -1;      // index into Plies; -1 = start position
+    private bool follow = true;
+
+    private BroadcastGame Focus =>
+        Feed.Games.FirstOrDefault(x => x.Key == focusKey) ?? Feed.Games.FirstOrDefault();
+
+    private string ViewFen
+    {
+        get
+        {
+            var g = Focus;
+            if (g is null) return EbChessboard.StartFen;
+            if (viewPly >= 0 && viewPly < g.Plies.Count) return g.Plies[viewPly].Fen;
+            return viewPly < 0 ? g.StartFen : g.CurrentFen;
+        }
+    }
+
+    private BroadcastPly ViewPlyMove
+    {
+        get
+        {
+            var g = Focus;
+            return g != null && viewPly >= 0 && viewPly < g.Plies.Count ? g.Plies[viewPly] : null;
+        }
+    }
+
+    private static bool BlackToMove(BroadcastGame g) =>
+        !g.Finished && g.SanMoves.Count % 2 == 1;
+
+    private static string Clock(string clk) => string.IsNullOrEmpty(clk) ? "–" : clk;
+
+    private static string Surname(string name)
+    {
+        var comma = name.IndexOf(',');
+        return comma > 0 ? name[..comma] : name;
+    }
+
+    private HotKeysContext keyContext;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Feed.Changed += OnChanged;
+        Feed.GameUpdated += OnGameUpdated;
+        if (Focus is { } g) { focusKey = g.Key; viewPly = g.Plies.Count - 1; }
+        keyContext = HotKeys.CreateContext()
+            .Add(Key.ArrowRight, (Func<Task>)(() => KeyStep(() => StepBy(1))), "Next move")
+            .Add(Key.ArrowLeft, (Func<Task>)(() => KeyStep(() => StepBy(-1))), "Previous move")
+            .Add(Key.Home, (Func<Task>)(() => KeyStep(() => StepTo(-1))), "Start of game")
+            .Add(Key.End, (Func<Task>)(() => KeyStep(() => StepTo(Focus?.Plies.Count - 1 ?? -1))), "Last move");
+        officialRounds = await BroadcastState.FetchOfficialRoundsAsync();
+    }
+
+    // Hotkey callbacks arrive outside the render loop; marshal and re-render.
+    private Task KeyStep(Action step) => InvokeAsync(() => { step(); StateHasChanged(); });
+
+    private void Start()
+    {
+        var target = !string.IsNullOrWhiteSpace(roundInput) ? roundInput : selectedOfficial;
+        if (string.IsNullOrWhiteSpace(target)) return;
+        focusKey = "";
+        viewPly = -1;
+        follow = true;
+        Feed.Start(target);
+    }
+
+    private async Task Stop() => await Feed.StopAsync();
+
+    private void SelectGame(string key)
+    {
+        focusKey = key;
+        follow = true;
+        viewPly = (Focus?.Plies.Count ?? 0) - 1;
+    }
+
+    private void StepTo(int ply)
+    {
+        var g = Focus;
+        if (g is null) return;
+        viewPly = Math.Clamp(ply, -1, g.Plies.Count - 1);
+        follow = viewPly == g.Plies.Count - 1;
+    }
+
+    private void StepBy(int delta) => StepTo(viewPly + delta);
+
+    private void ToggleFollow()
+    {
+        follow = !follow;
+        if (follow) viewPly = (Focus?.Plies.Count ?? 0) - 1;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnGameUpdated(BroadcastGame game, int newMoves) => _ = InvokeAsync(() =>
+    {
+        // First game to arrive becomes the focus; while following, jump to the newest move.
+        if (string.IsNullOrEmpty(focusKey)) { focusKey = game.Key; viewPly = game.Plies.Count - 1; }
+        else if (follow && game.Key == focusKey) viewPly = game.Plies.Count - 1;
+        StateHasChanged();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Feed.Changed -= OnChanged;
+        Feed.GameUpdated -= OnGameUpdated;
+        if (keyContext != null) await keyContext.DisposeAsync();
+    }
+}
