@@ -1,0 +1,129 @@
+.kib-panel {
+    background: rgba(30, 33, 44, 0.6);
+    border: 1px solid rgba(125, 132, 156, 0.18);
+    border-radius: 12px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+.kib-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.kib-select {
+    padding: 3px 6px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 4px;
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+    font-size: 0.78rem;
+    font-family: inherit;
+    min-width: 0;
+}
+
+.kib-engine-select {
+    flex: 1;
+}
+
+.kib-power {
+    width: 30px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px solid var(--mud-palette-lines-default);
+    background: transparent;
+    color: var(--mud-palette-text-secondary);
+    cursor: pointer;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.kib-power:hover:enabled {
+    background: var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-primary);
+}
+
+.kib-power.on {
+    background: var(--mud-palette-primary);
+    border-color: var(--mud-palette-primary);
+    color: #fff;
+}
+
+.kib-power:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.kib-controls label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.kib-overlay {
+    font-size: 0.75rem;
+    user-select: none;
+}
+
+.kib-overlay input {
+    accent-color: var(--mud-palette-primary);
+}
+
+.kib-wait {
+    font-style: italic;
+    font-size: 0.72rem;
+}
+
+/* Status strip: eval + depth/nodes/nps of the main line */
+.kib-status {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.kib-eval {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--mud-palette-text-primary);
+}
+
+/* Multi-PV rows */
+.kib-pvs {
+    display: flex;
+    flex-direction: column;
+}
+
+.kib-pv-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 3px 4px;
+    border-top: 1px solid rgba(125, 132, 156, 0.12);
+    min-width: 0;
+}
+
+.kib-pv-eval {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--mud-palette-text-primary);
+    flex-shrink: 0;
+    min-width: 44px;
+}
+
+.kib-pv-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--mud-palette-text-secondary);
+}

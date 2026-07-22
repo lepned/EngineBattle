@@ -1,16 +1,12 @@
 @page "/broadcast"
 @inject WebGUI.Services.Broadcast.BroadcastState Feed
 @inject NotifierService Notifier
-@inject OverlaySetting OverlaySetting
 @inject GlobalSettingsService SettingsService
-@inject BoardThemeService ThemeService
-@inject HotKeys HotKeys
 @inject ILogger<Broadcast> logger
 @implements IAsyncDisposable
 @using WebGUI.Services.Broadcast
 @using WebGUI.Components.Layout
 @using WebGUI.Components.Layout.ChessboardLayout
-@using Toolbelt.Blazor.HotKeys2
 
 <PageTitle>Lichess Broadcast</PageTitle>
 
@@ -18,7 +14,8 @@
     <h2>Lichess Broadcast</h2>
     <div class="bc-description">
         Watch live tournament games relayed by lichess, with your own engine analyzing the
-        position you are viewing. Pick an official broadcast round or paste a round URL.
+        position you are viewing. Make moves on the board to explore your own lines; Follow live
+        returns to the broadcast.
     </div>
 
     <div class="bc-picker">
@@ -44,64 +41,55 @@
     @if (Focus is { } g)
     {
         <div class="bc-layout">
-            <div class="bc-engine">
-                <EnginePanel @ref="enginePanel" FEN="@ViewFen" ChessBoard="@focusBoard" Id="nnInput1"
-                             Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded" PGNgames="noGames" />
-            </div>
-
             <div class="bc-focus">
-                <div class="bc-player top">
-                    <span class="bc-name">@g.Black <span class="bc-elo">@g.BlackElo</span></span>
-                    <span class="bc-clock @(BlackToMove(g) ? "active" : "")">@Clock(g.BlackClock)</span>
-                </div>
-                <EbChessboard Fen="@ViewFen" SizePx="null" Animate="true"
-                              LastMoveFrom="@ViewPlyMove?.FromSq" LastMoveTo="@ViewPlyMove?.ToSq"
-                              LastMoveColor="@ViewPlyMove?.Color"
-                              Arrows="@overlayArrows" Labels="@overlayLabels" />
-                <div class="bc-player bottom">
-                    <span class="bc-name">@g.White <span class="bc-elo">@g.WhiteElo</span></span>
-                    <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")">@Clock(g.WhiteClock)</span>
-                </div>
-
                 <div class="bc-controls">
-                    <button class="bc-btn" @onclick="() => StepTo(-1)" title="Start">⏮</button>
-                    <button class="bc-btn" @onclick="() => StepBy(-1)" title="Back">◀</button>
-                    <button class="bc-btn" @onclick="() => StepBy(1)" title="Forward">▶</button>
-                    <button class="bc-btn" @onclick="() => StepTo(g.Plies.Count - 1)" title="Last">⏭</button>
                     <button class="bc-btn @(follow ? "primary" : "")" @onclick="ToggleFollow">
                         @(follow ? "Following live" : "Follow live")
                     </button>
-                    @if (g.Finished)
+                    @if (!follow && !g.Finished)
                     {
-                        <span class="bc-result">@g.Result</span>
+                        <span class="bc-hint">exploring — live moves keep arriving in the background</span>
                     }
-                    else
+                    @if (!g.Finished)
                     {
                         <span class="bc-badge live header">LIVE</span>
                     }
                 </div>
 
-                <div class="bc-movelist">
-                    @for (int i = 0; i < g.Plies.Count; i += 2)
-                    {
-                        var wIdx = i;
-                        var bIdx = i + 1;
-                        <div class="bc-moverow">
-                            <span class="bc-movenr">@(i / 2 + 1).</span>
-                            <span class="bc-move @(wIdx == viewPly ? "current" : "")"
-                                  @onclick="() => StepTo(wIdx)">@g.Plies[wIdx].San</span>
-                            @if (bIdx < g.Plies.Count)
+                <ModernChessboard @ref="chessBoardRazor" FENposition="@fen" ChessBoard="@focusBoard"
+                                  ShowFenField=false ShowChessNavButtons=true ShowMoveList=true
+                                  MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right"
+                                  ShowPlayerInfo=true MoveEvals="@moveEvals"
+                                  OnMoveMadeOnBoard="OnUserMoveMade" OnBoardFlipped="f => boardFlipped = f">
+                    <BoardLeft>
+                        <EvalBar Cp="@kibCp" Mate="@kibMate" Flipped="@boardFlipped" />
+                    </BoardLeft>
+                    <AboveMoveList>
+                        <KibitzerPanel ChessBoard="@focusBoard" Id="nnInput1"
+                                       InitialEngine="Engine" InitialEnginePath="@engineConfigPath"
+                                       OnEvalUpdated="OnKibitzerEval" />
+                    </AboveMoveList>
+                    <BlackPlayerInfo>
+                        <div class="bc-player">
+                            <span class="bc-name">@g.Black <span class="bc-elo">@g.BlackElo</span></span>
+                            @if (g.Finished)
                             {
-                                <span class="bc-move @(bIdx == viewPly ? "current" : "")"
-                                      @onclick="() => StepTo(bIdx)">@g.Plies[bIdx].San</span>
+                                <span class="bc-score">@ScoreFor(g, white: false)</span>
                             }
-                            else
-                            {
-                                <span></span>
-                            }
+                            <span class="bc-clock @(BlackToMove(g) ? "active" : "")">@Clock(g.BlackClock)</span>
                         </div>
-                    }
-                </div>
+                    </BlackPlayerInfo>
+                    <WhitePlayerInfo>
+                        <div class="bc-player">
+                            <span class="bc-name">@g.White <span class="bc-elo">@g.WhiteElo</span></span>
+                            @if (g.Finished)
+                            {
+                                <span class="bc-score">@ScoreFor(g, white: true)</span>
+                            }
+                            <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")">@Clock(g.WhiteClock)</span>
+                        </div>
+                    </WhitePlayerInfo>
+                </ModernChessboard>
             </div>
 
             <div class="bc-games">
@@ -138,22 +126,22 @@
     private List<OfficialRound> officialRounds = new();
 
     private string focusKey = "";
-    private int viewPly = -1;      // index into Plies; -1 = start position
     private bool follow = true;
+    private string fen = Chess.startPos;
 
-    // Engine analysis: the panel's analyzer reads positions from this shared board,
-    // which SyncPositionAsync keeps aligned with the viewed ply.
+    // The shared board: ModernChessboard renders and takes user moves on it, the
+    // kibitzer's analyzer reads search positions from it.
     private readonly Chess.Board focusBoard = new();
-    private EnginePanel enginePanel;
+    private ModernChessboard chessBoardRazor;
     private EngineConfig Engine;
     private string engineConfigPath = "";
-    private readonly List<PGNTypes.PgnGame> noGames = new();
     private string lastNotifiedFen = "";
+    private Dictionary<int, string> moveEvals = new();
 
-    // Policy/N/Q overlay from the analyzing engine (same visual language as analysis mode).
-    private List<NNValues> lastNNMoves = new();
-    private IReadOnlyList<EbArrow> overlayArrows = Array.Empty<EbArrow>();
-    private IReadOnlyList<EbSquareLabel> overlayLabels = Array.Empty<EbSquareLabel>();
+    // Eval-bar state fed by the kibitzer (white perspective).
+    private double? kibCp;
+    private int? kibMate;
+    private bool boardFlipped;
 
     private BroadcastGame Focus =>
         Feed.Games.FirstOrDefault(x => x.Key == focusKey) ?? OrderedGames.FirstOrDefault();
@@ -172,30 +160,19 @@
         return w + b;
     }
 
-    private string ViewFen
-    {
-        get
-        {
-            var g = Focus;
-            if (g is null) return EbChessboard.StartFen;
-            if (viewPly >= 0 && viewPly < g.Plies.Count) return g.Plies[viewPly].Fen;
-            return viewPly < 0 ? g.StartFen : g.CurrentFen;
-        }
-    }
-
-    private BroadcastPly ViewPlyMove
-    {
-        get
-        {
-            var g = Focus;
-            return g != null && viewPly >= 0 && viewPly < g.Plies.Count ? g.Plies[viewPly] : null;
-        }
-    }
-
     private static bool BlackToMove(BroadcastGame g) =>
         !g.Finished && g.SanMoves.Count % 2 == 1;
 
     private static string Clock(string clk) => string.IsNullOrEmpty(clk) ? "–" : clk;
+
+    /// <summary>Per-player score once a game is finished: "1", "0" or "½".</summary>
+    private static string ScoreFor(BroadcastGame g, bool white) => g.Result switch
+    {
+        "1-0" => white ? "1" : "0",
+        "0-1" => white ? "0" : "1",
+        "1/2-1/2" or "½-½" => "½",
+        _ => ""
+    };
 
     private static string Surname(string name)
     {
@@ -203,13 +180,10 @@
         return comma > 0 ? name[..comma] : name;
     }
 
-    private HotKeysContext keyContext;
-
     protected override async Task OnInitializedAsync()
     {
         Feed.Changed += OnChanged;
         Feed.GameUpdated += OnGameUpdated;
-        Notifier.NotifyMovesWithId += OnNotifyMoves;
 
         var s = SettingsService.Settings;
         if (Engine == null && !string.IsNullOrEmpty(s.DefaultEnginePath))
@@ -225,42 +199,14 @@
             }
         }
 
-        if (Focus is { } g) { focusKey = g.Key; viewPly = g.Plies.Count - 1; await SyncPositionAsync(); }
-        keyContext = HotKeys.CreateContext()
-            .Add(Key.ArrowRight, (Func<Task>)(() => KeyStep(() => StepTo(viewPly + 1))), "Next move")
-            .Add(Key.ArrowLeft, (Func<Task>)(() => KeyStep(() => StepTo(viewPly - 1))), "Previous move")
-            .Add(Key.Home, (Func<Task>)(() => KeyStep(() => StepTo(-1))), "Start of game")
-            .Add(Key.End, (Func<Task>)(() => KeyStep(() => StepTo(Focus?.Plies.Count - 1 ?? -1))), "Last move");
+        if (Focus is { } g) { focusKey = g.Key; await LoadFocusGameAsync(); }
         officialRounds = await BroadcastState.FetchOfficialRoundsAsync();
     }
 
-    // Hotkey callbacks arrive outside the render loop; marshal and re-render.
-    private Task KeyStep(Func<Task> step) => InvokeAsync(async () => { await step(); StateHasChanged(); });
-
-    // Kibitzer default: analysis should follow the game without an extra click, so
-    // Auto-search is enabled the moment the panel mounts (it renders once games arrive).
-    private bool autoEnabled;
-
-    protected override void OnAfterRender(bool firstRender)
+    private void OnKibitzerEval((double? Cp, int? Mate) eval)
     {
-        if (!autoEnabled && enginePanel != null)
-        {
-            enginePanel.autoSearchSwitch = true;
-            autoEnabled = true;
-        }
-    }
-
-    public void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
-    {
-        if (engineConf.Id.Contains("Input1"))
-        {
-            Engine = engineConf.EngineConfig;
-            engineConfigPath = engineConf.SourceFilePath ?? "";
-            // Capability check: policy overlay only makes sense for engines exposing live stats.
-            var hasLiveStats = Engine?.Options?.Keys.Contains("LogLiveStats") ?? false;
-            OverlaySetting.SetOverlaySetting("nnInput1", hasLiveStats ? OverlaySettings.Policy : OverlaySettings.None);
-        }
-        _ = InvokeAsync(StateHasChanged);
+        (kibCp, kibMate) = eval;
+        StateHasChanged();
     }
 
     private void Start()
@@ -268,9 +214,8 @@
         var target = !string.IsNullOrWhiteSpace(roundInput) ? roundInput : selectedOfficial;
         if (string.IsNullOrWhiteSpace(target)) return;
         focusKey = "";
-        viewPly = -1;
         follow = true;
-        ClearOverlay();
+        (kibCp, kibMate) = (null, null);
         Feed.Start(target);
     }
 
@@ -280,139 +225,97 @@
     {
         focusKey = key;
         follow = true;
-        viewPly = (Focus?.Plies.Count ?? 0) - 1;
-        await SyncPositionAsync();
+        // Neutral eval bar until the kibitzer reports on the newly focused game.
+        (kibCp, kibMate) = (null, null);
+        await LoadFocusGameAsync();
     }
-
-    private async Task StepTo(int ply)
-    {
-        var g = Focus;
-        if (g is null) return;
-        viewPly = Math.Clamp(ply, -1, g.Plies.Count - 1);
-        follow = viewPly == g.Plies.Count - 1;
-        await SyncPositionAsync();
-    }
-
-    private Task StepBy(int delta) => StepTo(viewPly + delta);
 
     private async Task ToggleFollow()
     {
         follow = !follow;
-        if (follow)
-        {
-            viewPly = (Focus?.Plies.Count ?? 0) - 1;
-            await SyncPositionAsync();
-        }
+        // Returning to the live game discards any exploration and snaps to the latest move.
+        if (follow) await LoadFocusGameAsync();
     }
 
-    /// <summary>Aligns the shared engine board with the viewed ply and notifies the panel
-    /// (which restarts its search when auto-search is on). No-op if the position is unchanged.</summary>
-    private async Task SyncPositionAsync()
+    /// <summary>A move made by the user on the board: switch to exploration mode; the
+    /// engine follows the user's line (ModernChessboard already updated the shared board).</summary>
+    private async Task OnUserMoveMade(string move)
+    {
+        follow = false;
+        fen = focusBoard.FEN();
+        if (fen != lastNotifiedFen)
+        {
+            lastNotifiedFen = fen;
+            await Notifier.UpdateFen(fen);
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Rebuilds the shared board from the focus game's PGN (latest position),
+    /// refreshes ModernChessboard and notifies the engine.</summary>
+    private async Task LoadFocusGameAsync()
     {
         var g = Focus;
         if (g?.Parsed is null) return;
         try
         {
-            if (viewPly < 0) focusBoard.ResetBoardStateFromFen(g.StartFen);
-            else focusBoard.PlayPgnToPly(g.Parsed, viewPly + 1);   // PlyMove.Ply is 1-based
+            focusBoard.ResetBoardStateFromFen(g.StartFen);
+            focusBoard.LoadPGNGameWithVariations(g.Parsed);
         }
         catch (Exception ex)
         {
-            logger.LogWarning("Broadcast board sync failed: {Msg}", ex.Message);
+            logger.LogWarning("Broadcast board load failed: {Msg}", ex.Message);
             return;
         }
-        var fen = focusBoard.FEN();
-        if (fen == lastNotifiedFen) return;
-        lastNotifiedFen = fen;
-        ClearOverlay();
-        await Notifier.UpdateFen(fen);
+        fen = focusBoard.FEN();
+        moveEvals = ExtractMoveEvals(g);
+
+        var maf = focusBoard.MovesAndFenPlayed.LastOrDefault();
+        if (chessBoardRazor != null)
+        {
+            if (maf != null && !string.IsNullOrEmpty(maf.ShortSan)) await chessBoardRazor.OnNotifyMoveAndFen(maf);
+            else await chessBoardRazor.SetPositionDirect(fen);
+        }
+
+        if (fen != lastNotifiedFen)
+        {
+            lastNotifiedFen = fen;
+            await Notifier.UpdateFen(fen);
+        }
+    }
+
+    /// <summary>Lichess server evals per ply, formatted for the move list ("+0.2", "-1.5", "#4").</summary>
+    private static Dictionary<int, string> ExtractMoveEvals(BroadcastGame g)
+    {
+        var evals = new Dictionary<int, string>();
+        for (int i = 0; i < g.Plies.Count; i++)
+        {
+            var raw = g.Plies[i].Eval;
+            if (string.IsNullOrEmpty(raw)) continue;
+            if (raw.StartsWith('#'))
+                evals[i] = raw;
+            else if (double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                     System.Globalization.CultureInfo.InvariantCulture, out var v))
+                evals[i] = v.ToString("+0.0;-0.0", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return evals;
     }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
 
     private void OnGameUpdated(BroadcastGame game, int newMoves) => _ = InvokeAsync(async () =>
     {
-        // First game to arrive becomes the focus; while following, jump to the newest move.
-        if (string.IsNullOrEmpty(focusKey)) { focusKey = game.Key; viewPly = game.Plies.Count - 1; await SyncPositionAsync(); }
-        else if (follow && game.Key == focusKey) { viewPly = game.Plies.Count - 1; await SyncPositionAsync(); }
+        // First game to arrive becomes the focus; while following, the board tracks the
+        // newest move. While exploring, the board is left alone (tiles keep updating).
+        if (string.IsNullOrEmpty(focusKey)) { focusKey = game.Key; await LoadFocusGameAsync(); }
+        else if (follow && game.Key == focusKey && newMoves > 0) await LoadFocusGameAsync();
         StateHasChanged();
     });
-
-    // ── Engine overlay (ported from ModernChessboard's analysis overlay) ──
-
-    private Task OnNotifyMoves(List<NNValues> moves, string id) => InvokeAsync(() =>
-    {
-        if (id != "nnInput1") return;
-        lastNNMoves = moves.ToList();
-        RenderOverlay();
-        StateHasChanged();
-    });
-
-    private void ClearOverlay()
-    {
-        lastNNMoves.Clear();
-        overlayArrows = Array.Empty<EbArrow>();
-        overlayLabels = Array.Empty<EbSquareLabel>();
-    }
-
-    private static string FormatNodes(double nodes)
-    {
-        if (nodes > 1_000_000_000) return (nodes / 1_000_000_000).ToString("F1") + "B";
-        if (nodes > 1_000_000) return (nodes / 1_000_000).ToString("F1") + "M";
-        if (nodes > 1_000) return (nodes / 1_000).ToString("F1") + "K";
-        return nodes.ToString("F0");
-    }
-
-    private void RenderOverlay()
-    {
-        var overlay = OverlaySetting.GetOverlaySetting("nnInput1");
-        if (!OverlaySetting.IsOverlaySettingsEnabled || overlay == OverlaySettings.None || lastNNMoves.Count == 0)
-        {
-            overlayArrows = Array.Empty<EbArrow>();
-            overlayLabels = Array.Empty<EbSquareLabel>();
-            return;
-        }
-
-        var minPolicy = OverlaySetting.MinPolicyThreshold * 100;
-        var firstMove = lastNNMoves.FirstOrDefault();
-        if (firstMove != null && firstMove.Nodes == 1) overlay = OverlaySettings.Policy;
-        var moves = lastNNMoves.Skip(1).Where(e => e.P > minPolicy).ToList();
-
-        Func<NNValues, string> text = overlay switch
-        {
-            OverlaySettings.Policy => e => e.P.ToString("F1"),
-            OverlaySettings.SearchPolicy => e => (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1"),
-            OverlaySettings.Q => e => e.Q.ToString("F2"),
-            OverlaySettings.V => e => e.V.ToString("F2"),
-            OverlaySettings.QVDiff => e => (e.Q - e.V).ToString("F2"),
-            OverlaySettings.E => e => (2 * e.E).ToString("F2"),
-            OverlaySettings.Nodes => e => FormatNodes(e.Nodes),
-            _ => null
-        };
-        if (text is null || moves.Count == 0)
-        {
-            overlayArrows = Array.Empty<EbArrow>();
-            overlayLabels = Array.Empty<EbSquareLabel>();
-            return;
-        }
-
-        var theme = ThemeService.Current;
-        overlayArrows = theme.PolicyIndicator == "line"
-            ? moves.Select(e => new EbArrow(e.LANMove.Substring(0, 2), e.LANMove.Substring(2, 2),
-                                            theme.PolicyIndicatorColor, theme.PolicyIndicatorOpacity, 0.3, "line")).ToArray()
-            : Array.Empty<EbArrow>();
-        overlayLabels = theme.PolicyLabelStyle == "plain"
-            ? moves.Select(e => new EbSquareLabel(e.LANMove.Substring(2, 2), text(e), theme.PolicyLabelColor,
-                                                  "transparent", theme.PolicyLabelChipPct, theme.PolicyLabelFontPx)).ToArray()
-            : moves.Select(e => new EbSquareLabel(e.LANMove.Substring(2, 2), text(e), theme.PolicyLabelColor,
-                                                  theme.PolicyLabelBg, theme.PolicyLabelChipPct, theme.PolicyLabelFontPx, null, 0.9, true)).ToArray();
-    }
 
     public async ValueTask DisposeAsync()
     {
         Feed.Changed -= OnChanged;
         Feed.GameUpdated -= OnGameUpdated;
-        Notifier.NotifyMovesWithId -= OnNotifyMoves;
-        if (keyContext != null) await keyContext.DisposeAsync();
+        await Task.CompletedTask;
     }
 }

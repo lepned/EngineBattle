@@ -8,9 +8,10 @@ using ChessLibrary;
 
 namespace WebGUI.Services.Broadcast
 {
-    /// <summary>One half-move of a broadcast game with the position it leads to.</summary>
+    /// <summary>One half-move of a broadcast game with the position it leads to.
+    /// Eval is the lichess server evaluation from the PGN comment (e.g. "0.18" or "#4"), if any.</summary>
     public sealed record BroadcastPly(
-        string San, string Fen, string FromSq, string ToSq, string Color, string Clock);
+        string San, string Fen, string FromSq, string ToSq, string Color, string Clock, string Eval);
 
     /// <summary>One game of a broadcast round, updated as the stream re-sends its PGN.</summary>
     public sealed class BroadcastGame
@@ -115,6 +116,7 @@ namespace WebGUI.Services.Broadcast
         }
 
         private static readonly Regex ClkRegex = new(@"\[%clk\s+([0-9:.]+)\]", RegexOptions.Compiled);
+        private static readonly Regex EvalRegex = new(@"\[%eval\s+([^\]\s]+)\]", RegexOptions.Compiled);
 
         private void OnGamePgn(string pgn)
         {
@@ -154,13 +156,19 @@ namespace WebGUI.Services.Broadcast
                     if (string.IsNullOrEmpty(maf.ShortSan)) continue; // initial-position sentinel
                     var comment = plyIdx < parsed.Mainline.Count ? parsed.Mainline[plyIdx].Comment : "";
                     var clk = string.IsNullOrEmpty(comment) ? Match.Empty : ClkRegex.Match(comment);
+                    var ev = string.IsNullOrEmpty(comment) ? Match.Empty : EvalRegex.Match(comment);
                     plies.Add(new BroadcastPly(
                         maf.ShortSan, maf.FenAfterMove, maf.Move.FromSq, maf.Move.ToSq, maf.Move.Color,
-                        clk.Success ? clk.Groups[1].Value : ""));
+                        clk.Success ? clk.Groups[1].Value : "",
+                        ev.Success ? ev.Groups[1].Value : ""));
                     plyIdx++;
                 }
             }
             catch { plies.Clear(); /* broadcast PGN glitch — keep SAN-only state */ }
+
+            // Clocks (and lichess server evals) are extracted above; strip the raw
+            // [%clk]/[%eval] comments so move-list consumers render clean SAN.
+            foreach (var move in parsed.Mainline) move.Comment = "";
 
             BroadcastGame game;
             int newMoves;
