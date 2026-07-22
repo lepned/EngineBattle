@@ -10,7 +10,7 @@
 @inject BoardThemeService ThemeService
 @inject GlobalSettingsService SettingsService
 
-<div class="eb-board" style="@RootStyle">
+<div class="eb-board eb-style-@ThemeService.Current.HighlightStyle" style="@RootStyle">
     @{ var board = boardCells; }
     @for (int row = 0; row < 8; row++)
     {
@@ -63,14 +63,28 @@
             }
             @foreach (var a in Arrows ?? Array.Empty<EbArrow>())
             {
-                var geo = ArrowGeometry(a);
-                if (geo is var (x1, y1, x2, y2, head, strokeW))
+                @if (a.Head == "line")
                 {
-                    <g opacity="@F(a.Opacity)">
-                        <line x1="@F(x1)" y1="@F(y1)" x2="@F(x2)" y2="@F(y2)"
-                              stroke="@a.Color" stroke-width="@F(strokeW)" stroke-linecap="round" />
-                        <polygon points="@head" fill="@a.Color" />
-                    </g>
+                    var geo = LineGeometry(a);
+                    if (geo is var (x1, y1, cx2, cy2, strokeW2))
+                    {
+                        <g opacity="@F(a.Opacity)">
+                            <line x1="@F(x1)" y1="@F(y1)" x2="@F(cx2)" y2="@F(cy2)"
+                                  stroke="@a.Color" stroke-width="@F(strokeW2)" stroke-linecap="round" />
+                        </g>
+                    }
+                }
+                else
+                {
+                    var geo = ArrowGeometry(a);
+                    if (geo is var (x1, y1, x2, y2, head, strokeW))
+                    {
+                        <g opacity="@F(a.Opacity)">
+                            <line x1="@F(x1)" y1="@F(y1)" x2="@F(x2)" y2="@F(y2)"
+                                  stroke="@a.Color" stroke-width="@F(strokeW)" stroke-linecap="round" />
+                            <polygon points="@head" fill="@a.Color" />
+                        </g>
+                    }
                 }
             }
         </svg>
@@ -106,6 +120,9 @@
     /// <summary>Coordinate color override (appearance-page live preview); null follows the theme,
     /// where empty means auto (opposite square color).</summary>
     [Parameter] public string CoordinateColorCss { get; set; }
+    /// <summary>Selection-ring color override (appearance-page live preview); null follows the theme,
+    /// where empty means the default green ring.</summary>
+    [Parameter] public string SelectionRingColorCss { get; set; }
     // Colors and piece set default to the app-wide board theme (BoardThemeService,
     // user-configurable on the Settings page). Explicit parameters override the theme.
     // The highlight replaces the square color (as the pre-migration CSS did), and the
@@ -145,9 +162,17 @@
         $"--eb-coord-size:{CoordinateSizeCss ?? ThemeService.Current.CoordFontCss};" +
         // Only emitted when a fixed color is chosen; otherwise the scoped CSS falls back
         // to the auto contrast rule (opposite square color).
-        (string.IsNullOrEmpty(EffCoordColor) ? "" : $"--eb-coord-color:{EffCoordColor};");
+        (string.IsNullOrEmpty(EffCoordColor) ? "" : $"--eb-coord-color:{EffCoordColor};") +
+        // Selection ring: custom hex gets 65% alpha appended to match the default ring.
+        (string.IsNullOrEmpty(EffSelRing) ? "" : $"--eb-sel-ring:{WithAlpha(EffSelRing, "A6")};");
 
     private string EffCoordColor => CoordinateColorCss ?? ThemeService.Current.CoordColor;
+    private string EffSelRing => SelectionRingColorCss ?? ThemeService.Current.SelRingColor;
+
+    // Append a hex alpha only to plain #rrggbb values; anything else (hand-edited
+    // rgba()/named color in the settings file) is passed through untouched.
+    private static string WithAlpha(string color, string alphaHex) =>
+        color.Length == 7 && color[0] == '#' ? color + alphaHex : color;
 
     private static string SquareName(int file, int rank) => $"{(char)('a' + file)}{rank + 1}";
 
@@ -201,7 +226,13 @@
             font = $"{F(fontCqi)}cqi";
         }
 
-        var style = $"width:{F(l.SizePct * 100)}%;height:{F(l.SizePct * 100)}%;" +
+        // FitText: pill that grows with the content instead of a fixed circle, so long
+        // values are always enclosed by the background.
+        var dims = l.FitText
+            ? $"min-width:{F(l.SizePct * 100)}%;width:auto;height:{F(l.SizePct * 100)}%;" +
+              "padding:0 .35em;border-radius:999px;box-sizing:border-box;"
+            : $"width:{F(l.SizePct * 100)}%;height:{F(l.SizePct * 100)}%;";
+        var style = dims +
                     $"background:{l.BgColor};color:{l.TextColor};font-size:{font};opacity:{F(l.Opacity)};";
         if (!string.IsNullOrEmpty(l.BorderCss)) style += $"border:{l.BorderCss};";
         return style;
@@ -218,8 +249,10 @@
 
         // 0.17/0.33 match the pre-migration chessboard2 overrides
         // (.arrow-line-a8dce height 17%, .arrow-head-38dfa height 33%).
-        double strokeW = 0.17 * a.Width;
-        double headLen = 0.33, headW = 0.45;
+        // The user's arrow-width setting scales stroke and head together.
+        double scale = ThemeService.Current.ArrowWidthScale;
+        double strokeW = 0.17 * a.Width * scale;
+        double headLen = 0.33 * scale, headW = 0.45 * scale;
         double baseX = tipX - ux * headLen, baseY = tipY - uy * headLen;
         double px = -uy, py = ux;
 
@@ -227,6 +260,26 @@
                       $"{F(baseX + px * headW / 2)},{F(baseY + py * headW / 2)} " +
                       $"{F(baseX - px * headW / 2)},{F(baseY - py * headW / 2)}";
         return (x1, y1, baseX, baseY, head, strokeW);
+    }
+
+    /// <summary>Plain line from the origin toward the destination center. The label chip
+    /// renders above the overlay and covers the ending, so the line visually connects
+    /// to the badge.</summary>
+    private (double x1, double y1, double cx, double cy, double strokeW)? LineGeometry(EbArrow a)
+    {
+        if (string.IsNullOrEmpty(a.From) || string.IsNullOrEmpty(a.To) || a.From == a.To) return null;
+        var (x1, y1) = Center(a.From);
+        var (tipX, tipY) = Center(a.To);
+        double dx = tipX - x1, dy = tipY - y1;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        double ux = dx / len, uy = dy / len;
+
+        double scale = ThemeService.Current.ArrowWidthScale;
+        double strokeW = 0.17 * a.Width * scale;
+        // Small stand-off (vs the arrowhead's 0.33): close to the destination center
+        // without burying the ending under the label chip. Tuned by eye.
+        double cx = tipX - ux * 0.18, cy = tipY - uy * 0.18;
+        return (x1, y1, cx, cy, strokeW);
     }
 
     private char[] ParseBoard()

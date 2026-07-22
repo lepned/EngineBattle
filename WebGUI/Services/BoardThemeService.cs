@@ -9,7 +9,21 @@ public record BoardTheme(
     string PieceSet,
     bool TournamentCoordinates = true,
     string CoordFontCss = "min(2cqi, 12px)",
-    string CoordColor = "");
+    string CoordColor = "",
+    string HighlightStyle = "replace",
+    string SelRingColor = "",
+    string ArrowColor = "#9D8989",
+    string PolicyLabelColor = "#FFEB3B",
+    double ArrowWidthScale = 1.0,
+    string PolicyLabelStyle = "circle",
+    string PolicyIndicator = "arrow",
+    string PolicyIndicatorColor = "black",
+    double PolicyIndicatorOpacity = 0.25,
+    string PolicyLabelBg = "rgba(60, 60, 60, 0.8)",
+    double PolicyLabelFontPx = 12,
+    double PolicyLabelChipPct = 0.55,
+    string WhiteMoveArrowColor = "#cfece0",
+    string BlackMoveArrowColor = "#383231");
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -26,6 +40,9 @@ public class BoardThemeService
         ["lichess"] = ("Lichess Brown", "#F0D9B5", "#B58863", "rgba(155, 199, 0, 0.41)", "rgba(155, 199, 0, 0.41)"),
         ["green"] = ("Tournament Green", "#EBECD0", "#739552", "rgba(255, 255, 51, 0.5)", "rgba(255, 255, 51, 0.5)"),
         ["grey"] = ("Slate Grey", "#DEE3E6", "#8CA2AD", "rgba(155, 199, 0, 0.41)", "rgba(155, 199, 0, 0.41)"),
+        ["wood"] = ("Wood Brown", "#E8C99B", "#A5764C", "rgba(255, 215, 105, 0.55)", "rgba(255, 215, 105, 0.55)"),
+        ["purple"] = ("Royal Purple", "#E8E4F0", "#8E7CB0", "rgba(255, 255, 51, 0.45)", "rgba(255, 255, 51, 0.45)"),
+        ["midnight"] = ("Midnight Blue", "#8CA2C0", "#4A5A78", "rgba(160, 200, 255, 0.45)", "rgba(160, 200, 255, 0.45)"),
     };
 
     public static IReadOnlyList<(string Key, string Name)> Presets { get; } =
@@ -62,6 +79,46 @@ public class BoardThemeService
         }
     }
 
+    /// <summary>Opacity of the policy-move indicators (arrows/lines/dots) per prominence key.</summary>
+    public static double PolicyIndicatorOpacity(string key) => key switch
+    {
+        "medium" => 0.45,
+        "strong" => 0.65,
+        _ => 0.25,
+    };
+
+    /// <summary>Policy label font size (px) per size key.</summary>
+    public static double PolicyLabelFontPx(string key) => key switch
+    {
+        "small" => 10,
+        "large" => 15,
+        _ => 12,
+    };
+
+    /// <summary>Policy label chip diameter (fraction of the square) per size key.</summary>
+    public static double PolicyLabelChipPct(string key) => key switch
+    {
+        "small" => 0.48,
+        "large" => 0.63,
+        _ => 0.55,
+    };
+
+    /// <summary>Policy label background: a plain #rrggbb from the color picker gets the
+    /// default's 80% alpha appended; other values (hand-edited) pass through untouched.</summary>
+    public static string PolicyLabelBg(string customHex) =>
+        string.IsNullOrEmpty(customHex) ? "rgba(60, 60, 60, 0.8)"
+        : customHex.Length == 7 && customHex[0] == '#' ? customHex + "CC"
+        : customHex;
+
+    /// <summary>Arrow stroke/head scale per setting key (multiplies every arrow's width).</summary>
+    public static double ArrowWidthScale(string key) => key switch
+    {
+        "thin" => 0.7,
+        "thick" => 1.35,
+        "xthick" => 1.7,
+        _ => 1.0,
+    };
+
     /// <summary>Coordinate font size per setting key: proportional on small boards, capped on large.</summary>
     public static string CoordSizeCss(string key) => key switch
     {
@@ -74,6 +131,21 @@ public class BoardThemeService
     public static BoardTheme Resolve(GlobalSettings s)
     {
         var pieceSet = string.IsNullOrWhiteSpace(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
+        var highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
+        var selRing = s.BoardSelectionRingColor ?? "";
+        var arrow = string.IsNullOrEmpty(s.BoardArrowColor) ? "#9D8989" : s.BoardArrowColor;
+        var policyLabel = string.IsNullOrEmpty(s.BoardPolicyLabelColor) ? "#FFEB3B" : s.BoardPolicyLabelColor;
+        var arrowWidth = ArrowWidthScale(s.BoardArrowWidth);
+        var policyStyle = s.BoardPolicyLabelStyle == "plain" ? "plain" : "circle";
+        var policyIndicator = s.BoardPolicyIndicator == "none" ? "none" : "line";
+        var policyArrow = string.IsNullOrEmpty(s.BoardPolicyIndicatorColor) ? "black" : s.BoardPolicyIndicatorColor;
+        var policyArrowOp = PolicyIndicatorOpacity(s.BoardPolicyIndicatorProminence);
+        var policyBg = PolicyLabelBg(s.BoardPolicyLabelBgColor);
+        var policyFont = PolicyLabelFontPx(s.BoardPolicyLabelSize);
+        var policyChip = PolicyLabelChipPct(s.BoardPolicyLabelSize);
+        var whiteMoveArrow = string.IsNullOrEmpty(s.BoardWhiteMoveArrowColor) ? "#cfece0" : s.BoardWhiteMoveArrowColor;
+        var blackMoveArrow = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "#383231" : s.BoardBlackMoveArrowColor;
+
         if (s.BoardThemePreset == "custom")
         {
             // The custom highlight is a hex color from a color input; append 80% alpha
@@ -83,13 +155,17 @@ public class BoardThemeService
                 s.BoardCustomLightColor ?? "#B1D8DB",
                 s.BoardCustomDarkColor ?? "#619EB3",
                 highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates,
-                CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "");
+                CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
+                highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
+                policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow);
         }
 
         var key = presets.ContainsKey(s.BoardThemePreset ?? "") ? s.BoardThemePreset : "eb-blue";
         var p = presets[key];
         return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
-            CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "");
+            CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
+            highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
+            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow);
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>

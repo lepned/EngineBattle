@@ -6,6 +6,7 @@
 @inject JavaScriptInteropService JsInteropService
 @inject NotifierService Notifier
 @inject ILogger<StreamingChessboard> Logger
+@inject BoardThemeService ThemeService
 
 <MudGrid Justify="Justify.Center">
 	<MudItem sm=12>
@@ -272,13 +273,17 @@
 			if (ValidatePV(oppPvMove))
 			{
 				var (oppFromSq, oppToSq) = (oppPvMove.Substring(0, 2), oppPvMove.Substring(2, 2));
-				var (color, oppColor) = whiteToMove ? ("#cfece0", "#383231") : ("#383231", "#cfece0");
+				var theme = ThemeService.Current;
+				var (color, oppColor) =
+					whiteToMove
+						? (theme.WhiteMoveArrowColor, theme.BlackMoveArrowColor)
+						: (theme.BlackMoveArrowColor, theme.WhiteMoveArrowColor);
 				arrowMain = new EbArrow(fromSq, toSq, color);
 				arrowOpp = new EbArrow(oppFromSq, oppToSq, oppColor);
 			}
 			else
 			{
-				arrowMain = new EbArrow(fromSq, toSq, "#9D8989");
+				arrowMain = new EbArrow(fromSq, toSq, ThemeService.Current.ArrowColor);
 			}
 			await Render();
 		}
@@ -308,7 +313,7 @@
 			var bgColor = noPiece ? "transparent" : color == "w" ? "black" : "white";
 			state.LastPonderMove = ponderMove;
 			state.LastFraction = frac;
-			arrowMain = new EbArrow(fromSq, toSq, "#9D8989");
+			arrowMain = new EbArrow(fromSq, toSq, ThemeService.Current.ArrowColor);
 			// Legacy .circle-piece badge: 75% circle, yellow 2px border, fixed bold font
 			ponderLabel = new EbSquareLabel(toSq, text, textColor, bgColor, 0.75, 19, "2px solid yellow", 0.85);
 			await Render();

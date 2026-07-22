@@ -16,9 +16,13 @@
 
     <div class="appearance-layout">
         <div class="appearance-controls">
+            <div class="controls-col">
 
-            <div class="appearance-section">
-                <h4>Theme</h4>
+            <div class="appearance-section @SectionClass("theme")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("theme")'>
+                    <span class="section-title">Theme <span class="scope-badge all">All boards</span></span>
+                    <span class="collapse-indicator">@Indicator("theme")</span>
+                </h4>
                 <div class="preset-grid">
                     @foreach (var (key, name, light, dark) in BoardThemeService.PresetSwatches)
                     {
@@ -63,8 +67,11 @@
                 }
             </div>
 
-            <div class="appearance-section">
-                <h4>Pieces</h4>
+            <div class="appearance-section @SectionClass("pieces")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("pieces")'>
+                    <span class="section-title">Pieces <span class="scope-badge all">All boards</span></span>
+                    <span class="collapse-indicator">@Indicator("pieces")</span>
+                </h4>
                 <div class="pieceset-grid">
                     @foreach (var set in pieceSets)
                     {
@@ -81,8 +88,11 @@
                 <small>Add your own set as a folder under wwwroot/pieces (wK.svg … bP.svg)</small>
             </div>
 
-            <div class="appearance-section">
-                <h4>Coordinates</h4>
+            <div class="appearance-section @SectionClass("coords")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("coords")'>
+                    <span class="section-title">Coordinates <span class="scope-badge all">All boards</span></span>
+                    <span class="collapse-indicator">@Indicator("coords")</span>
+                </h4>
                 <div class="field-group">
                     <label class="checkbox-label">
                         <input type="checkbox" @bind="tournamentCoordinates" @bind:after="Apply" />
@@ -102,7 +112,7 @@
                 <div class="field-group">
                     <label>Color</label>
                     <div class="coord-color-row">
-                        <select @bind="coordinateColorMode" @bind:after="OnCoordColorModeChanged">
+                        <select @bind="coordinateColorMode" @bind:after="Apply">
                             <option value="auto">Auto (contrast)</option>
                             <option value="custom">Custom</option>
                         </select>
@@ -116,8 +126,192 @@
                 </div>
             </div>
 
-            <div class="appearance-section">
-                <h4>Effects</h4>
+            <div class="appearance-section @SectionClass("highlight")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("highlight")'>
+                    <span class="section-title">Highlight <span class="scope-badge all">All boards</span></span>
+                    <span class="collapse-indicator">@Indicator("highlight")</span>
+                </h4>
+                <div class="field-group">
+                    <label>Last-Move Highlight Style</label>
+                    <select @bind="highlightStyle" @bind:after="Apply">
+                        <option value="replace">Replace square color</option>
+                        <option value="tint">Translucent tint</option>
+                        <option value="frame">Border frame</option>
+                    </select>
+                </div>
+            </div>
+
+            </div>
+            <div class="controls-col">
+
+            <div class="appearance-section @SectionClass("pvarrows")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("pvarrows")'>
+                    <span class="section-title">PV Arrows <span class="scope-badge tournament">Tournament &amp; live</span></span>
+                    <span class="collapse-indicator">@Indicator("pvarrows")</span>
+                </h4>
+                <div class="field-group">
+                    <label>Arrow Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="arrowMode" @bind:after="Apply">
+                            <option value="auto">Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (arrowMode == "custom")
+                        {
+                            <input type="color" value="@arrowColor"
+                                   @oninput="e => arrowColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Best-move / PV arrows on live tournament boards</small>
+                </div>
+                <div class="field-group">
+                    <label>White Move Arrow</label>
+                    <div class="coord-color-row">
+                        <select @bind="whiteMoveArrowMode" @bind:after="Apply">
+                            <option value="auto">Default (light)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (whiteMoveArrowMode == "custom")
+                        {
+                            <input type="color" value="@whiteMoveArrowColor"
+                                   @oninput="e => whiteMoveArrowColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>White's best move when both engines' moves are shown</small>
+                </div>
+                <div class="field-group">
+                    <label>Black Move Arrow</label>
+                    <div class="coord-color-row">
+                        <select @bind="blackMoveArrowMode" @bind:after="Apply">
+                            <option value="auto">Default (dark)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (blackMoveArrowMode == "custom")
+                        {
+                            <input type="color" value="@blackMoveArrowColor"
+                                   @oninput="e => blackMoveArrowColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Black's best move when both engines' moves are shown</small>
+                </div>
+                <div class="field-group">
+                    <label>Arrow Width</label>
+                    <select @bind="arrowWidth" @bind:after="Apply">
+                        <option value="thin">Thin</option>
+                        <option value="normal">Normal</option>
+                        <option value="thick">Thick</option>
+                        <option value="xthick">Extra Thick</option>
+                    </select>
+                    <small>Scales all board arrows, including policy indicators</small>
+                </div>
+            </div>
+
+            <div class="appearance-section @SectionClass("policy")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("policy")'>
+                    <span class="section-title">Policy Overlay <span class="scope-badge analysis">Analysis</span></span>
+                    <span class="collapse-indicator">@Indicator("policy")</span>
+                </h4>
+                <div class="field-group">
+                    <label>Policy Move Indicator</label>
+                    <select @bind="policyIndicator" @bind:after="Apply">
+                        <option value="line">Line</option>
+                        <option value="none">None</option>
+                    </select>
+                    <small>A line from the origin square into the value badge, or no indicator at all</small>
+                </div>
+                <div class="field-group">
+                    <label>Indicator Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="policyArrowMode" @bind:after="Apply">
+                            <option value="auto">Default (black)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (policyArrowMode == "custom")
+                        {
+                            <input type="color" value="@policyArrowColor"
+                                   @oninput="e => policyArrowColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Color of the policy-move line</small>
+                </div>
+                <div class="field-group">
+                    <label>Indicator Prominence</label>
+                    <select @bind="policyArrowProminence" @bind:after="Apply">
+                        <option value="faint">Faint</option>
+                        <option value="medium">Medium</option>
+                        <option value="strong">Strong</option>
+                    </select>
+                    <small>Opacity of the policy-move line</small>
+                </div>
+                <div class="field-group">
+                    <label>Policy Label Style</label>
+                    <select @bind="policyLabelStyle" @bind:after="Apply">
+                        <option value="circle">Circle background</option>
+                        <option value="plain">Plain text</option>
+                    </select>
+                    <small>Dark circle behind policy values, or the value alone on the square</small>
+                </div>
+                <div class="field-group">
+                    <label>Policy Label Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="policyLabelMode" @bind:after="Apply">
+                            <option value="auto">Default (yellow)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (policyLabelMode == "custom")
+                        {
+                            <input type="color" value="@policyLabelColor"
+                                   @oninput="e => policyLabelColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Policy percentage labels on analysis boards</small>
+                </div>
+                <div class="field-group">
+                    <label>Policy Label Background</label>
+                    <div class="coord-color-row">
+                        <select @bind="policyLabelBgMode" @bind:after="Apply">
+                            <option value="auto">Default (dark)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (policyLabelBgMode == "custom")
+                        {
+                            <input type="color" value="@policyLabelBgColor"
+                                   @oninput="e => policyLabelBgColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Circle/pill behind policy values (Circle background style only)</small>
+                </div>
+                <div class="field-group">
+                    <label>Policy Label Size</label>
+                    <select @bind="policyLabelSize" @bind:after="Apply">
+                        <option value="small">Small</option>
+                        <option value="medium">Medium</option>
+                        <option value="large">Large</option>
+                    </select>
+                    <small>Font and chip size of the policy values</small>
+                </div>
+            </div>
+
+            <div class="appearance-section @SectionClass("effects")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("effects")'>
+                    <span class="section-title">Interaction &amp; Effects <span class="scope-badge analysis">Analysis &amp; play</span></span>
+                    <span class="collapse-indicator">@Indicator("effects")</span>
+                </h4>
+                <div class="field-group">
+                    <label>Selection Ring</label>
+                    <div class="coord-color-row">
+                        <select @bind="selRingMode" @bind:after="Apply">
+                            <option value="auto">Default (green)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (selRingMode == "custom")
+                        {
+                            <input type="color" value="@selRingColor"
+                                   @oninput="e => selRingColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Ring around the selected piece for click-to-move</small>
+                </div>
                 <div class="field-group">
                     <label class="checkbox-label">
                         <input type="checkbox" @bind="animateMoves" @bind:after="Apply" />
@@ -129,6 +323,8 @@
 
             <div class="appearance-actions">
                 <button class="btn btn-outline" @onclick="ResetAppearance">Reset to Defaults</button>
+            </div>
+
             </div>
         </div>
 
@@ -142,7 +338,10 @@
                           HighlightColorBlack="@Preview.HighlightBlack"
                           PieceSet="@Preview.PieceSet"
                           CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
-                          CoordinateColorCss="@EffectiveCoordColor" />
+                          CoordinateColorCss="@EffectiveCoordColor"
+                          SelectionRingColorCss="@EffectiveSelRing"
+                          SelectedSquare="c6"
+                          Arrows="@PreviewArrows" Labels="@PreviewLabels" />
             <div class="preview-tiles">
                 <div class="preview-tile">
                     <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
@@ -173,14 +372,82 @@
     private string coordinateSize = "medium";
     private string coordinateColorMode = "auto";
     private string coordinateColor = "#888888";
+    private string highlightStyle = "replace";
+    private string selRingMode = "auto";
+    private string selRingColor = "#14551E";
+    private string arrowMode = "auto";
+    private string arrowColor = "#9D8989";
+    private string arrowWidth = "normal";
+    private string whiteMoveArrowMode = "auto";
+    private string whiteMoveArrowColor = "#cfece0";
+    private string blackMoveArrowMode = "auto";
+    private string blackMoveArrowColor = "#383231";
+    private string policyLabelMode = "auto";
+    private string policyLabelColor = "#FFEB3B";
+    private string policyLabelStyle = "circle";
+    private string policyIndicator = "arrow";
+    private string policyArrowMode = "auto";
+    private string policyArrowColor = "#000000";
+    private string policyArrowProminence = "faint";
+    private string policyLabelBgMode = "auto";
+    private string policyLabelBgColor = "#3C3C3C";
+    private string policyLabelSize = "medium";
     private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
 
     private BoardTheme Preview =>
         BoardThemeService.Preview(themePreset, customLight, customDark, customHighlight, pieceSet);
 
-    // Preview override: fixed color, or empty string = force auto (so previewing "Auto"
+    // Preview overrides: fixed color, or empty string = force default (so previewing "Auto"
     // works even before the change is persisted).
     private string EffectiveCoordColor => coordinateColorMode == "custom" ? coordinateColor : "";
+    private string EffectiveSelRing => selRingMode == "custom" ? selRingColor : "";
+    private string EffectiveArrowColor => arrowMode == "custom" ? arrowColor : "#9D8989";
+    private string EffectivePolicyLabelColor => policyLabelMode == "custom" ? policyLabelColor : "#FFEB3B";
+    private string EffectivePolicyArrowColor => policyArrowMode == "custom" ? policyArrowColor : "black";
+    private string EffectiveWhiteMoveArrow => whiteMoveArrowMode == "custom" ? whiteMoveArrowColor : "#cfece0";
+    private string EffectiveBlackMoveArrow => blackMoveArrowMode == "custom" ? blackMoveArrowColor : "#383231";
+    private double EffectivePolicyArrowOpacity => BoardThemeService.PolicyIndicatorOpacity(policyArrowProminence);
+    private string EffectivePolicyLabelBg => BoardThemeService.PolicyLabelBg(policyLabelBgMode == "custom" ? policyLabelBgColor : "");
+    private double EffectivePolicyFontPx => BoardThemeService.PolicyLabelFontPx(policyLabelSize);
+    private double EffectivePolicyChipPct => BoardThemeService.PolicyLabelChipPct(policyLabelSize);
+
+    // Sample overlays, mirroring the real boards so custom colors are previewed against
+    // their true context. Both are legal moves for Black here (Nf6, a6), and the labels
+    // cover a dark (f6) and a light (a6) square — legibility depends on the square shade.
+    // g8->f6 is a tournament-style PV arrow (themed color/width, always an arrow);
+    // a7->a6 is a policy move drawn per the indicator setting (faint black arrow /
+    // origin dot / none), with the analysis circle backing per the label style.
+    private IReadOnlyList<EbArrow> PreviewArrows
+    {
+        get
+        {
+            var arrows = new List<EbArrow>
+            {
+                new EbArrow("g8", "f6", EffectiveArrowColor),
+                // Dual best-move arrows (streaming board when both engines' moves are shown)
+                new EbArrow("b1", "c3", EffectiveWhiteMoveArrow),
+                new EbArrow("f8", "e7", EffectiveBlackMoveArrow),
+            };
+            if (policyIndicator == "line")
+                arrows.Add(new EbArrow("a7", "a6", EffectivePolicyArrowColor, EffectivePolicyArrowOpacity, 0.3, "line"));
+            return arrows;
+        }
+    }
+    // f6 shows a deliberately long value (100.2K) to prove the pill encloses it.
+    // No ponder-badge sample here: its fixed 19px font is sized for the large streaming
+    // board and overflows on preview-sized squares.
+    private IReadOnlyList<EbSquareLabel> PreviewLabels =>
+        policyLabelStyle == "plain"
+            ? new[]
+            {
+                new EbSquareLabel("f6", "100.2K", EffectivePolicyLabelColor, "transparent", EffectivePolicyChipPct, EffectivePolicyFontPx),
+                new EbSquareLabel("a6", "12%", EffectivePolicyLabelColor, "transparent", EffectivePolicyChipPct, EffectivePolicyFontPx),
+            }
+            : new[]
+            {
+                new EbSquareLabel("f6", "100.2K", EffectivePolicyLabelColor, EffectivePolicyLabelBg, EffectivePolicyChipPct, EffectivePolicyFontPx, null, 0.9, true),
+                new EbSquareLabel("a6", "12%", EffectivePolicyLabelColor, EffectivePolicyLabelBg, EffectivePolicyChipPct, EffectivePolicyFontPx, null, 0.9, true),
+            };
 
     protected override void OnInitialized()
     {
@@ -196,12 +463,39 @@
         coordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
         coordinateColorMode = string.IsNullOrEmpty(s.BoardCoordinateColor) ? "auto" : "custom";
         if (coordinateColorMode == "custom") coordinateColor = s.BoardCoordinateColor;
+        highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
+        selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
+        if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
+        arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
+        if (arrowMode == "custom") arrowColor = s.BoardArrowColor;
+        arrowWidth = string.IsNullOrEmpty(s.BoardArrowWidth) ? "normal" : s.BoardArrowWidth;
+        whiteMoveArrowMode = string.IsNullOrEmpty(s.BoardWhiteMoveArrowColor) ? "auto" : "custom";
+        if (whiteMoveArrowMode == "custom") whiteMoveArrowColor = s.BoardWhiteMoveArrowColor;
+        blackMoveArrowMode = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "auto" : "custom";
+        if (blackMoveArrowMode == "custom") blackMoveArrowColor = s.BoardBlackMoveArrowColor;
+        policyLabelMode = string.IsNullOrEmpty(s.BoardPolicyLabelColor) ? "auto" : "custom";
+        if (policyLabelMode == "custom") policyLabelColor = s.BoardPolicyLabelColor;
+        policyLabelStyle = s.BoardPolicyLabelStyle == "plain" ? "plain" : "circle";
+        policyIndicator = s.BoardPolicyIndicator == "none" ? "none" : "line";
+        policyArrowMode = string.IsNullOrEmpty(s.BoardPolicyIndicatorColor) ? "auto" : "custom";
+        if (policyArrowMode == "custom") policyArrowColor = s.BoardPolicyIndicatorColor;
+        policyArrowProminence = s.BoardPolicyIndicatorProminence is "medium" or "strong" ? s.BoardPolicyIndicatorProminence : "faint";
+        policyLabelBgMode = string.IsNullOrEmpty(s.BoardPolicyLabelBgColor) ? "auto" : "custom";
+        if (policyLabelBgMode == "custom") policyLabelBgColor = s.BoardPolicyLabelBgColor;
+        policyLabelSize = s.BoardPolicyLabelSize is "small" or "large" ? s.BoardPolicyLabelSize : "medium";
+    }
+
+    // Collapsible sections: Theme and Pieces start open, the rest collapsed.
+    private readonly HashSet<string> openSections = new() { "theme", "pieces" };
+    private string SectionClass(string key) => openSections.Contains(key) ? "" : "collapsed";
+    private string Indicator(string key) => openSections.Contains(key) ? "▾" : "▸";
+    private void Toggle(string key)
+    {
+        if (!openSections.Remove(key)) openSections.Add(key);
     }
 
     private void SelectPreset(string key) { themePreset = key; Apply(); }
     private void SelectPieceSet(string set) { pieceSet = set; Apply(); }
-
-    private void OnCoordColorModeChanged() => Apply();
 
     // Instant apply: persist only this page's fields on top of the CURRENT settings, so a
     // concurrently edited Settings page is never clobbered (merge, not snapshot).
@@ -218,6 +512,19 @@
         merged.ShowTournamentBoardCoordinates = tournamentCoordinates;
         merged.BoardCoordinateSize = coordinateSize;
         merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
+        merged.BoardHighlightStyle = highlightStyle;
+        merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
+        merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
+        merged.BoardArrowWidth = arrowWidth;
+        merged.BoardWhiteMoveArrowColor = whiteMoveArrowMode == "custom" ? whiteMoveArrowColor : "";
+        merged.BoardBlackMoveArrowColor = blackMoveArrowMode == "custom" ? blackMoveArrowColor : "";
+        merged.BoardPolicyLabelColor = policyLabelMode == "custom" ? policyLabelColor : "";
+        merged.BoardPolicyLabelStyle = policyLabelStyle;
+        merged.BoardPolicyIndicator = policyIndicator;
+        merged.BoardPolicyIndicatorColor = policyArrowMode == "custom" ? policyArrowColor : "";
+        merged.BoardPolicyIndicatorProminence = policyArrowProminence;
+        merged.BoardPolicyLabelBgColor = policyLabelBgMode == "custom" ? policyLabelBgColor : "";
+        merged.BoardPolicyLabelSize = policyLabelSize;
         SettingsService.Save(merged);
     }
 
@@ -233,6 +540,19 @@
         tournamentCoordinates = d.ShowTournamentBoardCoordinates;
         coordinateSize = d.BoardCoordinateSize;
         coordinateColorMode = "auto";
+        highlightStyle = d.BoardHighlightStyle;
+        selRingMode = "auto";
+        arrowMode = "auto";
+        arrowWidth = d.BoardArrowWidth;
+        whiteMoveArrowMode = "auto";
+        blackMoveArrowMode = "auto";
+        policyLabelMode = "auto";
+        policyLabelStyle = d.BoardPolicyLabelStyle;
+        policyIndicator = d.BoardPolicyIndicator;
+        policyArrowMode = "auto";
+        policyArrowProminence = d.BoardPolicyIndicatorProminence;
+        policyLabelBgMode = "auto";
+        policyLabelSize = d.BoardPolicyLabelSize;
         Apply();
     }
 }

@@ -1,5 +1,5 @@
 .appearance-container {
-    max-width: 1200px;
+    max-width: 1500px;
     margin: 2rem auto;
     padding: 0 1.5rem;
 }
@@ -17,12 +17,31 @@
     font-size: 1.05rem;
 }
 
-/* Controls left, sticky preview right */
+/* Three columns: two masonry control columns left, sticky preview right */
 .appearance-layout {
     display: grid;
-    grid-template-columns: minmax(320px, 430px) 1fr;
+    grid-template-columns: minmax(620px, 1fr) minmax(340px, 520px);
     gap: 1.5rem;
     align-items: start;
+}
+
+/* Two fixed columns so sections never jump when others expand/collapse:
+   left = all-boards settings, right = mode-specific settings. */
+.appearance-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 1rem;
+    align-items: start;
+}
+
+@media (max-width: 1250px) {
+    .appearance-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .appearance-layout {
+        grid-template-columns: minmax(320px, 430px) 1fr;
+    }
 }
 
 @media (max-width: 900px) {
@@ -31,17 +50,13 @@
     }
 }
 
-.appearance-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
 .appearance-section {
     background: var(--mud-palette-surface);
     border: 1px solid var(--mud-palette-lines-default);
     border-radius: 8px;
     padding: 1rem 1.25rem;
+    break-inside: avoid;
+    margin-bottom: 1rem;
 }
 
 .appearance-section h4 {
@@ -49,6 +64,67 @@
     font-weight: 600;
     margin: 0 0 0.6rem 0;
     color: var(--mud-palette-text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* Collapsible sections: header always visible, content hidden when collapsed */
+.appearance-section.collapsed > *:not(h4) {
+    display: none;
+}
+
+.appearance-section.collapsed {
+    padding: 0.6rem 1.25rem;
+}
+
+.appearance-section.collapsed h4 {
+    margin: 0;
+}
+
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+}
+
+.collapsible-header:hover {
+    color: var(--mud-palette-primary);
+}
+
+.section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.collapse-indicator {
+    font-size: 0.8rem;
+    opacity: 0.6;
+}
+
+/* Scope badge: where a section's settings apply */
+.scope-badge {
+    font-size: 0.62rem;
+    font-weight: 500;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.scope-badge.all {
+    background: rgba(119, 107, 231, 0.14);
+    color: var(--mud-palette-primary);
+}
+
+.scope-badge.tournament {
+    background: rgba(2, 136, 209, 0.14);
+    color: #29b6f6;
+}
+
+.scope-badge.analysis {
+    background: rgba(46, 125, 50, 0.14);
+    color: #66bb6a;
 }
 
 .appearance-section small {
@@ -227,6 +303,7 @@ select:focus {
     display: flex;
     gap: 0.75rem;
     margin-bottom: 3rem;
+    break-inside: avoid;
 }
 
 .btn {

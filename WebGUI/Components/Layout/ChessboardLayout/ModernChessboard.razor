@@ -13,6 +13,7 @@
 @inject NotifierService Notifier
 @inject ILogger<ModernChessboard> logger
 @inject OverlaySetting OverlaySetting
+@inject BoardThemeService ThemeService
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 
@@ -750,12 +751,17 @@
         var data = GetDisplayData(moves, overlay);
         if (data.Count > 0)
         {
-            // Same visual language as the old JS setArrowSequence: faint black arrow
-            // (size 0.3), dark circle on the target square, fixed 12px yellow value text
-            // (old .square-overlay styling).
-            overlayArrows = data.Select(d => new EbArrow(d.FromSq, d.ToSq, "black", 0.25, 0.3)).ToArray();
-            overlayCircles = data.Select(d => new EbCircle(d.ToSq, "#3C3C3C", 0.8, 0.45)).ToArray();
-            overlayLabels = data.Select(d => new EbSquareLabel(d.ToSq, d.Text, "#FFEB3B", "transparent", 0.62, 12)).ToArray();
+            // A themeable line connects origin to destination (indicator "line"; "none"
+            // draws only the labels). The circle backing is the label's own background
+            // (FitText pill), so long values like 100.2K stay enclosed.
+            var theme = ThemeService.Current;
+            overlayArrows = theme.PolicyIndicator == "line"
+                ? data.Select(d => new EbArrow(d.FromSq, d.ToSq, theme.PolicyIndicatorColor, theme.PolicyIndicatorOpacity, 0.3, "line")).ToArray()
+                : Array.Empty<EbArrow>();
+            overlayCircles = Array.Empty<EbCircle>();
+            overlayLabels = theme.PolicyLabelStyle == "plain"
+                ? data.Select(d => new EbSquareLabel(d.ToSq, d.Text, theme.PolicyLabelColor, "transparent", theme.PolicyLabelChipPct, theme.PolicyLabelFontPx)).ToArray()
+                : data.Select(d => new EbSquareLabel(d.ToSq, d.Text, theme.PolicyLabelColor, theme.PolicyLabelBg, theme.PolicyLabelChipPct, theme.PolicyLabelFontPx, null, 0.9, true)).ToArray();
         }
         else
         {

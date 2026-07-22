@@ -71,6 +71,22 @@ public class GlobalSettings
     public bool ShowTournamentBoardCoordinates { get; set; } = true;
     public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge
     public string BoardCoordinateColor { get; set; } = "";       // "" = auto (opposite square color)
+    public string BoardHighlightStyle { get; set; } = "replace"; // replace | tint | frame
+    public string BoardSelectionRingColor { get; set; } = "";    // "" = default green ring
+    public string BoardArrowColor { get; set; } = "";            // "" = default (#9D8989)
+    public string BoardArrowWidth { get; set; } = "normal";      // thin | normal | thick | xthick
+    // Dual PV arrows when both engines' best moves are shown (streaming board):
+    public string BoardWhiteMoveArrowColor { get; set; } = "";   // "" = default (#cfece0)
+    public string BoardBlackMoveArrowColor { get; set; } = "";   // "" = default (#383231)
+    public string BoardPolicyLabelColor { get; set; } = "";      // "" = default (#FFEB3B)
+    public string BoardPolicyLabelStyle { get; set; } = "circle"; // circle | plain
+    // Default "line": with the circle label style the line plugs into the labeled
+    // badge, which is EB's signature policy-overlay look.
+    public string BoardPolicyIndicator { get; set; } = "line";    // line | none
+    public string BoardPolicyIndicatorColor { get; set; } = "";   // "" = default (faint black)
+    public string BoardPolicyIndicatorProminence { get; set; } = "faint"; // faint | medium | strong
+    public string BoardPolicyLabelBgColor { get; set; } = "";     // "" = default dark circle/pill
+    public string BoardPolicyLabelSize { get; set; } = "medium";  // small | medium | large
 
     // App behavior
     public string StartupPage { get; set; } = "";
