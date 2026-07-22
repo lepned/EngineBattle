@@ -1,5 +1,5 @@
 .bc-container {
-    max-width: 1400px;
+    max-width: 1750px;
     margin: 1.5rem auto;
     padding: 0 1.5rem;
 }
@@ -75,18 +75,37 @@
     color: #fff;
 }
 
-/* Focus board left, game tiles right */
+/* Engine panel left, focus board center, game tiles right — proportional like the
+   analysis pages, so the panel grows with the window instead of being capped. */
 .bc-layout {
     display: grid;
-    grid-template-columns: minmax(380px, 620px) 1fr;
-    gap: 1.5rem;
+    grid-template-columns: minmax(340px, 1.2fr) minmax(400px, 1.5fr) minmax(220px, 1fr);
+    gap: 1.25rem;
     align-items: start;
+}
+
+@media (max-width: 1400px) {
+    .bc-layout {
+        grid-template-columns: minmax(320px, 420px) 1fr;
+    }
+
+    .bc-games {
+        grid-column: 1 / -1;
+    }
 }
 
 @media (max-width: 950px) {
     .bc-layout {
         grid-template-columns: 1fr;
     }
+
+    .bc-games {
+        grid-column: auto;
+    }
+}
+
+.bc-engine {
+    min-width: 0;
 }
 
 .bc-player {
@@ -197,6 +216,45 @@
     padding: 0.4rem;
     background: var(--mud-palette-surface);
     transition: border-color 0.15s;
+    position: relative;
+}
+
+/* Live/finished status badge (tile top-right corner and focus header) */
+.bc-badge {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    z-index: 5;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    pointer-events: none;
+}
+
+.bc-badge.live {
+    background: rgba(211, 47, 47, 0.9);
+    color: #fff;
+}
+
+.bc-badge.live::before {
+    content: "●";
+    margin-right: 0.3rem;
+    animation: bc-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes bc-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+
+/* In the focus controls row the badge flows inline at the right edge */
+.bc-badge.header {
+    position: static;
+    margin-left: auto;
+    font-size: 0.7rem;
+    pointer-events: none;
 }
 
 .bc-tile:hover {

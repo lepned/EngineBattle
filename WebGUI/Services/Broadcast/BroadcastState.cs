@@ -29,6 +29,8 @@ namespace WebGUI.Services.Broadcast
         public string WhiteClock { get; set; } = "";
         public string BlackClock { get; set; } = "";
         public string RawPgn { get; set; } = "";
+        /// <summary>Parsed PGN of the latest update (for board replay, e.g. PlayPgnToPly).</summary>
+        public PGNTypes.PgnGame? Parsed { get; set; }
         public DateTime LastUpdateUtc { get; set; }
 
         public string LastMoveSan => SanMoves.Count > 0 ? SanMoves[^1] : "";
@@ -183,6 +185,7 @@ namespace WebGUI.Services.Broadcast
                 game.Result = string.IsNullOrEmpty(meta.Result) ? "*" : meta.Result;
                 game.SanMoves = san;
                 game.Plies = plies;
+                game.Parsed = parsed;
                 game.StartFen = startFen;
                 game.WhiteClock = whiteClock;
                 game.BlackClock = blackClock;
