@@ -1801,6 +1801,11 @@
         await Task.CompletedTask;
     }
 
+    // Coalesces overlapping auto-search starts: at most one task runs and one waits.
+    // Guards against unbounded thread-pool pile-up when the engine hangs or dies
+    // (WaitForReadyOk can block for a long time on a crashed process).
+    private int autoSearchQueued;
+
     public async Task OnNotifyFen(string newPos)
     {
         fen = newPos;
@@ -1826,10 +1831,37 @@
             {
                 searchInProgress = true;
                 StartSearchTimer();
-                _ = Task.Run(() => {
-                    try { StartSearchWithMode(); }
-                    catch (Exception ex) { logger.LogWarning("Search start failed: {Msg}", ex.Message); }
-                });
+                var a = analyzer;
+                if (Interlocked.CompareExchange(ref autoSearchQueued, 1, 0) == 0)
+                {
+                    _ = Task.Run(async () => {
+                        try
+                        {
+                            // Lock per analyzer so a task stuck on a dead engine never
+                            // blocks searches of a recreated one.
+                            lock (a)
+                            {
+                                autoSearchQueued = 0;
+                                if (!autoSearchSwitch || !ReferenceEquals(a, analyzer)) return;
+                                if (a.Engine.HasExited)
+                                {
+                                    logger.LogWarning("Engine process has exited during auto-search");
+                                    searchInProgress = false;
+                                }
+                                else
+                                {
+                                    StartSearchWithMode();
+                                }
+                            }
+                            if (!searchInProgress)
+                            {
+                                StopSearchTimer();
+                                await InvokeAsync(StateHasChanged);
+                            }
+                        }
+                        catch (Exception ex) { logger.LogWarning("Search start failed: {Msg}", ex.Message); }
+                    });
+                }
             }
             else
             {
