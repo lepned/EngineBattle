@@ -67,6 +67,7 @@ public class GlobalSettings
     public string BoardCustomDarkColor { get; set; } = "#619EB3";
     public string BoardCustomHighlightColor { get; set; } = "#FAFAD2";
     public string BoardPieceSet { get; set; } = "wikipedia";
+    public int BoardPieceScale { get; set; } = 100;              // piece size as % of the square (80–100)
     public bool BoardAnimateMoves { get; set; } = true;
     // Coordinates on tournament boards (streaming, PV duo, tile boards).
     public bool ShowTournamentBoardCoordinates { get; set; } = true;

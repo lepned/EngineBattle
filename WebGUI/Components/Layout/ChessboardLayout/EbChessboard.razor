@@ -117,6 +117,8 @@
     [Parameter] public bool? ShowCoordinates { get; set; }
     /// <summary>Coordinate font-size CSS override (appearance-page live preview); null follows the theme.</summary>
     [Parameter] public string CoordinateSizeCss { get; set; }
+    /// <summary>Piece scale override, 0.5–1.0 (appearance-page live preview); null follows the theme.</summary>
+    [Parameter] public double? PieceScale { get; set; }
     /// <summary>Coordinate color override (appearance-page live preview); null follows the theme,
     /// where empty means auto (opposite square color).</summary>
     [Parameter] public string CoordinateColorCss { get; set; }
@@ -160,6 +162,7 @@
         $"--eb-highlight:{EffHighlight};" +
         $"--eb-highlight-b:{EffHighlightBlack};" +
         $"--eb-coord-size:{CoordinateSizeCss ?? ThemeService.Current.CoordFontCss};" +
+        $"--eb-piece-scale:{(PieceScale ?? ThemeService.Current.PieceScale).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)};" +
         // Only emitted when a fixed color is chosen; otherwise the scoped CSS falls back
         // to the auto contrast rule (opposite square color).
         (string.IsNullOrEmpty(EffCoordColor) ? "" : $"--eb-coord-color:{EffCoordColor};") +

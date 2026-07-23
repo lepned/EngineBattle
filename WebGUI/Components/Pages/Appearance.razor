@@ -86,6 +86,15 @@
                     }
                 </div>
                 <small>Add your own set as a folder under wwwroot/pieces (wK.svg … bP.svg)</small>
+                <div class="field-group">
+                    <label>Piece Size</label>
+                    <div class="coord-color-row">
+                        <input type="range" min="80" max="100" step="5" value="@pieceScale"
+                               @oninput="e => pieceScale = int.Parse((string)e.Value)" @onchange="Apply" />
+                        <span class="piece-scale-value">@pieceScale%</span>
+                    </div>
+                    <small>Piece size as a share of the square — smaller leaves breathing room</small>
+                </div>
             </div>
 
             <div class="appearance-section @SectionClass("coords")">
@@ -372,6 +381,7 @@
                           HighlightColor="@Preview.HighlightWhite"
                           HighlightColorBlack="@Preview.HighlightBlack"
                           PieceSet="@Preview.PieceSet"
+                          PieceScale="@(pieceScale / 100.0)"
                           CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
                           CoordinateColorCss="@EffectiveCoordColor"
                           SelectionRingColorCss="@EffectiveSelRing"
@@ -389,6 +399,7 @@
                                   HighlightColor="@Preview.HighlightWhite"
                                   HighlightColorBlack="@Preview.HighlightBlack"
                                   PieceSet="@Preview.PieceSet"
+                                  PieceScale="@(pieceScale / 100.0)"
                                   CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
                                   CoordinateColorCss="@EffectiveCoordColor" />
                     <small>Tournament tile (coordinates auto-hide below 200px)</small>
@@ -404,6 +415,7 @@
     private string customDark = "#619EB3";
     private string customHighlight = "#FAFAD2";
     private string pieceSet = "wikipedia";
+    private int pieceScale = 100;
     private bool animateMoves = true;
     private bool tournamentCoordinates = true;
     private string coordinateSize = "medium";
@@ -499,6 +511,7 @@
         customDark = s.BoardCustomDarkColor ?? "#619EB3";
         customHighlight = s.BoardCustomHighlightColor ?? "#FAFAD2";
         pieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
+        pieceScale = s.BoardPieceScale is >= 80 and <= 100 ? s.BoardPieceScale : 100;
         animateMoves = s.BoardAnimateMoves;
         tournamentCoordinates = s.ShowTournamentBoardCoordinates;
         coordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
@@ -552,6 +565,7 @@
         merged.BoardCustomDarkColor = customDark;
         merged.BoardCustomHighlightColor = customHighlight;
         merged.BoardPieceSet = pieceSet;
+        merged.BoardPieceScale = pieceScale;
         merged.BoardAnimateMoves = animateMoves;
         merged.ShowTournamentBoardCoordinates = tournamentCoordinates;
         merged.BoardCoordinateSize = coordinateSize;
@@ -582,6 +596,7 @@
         customDark = d.BoardCustomDarkColor;
         customHighlight = d.BoardCustomHighlightColor;
         pieceSet = d.BoardPieceSet;
+        pieceScale = d.BoardPieceScale;
         animateMoves = d.BoardAnimateMoves;
         tournamentCoordinates = d.ShowTournamentBoardCoordinates;
         coordinateSize = d.BoardCoordinateSize;

@@ -23,7 +23,8 @@ public record BoardTheme(
     double PolicyLabelFontPx = 12,
     double PolicyLabelChipPct = 0.55,
     string WhiteMoveArrowColor = "#cfece0",
-    string BlackMoveArrowColor = "#383231");
+    string BlackMoveArrowColor = "#383231",
+    double PieceScale = 1.0);
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -145,6 +146,7 @@ public class BoardThemeService
         var policyChip = PolicyLabelChipPct(s.BoardPolicyLabelSize);
         var whiteMoveArrow = string.IsNullOrEmpty(s.BoardWhiteMoveArrowColor) ? "#cfece0" : s.BoardWhiteMoveArrowColor;
         var blackMoveArrow = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "#383231" : s.BoardBlackMoveArrowColor;
+        var pieceScale = (s.BoardPieceScale is >= 50 and <= 100 ? s.BoardPieceScale : 100) / 100.0;
 
         string light, dark, hlWhite, hlBlack;
         if (s.BoardThemePreset == "custom")
@@ -172,7 +174,7 @@ public class BoardThemeService
         return new BoardTheme(light, dark, hlWhite, hlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
             CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
             highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
-            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow);
+            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow, pieceScale);
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>
