@@ -2,6 +2,7 @@
 @inject GlobalSettingsService SettingsService
 @inject IDialogService DialogService
 @using WebGUI.Services
+@using System.Text.Json
 @using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
 
 <PageTitle>Settings</PageTitle>
@@ -459,61 +460,50 @@
     {
         try
         {
-            var cur = SettingsService.Settings;
-            var settings = new GlobalSettings
-            {
-                EngineDefsFolder = engineDefsFolder ?? "",
-                OpeningsFolder = openingsFolder ?? "",
-                PgnOutputFolder = pgnOutputFolder ?? "",
-                TournamentConfigFolder = tournamentConfigFolder ?? "",
-                TablebaseFolder = tablebaseFolder ?? "",
-                NeuralNetFolder = neuralNetFolder ?? "",
-                PuzzleConfigFolder = puzzleConfigFolder ?? "",
-                AnalysisGamesPath = analysisGamesPath ?? "",
-                OrdoExePath = ordoExePath ?? "",
-                LastBrowsedPath = SettingsService.Settings.LastBrowsedPath,
-                RecentBrowsePaths = SettingsService.Settings.RecentBrowsePaths,
-                DefaultEnginePath = defaultEnginePath ?? "",
-                SecondaryEnginePath = secondaryEnginePath ?? "",
-                DefaultSearchMode = defaultSearchMode ?? "Nodes",
-                DefaultSearchTimeMs = defaultSearchTimeMs,
-                DefaultSearchNodes = defaultSearchNodes,
-                PolicyDistributionMinMaxFilter = policyDistributionMinMaxFilter ?? "0.4,0.6",
-                CombineWhiteAndBlackMoves = combineWhiteAndBlackMoves,
-                DefaultMultiPV = defaultMultiPV,
-                MinPolicyThreshold = minPolicyThreshold,
-                ShowPuzzleEngineColumn = showPuzzleEngineColumn,
-                DelayBetweenGamesSec = delayBetweenGamesSec,
-                MoveOverheadMs = moveOverheadMs,
-                StartupPage = startupPage ?? "",
-                ReviewSearchMode = reviewSearchMode ?? "Time",
-                ReviewTimePerMove = reviewTimePerMove,
-                ReviewNodes = reviewNodes,
-                ReviewDepth = reviewDepth,
-                ReviewMultiPV = reviewMultiPV,
-                AccuracyDecay = accuracyDecay,
-                MicroLossBase = microLossBase,
-                MicroLossScale = microLossScale,
-                BrilliantPVGap = brilliantPVGap,
-                BestMinPVGap = bestMinPVGap,
-                GreatPVGap = greatPVGap,
-                ExcellentMaxWPLoss = excellentMaxWPLoss,
-                GoodMaxWPLoss = goodMaxWPLoss,
-                InaccuracyMaxWPLoss = inaccuracyMaxWPLoss,
-                MistakeMaxWPLoss = mistakeMaxWPLoss,
-                // Appearance fields are owned by the /appearance page (instant apply);
-                // carry the current values through so this snapshot-save never clobbers them.
-                BoardThemePreset = cur.BoardThemePreset,
-                BoardCustomLightColor = cur.BoardCustomLightColor,
-                BoardCustomDarkColor = cur.BoardCustomDarkColor,
-                BoardCustomHighlightColor = cur.BoardCustomHighlightColor,
-                BoardPieceSet = cur.BoardPieceSet,
-                BoardAnimateMoves = cur.BoardAnimateMoves,
-                ShowTournamentBoardCoordinates = cur.ShowTournamentBoardCoordinates,
-                BoardCoordinateSize = cur.BoardCoordinateSize,
-                BoardCoordinateColor = cur.BoardCoordinateColor,
-                ShowEvalBar = cur.ShowEvalBar,
-            };
+            // Clone the CURRENT settings and overwrite only the fields this page owns.
+            // A fresh object with an explicit field list silently resets every field
+            // not on the list (this bit all post-c7c4426 appearance fields); the clone
+            // makes fields owned by other pages (/appearance, browse history) safe by
+            // construction — including ones added in the future.
+            var settings = JsonSerializer.Deserialize<GlobalSettings>(
+                JsonSerializer.Serialize(SettingsService.Settings)) ?? new GlobalSettings();
+            settings.EngineDefsFolder = engineDefsFolder ?? "";
+            settings.OpeningsFolder = openingsFolder ?? "";
+            settings.PgnOutputFolder = pgnOutputFolder ?? "";
+            settings.TournamentConfigFolder = tournamentConfigFolder ?? "";
+            settings.TablebaseFolder = tablebaseFolder ?? "";
+            settings.NeuralNetFolder = neuralNetFolder ?? "";
+            settings.PuzzleConfigFolder = puzzleConfigFolder ?? "";
+            settings.AnalysisGamesPath = analysisGamesPath ?? "";
+            settings.OrdoExePath = ordoExePath ?? "";
+            settings.DefaultEnginePath = defaultEnginePath ?? "";
+            settings.SecondaryEnginePath = secondaryEnginePath ?? "";
+            settings.DefaultSearchMode = defaultSearchMode ?? "Nodes";
+            settings.DefaultSearchTimeMs = defaultSearchTimeMs;
+            settings.DefaultSearchNodes = defaultSearchNodes;
+            settings.PolicyDistributionMinMaxFilter = policyDistributionMinMaxFilter ?? "0.4,0.6";
+            settings.CombineWhiteAndBlackMoves = combineWhiteAndBlackMoves;
+            settings.DefaultMultiPV = defaultMultiPV;
+            settings.MinPolicyThreshold = minPolicyThreshold;
+            settings.ShowPuzzleEngineColumn = showPuzzleEngineColumn;
+            settings.DelayBetweenGamesSec = delayBetweenGamesSec;
+            settings.MoveOverheadMs = moveOverheadMs;
+            settings.StartupPage = startupPage ?? "";
+            settings.ReviewSearchMode = reviewSearchMode ?? "Time";
+            settings.ReviewTimePerMove = reviewTimePerMove;
+            settings.ReviewNodes = reviewNodes;
+            settings.ReviewDepth = reviewDepth;
+            settings.ReviewMultiPV = reviewMultiPV;
+            settings.AccuracyDecay = accuracyDecay;
+            settings.MicroLossBase = microLossBase;
+            settings.MicroLossScale = microLossScale;
+            settings.BrilliantPVGap = brilliantPVGap;
+            settings.BestMinPVGap = bestMinPVGap;
+            settings.GreatPVGap = greatPVGap;
+            settings.ExcellentMaxWPLoss = excellentMaxWPLoss;
+            settings.GoodMaxWPLoss = goodMaxWPLoss;
+            settings.InaccuracyMaxWPLoss = inaccuracyMaxWPLoss;
+            settings.MistakeMaxWPLoss = mistakeMaxWPLoss;
             SettingsService.Save(settings);
             statusMessage = "Settings saved.";
             statusType = "success";
