@@ -44,7 +44,8 @@
     min-width: 0;
 }
 
-.modern-chessboard .mcb-board-left {
+.modern-chessboard .mcb-board-left,
+.modern-chessboard .mcb-board-right {
     display: flex;
     align-items: stretch;
 }

@@ -104,7 +104,7 @@
                          OnEngineMoveMade="OnEngineMoveMade" Id="nnInput1" Engine="Engine1"
                          OnNewEngineLoaded="OnNewEngineLoaded"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)"
-                         OnSearchCompleted="OnSearchCompleted" />
+                         OnSearchCompleted="OnSearchCompleted" OnEvalUpdated="OnEval1Updated" />
         </div>
 
         <!-- Center Panel: Chessboard -->
@@ -147,6 +147,9 @@
                             MakeMoveListClickable=true MoveListPosition="MoveListPosition.Below"
                             MoveEvals="@moveEvals"
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                            OnBoardFlipped="f => boardFlipped = f"
+                            BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBar1Left : null)"
+                            BoardRight="@(SettingsService.Settings.ShowEvalBar ? EvalBar2Right : null)"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
@@ -240,7 +243,7 @@
                          OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2"
                          OnNewEngineLoaded="OnNewEngineLoaded"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)"
-                         OnSearchCompleted="OnSearchCompleted" />
+                         OnSearchCompleted="OnSearchCompleted" OnEvalUpdated="OnEval2Updated" />
         </div>
     </div>
 </div>
@@ -315,6 +318,33 @@
     private Chess.Board board = new();
     private HashSet<ulong> analyzedPositions = new();
     private Dictionary<int, string> moveEvals = new();
+
+    // Dual eval bars (white perspective): engine 1 left of the board, engine 2 right —
+    // disagreement between the engines is visible as a height difference at a glance.
+    // Reset on navigation so neither bar shows a stale eval for a different position.
+    private double? eval1Cp; private int? eval1Mate;
+    private double? eval2Cp; private int? eval2Mate;
+    private bool boardFlipped;
+    private RenderFragment EvalBar1Left => @<EvalBar Cp="@eval1Cp" Mate="@eval1Mate" Flipped="@boardFlipped" />;
+    private RenderFragment EvalBar2Right => @<EvalBar Cp="@eval2Cp" Mate="@eval2Mate" Flipped="@boardFlipped" />;
+
+    private void OnEval1Updated((double? Cp, int? Mate) eval)
+    {
+        (eval1Cp, eval1Mate) = (eval.Cp, eval.Mate);
+        StateHasChanged();
+    }
+
+    private void OnEval2Updated((double? Cp, int? Mate) eval)
+    {
+        (eval2Cp, eval2Mate) = (eval.Cp, eval.Mate);
+        StateHasChanged();
+    }
+
+    private void ResetEvalBars()
+    {
+        (eval1Cp, eval1Mate) = (null, null);
+        (eval2Cp, eval2Mate) = (null, null);
+    }
     private ElementReference pgnChart;
     HotKeysContext keyContext;
     private string fullPath = string.Empty;
@@ -842,6 +872,7 @@
 
     public async void OnNewFENOnBoard(string newFen)
     {
+        ResetEvalBars();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
@@ -853,6 +884,7 @@
 
     public async void OnMoveMadeOnBoard(string move)
     {
+        ResetEvalBars();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateDetectedOpening();
@@ -900,6 +932,7 @@
 
     public async void OnEngineMoveMade(string move)
     {
+        ResetEvalBars();
         if (chessBoardRazor != null)
             chessBoardRazor.UpdateVariationsDisplay();
         moveHistory = board.GetMoveHistory();

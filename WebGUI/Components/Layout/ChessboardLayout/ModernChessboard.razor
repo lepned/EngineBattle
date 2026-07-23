@@ -24,7 +24,7 @@
             <div class="mcb-player-info">@BlackPlayerInfo</div>
         }
 
-        <div class="mcb-board-wrapper @(BoardLeft != null ? "mcb-with-left" : "")">
+        <div class="mcb-board-wrapper @(BoardLeft != null || BoardRight != null ? "mcb-with-left" : "")">
             @if (BoardLeft != null)
             {
                 <div class="mcb-board-left">@BoardLeft</div>
@@ -55,6 +55,10 @@
                     </div>
                 }
             </div>
+            @if (BoardRight != null)
+            {
+                <div class="mcb-board-right">@BoardRight</div>
+            }
         </div>
 
         @if (!String.IsNullOrEmpty(OpeningMoves))
@@ -265,6 +269,8 @@
     [Parameter] public Dictionary<int, MoveAnnotation> MoveAnnotations { get; set; }
     /// <summary>Optional content rendered to the left of the board squares (e.g. an eval bar), spanning the board height.</summary>
     [Parameter] public RenderFragment BoardLeft { get; set; }
+    /// <summary>Optional content rendered to the right of the board squares (e.g. a second engine's eval bar).</summary>
+    [Parameter] public RenderFragment BoardRight { get; set; }
     /// <summary>Optional content stacked above the move list in Right layout (e.g. an engine widget).</summary>
     [Parameter] public RenderFragment AboveMoveList { get; set; }
 
