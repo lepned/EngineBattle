@@ -11,59 +11,98 @@
 <PageTitle>Lichess Broadcast</PageTitle>
 
 <div class="bc-container">
-    <h2>Lichess Broadcast</h2>
-    <div class="bc-description">
-        Watch live tournament games relayed by lichess, with your own engine analyzing the
-        position you are viewing. Make moves on the board to explore your own lines; Follow live
-        returns to the broadcast.
-    </div>
+    @if (LobbyVisible)
+    {
+        <div class="bc-lobby">
+            <div class="bc-lobby-head">
+                <h3>Lichess Broadcast</h3>
+                <span>watch live tournaments with your own engine as kibitzer</span>
+            </div>
 
-    <div class="bc-picker">
-        <select @bind="selectedTour">
-            <option value="">— official tournaments —</option>
-            @foreach (var t in Tours)
+            @if (Feed.IsRunning)
             {
-                <option value="@t.TourId">@t.TourName@(t.Live ? "  (live)" : "")</option>
+                <div class="bc-resume">
+                    <span>Watching: <b>@CurrentTourName</b>@(CurrentRound is { } cr ? $" — {cr.RoundName}" : "")</span>
+                    <button class="bc-btn primary" @onclick="() => showLobby = false">Resume</button>
+                    <button class="bc-btn" @onclick="Stop">Stop</button>
+                </div>
             }
-        </select>
-        <input placeholder="…or broadcast round URL / id" @bind="roundInput" @bind:event="oninput" />
-        @if (Feed.IsRunning)
-        {
-            <button class="bc-btn" @onclick="Stop">Stop</button>
-        }
-        else
-        {
-            <button class="bc-btn primary" @onclick="Start">Start</button>
-        }
-        <span class="bc-status">@Feed.Status</span>
-    </div>
 
+            @if (LiveTours.Count > 0)
+            {
+                <div class="bc-lobby-sect">Live now</div>
+                <div class="bc-live-grid">
+                    @foreach (var t in LiveTours)
+                    {
+                        <div class="bc-live-card" @onclick="() => StartTour(t.TourId)">
+                            <span class="bc-badge live card">LIVE</span>
+                            <div class="bc-card-name">@t.TourName</div>
+                            <div class="bc-card-meta">@LiveMeta(t.Pick)</div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (OtherTours.Count > 0)
+            {
+                <div class="bc-lobby-sect">Today &amp; upcoming</div>
+                <div class="bc-lobby-rows">
+                    @foreach (var t in OtherTours)
+                    {
+                        <div class="bc-lobby-row" @onclick="() => StartTour(t.TourId)">
+                            <span class="bc-row-name">@t.TourName</span>
+                            <span class="bc-row-when">@WhenLabel(t.Pick)</span>
+                        </div>
+                    }
+                </div>
+            }
+            @if (LiveTours.Count == 0 && OtherTours.Count == 0)
+            {
+                <p class="bc-waiting">Loading official broadcasts…</p>
+            }
+
+            <div class="bc-url-row">
+                <input placeholder="…or paste any broadcast round URL or id" @bind="roundInput" @bind:event="oninput" />
+                <button class="bc-btn" @onclick="StartFromUrl">Watch</button>
+                <span class="bc-status">@(Feed.IsRunning ? "" : Feed.Status == "idle" ? "" : Feed.Status)</span>
+            </div>
+        </div>
+    }
+
+    <div hidden="@LobbyVisible">
+    @if (Focus != null || Feed.IsRunning)
+    {
+        <div class="bc-header">
+            <span class="bc-back" title="All broadcasts" @onclick="() => showLobby = true">←</span>
+            <span class="bc-title" title="@CurrentTourName">@CurrentTourName</span>
+            @if (SiblingRounds is { Count: > 1 } siblings)
+            {
+                <select class="bc-round-select" value="@Feed.RoundId" @onchange="SwitchRound" title="Switch round">
+                    @foreach (var r in siblings)
+                    {
+                        <option value="@r.RoundId">@r.RoundName @(r.Ongoing ? " (live)" : !r.Finished ? " (upcoming)" : "")</option>
+                    }
+                </select>
+            }
+            @if (Focus is { Finished: false })
+            {
+                <span class="bc-badge live header">LIVE</span>
+            }
+            <span class="bc-dot @DotClass" title="@Feed.Status"></span>
+            @if (!follow && Focus is { Finished: false })
+            {
+                <span class="bc-hint">exploring — stepping to the latest move resumes following</span>
+            }
+            <button class="bc-btn bc-follow @(follow ? "primary" : "")" @onclick="ToggleFollow">
+                @(follow ? "Following live" : "Follow live")
+            </button>
+            <button class="bc-stop" title="Stop broadcast" @onclick="Stop">✕</button>
+        </div>
+    }
     @if (Focus is { } g)
     {
         <div class="bc-layout">
             <div class="bc-focus">
-                <div class="bc-controls">
-                    <button class="bc-btn @(follow ? "primary" : "")" @onclick="ToggleFollow">
-                        @(follow ? "Following live" : "Follow live")
-                    </button>
-                    @if (SiblingRounds is { Count: > 1 } siblings)
-                    {
-                        <select class="bc-round-select" value="@Feed.RoundId" @onchange="SwitchRound" title="Switch round">
-                            @foreach (var r in siblings)
-                            {
-                                <option value="@r.RoundId">@r.RoundName @(r.Ongoing ? " (live)" : !r.Finished ? " (upcoming)" : "")</option>
-                            }
-                        </select>
-                    }
-                    @if (!follow && !g.Finished)
-                    {
-                        <span class="bc-hint">exploring — stepping to the latest move resumes following</span>
-                    }
-                    @if (!g.Finished)
-                    {
-                        <span class="bc-badge live header">LIVE</span>
-                    }
-                </div>
 
                 <ModernChessboard @ref="chessBoardRazor" FENposition="@fen" ChessBoard="@focusBoard"
                                   ShowFenField=false ShowChessNavButtons=true ShowMoveList=true
@@ -77,7 +116,7 @@
                     <AboveMoveList>
                         <KibitzerPanel ChessBoard="@focusBoard" Id="nnInput1"
                                        InitialEngine="Engine" InitialEnginePath="@engineConfigPath"
-                                       OnEvalUpdated="OnKibitzerEval" />
+                                       OnEvalUpdated="OnKibitzerEval" OnLiveStats="OnKibitzerStats" />
                     </AboveMoveList>
                     <BlackPlayerInfo>
                         <div class="bc-player">
@@ -86,7 +125,8 @@
                             {
                                 <span class="bc-score">@ScoreFor(g, white: false)</span>
                             }
-                            <span class="bc-clock @(BlackToMove(g) ? "active" : "")">@Clock(g.BlackClock)</span>
+                            <span class="bc-clock @(BlackToMove(g) ? "active" : "")"
+                                  title="@ThinkingFor(g, white: false)">@LiveClock(g, white: false)</span>
                         </div>
                     </BlackPlayerInfo>
                     <WhitePlayerInfo>
@@ -96,17 +136,32 @@
                             {
                                 <span class="bc-score">@ScoreFor(g, white: true)</span>
                             }
-                            <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")">@Clock(g.WhiteClock)</span>
+                            <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")"
+                                  title="@ThinkingFor(g, white: true)">@LiveClock(g, white: true)</span>
                         </div>
                     </WhitePlayerInfo>
                 </ModernChessboard>
 
-                @if (g.Plies.Count > 1)
+                @if (g.Plies.Count > 1 || statsSeen)
                 {
                     <div class="bc-evalchart">
-                        <MoveEvalChart Baseline="@BaselineEvals(g)" Engine="@EngineEvals(g)"
-                                       CurrentPly="@CurrentPlyIndex(g)" OnPlyClicked="JumpToPly"
-                                       EngineName="@(Engine?.Name ?? "engine")" />
+                        @if (statsSeen)
+                        {
+                            <div class="bc-viewtabs">
+                                <span class="@(showCandidates ? "on" : "")" @onclick="() => showCandidates = true">Moves</span>
+                                <span class="@(!showCandidates ? "on" : "")" @onclick="() => showCandidates = false">Eval history</span>
+                            </div>
+                        }
+                        @if (statsSeen && showCandidates)
+                        {
+                            <CandidateMoves Stats="@candidateStats" Fen="@candidateFen" />
+                        }
+                        else if (g.Plies.Count > 1)
+                        {
+                            <MoveEvalChart Baseline="@BaselineEvals(g)" Engine="@EngineEvals(g)"
+                                           CurrentPly="@CurrentPlyIndex(g)" OnPlyClicked="JumpToPly"
+                                           EngineName="@(Engine?.Name ?? "engine")" />
+                        }
                     </div>
                 }
             </div>
@@ -137,21 +192,44 @@
     {
         <p class="bc-waiting">Waiting for games…</p>
     }
+    </div>
 </div>
 
 @code {
     private string roundInput = "";
-    private string selectedTour = "";
     private List<OfficialRound> officialRounds = new();
 
-    // Tournament picker entries: one per tour, live tours first, otherwise API order.
-    private List<(string TourId, string TourName, bool Live)> Tours =>
+    // Two-state page: lobby (pick a broadcast) vs watching. While streaming, "←" only
+    // shows the lobby on top — the watching view is CSS-hidden, never unmounted, so the
+    // kibitzer engine and board state survive a trip to the lobby.
+    private bool showLobby;
+    private bool LobbyVisible => !Feed.IsRunning || showLobby;
+
+    private record TourEntry(string TourId, string TourName, OfficialRound Pick);
+
+    /// <summary>Tours with a round live right now — the lobby's card grid (API order).</summary>
+    private List<TourEntry> LiveTours =>
         officialRounds
             .GroupBy(r => r.TourId)
-            .Where(g => !string.IsNullOrEmpty(g.Key))
-            .Select(g => (g.Key, g.First().TourName, g.Any(r => r.Ongoing)))
-            .OrderByDescending(t => t.Item3)
+            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Any(r => r.Ongoing))
+            .Select(g => new TourEntry(g.Key, g.First().TourName, g.First(r => r.Ongoing)))
             .ToList();
+
+    /// <summary>Remaining tours, upcoming first (soonest start), then finished by recency.</summary>
+    private List<TourEntry> OtherTours =>
+        officialRounds
+            .GroupBy(r => r.TourId)
+            .Where(g => !string.IsNullOrEmpty(g.Key) && !g.Any(r => r.Ongoing))
+            .Select(g => new TourEntry(g.Key, g.First().TourName, DefaultLobbyRound(g.ToList())))
+            .OrderBy(t => t.Pick.Finished ? 1 : 0)
+            .ThenBy(t => t.Pick.Finished ? -(t.Pick.StartsAt?.Ticks ?? 0) : (t.Pick.StartsAt?.Ticks ?? long.MaxValue))
+            .ToList();
+
+    /// <summary>The round a lobby row talks about: next upcoming, else the latest finished.</summary>
+    private static OfficialRound DefaultLobbyRound(List<OfficialRound> rounds) =>
+        rounds.Where(r => !r.Finished && !r.Ongoing).OrderBy(r => r.StartsAt ?? DateTimeOffset.MaxValue).FirstOrDefault()
+        ?? rounds.LastOrDefault(r => r.Finished)
+        ?? rounds.First();
 
     /// <summary>The round to land on when a tournament is picked: the live round if any,
     /// else the most recently finished (games to look at), else the first upcoming.</summary>
@@ -159,6 +237,38 @@
         rounds.FirstOrDefault(r => r.Ongoing)
         ?? rounds.LastOrDefault(r => r.Finished)
         ?? rounds.First();
+
+    private OfficialRound CurrentRound =>
+        officialRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
+
+    private string CurrentTourName =>
+        CurrentRound?.TourName
+        ?? (Focus is { } g && !string.IsNullOrEmpty(g.Round) ? g.Round : "Broadcast");
+
+    private string DotClass => Feed.Status == "connected" ? "ok" : "warn";
+
+    private static string LiveMeta(OfficialRound r)
+    {
+        var started = r.StartsAt is DateTimeOffset t ? $" · started {t.ToLocalTime():HH:mm}" : "";
+        return $"{r.RoundName}{started}";
+    }
+
+    private static string WhenLabel(OfficialRound r)
+    {
+        if (r.StartsAt is not DateTimeOffset t) return r.RoundName;
+        var local = t.ToLocalTime();
+        var now = DateTimeOffset.Now;
+        if (r.Finished)
+        {
+            var ago = now - local;
+            return ago.TotalHours < 1 ? $"{r.RoundName} finished · {Math.Max(0, (int)ago.TotalMinutes)}m ago"
+                 : ago.TotalHours < 24 ? $"{r.RoundName} finished · {(int)ago.TotalHours}h ago"
+                 : $"{r.RoundName} finished · {local:MMM d}";
+        }
+        if (local.Date == now.Date) return $"{r.RoundName} · starts {local:HH:mm}";
+        if (local.Date == now.Date.AddDays(1)) return $"{r.RoundName} · tomorrow {local:HH:mm}";
+        return $"{r.RoundName} · {local:MMM d HH:mm}";
+    }
 
     private string focusKey = "";
     private bool follow = true;
@@ -168,6 +278,7 @@
     // kibitzer's analyzer reads search positions from it.
     private readonly Chess.Board focusBoard = new();
     private ModernChessboard chessBoardRazor;
+    private System.Threading.Timer clockTimer;
     private EngineConfig Engine;
     private string engineConfigPath = "";
     private string lastNotifiedFen = "";
@@ -181,6 +292,13 @@
     // Engine eval per ply index (white perspective, clamped to ±5) for the eval chart.
     // Fills in as the kibitzer analyzes positions — live tip while following, gaps when browsing.
     private readonly Dictionary<int, double> engineEvalByPly = new();
+
+    // Candidate-move panel: latest verbose move stats from the kibitzer (MCTS engines only).
+    // statsSeen turns the Moves/Eval-history toggle on once the engine proves it emits them.
+    private List<NNValues> candidateStats = new();
+    private string candidateFen = "";
+    private bool statsSeen;
+    private bool showCandidates = true;
 
     private BroadcastGame Focus =>
         Feed.Games.FirstOrDefault(x => x.Key == focusKey) ?? OrderedGames.FirstOrDefault();
@@ -203,6 +321,44 @@
         !g.Finished && g.SanMoves.Count % 2 == 1;
 
     private static string Clock(string clk) => string.IsNullOrEmpty(clk) ? "–" : clk;
+
+    // ── Live clock ticking ──
+    // [%clk] is a player's remaining time after their LAST move; while they think, we
+    // tick their clock down locally from the moment the opponent's move arrived
+    // (lichess-style). Increment/lag make this an approximation — every new move
+    // re-syncs to the relayed value.
+
+    private static bool ToMove(BroadcastGame g, bool white) =>
+        !g.Finished && (BlackToMove(g) ? !white : white);
+
+    /// <summary>"H:MM:SS" / "MM:SS" clock string → TimeSpan (null if absent/unparsable).</summary>
+    private static TimeSpan? ParseClock(string clk)
+    {
+        if (string.IsNullOrEmpty(clk)) return null;
+        var s = clk.Count(c => c == ':') == 1 ? "0:" + clk : clk; // "MM:SS" would parse as hours:minutes
+        return TimeSpan.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
+    }
+
+    private static string FormatClock(TimeSpan t) =>
+        $"{(int)t.TotalHours}:{t.Minutes:D2}:{t.Seconds:D2}";
+
+    /// <summary>The player-bar clock: relayed value, ticking down for the side to move.</summary>
+    private string LiveClock(BroadcastGame g, bool white)
+    {
+        var raw = white ? g.WhiteClock : g.BlackClock;
+        if (!ToMove(g, white) || g.LastMoveUtc == default || ParseClock(raw) is not TimeSpan t)
+            return Clock(raw);
+        var remaining = t - (DateTime.UtcNow - g.LastMoveUtc);
+        return FormatClock(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
+    }
+
+    /// <summary>Tooltip on the active clock: elapsed thinking time on the current move.</summary>
+    private string ThinkingFor(BroadcastGame g, bool white)
+    {
+        if (!ToMove(g, white) || g.LastMoveUtc == default) return "";
+        var e = DateTime.UtcNow - g.LastMoveUtc;
+        return $"thinking for {(int)e.TotalMinutes}:{e.Seconds:D2}";
+    }
 
     /// <summary>Per-player score once a game is finished: "1", "0" or "½".</summary>
     private static string ScoreFor(BroadcastGame g, bool white) => g.Result switch
@@ -239,6 +395,19 @@
         }
 
         if (Focus is { } g) { focusKey = g.Key; await LoadFocusGameAsync(); }
+
+        // 1 Hz re-render for the ticking clocks — only while a live game is focused
+        // and the watching view is actually visible.
+        clockTimer = new System.Threading.Timer(_ =>
+        {
+            try
+            {
+                if (Feed.IsRunning && !showLobby && Focus is { Finished: false })
+                    _ = InvokeAsync(StateHasChanged);
+            }
+            catch { /* fires during dispose — ignore */ }
+        }, null, 1000, 1000);
+
         officialRounds = await BroadcastState.FetchOfficialRoundsAsync();
     }
 
@@ -315,28 +484,81 @@
         Feed.Start(roundId);
     }
 
+    private DateTime lastStatsRender = DateTime.MinValue;
+    private bool statsRenderPending;
+
+    private void OnKibitzerStats((IReadOnlyList<NNValues> Stats, string Fen) payload)
+    {
+        // Empty payload = engine switched; hide the Moves tab until the new engine
+        // proves it emits verbose stats.
+        if (payload.Stats.Count == 0)
+        {
+            candidateStats = new();
+            candidateFen = "";
+            statsSeen = false;
+            StateHasChanged();
+            return;
+        }
+        candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
+        candidateFen = payload.Fen;
+        statsSeen = true;
+        // Engines can dump stats several times per second — cap panel re-renders at 4 Hz,
+        // with a trailing render so the final dump of a search is never dropped.
+        var now = DateTime.UtcNow;
+        if ((now - lastStatsRender).TotalMilliseconds >= 250)
+        {
+            lastStatsRender = now;
+            StateHasChanged();
+        }
+        else if (!statsRenderPending)
+        {
+            statsRenderPending = true;
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Delay(250);
+                statsRenderPending = false;
+                lastStatsRender = DateTime.UtcNow;
+                StateHasChanged();
+            });
+        }
+    }
+
     private void ResetEvalState()
     {
         (kibCp, kibMate) = (null, null);
         engineEvalByPly.Clear();
+        candidateStats = new();
+        candidateFen = "";
     }
 
-    private void Start()
+    /// <summary>Lobby card/row click: start the tour's current round.</summary>
+    private void StartTour(string tourId)
     {
-        var target = roundInput;
-        if (string.IsNullOrWhiteSpace(target) && !string.IsNullOrEmpty(selectedTour))
-        {
-            var rounds = officialRounds.Where(r => r.TourId == selectedTour).ToList();
-            if (rounds.Count > 0) target = DefaultRound(rounds).RoundId;
-        }
-        if (string.IsNullOrWhiteSpace(target)) return;
+        var rounds = officialRounds.Where(r => r.TourId == tourId).ToList();
+        if (rounds.Count == 0) return;
+        StartRound(DefaultRound(rounds).RoundId);
+    }
+
+    private void StartFromUrl()
+    {
+        if (string.IsNullOrWhiteSpace(roundInput)) return;
+        StartRound(roundInput);
+    }
+
+    private void StartRound(string target)
+    {
         focusKey = "";
         follow = true;
+        showLobby = false;
         ResetEvalState();
         Feed.Start(target);
     }
 
-    private async Task Stop() => await Feed.StopAsync();
+    private async Task Stop()
+    {
+        showLobby = false;
+        await Feed.StopAsync();
+    }
 
     private async Task SelectGame(string key)
     {
@@ -441,6 +663,6 @@
     {
         Feed.Changed -= OnChanged;
         Feed.GameUpdated -= OnGameUpdated;
-        await Task.CompletedTask;
+        if (clockTimer != null) await clockTimer.DisposeAsync();
     }
 }

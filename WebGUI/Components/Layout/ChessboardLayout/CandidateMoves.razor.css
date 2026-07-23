@@ -1,0 +1,163 @@
+/* Candidate-move panel (variant A of the design mockup): search-share bars with a
+   policy-prior tick, Q and WDL per move. Colors are fixed for the dark app theme;
+   text rides the Mud text tokens. */
+
+.cm-empty {
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+    font-style: italic;
+    padding: 0.4rem 0;
+}
+
+.cm-grid {
+    display: grid;
+    grid-template-columns: 3.6rem 1fr 4.6rem 3.6rem 6.2rem;
+    gap: 0 0.8rem;
+    align-items: center;
+}
+
+.cm-h {
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+    padding-bottom: 0.3rem;
+}
+
+.cm-h-prior { color: #e8c86e; }
+.cm-right { text-align: right; }
+
+.cm-row { display: contents; }
+.cm-row > * { padding: 0.24rem 0; }
+.cm-row:hover > * { background: rgba(255, 255, 255, 0.04); }
+
+.cm-san {
+    font-weight: 650;
+    font-size: 0.92rem;
+    color: var(--mud-palette-text-primary);
+}
+
+.cm-san.top { color: #7fd4f2; }
+
+.cm-barcell { min-width: 0; }
+
+.cm-track {
+    position: relative;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 4px;
+}
+
+.cm-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: #4da5c4;
+    border-radius: 0 4px 4px 0;
+    min-width: 2px;
+    transition: width 0.25s ease;
+}
+
+.cm-fill.top { background: #7fd4f2; }
+
+.cm-prior {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background: #e8c86e;
+    border-radius: 1px;
+    transition: left 0.25s ease;
+}
+
+.cm-pct {
+    position: absolute;
+    top: -1px;
+    font-size: 0.76rem;
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+}
+
+.cm-pct.inside {
+    position: static;
+    float: right;
+    padding-right: 0.45rem;
+    color: #10222b;
+    font-weight: 600;
+    line-height: 14px;
+}
+
+.cm-n {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+    text-align: right;
+}
+
+.cm-q {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-align: right;
+    color: var(--mud-palette-text-secondary);
+}
+
+.cm-q.pos { color: #7fd1a8; }
+.cm-q.neg { color: #e58a8a; }
+
+.cm-wdl-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.cm-wdl {
+    display: flex;
+    width: 58px;
+    height: 12px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+}
+
+.cm-wdl span { display: block; height: 100%; }
+.cm-wdl span + span { margin-left: 2px; }
+.cm-wdl .w { background: #ededef; }
+.cm-wdl .d { background: #8b8b98; }
+.cm-wdl .l { background: #585874; }
+
+.cm-wdl-num {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem;
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+}
+
+.cm-legend {
+    display: flex;
+    gap: 1.4rem;
+    margin-top: 0.7rem;
+    font-size: 0.72rem;
+    color: var(--mud-palette-text-secondary);
+    flex-wrap: wrap;
+}
+
+.cm-legend i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 0.35rem;
+    vertical-align: -1px;
+}
+
+.cm-legend .sw-top { background: #7fd4f2; }
+.cm-legend .sw-n { background: #4da5c4; }
+.cm-legend .sw-p { background: #e8c86e; }
+.cm-legend .sw-w { background: #ededef; }
+.cm-legend .sw-d { background: #8b8b98; margin-left: 0.6rem; }
+.cm-legend .sw-l { background: #585874; margin-left: 0.6rem; }

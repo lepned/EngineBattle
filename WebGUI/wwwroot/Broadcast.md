@@ -6,8 +6,8 @@ Open it from the navigation menu: **Tournament → Lichess broadcast** (`/broadc
 
 ## Quick start
 
-1. Pick a tournament from the **official tournaments** dropdown (live tournaments are listed first), or paste any lichess broadcast round URL or round id into the text field.
-2. Press **Start**. You land on the tournament's current round — the live round if one is running, otherwise the latest finished round. All games of the round appear as tiles; the first game becomes the focus board. Click a tile to focus a different game. Use the round switcher next to the Follow button to change rounds.
+1. The page opens as a **lobby**: tournaments that are live right now appear as cards, everything else as a list with start times. Click one to start watching — you land on the tournament's current round (the live round if one is running, otherwise the latest finished round). Power users can paste any lichess broadcast round URL or id in the field at the bottom.
+2. All games of the round appear as tiles; the first game becomes the focus board. Click a tile to focus a different game. The **header line** above the board holds everything else: **←** back to the lobby (the stream and engine keep running), the round switcher pill, a LIVE badge, a stream-health dot (green = connected, amber = reconnecting; hover for details), the Follow button and **✕** to stop.
 3. Press **▶** in the kibitzer panel (top right of the move list) to start engine analysis. Analysis follows whatever position is on the board — live moves, browsing, or your own exploration.
 
 ## The kibitzer panel
@@ -24,10 +24,11 @@ Evals are displayed from **white's perspective** everywhere (panel, bar, chart),
 
 If the engine process crashes, the panel shows *"engine exited — press ▶ to restart"* — one click recreates it.
 
-## Eval bar and eval chart
+## Eval bar, candidate moves and eval chart
 
 - The **vertical bar** beside the board tracks the engine's main line, using the same win-probability scaling lichess uses. It flips with the board.
-- The **chart** below the board plots eval per move: your engine (colored line and dots) against lichess's server evaluation (gray line, present when lichess has analyzed the game). The engine line fills in as positions get analyzed — the live tip while following, plus any position you browse to. Click anywhere in the chart to jump the board to that move.
+- Below the board, engines with `LogLiveStats` (Lc0/Ceres) get a **candidate-moves panel**: the top 5 root moves by visits, each with a visit-share bar, an amber tick marking the policy prior (so you see where search and net disagree), node count, Q and a win/draw/loss micro-bar — all white-perspective. A small **Moves / Eval history** toggle switches between this panel and the chart.
+- The **eval chart** plots eval per move: your engine (colored line and dots) against lichess's server evaluation (gray line, present when lichess has analyzed the game). The engine line fills in as positions get analyzed — the live tip while following, plus any position you browse to. Click anywhere in the chart to jump the board to that move. Engines without live stats always show the chart.
 
 ## Following vs exploring
 
@@ -37,7 +38,7 @@ If the engine process crashes, the panel shows *"engine exited — press ▶ to 
 
 ## Round switcher
 
-When the current round belongs to a tournament from the official list, a round dropdown appears next to the Follow button — this is where you move between rounds (live and upcoming rounds are marked). Pasted rounds that are not in the official list have no switcher.
+When the current round belongs to a tournament from the official list, the round pill in the header is a dropdown — this is where you move between rounds (live and upcoming rounds are marked). Pasted rounds that are not in the official list have no switcher.
 
 ## Finished games
 

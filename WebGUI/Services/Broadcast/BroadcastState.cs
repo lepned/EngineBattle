@@ -33,6 +33,9 @@ namespace WebGUI.Services.Broadcast
         /// <summary>Parsed PGN of the latest update (for board replay, e.g. PlayPgnToPly).</summary>
         public PGNTypes.PgnGame? Parsed { get; set; }
         public DateTime LastUpdateUtc { get; set; }
+        /// <summary>When the last new move arrived (unlike LastUpdateUtc, tag-only updates
+        /// don't touch this). Basis for ticking the side-to-move's clock locally.</summary>
+        public DateTime LastMoveUtc { get; set; }
 
         public string LastMoveSan => SanMoves.Count > 0 ? SanMoves[^1] : "";
         public bool Finished => Result is "1-0" or "0-1" or "1/2-1/2";
@@ -41,7 +44,7 @@ namespace WebGUI.Services.Broadcast
 
     /// <summary>One round of an official broadcast. The picker groups these by TourId
     /// (tournament dropdown); the round switcher lists one tour's rounds.</summary>
-    public sealed record OfficialRound(string RoundId, string RoundName, bool Ongoing, bool Finished, string TourId, string TourName);
+    public sealed record OfficialRound(string RoundId, string RoundName, bool Ongoing, bool Finished, string TourId, string TourName, DateTimeOffset? StartsAt);
 
     /// <summary>
     /// Holds the live state of one lichess broadcast round: starts/stops the streaming
@@ -200,6 +203,7 @@ namespace WebGUI.Services.Broadcast
                 game.BlackClock = blackClock;
                 game.RawPgn = pgn;
                 game.LastUpdateUtc = DateTime.UtcNow;
+                if (newMoves > 0) game.LastMoveUtc = game.LastUpdateUtc;
             }
 
             if (changed)
@@ -246,7 +250,9 @@ namespace WebGUI.Services.Broadcast
                             var ongoing = round.TryGetProperty("ongoing", out var o) && o.GetBoolean();
                             var finished = round.TryGetProperty("finished", out var f) && f.GetBoolean();
                             if (id.Length == 0) continue;
-                            result.Add(new OfficialRound(id, name, ongoing, finished, tourId, tourName));
+                            DateTimeOffset? startsAt = round.TryGetProperty("startsAt", out var sa) && sa.TryGetInt64(out var ms)
+                                ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
+                            result.Add(new OfficialRound(id, name, ongoing, finished, tourId, tourName, startsAt));
                         }
                     }
                     catch { /* one malformed line must not kill the list */ }

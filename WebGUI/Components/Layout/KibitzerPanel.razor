@@ -88,6 +88,10 @@
     /// <summary>White-perspective eval of the best line (pawns, or mate distance) plus the
     /// FEN the search was started on — feeds an eval bar / eval chart.</summary>
     [Parameter] public EventCallback<(double? Cp, int? Mate, string Fen)> OnEvalUpdated { get; set; }
+    /// <summary>Verbose move stats of the current search (Lc0/Ceres LogLiveStats engines
+    /// only) plus the FEN the search runs on — feeds the candidate-moves panel. Fires
+    /// regardless of the overlay checkbox.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<NNValues> Stats, string Fen)> OnLiveStats { get; set; }
 
     private record EngineFile(string Path, string Name);
 
@@ -185,6 +189,10 @@
         hasLiveStats = false;
         engineNote = "";
         ClearData();
+        // Tell stats consumers the source changed: an empty payload means "no verbose
+        // stats until proven otherwise" (the new engine may not emit them at all).
+        if (OnLiveStats.HasDelegate)
+            await OnLiveStats.InvokeAsync((Array.Empty<NNValues>(), ""));
         var old = analyzer;
         analyzer = null;
         if (old != null)
@@ -352,10 +360,18 @@
                     break;
 
                 case EngineUpdate.NNSeq n:
-                    if (overlayOn && hasLiveStats && n.NNSeq.Count > 0)
+                    if (hasLiveStats && n.NNSeq.Count > 0)
                     {
                         n.NNSeq.Reverse();
-                        await Notifier.MovesWithId(n.NNSeq, Id);
+                        if (OnLiveStats.HasDelegate)
+                        {
+                            // Copy: the overlay consumer receives the same list instance.
+                            var stats = n.NNSeq.ToList();
+                            var statsFen = lastSearchFen;
+                            await InvokeAsync(() => OnLiveStats.InvokeAsync((stats, statsFen)));
+                        }
+                        if (overlayOn)
+                            await Notifier.MovesWithId(n.NNSeq, Id);
                     }
                     break;
             }

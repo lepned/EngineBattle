@@ -4,51 +4,195 @@
     padding: 0 1.5rem;
 }
 
-.bc-container h2 {
-    font-size: 1.6rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-    color: var(--mud-palette-text-primary);
-}
-
-.bc-description {
-    color: var(--mud-palette-text-secondary);
-    margin-bottom: 1rem;
-    font-size: 1rem;
-}
-
-/* Picker bar */
-.bc-picker {
+/* ── Lobby (no broadcast running, or "←" while streaming) ── */
+.bc-lobby-head {
     display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    margin-bottom: 1.25rem;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 1.1rem;
     flex-wrap: wrap;
 }
 
-.bc-picker select,
-.bc-picker input {
+.bc-lobby-head h3 {
+    font-size: 1.15rem;
+    font-weight: 650;
+    margin: 0;
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-lobby-head span {
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+.bc-resume {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 8px;
+    background: var(--mud-palette-surface);
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+.bc-lobby-sect {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+    margin: 1.1rem 0 0.55rem;
+}
+
+.bc-live-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 0.7rem;
+    max-width: 1088px;
+}
+
+.bc-live-card {
+    position: relative;
+    border: 1px solid rgba(211, 47, 47, 0.45);
+    border-radius: 8px;
+    padding: 0.75rem 0.9rem;
+    background: var(--mud-palette-surface);
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.bc-live-card:hover {
+    border-color: rgba(211, 47, 47, 0.9);
+}
+
+.bc-card-name {
+    font-weight: 600;
+    font-size: 0.88rem;
+    line-height: 1.3;
+    margin-bottom: 0.3rem;
+    padding-right: 3.4rem;
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-card-meta {
+    font-size: 0.75rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+.bc-lobby-rows {
+    display: flex;
+    flex-direction: column;
+    max-width: 1088px;
+}
+
+.bc-lobby-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.42rem 0.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.84rem;
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-lobby-row:hover {
+    background: var(--mud-palette-lines-default);
+}
+
+.bc-row-when {
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.75rem;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.bc-url-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 1.4rem;
+}
+
+.bc-url-row input {
+    flex: 1;
+    max-width: 460px;
     padding: 0.45rem 0.65rem;
     border: 1px solid var(--mud-palette-lines-default);
     border-radius: 4px;
     background: var(--mud-palette-background);
     color: var(--mud-palette-text-primary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-family: inherit;
-}
-
-.bc-picker select {
-    max-width: 420px;
-}
-
-.bc-picker input {
-    flex: 1;
-    min-width: 240px;
 }
 
 .bc-status {
     font-size: 0.8rem;
     color: var(--mud-palette-text-secondary);
+}
+
+/* ── Watching header: one slim line above the board ── */
+.bc-header {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding-bottom: 0.7rem;
+}
+
+.bc-back {
+    color: var(--mud-palette-text-secondary);
+    font-size: 1.05rem;
+    cursor: pointer;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    user-select: none;
+}
+
+.bc-back:hover {
+    background: var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-primary);
+}
+
+.bc-title {
+    font-weight: 650;
+    font-size: 0.95rem;
+    color: var(--mud-palette-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.bc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.bc-dot.ok { background: #66bb6a; }
+.bc-dot.warn { background: #e8c86e; }
+
+.bc-follow {
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.bc-stop {
+    background: transparent;
+    border: none;
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+}
+
+.bc-stop:hover {
+    background: var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-primary);
 }
 
 /* Buttons */
@@ -137,29 +281,50 @@
     font-weight: 600;
 }
 
-.bc-controls {
-    display: flex;
-    gap: 0.4rem;
-    align-items: center;
-    margin: 0.6rem 0;
-}
-
-/* Round switcher in the controls row */
+/* Round switcher: a content pill in the header (native select underneath) */
 .bc-round-select {
-    padding: 0.35rem 0.5rem;
-    border: 1px solid var(--mud-palette-lines-default);
-    border-radius: 4px;
-    background: var(--mud-palette-background);
+    padding: 0.22rem 0.55rem;
+    border: none;
+    border-radius: 5px;
+    background: var(--mud-palette-lines-default);
     color: var(--mud-palette-text-primary);
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-family: inherit;
     max-width: 220px;
+    cursor: pointer;
 }
 
-/* Eval chart below the board — matches the board + move list width */
+.bc-round-select:hover {
+    filter: brightness(1.25);
+}
+
+/* Eval chart / candidate-moves panel below the board — matches the board + move list width */
 .bc-evalchart {
     margin-top: 0.6rem;
     max-width: 1088px;
+}
+
+/* Moves / Eval-history toggle (shown once the engine emits verbose move stats) */
+.bc-viewtabs {
+    display: inline-flex;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 0.55rem;
+}
+
+.bc-viewtabs span {
+    padding: 0.18rem 0.7rem;
+    font-size: 0.72rem;
+    color: var(--mud-palette-text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.bc-viewtabs span.on {
+    background: var(--mud-palette-lines-default);
+    color: var(--mud-palette-text-primary);
+    font-weight: 600;
 }
 
 .bc-hint {
