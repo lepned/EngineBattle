@@ -72,6 +72,7 @@ public class GlobalSettings
     public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge
     public string BoardCoordinateColor { get; set; } = "";       // "" = auto (opposite square color)
     public string BoardHighlightStyle { get; set; } = "replace"; // replace | tint | frame
+    public string BoardMoveHighlightColor { get; set; } = "";    // "" = theme's highlight; hex = override on any preset
     public string BoardSelectionRingColor { get; set; } = "";    // "" = default green ring
     public string BoardArrowColor { get; set; } = "";            // "" = default (#9D8989)
     public string BoardArrowWidth { get; set; } = "normal";      // thin | normal | thick | xthick

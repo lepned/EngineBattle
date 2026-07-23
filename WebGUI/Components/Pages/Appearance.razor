@@ -139,6 +139,21 @@
                         <option value="frame">Border frame</option>
                     </select>
                 </div>
+                <div class="field-group">
+                    <label>Last-Move Highlight Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="moveHighlightMode" @bind:after="Apply">
+                            <option value="auto">Theme default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (moveHighlightMode == "custom")
+                        {
+                            <input type="color" value="@moveHighlightColor"
+                                   @oninput="e => moveHighlightColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Overrides the theme's last-move highlight on any preset</small>
+                </div>
             </div>
 
             </div>
@@ -373,6 +388,8 @@
     private string coordinateColorMode = "auto";
     private string coordinateColor = "#888888";
     private string highlightStyle = "replace";
+    private string moveHighlightMode = "auto";
+    private string moveHighlightColor = "#FAFAD2";
     private string selRingMode = "auto";
     private string selRingColor = "#14551E";
     private string arrowMode = "auto";
@@ -395,7 +412,8 @@
     private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
 
     private BoardTheme Preview =>
-        BoardThemeService.Preview(themePreset, customLight, customDark, customHighlight, pieceSet);
+        BoardThemeService.Preview(themePreset, customLight, customDark, customHighlight, pieceSet,
+            moveHighlightMode == "custom" ? moveHighlightColor : "");
 
     // Preview overrides: fixed color, or empty string = force default (so previewing "Auto"
     // works even before the change is persisted).
@@ -464,6 +482,8 @@
         coordinateColorMode = string.IsNullOrEmpty(s.BoardCoordinateColor) ? "auto" : "custom";
         if (coordinateColorMode == "custom") coordinateColor = s.BoardCoordinateColor;
         highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
+        moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
+        if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
         arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
@@ -513,6 +533,7 @@
         merged.BoardCoordinateSize = coordinateSize;
         merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
         merged.BoardHighlightStyle = highlightStyle;
+        merged.BoardMoveHighlightColor = moveHighlightMode == "custom" ? moveHighlightColor : "";
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
         merged.BoardArrowWidth = arrowWidth;
@@ -541,6 +562,7 @@
         coordinateSize = d.BoardCoordinateSize;
         coordinateColorMode = "auto";
         highlightStyle = d.BoardHighlightStyle;
+        moveHighlightMode = "auto";
         selRingMode = "auto";
         arrowMode = "auto";
         arrowWidth = d.BoardArrowWidth;
