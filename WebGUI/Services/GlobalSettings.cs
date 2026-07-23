@@ -31,6 +31,7 @@ public class GlobalSettings
     public bool CombineWhiteAndBlackMoves { get; set; } = true;
     public int DefaultMultiPV { get; set; } = 10;
     public double MinPolicyThreshold { get; set; } = 0.05;
+    public bool ShowEvalBar { get; set; } = true;             // vertical eval bar beside analysis/review boards
 
     // Game Review defaults
     public string ReviewSearchMode { get; set; } = "Time";  // Time, Nodes, Depth

@@ -335,6 +335,18 @@ select:focus {
     max-width: 560px;
 }
 
+/* Large preview board with the optional eval bar beside it (mirrors the analysis layout) */
+.preview-board-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+
+.preview-board-main {
+    flex: 1;
+    min-width: 0;
+}
+
 .preview-tiles {
     display: flex;
     gap: 1rem;

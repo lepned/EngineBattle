@@ -156,6 +156,20 @@
                 </div>
             </div>
 
+            <div class="appearance-section @SectionClass("evalbar")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("evalbar")'>
+                    <span class="section-title">Eval Bar <span class="scope-badge analysis">Analysis &amp; review</span></span>
+                    <span class="collapse-indicator">@Indicator("evalbar")</span>
+                </h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="showEvalBar" @bind:after="Apply" />
+                        Show eval bar beside the board
+                    </label>
+                    <small>Vertical win-probability bar on Single Analysis and Game Review (the broadcast page always shows it)</small>
+                </div>
+            </div>
+
             </div>
             <div class="controls-col">
 
@@ -344,6 +358,12 @@
         </div>
 
         <div class="appearance-preview">
+            <div class="preview-board-row">
+            @if (showEvalBar)
+            {
+                <EvalBar Cp="@((double?)0.9)" />
+            }
+            <div class="preview-board-main">
             <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
                           SizePx="null" ShowCoordinates="true"
                           LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
@@ -357,6 +377,8 @@
                           SelectionRingColorCss="@EffectiveSelRing"
                           SelectedSquare="c6"
                           Arrows="@PreviewArrows" Labels="@PreviewLabels" />
+            </div>
+            </div>
             <div class="preview-tiles">
                 <div class="preview-tile">
                     <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
@@ -390,6 +412,7 @@
     private string highlightStyle = "replace";
     private string moveHighlightMode = "auto";
     private string moveHighlightColor = "#FAFAD2";
+    private bool showEvalBar = true;
     private string selRingMode = "auto";
     private string selRingColor = "#14551E";
     private string arrowMode = "auto";
@@ -484,6 +507,7 @@
         highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
         moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
         if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
+        showEvalBar = s.ShowEvalBar;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
         arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
@@ -534,6 +558,7 @@
         merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
         merged.BoardHighlightStyle = highlightStyle;
         merged.BoardMoveHighlightColor = moveHighlightMode == "custom" ? moveHighlightColor : "";
+        merged.ShowEvalBar = showEvalBar;
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
         merged.BoardArrowWidth = arrowWidth;
@@ -563,6 +588,7 @@
         coordinateColorMode = "auto";
         highlightStyle = d.BoardHighlightStyle;
         moveHighlightMode = "auto";
+        showEvalBar = d.ShowEvalBar;
         selRingMode = "auto";
         arrowMode = "auto";
         arrowWidth = d.BoardArrowWidth;

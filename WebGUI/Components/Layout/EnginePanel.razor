@@ -355,6 +355,9 @@
     [Parameter] public string Player { get; set; }
     [Parameter] public bool IsReviewing { get; set; }
     [Parameter] public EventCallback<string> OnSearchCompleted { get; set; }
+    /// <summary>White-perspective eval of the main line (pawns, or mate distance) — feeds
+    /// an eval bar on the host page. Throttled to meaningful changes (0.05 pawns).</summary>
+    [Parameter] public EventCallback<(double? Cp, int? Mate)> OnEvalUpdated { get; set; }
     [Parameter] public Func<bool> IsPositionAnalyzed { get; set; }
 
     [Parameter] public int Nodes { get; set; } = 0;
@@ -447,6 +450,9 @@
         dataList.Clear();
         InfoLineList.Clear();
         NNInfoList.Clear();
+        // New position/search: let the first eval through even if it equals the last one.
+        lastPublishedCp = null;
+        lastPublishedMate = null;
         if (searchInfoPlot != null) await searchInfoPlot.ResetPlot(false);
         cpEvalPlot?.Clear();
         await InvokeAsync(StateHasChanged);
@@ -1797,8 +1803,33 @@
         // Always update PV state for any subscriber (individual or dual dialog)
         UpdatePVState();
 
+        if (k <= 1) await PublishEval(status);
+
         await InvokeAsync(StateHasChanged);
         await Task.CompletedTask;
+    }
+
+    // Eval-bar publishing: throttled so the host page is not re-rendered per info line.
+    private double? lastPublishedCp;
+    private int? lastPublishedMate;
+
+    private async Task PublishEval(EngineStatus status)
+    {
+        if (!OnEvalUpdated.HasDelegate) return;
+        // EngineStatus.Eval is already white-perspective (the UCI parser negates for black).
+        (double? cp, int? mate) = status.Eval switch
+        {
+            EvalType.CP c => ((double?)c.Info, (int?)null),
+            EvalType.Mate m => (null, m.Info),
+            _ => ((double?)null, (int?)null)
+        };
+        if (cp == null && mate == null) return;
+        var changed = mate != lastPublishedMate || (cp.HasValue != lastPublishedCp.HasValue) ||
+                      (cp.HasValue && lastPublishedCp.HasValue && Math.Abs(cp.Value - lastPublishedCp.Value) >= 0.05);
+        if (!changed) return;
+        lastPublishedCp = cp;
+        lastPublishedMate = mate;
+        await InvokeAsync(() => OnEvalUpdated.InvokeAsync((cp, mate)));
     }
 
     // Coalesces overlapping auto-search starts: at most one task runs and one waits.
