@@ -167,7 +167,7 @@
 
             <div class="appearance-section @SectionClass("evalbar")">
                 <h4 class="collapsible-header" @onclick='() => Toggle("evalbar")'>
-                    <span class="section-title">Eval Bar <span class="scope-badge all">Analysis &amp; tournament</span></span>
+                    <span class="section-title">Eval Bar <span class="scope-badge all">All boards</span></span>
                     <span class="collapse-indicator">@Indicator("evalbar")</span>
                 </h4>
                 <div class="field-group">
@@ -175,7 +175,7 @@
                         <input type="checkbox" @bind="showEvalBar" @bind:after="Apply" />
                         Show eval bar beside the board
                     </label>
-                    <small>Vertical win-probability bar on Single/Dual Analysis, Game Review and the live tournament board (the broadcast page always shows it; never shown in Play vs Computer)</small>
+                    <small>Vertical win-probability bar beside boards with a live eval — analysis pages, Game Review, tournament board and live games grid (the broadcast page always shows it; never shown in Play vs Computer)</small>
                 </div>
             </div>
 

@@ -1,6 +1,7 @@
 @page "/tournament-grid"
 @using WebGUI.Services
 @using WebGUI.Components.Layout.TournamentLayout
+@using WebGUI.Components.Layout.ChessboardLayout
 @using ChessLibrary
 @using static ChessLibrary.PGNTypes
 @using static ChessLibrary.MiscTypes
@@ -10,6 +11,7 @@
 @inject WebGUI.Services.Ceres.CeresFeedBridge CeresBridge
 @inject NavigationManager Nav
 @inject Microsoft.JSInterop.IJSRuntime JS
+@inject GlobalSettingsService SettingsService
 
 <PageTitle>Live games grid</PageTitle>
 
@@ -150,7 +152,7 @@
         <br />Replay a recording: <code>/tournament-grid?replay=PATH&amp;games=4&amp;speed=600</code></p>
 }
 
-<div class="games-grid" style="grid-template-columns: repeat(auto-fill, minmax(@(bs + 28)px, 1fr));">
+<div class="games-grid" style="grid-template-columns: repeat(auto-fill, minmax(@(bs + (showEvalBar ? 40 : 28))px, 1fr));">
     @foreach (var g in tiles)
     {
         <a class="game-tile @(g.Finished ? "done" : "")" @key="g.GameId"
@@ -163,7 +165,13 @@
             </div>
             <div class="pv">@ShortPv(g.BlackPV)</div>
             <div class="stats">@g.BlackStats</div>
-            <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@bs" />
+            <div class="tile-board-row">
+                @if (showEvalBar)
+                {
+                    <EvalBar Cp="@g.EvalCp" Mate="@g.EvalMate" />
+                }
+                <PVtileBoard Fen="@g.Fen" Color="@g.MoveColor" FromSq="@g.FromSq" ToSq="@g.ToSq" Size="@bs" />
+            </div>
             <div class="pv">@ShortPv(g.WhitePV)</div>
             <div class="stats">@g.WhiteStats</div>
             <div class="tile-row">
@@ -185,6 +193,8 @@
 </div>
 
 @code {
+    private bool showEvalBar => SettingsService.Settings.ShowEvalBar;
+
     private readonly Dictionary<string, GameVM> games = new();
     private readonly List<Result> results = new();          // accumulated across all games/slots
     private readonly HashSet<string> seenStandings = new(); // dedup results for standings (Ceres sends gameEnd + gameResult)
@@ -361,6 +371,7 @@
                             : sog.Game.StartPos;
                         vm.FromSq = vm.ToSq = vm.LastMove = "";
                         vm.WhiteEval = vm.BlackEval = "";
+                        vm.EvalCp = null; vm.EvalMate = null;
                         vm.WhitePV = vm.BlackPV = "";
                         vm.WhiteStats = vm.BlackStats = "";
                         vm.Result = "";
@@ -382,6 +393,7 @@
                         var stats = FmtStats(bm.Status.Nodes, bm.Status.NPS, bm.Status.EPS);
                         if (bm.Info.Player == vm.White) { vm.WhiteEval = ev; vm.WhitePV = bm.Info.PV; vm.WhiteTime = FmtClock(bm.Info.TimeLeft); vm.WhiteStats = stats; }
                         else if (bm.Info.Player == vm.Black) { vm.BlackEval = ev; vm.BlackPV = bm.Info.PV; vm.BlackTime = FmtClock(bm.Info.TimeLeft); vm.BlackStats = stats; }
+                        SetTileEval(vm, bm.Info.Eval);
                         // Per-engine speed + cumulative think time for the standings table (one sample per move).
                         if (!string.IsNullOrEmpty(bm.Info.Player) && bm.Status.Nodes > 0)
                         {
@@ -399,6 +411,7 @@
                         var stats = FmtStats(st.Engine.Nodes, st.Engine.NPS, st.Engine.EPS);
                         if (st.Engine.PlayerName == vm.White) { vm.WhiteEval = ev; vm.WhitePV = st.Engine.PV; vm.WhiteStats = stats; }
                         else if (st.Engine.PlayerName == vm.Black) { vm.BlackEval = ev; vm.BlackPV = st.Engine.PV; vm.BlackStats = stats; }
+                        SetTileEval(vm, st.Engine.Eval);
                         break;
                     }
 
@@ -509,6 +522,16 @@
 
     private static string Eval(EvalType e) => e == null || e.IsNA ? "" : e.ToString();
 
+    /// <summary>Latest typed eval for the tile's bar (white perspective); NA keeps the last value.</summary>
+    private static void SetTileEval(GameVM vm, EvalType e)
+    {
+        switch (e)
+        {
+            case EvalType.CP cp: (vm.EvalCp, vm.EvalMate) = (cp.Info, null); break;
+            case EvalType.Mate m: (vm.EvalCp, vm.EvalMate) = (null, m.Info); break;
+        }
+    }
+
     // Compact magnitude formatter: 31200 -> "31.2k", 4_300_000 -> "4.3M".
     private static string Kfmt(double v) => v >= 1_000_000 ? $"{v / 1_000_000:0.0}M" : $"{v / 1_000:0.0}k";
 
@@ -608,6 +631,9 @@
         public string LastMove { get; set; } = "";
         public string WhiteEval { get; set; } = "";
         public string BlackEval { get; set; } = "";
+        // Latest typed eval from either engine (white perspective) — drives the tile's eval bar.
+        public double? EvalCp { get; set; }
+        public int? EvalMate { get; set; }
         public string WhitePV { get; set; } = "";
         public string BlackPV { get; set; } = "";
         public string WhiteStats { get; set; } = "";   // "N = …  nps = …k  eps = …k"
