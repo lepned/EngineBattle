@@ -10,16 +10,21 @@
 
 <MudGrid Justify="Justify.Center">
 	<MudItem sm=12>
-		<div class="mt-3 streaming-board" style="height:100%; display:flex; gap:6px; align-items:stretch;">
-			@if (ShowEvalBar)
-			{
-				<EvalBar Cp="@EvalCp" Mate="@EvalMate" />
-			}
-			<div style="flex:1 1 auto; min-width:0;">
-				<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
-							  SizePx="null"
-							  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
-							  Arrows="@BoardArrows" Labels="@BoardLabels" />
+		<div class="mt-3 streaming-board" style="height:100%;">
+			@* Inner row sizes to its content (the square board), so the stretched bar
+			   matches the board height exactly — the outer div's height:100% would
+			   otherwise stretch the bar past the board's bottom edge. *@
+			<div style="display:flex; gap:6px; align-items:stretch;">
+				@if (ShowEvalBar)
+				{
+					<EvalBar Cp="@EvalCp" Mate="@EvalMate" />
+				}
+				<div style="flex:1 1 auto; min-width:0;">
+					<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
+								  SizePx="null"
+								  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
+								  Arrows="@BoardArrows" Labels="@BoardLabels" />
+				</div>
 			</div>
 		</div>
 	</MudItem>
