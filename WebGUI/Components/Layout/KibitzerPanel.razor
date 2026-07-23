@@ -27,6 +27,14 @@
         </button>
     </div>
 
+    @if (engineFiles.Count == 0)
+    {
+        <div class="kib-setup-hint">
+            No engine definitions found. Set your <b>Engine defs folder</b> (and optionally a
+            default engine) in <a href="/settings">Settings</a>, then return here.
+        </div>
+    }
+
     <div class="kib-row kib-controls">
         <label title="Search time per position">
             <select class="kib-select" value="@limitSeconds" @onchange="OnLimitChanged">

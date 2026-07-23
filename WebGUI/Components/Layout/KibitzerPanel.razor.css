@@ -127,3 +127,15 @@
     text-overflow: ellipsis;
     color: var(--mud-palette-text-secondary);
 }
+
+/* First-run guidance when no engine definitions exist (empty defs folder, no default). */
+.kib-setup-hint {
+    font-size: 0.78rem;
+    color: var(--mud-palette-text-secondary);
+    padding: 0.35rem 0.1rem;
+    line-height: 1.45;
+}
+
+.kib-setup-hint a {
+    color: var(--mud-palette-primary);
+}
