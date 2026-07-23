@@ -1,0 +1,83 @@
+.mec-wrap {
+    background: rgba(30, 33, 44, 0.6);
+    border: 1px solid rgba(125, 132, 156, 0.18);
+    border-radius: 12px;
+    padding: 6px 8px 2px;
+}
+
+.mec-svg {
+    display: block;
+    width: 100%;
+    height: 120px;
+}
+
+.mec-zero {
+    stroke: rgba(160, 168, 184, 0.35);
+    stroke-width: 1;
+    stroke-dasharray: 5 5;
+    vector-effect: non-scaling-stroke;
+}
+
+.mec-cursor {
+    stroke: rgba(143, 217, 255, 0.55);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+.mec-baseline {
+    fill: none;
+    stroke: #9aa4b5;
+    stroke-width: 1.5;
+    opacity: 0.75;
+    vector-effect: non-scaling-stroke;
+}
+
+.mec-engine {
+    fill: none;
+    stroke: var(--mud-palette-primary);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.mec-engine-dot {
+    fill: var(--mud-palette-primary);
+    stroke: none;
+}
+
+.mec-hit {
+    fill: transparent;
+    cursor: pointer;
+}
+
+.mec-hit:hover {
+    fill: rgba(255, 255, 255, 0.06);
+}
+
+.mec-legend {
+    display: flex;
+    gap: 14px;
+    padding: 2px 4px 4px;
+    font-size: 0.72rem;
+    color: var(--mud-palette-text-secondary);
+}
+
+.mec-legend > span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.mec-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+}
+
+.mec-swatch.engine {
+    background: var(--mud-palette-primary);
+}
+
+.mec-swatch.baseline {
+    background: #9aa4b5;
+}

@@ -31,6 +31,7 @@ public class GlobalSettings
     public bool CombineWhiteAndBlackMoves { get; set; } = true;
     public int DefaultMultiPV { get; set; } = 10;
     public double MinPolicyThreshold { get; set; } = 0.05;
+    public bool ShowEvalBar { get; set; } = true;             // vertical eval bar beside analysis/review boards
 
     // Game Review defaults
     public string ReviewSearchMode { get; set; } = "Time";  // Time, Nodes, Depth
@@ -66,12 +67,14 @@ public class GlobalSettings
     public string BoardCustomDarkColor { get; set; } = "#619EB3";
     public string BoardCustomHighlightColor { get; set; } = "#FAFAD2";
     public string BoardPieceSet { get; set; } = "wikipedia";
+    public int BoardPieceScale { get; set; } = 100;              // piece size as % of the square (80–100)
     public bool BoardAnimateMoves { get; set; } = true;
     // Coordinates on tournament boards (streaming, PV duo, tile boards).
     public bool ShowTournamentBoardCoordinates { get; set; } = true;
     public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge
     public string BoardCoordinateColor { get; set; } = "";       // "" = auto (opposite square color)
     public string BoardHighlightStyle { get; set; } = "replace"; // replace | tint | frame
+    public string BoardMoveHighlightColor { get; set; } = "";    // "" = theme's highlight; hex = override on any preset
     public string BoardSelectionRingColor { get; set; } = "";    // "" = default green ring
     public string BoardArrowColor { get; set; } = "";            // "" = default (#9D8989)
     public string BoardArrowWidth { get; set; } = "normal";      // thin | normal | thick | xthick

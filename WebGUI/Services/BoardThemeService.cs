@@ -23,7 +23,8 @@ public record BoardTheme(
     double PolicyLabelFontPx = 12,
     double PolicyLabelChipPct = 0.55,
     string WhiteMoveArrowColor = "#cfece0",
-    string BlackMoveArrowColor = "#383231");
+    string BlackMoveArrowColor = "#383231",
+    double PieceScale = 1.0);
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -145,31 +146,39 @@ public class BoardThemeService
         var policyChip = PolicyLabelChipPct(s.BoardPolicyLabelSize);
         var whiteMoveArrow = string.IsNullOrEmpty(s.BoardWhiteMoveArrowColor) ? "#cfece0" : s.BoardWhiteMoveArrowColor;
         var blackMoveArrow = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "#383231" : s.BoardBlackMoveArrowColor;
+        var pieceScale = (s.BoardPieceScale is >= 50 and <= 100 ? s.BoardPieceScale : 100) / 100.0;
 
+        string light, dark, hlWhite, hlBlack;
         if (s.BoardThemePreset == "custom")
         {
+            light = s.BoardCustomLightColor ?? "#B1D8DB";
+            dark = s.BoardCustomDarkColor ?? "#619EB3";
             // The custom highlight is a hex color from a color input; append 80% alpha
             // so it composes like the preset highlights.
-            var highlight = (s.BoardCustomHighlightColor ?? "#FAFAD2") + "CC";
-            return new BoardTheme(
-                s.BoardCustomLightColor ?? "#B1D8DB",
-                s.BoardCustomDarkColor ?? "#619EB3",
-                highlight, highlight, pieceSet, s.ShowTournamentBoardCoordinates,
-                CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
-                highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
-                policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow);
+            hlWhite = hlBlack = (s.BoardCustomHighlightColor ?? "#FAFAD2") + "CC";
+        }
+        else
+        {
+            var key = presets.ContainsKey(s.BoardThemePreset ?? "") ? s.BoardThemePreset : "eb-blue";
+            var p = presets[key];
+            (light, dark, hlWhite, hlBlack) = (p.Light, p.Dark, p.HlWhite, p.HlBlack);
         }
 
-        var key = presets.ContainsKey(s.BoardThemePreset ?? "") ? s.BoardThemePreset : "eb-blue";
-        var p = presets[key];
-        return new BoardTheme(p.Light, p.Dark, p.HlWhite, p.HlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
+        // Standalone move-highlight override: recolors the last-move highlight on any preset.
+        if (!string.IsNullOrEmpty(s.BoardMoveHighlightColor))
+        {
+            var c = s.BoardMoveHighlightColor;
+            hlWhite = hlBlack = c.Length == 7 && c[0] == '#' ? c + "CC" : c;
+        }
+
+        return new BoardTheme(light, dark, hlWhite, hlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
             CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
             highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
-            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow);
+            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow, pieceScale);
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>
-    public static BoardTheme Preview(string presetKey, string customLight, string customDark, string customHighlight, string pieceSet) =>
+    public static BoardTheme Preview(string presetKey, string customLight, string customDark, string customHighlight, string pieceSet, string moveHighlight = "") =>
         Resolve(new GlobalSettings
         {
             BoardThemePreset = presetKey,
@@ -177,6 +186,7 @@ public class BoardThemeService
             BoardCustomDarkColor = customDark,
             BoardCustomHighlightColor = customHighlight,
             BoardPieceSet = pieceSet,
+            BoardMoveHighlightColor = moveHighlight,
         });
 
     /// <summary>Web path to a piece image, probing svg vs png per set (for gallery thumbnails).</summary>

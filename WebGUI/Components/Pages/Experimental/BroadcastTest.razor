@@ -1,0 +1,98 @@
+@page "/broadcast-test"
+@inject WebGUI.Services.Broadcast.BroadcastState Broadcast
+@implements IDisposable
+@using WebGUI.Services.Broadcast
+
+<PageTitle>Broadcast Test</PageTitle>
+
+<div style="max-width:1100px; margin:1.5rem auto; padding:0 1rem;">
+    <h3>Lichess Broadcast — Phase 1 ingest test</h3>
+    <p style="opacity:.7">
+        Paste a lichess broadcast round URL (e.g. https://lichess.org/broadcast/…/…/xxxxxxxx)
+        or a bare round id, then Start. Games appear and update as moves are played.
+    </p>
+
+    <div style="display:flex; gap:.5rem; margin-bottom:1rem;">
+        <input style="flex:1; padding:.45rem .65rem;" placeholder="Broadcast round URL or id"
+               @bind="roundInput" @bind:event="oninput" />
+        <button class="mud-button-root" style="padding:.45rem 1rem;" @onclick="Start" disabled="@Broadcast.IsRunning">Start</button>
+        <button class="mud-button-root" style="padding:.45rem 1rem;" @onclick="Stop" disabled="@(!Broadcast.IsRunning)">Stop</button>
+    </div>
+
+    <p><b>Status:</b> @Broadcast.Status @(string.IsNullOrEmpty(Broadcast.RoundId) ? "" : $"(round {Broadcast.RoundId})")</p>
+
+    @if (Broadcast.Games.Count > 0)
+    {
+        <table style="width:100%; border-collapse:collapse; font-size:.9rem;">
+            <thead>
+                <tr style="text-align:left; border-bottom:1px solid #666;">
+                    <th style="padding:.3rem;">White</th>
+                    <th></th>
+                    <th style="padding:.3rem;">Black</th>
+                    <th></th>
+                    <th style="padding:.3rem;">Result</th>
+                    <th style="padding:.3rem;">Moves</th>
+                    <th style="padding:.3rem;">Last</th>
+                    <th style="padding:.3rem;">Clock W</th>
+                    <th style="padding:.3rem;">Clock B</th>
+                    <th style="padding:.3rem;">Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var g in Broadcast.Games)
+                {
+                    <tr style="border-bottom:1px solid #333;">
+                        <td style="padding:.3rem;">@g.White</td>
+                        <td style="opacity:.6;">@g.WhiteElo</td>
+                        <td style="padding:.3rem;">@g.Black</td>
+                        <td style="opacity:.6;">@g.BlackElo</td>
+                        <td style="padding:.3rem;">@g.Result</td>
+                        <td style="padding:.3rem;">@g.SanMoves.Count</td>
+                        <td style="padding:.3rem;">@g.LastMoveSan</td>
+                        <td style="padding:.3rem;">@g.WhiteClock</td>
+                        <td style="padding:.3rem;">@g.BlackClock</td>
+                        <td style="padding:.3rem; opacity:.6;">@g.LastUpdateUtc.ToLocalTime().ToString("HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (log.Count > 0)
+    {
+        <h4 style="margin-top:1.5rem;">Updates</h4>
+        <pre style="font-size:.8rem; max-height:300px; overflow-y:auto; background:rgba(128,128,128,.08); padding:.5rem;">@string.Join("\n", log)</pre>
+    }
+</div>
+
+@code {
+    private string roundInput = "";
+    private readonly List<string> log = new();
+
+    protected override void OnInitialized()
+    {
+        Broadcast.Changed += OnChanged;
+        Broadcast.GameUpdated += OnGameUpdated;
+    }
+
+    private void Start() => Broadcast.Start(roundInput);
+
+    private async Task Stop() => await Broadcast.StopAsync();
+
+    // Events arrive on background threads; marshal to the renderer.
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnGameUpdated(BroadcastGame game, int newMoves) => _ = InvokeAsync(() =>
+    {
+        var what = newMoves > 0 ? $"+{newMoves} move(s), last {game.LastMoveSan}" : $"result {game.Result}";
+        log.Insert(0, $"{DateTime.Now:HH:mm:ss}  {game.White} - {game.Black}: {what}");
+        if (log.Count > 30) log.RemoveRange(30, log.Count - 30);
+        StateHasChanged();
+    });
+
+    public void Dispose()
+    {
+        Broadcast.Changed -= OnChanged;
+        Broadcast.GameUpdated -= OnGameUpdated;
+    }
+}

@@ -76,6 +76,9 @@
     width: 100%;
     height: 100%;
     display: block;
+    /* User-chosen piece size (% of the square); scale keeps the piece centered and
+       composes with the move animation, whose keyframes repeat it. */
+    transform: scale(var(--eb-piece-scale, 1));
     position: relative;
     z-index: 1;
     touch-action: none; /* allow pointer-event dragging on touch devices */
@@ -93,12 +96,13 @@
 
 @keyframes eb-move {
     from {
-        transform: translate(var(--eb-dx), var(--eb-dy));
+        /* translate before scale: the glide distance stays in unscaled square units */
+        transform: translate(var(--eb-dx), var(--eb-dy)) scale(var(--eb-piece-scale, 1));
         z-index: 6;
     }
 
     to {
-        transform: none;
+        transform: scale(var(--eb-piece-scale, 1));
         z-index: 6;
     }
 }
@@ -167,14 +171,17 @@
     }
 }
 
+/* Corner insets scale with the coordinate font so large sizes keep breathing room —
+   critically the bottom inset: "g" is the only file letter with a descender, and with
+   a fixed 2px inset its tail visually crowded the board edge at Large/Extra Large. */
 .eb-coord.rank {
-    left: 3px;
-    top: 2px;
+    left: calc(1px + 0.15em);
+    top: calc(1px + 0.1em);
 }
 
 .eb-coord.file {
-    right: 3px;
-    bottom: 2px;
+    right: calc(1px + 0.15em);
+    bottom: calc(1px + 0.15em);
 }
 
 /* Coordinate text: a user-chosen fixed color (--eb-coord-color) when set, otherwise

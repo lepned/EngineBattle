@@ -86,6 +86,15 @@
                     }
                 </div>
                 <small>Add your own set as a folder under wwwroot/pieces (wK.svg … bP.svg)</small>
+                <div class="field-group">
+                    <label>Piece Size</label>
+                    <div class="coord-color-row">
+                        <input type="range" min="80" max="100" step="5" value="@pieceScale"
+                               @oninput="e => pieceScale = int.Parse((string)e.Value)" @onchange="Apply" />
+                        <span class="piece-scale-value">@pieceScale%</span>
+                    </div>
+                    <small>Piece size as a share of the square — smaller leaves breathing room</small>
+                </div>
             </div>
 
             <div class="appearance-section @SectionClass("coords")">
@@ -138,6 +147,35 @@
                         <option value="tint">Translucent tint</option>
                         <option value="frame">Border frame</option>
                     </select>
+                </div>
+                <div class="field-group">
+                    <label>Last-Move Highlight Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="moveHighlightMode" @bind:after="Apply">
+                            <option value="auto">Theme default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (moveHighlightMode == "custom")
+                        {
+                            <input type="color" value="@moveHighlightColor"
+                                   @oninput="e => moveHighlightColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Overrides the theme's last-move highlight on any preset</small>
+                </div>
+            </div>
+
+            <div class="appearance-section @SectionClass("evalbar")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("evalbar")'>
+                    <span class="section-title">Eval Bar <span class="scope-badge all">Analysis &amp; tournament</span></span>
+                    <span class="collapse-indicator">@Indicator("evalbar")</span>
+                </h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="showEvalBar" @bind:after="Apply" />
+                        Show eval bar beside the board
+                    </label>
+                    <small>Vertical win-probability bar on Single/Dual Analysis, Game Review and the live tournament board (the broadcast page always shows it; never shown in Play vs Computer)</small>
                 </div>
             </div>
 
@@ -329,6 +367,12 @@
         </div>
 
         <div class="appearance-preview">
+            <div class="preview-board-row">
+            @if (showEvalBar)
+            {
+                <EvalBar Cp="@((double?)0.9)" />
+            }
+            <div class="preview-board-main">
             <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
                           SizePx="null" ShowCoordinates="true"
                           LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
@@ -337,11 +381,14 @@
                           HighlightColor="@Preview.HighlightWhite"
                           HighlightColorBlack="@Preview.HighlightBlack"
                           PieceSet="@Preview.PieceSet"
+                          PieceScale="@(pieceScale / 100.0)"
                           CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
                           CoordinateColorCss="@EffectiveCoordColor"
                           SelectionRingColorCss="@EffectiveSelRing"
                           SelectedSquare="c6"
                           Arrows="@PreviewArrows" Labels="@PreviewLabels" />
+            </div>
+            </div>
             <div class="preview-tiles">
                 <div class="preview-tile">
                     <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
@@ -352,6 +399,7 @@
                                   HighlightColor="@Preview.HighlightWhite"
                                   HighlightColorBlack="@Preview.HighlightBlack"
                                   PieceSet="@Preview.PieceSet"
+                                  PieceScale="@(pieceScale / 100.0)"
                                   CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
                                   CoordinateColorCss="@EffectiveCoordColor" />
                     <small>Tournament tile (coordinates auto-hide below 200px)</small>
@@ -367,12 +415,16 @@
     private string customDark = "#619EB3";
     private string customHighlight = "#FAFAD2";
     private string pieceSet = "wikipedia";
+    private int pieceScale = 100;
     private bool animateMoves = true;
     private bool tournamentCoordinates = true;
     private string coordinateSize = "medium";
     private string coordinateColorMode = "auto";
     private string coordinateColor = "#888888";
     private string highlightStyle = "replace";
+    private string moveHighlightMode = "auto";
+    private string moveHighlightColor = "#FAFAD2";
+    private bool showEvalBar = true;
     private string selRingMode = "auto";
     private string selRingColor = "#14551E";
     private string arrowMode = "auto";
@@ -395,7 +447,8 @@
     private IReadOnlyList<string> pieceSets = new[] { "wikipedia" };
 
     private BoardTheme Preview =>
-        BoardThemeService.Preview(themePreset, customLight, customDark, customHighlight, pieceSet);
+        BoardThemeService.Preview(themePreset, customLight, customDark, customHighlight, pieceSet,
+            moveHighlightMode == "custom" ? moveHighlightColor : "");
 
     // Preview overrides: fixed color, or empty string = force default (so previewing "Auto"
     // works even before the change is persisted).
@@ -458,12 +511,16 @@
         customDark = s.BoardCustomDarkColor ?? "#619EB3";
         customHighlight = s.BoardCustomHighlightColor ?? "#FAFAD2";
         pieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
+        pieceScale = s.BoardPieceScale is >= 80 and <= 100 ? s.BoardPieceScale : 100;
         animateMoves = s.BoardAnimateMoves;
         tournamentCoordinates = s.ShowTournamentBoardCoordinates;
         coordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
         coordinateColorMode = string.IsNullOrEmpty(s.BoardCoordinateColor) ? "auto" : "custom";
         if (coordinateColorMode == "custom") coordinateColor = s.BoardCoordinateColor;
         highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
+        moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
+        if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
+        showEvalBar = s.ShowEvalBar;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
         arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
@@ -508,11 +565,14 @@
         merged.BoardCustomDarkColor = customDark;
         merged.BoardCustomHighlightColor = customHighlight;
         merged.BoardPieceSet = pieceSet;
+        merged.BoardPieceScale = pieceScale;
         merged.BoardAnimateMoves = animateMoves;
         merged.ShowTournamentBoardCoordinates = tournamentCoordinates;
         merged.BoardCoordinateSize = coordinateSize;
         merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
         merged.BoardHighlightStyle = highlightStyle;
+        merged.BoardMoveHighlightColor = moveHighlightMode == "custom" ? moveHighlightColor : "";
+        merged.ShowEvalBar = showEvalBar;
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
         merged.BoardArrowWidth = arrowWidth;
@@ -536,11 +596,14 @@
         customDark = d.BoardCustomDarkColor;
         customHighlight = d.BoardCustomHighlightColor;
         pieceSet = d.BoardPieceSet;
+        pieceScale = d.BoardPieceScale;
         animateMoves = d.BoardAnimateMoves;
         tournamentCoordinates = d.ShowTournamentBoardCoordinates;
         coordinateSize = d.BoardCoordinateSize;
         coordinateColorMode = "auto";
         highlightStyle = d.BoardHighlightStyle;
+        moveHighlightMode = "auto";
+        showEvalBar = d.ShowEvalBar;
         selRingMode = "auto";
         arrowMode = "auto";
         arrowWidth = d.BoardArrowWidth;

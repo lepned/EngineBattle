@@ -32,6 +32,24 @@
     width: 100%;
 }
 
+/* With BoardLeft content (eval bar): row layout, extra content spans board height */
+.modern-chessboard .mcb-board-wrapper.mcb-with-left {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+
+.modern-chessboard .mcb-board-wrapper.mcb-with-left .chessboard-root {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.modern-chessboard .mcb-board-left,
+.modern-chessboard .mcb-board-right {
+    display: flex;
+    align-items: stretch;
+}
+
 /* ── Board sizing (self-contained) ── */
 .modern-chessboard ::deep .chessboard-root {
     width: 100%;
@@ -93,15 +111,32 @@
     word-wrap: break-word;
 }
 
-/* ── Move list: Right mode (panel) ── */
+/* ── Move list: Right mode (panel) ──
+   The right column stacks optional AboveMoveList content over the scrolling
+   move list; the height:0/min-height:100% trick keeps the column at board
+   height so the panel scrolls instead of growing. */
+.modern-chessboard .mcb-right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 0;
+    min-height: 100%;
+    min-width: 0;
+}
+
+.modern-chessboard .mcb-above-movelist {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
 .modern-chessboard .mcb-movelist-panel {
     background: rgba(30, 33, 44, 0.6);
     border: 1px solid rgba(125, 132, 156, 0.18);
     border-radius: 12px;
     padding: 8px;
     overflow-y: auto;
-    height: 0;
-    min-height: 100%;
+    flex: 1 1 0;
+    min-height: 0;
 }
 
 /* ── Two-column move table ── */
@@ -231,7 +266,13 @@
         grid-template-columns: 1fr;
     }
 
+    .mcb-right-col {
+        height: auto;
+        min-height: 0;
+    }
+
     .mcb-movelist-panel {
+        flex: 0 1 auto;
         max-height: 250px;
     }
 }

@@ -1,0 +1,29 @@
+.eb-evalbar {
+    position: relative;
+    flex: 0 0 16px;
+    width: 16px;
+    align-self: stretch;
+    background: #3d4148;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.eb-evalbar-white {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #e8e8e4;
+    transition: height 0.5s ease;
+}
+
+/* Black at the bottom: white portion grows from the top instead */
+.eb-evalbar.flipped .eb-evalbar-white {
+    bottom: auto;
+    top: 0;
+}
+
+/* No eval yet: muted neutral bar */
+.eb-evalbar.idle {
+    opacity: 0.35;
+}

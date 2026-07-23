@@ -1,0 +1,475 @@
+@using System.Globalization
+@using System.IO
+@using ChessLibrary
+@implements IAsyncDisposable
+@inject NotifierService Notifier
+@inject OverlaySetting OverlaySetting
+@inject GlobalSettingsService SettingsService
+@inject ILogger<KibitzerPanel> logger
+
+@* Compact broadcast kibitzer: engine picker, start/stop, time limit, multi-PV lines
+   and policy overlay publishing. Slim replacement for EnginePanel on viewer pages. *@
+<div class="kib-panel">
+    <div class="kib-row">
+        <select class="kib-select kib-engine-select" value="@selectedPath" @onchange="OnEngineSelected" title="Analysis engine">
+            @if (engineFiles.Count == 0)
+            {
+                <option value="">no engine definitions found</option>
+            }
+            @foreach (var f in engineFiles)
+            {
+                <option value="@f.Path">@f.Name</option>
+            }
+        </select>
+        <button class="kib-power @(running ? "on" : "")" disabled="@(engineConfig == null)"
+                @onclick="ToggleRunning" title="@(running ? "Stop analysis" : "Start analysis")">
+            @(running ? "■" : "▶")
+        </button>
+    </div>
+
+    <div class="kib-row kib-controls">
+        <label title="Search time per position">
+            <select class="kib-select" value="@limitSeconds" @onchange="OnLimitChanged">
+                <option value="0">∞</option>
+                <option value="5">5s</option>
+                <option value="10">10s</option>
+                <option value="30">30s</option>
+            </select>
+        </label>
+        <label title="Number of engine lines">
+            <select class="kib-select" value="@pvLines" @onchange="OnPvLinesChanged">
+                <option value="1">1 line</option>
+                <option value="3">3 lines</option>
+                <option value="5">5 lines</option>
+            </select>
+        </label>
+        @if (hasLiveStats)
+        {
+            <label class="kib-overlay" title="Policy overlay on the board">
+                <input type="checkbox" checked="@overlayOn" @onchange="OnOverlayToggled" /> overlay
+            </label>
+        }
+        @if (waitingForEngine)
+        {
+            <span class="kib-wait">starting…</span>
+        }
+        else if (!string.IsNullOrEmpty(engineNote))
+        {
+            <span class="kib-wait">@engineNote</span>
+        }
+    </div>
+
+    @if (dataList.Count > 0)
+    {
+        var main = dataList[0].Value;
+        <div class="kib-status">
+            <span class="kib-eval">@WhiteEvalStr(main)</span>
+            <span>depth @main.Depth</span>
+            <span>@FormatNodes(main.Nodes)</span>
+            <span>@Formatting.formatNPS(main.NPS)</span>
+        </div>
+        <div class="kib-pvs">
+            @foreach (var item in dataList)
+            {
+                <div class="kib-pv-row" title="@item.Value.PV">
+                    <span class="kib-pv-eval">@WhiteEvalStr(item.Value)</span>
+                    <span class="kib-pv-line">@item.Value.PV</span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Chess.Board ChessBoard { get; set; }
+    [Parameter] public string Id { get; set; } = "nnInput1";
+    [Parameter] public EngineConfig InitialEngine { get; set; }
+    [Parameter] public string InitialEnginePath { get; set; }
+    /// <summary>White-perspective eval of the best line (pawns, or mate distance) plus the
+    /// FEN the search was started on — feeds an eval bar / eval chart.</summary>
+    [Parameter] public EventCallback<(double? Cp, int? Mate, string Fen)> OnEvalUpdated { get; set; }
+    /// <summary>Verbose move stats of the current search (Lc0/Ceres LogLiveStats engines
+    /// only) plus the FEN the search runs on — feeds the candidate-moves panel. Fires
+    /// regardless of the overlay checkbox.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<NNValues> Stats, string Fen)> OnLiveStats { get; set; }
+
+    private record EngineFile(string Path, string Name);
+
+    private readonly List<EngineFile> engineFiles = new();
+    private string selectedPath = "";
+    private EngineConfig engineConfig;
+
+    private AnalysisManager.SimpleEngineAnalyzer analyzer;
+    private bool running;
+    private bool waitingForEngine;
+    private bool hasLiveStats;
+    private bool overlayOn = true;
+    private int limitSeconds = 5;
+    private int pvLines = 3;
+
+    // data is written from the engine-callback thread, the UI thread and the
+    // broadcast-stream thread (via OnNotifyFen) — every touch goes through dataLock.
+    private readonly object dataLock = new();
+    private readonly Dictionary<int, EngineStatus> data = new();
+    private List<KeyValuePair<int, EngineStatus>> dataList = new();
+    // Coalesces overlapping search starts: at most one task runs and one waits.
+    // Guards against unbounded thread-pool pile-up when the engine hangs or dies
+    // (WaitForReadyOk can block for a long time on a crashed process).
+    private int searchQueued;
+    private string engineNote = "";
+    // FEN of the position the current search was started on; published with evals so
+    // consumers attribute them to the right move even when navigation is in flight.
+    private string lastSearchFen = "";
+    private double? lastCp;
+    private int? lastMate;
+    private readonly CancellationTokenSource disposeCts = new();
+
+    protected override void OnInitialized()
+    {
+        engineConfig = InitialEngine;
+        selectedPath = InitialEnginePath ?? "";
+        LoadEngineList();
+        // Without a configured default engine the dropdown would show an entry that
+        // is not actually loaded — load the first one so ▶ works right away.
+        if (engineConfig == null && engineFiles.Count > 0)
+        {
+            try
+            {
+                engineConfig = JSON.readSingleEngineConfig(engineFiles[0].Path);
+                selectedPath = engineFiles[0].Path;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Could not load engine config {Path}: {Msg}", engineFiles[0].Path, ex.Message);
+            }
+        }
+        Notifier.NotifyFen += OnNotifyFen;
+    }
+
+    private void LoadEngineList()
+    {
+        engineFiles.Clear();
+        try
+        {
+            var folder = SettingsService.Settings.EngineDefsFolder;
+            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+            {
+                foreach (var f in Directory.GetFiles(folder, "*.json").OrderBy(Path.GetFileName))
+                    engineFiles.Add(new EngineFile(f, Path.GetFileNameWithoutExtension(f)));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Could not scan engine folder: {Msg}", ex.Message);
+        }
+        // The configured default engine may live outside the folder.
+        if (!string.IsNullOrEmpty(selectedPath) &&
+            !engineFiles.Any(f => string.Equals(f.Path, selectedPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            engineFiles.Insert(0, new EngineFile(selectedPath, Path.GetFileNameWithoutExtension(selectedPath)));
+        }
+    }
+
+    private async Task OnEngineSelected(ChangeEventArgs e)
+    {
+        var path = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(path) || path == selectedPath) return;
+        EngineConfig config;
+        try
+        {
+            config = JSON.readSingleEngineConfig(path);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Could not load engine config {Path}: {Msg}", path, ex.Message);
+            return;
+        }
+        selectedPath = path;
+        engineConfig = config;
+        hasLiveStats = false;
+        engineNote = "";
+        ClearData();
+        // Tell stats consumers the source changed: an empty payload means "no verbose
+        // stats until proven otherwise" (the new engine may not emit them at all).
+        if (OnLiveStats.HasDelegate)
+            await OnLiveStats.InvokeAsync((Array.Empty<NNValues>(), ""));
+        var old = analyzer;
+        analyzer = null;
+        if (old != null)
+            _ = Task.Run(() => { try { old.Quit(); } catch (Exception ex) { logger.LogWarning("Engine quit failed: {Msg}", ex.Message); } });
+        if (running)
+        {
+            await EnsureAnalyzer();
+            BeginSearch();
+        }
+    }
+
+    private async Task ToggleRunning()
+    {
+        if (running)
+        {
+            running = false;
+            analyzer?.Stop();
+        }
+        else
+        {
+            running = true;
+            engineNote = "";
+            await EnsureAnalyzer();
+            if (analyzer == null) { running = false; return; }
+            BeginSearch();
+        }
+    }
+
+    private async Task EnsureAnalyzer()
+    {
+        if (analyzer != null && analyzer.Engine.HasExited)
+            analyzer = null;
+        if (analyzer != null || engineConfig == null)
+            return;
+        waitingForEngine = true;
+        StateHasChanged();
+        var config = engineConfig;
+        var created = await Task.Run(() =>
+        {
+            try
+            {
+                return new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, HandleUpdate, false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Engine start failed: {Msg}", ex.Message);
+                return null;
+            }
+        });
+        waitingForEngine = false;
+        if (created == null) return;
+        if (disposeCts.IsCancellationRequested) { created.Quit(); return; }
+        created.Board = ChessBoard;
+        created.AddSetoption(EngineOption.Create("MultiPV", pvLines.ToString()));
+        analyzer = created;
+    }
+
+    private void ClearData()
+    {
+        lock (dataLock)
+        {
+            data.Clear();
+            dataList = new();
+        }
+        // Reset the eval throttle so each new search publishes at least one update,
+        // even when the eval happens to match the previous position's.
+        lastCp = null;
+        lastMate = null;
+    }
+
+    /// <summary>Starts (or restarts) a search on the shared board's current position.</summary>
+    private void BeginSearch()
+    {
+        var a = analyzer;
+        if (a == null) return;
+        ClearData();
+        // Coalesce: if a start is already queued behind the running one it will pick
+        // up the latest board state anyway — no need for another task.
+        if (Interlocked.CompareExchange(ref searchQueued, 1, 0) != 0) return;
+        var ms = limitSeconds * 1000;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Lock per analyzer so a task stuck on a dead engine never blocks
+                // searches of a newly selected engine.
+                lock (a)
+                {
+                    searchQueued = 0;
+                    // The user may have pressed stop (or switched engines) while this
+                    // start was queued — never fire a search the UI no longer shows.
+                    if (!running || !ReferenceEquals(a, analyzer)) return;
+                    if (a.Engine.HasExited)
+                    {
+                        running = false;
+                        engineNote = "engine exited — press ▶ to restart";
+                        logger.LogWarning("Kibitzer engine process has exited");
+                    }
+                    else
+                    {
+                        lastSearchFen = ChessBoard.FEN();
+                        if (ms <= 0) a.GoInfinite();
+                        else a.Play($"go movetime {ms}");
+                    }
+                }
+                if (!running)
+                    await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Search start failed: {Msg}", ex.Message);
+            }
+        });
+    }
+
+    public async Task OnNotifyFen(string newPos)
+    {
+        if (running && analyzer != null)
+            BeginSearch();
+        await Task.CompletedTask;
+    }
+
+    public async void HandleUpdate(EngineUpdate update)
+    {
+        if (disposeCts.IsCancellationRequested) return;
+        try
+        {
+            switch (update)
+            {
+                case EngineUpdate.Ready ready:
+                    hasLiveStats = ready.HasLiveStat;
+                    waitingForEngine = false;
+                    engineNote = "";
+                    await ApplyOverlaySetting();
+                    await InvokeAsync(StateHasChanged);
+                    break;
+
+                case EngineUpdate.Status s:
+                    var status = s.Item;
+                    var k = status.MultiPV <= 0 ? 1 : status.MultiPV;
+                    if (k <= pvLines)
+                    {
+                        lock (dataLock)
+                        {
+                            data[k] = status;
+                            dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
+                        }
+                        if (k == 1) await PublishEval(status);
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    break;
+
+                case EngineUpdate.BestMove b:
+                    // Value-head engines report an empty PV in status lines; fill from bestmove.
+                    lock (dataLock)
+                    {
+                        if (!string.IsNullOrEmpty(b.Item.PV) && data.TryGetValue(1, out var first) && string.IsNullOrEmpty(first.PV))
+                        {
+                            data[1] = new EngineStatus(first.PlayerName, first.Eval, first.Nodes, first.NPS, first.EPS,
+                                                       first.Depth, first.SD, first.TBhits, first.WDL, b.Item.PV, b.Item.Move, first.MultiPV);
+                            dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
+                        }
+                    }
+                    await InvokeAsync(StateHasChanged);
+                    break;
+
+                case EngineUpdate.NNSeq n:
+                    if (hasLiveStats && n.NNSeq.Count > 0)
+                    {
+                        n.NNSeq.Reverse();
+                        if (OnLiveStats.HasDelegate)
+                        {
+                            // Copy: the overlay consumer receives the same list instance.
+                            var stats = n.NNSeq.ToList();
+                            var statsFen = lastSearchFen;
+                            await InvokeAsync(() => OnLiveStats.InvokeAsync((stats, statsFen)));
+                        }
+                        if (overlayOn)
+                            await Notifier.MovesWithId(n.NNSeq, Id);
+                    }
+                    break;
+            }
+        }
+        catch (ObjectDisposedException) { }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Kibitzer update failed: {Msg}", ex.Message);
+        }
+    }
+
+    // EngineStatus.Eval is already white-perspective: the UCI parser negates the
+    // side-to-move score for black (EngineProtocol.getEssentialDataWithEPS).
+    private static (double? Cp, int? Mate) WhiteEval(EngineStatus status) => status.Eval switch
+    {
+        EvalType.CP cp => (cp.Info, null),
+        EvalType.Mate m => (null, m.Info),
+        _ => ((double?)null, (int?)null)
+    };
+
+    private string WhiteEvalStr(EngineStatus status)
+    {
+        var (cp, mate) = WhiteEval(status);
+        return mate is int m ? (m > 0 ? $"M{m}" : $"-M{-m}")
+             : cp is double c ? c.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)
+             : "–";
+    }
+
+    private async Task PublishEval(EngineStatus status)
+    {
+        if (!OnEvalUpdated.HasDelegate) return;
+        var (cp, mate) = WhiteEval(status);
+        if (cp == null && mate == null) return;
+        // Throttle: only push meaningful changes to avoid re-rendering the host page per info line.
+        var changed = mate != lastMate || (cp.HasValue != lastCp.HasValue) ||
+                      (cp.HasValue && lastCp.HasValue && Math.Abs(cp.Value - lastCp.Value) >= 0.05);
+        if (!changed) return;
+        lastCp = cp;
+        lastMate = mate;
+        var searchFen = lastSearchFen;
+        await InvokeAsync(() => OnEvalUpdated.InvokeAsync((cp, mate, searchFen)));
+    }
+
+    private async Task ApplyOverlaySetting()
+    {
+        var setting = overlayOn && hasLiveStats ? OverlaySettings.Policy : OverlaySettings.None;
+        OverlaySetting.SetOverlaySetting(Id, setting);
+        await Notifier.UpdateDisplaySettings(setting, Id);
+    }
+
+    private async Task OnOverlayToggled(ChangeEventArgs e)
+    {
+        overlayOn = e.Value is bool b && b;
+        await ApplyOverlaySetting();
+    }
+
+    private void OnLimitChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var s))
+        {
+            limitSeconds = s;
+            if (running) BeginSearch();
+        }
+    }
+
+    private void OnPvLinesChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var n)) return;
+        pvLines = n;
+        analyzer?.AddSetoption(EngineOption.Create("MultiPV", n.ToString()));
+        lock (dataLock)
+        {
+            foreach (var stale in data.Keys.Where(key => key > n).ToList())
+                data.Remove(stale);
+            dataList = data.OrderBy(x => x.Value.MultiPV).ToList();
+        }
+        if (running) BeginSearch();
+    }
+
+    private static string FormatNodes(long nodes) => nodes switch
+    {
+        >= 1_000_000_000 => $"{nodes / 1_000_000_000.0:0.#}B nodes",
+        >= 1_000_000 => $"{nodes / 1_000_000.0:0.#}M nodes",
+        >= 1_000 => $"{nodes / 1_000.0:0.#}k nodes",
+        _ => $"{nodes} nodes"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        running = false;
+        disposeCts.Cancel();
+        Notifier.NotifyFen -= OnNotifyFen;
+        var a = analyzer;
+        analyzer = null;
+        if (a != null)
+            _ = Task.Run(() => { try { a.Quit(); } catch (Exception ex) { logger.LogWarning("Engine quit failed: {Msg}", ex.Message); } });
+        disposeCts.Dispose();
+        await Task.CompletedTask;
+    }
+}

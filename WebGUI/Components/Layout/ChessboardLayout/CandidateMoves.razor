@@ -1,0 +1,145 @@
+@using System.Globalization
+
+@* Candidate-move panel for MCTS engines (Lc0/Ceres verbose move stats): top root moves
+   by visits, each row showing search share (bar) vs policy prior (tick), nodes, Q and
+   WDL — all displayed white-perspective. Fed live by the kibitzer during search. *@
+
+@if (rows.Count == 0)
+{
+    <div class="cm-empty">waiting for engine move stats…</div>
+}
+else
+{
+    <div class="cm-grid">
+        <div class="cm-h">Move</div>
+        <div class="cm-h">Search share · <span class="cm-h-prior">▏</span>prior</div>
+        <div class="cm-h cm-right">Nodes</div>
+        <div class="cm-h cm-right">Q</div>
+        <div class="cm-h">WDL</div>
+
+        @foreach (var r in rows)
+        {
+            <div class="cm-row">
+                <div class="cm-san @(r.IsTop ? "top" : "")">@r.San</div>
+                <div class="cm-barcell">
+                    <div class="cm-track">
+                        <div class="cm-fill @(r.IsTop ? "top" : "")" style="width:@Pct(r.NShare)">
+                            @if (r.NShare >= 0.18)
+                            {
+                                <span class="cm-pct inside">@PctLabel(r.NShare)</span>
+                            }
+                        </div>
+                        @if (r.NShare < 0.18)
+                        {
+                            <span class="cm-pct" style="left:calc(@Pct(r.NShare) + 0.45rem)">@PctLabel(r.NShare)</span>
+                        }
+                        <div class="cm-prior" style="left:@Pct(r.PShare)" title="@($"prior {r.PShare * 100:0.0}%")"></div>
+                    </div>
+                </div>
+                <div class="cm-n">@FormatNodes(r.Nodes)</div>
+                <div class="cm-q @(r.Q >= 0.05 ? "pos" : r.Q <= -0.05 ? "neg" : "")">
+                    @r.Q.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)
+                </div>
+                @if (r.HasWdl)
+                {
+                    <div class="cm-wdl-wrap" title="@($"W {r.W:0}% · D {r.D:0}% · L {r.L:0}%")">
+                        <div class="cm-wdl">
+                            <span class="w" style="width:@($"{r.W:0.#}%")"></span>
+                            <span class="d" style="width:@($"{r.D:0.#}%")"></span>
+                            <span class="l" style="width:@($"{r.L:0.#}%")"></span>
+                        </div>
+                        <span class="cm-wdl-num">@($"{r.W:0}·{r.D:0}·{r.L:0}")</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="cm-wdl-num">–</div>
+                }
+            </div>
+        }
+    </div>
+    <div class="cm-legend">
+        <span><i class="sw-top"></i>best move</span>
+        <span><i class="sw-n"></i>visit share (N%)</span>
+        <span><i class="sw-p"></i>policy prior (P%)</span>
+        <span><i class="sw-w"></i>win <i class="sw-d"></i>draw <i class="sw-l"></i>loss</span>
+    </div>
+}
+
+@code {
+    /// <summary>Verbose move stats of the current search, any order (sorted here by visits).</summary>
+    [Parameter] public IReadOnlyList<NNValues> Stats { get; set; }
+    /// <summary>FEN the search ran on — decides the white-perspective flip for Q/WDL.</summary>
+    [Parameter] public string Fen { get; set; } = "";
+    [Parameter] public int MaxRows { get; set; } = 5;
+
+    private record Row(string San, bool IsTop, double NShare, double PShare, long Nodes,
+                       double Q, bool HasWdl, double W, double D, double L);
+
+    // WL (win-minus-loss) and D (draw prob) ride in the raw info string but are not
+    // parsed into NNValues — W = (1-D+WL)/2, L = (1-D-WL)/2.
+    private static readonly System.Text.RegularExpressions.Regex WlRegex =
+        new(@"\(WL:\s*(-?[0-9.]+)\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex DRegex =
+        new(@"\(D:\s*(-?[0-9.]+)\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // Built once per parameter change — the markup reads it twice (empty check + loop).
+    private List<Row> rows = new();
+
+    protected override void OnParametersSet() => rows = BuildRows();
+
+    private List<Row> BuildRows()
+    {
+        // Verbose move stats end with a "node" entry for the root itself (its N is the
+        // whole search) — not a move, and it must not inflate the share denominator.
+        var stats = Stats?.Where(s => !string.Equals(s.LANMove?.Trim(), "node", StringComparison.OrdinalIgnoreCase)).ToList();
+        if (stats == null || stats.Count == 0) return new();
+        var total = stats.Sum(s => Math.Max(0L, s.Nodes));
+        if (total <= 0) return new();
+        var whiteToMove = !Fen.Contains(" b ");
+        var top = stats.OrderByDescending(s => s.Nodes).Take(MaxRows).ToList();
+
+        var result = new List<Row>(top.Count);
+        for (int i = 0; i < top.Count; i++)
+        {
+            var s = top[i];
+            var san = string.IsNullOrEmpty(s.SANMove) ? s.LANMove : s.SANMove;
+            var q = whiteToMove ? s.Q : -s.Q;
+            var hasWdl = TryParseWdl(s.Raw, out var w, out var d, out var l);
+            if (hasWdl && !whiteToMove) (w, l) = (l, w);
+            result.Add(new Row(san, i == 0, (double)s.Nodes / total, Math.Clamp(s.P / 100.0, 0, 1),
+                               s.Nodes, q, hasWdl, w * 100, d * 100, l * 100));
+        }
+        return result;
+    }
+
+    private static bool TryParseWdl(string raw, out double w, out double d, out double l)
+    {
+        (w, d, l) = (0, 0, 0);
+        if (string.IsNullOrEmpty(raw)) return false;
+        var wlM = WlRegex.Match(raw);
+        var dM = DRegex.Match(raw);
+        if (!wlM.Success || !dM.Success) return false;
+        if (!double.TryParse(wlM.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var wl) ||
+            !double.TryParse(dM.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
+            return false;
+        w = Math.Clamp((1.0 - d + wl) / 2.0, 0, 1);
+        l = Math.Clamp((1.0 - d - wl) / 2.0, 0, 1);
+        d = Math.Clamp(d, 0, 1);
+        return true;
+    }
+
+    private static string Pct(double share) =>
+        (share * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private static string PctLabel(double share) =>
+        Math.Round(share * 100).ToString(CultureInfo.InvariantCulture) + "%";
+
+    private static string FormatNodes(long nodes) => nodes switch
+    {
+        >= 1_000_000_000 => $"{nodes / 1_000_000_000.0:0.##}B",
+        >= 1_000_000 => $"{nodes / 1_000_000.0:0.##}M",
+        >= 1_000 => $"{nodes / 1_000.0:0.#}K",
+        _ => nodes.ToString()
+    };
+}

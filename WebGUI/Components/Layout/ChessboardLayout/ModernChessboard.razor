@@ -24,7 +24,11 @@
             <div class="mcb-player-info">@BlackPlayerInfo</div>
         }
 
-        <div class="mcb-board-wrapper">
+        <div class="mcb-board-wrapper @(BoardLeft != null || BoardRight != null ? "mcb-with-left" : "")">
+            @if (BoardLeft != null)
+            {
+                <div class="mcb-board-left">@BoardLeft</div>
+            }
             <div class="chessboard-root" style="position:relative;" @ref="board">
                 <EbChessboard @ref="ebBoard" Fen="@fen" SizePx="null" Flipped="@isBoardFlipped" ShowCoordinates="true"
                               Animate="true"
@@ -51,6 +55,10 @@
                     </div>
                 }
             </div>
+            @if (BoardRight != null)
+            {
+                <div class="mcb-board-right">@BoardRight</div>
+            }
         </div>
 
         @if (!String.IsNullOrEmpty(OpeningMoves))
@@ -114,9 +122,14 @@
         }
     </div>
 
-    @* Move list panel to the right of the board *@
+    @* Move list panel to the right of the board (optionally with content stacked above it) *@
     @if (ShowMoveList && MoveListPosition == MoveListPosition.Right)
     {
+        <div class="mcb-right-col">
+        @if (AboveMoveList != null)
+        {
+            <div class="mcb-above-movelist">@AboveMoveList</div>
+        }
         <div id="moveListDiv" class="mcb-movelist-panel">
             <div class="mcb-movelist-right">
                 <table class="mcb-move-table">
@@ -208,6 +221,7 @@
                 </table>
             </div>
         </div>
+        </div>
     }
 
     @if (showMoveActionDialog)
@@ -253,6 +267,12 @@
     [Parameter] public MoveListPosition MoveListPosition { get; set; } = MoveListPosition.Below;
     [Parameter] public Dictionary<int, string> MoveEvals { get; set; }
     [Parameter] public Dictionary<int, MoveAnnotation> MoveAnnotations { get; set; }
+    /// <summary>Optional content rendered to the left of the board squares (e.g. an eval bar), spanning the board height.</summary>
+    [Parameter] public RenderFragment BoardLeft { get; set; }
+    /// <summary>Optional content rendered to the right of the board squares (e.g. a second engine's eval bar).</summary>
+    [Parameter] public RenderFragment BoardRight { get; set; }
+    /// <summary>Optional content stacked above the move list in Right layout (e.g. an engine widget).</summary>
+    [Parameter] public RenderFragment AboveMoveList { get; set; }
 
     public record MoveAnnotation(string Symbol, string CssClass, string Label, string BestMoveLine);
 

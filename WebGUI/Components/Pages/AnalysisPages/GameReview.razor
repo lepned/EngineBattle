@@ -128,6 +128,8 @@
                         ChessBoard="@board"
                         OnMoveMadeOnBoard="OnBoardNavigated"
                         OnNewFENOnBoard="OnBoardNavigated"
+                        OnBoardFlipped="f => boardFlipped = f"
+                        BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
                         DetectedOpeningName="@openingName"
                         DetectedOpeningECO="@openingECO" />
 
@@ -282,6 +284,45 @@
     private GameAnalysisResult analysisResult;
     private Dictionary<int, string> moveEvals = new();
     private Dictionary<int, ModernChessboard.MoveAnnotation> moveAnnotations = new();
+
+    // ── Eval bar: driven by the review's per-move evals, so it tracks browsing without
+    // a running engine. moveEvals has two keying conventions: review data is EvalBefore
+    // (keyed by the NEXT move's ply), comment-extracted evals are after-move (keyed by
+    // the LAST move's ply) — probe the matching key first, the other as fallback.
+    private bool boardFlipped;
+    private RenderFragment EvalBarLeft => @<EvalBar Cp="@CurrentEval.Cp" Mate="@CurrentEval.Mate" Flipped="@boardFlipped" />;
+
+    private (double? Cp, int? Mate) CurrentEval
+    {
+        get
+        {
+            var idx = gameFens != null ? Array.IndexOf(gameFens, fen) : -1; // last played ply, -1 = start position
+            var keys = analysisResult != null ? new[] { idx + 1, idx } : new[] { idx, idx + 1 };
+            foreach (var k in keys)
+            {
+                if (k >= 0 && moveEvals.TryGetValue(k, out var s))
+                {
+                    var v = ParseEvalString(s);
+                    if (v.Cp != null || v.Mate != null) return v;
+                }
+            }
+            return (null, null);
+        }
+    }
+
+    /// <summary>"+0.3" / "-1.5" / "M5" / "M-3" (white perspective) → typed eval.</summary>
+    private static (double? Cp, int? Mate) ParseEvalString(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return (null, null);
+        s = s.Trim();
+        if (s.StartsWith("M", StringComparison.OrdinalIgnoreCase))
+            return int.TryParse(s[1..], System.Globalization.NumberStyles.Integer,
+                                System.Globalization.CultureInfo.InvariantCulture, out var m)
+                ? (null, m) : ((double?)null, (int?)null);
+        return double.TryParse(s, System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out var cp)
+            ? (cp, null) : ((double?)null, (int?)null);
+    }
     private bool isAnalyzing;
     private int progressCurrent;
     private int progressTotal;

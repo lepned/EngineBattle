@@ -1,0 +1,668 @@
+@page "/broadcast"
+@inject WebGUI.Services.Broadcast.BroadcastState Feed
+@inject NotifierService Notifier
+@inject GlobalSettingsService SettingsService
+@inject ILogger<Broadcast> logger
+@implements IAsyncDisposable
+@using WebGUI.Services.Broadcast
+@using WebGUI.Components.Layout
+@using WebGUI.Components.Layout.ChessboardLayout
+
+<PageTitle>Lichess Broadcast</PageTitle>
+
+<div class="bc-container">
+    @if (LobbyVisible)
+    {
+        <div class="bc-lobby">
+            <div class="bc-lobby-head">
+                <h3>Lichess Broadcast</h3>
+                <span>watch live tournaments with your own engine as kibitzer</span>
+            </div>
+
+            @if (Feed.IsRunning)
+            {
+                <div class="bc-resume">
+                    <span>Watching: <b>@CurrentTourName</b>@(CurrentRound is { } cr ? $" — {cr.RoundName}" : "")</span>
+                    <button class="bc-btn primary" @onclick="() => showLobby = false">Resume</button>
+                    <button class="bc-btn" @onclick="Stop">Stop</button>
+                </div>
+            }
+
+            @if (LiveTours.Count > 0)
+            {
+                <div class="bc-lobby-sect">Live now</div>
+                <div class="bc-live-grid">
+                    @foreach (var t in LiveTours)
+                    {
+                        <div class="bc-live-card" @onclick="() => StartTour(t.TourId)">
+                            <span class="bc-badge live card">LIVE</span>
+                            <div class="bc-card-name">@t.TourName</div>
+                            <div class="bc-card-meta">@LiveMeta(t.Pick)</div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (OtherTours.Count > 0)
+            {
+                <div class="bc-lobby-sect">Today &amp; upcoming</div>
+                <div class="bc-lobby-rows">
+                    @foreach (var t in OtherTours)
+                    {
+                        <div class="bc-lobby-row" @onclick="() => StartTour(t.TourId)">
+                            <span class="bc-row-name">@t.TourName</span>
+                            <span class="bc-row-when">@WhenLabel(t.Pick)</span>
+                        </div>
+                    }
+                </div>
+            }
+            @if (LiveTours.Count == 0 && OtherTours.Count == 0)
+            {
+                <p class="bc-waiting">Loading official broadcasts…</p>
+            }
+
+            <div class="bc-url-row">
+                <input placeholder="…or paste any broadcast round URL or id" @bind="roundInput" @bind:event="oninput" />
+                <button class="bc-btn" @onclick="StartFromUrl">Watch</button>
+                <span class="bc-status">@(Feed.IsRunning ? "" : Feed.Status == "idle" ? "" : Feed.Status)</span>
+            </div>
+        </div>
+    }
+
+    <div hidden="@LobbyVisible">
+    @if (Focus != null || Feed.IsRunning)
+    {
+        <div class="bc-header">
+            <span class="bc-back" title="All broadcasts" @onclick="() => showLobby = true">←</span>
+            <span class="bc-title" title="@CurrentTourName">@CurrentTourName</span>
+            @if (SiblingRounds is { Count: > 1 } siblings)
+            {
+                <select class="bc-round-select" value="@Feed.RoundId" @onchange="SwitchRound" title="Switch round">
+                    @foreach (var r in siblings)
+                    {
+                        <option value="@r.RoundId">@r.RoundName @(r.Ongoing ? " (live)" : !r.Finished ? " (upcoming)" : "")</option>
+                    }
+                </select>
+            }
+            @if (Focus is { Finished: false })
+            {
+                <span class="bc-badge live header">LIVE</span>
+            }
+            <span class="bc-dot @DotClass" title="@Feed.Status"></span>
+            @if (!follow && Focus is { Finished: false })
+            {
+                <span class="bc-hint">exploring — stepping to the latest move resumes following</span>
+            }
+            <button class="bc-btn bc-follow @(follow ? "primary" : "")" @onclick="ToggleFollow">
+                @(follow ? "Following live" : "Follow live")
+            </button>
+            <button class="bc-stop" title="Stop broadcast" @onclick="Stop">✕</button>
+        </div>
+    }
+    @if (Focus is { } g)
+    {
+        <div class="bc-layout">
+            <div class="bc-focus">
+
+                <ModernChessboard @ref="chessBoardRazor" FENposition="@fen" ChessBoard="@focusBoard"
+                                  ShowFenField=false ShowChessNavButtons=true ShowMoveList=true
+                                  MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right"
+                                  ShowPlayerInfo=true MoveEvals="@moveEvals"
+                                  OnMoveMadeOnBoard="OnUserMoveMade" OnNewFENOnBoard="OnBoardFenChanged"
+                                  OnBoardFlipped="f => boardFlipped = f">
+                    <BoardLeft>
+                        <EvalBar Cp="@kibCp" Mate="@kibMate" Flipped="@boardFlipped" />
+                    </BoardLeft>
+                    <AboveMoveList>
+                        <KibitzerPanel ChessBoard="@focusBoard" Id="nnInput1"
+                                       InitialEngine="Engine" InitialEnginePath="@engineConfigPath"
+                                       OnEvalUpdated="OnKibitzerEval" OnLiveStats="OnKibitzerStats" />
+                    </AboveMoveList>
+                    <BlackPlayerInfo>
+                        <div class="bc-player">
+                            <span class="bc-name">@g.Black <span class="bc-elo">@g.BlackElo</span></span>
+                            @if (g.Finished)
+                            {
+                                <span class="bc-score">@ScoreFor(g, white: false)</span>
+                            }
+                            <span class="bc-clock @(BlackToMove(g) ? "active" : "")"
+                                  title="@ThinkingFor(g, white: false)">@LiveClock(g, white: false)</span>
+                        </div>
+                    </BlackPlayerInfo>
+                    <WhitePlayerInfo>
+                        <div class="bc-player">
+                            <span class="bc-name">@g.White <span class="bc-elo">@g.WhiteElo</span></span>
+                            @if (g.Finished)
+                            {
+                                <span class="bc-score">@ScoreFor(g, white: true)</span>
+                            }
+                            <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")"
+                                  title="@ThinkingFor(g, white: true)">@LiveClock(g, white: true)</span>
+                        </div>
+                    </WhitePlayerInfo>
+                </ModernChessboard>
+
+                @if (g.Plies.Count > 1 || statsSeen)
+                {
+                    <div class="bc-evalchart">
+                        @if (statsSeen)
+                        {
+                            <div class="bc-viewtabs">
+                                <span class="@(showCandidates ? "on" : "")" @onclick="() => showCandidates = true">Moves</span>
+                                <span class="@(!showCandidates ? "on" : "")" @onclick="() => showCandidates = false">Eval history</span>
+                            </div>
+                        }
+                        @if (statsSeen && showCandidates)
+                        {
+                            <CandidateMoves Stats="@candidateStats" Fen="@candidateFen" />
+                        }
+                        else if (g.Plies.Count > 1)
+                        {
+                            <MoveEvalChart Baseline="@BaselineEvals(g)" Engine="@EngineEvals(g)"
+                                           CurrentPly="@CurrentPlyIndex(g)" OnPlyClicked="JumpToPly"
+                                           EngineName="@(Engine?.Name ?? "engine")" />
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="bc-games">
+                @foreach (var game in OrderedGames)
+                {
+                    var last = game.Plies.Count > 0 ? game.Plies[^1] : null;
+                    <div class="bc-tile @(game.Key == focusKey ? "selected" : "") @(game.Finished ? "done" : "")"
+                         @onclick="() => SelectGame(game.Key)">
+                        @if (!game.Finished)
+                        {
+                            <span class="bc-badge live">LIVE</span>
+                        }
+                        <EbChessboard Fen="@game.CurrentFen" SizePx="170"
+                                      LastMoveFrom="@last?.FromSq" LastMoveTo="@last?.ToSq"
+                                      LastMoveColor="@last?.Color" />
+                        <div class="bc-tile-caption">
+                            <span>@Surname(game.White) – @Surname(game.Black)</span>
+                            <span class="bc-tile-result">@(game.Finished ? game.Result : $"{game.SanMoves.Count / 2 + game.SanMoves.Count % 2}. {game.LastMoveSan}")</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (Feed.IsRunning)
+    {
+        <p class="bc-waiting">Waiting for games…</p>
+    }
+    </div>
+</div>
+
+@code {
+    private string roundInput = "";
+    private List<OfficialRound> officialRounds = new();
+
+    // Two-state page: lobby (pick a broadcast) vs watching. While streaming, "←" only
+    // shows the lobby on top — the watching view is CSS-hidden, never unmounted, so the
+    // kibitzer engine and board state survive a trip to the lobby.
+    private bool showLobby;
+    private bool LobbyVisible => !Feed.IsRunning || showLobby;
+
+    private record TourEntry(string TourId, string TourName, OfficialRound Pick);
+
+    /// <summary>Tours with a round live right now — the lobby's card grid (API order).</summary>
+    private List<TourEntry> LiveTours =>
+        officialRounds
+            .GroupBy(r => r.TourId)
+            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Any(r => r.Ongoing))
+            .Select(g => new TourEntry(g.Key, g.First().TourName, g.First(r => r.Ongoing)))
+            .ToList();
+
+    /// <summary>Remaining tours, upcoming first (soonest start), then finished by recency.</summary>
+    private List<TourEntry> OtherTours =>
+        officialRounds
+            .GroupBy(r => r.TourId)
+            .Where(g => !string.IsNullOrEmpty(g.Key) && !g.Any(r => r.Ongoing))
+            .Select(g => new TourEntry(g.Key, g.First().TourName, DefaultLobbyRound(g.ToList())))
+            .OrderBy(t => t.Pick.Finished ? 1 : 0)
+            .ThenBy(t => t.Pick.Finished ? -(t.Pick.StartsAt?.Ticks ?? 0) : (t.Pick.StartsAt?.Ticks ?? long.MaxValue))
+            .ToList();
+
+    /// <summary>The round a lobby row talks about: next upcoming, else the latest finished.</summary>
+    private static OfficialRound DefaultLobbyRound(List<OfficialRound> rounds) =>
+        rounds.Where(r => !r.Finished && !r.Ongoing).OrderBy(r => r.StartsAt ?? DateTimeOffset.MaxValue).FirstOrDefault()
+        ?? rounds.LastOrDefault(r => r.Finished)
+        ?? rounds.First();
+
+    /// <summary>The round to land on when a tournament is picked: the live round if any,
+    /// else the most recently finished (games to look at), else the first upcoming.</summary>
+    private static OfficialRound DefaultRound(List<OfficialRound> rounds) =>
+        rounds.FirstOrDefault(r => r.Ongoing)
+        ?? rounds.LastOrDefault(r => r.Finished)
+        ?? rounds.First();
+
+    private OfficialRound CurrentRound =>
+        officialRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
+
+    private string CurrentTourName =>
+        CurrentRound?.TourName
+        ?? (Focus is { } g && !string.IsNullOrEmpty(g.Round) ? g.Round : "Broadcast");
+
+    private string DotClass => Feed.Status == "connected" ? "ok" : "warn";
+
+    private static string LiveMeta(OfficialRound r)
+    {
+        var started = r.StartsAt is DateTimeOffset t ? $" · started {t.ToLocalTime():HH:mm}" : "";
+        return $"{r.RoundName}{started}";
+    }
+
+    private static string WhenLabel(OfficialRound r)
+    {
+        if (r.StartsAt is not DateTimeOffset t) return r.RoundName;
+        var local = t.ToLocalTime();
+        var now = DateTimeOffset.Now;
+        if (r.Finished)
+        {
+            var ago = now - local;
+            return ago.TotalHours < 1 ? $"{r.RoundName} finished · {Math.Max(0, (int)ago.TotalMinutes)}m ago"
+                 : ago.TotalHours < 24 ? $"{r.RoundName} finished · {(int)ago.TotalHours}h ago"
+                 : $"{r.RoundName} finished · {local:MMM d}";
+        }
+        if (local.Date == now.Date) return $"{r.RoundName} · starts {local:HH:mm}";
+        if (local.Date == now.Date.AddDays(1)) return $"{r.RoundName} · tomorrow {local:HH:mm}";
+        return $"{r.RoundName} · {local:MMM d HH:mm}";
+    }
+
+    private string focusKey = "";
+    private bool follow = true;
+    private string fen = Chess.startPos;
+
+    // The shared board: ModernChessboard renders and takes user moves on it, the
+    // kibitzer's analyzer reads search positions from it.
+    private readonly Chess.Board focusBoard = new();
+    private ModernChessboard chessBoardRazor;
+    private System.Threading.Timer clockTimer;
+    private EngineConfig Engine;
+    private string engineConfigPath = "";
+    private string lastNotifiedFen = "";
+    private Dictionary<int, string> moveEvals = new();
+
+    // Eval-bar state fed by the kibitzer (white perspective).
+    private double? kibCp;
+    private int? kibMate;
+    private bool boardFlipped;
+
+    // Engine eval per ply index (white perspective, clamped to ±5) for the eval chart.
+    // Fills in as the kibitzer analyzes positions — live tip while following, gaps when browsing.
+    private readonly Dictionary<int, double> engineEvalByPly = new();
+
+    // Candidate-move panel: latest verbose move stats from the kibitzer (MCTS engines only).
+    // statsSeen turns the Moves/Eval-history toggle on once the engine proves it emits them.
+    private List<NNValues> candidateStats = new();
+    private string candidateFen = "";
+    private bool statsSeen;
+    private bool showCandidates = true;
+
+    private BroadcastGame Focus =>
+        Feed.Games.FirstOrDefault(x => x.Key == focusKey) ?? OrderedGames.FirstOrDefault();
+
+    // Tiles: live games before finished ones, strongest pairings first within each group.
+    private IEnumerable<BroadcastGame> OrderedGames =>
+        Feed.Games
+            .OrderBy(g => g.Finished ? 1 : 0)
+            .ThenByDescending(RatingSum)
+            .ThenBy(g => g.Key, StringComparer.Ordinal);
+
+    private static int RatingSum(BroadcastGame g)
+    {
+        int.TryParse(g.WhiteElo, out var w);
+        int.TryParse(g.BlackElo, out var b);
+        return w + b;
+    }
+
+    private static bool BlackToMove(BroadcastGame g) =>
+        !g.Finished && g.SanMoves.Count % 2 == 1;
+
+    private static string Clock(string clk) => string.IsNullOrEmpty(clk) ? "–" : clk;
+
+    // ── Live clock ticking ──
+    // [%clk] is a player's remaining time after their LAST move; while they think, we
+    // tick their clock down locally from the moment the opponent's move arrived
+    // (lichess-style). Increment/lag make this an approximation — every new move
+    // re-syncs to the relayed value.
+
+    private static bool ToMove(BroadcastGame g, bool white) =>
+        !g.Finished && (BlackToMove(g) ? !white : white);
+
+    /// <summary>"H:MM:SS" / "MM:SS" clock string → TimeSpan (null if absent/unparsable).</summary>
+    private static TimeSpan? ParseClock(string clk)
+    {
+        if (string.IsNullOrEmpty(clk)) return null;
+        var s = clk.Count(c => c == ':') == 1 ? "0:" + clk : clk; // "MM:SS" would parse as hours:minutes
+        return TimeSpan.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
+    }
+
+    private static string FormatClock(TimeSpan t) =>
+        $"{(int)t.TotalHours}:{t.Minutes:D2}:{t.Seconds:D2}";
+
+    /// <summary>The player-bar clock: relayed value, ticking down for the side to move.</summary>
+    private string LiveClock(BroadcastGame g, bool white)
+    {
+        var raw = white ? g.WhiteClock : g.BlackClock;
+        if (!ToMove(g, white) || g.LastMoveUtc == default || ParseClock(raw) is not TimeSpan t)
+            return Clock(raw);
+        var remaining = t - (DateTime.UtcNow - g.LastMoveUtc);
+        return FormatClock(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
+    }
+
+    /// <summary>Tooltip on the active clock: elapsed thinking time on the current move.</summary>
+    private string ThinkingFor(BroadcastGame g, bool white)
+    {
+        if (!ToMove(g, white) || g.LastMoveUtc == default) return "";
+        var e = DateTime.UtcNow - g.LastMoveUtc;
+        return $"thinking for {(int)e.TotalMinutes}:{e.Seconds:D2}";
+    }
+
+    /// <summary>Per-player score once a game is finished: "1", "0" or "½".</summary>
+    private static string ScoreFor(BroadcastGame g, bool white) => g.Result switch
+    {
+        "1-0" => white ? "1" : "0",
+        "0-1" => white ? "0" : "1",
+        "1/2-1/2" or "½-½" => "½",
+        _ => ""
+    };
+
+    private static string Surname(string name)
+    {
+        var comma = name.IndexOf(',');
+        return comma > 0 ? name[..comma] : name;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Feed.Changed += OnChanged;
+        Feed.GameUpdated += OnGameUpdated;
+
+        var s = SettingsService.Settings;
+        if (Engine == null && !string.IsNullOrEmpty(s.DefaultEnginePath))
+        {
+            try
+            {
+                Engine = Configuration.JSON.readSingleEngineConfig(s.DefaultEnginePath);
+                engineConfigPath = s.DefaultEnginePath;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Could not load default engine: {Msg}", ex.Message);
+            }
+        }
+
+        if (Focus is { } g) { focusKey = g.Key; await LoadFocusGameAsync(); }
+
+        // 1 Hz re-render for the ticking clocks — only while a live game is focused
+        // and the watching view is actually visible.
+        clockTimer = new System.Threading.Timer(_ =>
+        {
+            try
+            {
+                if (Feed.IsRunning && !showLobby && Focus is { Finished: false })
+                    _ = InvokeAsync(StateHasChanged);
+            }
+            catch { /* fires during dispose — ignore */ }
+        }, null, 1000, 1000);
+
+        officialRounds = await BroadcastState.FetchOfficialRoundsAsync();
+    }
+
+    private void OnKibitzerEval((double? Cp, int? Mate, string Fen) eval)
+    {
+        (kibCp, kibMate) = (eval.Cp, eval.Mate);
+        // Chart: attribute the eval to the position the search ran on (not whatever is
+        // on the board now — engine output can arrive just after a navigation). Start
+        // position and off-game exploration fens resolve to -1 and are not recorded.
+        if (Focus is { } g && !string.IsNullOrEmpty(eval.Fen))
+        {
+            var idx = g.Plies.FindIndex(p => p.Fen == eval.Fen);
+            var v = eval.Mate is int m ? (m > 0 ? 5.0 : -5.0) : eval.Cp;
+            if (idx >= 0 && v is double val) engineEvalByPly[idx] = Math.Clamp(val, -5.0, 5.0);
+        }
+        StateHasChanged();
+    }
+
+    // ── Eval chart helpers ──
+    private int CurrentPlyIndex(BroadcastGame g) => g.Plies.FindIndex(p => p.Fen == fen);
+
+    /// <summary>Lichess server evals per ply ("0.18" / "#4" strings → white-perspective pawns, ±5).</summary>
+    private static List<double?> BaselineEvals(BroadcastGame g) =>
+        g.Plies.Select(p => ParseLichessEval(p.Eval)).ToList();
+
+    private List<double?> EngineEvals(BroadcastGame g)
+    {
+        var result = new List<double?>(g.Plies.Count);
+        for (int i = 0; i < g.Plies.Count; i++)
+            result.Add(engineEvalByPly.TryGetValue(i, out var v) ? v : null);
+        return result;
+    }
+
+    private static double? ParseLichessEval(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return null;
+        if (raw.StartsWith('#'))
+            return raw.Contains('-') ? -5.0 : 5.0;
+        return double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? Math.Clamp(v, -5.0, 5.0)
+            : null;
+    }
+
+    /// <summary>Chart click: jump the board (and engine) to the position after that ply.</summary>
+    private async Task JumpToPly(int ply)
+    {
+        var g = Focus;
+        if (g == null || ply < 0 || ply >= g.Plies.Count) return;
+        var targetFen = g.Plies[ply].Fen;
+        focusBoard.LoadFen(targetFen);
+        if (chessBoardRazor != null) await chessBoardRazor.SetPositionDirect(targetFen);
+        await AfterBoardNavigation();
+    }
+
+    // ── Round switcher ──
+    private List<OfficialRound> SiblingRounds
+    {
+        get
+        {
+            var current = officialRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
+            if (current == null || string.IsNullOrEmpty(current.TourId)) return new();
+            return officialRounds.Where(r => r.TourId == current.TourId).ToList();
+        }
+    }
+
+    private void SwitchRound(ChangeEventArgs e)
+    {
+        var roundId = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(roundId) || roundId == Feed.RoundId) return;
+        focusKey = "";
+        follow = true;
+        ResetEvalState();
+        Feed.Start(roundId);
+    }
+
+    private DateTime lastStatsRender = DateTime.MinValue;
+    private bool statsRenderPending;
+
+    private void OnKibitzerStats((IReadOnlyList<NNValues> Stats, string Fen) payload)
+    {
+        // Empty payload = engine switched; hide the Moves tab until the new engine
+        // proves it emits verbose stats.
+        if (payload.Stats.Count == 0)
+        {
+            candidateStats = new();
+            candidateFen = "";
+            statsSeen = false;
+            StateHasChanged();
+            return;
+        }
+        candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
+        candidateFen = payload.Fen;
+        statsSeen = true;
+        // Engines can dump stats several times per second — cap panel re-renders at 4 Hz,
+        // with a trailing render so the final dump of a search is never dropped.
+        var now = DateTime.UtcNow;
+        if ((now - lastStatsRender).TotalMilliseconds >= 250)
+        {
+            lastStatsRender = now;
+            StateHasChanged();
+        }
+        else if (!statsRenderPending)
+        {
+            statsRenderPending = true;
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Delay(250);
+                statsRenderPending = false;
+                lastStatsRender = DateTime.UtcNow;
+                StateHasChanged();
+            });
+        }
+    }
+
+    private void ResetEvalState()
+    {
+        (kibCp, kibMate) = (null, null);
+        engineEvalByPly.Clear();
+        candidateStats = new();
+        candidateFen = "";
+    }
+
+    /// <summary>Lobby card/row click: start the tour's current round.</summary>
+    private void StartTour(string tourId)
+    {
+        var rounds = officialRounds.Where(r => r.TourId == tourId).ToList();
+        if (rounds.Count == 0) return;
+        StartRound(DefaultRound(rounds).RoundId);
+    }
+
+    private void StartFromUrl()
+    {
+        if (string.IsNullOrWhiteSpace(roundInput)) return;
+        StartRound(roundInput);
+    }
+
+    private void StartRound(string target)
+    {
+        focusKey = "";
+        follow = true;
+        showLobby = false;
+        ResetEvalState();
+        Feed.Start(target);
+    }
+
+    private async Task Stop()
+    {
+        showLobby = false;
+        await Feed.StopAsync();
+    }
+
+    private async Task SelectGame(string key)
+    {
+        focusKey = key;
+        follow = true;
+        // Neutral eval bar + empty chart until the kibitzer reports on the new game.
+        ResetEvalState();
+        await LoadFocusGameAsync();
+    }
+
+    private async Task ToggleFollow()
+    {
+        follow = !follow;
+        // Returning to the live game discards any exploration and snaps to the latest move.
+        if (follow) await LoadFocusGameAsync();
+    }
+
+    /// <summary>A move made or navigated on the board (ModernChessboard already updated
+    /// the shared board): sync fen, adjust follow mode, notify the engine.</summary>
+    private async Task OnUserMoveMade(string move) => await AfterBoardNavigation();
+
+    /// <summary>Home/End navigation reports a bare fen instead of a move.</summary>
+    private async Task OnBoardFenChanged(string newFen) => await AfterBoardNavigation();
+
+    /// <summary>Shared post-navigation logic: browsing away from the live tip pauses
+    /// following; stepping back onto the tip resumes it (lichess-style).</summary>
+    private async Task AfterBoardNavigation()
+    {
+        var g = Focus;
+        fen = focusBoard.FEN();
+        follow = g != null && !g.Finished && fen == g.CurrentFen;
+        if (fen != lastNotifiedFen)
+        {
+            lastNotifiedFen = fen;
+            await Notifier.UpdateFen(fen);
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Rebuilds the shared board from the focus game's PGN (latest position),
+    /// refreshes ModernChessboard and notifies the engine.</summary>
+    private async Task LoadFocusGameAsync()
+    {
+        var g = Focus;
+        if (g?.Parsed is null) return;
+        try
+        {
+            focusBoard.ResetBoardStateFromFen(g.StartFen);
+            focusBoard.LoadPGNGameWithVariations(g.Parsed);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Broadcast board load failed: {Msg}", ex.Message);
+            return;
+        }
+        fen = focusBoard.FEN();
+        moveEvals = ExtractMoveEvals(g);
+
+        var maf = focusBoard.MovesAndFenPlayed.LastOrDefault();
+        if (chessBoardRazor != null)
+        {
+            if (maf != null && !string.IsNullOrEmpty(maf.ShortSan)) await chessBoardRazor.OnNotifyMoveAndFen(maf);
+            else await chessBoardRazor.SetPositionDirect(fen);
+        }
+
+        if (fen != lastNotifiedFen)
+        {
+            lastNotifiedFen = fen;
+            await Notifier.UpdateFen(fen);
+        }
+    }
+
+    /// <summary>Lichess server evals per ply, formatted for the move list ("+0.2", "-1.5", "#4").</summary>
+    private static Dictionary<int, string> ExtractMoveEvals(BroadcastGame g)
+    {
+        var evals = new Dictionary<int, string>();
+        for (int i = 0; i < g.Plies.Count; i++)
+        {
+            var raw = g.Plies[i].Eval;
+            if (string.IsNullOrEmpty(raw)) continue;
+            if (raw.StartsWith('#'))
+                evals[i] = raw;
+            else if (double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                     System.Globalization.CultureInfo.InvariantCulture, out var v))
+                evals[i] = v.ToString("+0.0;-0.0", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return evals;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnGameUpdated(BroadcastGame game, int newMoves) => _ = InvokeAsync(async () =>
+    {
+        // First game to arrive becomes the focus; while following, the board tracks the
+        // newest move. While exploring, the board is left alone (tiles keep updating).
+        if (string.IsNullOrEmpty(focusKey)) { focusKey = game.Key; await LoadFocusGameAsync(); }
+        else if (follow && game.Key == focusKey && newMoves > 0) await LoadFocusGameAsync();
+        StateHasChanged();
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        Feed.Changed -= OnChanged;
+        Feed.GameUpdated -= OnGameUpdated;
+        if (clockTimer != null) await clockTimer.DisposeAsync();
+    }
+}

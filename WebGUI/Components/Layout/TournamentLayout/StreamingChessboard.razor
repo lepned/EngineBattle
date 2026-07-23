@@ -10,11 +10,17 @@
 
 <MudGrid Justify="Justify.Center">
 	<MudItem sm=12>
-		<div class="mt-3 streaming-board" style="height:100%;">
-			<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
-						  SizePx="null"
-						  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
-						  Arrows="@BoardArrows" Labels="@BoardLabels" />
+		<div class="mt-3 streaming-board" style="height:100%; display:flex; gap:6px; align-items:stretch;">
+			@if (ShowEvalBar)
+			{
+				<EvalBar Cp="@EvalCp" Mate="@EvalMate" />
+			}
+			<div style="flex:1 1 auto; min-width:0;">
+				<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
+							  SizePx="null"
+							  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
+							  Arrows="@BoardArrows" Labels="@BoardLabels" />
+			</div>
 		</div>
 	</MudItem>
 
@@ -83,6 +89,10 @@
 @code {
 
 	[Parameter] public bool ShowMoveList { get; set; } = true;
+	/// <summary>Vertical eval bar beside the board (white perspective; the streaming board never flips).</summary>
+	[Parameter] public bool ShowEvalBar { get; set; }
+	[Parameter] public double? EvalCp { get; set; }
+	[Parameter] public int? EvalMate { get; set; }
 	[Parameter] public string OpeningName { get; set; }
 	[Parameter] public string OpeningMoves { get; set; }
 	[Parameter] public int MoveListFontSize { get; set; }

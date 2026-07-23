@@ -1,0 +1,29 @@
+@using System.Globalization
+
+<div class="eb-evalbar @(Flipped ? "flipped" : "") @(HasEval ? "" : "idle")" title="@Tooltip">
+    <div class="eb-evalbar-white" style="height:@WhitePercent"></div>
+</div>
+
+@code {
+    /// <summary>Eval in pawns from white's perspective (positive = white better).</summary>
+    [Parameter] public double? Cp { get; set; }
+    /// <summary>Mate distance from white's perspective (positive = white mates).</summary>
+    [Parameter] public int? Mate { get; set; }
+    /// <summary>True when the board is shown with black at the bottom.</summary>
+    [Parameter] public bool Flipped { get; set; }
+
+    private bool HasEval => Cp.HasValue || Mate.HasValue;
+
+    // Same logistic lichess uses to map centipawns to winning chances.
+    private double WhiteShare =>
+        Mate is int m ? (m > 0 ? 1.0 : 0.0)
+        : Cp is double cp ? Math.Clamp(1.0 / (1.0 + Math.Exp(-0.368208 * cp)), 0.05, 0.95)
+        : 0.5;
+
+    private string WhitePercent => (100.0 * WhiteShare).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    private string Tooltip =>
+        Mate is int m ? (m > 0 ? $"M{m}" : $"-M{-m}")
+        : Cp is double cp ? cp.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)
+        : "no eval";
+}

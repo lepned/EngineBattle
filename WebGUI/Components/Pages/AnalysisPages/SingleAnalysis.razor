@@ -75,6 +75,7 @@
                          ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
                          Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
                          PGNgames="games" Player=@searchString OnSearchCompleted="OnSearchCompleted"
+                         OnEvalUpdated="OnEvalUpdated"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
         </div>
 
@@ -102,6 +103,8 @@
                 <ModernChessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
                             MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right" MoveEvals="@moveEvals"
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                            OnBoardFlipped="f => boardFlipped = f"
+                            BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
@@ -333,6 +336,21 @@
     private List<EPDTypes.EPDEntry> epdGames = new();
     private Chess.Board board = new();
     private Dictionary<int, string> moveEvals = new();
+
+    // Eval bar (white perspective), fed by EnginePanel.OnEvalUpdated; reset on navigation
+    // so the bar never shows a stale eval for a different position.
+    private double? evalBarCp;
+    private int? evalBarMate;
+    private bool boardFlipped;
+    private RenderFragment EvalBarLeft => @<EvalBar Cp="@evalBarCp" Mate="@evalBarMate" Flipped="@boardFlipped" />;
+
+    private void OnEvalUpdated((double? Cp, int? Mate) eval)
+    {
+        (evalBarCp, evalBarMate) = (eval.Cp, eval.Mate);
+        StateHasChanged();
+    }
+
+    private void ResetEvalBar() => (evalBarCp, evalBarMate) = (null, null);
     private HashSet<ulong> analyzedPositions = new();
     HotKeysContext keyContext;
     private string searchString = "";
@@ -803,6 +821,7 @@
 
     public async void OnNewFENOnBoard(string newFen)
     {
+        ResetEvalBar();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
@@ -815,6 +834,7 @@
 
     public async void OnMoveMadeOnBoard(string move)
     {
+        ResetEvalBar();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateDetectedOpening();
@@ -862,6 +882,7 @@
 
     public async void OnEngineMoveMade(string move)
     {
+        ResetEvalBar();
         if (chessBoardRazor != null)
             chessBoardRazor.UpdateVariationsDisplay();
         moveHistory = board.GetMoveHistory();
