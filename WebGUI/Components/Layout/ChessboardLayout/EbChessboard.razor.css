@@ -184,6 +184,14 @@
     bottom: calc(1px + 0.15em);
 }
 
+/* Optical correction: "g" is the only file letter with a descender, so its tail sits
+   visibly lower than its neighbors' baseline-resting bottoms. Lifting it a fraction
+   of the descender depth clears the tail; the slight bowl raise is imperceptible a
+   square-width away from f and h. */
+.eb-coord.file.descender {
+    bottom: calc(1px + 0.3em);
+}
+
 /* Coordinate text: a user-chosen fixed color (--eb-coord-color) when set, otherwise
    auto contrast via the opposite square color. */
 .eb-sq.light .eb-coord {

@@ -47,7 +47,7 @@
                 }
                 @if (CoordinatesVisible && row == 7)
                 {
-                    <span class="eb-coord file">@((char)('a' + file))</span>
+                    <span class="eb-coord file @(file == 6 ? "descender" : "")">@((char)('a' + file))</span>
                 }
             </div>
         }
