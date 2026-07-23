@@ -298,6 +298,13 @@
     filter: brightness(1.25);
 }
 
+/* The pill's translucent background makes the browser paint the native dropdown
+   popup white while the options inherit white text — style options explicitly. */
+.bc-round-select option {
+    background: var(--mud-palette-background);
+    color: var(--mud-palette-text-primary);
+}
+
 /* Eval chart / candidate-moves panel below the board — matches the board + move list width */
 .bc-evalchart {
     margin-top: 0.6rem;

@@ -34,29 +34,44 @@
                 <div class="bc-live-grid">
                     @foreach (var t in LiveTours)
                     {
-                        <div class="bc-live-card" @onclick="() => StartTour(t.TourId)">
+                        <div class="bc-live-card" @onclick="() => StartTour(t)">
                             <span class="bc-badge live card">LIVE</span>
                             <div class="bc-card-name">@t.TourName</div>
-                            <div class="bc-card-meta">@LiveMeta(t.Pick)</div>
+                            <div class="bc-card-meta">@LiveMeta(t)</div>
                         </div>
                     }
                 </div>
             }
 
-            @if (OtherTours.Count > 0)
+            @if (UpcomingTours.Count > 0)
             {
                 <div class="bc-lobby-sect">Today &amp; upcoming</div>
                 <div class="bc-lobby-rows">
-                    @foreach (var t in OtherTours)
+                    @foreach (var t in UpcomingTours)
                     {
-                        <div class="bc-lobby-row" @onclick="() => StartTour(t.TourId)">
+                        <div class="bc-lobby-row" @onclick="() => StartTour(t)">
                             <span class="bc-row-name">@t.TourName</span>
-                            <span class="bc-row-when">@WhenLabel(t.Pick)</span>
+                            <span class="bc-row-when">@WhenLabel(t)</span>
                         </div>
                     }
                 </div>
             }
-            @if (LiveTours.Count == 0 && OtherTours.Count == 0)
+
+            @if (lobby.Past.Count > 0)
+            {
+                <div class="bc-lobby-sect">Recently finished</div>
+                <div class="bc-lobby-rows">
+                    @foreach (var t in lobby.Past.Take(8))
+                    {
+                        <div class="bc-lobby-row" @onclick="() => StartTour(t)">
+                            <span class="bc-row-name">@t.TourName</span>
+                            <span class="bc-row-when">@FinishedLabel(t)</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (lobby.IsEmpty)
             {
                 <p class="bc-waiting">Loading official broadcasts…</p>
             }
@@ -73,7 +88,7 @@
     @if (Focus != null || Feed.IsRunning)
     {
         <div class="bc-header">
-            <span class="bc-back" title="All broadcasts" @onclick="() => showLobby = true">←</span>
+            <span class="bc-back" title="All broadcasts" @onclick="BackToLobby">←</span>
             <span class="bc-title" title="@CurrentTourName">@CurrentTourName</span>
             @if (SiblingRounds is { Count: > 1 } siblings)
             {
@@ -197,7 +212,11 @@
 
 @code {
     private string roundInput = "";
-    private List<OfficialRound> officialRounds = new();
+    private BroadcastLobby lobby = BroadcastLobby.Empty;
+    // Full round list of the tour being watched (feeds the round switcher), fetched
+    // per-tour on start — the /top lobby only carries one round per tour.
+    private List<OfficialRound> tourRounds = new();
+    private string currentTourName = "";
 
     // Two-state page: lobby (pick a broadcast) vs watching. While streaming, "←" only
     // shows the lobby on top — the watching view is CSS-hidden, never unmounted, so the
@@ -205,70 +224,46 @@
     private bool showLobby;
     private bool LobbyVisible => !Feed.IsRunning || showLobby;
 
-    private record TourEntry(string TourId, string TourName, OfficialRound Pick);
+    /// <summary>Lobby cards: active tours whose round is live right now (complete per /top).</summary>
+    private List<LobbyTour> LiveTours => lobby.Active.Where(t => t.LiveNow).ToList();
 
-    /// <summary>Tours with a round live right now — the lobby's card grid (API order).</summary>
-    private List<TourEntry> LiveTours =>
-        officialRounds
-            .GroupBy(r => r.TourId)
-            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Any(r => r.Ongoing))
-            .Select(g => new TourEntry(g.Key, g.First().TourName, g.First(r => r.Ongoing)))
+    /// <summary>Lobby rows: active-but-between-rounds tours (soonest next round first),
+    /// then genuinely upcoming tours.</summary>
+    private List<LobbyTour> UpcomingTours =>
+        lobby.Active.Where(t => !t.LiveNow)
+            .OrderBy(t => t.StartsAt?.Ticks ?? long.MaxValue)
+            .Concat(lobby.Upcoming)
             .ToList();
-
-    /// <summary>Remaining tours, upcoming first (soonest start), then finished by recency.</summary>
-    private List<TourEntry> OtherTours =>
-        officialRounds
-            .GroupBy(r => r.TourId)
-            .Where(g => !string.IsNullOrEmpty(g.Key) && !g.Any(r => r.Ongoing))
-            .Select(g => new TourEntry(g.Key, g.First().TourName, DefaultLobbyRound(g.ToList())))
-            .OrderBy(t => t.Pick.Finished ? 1 : 0)
-            .ThenBy(t => t.Pick.Finished ? -(t.Pick.StartsAt?.Ticks ?? 0) : (t.Pick.StartsAt?.Ticks ?? long.MaxValue))
-            .ToList();
-
-    /// <summary>The round a lobby row talks about: next upcoming, else the latest finished.</summary>
-    private static OfficialRound DefaultLobbyRound(List<OfficialRound> rounds) =>
-        rounds.Where(r => !r.Finished && !r.Ongoing).OrderBy(r => r.StartsAt ?? DateTimeOffset.MaxValue).FirstOrDefault()
-        ?? rounds.LastOrDefault(r => r.Finished)
-        ?? rounds.First();
-
-    /// <summary>The round to land on when a tournament is picked: the live round if any,
-    /// else the most recently finished (games to look at), else the first upcoming.</summary>
-    private static OfficialRound DefaultRound(List<OfficialRound> rounds) =>
-        rounds.FirstOrDefault(r => r.Ongoing)
-        ?? rounds.LastOrDefault(r => r.Finished)
-        ?? rounds.First();
 
     private OfficialRound CurrentRound =>
-        officialRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
+        tourRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
 
     private string CurrentTourName =>
-        CurrentRound?.TourName
+        !string.IsNullOrEmpty(currentTourName) ? currentTourName
+        : CurrentRound?.TourName
         ?? (Focus is { } g && !string.IsNullOrEmpty(g.Round) ? g.Round : "Broadcast");
 
     private string DotClass => Feed.Status == "connected" ? "ok" : "warn";
 
-    private static string LiveMeta(OfficialRound r)
+    private static string LiveMeta(LobbyTour t)
     {
-        var started = r.StartsAt is DateTimeOffset t ? $" · started {t.ToLocalTime():HH:mm}" : "";
-        return $"{r.RoundName}{started}";
+        var started = t.StartsAt is DateTimeOffset s ? $" · started {s.ToLocalTime():HH:mm}" : "";
+        return $"{t.RoundName}{started}";
     }
 
-    private static string WhenLabel(OfficialRound r)
+    private static string WhenLabel(LobbyTour t)
     {
-        if (r.StartsAt is not DateTimeOffset t) return r.RoundName;
-        var local = t.ToLocalTime();
+        if (t.StartsAt is not DateTimeOffset s) return t.RoundName;
+        var local = s.ToLocalTime();
         var now = DateTimeOffset.Now;
-        if (r.Finished)
-        {
-            var ago = now - local;
-            return ago.TotalHours < 1 ? $"{r.RoundName} finished · {Math.Max(0, (int)ago.TotalMinutes)}m ago"
-                 : ago.TotalHours < 24 ? $"{r.RoundName} finished · {(int)ago.TotalHours}h ago"
-                 : $"{r.RoundName} finished · {local:MMM d}";
-        }
-        if (local.Date == now.Date) return $"{r.RoundName} · starts {local:HH:mm}";
-        if (local.Date == now.Date.AddDays(1)) return $"{r.RoundName} · tomorrow {local:HH:mm}";
-        return $"{r.RoundName} · {local:MMM d HH:mm}";
+        if (local <= now) return $"{t.RoundName} · in progress";
+        if (local.Date == now.Date) return $"{t.RoundName} · starts {local:HH:mm}";
+        if (local.Date == now.Date.AddDays(1)) return $"{t.RoundName} · tomorrow {local:HH:mm}";
+        return $"{t.RoundName} · {local:MMM d HH:mm}";
     }
+
+    private static string FinishedLabel(LobbyTour t) =>
+        t.StartsAt is DateTimeOffset s ? $"{t.RoundName} · {s.ToLocalTime():MMM d}" : t.RoundName;
 
     private string focusKey = "";
     private bool follow = true;
@@ -408,7 +403,29 @@
             catch { /* fires during dispose — ignore */ }
         }, null, 1000, 1000);
 
-        officialRounds = await BroadcastState.FetchOfficialRoundsAsync();
+        lobby = await BroadcastState.FetchLobbyAsync();
+    }
+
+    // LoadFocusGameAsync ran before ModernChessboard mounted (page navigation while
+    // streaming, or the first game arriving right after Start) — its board sync and
+    // move-list scroll were skipped and must be replayed once the reference is live.
+    private bool pendingBoardSync;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (pendingBoardSync && chessBoardRazor != null && Focus != null)
+        {
+            pendingBoardSync = false;
+            await LoadFocusGameAsync();
+        }
+    }
+
+    /// <summary>Refreshes the lobby sections (live rounds change while watching).</summary>
+    private async Task RefreshLobbyAsync()
+    {
+        var fresh = await BroadcastState.FetchLobbyAsync();
+        if (!fresh.IsEmpty) lobby = fresh;   // keep the old list on a failed refresh
+        await InvokeAsync(StateHasChanged);
     }
 
     private void OnKibitzerEval((double? Cp, int? Mate, string Fen) eval)
@@ -464,15 +481,10 @@
     }
 
     // ── Round switcher ──
-    private List<OfficialRound> SiblingRounds
-    {
-        get
-        {
-            var current = officialRounds.FirstOrDefault(r => r.RoundId == Feed.RoundId);
-            if (current == null || string.IsNullOrEmpty(current.TourId)) return new();
-            return officialRounds.Where(r => r.TourId == current.TourId).ToList();
-        }
-    }
+    // The watched tour's rounds; only meaningful when the current round belongs to it
+    // (pasted rounds from unknown tours leave this empty → no switcher).
+    private List<OfficialRound> SiblingRounds =>
+        tourRounds.Any(r => r.RoundId == Feed.RoundId) ? tourRounds : new();
 
     private void SwitchRound(ChangeEventArgs e)
     {
@@ -531,17 +543,29 @@
         candidateFen = "";
     }
 
-    /// <summary>Lobby card/row click: start the tour's current round.</summary>
-    private void StartTour(string tourId)
+    /// <summary>Lobby card/row click: start the tour's linked round (lichess's pick) and
+    /// fetch the tour's full round list for the switcher in the background.</summary>
+    private void StartTour(LobbyTour t)
     {
-        var rounds = officialRounds.Where(r => r.TourId == tourId).ToList();
-        if (rounds.Count == 0) return;
-        StartRound(DefaultRound(rounds).RoundId);
+        currentTourName = t.TourName;
+        tourRounds = new();
+        StartRound(t.RoundId);
+        _ = LoadTourRoundsAsync(t.TourId);
+    }
+
+    private async Task LoadTourRoundsAsync(string tourId)
+    {
+        var (rounds, _) = await BroadcastState.FetchTourRoundsAsync(tourId);
+        tourRounds = rounds;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void StartFromUrl()
     {
         if (string.IsNullOrWhiteSpace(roundInput)) return;
+        // Unknown tour: no switcher, header falls back to the game's Round tag.
+        currentTourName = "";
+        tourRounds = new();
         StartRound(roundInput);
     }
 
@@ -554,10 +578,18 @@
         Feed.Start(target);
     }
 
+    /// <summary>"←": show the lobby (stream keeps running) with freshly fetched sections.</summary>
+    private void BackToLobby()
+    {
+        showLobby = true;
+        _ = RefreshLobbyAsync();
+    }
+
     private async Task Stop()
     {
         showLobby = false;
         await Feed.StopAsync();
+        _ = RefreshLobbyAsync();
     }
 
     private async Task SelectGame(string key)
@@ -623,6 +655,12 @@
             if (maf != null && !string.IsNullOrEmpty(maf.ShortSan)) await chessBoardRazor.OnNotifyMoveAndFen(maf);
             else await chessBoardRazor.SetPositionDirect(fen);
         }
+        else
+        {
+            // Board not mounted yet — replay this sync after the next render (else the
+            // move list comes up unscrolled and the board misses the display refresh).
+            pendingBoardSync = true;
+        }
 
         if (fen != lastNotifiedFen)
         {
@@ -654,7 +692,15 @@
     {
         // First game to arrive becomes the focus; while following, the board tracks the
         // newest move. While exploring, the board is left alone (tiles keep updating).
-        if (string.IsNullOrEmpty(focusKey)) { focusKey = game.Key; await LoadFocusGameAsync(); }
+        if (string.IsNullOrEmpty(focusKey))
+        {
+            focusKey = game.Key;
+            await LoadFocusGameAsync();
+            // A round switch unmounts ModernChessboard (Focus was null) but @ref keeps
+            // pointing at the disposed instance, so the sync above went nowhere visible.
+            // Always replay after the render that mounts the fresh board.
+            pendingBoardSync = true;
+        }
         else if (follow && game.Key == focusKey && newMoves > 0) await LoadFocusGameAsync();
         StateHasChanged();
     });

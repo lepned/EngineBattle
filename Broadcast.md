@@ -6,7 +6,7 @@ Open it from the navigation menu: **Tournament → Lichess broadcast** (`/broadc
 
 ## Quick start
 
-1. The page opens as a **lobby**: tournaments that are live right now appear as cards, everything else as a list with start times. Click one to start watching — you land on the tournament's current round (the live round if one is running, otherwise the latest finished round). Power users can paste any lichess broadcast round URL or id in the field at the bottom.
+1. The page opens as a **lobby** fed by lichess's broadcast overview: every tournament with a round live right now appears as a card, tournaments between rounds or upcoming as a list with start times, and recently finished events below. Click one to start watching — you land on the round lichess itself would open. Power users can paste any lichess broadcast round URL or id in the field at the bottom.
 2. All games of the round appear as tiles; the first game becomes the focus board. Click a tile to focus a different game. The **header line** above the board holds everything else: **←** back to the lobby (the stream and engine keep running), the round switcher pill, a LIVE badge, a stream-health dot (green = connected, amber = reconnecting; hover for details), the Follow button and **✕** to stop.
 3. Press **▶** in the kibitzer panel (top right of the move list) to start engine analysis. Analysis follows whatever position is on the board — live moves, browsing, or your own exploration.
 

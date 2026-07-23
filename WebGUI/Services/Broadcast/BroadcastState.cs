@@ -42,9 +42,19 @@ namespace WebGUI.Services.Broadcast
         public string CurrentFen => Plies.Count > 0 ? Plies[^1].Fen : StartFen;
     }
 
-    /// <summary>One round of an official broadcast. The picker groups these by TourId
-    /// (tournament dropdown); the round switcher lists one tour's rounds.</summary>
+    /// <summary>One round of an official broadcast tour — feeds the round switcher.</summary>
     public sealed record OfficialRound(string RoundId, string RoundName, bool Ongoing, bool Finished, string TourId, string TourName, DateTimeOffset? StartsAt);
+
+    /// <summary>A tour entry of the broadcast lobby (from /api/broadcast/top): the tour plus
+    /// the round lichess would open for it (roundToLink) and that round's live/start state.</summary>
+    public sealed record LobbyTour(string TourId, string TourName, string RoundId, string RoundName, bool LiveNow, DateTimeOffset? StartsAt);
+
+    /// <summary>The three sections of lichess's broadcast overview page.</summary>
+    public sealed record BroadcastLobby(List<LobbyTour> Active, List<LobbyTour> Upcoming, List<LobbyTour> Past)
+    {
+        public static BroadcastLobby Empty => new(new(), new(), new());
+        public bool IsEmpty => Active.Count == 0 && Upcoming.Count == 0 && Past.Count == 0;
+    }
 
     /// <summary>
     /// Holds the live state of one lichess broadcast round: starts/stops the streaming
@@ -224,42 +234,86 @@ namespace WebGUI.Services.Broadcast
             return client;
         }
 
-        /// <summary>Fetches the official broadcast list (ndjson) for the tournament picker.
-        /// Returns every round of every tour, in API order (tours by lichess relevance,
-        /// rounds chronological within a tour). Empty list on any failure.</summary>
-        public static async Task<List<OfficialRound>> FetchOfficialRoundsAsync(int tournaments = 20)
+        /// <summary>Fetches the broadcast lobby from /api/broadcast/top — the same endpoint
+        /// behind lichess.org/broadcast, so "active with a live round" is complete (the old
+        /// /api/broadcast?nb=N window ordered by prominence routinely missed live events).
+        /// Empty lobby on any failure.</summary>
+        public static async Task<BroadcastLobby> FetchLobbyAsync()
         {
-            var result = new List<OfficialRound>();
             try
             {
-                var body = await ListHttp.GetStringAsync($"https://lichess.org/api/broadcast?nb={tournaments}");
-                foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                var body = await ListHttp.GetStringAsync("https://lichess.org/api/broadcast/top");
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                var root = doc.RootElement;
+
+                List<LobbyTour> Section(System.Text.Json.JsonElement arr)
                 {
-                    try
+                    var list = new List<LobbyTour>();
+                    foreach (var e in arr.EnumerateArray())
                     {
-                        using var doc = System.Text.Json.JsonDocument.Parse(line);
-                        var root = doc.RootElement;
-                        var tour = root.GetProperty("tour");
-                        var tourName = tour.GetProperty("name").GetString() ?? "";
-                        var tourId = tour.TryGetProperty("id", out var tid) ? tid.GetString() ?? "" : "";
-                        if (!root.TryGetProperty("rounds", out var rounds)) continue;
-                        foreach (var round in rounds.EnumerateArray())
+                        try
                         {
-                            var id = round.GetProperty("id").GetString() ?? "";
-                            var name = round.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                            var tour = e.GetProperty("tour");
+                            var round = e.GetProperty("round");
+                            // roundToLink is lichess's "open this round" pick; fall back to the shown round.
+                            var roundId =
+                                (e.TryGetProperty("roundToLink", out var rtl) && rtl.TryGetProperty("id", out var lid) ? lid.GetString() : null)
+                                ?? (round.TryGetProperty("id", out var rid) ? rid.GetString() : null);
+                            if (string.IsNullOrEmpty(roundId)) continue;
                             var ongoing = round.TryGetProperty("ongoing", out var o) && o.GetBoolean();
-                            var finished = round.TryGetProperty("finished", out var f) && f.GetBoolean();
-                            if (id.Length == 0) continue;
                             DateTimeOffset? startsAt = round.TryGetProperty("startsAt", out var sa) && sa.TryGetInt64(out var ms)
                                 ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
-                            result.Add(new OfficialRound(id, name, ongoing, finished, tourId, tourName, startsAt));
+                            list.Add(new LobbyTour(
+                                tour.GetProperty("id").GetString() ?? "",
+                                tour.GetProperty("name").GetString() ?? "",
+                                roundId,
+                                round.TryGetProperty("name", out var rn) ? rn.GetString() ?? "" : "",
+                                ongoing, startsAt));
                         }
+                        catch { /* one malformed entry must not kill the lobby */ }
                     }
-                    catch { /* one malformed line must not kill the list */ }
+                    return list;
                 }
+
+                var active = root.TryGetProperty("active", out var a) ? Section(a) : new();
+                var upcoming = root.TryGetProperty("upcoming", out var u) ? Section(u) : new();
+                var past = root.TryGetProperty("past", out var p) && p.TryGetProperty("currentPageResults", out var pr)
+                    ? Section(pr) : new();
+                return new BroadcastLobby(active, upcoming, past);
             }
-            catch { /* offline or lichess down — picker just stays empty */ }
-            return result;
+            catch { return BroadcastLobby.Empty; /* offline or lichess down */ }
+        }
+
+        /// <summary>Fetches one tour's full round list (feeds the round switcher) plus
+        /// lichess's defaultRoundId. Empty on any failure.</summary>
+        public static async Task<(List<OfficialRound> Rounds, string DefaultRoundId)> FetchTourRoundsAsync(string tourId)
+        {
+            var rounds = new List<OfficialRound>();
+            try
+            {
+                var body = await ListHttp.GetStringAsync($"https://lichess.org/api/broadcast/{tourId}");
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                var tourName = root.TryGetProperty("tour", out var t) && t.TryGetProperty("name", out var tn)
+                    ? tn.GetString() ?? "" : "";
+                if (root.TryGetProperty("rounds", out var arr))
+                {
+                    foreach (var round in arr.EnumerateArray())
+                    {
+                        var id = round.TryGetProperty("id", out var rid) ? rid.GetString() ?? "" : "";
+                        if (id.Length == 0) continue;
+                        var name = round.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                        var ongoing = round.TryGetProperty("ongoing", out var o) && o.GetBoolean();
+                        var finished = round.TryGetProperty("finished", out var f) && f.GetBoolean();
+                        DateTimeOffset? startsAt = round.TryGetProperty("startsAt", out var sa) && sa.TryGetInt64(out var ms)
+                            ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
+                        rounds.Add(new OfficialRound(id, name, ongoing, finished, tourId, tourName, startsAt));
+                    }
+                }
+                var defaultRound = root.TryGetProperty("defaultRoundId", out var dr) ? dr.GetString() ?? "" : "";
+                return (rounds, defaultRound);
+            }
+            catch { return (rounds, ""); }
         }
     }
 }
