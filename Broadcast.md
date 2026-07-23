@@ -6,8 +6,8 @@ Open it from the navigation menu: **Tournament → Lichess broadcast** (`/broadc
 
 ## Quick start
 
-1. Pick a broadcast from the **official broadcasts** dropdown (live rounds are listed first), or paste any lichess broadcast round URL or round id into the text field.
-2. Press **Start**. All games of the round appear as tiles; the first game becomes the focus board. Click a tile to focus a different game.
+1. Pick a tournament from the **official tournaments** dropdown (live tournaments are listed first), or paste any lichess broadcast round URL or round id into the text field.
+2. Press **Start**. You land on the tournament's current round — the live round if one is running, otherwise the latest finished round. All games of the round appear as tiles; the first game becomes the focus board. Click a tile to focus a different game. Use the round switcher next to the Follow button to change rounds.
 3. Press **▶** in the kibitzer panel (top right of the move list) to start engine analysis. Analysis follows whatever position is on the board — live moves, browsing, or your own exploration.
 
 ## The kibitzer panel
@@ -37,7 +37,7 @@ If the engine process crashes, the panel shows *"engine exited — press ▶ to 
 
 ## Round switcher
 
-When the current round belongs to a tournament from the official list, a round dropdown appears next to the Follow button — switch rounds without re-pasting URLs.
+When the current round belongs to a tournament from the official list, a round dropdown appears next to the Follow button — this is where you move between rounds (live and upcoming rounds are marked). Pasted rounds that are not in the official list have no switcher.
 
 ## Finished games
 

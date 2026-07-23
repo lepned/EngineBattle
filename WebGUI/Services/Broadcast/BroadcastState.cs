@@ -39,9 +39,9 @@ namespace WebGUI.Services.Broadcast
         public string CurrentFen => Plies.Count > 0 ? Plies[^1].Fen : StartFen;
     }
 
-    /// <summary>An entry of the official-broadcasts picker. TourId/RoundName group the
-    /// rounds of one tournament for the round switcher.</summary>
-    public sealed record OfficialRound(string RoundId, string Label, bool Ongoing, string TourId, string RoundName);
+    /// <summary>One round of an official broadcast. The picker groups these by TourId
+    /// (tournament dropdown); the round switcher lists one tour's rounds.</summary>
+    public sealed record OfficialRound(string RoundId, string RoundName, bool Ongoing, bool Finished, string TourId, string TourName);
 
     /// <summary>
     /// Holds the live state of one lichess broadcast round: starts/stops the streaming
@@ -220,9 +220,10 @@ namespace WebGUI.Services.Broadcast
             return client;
         }
 
-        /// <summary>Fetches the official broadcast list (ndjson) for the round picker.
-        /// Returns tour+round entries, ongoing rounds first. Empty list on any failure.</summary>
-        public static async Task<List<OfficialRound>> FetchOfficialRoundsAsync(int tournaments = 10)
+        /// <summary>Fetches the official broadcast list (ndjson) for the tournament picker.
+        /// Returns every round of every tour, in API order (tours by lichess relevance,
+        /// rounds chronological within a tour). Empty list on any failure.</summary>
+        public static async Task<List<OfficialRound>> FetchOfficialRoundsAsync(int tournaments = 20)
         {
             var result = new List<OfficialRound>();
             try
@@ -245,15 +246,14 @@ namespace WebGUI.Services.Broadcast
                             var ongoing = round.TryGetProperty("ongoing", out var o) && o.GetBoolean();
                             var finished = round.TryGetProperty("finished", out var f) && f.GetBoolean();
                             if (id.Length == 0) continue;
-                            var label = $"{tourName} — {name}" + (ongoing ? "  (live)" : finished ? "  (finished)" : "");
-                            result.Add(new OfficialRound(id, label, ongoing, tourId, name));
+                            result.Add(new OfficialRound(id, name, ongoing, finished, tourId, tourName));
                         }
                     }
                     catch { /* one malformed line must not kill the list */ }
                 }
             }
             catch { /* offline or lichess down — picker just stays empty */ }
-            return result.OrderByDescending(r => r.Ongoing).ToList();
+            return result;
         }
     }
 }

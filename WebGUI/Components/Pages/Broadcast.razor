@@ -19,11 +19,11 @@
     </div>
 
     <div class="bc-picker">
-        <select @bind="selectedOfficial">
-            <option value="">— official broadcasts —</option>
-            @foreach (var r in officialRounds)
+        <select @bind="selectedTour">
+            <option value="">— official tournaments —</option>
+            @foreach (var t in Tours)
             {
-                <option value="@r.RoundId">@r.Label</option>
+                <option value="@t.TourId">@t.TourName@(t.Live ? "  (live)" : "")</option>
             }
         </select>
         <input placeholder="…or broadcast round URL / id" @bind="roundInput" @bind:event="oninput" />
@@ -51,7 +51,7 @@
                         <select class="bc-round-select" value="@Feed.RoundId" @onchange="SwitchRound" title="Switch round">
                             @foreach (var r in siblings)
                             {
-                                <option value="@r.RoundId">@r.RoundName @(r.Ongoing ? " (live)" : "")</option>
+                                <option value="@r.RoundId">@r.RoundName @(r.Ongoing ? " (live)" : !r.Finished ? " (upcoming)" : "")</option>
                             }
                         </select>
                     }
@@ -141,8 +141,24 @@
 
 @code {
     private string roundInput = "";
-    private string selectedOfficial = "";
+    private string selectedTour = "";
     private List<OfficialRound> officialRounds = new();
+
+    // Tournament picker entries: one per tour, live tours first, otherwise API order.
+    private List<(string TourId, string TourName, bool Live)> Tours =>
+        officialRounds
+            .GroupBy(r => r.TourId)
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .Select(g => (g.Key, g.First().TourName, g.Any(r => r.Ongoing)))
+            .OrderByDescending(t => t.Item3)
+            .ToList();
+
+    /// <summary>The round to land on when a tournament is picked: the live round if any,
+    /// else the most recently finished (games to look at), else the first upcoming.</summary>
+    private static OfficialRound DefaultRound(List<OfficialRound> rounds) =>
+        rounds.FirstOrDefault(r => r.Ongoing)
+        ?? rounds.LastOrDefault(r => r.Finished)
+        ?? rounds.First();
 
     private string focusKey = "";
     private bool follow = true;
@@ -307,7 +323,12 @@
 
     private void Start()
     {
-        var target = !string.IsNullOrWhiteSpace(roundInput) ? roundInput : selectedOfficial;
+        var target = roundInput;
+        if (string.IsNullOrWhiteSpace(target) && !string.IsNullOrEmpty(selectedTour))
+        {
+            var rounds = officialRounds.Where(r => r.TourId == selectedTour).ToList();
+            if (rounds.Count > 0) target = DefaultRound(rounds).RoundId;
+        }
         if (string.IsNullOrWhiteSpace(target)) return;
         focusKey = "";
         follow = true;
