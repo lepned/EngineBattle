@@ -27,6 +27,7 @@
 @inject JsonFeedService JsonFeedSvc
 @inject LiveFeedReplayer Replayer
 @inject NavigationManager Nav
+@inject GlobalSettingsService SettingsService
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -223,7 +224,9 @@
 								 MoveHistory="@moveHistory" OpeningName="@currentOpeningInPlay" MoveListFontSize="@layoutOptions.Fonts.MoveListFont"
 								 OpeningSansForDeviation="@openingSansForDeviation"
 								 ReferenceSansForDeviation="@referenceSansForDeviation"
-								 ShowCopyFen="@FeedMode">
+								 ShowCopyFen="@FeedMode"
+								 ShowEvalBar="@SettingsService.Settings.ShowEvalBar"
+								 EvalCp="@tournamentEvalCp" EvalMate="@tournamentEvalMate">
 			</StreamingChessboard>
 			<div>
 				<div style=@pvStyleBlack class="pv-black-box pv">
@@ -1035,6 +1038,11 @@
 		return msg;
 	}
 
+	// Eval bar beside the streaming board: latest eval from the engine on move
+	// (already white-perspective — the parser negates for the black engine).
+	private double? tournamentEvalCp;
+	private int? tournamentEvalMate;
+
 	private void SetEngineStatus(EngineStatus status)
 	{
 		if (status.PlayerName == Engine1.PlayerName)
@@ -1044,6 +1052,12 @@
 		else
 		{
 			Engine2 = status;
+		}
+
+		switch (status.Eval)
+		{
+			case EvalType.CP cp: (tournamentEvalCp, tournamentEvalMate) = (cp.Info, null); break;
+			case EvalType.Mate m: (tournamentEvalCp, tournamentEvalMate) = (null, m.Info); break;
 		}
 
 		if (status.EPS > 0)
@@ -1396,6 +1410,7 @@
 	private async void ResetGameState()
 	{
 		infoBannerInfo.ResultTxt = " * ";
+		(tournamentEvalCp, tournamentEvalMate) = (null, null);
 		move50 = 0;
 		r3 = 0;
 		blackLongPV = "";
