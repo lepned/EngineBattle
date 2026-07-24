@@ -138,3 +138,15 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
         if not isReady then
           failwith $"Engine {engine.Name} did not respond to isready command before search"
         engine.SendUCICommand (RawCommand goCommand)
+
+    /// Search from a position command the caller already built from a board snapshot.
+    /// Touches no shared board state, so unlike Play/GoInfinite it is safe to call
+    /// from a thread that does not own the board.
+    member x.PlayPrepared (positionCmd: string, goCommand: string) =
+      engine.SendUCICommand Stop
+      printfn "Search prepared command: %s" positionCmd
+      engine.SendUCICommand (PositionWithMoves positionCmd)
+      let isReady = engine.WaitForReadyOk()
+      if not isReady then
+        failwith $"Engine {engine.Name} did not respond to isready command before search"
+      engine.SendUCICommand (RawCommand goCommand)

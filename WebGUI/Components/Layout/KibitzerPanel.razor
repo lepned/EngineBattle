@@ -128,6 +128,12 @@
     // FEN of the position the current search was started on; published with evals so
     // consumers attribute them to the right move even when navigation is in flight.
     private string lastSearchFen = "";
+    // Position snapshot for the search task: UCI position command + the fen it was
+    // built from, captured together on the dispatcher (Chess.Board is not thread-safe
+    // and is mutated by ModernChessboard on the dispatcher — the search task must
+    // never touch it). Immutable tuple, so the reference write is atomic and a
+    // coalesced start simply picks up the newest snapshot.
+    private (string PosCmd, string Fen) latestSearch;
     private double? lastCp;
     private int? lastMate;
     private readonly CancellationTokenSource disposeCts = new();
@@ -271,14 +277,18 @@
         lastMate = null;
     }
 
-    /// <summary>Starts (or restarts) a search on the shared board's current position.</summary>
+    /// <summary>Starts (or restarts) a search on the shared board's current position.
+    /// Must run on the dispatcher: it snapshots the shared board here so the search
+    /// task never touches it (off-dispatcher board access races ModernChessboard).</summary>
     private void BeginSearch()
     {
         var a = analyzer;
         if (a == null) return;
         ClearData();
+        if (!ChessBoard.AnyLegalMove()) return;
+        latestSearch = (ChessBoard.PositionWithMovesFromGraph(), ChessBoard.FEN());
         // Coalesce: if a start is already queued behind the running one it will pick
-        // up the latest board state anyway — no need for another task.
+        // up the latest snapshot anyway — no need for another task.
         if (Interlocked.CompareExchange(ref searchQueued, 1, 0) != 0) return;
         var ms = limitSeconds * 1000;
         _ = Task.Run(async () =>
@@ -301,9 +311,9 @@
                     }
                     else
                     {
-                        lastSearchFen = ChessBoard.FEN();
-                        if (ms <= 0) a.GoInfinite();
-                        else a.Play($"go movetime {ms}");
+                        var (posCmd, searchFen) = latestSearch;
+                        lastSearchFen = searchFen;
+                        a.PlayPrepared(posCmd, ms <= 0 ? "go infinite" : $"go movetime {ms}");
                     }
                 }
                 if (!running)
@@ -318,9 +328,11 @@
 
     public async Task OnNotifyFen(string newPos)
     {
+        // Marshal to the dispatcher: BeginSearch snapshots the shared board, and
+        // Notifier events run on whatever thread raised them — today always the
+        // dispatcher, but nothing enforces that for future callers.
         if (running && analyzer != null)
-            BeginSearch();
-        await Task.CompletedTask;
+            await InvokeAsync(BeginSearch);
     }
 
     public async void HandleUpdate(EngineUpdate update)
