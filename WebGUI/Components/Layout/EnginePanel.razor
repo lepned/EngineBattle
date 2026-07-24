@@ -1836,8 +1836,24 @@
     // Guards against unbounded thread-pool pile-up when the engine hangs or dies
     // (WaitForReadyOk can block for a long time on a crashed process).
     private int autoSearchQueued;
+    // Position snapshot for the auto-search task: Chess.Board is not thread-safe and
+    // is mutated on the dispatcher, so the task must never touch it (same pattern as
+    // KibitzerPanel). Immutable tuple — the reference write is atomic and a coalesced
+    // start picks up the newest snapshot.
+    private (string PosCmd, string Go) latestAutoSearch;
 
-    public async Task OnNotifyFen(string newPos)
+    private string BuildAutoGoCommand()
+    {
+        var suffix = analyzer.SearchMoves.Any() ? " searchmoves " + string.Join(" ", analyzer.SearchMoves) : "";
+        return searchMode == SearchMode.Nodes
+            ? $"go nodes {(int)numberOfNodes}{suffix}"
+            : $"go movetime {(int)Math.Max(1, Math.Round(numberOfTimeMs))}{suffix}";
+    }
+
+    // Marshalled to the dispatcher: the body mutates UI state and snapshots the shared
+    // board, and Notifier events run on whatever thread raised them — today always the
+    // dispatcher, but nothing enforces that for future callers.
+    public Task OnNotifyFen(string newPos) => InvokeAsync(async () =>
     {
         fen = newPos;
         NNInfoList.Clear();
@@ -1863,6 +1879,11 @@
                 searchInProgress = true;
                 StartSearchTimer();
                 var a = analyzer;
+                // Snapshot the shared board here on the dispatcher — the search task
+                // must never touch it (racing the board's owner page corrupts the
+                // move list mid-render: "Collection was modified").
+                if (!ChessBoard.AnyLegalMove()) return;
+                latestAutoSearch = (ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand());
                 if (Interlocked.CompareExchange(ref autoSearchQueued, 1, 0) == 0)
                 {
                     _ = Task.Run(async () => {
@@ -1881,7 +1902,8 @@
                                 }
                                 else
                                 {
-                                    StartSearchWithMode();
+                                    var (posCmd, goCmd) = latestAutoSearch;
+                                    a.PlayPrepared(posCmd, goCmd);
                                 }
                             }
                             if (!searchInProgress)
@@ -1904,7 +1926,7 @@
             searchInProgress = false;
             StopSearchTimer();
         }
-    }
+    });
 
     protected override Task OnInitializedAsync()
     {
