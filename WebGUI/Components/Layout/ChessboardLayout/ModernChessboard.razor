@@ -19,9 +19,11 @@
 
 <div class="modern-chessboard @(MoveListPosition == MoveListPosition.Right ? "mcb-right-layout" : "mcb-below-layout")">
     <div class="mcb-board-area">
+        @* Player bars follow the board orientation: the side rendered at the bottom
+           of the flipped board gets the bottom bar. *@
         @if (ShowPlayerInfo)
         {
-            <div class="mcb-player-info">@BlackPlayerInfo</div>
+            <div class="mcb-player-info">@(isBoardFlipped ? WhitePlayerInfo : BlackPlayerInfo)</div>
         }
 
         <div class="mcb-board-wrapper @(BoardLeft != null || BoardRight != null ? "mcb-with-left" : "")">
@@ -68,7 +70,7 @@
 
         @if (ShowPlayerInfo)
         {
-            <div class="mcb-player-info">@WhitePlayerInfo</div>
+            <div class="mcb-player-info">@(isBoardFlipped ? BlackPlayerInfo : WhitePlayerInfo)</div>
         }
 
         @if (!String.IsNullOrEmpty(DetectedOpeningName))
