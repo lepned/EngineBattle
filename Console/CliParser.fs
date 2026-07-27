@@ -96,6 +96,17 @@ let createCombinedScoresTable
     // Combine all sets of scores
     let allScores = policyScores @ valueScores @ searchScores @ solveScores
 
+    // Engine column auto-show: only when it disambiguates — a row has no net name to
+    // identify it, or the same net appears under different engine configs (e.g. two
+    // configs differing only in options). Otherwise Neural net alone identifies every
+    // row and the column is redundant width.
+    let showEngineColumn =
+        allScores |> List.exists (fun s -> System.String.IsNullOrEmpty s.NeuralNet)
+        || (allScores
+            |> List.groupBy (fun s -> s.NeuralNet)
+            |> List.exists (fun (_, group) ->
+                group |> List.map (fun s -> s.Engine) |> List.distinct |> List.length > 1))
+
     // Helper to get max of header length vs. data lengths
     let maxOf (header:string) (lengths :int list) =
         let length = if lengths.Length > 0 then (lengths |> List.max) else 0
@@ -164,27 +175,27 @@ let createCombinedScoresTable
         maxOf "Max" (policyScores |> List.map (fun s -> (formatEstMax s).Length))
 
     let sep = "  "
+    let engCol (value: string) =
+        if showEngineColumn then value.PadRight maxEngineWidth + sep else ""
     // Base columns shared by all sections
     let baseHeader =
-        sprintf "%s%s%s%s%s%s%s%s%s%s%s%s%s"
-          ("Engine".PadRight maxEngineWidth) sep
-          ("Neural net".PadRight maxNeuralNetWidth) sep
-          ("Perf".PadRight maxPerfWidth) sep
-          ("Accuracy".PadRight maxAccuracyWidth) sep
-          ("Total".PadRight maxTotalWidth) sep
-          ("AvgR".PadRight maxAvgRatingWidth) sep
-          ("Theme".PadRight maxThemeWidth)
+        engCol "Engine"
+        + ("Neural net".PadRight maxNeuralNetWidth) + sep
+        + ("Perf".PadRight maxPerfWidth) + sep
+        + ("Accuracy".PadRight maxAccuracyWidth) + sep
+        + ("Total".PadRight maxTotalWidth) + sep
+        + ("AvgR".PadRight maxAvgRatingWidth) + sep
+        + ("Theme".PadRight maxThemeWidth)
     let baseRow (s: ChessLibrary.PuzzleTypes.Score) =
         let perf = s.PlayerRecord.Rating.ToString("F0")
         let accuracy = (decimal s.Correct / decimal s.TotalNumber).ToString("P1")
-        sprintf "%s%s%s%s%s%s%s%s%s%s%s%s%s"
-            (s.Engine.PadRight maxEngineWidth) sep
-            (s.NeuralNet.PadRight maxNeuralNetWidth) sep
-            (perf.PadRight maxPerfWidth) sep
-            (accuracy.PadRight maxAccuracyWidth) sep
-            (s.TotalNumber.ToString().PadRight maxTotalWidth) sep
-            (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth) sep
-            (s.Filter.PadRight maxThemeWidth)
+        engCol s.Engine
+        + (s.NeuralNet.PadRight maxNeuralNetWidth) + sep
+        + (perf.PadRight maxPerfWidth) + sep
+        + (accuracy.PadRight maxAccuracyWidth) + sep
+        + (s.TotalNumber.ToString().PadRight maxTotalWidth) + sep
+        + (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth) + sep
+        + (s.Filter.PadRight maxThemeWidth)
 
     // Policy: base + Type + KLD + P95 + P99 + Max + ≤100 (no Nodes)
     let policyHeaderLine =
@@ -207,8 +218,9 @@ let createCombinedScoresTable
     // Sum up all column widths and add a buffer for tab spacing
     let approximateWidth =
         let sepWidth = 2
-        let columns = 8
-        maxEngineWidth + maxNeuralNetWidth + maxPerfWidth + maxAccuracyWidth +
+        let columns = if showEngineColumn then 8 else 7
+        (if showEngineColumn then maxEngineWidth else 0)
+        + maxNeuralNetWidth + maxPerfWidth + maxAccuracyWidth +
         maxTotalWidth + maxAvgRatingWidth + maxThemeWidth + maxNodesWidth +
         (columns - 1) * sepWidth
         //20 // Buffer for spacing between columns

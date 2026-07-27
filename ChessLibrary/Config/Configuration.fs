@@ -764,7 +764,7 @@ module JSONParser =
             else None
         prefix, embeddedParams
 
-    let private applyNetToConfig (baseConfig: EngineConfig) (net: string) =
+    let private applyNetToConfig (configFileName: string) (baseConfig: EngineConfig) (net: string) =
         let newOptions = JSON.cloneOptions baseConfig.Options
 
         if newOptions.ContainsKey("WeightsFile") then
@@ -788,9 +788,12 @@ module JSONParser =
             ConsoleUtils.printInColor ConsoleColor.Yellow (sprintf "Warning: Engine '%s' config does not contain 'WeightsFile' or 'Network' option to set net '%s'" baseConfig.Name net)
 
         let netName = Path.GetFileNameWithoutExtension net
-        let firstName = baseConfig.Name.Split(' ') |> Seq.head
+        // Label instances by the config FILE name, not the Name field inside it: the same
+        // engine binary is often referenced by several configs differing only in options
+        // (e.g. output head), where the Name field — and even the net — can be identical.
+        let configName = Path.GetFileNameWithoutExtension configFileName
         let displayNet = Path.GetFileName(net)
-        { baseConfig with Name = firstName + " " + netName; Options = newOptions; NetworkPath = displayNet }
+        { baseConfig with Name = configName + " " + netName; Options = newOptions; NetworkPath = displayNet }
 
     let mapToEngConfig (engineFolder: string) (engine: PuzzleTypes.PuzzleEngine) =
         match engine with
@@ -803,7 +806,7 @@ module JSONParser =
             let baseConfig = JSON.readSingleEngineConfig fullPath
             [
                 for net in nets do
-                    yield applyNetToConfig baseConfig net
+                    yield applyNetToConfig name baseConfig net
             ]
 
     let mapToEngPuzzleConfig (engineFolder: string) (engine: PuzzleTypes.PuzzleEngine) =
@@ -822,7 +825,7 @@ module JSONParser =
                 let mapNet (net: string) =
                     try
                         let baseConfig = JSON.readSingleEngineConfig fullPath
-                        let cfg = applyNetToConfig baseConfig net
+                        let cfg = applyNetToConfig name baseConfig net
                         Some (cfg, nodes)
                     with ex ->
                         ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Error mapping engine '%s' with net '%s': %s" name net ex.Message)

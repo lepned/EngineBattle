@@ -255,7 +255,19 @@
     private List<Score> ValueScores = new();
     private List<Score> SearchScores = new();
     private List<Score> SolveScores = new();
-    private bool ShowEngineColumn => SettingsService.Settings.ShowPuzzleEngineColumn;
+    // Engine column auto-shows when it disambiguates — a row has no net name to identify
+    // it, or the same net appears under different engine configs (e.g. two configs
+    // differing only in options). The settings toggle means "always show".
+    private bool EngineColumnNeeded
+    {
+        get
+        {
+            var all = PolicyScores.Concat(ValueScores).Concat(SearchScores).Concat(SolveScores).ToList();
+            return all.Any(s => string.IsNullOrEmpty(s.NeuralNet))
+                || all.GroupBy(s => s.NeuralNet).Any(g => g.Select(x => x.Engine).Distinct().Count() > 1);
+        }
+    }
+    private bool ShowEngineColumn => SettingsService.Settings.ShowPuzzleEngineColumn || EngineColumnNeeded;
     private string Filter { get; set; } = "";
     int failedNumber = 5;
     int solvedNumber = 5;
