@@ -625,6 +625,20 @@
         int maxNodesWidth = Math.Max("Nodes".Length, allScores.Max(s => s.Nodes.ToString().Length));
         int maxKLDWidth = Math.Max("KLD".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => s.AvgKLD > 0 ? s.AvgKLD.ToString("F4").Length : 1) : 1);
         string FormatKLD(Score s) => s.AvgKLD > 0 ? s.AvgKLD.ToString("F4") : "—";
+        // Estimated-nodes columns (P95/P99/Max/≤100), mirroring the console table in CliParser.fs.
+        // AvgEstNodesLog10 = 0 means the metric is absent (no policy data), which blanks the columns.
+        static string FormatNodeCount(double n) =>
+            n < 10.0 ? n.ToString("F2")
+            : n < 1000.0 ? n.ToString("F0")
+            : n < 1_000_000.0 ? (n / 1000.0).ToString("F1") + "k"
+            : (n / 1_000_000.0).ToString("F2") + "M";
+        string FormatEstPercentile(double value, Score s) => s.AvgEstNodesLog10 > 0.0 ? FormatNodeCount(value) : "—";
+        string FormatEstCdf100(Score s) => s.AvgEstNodesLog10 > 0.0 ? (s.EstNodesCdf100 * 100.0).ToString("F1") + "%" : "—";
+        string FormatEstMax(Score s) => s.AvgEstNodesLog10 > 0.0 && s.HardestByEstNodes.Count > 0 ? FormatNodeCount(s.HardestByEstNodes[0].Item2) : "—";
+        int maxEstP95Width = Math.Max("P95".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => FormatEstPercentile(s.EstNodesP95, s).Length) : 0);
+        int maxEstP99Width = Math.Max("P99".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => FormatEstPercentile(s.EstNodesP99, s).Length) : 0);
+        int maxEstMaxWidth = Math.Max("Max".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => FormatEstMax(s).Length) : 0);
+        int maxEstCdfWidth = Math.Max("≤100".Length, PolicyScores.Count > 0 ? PolicyScores.Max(s => FormatEstCdf100(s).Length) : 0);
         var sep = "  ";
         string engCol(string val) => showEng ? $"{val.PadRight(maxEngineWidth)}{sep}" : "";
         string BaseRow(Score s) => $"{engCol(s.Engine)}{s.NeuralNet.PadRight(maxNeuralNetWidth)}{sep}{s.PlayerRecord.Rating.ToString("F0").PadRight(maxPerfWidth)}{sep}{(s.TotalNumber > 0 ? ((decimal)s.Correct / s.TotalNumber).ToString("P1") : "N/A").PadRight(maxAccuracyWidth)}{sep}{s.TotalNumber.ToString().PadRight(maxTotalWidth)}{sep}{s.RatingAvg.ToString("F0").PadRight(maxAvgRatingWidth)}{sep}{s.Filter.PadRight(maxThemeWidth)}";
@@ -641,7 +655,7 @@
         if (PolicyScores.Count > 0)
         {
             sb.AppendLine("Policy Head Tests\n");
-            sb.AppendLine($"{BaseHeader()}{sep}{"Type".PadRight(maxTypeWidth)}{sep}{"KLD".PadRight(maxKLDWidth)}");
+            sb.AppendLine($"{BaseHeader()}{sep}{"Type".PadRight(maxTypeWidth)}{sep}{"KLD".PadRight(maxKLDWidth)}{sep}{"P95".PadRight(maxEstP95Width)}{sep}{"P99".PadRight(maxEstP99Width)}{sep}{"Max".PadRight(maxEstMaxWidth)}{sep}{"≤100".PadRight(maxEstCdfWidth)}");
 
             double? currentGroup = null;
             foreach (var score in PolicyScores)
@@ -651,7 +665,7 @@
                     sb.AppendLine(separatorLine);
                 }
                 currentGroup = score.RatingAvg;
-                sb.AppendLine($"{BaseRow(score)}{sep}{score.Type.PadRight(maxTypeWidth)}{sep}{FormatKLD(score).PadRight(maxKLDWidth)}");
+                sb.AppendLine($"{BaseRow(score)}{sep}{score.Type.PadRight(maxTypeWidth)}{sep}{FormatKLD(score).PadRight(maxKLDWidth)}{sep}{FormatEstPercentile(score.EstNodesP95, score).PadRight(maxEstP95Width)}{sep}{FormatEstPercentile(score.EstNodesP99, score).PadRight(maxEstP99Width)}{sep}{FormatEstMax(score).PadRight(maxEstMaxWidth)}{sep}{FormatEstCdf100(score).PadRight(maxEstCdfWidth)}");
             }
             sb.AppendLine();
         }
@@ -967,6 +981,42 @@
                             csvWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
                         }
                         logger.LogInformation($"  Failed puzzles CSV ({allFailed.Length} unique): {csvFileName}");
+                    }
+
+                    var estCsvFileName = Path.Combine(normalized, $"estNodesHardest_{datePart}.csv");
+                    var hardest = PolicyScores
+                        .SelectMany(s => s.HardestByEstNodes)
+                        .OrderByDescending(t => t.Item2)
+                        .GroupBy(t => t.Item1.PuzzleId)
+                        .Select(g => g.First())
+                        .Take(50)
+                        .ToArray();
+                    if (hardest.Length > 0)
+                    {
+                        static string FormatEstNodes(double n) =>
+                            n < 10.0 ? n.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                            : n < 1000.0 ? n.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)
+                            : n < 1_000_000.0 ? (n / 1000.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "k"
+                            : (n / 1_000_000.0).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "M";
+
+                        using (var estWriter = new StreamWriter(estCsvFileName))
+                        {
+                            estWriter.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags");
+                            foreach (var t in hardest)
+                            {
+                                var p = t.Item1;
+                                estWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
+                            }
+                        }
+                        var hardestLog = new StringBuilder();
+                        hardestLog.AppendLine($"  Hardest-by-EstNodes CSV (top {hardest.Length}, worst first): {estCsvFileName}");
+                        hardestLog.AppendLine("  Top 10 worst-case candidates by estimated nodes to find the correct move:");
+                        foreach (var t in hardest.Take(10))
+                        {
+                            var p = t.Item1;
+                            hardestLog.AppendLine($"    {p.PuzzleId,-12}  rating {(int)p.Rating,4}  est {FormatEstNodes(t.Item2),-7}  {p.GameUrl}");
+                        }
+                        logger.LogInformation(hardestLog.ToString());
                     }
 
                     var allScoresForCross = PolicyScores.AsEnumerable()
