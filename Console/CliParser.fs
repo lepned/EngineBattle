@@ -132,6 +132,36 @@ let createCombinedScoresTable
         maxOf "KLD" (policyScores |> List.map (fun s -> if s.AvgKLD > 0.0 then s.AvgKLD.ToString("F4").Length else 1))
     let formatKLD (s: ChessLibrary.PuzzleTypes.Score) =
         if s.AvgKLD > 0.0 then s.AvgKLD.ToString("F4") else "—"
+    // Compact node-count formatter shared by the P95/P99/Max columns. Values can sit
+    // below 10 (rank-1 puzzles contribute 0), so keep decimals at the low end or the
+    // column collapses to "0".
+    let formatNodeCount (n: float) =
+        if n < 10.0 then n.ToString("F2")
+        elif n < 1000.0 then n.ToString("F0")
+        elif n < 1_000_000.0 then (n / 1000.0).ToString("F1") + "k"
+        else (n / 1_000_000.0).ToString("F2") + "M"
+    // AvgEstNodesLog10 = 0 means the estimated-nodes metric is absent (no policy data),
+    // which blanks the percentile and CDF columns.
+    let formatEstPercentile (value: float) (s: ChessLibrary.PuzzleTypes.Score) =
+        if s.AvgEstNodesLog10 > 0.0 then formatNodeCount value else "—"
+    let maxEstP95Width =
+        maxOf "P95" (policyScores |> List.map (fun s -> (formatEstPercentile s.EstNodesP95 s).Length))
+    let maxEstP99Width =
+        maxOf "P99" (policyScores |> List.map (fun s -> (formatEstPercentile s.EstNodesP99 s).Length))
+    // CDF at a 100-node budget: "a 100-node search reaches the correct move on X% of positions".
+    let formatEstCdf100 (s: ChessLibrary.PuzzleTypes.Score) =
+        if s.AvgEstNodesLog10 > 0.0 then (s.EstNodesCdf100 * 100.0).ToString("F1") + "%" else "—"
+    let maxEstCdfWidth =
+        maxOf "≤100" (policyScores |> List.map (fun s -> (formatEstCdf100 s).Length))
+    // Worst case of the whole set by the formula: HardestByEstNodes is sorted desc,
+    // so its head is the max per-puzzle estimate. First-visit estimate only — real
+    // nodes-to-solve can be far higher when the value head also misjudges the child.
+    let formatEstMax (s: ChessLibrary.PuzzleTypes.Score) =
+        if s.AvgEstNodesLog10 > 0.0 && s.HardestByEstNodes.Count > 0
+        then formatNodeCount (snd s.HardestByEstNodes.[0])
+        else "—"
+    let maxEstMaxWidth =
+        maxOf "Max" (policyScores |> List.map (fun s -> (formatEstMax s).Length))
 
     let sep = "  "
     // Base columns shared by all sections
@@ -156,8 +186,11 @@ let createCombinedScoresTable
             (s.RatingAvg.ToString("F0").PadRight maxAvgRatingWidth) sep
             (s.Filter.PadRight maxThemeWidth)
 
-    // Policy: base + Type + KLD (no Nodes)
-    let policyHeaderLine = baseHeader + sep + ("Type".PadRight maxTypeWidth) + sep + ("KLD".PadRight maxKLDWidth)
+    // Policy: base + Type + KLD + P95 + P99 + Max + ≤100 (no Nodes)
+    let policyHeaderLine =
+        baseHeader + sep + ("Type".PadRight maxTypeWidth) + sep + ("KLD".PadRight maxKLDWidth)
+        + sep + ("P95".PadRight maxEstP95Width) + sep + ("P99".PadRight maxEstP99Width)
+        + sep + ("Max".PadRight maxEstMaxWidth) + sep + ("≤100".PadRight maxEstCdfWidth)
     // Value: base + Type (no Nodes, no KLD)
     let valueHeaderLine = baseHeader + sep + ("Type".PadRight maxTypeWidth)
     // Search/Solve: base + Nodes (no Type, no KLD)
@@ -188,7 +221,12 @@ let createCombinedScoresTable
         sb.AppendLine(policyHeaderLine) |> ignore
     policyScores
     |> List.iter (fun s ->
-        let line = baseRow s + sep + (s.Type.PadRight maxTypeWidth) + sep + ((formatKLD s).PadRight maxKLDWidth)
+        let line =
+            baseRow s + sep + (s.Type.PadRight maxTypeWidth) + sep + ((formatKLD s).PadRight maxKLDWidth)
+            + sep + ((formatEstPercentile s.EstNodesP95 s).PadRight maxEstP95Width)
+            + sep + ((formatEstPercentile s.EstNodesP99 s).PadRight maxEstP99Width)
+            + sep + ((formatEstMax s).PadRight maxEstMaxWidth)
+            + sep + ((formatEstCdf100 s).PadRight maxEstCdfWidth)
         widestText <- if widestText.Length < line.Length then line else widestText
         if s.RatingAvg <> startGroup then
             startGroup <- s.RatingAvg

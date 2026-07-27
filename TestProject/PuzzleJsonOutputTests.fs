@@ -34,7 +34,12 @@ let private mkScore
       AvgRankWeightedKld = 0.0
       AvgFrontierKld = 0.0
       AvgMarginLoss = 0.0
-      AvgValueLoss = 0.0 }
+      AvgValueLoss = 0.0
+      AvgEstNodesLog10 = 0.0
+      EstNodesP95 = 0.0
+      EstNodesP99 = 0.0
+      EstNodesCdf100 = 0.0
+      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
 
 /// Helper that lets a test set both AvgKLD and AvgRankWeightedKld.
 let private mkScoreWithRankWtKld

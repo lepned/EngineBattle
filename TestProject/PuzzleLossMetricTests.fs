@@ -1,4 +1,4 @@
-module PuzzleLossMetricTests
+﻿module PuzzleLossMetricTests
 
 open System
 open Xunit
@@ -191,6 +191,144 @@ let ``computeMarginLoss returns 0 for single move`` () =
     Assert.Equal(0.0, computeMarginLoss nn "e2e4")
 
 // ---------------------------------------------------------------------------
+// computeEstNodesToFind
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``computeEstNodesToFind returns 0 for rank 1`` () =
+    let nn = [ mkNN "e2e4" 60.0 0.0; mkNN "d2d4" 30.0 0.0; mkNN "c2c4" 10.0 0.0 ]
+    Assert.Equal(0.0, computeEstNodesToFind nn "e2e4")
+
+[<Fact>]
+let ``computeEstNodesToFind returns 0 for empty list`` () =
+    Assert.Equal(0.0, computeEstNodesToFind [] "e2e4")
+
+[<Fact>]
+let ``computeEstNodesToFind matches hand-computed value`` () =
+    // Correct move c2c4 at rank 3: P=10% → 0.10, sumHigher=90% → 0.9
+    // N = (0.98416 * sqrt(0.9) / (2.897 * 0.10))² ≈ 10.3867
+    let nn = [ mkNN "e2e4" 60.0 0.0; mkNN "d2d4" 30.0 0.0; mkNN "c2c4" 10.0 0.0 ]
+    let result = computeEstNodesToFind nn "c2c4"
+    Assert.Equal(10.3867, result, 4)
+
+[<Fact>]
+let ``computeEstNodesToFind converts percent to fraction`` () =
+    // Correct move at rank 2 with equal split: P=0.5, sumHigher=0.5
+    // N = (0.98416 * sqrt(0.5) / (2.897 * 0.5))² ≈ 0.2308 — found near-immediately
+    let nn = [ mkNN "e2e4" 50.0 0.0; mkNN "d2d4" 50.0 0.0 ]
+    let result = computeEstNodesToFind nn "d2d4"
+    Assert.Equal(0.2308, result, 4)
+
+[<Fact>]
+let ``computeEstNodesToFind uses floor when correct move missing`` () =
+    // Missing move → P floored at 0.01% with all listed mass counted as higher:
+    // N = (0.98416 * sqrt(1.0) / (2.897 * 0.0001))² ≈ 1.154e7
+    let nn = [ mkNN "e2e4" 60.0 0.0; mkNN "d2d4" 40.0 0.0 ]
+    let result = computeEstNodesToFind nn "g1f3"
+    Assert.True(result > 1.1e7 && result < 1.2e7, sprintf "Expected ~1.15e7, got %f" result)
+
+[<Fact>]
+let ``computeEstNodesToFind treats zero P as missing`` () =
+    let nnZero = [ mkNN "e2e4" 99.0 0.0; mkNN "c2c4" 0.0 0.0 ]
+    let nnMissing = [ mkNN "e2e4" 99.0 0.0 ]
+    // P=0 takes the same floor path; both count all listed mass (99%) as higher.
+    Assert.Equal(computeEstNodesToFind nnMissing "c2c4", computeEstNodesToFind nnZero "c2c4", 6)
+
+[<Fact>]
+let ``computeEstNodesToFind grows as correct move sinks in the ranking`` () =
+    let rank2 = [ mkNN "e2e4" 50.0 0.0; mkNN "d2d4" 25.0 0.0; mkNN "c2c4" 25.0 0.0 ]
+    let rank3 = [ mkNN "e2e4" 50.0 0.0; mkNN "c2c4" 25.0 0.0; mkNN "d2d4" 25.0 0.0 ]
+    Assert.True(computeEstNodesToFind rank3 "d2d4" > computeEstNodesToFind rank2 "d2d4")
+
+// ---------------------------------------------------------------------------
+// normalizeCastlingAliases
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``normalizeCastlingAliases rewrites king-takes-rook to standard`` () =
+    // Lc0 verbose stats say e1h1; lichess solution says e1g1.
+    let nn = [ mkNN "e1h1" 27.8 0.0; mkNN "f3f7" 10.0 0.0 ]
+    let result = normalizeCastlingAliases "e1g1" nn
+    Assert.Equal("e1g1", result.[0].LANMove)
+    Assert.Equal(27.8, result.[0].P, 6)
+
+[<Fact>]
+let ``normalizeCastlingAliases no-op when standard notation present`` () =
+    // Rook move e1g1 genuinely in the list — alias must not fire on e1h1-less lists
+    let nn = [ mkNN "e1g1" 5.0 0.0; mkNN "d2d4" 40.0 0.0 ]
+    let result = normalizeCastlingAliases "e1g1" nn
+    Assert.Equal<NNValues list>(nn, result)
+
+[<Fact>]
+let ``normalizeCastlingAliases no-op when both notations present`` () =
+    // Pathological: rook on e1 can move to g1 AND castling shown as e1h1.
+    // Standard notation exists in the list, so nothing is rewritten.
+    let nn = [ mkNN "e1g1" 5.0 0.0; mkNN "e1h1" 20.0 0.0 ]
+    let result = normalizeCastlingAliases "e1g1" nn
+    Assert.Equal<NNValues list>(nn, result)
+
+[<Fact>]
+let ``normalizeCastlingAliases no-op for non-castling correct move`` () =
+    let nn = [ mkNN "e1h1" 20.0 0.0; mkNN "d2d4" 40.0 0.0 ]
+    let result = normalizeCastlingAliases "d2d4" nn
+    Assert.Equal<NNValues list>(nn, result)
+
+[<Fact>]
+let ``normalizeCastlingAliases handles black queenside`` () =
+    let nn = [ mkNN "e8a8" 15.0 0.0; mkNN "g8f6" 30.0 0.0 ]
+    let result = normalizeCastlingAliases "e8c8" nn
+    Assert.Equal("e8c8", result.[0].LANMove)
+
+// ---------------------------------------------------------------------------
+// fractionAtOrBelow
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``fractionAtOrBelow returns 0 for empty sample`` () =
+    Assert.Equal(0.0, fractionAtOrBelow 1000.0 [||])
+
+[<Fact>]
+let ``fractionAtOrBelow counts inclusive threshold`` () =
+    // 0, 500, 1000 are <= 1000; 5000 is not → 3/4
+    Assert.Equal(0.75, fractionAtOrBelow 1000.0 [| 0.0; 500.0; 1000.0; 5000.0 |], 6)
+
+[<Fact>]
+let ``fractionAtOrBelow returns 1 when all below`` () =
+    Assert.Equal(1.0, fractionAtOrBelow 1000.0 [| 0.0; 1.0; 999.9 |], 6)
+
+// ---------------------------------------------------------------------------
+// percentile (nearest-rank)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``percentile returns 0 for empty sample`` () =
+    Assert.Equal(0.0, percentile 95.0 [||])
+
+[<Fact>]
+let ``percentile returns max for p100`` () =
+    Assert.Equal(9.0, percentile 100.0 [| 3.0; 9.0; 1.0 |])
+
+[<Fact>]
+let ``percentile nearest-rank on 10 values`` () =
+    // Nearest-rank: p95 of n=10 → ceil(0.95*10)=10th value (the max);
+    // p50 → ceil(0.5*10)=5th value.
+    let values = [| 1.0 .. 10.0 |]
+    Assert.Equal(10.0, percentile 95.0 values)
+    Assert.Equal(5.0, percentile 50.0 values)
+
+[<Fact>]
+let ``percentile handles unsorted input`` () =
+    let values = [| 50.0; 10.0; 40.0; 20.0; 30.0 |]
+    // p60 of n=5 → ceil(0.6*5)=3rd sorted value = 30
+    Assert.Equal(30.0, percentile 60.0 values)
+
+[<Fact>]
+let ``percentile p99 picks tail of larger sample`` () =
+    // n=100 → ceil(0.99*100)=99th sorted value
+    let values = [| 1.0 .. 100.0 |]
+    Assert.Equal(99.0, percentile 99.0 values)
+
+// ---------------------------------------------------------------------------
 // computeValueLoss
 // ---------------------------------------------------------------------------
 
@@ -268,3 +406,4 @@ let ``computeValueLoss quadratic scaling for big miss`` () =
     let nn = [ mkNN "e2e4" 60.0 0.1 ]
     let result = computeValueLoss nn "e2e4" "mate" true
     Assert.Equal(0.7225, result, 6)
+

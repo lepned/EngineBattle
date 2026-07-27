@@ -1834,6 +1834,33 @@ module Program =
                 sw.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{int p.Rating},{int p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}")
             printfn "  Failed puzzles CSV (%d unique): %s" allFailed.Length csvPath
 
+    // Worst-case candidates nominated by the 1-node EstNodes formula, worst first.
+    // Written in lichess CSV format so the file can feed a `search`-type config
+    // directly for targeted real-search verification of the predicted hardest puzzles.
+    let writeHardestByEstNodesCsv (allScores: Score list list) (csvPath: string) =
+        let formatEstNodes (n: float) =
+            if n < 10.0 then n.ToString("F2", CultureInfo.InvariantCulture)
+            elif n < 1000.0 then n.ToString("F0", CultureInfo.InvariantCulture)
+            elif n < 1_000_000.0 then (n / 1000.0).ToString("F1", CultureInfo.InvariantCulture) + "k"
+            else (n / 1_000_000.0).ToString("F2", CultureInfo.InvariantCulture) + "M"
+        let hardest =
+            allScores
+            |> Seq.concat
+            |> Seq.collect (fun score -> score.HardestByEstNodes)
+            |> Seq.sortByDescending snd
+            |> Seq.distinctBy (fun (p, _) -> p.PuzzleId)
+            |> Seq.truncate 50
+            |> Seq.toArray
+        if hardest.Length > 0 then
+            use sw = new StreamWriter(csvPath)
+            sw.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags")
+            for (p, _) in hardest do
+                sw.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{int p.Rating},{int p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}")
+            printfn "  Hardest-by-EstNodes CSV (top %d, worst first): %s" hardest.Length csvPath
+            printfn "  Top 10 worst-case candidates by estimated nodes to find the correct move:"
+            for (p, estN) in hardest |> Seq.truncate 10 do
+                printfn "    %-12O  rating %4d  est %-7s  %s" p.PuzzleId (int p.Rating) (formatEstNodes estN) p.GameUrl
+
     let escaped = escapeString data.FailedPuzzlesOutputFolder
     let table = createCombinedScoresTable normalizedPath policyScores valueScores search solve
     printfn "%s" table
@@ -1853,6 +1880,9 @@ module Program =
 
         let csvFileName = Path.Combine(escaped, $"failedLichessPuzzles_{filenameFriendlyDate}.csv")
         writeFailedPuzzlesToCsv [policyScores; valueScores; search; solve] csvFileName
+
+        let estCsvFileName = Path.Combine(escaped, $"estNodesHardest_{filenameFriendlyDate}.csv")
+        writeHardestByEstNodesCsv [policyScores] estCsvFileName
 
         let allScoresForCross = Seq.concat [ policyScores; valueScores; search; solve ]
         PuzzleCrossEngine.writeCrossEngineFiles escaped filenameFriendlyDate allScoresForCross

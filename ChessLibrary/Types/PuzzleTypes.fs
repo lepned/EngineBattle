@@ -279,7 +279,30 @@ module PuzzleTypes =
         // Measures how decisively the engine prefers the correct move over alternatives.
         AvgMarginLoss: float
         // Value head loss: |Q - expected_Q| from puzzle themes. Solved puzzles only.
-        AvgValueLoss: float }
+        AvgValueLoss: float
+        // Mean of log10(1 + N_est) where N_est estimates the parent visits a PUCT
+        // search needs before first exploring the correct move (fixed match-play
+        // CPuct/FPU constants, see PuzzleEngineAgent). 0.0 for non-policy tests —
+        // consumers use that as the "metric present" gate. Not displayed; kept as
+        // the smooth aggregate for potential tuner/JSON use.
+        AvgEstNodesLog10: float
+        // p95/p99 of the per-puzzle N_est distribution in raw node units, over ALL
+        // puzzles: "in the worst 5%/1% of positions the search needs ~X nodes before
+        // it even tries the correct move". Tail statistics — robust report numbers,
+        // too noisy for tuning signals at small sample sizes.
+        EstNodesP95: float
+        EstNodesP99: float
+        // CDF of the same per-puzzle N_est distribution at a fixed 100-node budget:
+        // fraction of puzzles (0..1) whose estimated nodes-to-first-visit is <= 100.
+        // 100 sits between P95 and P99 for current strong nets, where the
+        // distributions actually differ (1000 saturated at ~100% for all of them).
+        // First visit is necessary but not sufficient for solving — continued
+        // investment depends on the value head liking the child position.
+        EstNodesCdf100: float
+        // Top puzzles by per-puzzle N_est, descending (worst first, capped at 50).
+        // Lets the cheap 1-node policy run nominate worst-case candidates for
+        // targeted real-search verification. Empty for non-policy tests.
+        HardestByEstNodes: ResizeArray<CsvPuzzleData * float> }
         with
           static member empty =
             { Engine = ""
@@ -299,7 +322,12 @@ module PuzzleTypes =
               AvgRankWeightedKld = 0.0
               AvgFrontierKld = 0.0
               AvgMarginLoss = 0.0
-              AvgValueLoss = 0.0 }
+              AvgValueLoss = 0.0
+              AvgEstNodesLog10 = 0.0
+              EstNodesP95 = 0.0
+              EstNodesP99 = 0.0
+              EstNodesCdf100 = 0.0
+              HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
 
     type Lichess =
       | PuzzleResult of Score

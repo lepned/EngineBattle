@@ -328,6 +328,71 @@ let computeValueLoss (allNNValues: EngineTypes.NNValues list) (correctMove: stri
             let gap = max 0.0 (threshold - q)
             gap * gap
 
+// Fixed constants matching modern Lc0 match-play tuning (validated 2026-07-27
+// against verbose-move-stats visit patterns of a BT4 engine def). Deliberately
+// NOT read from the engine's actual options so the metric stays comparable
+// across engines with different tuned search parameters.
+let estNodesCPuct = 2.897
+let estNodesFpu = 0.98416
+
+/// Estimated parent visits a PUCT search needs before first exploring the correct
+/// move, from the FPU-reduction first-visit condition (suggested by Kovax):
+///   FpuValue * sqrt(sum_of_higher_policies) <= P_correct * CPuct * sqrt(N)
+/// solved for N. Moves ranked above the correct move get visited first and their
+/// accumulated policy mass drives the FPU dock on unvisited children. Rank 1
+/// returns 0 (explored immediately). Correct move missing or P=0 uses the same
+/// 0.01% floor as computeKLD with all listed policy mass counted as "higher".
+/// Order-of-magnitude heuristic: real engines grow CPuct with N and treat FPU at
+/// root specially. Assumes allNNValues is sorted descending by P.
+let computeEstNodesToFind (allNNValues: EngineTypes.NNValues list) (correctMove: string) =
+    if allNNValues.IsEmpty then 0.0  // no policy data (e.g. classical engine)
+    else
+        // P values are in percent; convert to fractions.
+        let pCorrect, sumHigherPct =
+            match allNNValues |> List.tryFind (fun v -> v.LANMove = correctMove) with
+            | Some v when v.P > 0.0 ->
+                let higher = allNNValues |> List.takeWhile (fun v -> v.LANMove <> correctMove)
+                v.P / 100.0, (higher |> List.sumBy (fun v -> max 0.0 v.P))
+            | _ ->
+                0.01 / 100.0, (allNNValues |> List.sumBy (fun v -> max 0.0 v.P))
+        let sumHigher = sumHigherPct / 100.0
+        if sumHigher <= 0.0 then 0.0  // correct move ranked first
+        else (estNodesFpu * sqrt sumHigher / (estNodesCPuct * pCorrect)) ** 2.0
+
+/// Lc0/Ceres verbose move stats print castling as king-takes-rook (e1h1) even in
+/// standard chess, while lichess puzzle solutions use king-destination (e1g1).
+/// Rewrite the alias in the parsed list so downstream string comparisons match.
+/// Fires only when the list lacks the standard notation but contains the
+/// king-takes-rook string, so genuine piece moves like Re1-g1 and Chess960
+/// positions are unaffected.
+let normalizeCastlingAliases (correctMove: string) (allNNValues: EngineTypes.NNValues list) =
+    let alias =
+        match correctMove with
+        | "e1g1" -> Some "e1h1"
+        | "e1c1" -> Some "e1a1"
+        | "e8g8" -> Some "e8h8"
+        | "e8c8" -> Some "e8a8"
+        | _ -> None
+    match alias with
+    | Some kxr when not (allNNValues |> List.exists (fun v -> v.LANMove = correctMove))
+                    && (allNNValues |> List.exists (fun v -> v.LANMove = kxr)) ->
+        allNNValues |> List.map (fun v -> if v.LANMove = kxr then { v with LANMove = correctMove } else v)
+    | _ -> allNNValues
+
+/// Fraction of values at or below the threshold (0..1). 0.0 for an empty sample.
+let fractionAtOrBelow (threshold: float) (values: float[]) =
+    if values.Length = 0 then 0.0
+    else float (values |> Array.sumBy (fun v -> if v <= threshold then 1 else 0)) / float values.Length
+
+/// Nearest-rank percentile: smallest value with at least q% of the sample at or
+/// below it. q in (0, 100]. Returns 0.0 for an empty sample.
+let percentile (q: float) (values: float[]) =
+    if values.Length = 0 then 0.0
+    else
+        let sorted = Array.sort values
+        let idx = int (ceil (q / 100.0 * float sorted.Length)) - 1
+        sorted.[max 0 (min (sorted.Length - 1) idx)]
+
 /// Compute KLD for one move: -log(P_correct / 100).
 /// When correct move not found or P=0, returns -log(0.01/100) ≈ 9.21 (floor at 0.01%).
 let computeKLD (allNNValues: EngineTypes.NNValues list) (correctMove: string) =
@@ -358,10 +423,11 @@ let computeValueKLD (moveVals: (string * float) list) (correctMove: string) =
         | _ -> -log(0.01 / 100.0)
 
 /// Per-puzzle multi-topN workflow: one engine call, check all thresholds at once.
-/// Returns (puzzle, maxKLD, engineRankAtMaxKld, correctPerTopN) where:
+/// Returns (puzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, maxEstNodes, correctPerTopN) where:
 ///   * maxKLD = max log-loss across the puzzle's commands
 ///   * engineRankAtMaxKld = engine's rank (1-indexed) of the correct move AT the
 ///     command that produced maxKLD; 0 if no rank could be determined.
+///   * maxEstNodes = max computeEstNodesToFind across the puzzle's commands.
 ///   * correctPerTopN maps each topN to whether the puzzle was solved at that threshold.
 let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int list) (puzzle:CsvPuzzleData) = async {
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
@@ -369,6 +435,7 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
     let maxTopN = topNs |> List.max
     let mutable maxKLD = 0.0
     let mutable maxMarginLoss = 0.0
+    let mutable maxEstNodes = 0.0
     let mutable engineRankAtMaxKld = 0
     let valueLosses = ResizeArray<float>()
     // Track correctness per topN threshold
@@ -380,10 +447,14 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
     let mutable firstFailedEngineMove = ""
 
     for cmd in puzzle.Commands do
-        let! (mv, allNNValues) = agent.PostAndAsyncReply(fun ch -> BestMoveWithAllPolicies(cmd, ch))
+        let! (mv, allNNValuesRaw) = agent.PostAndAsyncReply(fun ch -> BestMoveWithAllPolicies(cmd, ch))
+        let allNNValues = normalizeCastlingAliases cmd.CorrectMove allNNValuesRaw
         let kld = computeKLD allNNValues cmd.CorrectMove
         let ml = computeMarginLoss allNNValues cmd.CorrectMove
         if ml > maxMarginLoss then maxMarginLoss <- ml
+        // Hardest position of the puzzle's move sequence, consistent with maxKLD.
+        let estN = computeEstNodesToFind allNNValues cmd.CorrectMove
+        if estN > maxEstNodes then maxEstNodes <- estN
         if kld > maxKLD then
             maxKLD <- kld
             engineRankAtMaxKld <- findEngineRank allNNValues cmd.CorrectMove
@@ -428,7 +499,7 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
                     else el)
                 |> Seq.toList
             { puzzle with Commands = cmds }
-    return (updatedPuzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
+    return (updatedPuzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, maxEstNodes, correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
   }
 
 /// Per-puzzle multi-topN value workflow: one per-child evaluation, check all thresholds.
@@ -799,6 +870,11 @@ let performValueNetworkTest
               AvgFrontierKld = 0.0
               AvgMarginLoss = 0.0
               AvgValueLoss = 0.0
+              AvgEstNodesLog10 = 0.0
+              EstNodesP95 = 0.0
+              EstNodesP99 = 0.0
+              EstNodesCdf100 = 0.0
+              HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
             }
     finally
         shutdownAgents agents
@@ -892,6 +968,11 @@ let performPolicyOrSearchTest
           AvgFrontierKld = 0.0
           AvgMarginLoss = 0.0
           AvgValueLoss = 0.0
+          AvgEstNodesLog10 = 0.0
+          EstNodesP95 = 0.0
+          EstNodesP99 = 0.0
+          EstNodesCdf100 = 0.0
+          HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
         }
     finally
         shutdownAgents agents
@@ -983,6 +1064,11 @@ let performSolveTest
           AvgFrontierKld = 0.0
           AvgMarginLoss = 0.0
           AvgValueLoss = 0.0
+          AvgEstNodesLog10 = 0.0
+          EstNodesP95 = 0.0
+          EstNodesP99 = 0.0
+          EstNodesCdf100 = 0.0
+          HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
         }
     finally
         shutdownAgents agents
@@ -1013,7 +1099,7 @@ let performPolicyMultiTopNTest
 
         let mutable processedCount = 0
         let total = puzzles.Length
-        let resultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * Map<int, bool>>()
+        let resultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool>>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
             while keepGoing && not ct.IsCancellationRequested do
@@ -1042,35 +1128,55 @@ let performPolicyMultiTopNTest
 
         let avgRating =
           if allResults.Length = 0 then 0.0
-          else allResults |> Array.averageBy (fun (p, _, _, _, _, _) -> p.Rating)
+          else allResults |> Array.averageBy (fun (p, _, _, _, _, _, _) -> p.Rating)
         let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
+
+        // Tail of the per-puzzle estimated nodes-to-find distribution (all puzzles,
+        // raw node units). Independent of the topN threshold.
+        let estNodesAll = allResults |> Array.map (fun (_, _, _, _, _, estN, _) -> estN)
+        let estNodesP95 = percentile 95.0 estNodesAll
+        let estNodesP99 = percentile 99.0 estNodesAll
+        let estNodesCdf100 = fractionAtOrBelow 100.0 estNodesAll
+        // Worst-case candidates by estimate, for targeted real-search verification.
+        let hardestByEstNodes =
+            allResults
+            |> Array.map (fun (p, _, _, _, _, estN, _) -> p, estN)
+            |> Array.sortByDescending snd
+            |> Array.truncate 50
 
         // Produce one Score per topN threshold
         topNs |> List.map (fun topN ->
-            let correct = allResults |> Array.filter (fun (_, _, _, _, _, m) -> m.[topN])
-            let failed  = allResults |> Array.filter (fun (_, _, _, _, _, m) -> not m.[topN])
+            let correct = allResults |> Array.filter (fun (_, _, _, _, _, _, m) -> m.[topN])
+            let failed  = allResults |> Array.filter (fun (_, _, _, _, _, _, m) -> not m.[topN])
             let kldSource = if includeFailedPuzzles then allResults else correct
             let avgKLD =
               if kldSource.Length = 0 then 0.0
-              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _) -> kld)
+              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _) -> kld)
             let avgRankWeightedKld =
-              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
+              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
             // Frontier-weighted uses ALL puzzles (solved + failed) regardless of
             // includeFailedPuzzles — the frontier is defined by rank, not solved status.
             let avgFrontierKld =
-              computeFrontierWeightedKld (allResults |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
+              computeFrontierWeightedKld (allResults |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
             // Margin loss uses all puzzles (solved + failed), weighted 2x on
             // unsolved. Solved status is per-puzzle top-1 correctness.
             let avgMarginLoss =
               computeWeightedMarginLoss
-                (allResults |> Seq.map (fun (_, _, ml, _, _, correctPerTopN) ->
+                (allResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN) ->
                     ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
                 2.0
             // Value loss: |Q - expected_Q| from puzzle themes, solved puzzles only (vl >= 0).
-            let validValueLosses = allResults |> Array.choose (fun (_, _, _, _, vl, _) -> if vl >= 0.0 then Some vl else None)
+            let validValueLosses = allResults |> Array.choose (fun (_, _, _, _, vl, _, _) -> if vl >= 0.0 then Some vl else None)
             let avgValueLoss =
               if validValueLosses.Length = 0 then 0.0
               else validValueLosses |> Array.average
+            // Estimated nodes-to-find aggregated in log space (raw N spans 0..millions).
+            // ALWAYS uses all puzzles regardless of includeFailedPuzzles (like FrontierKLD
+            // and MarginLoss): solved-at-top-1 puzzles are 0 by construction, so the
+            // signal lives almost entirely in the failed ones.
+            let avgEstNodesLog10 =
+              if allResults.Length = 0 then 0.0
+              else allResults |> Array.averageBy (fun (_, _, _, _, _, estN, _) -> log10 (1.0 + estN))
             let w, d, l = correct.Length, 0, failed.Length
 
             let diffElo = EloCalculator.eloDiffWDL w d l
@@ -1089,8 +1195,8 @@ let performPolicyMultiTopNTest
               RatingAvg = avgRating
               Filter = if theme.Trim() = "" then "none" else theme.Trim()
               PlayerRecord = pRating
-              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _) -> p, ""))
-              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _) -> p))
+              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _) -> p, ""))
+              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _) -> p))
               Nodes = 1
               WithHistory = false
               Type = typeLabel
@@ -1099,6 +1205,11 @@ let performPolicyMultiTopNTest
               AvgFrontierKld = avgFrontierKld
               AvgMarginLoss = avgMarginLoss
               AvgValueLoss = avgValueLoss
+              AvgEstNodesLog10 = avgEstNodesLog10
+              EstNodesP95 = estNodesP95
+              EstNodesP99 = estNodesP99
+              EstNodesCdf100 = estNodesCdf100
+              HardestByEstNodes = ResizeArray hardestByEstNodes
             }
         )
     finally
@@ -1192,6 +1303,11 @@ let performValueMultiTopNTest
               AvgFrontierKld = 0.0
               AvgMarginLoss = 0.0
               AvgValueLoss = 0.0
+              AvgEstNodesLog10 = 0.0
+              EstNodesP95 = 0.0
+              EstNodesP99 = 0.0
+              EstNodesCdf100 = 0.0
+              HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
             }
         )
     finally
@@ -1282,6 +1398,11 @@ let performValueTopNTest
           AvgFrontierKld = 0.0
           AvgMarginLoss = 0.0
           AvgValueLoss = 0.0
+          AvgEstNodesLog10 = 0.0
+          EstNodesP95 = 0.0
+          EstNodesP99 = 0.0
+          EstNodesCdf100 = 0.0
+          HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
         }
     finally
         shutdownAgents agents
@@ -1371,7 +1492,7 @@ let performPolicyValueTest
             puzzleCh.Writer.Complete()
 
             let mutable processedCount = 0
-            let policyResultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * Map<int, bool>>()
+            let policyResultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool>>()
             let policyWorker (agent: MailboxProcessor<EngineMsg>) = async {
                 let mutable keepGoing = true
                 while keepGoing && not ct.IsCancellationRequested do
@@ -1395,27 +1516,40 @@ let performPolicyValueTest
             // Build Policy Score
             let avgRating =
               if policyResults.Length = 0 then 0.0
-              else policyResults |> Array.averageBy (fun (p, _, _, _, _, _) -> p.Rating)
+              else policyResults |> Array.averageBy (fun (p, _, _, _, _, _, _) -> p.Rating)
 
-            let correct = policyResults |> Array.filter (fun (_, _, _, _, _, m) -> m.[1])
-            let failed  = policyResults |> Array.filter (fun (_, _, _, _, _, m) -> not m.[1])
+            let correct = policyResults |> Array.filter (fun (_, _, _, _, _, _, m) -> m.[1])
+            let failed  = policyResults |> Array.filter (fun (_, _, _, _, _, _, m) -> not m.[1])
             let kldSource = if includeFailedPuzzles then policyResults else correct
             let avgKLD =
               if kldSource.Length = 0 then 0.0
-              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _) -> kld)
+              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _) -> kld)
             let avgRankWeightedKld =
-              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
+              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
             let avgFrontierKld =
-              computeFrontierWeightedKld (policyResults |> Seq.map (fun (_, kld, _, rank, _, _) -> kld, rank))
+              computeFrontierWeightedKld (policyResults |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
             let avgMarginLoss =
               computeWeightedMarginLoss
-                (policyResults |> Seq.map (fun (_, _, ml, _, _, correctPerTopN) ->
+                (policyResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN) ->
                     ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
                 2.0
-            let validValueLosses = policyResults |> Array.choose (fun (_, _, _, _, vl, _) -> if vl >= 0.0 then Some vl else None)
+            let validValueLosses = policyResults |> Array.choose (fun (_, _, _, _, vl, _, _) -> if vl >= 0.0 then Some vl else None)
             let avgValueLoss =
               if validValueLosses.Length = 0 then 0.0
               else validValueLosses |> Array.average
+            // All puzzles, like FrontierKLD/MarginLoss — see performPolicyMultiTopNTest.
+            let avgEstNodesLog10 =
+              if policyResults.Length = 0 then 0.0
+              else policyResults |> Array.averageBy (fun (_, _, _, _, _, estN, _) -> log10 (1.0 + estN))
+            let estNodesAll = policyResults |> Array.map (fun (_, _, _, _, _, estN, _) -> estN)
+            let estNodesP95 = percentile 95.0 estNodesAll
+            let estNodesP99 = percentile 99.0 estNodesAll
+            let estNodesCdf100 = fractionAtOrBelow 100.0 estNodesAll
+            let hardestByEstNodes =
+                policyResults
+                |> Array.map (fun (p, _, _, _, _, estN, _) -> p, estN)
+                |> Array.sortByDescending snd
+                |> Array.truncate 50
             let pw, pd, pl = correct.Length, 0, failed.Length
             let diffElo = EloCalculator.eloDiffWDL pw pd pl
             let error   = EloCalculator.calculateEloError pw pd pl
@@ -1431,8 +1565,8 @@ let performPolicyValueTest
                   RatingAvg = avgRating
                   Filter = if theme.Trim() = "" then "none" else theme.Trim()
                   PlayerRecord = {Rating = perf; Deviation = error; Volatility = 0.0}
-                  FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _) -> p, ""))
-                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _) -> p))
+                  FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _) -> p, ""))
+                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _) -> p))
                   Nodes = 1
                   WithHistory = false
                   Type = "Policy"
@@ -1441,6 +1575,11 @@ let performPolicyValueTest
                   AvgFrontierKld = avgFrontierKld
                   AvgMarginLoss = avgMarginLoss
                   AvgValueLoss = avgValueLoss
+                  AvgEstNodesLog10 = avgEstNodesLog10
+                  EstNodesP95 = estNodesP95
+                  EstNodesP99 = estNodesP99
+                  EstNodesCdf100 = estNodesCdf100
+                  HardestByEstNodes = ResizeArray hardestByEstNodes
                 }
 
             // ---- Pass 2: Value evaluation (same agents, same engine) ----
@@ -1506,6 +1645,11 @@ let performPolicyValueTest
                       AvgFrontierKld = 0.0
                       AvgMarginLoss = 0.0
                       AvgValueLoss = 0.0
+                      AvgEstNodesLog10 = 0.0
+                      EstNodesP95 = 0.0
+                      EstNodesP99 = 0.0
+                      EstNodesCdf100 = 0.0
+                      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
                     }
 
                 [policyScore; valueScore]
