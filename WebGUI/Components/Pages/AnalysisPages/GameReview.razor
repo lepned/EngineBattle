@@ -958,6 +958,11 @@
     {
         if (gameFens == null || ply < 0 || ply >= gameFens.Length) return;
         fen = gameFens[ply];
+        // SetPositionDirect only repaints the visual board — the shared Chess.Board must
+        // follow too, since EnginePanel snapshots it for the search position. Without this,
+        // starting a search after review navigation analyzes wherever the board last was
+        // (typically the final position).
+        board.LoadFen(fen);
         if (chessBoardRazor != null)
             await chessBoardRazor.SetPositionDirect(fen);
         if (accuracyPlot != null)
