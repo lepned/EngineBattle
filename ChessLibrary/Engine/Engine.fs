@@ -238,7 +238,10 @@ module Engine =
               MultiPV = mPv
             }
           callback (Status status)
-                      
+          // Raw line alongside the parsed status: engine-specific extras in info lines
+          // survive to GUI consumers (e.g. the CandidateMoves copy output).
+          callback (Info (engineName, line))
+
         |None -> ()
 
       let processLine callback (name:string) (line:string)  =

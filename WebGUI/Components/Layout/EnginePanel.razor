@@ -271,7 +271,7 @@
                    ep-table-container scrolls, charts stay capped by the PV-lines input. *@
                 <CandidateMoves Stats="@NNInfoList" Fen="@fen" MaxRows="int.MaxValue" Detailed="true"
                                 FocusedMoves="@focusedMoves" PreferredLanMove="@PreferredLanMove"
-                                SourceDescription="@EngineDescription"
+                                SourceDescription="@EngineDescription" RawInfoLine="@MainInfoLine"
                                 OnRowClick="@HandleCandidateRowClick" />
             </div>
         </div>
@@ -434,6 +434,8 @@
         // Reference assignment, not Clear(): renders (and CandidateMoves) enumerate the
         // list on the dispatcher while the engine reader thread produces updates.
         NNInfoList = new();
+        lastMainInfoLine = "";
+        lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
         // New position/search: let the first eval through even if it equals the last one.
         lastPublishedCp = null;
         lastPublishedMate = null;
@@ -798,6 +800,25 @@
     // MCTS engines may differ from the max-N move (drives the * marker in CandidateMoves).
     public string PreferredLanMove =>
         dataList.Count > 0 ? GetFirstMove(dataList[0].Value.PVLongSAN) : "";
+
+    // Latest raw info lines (with PV) per MultiPV index up to the chart-lines input,
+    // joined — appended to the CandidateMoves copy output (search depth/score/PV + extras).
+    private string lastMainInfoLine = "";
+    private readonly Dictionary<int, string> lastInfoByMultiPv = new();
+    public string MainInfoLine => lastMainInfoLine;
+
+    private static int MultiPvOf(string line)
+    {
+        var idx = line.IndexOf("multipv ", StringComparison.Ordinal);
+        if (idx < 0) return 1;
+        int n = 0;
+        foreach (var c in line.AsSpan(idx + 8))
+        {
+            if (!char.IsDigit(c)) break;
+            n = n * 10 + (c - '0');
+        }
+        return n == 0 ? 1 : n;
+    }
 
     // "Engine (network)" provenance for the CandidateMoves copy output.
     public string EngineDescription
@@ -1191,6 +1212,32 @@
 
                 case EngineUpdate.Info i:
                     InfoLineList.Insert(0, (i.Info));
+                    // Info now arrives per parsed status line — cap the (display-unused)
+                    // backlog so an infinite search can't grow it without bound.
+                    if (InfoLineList.Count > 200)
+                        InfoLineList.RemoveAt(InfoLineList.Count - 1);
+                    // Latest raw PV info per MultiPV index — raw, so any engine-specific
+                    // extras survive into the CandidateMoves copy output. Capped at the
+                    // chart-lines input (= the MultiPV the engine searches), filtered at
+                    // join time so lowering the slider drops stale higher lines. Joined
+                    // eagerly here (single engine reader thread mutates the dict, cleared
+                    // on the dispatcher — lock both; renders read only the joined string).
+                    if (i.Info.Contains(" pv "))
+                    {
+                        var k = MultiPvOf(i.Info);
+                        var lineCap = ActiveChartLines;
+                        if (k <= lineCap)
+                        {
+                            lock (lastInfoByMultiPv)
+                            {
+                                lastInfoByMultiPv[k] = i.Info;
+                                lastMainInfoLine = string.Join("\n",
+                                    lastInfoByMultiPv.Where(kv => kv.Key <= lineCap)
+                                                     .OrderBy(kv => kv.Key)
+                                                     .Select(kv => kv.Value));
+                            }
+                        }
+                    }
                     break;
 
                 case EngineUpdate.Eval e:
@@ -1888,6 +1935,8 @@
     {
         fen = newPos;
         NNInfoList = new();
+        lastMainInfoLine = "";
+        lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
         if (focusedMoves.Count > 0)
         {
             focusedMoves.Clear();
@@ -2018,6 +2067,10 @@
             currentName = Engine.Name;
             await searchInfoPlot?.ResetNPlot();
             await InvokeAsync(() => NNInfoList = new());
+            // New engine: captured info lines belong to the old one — don't let the
+            // copy output pair them with the new engine's description.
+            lastMainInfoLine = "";
+            lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
             neuralNet = string.Empty;
             OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
             await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);

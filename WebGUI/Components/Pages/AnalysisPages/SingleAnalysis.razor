@@ -115,6 +115,7 @@
                 <CandidateMoves Stats="@candidateStats" Fen="@candidateFen"
                                 MaxRows="int.MaxValue" Detailed="true"
                                 PreferredLanMove="@candidatePreferred" SourceDescription="@candidateSource"
+                                RawInfoLine="@candidateInfoLine"
                                 FocusedMoves="@analysisWithEngine?.FocusedLanMoves"
                                 OnRowClick="@(t => analysisWithEngine is null ? Task.CompletedTask : analysisWithEngine.HandleCandidateRowClick(t))" />
             </div>
@@ -837,31 +838,36 @@
     private string candidateFen = "";
     private string candidatePreferred = "";
     private string candidateSource = "";
-    private readonly Dictionary<string, (List<NNValues> Stats, string Preferred, string Source)> candidateStatsByFen = new();
+    private string candidateInfoLine = "";
+    // Everything the panel shows/copies for one position, snapshotted together so restored
+    // positions stay coherent even after an engine switch (engine choice ≠ max-N for MCTS).
+    private sealed record CandidateSnapshot(List<NNValues> Stats, string Preferred, string Source, string InfoLine);
+    private readonly Dictionary<string, CandidateSnapshot> candidateStatsByFen = new();
 
     private void OnLiveStatsUpdated((IReadOnlyList<NNValues> Stats, string Fen) payload)
     {
         candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
         candidateFen = payload.Fen;
-        // PV-1 head and engine/net at the time these stats arrived — cached alongside so
-        // restored positions keep the correct * marker and provenance even after an
-        // engine switch (engine choice ≠ max-N for MCTS).
         candidatePreferred = analysisWithEngine?.PreferredLanMove ?? "";
         candidateSource = analysisWithEngine?.EngineDescription ?? "";
+        candidateInfoLine = analysisWithEngine?.MainInfoLine ?? "";
         if (!string.IsNullOrEmpty(payload.Fen))
         {
             // Crude bound so a very long session can't grow without limit.
             if (candidateStatsByFen.Count > 400)
                 candidateStatsByFen.Clear();
-            candidateStatsByFen[payload.Fen] = (candidateStats, candidatePreferred, candidateSource);
+            candidateStatsByFen[payload.Fen] = new(candidateStats, candidatePreferred, candidateSource, candidateInfoLine);
         }
     }
 
     private void RestoreCandidateStatsForCurrentPosition()
     {
         candidateFen = board.FEN();
-        (candidateStats, candidatePreferred, candidateSource) = candidateStatsByFen.TryGetValue(candidateFen, out var cached)
-            ? cached : (new(), "", "");
+        var cached = candidateStatsByFen.GetValueOrDefault(candidateFen);
+        candidateStats = cached?.Stats ?? new();
+        candidatePreferred = cached?.Preferred ?? "";
+        candidateSource = cached?.Source ?? "";
+        candidateInfoLine = cached?.InfoLine ?? "";
     }
 
     // "Reset board state" = fresh analysis session: without this, positions analyzed
