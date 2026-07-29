@@ -75,7 +75,8 @@
                          ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
                          Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
                          PGNgames="games" Player=@searchString OnSearchCompleted="OnSearchCompleted"
-                         OnEvalUpdated="OnEvalUpdated"
+                         OnEvalUpdated="OnEvalUpdated" OnLiveStats="OnLiveStatsUpdated"
+                         CompactChartLegend="true" StatsPanelKey="single-analysis"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
         </div>
 
@@ -102,10 +103,17 @@
             <div class="sa-board-wrapper">
                 <ModernChessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
                             MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right" MoveEvals="@moveEvals"
-                            OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                            OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" OnBoardReset="OnBoardReset" ChessBoard="@board"
                             OnBoardFlipped="f => boardFlipped = f"
                             BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
+            </div>
+
+            <div class="sa-candidates">
+                <CandidateMoves Stats="@candidateStats" Fen="@candidateFen"
+                                MaxRows="@(analysisWithEngine?.ActivePvLines ?? 6)" Detailed="true"
+                                FocusedMoves="@analysisWithEngine?.FocusedLanMoves"
+                                OnRowClick="@(t => analysisWithEngine is null ? Task.CompletedTask : analysisWithEngine.HandleCandidateRowClick(t))" />
             </div>
 
             <div class="sa-save-section">
@@ -819,9 +827,45 @@
         }
     }
 
+    // Candidate-moves panel below the board, fed by EnginePanel.OnLiveStats.
+    // Stats are cached per position so navigating back to an already-analyzed position
+    // (which auto-search deliberately skips) restores its stats instead of going blank.
+    private List<NNValues> candidateStats = new();
+    private string candidateFen = "";
+    private readonly Dictionary<string, List<NNValues>> candidateStatsByFen = new();
+
+    private void OnLiveStatsUpdated((IReadOnlyList<NNValues> Stats, string Fen) payload)
+    {
+        candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
+        candidateFen = payload.Fen;
+        if (!string.IsNullOrEmpty(payload.Fen))
+        {
+            // Crude bound so a very long session can't grow without limit.
+            if (candidateStatsByFen.Count > 400)
+                candidateStatsByFen.Clear();
+            candidateStatsByFen[payload.Fen] = candidateStats;
+        }
+    }
+
+    private void RestoreCandidateStatsForCurrentPosition()
+    {
+        candidateFen = board.FEN();
+        candidateStats = candidateStatsByFen.TryGetValue(candidateFen, out var cached) ? cached : new();
+    }
+
+    // "Reset board state" = fresh analysis session: without this, positions analyzed
+    // before the reset stay in the skip set and auto-search silently ignores them.
+    private void OnBoardReset()
+    {
+        analyzedPositions.Clear();
+        moveEvals.Clear();
+        candidateStatsByFen.Clear();
+    }
+
     public async void OnNewFENOnBoard(string newFen)
     {
         ResetEvalBar();
+        RestoreCandidateStatsForCurrentPosition();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateFrcId(board.StartPosition);
@@ -835,6 +879,7 @@
     public async void OnMoveMadeOnBoard(string move)
     {
         ResetEvalBar();
+        RestoreCandidateStatsForCurrentPosition();
         moveHistory = board.GetMoveHistory();
         fen = board.FEN();
         UpdateDetectedOpening();

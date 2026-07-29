@@ -260,6 +260,14 @@
     border: 1px solid var(--sa-border);
 }
 
+/* Candidate-moves panel below the board (broadcast-style live move stats) */
+.single-analysis .sa-candidates {
+    background: var(--sa-card);
+    border-radius: 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--sa-border);
+}
+
 /* Save Section */
 .single-analysis .sa-save-section {
     display: grid;

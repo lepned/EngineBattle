@@ -259,81 +259,49 @@
     @if (showNNdata)
     {
         <div class="ep-table-container">
-            <table class="ep-table ep-nn-table">
-                <thead>
-                    <tr>
-                        <th class="ep-th-with-toggle">
-                            Log live move stats
-                            <button class="ep-raw-toggle @(showNNdata ? "active" : "")"
-                                    disabled="@(NNInfoList.Count == 0)"
-                                    @onclick="ShowSearchPlot"
-                                    title="Show analysis table">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                    <polyline points="14 2 14 8 20 8"/>
-                                    <line x1="16" y1="13" x2="8" y2="13"/>
-                                    <line x1="16" y1="17" x2="8" y2="17"/>
-                                    <line x1="10" y1="9" x2="8" y2="9"/>
-                                </svg>
-                            </button>
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var item in NNInfoList.ToArray())
-                    {
-                        <tr class="@(focusedMoves.Contains(item?.LANMove) ? "ep-focused-row" : "")"
-                            @onclick="@((e) => OnNNTableRowClick(item, e.CtrlKey))">
-                            <td>@item?.Raw</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <div class="ep-cm-header">
+                <span class="ep-cm-title">Live move stats</span>
+                <div class="ep-seg" role="tablist">
+                    <button class="ep-seg-btn" @onclick="() => SetStatsPanel(false)" title="Show PV lines table">PV lines</button>
+                    <button class="ep-seg-btn active" title="Live move stats">Move stats</button>
+                </div>
+            </div>
+            <div class="ep-cm-wrap">
+                <CandidateMoves Stats="@NNInfoList" Fen="@fen" MaxRows="20" Detailed="true"
+                                FocusedMoves="@focusedMoves"
+                                OnRowClick="@HandleCandidateRowClick" />
+            </div>
         </div>
     }
 
     @if (!showNNdata)
     {
-        <div class="ep-table-container" style="min-height:@($"{45 + Math.Min(numberOfLines, 10) * 41}px"); max-height:@($"{45 + 10 * 41}px")">
-            <table class="ep-table">
-                <thead>
-                    <tr>
-                        <th>Eval</th>
-                        <th>D</th>
-                        <th>SD</th>
-                        <th class="ep-th-with-toggle">
-                            PV
-                            @if (runLogLiveStats)
-                            {
-                                <button class="ep-raw-toggle @(showNNdata ? "active" : "")"
-                                        disabled="@(NNInfoList.Count == 0)"
-                                        @onclick="ShowSearchPlot"
-                                        title="Show raw output">
-                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                                        <polyline points="14 2 14 8 20 8"/>
-                                        <line x1="16" y1="13" x2="8" y2="13"/>
-                                        <line x1="16" y1="17" x2="8" y2="17"/>
-                                        <line x1="10" y1="9" x2="8" y2="9"/>
-                                    </svg>
-                                </button>
-                            }
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var item in dataList)
+        <div class="ep-table-container" style="min-height:@($"{40 + Math.Min(numberOfLines, 10) * 32}px"); max-height:@($"{40 + 10 * 41}px")">
+            <div class="ep-pv-head">
+                <span class="ep-pv-h ep-pv-h-eval">Eval</span>
+                <span class="ep-pv-h ep-pv-h-depth">Depth</span>
+                <span class="ep-pv-h ep-pv-h-pv">
+                    PV
+                    @if (runLogLiveStats)
                     {
-                        <tr class="@(focusModeEnabled && focusedMoves.Contains(GetFirstMove(item.Value.PVLongSAN)) ? "ep-focused-row" : "")"
-                            @onclick="@((e) => OnPVTableRowClick(item, e.CtrlKey))">
-                            <td>@item.Value.Eval</td>
-                            <td>@item.Value.Depth</td>
-                            <td>@item.Value.SD</td>
-                            <td class="pv-cell">@item.Value.PV</td>
-                        </tr>
+                        <div class="ep-seg" role="tablist">
+                            <button class="ep-seg-btn active" title="PV lines table">PV lines</button>
+                            <button class="ep-seg-btn" @onclick="() => SetStatsPanel(true)" title="Show live move stats">Move stats</button>
+                        </div>
                     }
-                </tbody>
-            </table>
+                </span>
+            </div>
+            @foreach (var item in dataList)
+            {
+                var (evalText, evalCls) = PvEvalParts(item.Value);
+                <div class="ep-pv-row @(focusModeEnabled && focusedMoves.Contains(GetFirstMove(item.Value.PVLongSAN)) ? "focused" : "")"
+                     title="@item.Value.PV"
+                     @onclick="@((e) => OnPVTableRowClick(item, e.CtrlKey))">
+                    <span class="ep-pv-eval @evalCls @(item.Value.MultiPV <= 1 ? "top" : "")">@evalText</span>
+                    <span class="ep-pv-depth">@item.Value.Depth<span class="ep-pv-sd">/@item.Value.SD</span></span>
+                    <span class="ep-pv-line">@item.Value.PV</span>
+                </div>
+            }
         </div>
     }
 </div>
@@ -358,7 +326,16 @@
     /// <summary>White-perspective eval of the main line (pawns, or mate distance) — feeds
     /// an eval bar on the host page. Throttled to meaningful changes (0.05 pawns).</summary>
     [Parameter] public EventCallback<(double? Cp, int? Mate)> OnEvalUpdated { get; set; }
+    /// <summary>Verbose move stats of the current search plus the position they belong to —
+    /// lets host pages render a candidate-moves panel outside this component.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<NNValues> Stats, string Fen)> OnLiveStats { get; set; }
     [Parameter] public Func<bool> IsPositionAnalyzed { get; set; }
+    /// <summary>SAN-only legend on the N/Q charts — for hosts that show the numbers in a
+    /// candidate-move panel instead (SingleAnalysis). Full values remain on hover.</summary>
+    [Parameter] public bool CompactChartLegend { get; set; }
+    /// <summary>Persistence key for the live-stats/PV-table toggle ("single-analysis",
+    /// "dual-analysis"). Empty = don't remember, always start on the PV table.</summary>
+    [Parameter] public string StatsPanelKey { get; set; } = "";
 
     [Parameter] public int Nodes { get; set; } = 0;
     private string zobristHash;
@@ -431,6 +408,8 @@
 
     // Expose PVState for parent components (e.g., DualAnalysis for dual comparison)
     public PVState PVState => pvState;
+    // Current MultiPV line count — hosts use it to size external stat panels consistently.
+    public int ActivePvLines => numberOfLines;
     private bool waitingForEngine = false;
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
     private List<NNValues> NNInfoList = new();
@@ -449,7 +428,9 @@
         data.Clear();
         dataList.Clear();
         InfoLineList.Clear();
-        NNInfoList.Clear();
+        // Reference assignment, not Clear(): renders (and CandidateMoves) enumerate the
+        // list on the dispatcher while the engine reader thread produces updates.
+        NNInfoList = new();
         // New position/search: let the first eval through even if it equals the last one.
         lastPublishedCp = null;
         lastPublishedMate = null;
@@ -745,6 +726,23 @@
         StateHasChanged();
     }
 
+    // Public: also the click target for host-page candidate panels (SingleAnalysis
+    // renders CandidateMoves below the board) — same play/focus semantics everywhere.
+    public Task HandleCandidateRowClick((NNValues Move, bool CtrlKey) args) =>
+        OnNNTableRowClick(args.Move, args.CtrlKey);
+
+    // Focus-mode restriction set, exposed so external candidate panels highlight in sync.
+    public IReadOnlyCollection<string> FocusedLanMoves => focusedMoves;
+
+    // Eval is already white-perspective (the UCI parser negates for black to move).
+    private static (string Text, string Cls) PvEvalParts(EngineStatus status) => status.Eval switch
+    {
+        EvalType.CP cp => (cp.Info.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture),
+                           cp.Info >= 0.05 ? "pos" : cp.Info <= -0.05 ? "neg" : ""),
+        EvalType.Mate m => (m.Info > 0 ? $"M{m.Info}" : $"-M{-m.Info}", m.Info > 0 ? "pos" : "neg"),
+        _ => ("–", "")
+    };
+
     private async Task OnNNTableRowClick(NNValues moveInfo, bool ctrlKey = false)
     {
         if (focusModeEnabled && (ctrlKey || !autoSearchSwitch) && moveInfo != null)
@@ -848,6 +846,7 @@
             if (searchInfoPlot == null)
             {
                 searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+                searchInfoPlot.CompactLegend = CompactChartLegend;
                 searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
             }
             else
@@ -979,7 +978,7 @@
             };
             await OnNewEngineLoaded.InvokeAsync(args);
             Engine = engineConfig;
-            NNInfoList.Clear();
+            NNInfoList = new();
             analyzer = null;
             await StartAnalyzer();
             neuralNet = analyzer.GetNetwork();
@@ -1102,6 +1101,7 @@
         if (searchInfoPlot == null)
         {
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            searchInfoPlot.CompactLegend = CompactChartLegend;
             searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
         }
         else
@@ -1165,7 +1165,7 @@
                 case EngineUpdate.Ready ready:
                     showCharts = ready.HasLiveStat;
                     showCpChart = !ready.HasLiveStat;
-                    showNNdata = false;
+                    showNNdata = ready.HasLiveStat && RememberedStatsPanelChoice();
                     searchInProgress = false;
                     waitingForEngine = false;
                     break;
@@ -1231,10 +1231,11 @@
                 case EngineUpdate.NNSeq n:
                     if (n.NNSeq.Count > 0)
                     {
-                        NNInfoList.Clear();
                         n.NNSeq.Reverse();
                         currentPosition = n.NNSeq.FirstOrDefault();
-                        NNInfoList.AddRange(n.NNSeq);
+                        // Swap in a fresh list instead of mutating in place — renders may
+                        // be enumerating the old one on the dispatcher right now.
+                        NNInfoList = n.NNSeq.ToList();
                         var skipTopNode = NNInfoList.Skip(1).ToList();
                         searchInfoPlot?.AddData(skipTopNode);
                         if (NNInfoList.Count > 0)
@@ -1242,6 +1243,14 @@
                         var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
                         if (searchInfoPlot != null)
                             await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff, includeConvergence: chartView == ChartView.Convergence);
+                        if (OnLiveStats.HasDelegate)
+                        {
+                            // Engine updates arrive on the reader thread; EventCallback
+                            // renders the host page, so marshal to the dispatcher.
+                            var statsCopy = NNInfoList.ToList();
+                            var statsFen = fen;
+                            await InvokeAsync(() => OnLiveStats.InvokeAsync((statsCopy, statsFen)));
+                        }
                     }
                     break;
             }
@@ -1254,10 +1263,22 @@
         }
     }
 
-    private void ShowSearchPlot()
+    private void SetStatsPanel(bool showStats)
     {
-        showNNdata = !showNNdata;
+        if (showNNdata == showStats) return;
+        showNNdata = showStats;
+        if (!string.IsNullOrEmpty(StatsPanelKey))
+        {
+            var settings = SettingsService.Settings;
+            settings.ShowLiveMoveStatsPanel[StatsPanelKey] = showNNdata;
+            SettingsService.Save(settings);
+        }
     }
+
+    private bool RememberedStatsPanelChoice() =>
+        !string.IsNullOrEmpty(StatsPanelKey)
+        && SettingsService.Settings.ShowLiveMoveStatsPanel.TryGetValue(StatsPanelKey, out var preferStats)
+        && preferStats;
 
     private async Task DoQAnalysis()
     {
@@ -1738,7 +1759,7 @@
         {
             await cpEvalPlot.ClearChart();
         }
-        NNInfoList.Clear();
+        NNInfoList = new();
         InfoLineList.Clear();
         data.Clear();
         focusedMoves.Clear();
@@ -1757,14 +1778,6 @@
         uciButtonPressed = true;
         analyzer?.UCI();
         StateHasChanged();
-    }
-
-    private string CalcWDL(WDLType wdlType)
-    {
-        var wdl = wdlType.Value();
-        var total = wdl.Win + wdl.Draw + wdl.Loss;
-        var (win, draw, loss) = (wdl.Win / total, wdl.Draw / total, wdl.Loss / total);
-        return $"W: {win:P0} D: {draw:P0} L: {loss:P0}";
     }
 
     private async Task Update(EngineStatus status)
@@ -1787,15 +1800,14 @@
             }
         }
         var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
-        var wdlString = status.WDL != null ? CalcWDL(ordered[0].Value.WDL) : "W: N/A D: N/A L: N/A";
         if (status.EPS == 0)
         {
-            tableHeader = $"{nodes} ({nps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+            tableHeader = $"{nodes} ({nps}) (tbhits: {status.TBhits:N0})";
         }
         else
         {
             var eps = GameAnalysis.Formatting.formatEPS(status.EPS);
-            tableHeader = $"{nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0}) ({wdlString})";
+            tableHeader = $"{nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0})";
         }
         dataList = ordered;
         whitePV = ordered[0].Value.PV;
@@ -1856,7 +1868,7 @@
     public Task OnNotifyFen(string newPos) => InvokeAsync(async () =>
     {
         fen = newPos;
-        NNInfoList.Clear();
+        NNInfoList = new();
         if (focusedMoves.Count > 0)
         {
             focusedMoves.Clear();
@@ -1865,7 +1877,18 @@
         if (autoSearchSwitch)
         {
             if (IsPositionAnalyzed?.Invoke() == true)
+            {
+                // Skipping this position — but a search started for a PREVIOUS position
+                // may still be running; left alone it keeps the panel stuck "searching"
+                // (Stop enabled) with stats that no longer match the board.
+                if (searchInProgress)
+                {
+                    analyzer?.Stop();
+                    StopSearchTimer();
+                    searchInProgress = false;
+                }
                 return;
+            }
             if (searchInProgress)
             {
                 analyzer?.Stop();
@@ -1975,7 +1998,7 @@
             logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
             currentName = Engine.Name;
             await searchInfoPlot?.ResetNPlot();
-            await InvokeAsync(NNInfoList.Clear);
+            await InvokeAsync(() => NNInfoList = new());
             neuralNet = string.Empty;
             OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
             await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);
@@ -2029,6 +2052,7 @@
             }
             searchInfoPlot?.Dispose();
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
+            searchInfoPlot.CompactLegend = CompactChartLegend;
             searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
             cpEvalPlot = new CpEvalPlot(chessModule, cpChartReference);
             if (string.IsNullOrEmpty(FEN) == false)

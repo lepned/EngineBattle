@@ -10,16 +10,26 @@
 }
 else
 {
-    <div class="cm-grid">
+    <div class="cm-grid @(Detailed ? "detailed" : null)">
         <div class="cm-h">Move</div>
         <div class="cm-h">Search share · <span class="cm-h-prior">▏</span>prior</div>
         <div class="cm-h cm-right">Nodes</div>
+        @if (Detailed)
+        {
+            <div class="cm-h cm-right">P</div>
+        }
         <div class="cm-h cm-right">Q</div>
+        @if (Detailed)
+        {
+            <div class="cm-h cm-right">V</div>
+        }
         <div class="cm-h">WDL</div>
 
         @foreach (var r in rows)
         {
-            <div class="cm-row">
+            <div class="cm-row @(OnRowClick.HasDelegate ? "clickable" : null) @(IsFocused(r) ? "focused" : null)"
+                 title="@RowTitle(r)"
+                 @onclick="@(e => RowClicked(r, e.CtrlKey))">
                 <div class="cm-san @(r.IsTop ? "top" : "")">@r.San</div>
                 <div class="cm-barcell">
                     <div class="cm-track">
@@ -31,24 +41,37 @@ else
                         </div>
                         @if (r.NShare < 0.18)
                         {
-                            <span class="cm-pct" style="left:calc(@Pct(r.NShare) + 0.45rem)">@PctLabel(r.NShare)</span>
+                            <span class="cm-pct" style="left:@OutsideLabelLeft(r)">@PctLabel(r.NShare)</span>
                         }
                         <div class="cm-prior" style="left:@Pct(r.PShare)" title="@($"prior {r.PShare * 100:0.0}%")"></div>
                     </div>
                 </div>
                 <div class="cm-n">@FormatNodes(r.Nodes)</div>
+                @if (Detailed)
+                {
+                    <div class="cm-p">@((r.PShare * 100).ToString("0.0", CultureInfo.InvariantCulture))%</div>
+                }
                 <div class="cm-q @(r.Q >= 0.05 ? "pos" : r.Q <= -0.05 ? "neg" : "")">
                     @r.Q.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)
                 </div>
+                @if (Detailed)
+                {
+                    <div class="cm-q @(r.V >= 0.05 ? "pos" : r.V <= -0.05 ? "neg" : "")">
+                        @r.V.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)
+                    </div>
+                }
                 @if (r.HasWdl)
                 {
-                    <div class="cm-wdl-wrap" title="@($"W {r.W:0}% · D {r.D:0}% · L {r.L:0}%")">
+                    <div class="cm-wdl-wrap" title="@($"W {r.W:0.0}% · D {r.D:0.0}% · L {r.L:0.0}%")">
                         <div class="cm-wdl">
                             <span class="w" style="width:@($"{r.W:0.#}%")"></span>
                             <span class="d" style="width:@($"{r.D:0.#}%")"></span>
                             <span class="l" style="width:@($"{r.L:0.#}%")"></span>
                         </div>
-                        <span class="cm-wdl-num">@($"{r.W:0}·{r.D:0}·{r.L:0}")</span>
+                        @if (!Detailed)
+                        {
+                            <span class="cm-wdl-num">@($"{r.W:0}·{r.D:0}·{r.L:0}")</span>
+                        }
                     </div>
                 }
                 else
@@ -69,12 +92,28 @@ else
 @code {
     /// <summary>Verbose move stats of the current search, any order (sorted here by visits).</summary>
     [Parameter] public IReadOnlyList<NNValues> Stats { get; set; }
-    /// <summary>FEN the search ran on — decides the white-perspective flip for Q/WDL.</summary>
+    /// <summary>FEN the search ran on — decides the white-perspective flip for Q/V/WDL.</summary>
     [Parameter] public string Fen { get; set; } = "";
     [Parameter] public int MaxRows { get; set; } = 5;
+    /// <summary>Adds numeric P and V columns for analysis use; broadcast stays compact.</summary>
+    [Parameter] public bool Detailed { get; set; }
+    /// <summary>Row click, with Ctrl state — hosts wire this to focus-mode selection.</summary>
+    [Parameter] public EventCallback<(NNValues Move, bool CtrlKey)> OnRowClick { get; set; }
+    /// <summary>LAN moves currently restricting the search (focus mode) — highlighted.</summary>
+    [Parameter] public IReadOnlyCollection<string> FocusedMoves { get; set; }
 
     private record Row(string San, bool IsTop, double NShare, double PShare, long Nodes,
-                       double Q, bool HasWdl, double W, double D, double L);
+                       double Q, double V, bool HasWdl, double W, double D, double L, NNValues Source);
+
+    private bool IsFocused(Row r) => FocusedMoves != null && FocusedMoves.Contains(r.Source.LANMove);
+
+    private string RowTitle(Row r) =>
+        OnRowClick.HasDelegate && !string.IsNullOrEmpty(r.Source.Raw)
+            ? $"{r.Source.Raw}\nCtrl+click: restrict search to selected moves"
+            : r.Source.Raw ?? "";
+
+    private Task RowClicked(Row r, bool ctrl) =>
+        OnRowClick.HasDelegate ? OnRowClick.InvokeAsync((r.Source, ctrl)) : Task.CompletedTask;
 
     // WL (win-minus-loss) and D (draw prob) ride in the raw info string but are not
     // parsed into NNValues — W = (1-D+WL)/2, L = (1-D-WL)/2.
@@ -105,10 +144,11 @@ else
             var s = top[i];
             var san = string.IsNullOrEmpty(s.SANMove) ? s.LANMove : s.SANMove;
             var q = whiteToMove ? s.Q : -s.Q;
+            var v = whiteToMove ? s.V : -s.V;
             var hasWdl = TryParseWdl(s.Raw, out var w, out var d, out var l);
             if (hasWdl && !whiteToMove) (w, l) = (l, w);
             result.Add(new Row(san, i == 0, (double)s.Nodes / total, Math.Clamp(s.P / 100.0, 0, 1),
-                               s.Nodes, q, hasWdl, w * 100, d * 100, l * 100));
+                               s.Nodes, q, v, hasWdl, w * 100, d * 100, l * 100, s));
         }
         return result;
     }
@@ -131,6 +171,15 @@ else
 
     private static string Pct(double share) =>
         (share * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+
+    // Low-share rows show their % label outside the bar, starting right after the fill.
+    // The prior tick often sits in that same stretch and would draw through the text —
+    // when it falls within the label's approximate span, anchor the label past the tick.
+    private static string OutsideLabelLeft(Row r)
+    {
+        var anchor = r.PShare > r.NShare && r.PShare - r.NShare < 0.18 ? r.PShare : r.NShare;
+        return $"calc({Pct(anchor)} + 0.45rem)";
+    }
 
     private static string PctLabel(double share) =>
         Math.Round(share * 100).ToString(CultureInfo.InvariantCulture) + "%";

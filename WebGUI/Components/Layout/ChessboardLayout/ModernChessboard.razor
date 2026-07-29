@@ -262,6 +262,10 @@
     [Parameter] public string DetectedOpeningECO { get; set; }
     [Parameter] public EventCallback<string> OnMoveMadeOnBoard { get; set; }
     [Parameter] public EventCallback<string> OnNewFENOnBoard { get; set; }
+    /// <summary>Raised only by the "Reset board state" button — hosts use it to start a
+    /// fresh analysis session (clear analyzed-position skip sets, cached evals, etc.).
+    /// Navigation (go-to-start/end) raises OnNewFENOnBoard instead, never this.</summary>
+    [Parameter] public EventCallback OnBoardReset { get; set; }
     [Parameter] public EventCallback<bool> OnBoardFlipped { get; set; }
     [Parameter] public Board ChessBoard { get; set; } = new();
     [Parameter] public int MoveListFontSize { get; set; }
@@ -712,6 +716,12 @@
         ClearBoardMarkers();
         await ClearOverlayOnPositionChange();
         UpdateVariationsDisplay();
+        // Fresh session first (hosts clear skip sets), then the position notification —
+        // so the auto-search triggered by the new FEN is not skipped as "analyzed".
+        await OnBoardReset.InvokeAsync();
+        // Tell the host page the position changed — without this the page keeps the old
+        // FEN, Notifier.UpdateFen never fires, and auto-search silently stops.
+        await OnNewFENOnBoard.InvokeAsync(fen);
         StateHasChanged();
     }
 

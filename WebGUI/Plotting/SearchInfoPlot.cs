@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using System.Globalization;
 using MudBlazor;
 using MudBlazor.Charts;
 using System.Drawing;
@@ -24,6 +25,9 @@ namespace WebGUI.Plotting
         // move appears as a continuous line through its (N, Q) trajectory across the search.
         public Dictionary<string, List<double>> NAbsoluteValuesDict { get; set; }
         public Dictionary<int,double> PolicyDistribution { get; set; } = new Dictionary<int,double>();
+        /// <summary>Legend shows SAN only (numbers live in the candidate-move panel + hover).
+        /// Set by hosts that render a numeric move panel next to the charts (SingleAnalysis).</summary>
+        public bool CompactLegend { get; set; }
 
         public ElementReference ConvergenceChartElement { get; set; }
 
@@ -366,13 +370,26 @@ namespace WebGUI.Plotting
                 };
             }
 
+            var move = moves[n];
+            // Per-move numbers always ride in the hover; the legend carries them too unless
+            // the host opted into the compact SAN-only legend.
+            // Tooltip layout: move, chart-specific reading, priors — with Q and V paired on the last line.
+            // Invariant formatting: Plotly's %{y} placeholders always render dot decimals,
+            // so our baked-in numbers must too, regardless of server locale.
+            string pPart = $"P: {InvPct(move.P)}{(move.E != 0.0 ? $" E: ±{Inv2(2 * move.E)}" : "")}";
+            string vPart = move.V != 0.0 ? $" V: {Inv2(move.V)}" : "";
+            string hover = qChartSelected
+                ? $"{move.SANMove}<br>{pPart}<br>Q: %{{y:.2f}}{vPart}<extra></extra>"
+                : $"{move.SANMove}<br>N: %{{y:.1%}}<br>{pPart}<br>Q: {Inv2(move.Q)}{vPart}<extra></extra>";
+
             return new
             {
                 x = NumberOfNodesSearched.ToArray(),
-                y = nDict[moves[n].SANMove].ToArray(),
+                y = nDict[move.SANMove].ToArray(),
                 type = "scatter",
                 line = new { color = color },
-                name = FormatMove(moves[n], qChartSelected),
+                name = CompactLegend ? move.SANMove : FormatMove(move, qChartSelected),
+                hovertemplate = hover,
             };
         }
 
@@ -1312,19 +1329,24 @@ namespace WebGUI.Plotting
             await Task.CompletedTask;
         }
 
+        // Invariant number formatting for legend/hover strings — Plotly's own %{y} placeholders
+        // always render dot decimals, so baked-in values must match on any server locale.
+        private static string InvPct(double percent) => percent.ToString("0.0", CultureInfo.InvariantCulture) + "%";
+        private static string Inv2(double v) => v.ToString("0.00", CultureInfo.InvariantCulture);
+
         string FormatMove(NNValues move, bool qChartSelected)
         {
             if (qChartSelected)
             {
                 var fraction = NvaluesDict[move.SANMove].Last();
-                var moveWithQFormatted = $"{move.SANMove}, P: {move.P / 100:p1} N: {fraction:p1}";
+                var moveWithQFormatted = $"{move.SANMove}, P: {InvPct(move.P)} N: {InvPct(fraction * 100)}";
                 return moveWithQFormatted;
             }
             else
             {
                 //var eval = Utilities.EvalLogistic.logisticToCentipawn(move.Q) / 100;
-                var e = move.E != 0.0 ? $"E: ± {(2 * move.E):f2}" : "";
-                var moveFormatted = $"{move.SANMove}, P: {move.P / 100:p1} Q: {move.Q:f2} {e}";
+                var e = move.E != 0.0 ? $"E: ± {Inv2(2 * move.E)}" : "";
+                var moveFormatted = $"{move.SANMove}, P: {InvPct(move.P)} Q: {Inv2(move.Q)} {e}";
                 return moveFormatted;
             }
         }
@@ -1378,9 +1400,10 @@ namespace WebGUI.Plotting
                 var m = moves[i];
                 var color = ConvergenceColor(i);
 
-                // Legend label: drop N/Q (read off the axes); keep move, policy prior, and raw value.
-                string vPart = m.V != 0.0 ? $" V: {m.V:f2}" : "";
-                string label = $"{m.SANMove}, P: {m.P / 100:p1}{vPart}";
+                // Legend label: drop N/Q (read off the axes); keep move, policy prior, and raw
+                // value — unless the host asked for the compact SAN-only legend (numbers on hover).
+                string vPart = m.V != 0.0 ? $" V: {Inv2(m.V)}" : "";
+                string label = CompactLegend ? m.SANMove : $"{m.SANMove}, P: {InvPct(m.P)}{vPart}";
 
                 // Per-tick (N, Q) trajectory across the search. If lengths drift (shouldn't, but be
                 // defensive), trim to the shorter so we don't render bogus pairs.
@@ -1405,7 +1428,7 @@ namespace WebGUI.Plotting
                     mode = "lines",
                     name = label,
                     line = new { color = color, width = 1.5, shape = "spline" },
-                    hovertemplate = $"{m.SANMove}<br>N: %{{x:,.0f}}<br>Q: %{{y:.3f}}<extra></extra>",
+                    hovertemplate = $"{m.SANMove}<br>N: %{{x:,.0f}}<br>P: {InvPct(m.P)}<br>Q: %{{y:.3f}}{vPart}<extra></extra>",
                 });
             }
 

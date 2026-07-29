@@ -211,8 +211,10 @@
         string font;
         if (l.FontPx.HasValue)
         {
-            // Legacy fixed-pixel font (old .square-overlay / .circle-piece look)
-            font = $"{F(l.FontPx.Value)}px";
+            // Themed pixel font (old .square-overlay / .circle-piece look), capped by a
+            // container-relative size so it shrinks with the board: the px value is
+            // treated as the size at a 600px reference board (100cqi = board width).
+            font = $"min({F(l.FontPx.Value)}px, {F(l.FontPx.Value / 6.0)}cqi)";
         }
         else
         {

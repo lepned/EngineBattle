@@ -28,9 +28,26 @@
 .cm-h-prior { color: #e8c86e; }
 .cm-right { text-align: right; }
 
+/* Detailed (analysis) variant adds numeric P and V columns; WDL is bar-only there
+   (exact percentages live in the tooltip), so its column shrinks. */
+.cm-grid.detailed {
+    grid-template-columns: 3.6rem 1fr 4.6rem 3.4rem 3.6rem 3.6rem 3.9rem;
+}
+
 .cm-row { display: contents; }
 .cm-row > * { padding: 0.24rem 0; }
 .cm-row:hover > * { background: rgba(255, 255, 255, 0.04); }
+.cm-row.clickable > * { cursor: pointer; }
+.cm-row.focused > * { background: rgba(127, 212, 242, 0.12); }
+.cm-row.focused:hover > * { background: rgba(127, 212, 242, 0.18); }
+
+.cm-p {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    color: #e8c86e;
+    text-align: right;
+}
 
 .cm-san {
     font-weight: 650;

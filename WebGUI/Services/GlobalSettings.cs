@@ -33,6 +33,11 @@ public class GlobalSettings
     public double MinPolicyThreshold { get; set; } = 0.05;
     public bool ShowEvalBar { get; set; } = true;             // vertical eval bar beside analysis/review boards
 
+    // Remembered last choice of the below-chart panel (live move stats vs PV table),
+    // keyed per host page ("single-analysis", "dual-analysis"). No settings UI — written
+    // when the user flips the in-panel toggle; applied only for engines with LogLiveStats.
+    public Dictionary<string, bool> ShowLiveMoveStatsPanel { get; set; } = new();
+
     // Game Review defaults
     public string ReviewSearchMode { get; set; } = "Time";  // Time, Nodes, Depth
     public int ReviewTimePerMove { get; set; } = 1000;

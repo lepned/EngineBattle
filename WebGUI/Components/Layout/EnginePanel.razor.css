@@ -612,50 +612,134 @@
     flex-shrink: 0;
 }
 
-/* Raw output toggle button */
-.engine-panel .ep-raw-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border-radius: 6px;
+/* Segmented PV-lines / Move-stats switch (labeled for discoverability) */
+.engine-panel .ep-seg {
+    display: inline-flex;
     border: 1px solid rgba(125, 132, 156, 0.35);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.engine-panel .ep-seg-btn {
+    border: none;
     background: transparent;
     color: var(--ep-muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.5rem;
     cursor: pointer;
+    white-space: nowrap;
     transition: all 0.2s ease;
-    flex-shrink: 0;
 }
 
-.engine-panel .ep-raw-toggle:hover:not(:disabled) {
-    border-color: var(--ep-accent);
+.engine-panel .ep-seg-btn + .ep-seg-btn {
+    border-left: 1px solid rgba(125, 132, 156, 0.35);
+}
+
+.engine-panel .ep-seg-btn:hover:not(.active) {
     color: var(--ep-accent);
-    background: rgba(94, 228, 195, 0.1);
+    background: rgba(94, 228, 195, 0.08);
 }
 
-.engine-panel .ep-raw-toggle.active {
-    border-color: var(--ep-accent);
+.engine-panel .ep-seg-btn.active {
     color: var(--ep-accent);
     background: rgba(94, 228, 195, 0.15);
+    cursor: default;
 }
 
-.engine-panel .ep-raw-toggle:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.engine-panel .ep-raw-toggle .icon {
-    width: 14px;
-    height: 14px;
-}
-
-/* Table header cell with toggle button */
-.engine-panel .ep-th-with-toggle {
+/* Candidate-moves (broadcast-style) live stats view */
+.engine-panel .ep-cm-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding: 0.45rem 0.75rem 0.15rem;
+}
+
+.engine-panel .ep-cm-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ep-muted);
+}
+
+.engine-panel .ep-cm-wrap {
+    padding: 0 0.75rem 0.6rem;
+}
+
+/* PV lines (broadcast-style restyle of the old Eval|D|SD|PV table) */
+.engine-panel .ep-pv-head {
+    display: grid;
+    grid-template-columns: 3.3rem 3rem 1fr;
+    gap: 0 0.6rem;
+    align-items: center;
+    padding: 0.45rem 0.55rem 0.15rem;
+}
+
+.engine-panel .ep-pv-h {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ep-muted);
+}
+
+/* Right-align the numeric column headers so they sit over their values. */
+.engine-panel .ep-pv-h-eval,
+.engine-panel .ep-pv-h-depth { text-align: right; }
+
+.engine-panel .ep-pv-h-pv {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.engine-panel .ep-pv-row {
+    display: grid;
+    grid-template-columns: 3.3rem 3rem 1fr;
+    gap: 0 0.6rem;
+    align-items: center;
+    padding: 0.28rem 0.55rem;
+    cursor: pointer;
+}
+
+.engine-panel .ep-pv-row:hover { background: rgba(255, 255, 255, 0.04); }
+.engine-panel .ep-pv-row.focused { background: rgba(127, 212, 242, 0.12); }
+.engine-panel .ep-pv-row.focused:hover { background: rgba(127, 212, 242, 0.18); }
+
+.engine-panel .ep-pv-eval {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.88rem;
+    font-weight: 650;
+    text-align: right;
+    color: var(--ep-muted);
+}
+
+.engine-panel .ep-pv-eval.pos { color: #7fd1a8; }
+.engine-panel .ep-pv-eval.neg { color: #e58a8a; }
+.engine-panel .ep-pv-eval.top { font-weight: 750; }
+
+.engine-panel .ep-pv-depth {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    text-align: right;
+    color: var(--ep-muted);
+}
+
+.engine-panel .ep-pv-sd { opacity: 0.6; }
+
+.engine-panel .ep-pv-line {
+    font-size: 0.85rem;
+    color: var(--mud-palette-text-primary);
+    /* Single line: keep row height fixed, full PV lives in the tooltip. */
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Results Table */
