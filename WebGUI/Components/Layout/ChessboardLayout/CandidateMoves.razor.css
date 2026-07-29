@@ -172,6 +172,24 @@
     vertical-align: -1px;
 }
 
+.cm-legend .cm-copy {
+    margin-left: auto;
+    border: 1px solid rgba(125, 132, 156, 0.35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.66rem;
+    padding: 0.1rem 0.45rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.cm-legend .cm-copy:hover {
+    color: var(--mud-palette-text-primary);
+    border-color: rgba(125, 132, 156, 0.7);
+}
+
 .cm-legend .sw-top { background: #7fd4f2; }
 .cm-legend .sw-n { background: #4da5c4; }
 .cm-legend .sw-p { background: #e8c86e; }

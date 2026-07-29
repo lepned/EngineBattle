@@ -260,13 +260,26 @@
     border: 1px solid var(--sa-border);
 }
 
-/* Candidate-moves panel below the board (broadcast-style live move stats) */
+/* Candidate-moves panel below the board (broadcast-style live move stats).
+   Fixed max height + scroll: top moves visible at a glance, the engine's full
+   candidate list reachable by scrolling. */
 .single-analysis .sa-candidates {
     background: var(--sa-card);
     border-radius: 16px;
     padding: 10px 14px;
     border: 1px solid var(--sa-border);
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(125, 132, 156, 0.45) transparent;
 }
+
+.single-analysis .sa-candidates::-webkit-scrollbar { width: 6px; }
+.single-analysis .sa-candidates::-webkit-scrollbar-thumb {
+    background: rgba(125, 132, 156, 0.45);
+    border-radius: 3px;
+}
+.single-analysis .sa-candidates::-webkit-scrollbar-track { background: transparent; }
 
 /* Save Section */
 .single-analysis .sa-save-section {

@@ -267,8 +267,11 @@
                 </div>
             </div>
             <div class="ep-cm-wrap">
-                <CandidateMoves Stats="@NNInfoList" Fen="@fen" MaxRows="20" Detailed="true"
-                                FocusedMoves="@focusedMoves"
+                @* Full candidate list (verbose move stats carry every root move); the
+                   ep-table-container scrolls, charts stay capped by the PV-lines input. *@
+                <CandidateMoves Stats="@NNInfoList" Fen="@fen" MaxRows="int.MaxValue" Detailed="true"
+                                FocusedMoves="@focusedMoves" PreferredLanMove="@PreferredLanMove"
+                                SourceDescription="@EngineDescription"
                                 OnRowClick="@HandleCandidateRowClick" />
             </div>
         </div>
@@ -790,6 +793,22 @@
 
     private string GetFirstMove(string pvLongSAN) =>
         pvLongSAN?.Split(' ').FirstOrDefault() ?? "";
+
+    // First move of the MultiPV-1 line (LAN) — the engine's actual move choice, which for
+    // MCTS engines may differ from the max-N move (drives the * marker in CandidateMoves).
+    public string PreferredLanMove =>
+        dataList.Count > 0 ? GetFirstMove(dataList[0].Value.PVLongSAN) : "";
+
+    // "Engine (network)" provenance for the CandidateMoves copy output.
+    public string EngineDescription
+    {
+        get
+        {
+            var name = Engine?.Name ?? "";
+            return !string.IsNullOrEmpty(neuralNet) && neuralNet != "none"
+                ? $"{name} ({neuralNet})" : name;
+        }
+    }
 
     private void ApplySearchMoves()
     {

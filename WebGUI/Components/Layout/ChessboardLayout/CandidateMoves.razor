@@ -1,4 +1,5 @@
 @using System.Globalization
+@inject IJSRuntime JS
 
 @* Candidate-move panel for MCTS engines (Lc0/Ceres verbose move stats): top root moves
    by visits, each row showing search share (bar) vs policy prior (tick), nodes, Q and
@@ -30,7 +31,7 @@ else
             <div class="cm-row @(OnRowClick.HasDelegate ? "clickable" : null) @(IsFocused(r) ? "focused" : null)"
                  title="@RowTitle(r)"
                  @onclick="@(e => RowClicked(r, e.CtrlKey))">
-                <div class="cm-san @(r.IsTop ? "top" : "")">@r.San</div>
+                <div class="cm-san @(r.IsTop ? "top" : "")">@r.San@(IsPreferred(r) ? preferredMark : null)</div>
                 <div class="cm-barcell">
                     <div class="cm-track">
                         <div class="cm-fill @(r.IsTop ? "top" : "")" style="width:@Pct(r.NShare)">
@@ -86,6 +87,12 @@ else
         <span><i class="sw-n"></i>visit share (N%)</span>
         <span><i class="sw-p"></i>policy prior (P%)</span>
         <span><i class="sw-w"></i>win <i class="sw-d"></i>draw <i class="sw-l"></i>loss</span>
+        @if (!string.IsNullOrEmpty(PreferredLanMove))
+        {
+            <span>@preferredMark = engine choice (first PV move)</span>
+        }
+        <button class="cm-copy" @onclick="CopyToClipboard"
+                title="Copy move stats as text (paste into a Discord code block)">@copyLabel</button>
     </div>
 }
 
@@ -101,6 +108,18 @@ else
     [Parameter] public EventCallback<(NNValues Move, bool CtrlKey)> OnRowClick { get; set; }
     /// <summary>LAN moves currently restricting the search (focus mode) — highlighted.</summary>
     [Parameter] public IReadOnlyCollection<string> FocusedMoves { get; set; }
+    /// <summary>First move of the engine's main PV (LAN) — its actual move choice, which for
+    /// MCTS engines may differ from the max-N move. Marked with * in table and copy output.</summary>
+    [Parameter] public string PreferredLanMove { get; set; }
+    /// <summary>Engine (and network) that produced these stats — provenance header line in
+    /// the copy output. Not rendered in the table.</summary>
+    [Parameter] public string SourceDescription { get; set; }
+
+    private const string preferredMark = "*";
+
+    private bool IsPreferred(Row r) =>
+        !string.IsNullOrEmpty(PreferredLanMove)
+        && string.Equals(r.Source.LANMove?.Trim(), PreferredLanMove.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private record Row(string San, bool IsTop, double NShare, double PShare, long Nodes,
                        double Q, double V, bool HasWdl, double W, double D, double L, NNValues Source);
@@ -183,6 +202,47 @@ else
 
     private static string PctLabel(double share) =>
         Math.Round(share * 100).ToString(CultureInfo.InvariantCulture) + "%";
+
+    // ── Copy to clipboard: aligned plain-text table (Discord code-block friendly),
+    //    same white-perspective values as displayed, FEN header for provenance. ──
+    private string copyLabel = "Copy";
+
+    private string BuildCopyText()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"FEN: {Fen}");
+        if (!string.IsNullOrWhiteSpace(SourceDescription))
+            sb.AppendLine(SourceDescription);
+        sb.AppendLine($"{"Move",-8}{"N%",7}{"P%",7}{"Nodes",9}{"Q",8}{"V",8}  WDL%");
+        foreach (var r in rows)
+        {
+            var san = IsPreferred(r) ? r.San + preferredMark : r.San;
+            var q = r.Q.ToString("+0.00;-0.00;0.00", inv);
+            var v = r.V.ToString("+0.00;-0.00;0.00", inv);
+            var wdl = r.HasWdl ? $"{r.W.ToString("0", inv)}-{r.D.ToString("0", inv)}-{r.L.ToString("0", inv)}" : "-";
+            sb.AppendLine($"{san,-8}{(r.NShare * 100).ToString("0.0", inv),7}{(r.PShare * 100).ToString("0.0", inv),7}{FormatNodes(r.Nodes),9}{q,8}{v,8}  {wdl}");
+        }
+        if (rows.Any(IsPreferred))
+            sb.AppendLine($"{preferredMark} = engine choice (first PV move)");
+        return sb.ToString();
+    }
+
+    private async Task CopyToClipboard()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", BuildCopyText());
+            copyLabel = "Copied ✓";
+            StateHasChanged();
+            await Task.Delay(1500);
+            copyLabel = "Copy";
+        }
+        catch
+        {
+            // Clipboard unavailable (permissions/non-secure context) — leave the label as-is.
+        }
+    }
 
     private static string FormatNodes(long nodes) => nodes switch
     {
