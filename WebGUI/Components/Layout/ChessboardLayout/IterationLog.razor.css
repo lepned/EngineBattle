@@ -1,0 +1,303 @@
+/* Iteration log (AB engines) — deliberately the visual sibling of CandidateMoves: same
+   amber accent, same Mud text tokens, no card chrome of its own (the host panel supplies
+   background, radius and padding). */
+
+.il-empty {
+    font-size: 0.8rem;
+    color: var(--mud-palette-text-secondary);
+    font-style: italic;
+    padding: 0.4rem 0;
+}
+
+.il-card {
+    --il-accent: #e8c86e;
+    /* First column fits a merged range like "2-245", not just a depth. */
+    --il-cols: 4.2rem 5.4rem 1fr 5.4rem 4.4rem;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* Under the board there is room to spare, so the full card gets real margins and taller
+   rows. The panel variant stays tight — its column is narrow and shares space with the
+   charts. */
+.il-card:not(.compact) {
+    padding: 0.5rem 0.9rem 0.4rem;
+}
+
+.il-card.compact {
+    --il-cols: 3.8rem 4.8rem 1fr 4rem;
+}
+
+/* ── Header line ───────────────────────────────────────────────────────────── */
+.il-top {
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+    margin-bottom: 0.6rem;
+}
+
+.il-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--mud-palette-text-primary);
+}
+
+.il-meta {
+    margin-left: auto;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* Height slider — deliberately small and muted; it is a preference, not a control the
+   card is about. */
+.il-height {
+    width: 84px;
+    height: 3px;
+    accent-color: rgba(232, 200, 110, 0.75);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+}
+
+.il-height:hover { opacity: 1; }
+
+.il-copy {
+    border: 1px solid rgba(125, 132, 156, 0.35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.66rem;
+    padding: 0.1rem 0.45rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.il-copy:hover {
+    color: var(--mud-palette-text-primary);
+    border-color: rgba(125, 132, 156, 0.7);
+}
+
+/* ── Hero: the state of the search right now ───────────────────────────────── */
+.il-hero {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    padding: 0.2rem 0 0.9rem;
+    flex-wrap: wrap;
+}
+
+.il-hero-best {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.il-facts {
+    display: flex;
+    gap: 1.4rem;
+    margin-left: auto;
+}
+
+.il-facts > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    align-items: flex-end;
+}
+
+.il-lbl {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.il-bestmove {
+    font-size: 1.1rem;
+    font-weight: 650;
+    color: var(--mud-palette-text-primary);
+}
+
+.il-val {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 1.05rem;
+    font-weight: 650;
+    color: var(--mud-palette-text-primary);
+}
+
+/* Hash close to full: the search is about to degrade, and that is a setting, not a position. */
+.il-val.warn { color: #e8956e; }
+
+/* Its own hero field next to the move: label above, "d23 · 0.72s" below. Slightly smaller
+   and quieter than the other values — it qualifies the move rather than measuring the search. */
+.il-since {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+}
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+.il-head,
+.il-row {
+    display: grid;
+    grid-template-columns: var(--il-cols);
+    gap: 0 0.8rem;
+    align-items: center;
+    padding-left: 0.4rem;
+}
+
+.il-card:not(.compact) .il-head,
+.il-card:not(.compact) .il-row {
+    gap: 0 1.1rem;
+    padding-left: 0.55rem;
+}
+
+/* Matches the scroller's thin scrollbar so the right-aligned columns stay lined up
+   with their headers whether or not the log overflows. */
+.il-head {
+    padding-right: 6px;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(125, 132, 156, 0.16);
+}
+
+.il-h {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.il-r { text-align: right; }
+
+/* Column headers that toggle totals vs per-iteration — a button, but it has to read as
+   a header, so everything but the pointer is inherited. */
+.il-h-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+    cursor: pointer;
+}
+
+.il-h-btn:hover { color: var(--mud-palette-text-primary); }
+
+/* Compact variant: the panel owns the title row, so only the copy button is rendered. */
+.il-card.compact .il-top { margin-bottom: 0.3rem; }
+.il-copy-only { margin-left: auto; }
+
+/* The iteration currently being searched. Dimmed and slowly pulsing so it reads as
+   pending rather than as a result. */
+.il-row.in-progress {
+    opacity: 0.45;
+    animation: il-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes il-pulse {
+    0%, 100% { opacity: 0.32; }
+    50% { opacity: 0.6; }
+}
+
+/* Newest row at the bottom, and the scroller stays pinned there on its own. */
+.il-scroll {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: flex-start;
+    overflow-y: auto;
+    max-height: var(--il-max-h, 200px);
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(125, 132, 156, 0.45) transparent;
+}
+
+/* In the engine panel the log is the only scroller inside a 600px container, so it takes
+   nearly all of it — the same room the move-stats table gets. Left just enough for the
+   header row and the PV chips so a second scrollbar never appears on the container. */
+.il-card.compact .il-scroll { max-height: var(--il-max-h, 480px); }
+
+.il-scroll::-webkit-scrollbar { width: 6px; }
+.il-scroll::-webkit-scrollbar-thumb { background: rgba(125, 132, 156, 0.45); border-radius: 3px; }
+.il-scroll::-webkit-scrollbar-track { background: transparent; }
+
+.il-row {
+    padding-top: 0.26rem;
+    padding-bottom: 0.26rem;
+}
+
+.il-card:not(.compact) .il-row {
+    padding-top: 0.42rem;
+    padding-bottom: 0.42rem;
+}
+
+.il-card:not(.compact) .il-head {
+    padding-bottom: 0.5rem;
+}
+
+.il-card:not(.compact) .il-hero {
+    padding-bottom: 1.2rem;
+}
+
+.il-card:not(.compact) .il-top {
+    margin-bottom: 0.8rem;
+}
+
+
+.il-row:hover { background: rgba(255, 255, 255, 0.04); }
+
+/* Inset shadow rather than a border: the accent edge appears without nudging the
+   columns of the rows around it. */
+.il-row.changed {
+    box-shadow: inset 2px 0 0 var(--il-accent);
+    background: rgba(232, 200, 110, 0.045);
+}
+
+.il-d,
+.il-sc,
+.il-n,
+.il-t {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+}
+
+.il-d { color: var(--mud-palette-text-secondary); }
+.il-sc { font-weight: 700; }
+
+/* Score moved past the threshold while the move stayed put — the accent edge only marks
+   move changes, and a half-pawn swing on an unchanged move is just as interesting. */
+.il-jump {
+    font-size: 0.6rem;
+    margin-right: 0.15rem;
+    vertical-align: 1px;
+}
+
+.il-jump.up { color: rgba(232, 200, 110, 0.9); }
+.il-jump.down { color: rgba(180, 140, 150, 0.9); }
+
+.il-n,
+.il-t { color: var(--mud-palette-text-secondary); }
+
+.il-best {
+    font-size: 0.86rem;
+    font-weight: 650;
+    color: var(--mud-palette-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+

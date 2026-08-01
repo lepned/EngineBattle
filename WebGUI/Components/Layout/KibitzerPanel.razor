@@ -335,7 +335,19 @@
             await InvokeAsync(BeginSearch);
     }
 
-    public async void HandleUpdate(EngineUpdate update)
+    // Same reasoning as EnginePanel.HandleUpdate: the reader thread must not be allowed to
+    // run two of these at once over the same component state.
+    public void HandleUpdate(EngineUpdate update)
+    {
+        if (disposeCts.IsCancellationRequested) return;
+        try
+        {
+            _ = InvokeAsync(() => HandleUpdateCore(update));
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task HandleUpdateCore(EngineUpdate update)
     {
         if (disposeCts.IsCancellationRequested) return;
         try

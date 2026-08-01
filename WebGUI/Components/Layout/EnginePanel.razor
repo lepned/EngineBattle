@@ -260,19 +260,30 @@
     {
         <div class="ep-table-container">
             <div class="ep-cm-header">
-                <span class="ep-cm-title">Live move stats</span>
+                <span class="ep-cm-title">@(runLogLiveStats ? "Live move stats" : "Iteration log")</span>
                 <div class="ep-seg" role="tablist">
                     <button class="ep-seg-btn" @onclick="() => SetStatsPanel(false)" title="Show PV lines table">PV lines</button>
-                    <button class="ep-seg-btn active" title="Live move stats">Move stats</button>
+                    <button class="ep-seg-btn active" title="@StatsPanelTitle">@StatsPanelLabel</button>
                 </div>
             </div>
             <div class="ep-cm-wrap">
-                @* Full candidate list (verbose move stats carry every root move); the
-                   ep-table-container scrolls, charts stay capped by the PV-lines input. *@
-                <CandidateMoves Stats="@NNInfoList" Fen="@fen" MaxRows="int.MaxValue" Detailed="true"
-                                FocusedMoves="@focusedMoves" PreferredLanMove="@PreferredLanMove"
-                                SourceDescription="@EngineDescription" RawInfoLine="@MainInfoLine"
-                                OnRowClick="@HandleCandidateRowClick" />
+                @if (runLogLiveStats)
+                {
+                    @* Full candidate list (verbose move stats carry every root move); the
+                       ep-table-container scrolls, charts stay capped by the PV-lines input. *@
+                    <CandidateMoves Stats="@NNInfoList" Fen="@fen" MaxRows="int.MaxValue" Detailed="true"
+                                    FocusedMoves="@focusedMoves" PreferredLanMove="@PreferredLanMove"
+                                    SourceDescription="@EngineDescription" RawInfoLine="@MainInfoLine"
+                                    OnRowClick="@HandleCandidateRowClick" />
+                }
+                else
+                {
+                    @* AB engines have no root visit counts — the per-depth iteration log is
+                       the equivalent view. Compact here; the full card lives under the board. *@
+                    <IterationLog Rows="@iterations" Fen="@fen" Compact="true" Searching="@searchInProgress"
+                                  EngineLabel="@EngineIdLabel" MultiPv="@ActiveChartLines"
+                                  Threads="@ThreadsLabel" RawInfoLine="@MainInfoLine" />
+                }
             </div>
         </div>
     }
@@ -285,13 +296,10 @@
                 <span class="ep-pv-h ep-pv-h-depth">Depth</span>
                 <span class="ep-pv-h ep-pv-h-pv">
                     PV
-                    @if (runLogLiveStats)
-                    {
-                        <div class="ep-seg" role="tablist">
-                            <button class="ep-seg-btn active" title="PV lines table">PV lines</button>
-                            <button class="ep-seg-btn" @onclick="() => SetStatsPanel(true)" title="Show live move stats">Move stats</button>
-                        </div>
-                    }
+                    <div class="ep-seg" role="tablist">
+                        <button class="ep-seg-btn active" title="PV lines table">PV lines</button>
+                        <button class="ep-seg-btn" @onclick="() => SetStatsPanel(true)" title="@StatsPanelTitle">@StatsPanelLabel</button>
+                    </div>
                 </span>
             </div>
             @foreach (var item in dataList)
@@ -332,6 +340,10 @@
     /// <summary>Verbose move stats of the current search plus the position they belong to —
     /// lets host pages render a candidate-moves panel outside this component.</summary>
     [Parameter] public EventCallback<(IReadOnlyList<NNValues> Stats, string Fen)> OnLiveStats { get; set; }
+    /// <summary>Per-depth iteration log of the current search plus the position it belongs to —
+    /// the AB counterpart of <see cref="OnLiveStats"/>. Raised once per new depth, not per
+    /// info line, so hosts re-render at a sane rate.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<IterationRow> Rows, string Fen)> OnIterations { get; set; }
     [Parameter] public Func<bool> IsPositionAnalyzed { get; set; }
     /// <summary>SAN-only legend on the N/Q charts — for hosts that show the numbers in a
     /// candidate-move panel instead (SingleAnalysis). Full values remain on hover.</summary>
@@ -413,6 +425,8 @@
     public PVState PVState => pvState;
     // Current MultiPV line count — hosts use it to size external stat panels consistently.
     public int ActivePvLines => numberOfLines;
+    // MultiPV actually sent to the engine (the charts and the cp chart have separate inputs).
+    public int ActiveMultiPv => ActiveChartLines;
     private bool waitingForEngine = false;
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
     private List<NNValues> NNInfoList = new();
@@ -434,6 +448,7 @@
         // Reference assignment, not Clear(): renders (and CandidateMoves) enumerate the
         // list on the dispatcher while the engine reader thread produces updates.
         NNInfoList = new();
+        ClearIterations();
         lastMainInfoLine = "";
         lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
         // New position/search: let the first eval through even if it equals the last one.
@@ -441,6 +456,7 @@
         lastPublishedMate = null;
         if (searchInfoPlot != null) await searchInfoPlot.ResetPlot(false);
         cpEvalPlot?.Clear();
+        cpChartDirty = false;
         await InvokeAsync(StateHasChanged);
     }
     private IDialogReference dialogReference;
@@ -524,7 +540,15 @@
         uiTimer.Elapsed += (s, e) =>
         {
             elapsed = searchWatch.Elapsed;
-            InvokeAsync(StateHasChanged);
+            // Guarded on both sides: a circuit torn down between two ticks makes InvokeAsync
+            // itself throw synchronously on the timer thread, while anything inside the tick
+            // would otherwise fault a discarded task.
+            try
+            {
+                _ = InvokeAsync(SearchTickAsync);
+            }
+            catch (ObjectDisposedException) { }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
         };
         uiTimer.Start();
     }
@@ -535,6 +559,30 @@
         uiTimer?.Stop();
         uiTimer?.Dispose();
         uiTimer = null;
+    }
+
+    // The cp chart is drawn from the search timer rather than per info line: an engine can
+    // deliver hundreds of lines in a millisecond — a proven mate iterates to the ply cap —
+    // and every redraw crosses the circuit. Points are still recorded per line; only the
+    // drawing is coalesced to the 100ms tick, with a final draw when the search ends.
+    private bool cpChartDirty;
+
+    private async Task SearchTickAsync()
+    {
+        try
+        {
+            await FlushCpChart();
+            StateHasChanged();
+        }
+        catch (ObjectDisposedException) { }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+    }
+
+    private async Task FlushCpChart()
+    {
+        if (!cpChartDirty || cpEvalPlot is null) return;
+        cpChartDirty = false;
+        await cpEvalPlot.UpdateChart(EngineName, cpChartLines);
     }
 
     private void ResetSearchTimer()
@@ -818,6 +866,121 @@
             n = n * 10 + (c - '0');
         }
         return n == 0 ? 1 : n;
+    }
+
+    // ── AB iteration log ─────────────────────────────────────────────────────────
+    // One row per completed depth of the main line. Built from the raw info line rather
+    // than from EngineStatus alone, because EngineStatus has no time field — Engine.fs
+    // emits Status and then the raw Info for the same line on the same thread, so the
+    // parsed status of the line being captured is always the last one seen.
+    private static readonly System.Text.RegularExpressions.Regex IterationTimeRegex =
+        new(@"\btime\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex IterationBoundRegex =
+        new(@"\b(lowerbound|upperbound)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex IterationHashfullRegex =
+        new(@"\bhashfull\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private readonly object iterationLock = new();
+    private readonly List<IterationRow> iterationsWork = new();
+    private List<IterationRow> iterations = new();
+    private EngineStatus pendingIterationStatus;
+
+    /// <summary>Per-depth iteration log of the current search (ascending by depth).</summary>
+    public IReadOnlyList<IterationRow> Iterations => iterations;
+
+    /// <summary>False for alpha-beta engines — hosts use it to pick between the candidate-move
+    /// panel and the iteration log.</summary>
+    public bool HasLiveStats => runLogLiveStats;
+
+    /// <summary>Whether a search is running — hosts pass it to panels that show live state.</summary>
+    public bool IsSearching => searchInProgress;
+
+    /// <summary>The engine's own UCI identity ("Stockfish 17.1"), which carries the version;
+    /// falls back to the config display name before the handshake completes.</summary>
+    public string EngineIdLabel
+    {
+        get
+        {
+            var id = analyzer?.Engine?.UciIdName;
+            return string.IsNullOrWhiteSpace(id) ? (Engine?.Name ?? "") : id;
+        }
+    }
+
+    /// <summary>Configured thread count as a chip ("32T"), or empty when the def doesn't set it.
+    /// Key lookup is case-insensitive — engine defs are hand-written.</summary>
+    public string ThreadsLabel
+    {
+        get
+        {
+            var opts = Engine?.Options;
+            if (opts is null) return "";
+            foreach (var kv in opts)
+            {
+                if (string.Equals(kv.Key, "Threads", StringComparison.OrdinalIgnoreCase) && kv.Value is not null)
+                    return $"{kv.Value}T";
+            }
+            return "";
+        }
+    }
+
+    private string StatsPanelLabel => runLogLiveStats ? "Move stats" : "Iterations";
+    private string StatsPanelTitle => runLogLiveStats
+        ? "Live move stats — root moves by visits"
+        : "Iteration log — score and best move per depth";
+
+    // Returns true when the line opened a new depth (rather than refining the current one),
+    // which is the rate hosts are notified at.
+    private bool CaptureIteration(EngineStatus s, string rawLine)
+    {
+        if (s.Depth <= 0) return false;
+        var m = IterationTimeRegex.Match(rawLine);
+        var seconds = m.Success && long.TryParse(m.Groups[1].Value, out var ms)
+            ? ms / 1000.0
+            : elapsed.TotalSeconds;
+        double? cp = null;
+        int? mate = null;
+        switch (s.Eval)
+        {
+            case EvalType.CP c: cp = c.Info; break;
+            case EvalType.Mate mt: mate = mt.Info; break;
+        }
+        var hf = IterationHashfullRegex.Match(rawLine);
+        var hashfull = hf.Success && int.TryParse(hf.Groups[1].Value, out var permille) ? permille : 0;
+        var row = new IterationRow(s.Depth, s.SD, cp, mate, s.PV ?? "", s.PVLongSAN ?? "",
+                                   s.Nodes, s.NPS, seconds, IterationBoundRegex.IsMatch(rawLine), hashfull);
+        lock (iterationLock)
+        {
+            // Aspiration re-searches repeat a depth; the last line for it wins, so the log
+            // holds one row per depth like an engine's own iteration output.
+            var idx = iterationsWork.FindLastIndex(r => r.Depth == row.Depth);
+            if (idx >= 0)
+            {
+                iterationsWork[idx] = row;
+            }
+            else
+            {
+                iterationsWork.Add(row);
+                // One row per depth, so this is bounded by the engine's ply cap (~245 for
+                // Stockfish) on its own. The limit is only a backstop against an engine
+                // reporting nonsense depths — trimming for size would throw away the early
+                // iterations, which are the ones that carry the information once the
+                // display merges unchanged runs.
+                if (iterationsWork.Count > 512) iterationsWork.RemoveAt(0);
+            }
+            // Publish a snapshot: renders enumerate it on the dispatcher while the engine
+            // reader thread keeps producing.
+            iterations = new List<IterationRow>(iterationsWork);
+            return idx < 0;
+        }
+    }
+
+    private void ClearIterations()
+    {
+        lock (iterationLock)
+        {
+            iterationsWork.Clear();
+            iterations = new();
+        }
+        pendingIterationStatus = null;
     }
 
     // "Engine (network)" provenance for the CandidateMoves copy output.
@@ -1138,6 +1301,7 @@
             await StartAnalyzer();
         }
         InfoLineList.Clear();
+        ClearIterations();
         if (searchInfoPlot == null)
         {
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
@@ -1149,6 +1313,7 @@
             await searchInfoPlot?.ResetPlot(false);
         }
         cpEvalPlot?.Clear();
+        cpChartDirty = false;
         searchInProgress = true;
         ResetSearchTimer();
         if (selectedOverlaySetting != OverlaySettings.None)
@@ -1192,7 +1357,24 @@
         await Task.CompletedTask;
     }
 
-    public async void HandleUpdate(EngineUpdate update)
+    // Updates arrive on the engine's reader thread. The handler is async, so at its first
+    // await it returns and the reader thread immediately starts the next one — two flows
+    // then mutate `data` and `InfoLineList` at once. A mate found at the ply cap delivers
+    // 245 updates in 8ms and makes that collision routine ("Destination array was not long
+    // enough" out of a dictionary being copied while it grows). Marshalling to the
+    // dispatcher serialises them: component state is only ever touched from one thread,
+    // which is what Blazor expects in the first place.
+    public void HandleUpdate(EngineUpdate update)
+    {
+        if (disposeCts.IsCancellationRequested) return;
+        try
+        {
+            _ = InvokeAsync(() => HandleUpdateCore(update));
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task HandleUpdateCore(EngineUpdate update)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
@@ -1205,7 +1387,9 @@
                 case EngineUpdate.Ready ready:
                     showCharts = ready.HasLiveStat;
                     showCpChart = !ready.HasLiveStat;
-                    showNNdata = ready.HasLiveStat && RememberedStatsPanelChoice();
+                    // The remembered choice now applies to both alternatives — MCTS engines
+                    // get the move-stats panel, AB engines the iteration log.
+                    showNNdata = RememberedStatsPanelChoice();
                     searchInProgress = false;
                     waitingForEngine = false;
                     break;
@@ -1237,6 +1421,18 @@
                                                      .Select(kv => kv.Value));
                             }
                         }
+                        // Iteration log: main line only, paired with the Status parsed from
+                        // this very line (emitted immediately before it).
+                        if (k <= 1 && !runLogLiveStats && pendingIterationStatus is not null)
+                        {
+                            var newDepth = CaptureIteration(pendingIterationStatus, i.Info);
+                            if (newDepth && OnIterations.HasDelegate)
+                            {
+                                var rowsCopy = iterations;
+                                var rowsFen = fen;
+                                await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen)));
+                            }
+                        }
                     }
                     break;
 
@@ -1252,6 +1448,9 @@
                     var evalComment = $"{{{commentEval}/{commentNodes.ToString("N0")}}}";
                     ChessBoard.SetCommentOnCurrentEdge(evalComment);
                     StopSearchTimer();
+                    // The timer that would have drawn it is gone now, so draw whatever the
+                    // last lines added before the search ended.
+                    await FlushCpChart();
                     pvState.SetSearching(false);
                     // Fill empty PV in status table from bestmove (value head engines)
                     if (!string.IsNullOrEmpty(b.Item.PV) && data.ContainsKey(1) && string.IsNullOrEmpty(data[1].PV))
@@ -1282,11 +1481,14 @@
 
                 case EngineUpdate.Status s:
                     var status = s.Item;
+                    // Assigned before the first await so it is in place when the raw Info
+                    // for this same line arrives and builds the iteration row.
+                    if (status.MultiPV <= 1) pendingIterationStatus = status;
                     await Update(status);
                     if (!runLogLiveStats && showCpChart && cpEvalPlot != null)
                     {
                         cpEvalPlot.AddDataPoint(status.MultiPV, status.Depth, status.Eval, status.PV);
-                        await cpEvalPlot.UpdateChart(EngineName, cpChartLines);
+                        cpChartDirty = true;
                     }
                     break;
 
@@ -1325,7 +1527,10 @@
         catch (Microsoft.JSInterop.JSDisconnectedException) { }
         catch (Exception ex)
         {
-            logger.LogWarning("Engine update callback failed: {Message}", ex.Message);
+            // Full exception, not just the message: this handler touches a dozen collections
+            // and the message alone ("Destination array was not long enough") says nothing
+            // about which one.
+            logger.LogWarning(ex, "Engine update callback failed [{Update}]", update.GetType().Name);
         }
     }
 
@@ -1824,8 +2029,10 @@
         if (cpEvalPlot != null)
         {
             await cpEvalPlot.ClearChart();
+            cpChartDirty = false;
         }
         NNInfoList = new();
+        ClearIterations();
         InfoLineList.Clear();
         data.Clear();
         focusedMoves.Clear();
@@ -1935,6 +2142,7 @@
     {
         fen = newPos;
         NNInfoList = new();
+        ClearIterations();
         lastMainInfoLine = "";
         lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
         if (focusedMoves.Count > 0)
@@ -1965,6 +2173,7 @@
             if (searchInfoPlot != null)
                 await searchInfoPlot?.ResetPlot(false);
             cpEvalPlot?.Clear();
+            cpChartDirty = false;
             if (analyzer != null)
             {
                 searchInProgress = true;
@@ -2069,6 +2278,7 @@
             await InvokeAsync(() => NNInfoList = new());
             // New engine: captured info lines belong to the old one — don't let the
             // copy output pair them with the new engine's description.
+            ClearIterations();
             lastMainInfoLine = "";
             lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
             neuralNet = string.Empty;

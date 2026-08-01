@@ -14,6 +14,9 @@ public class CpEvalPlot
     private readonly ElementReference _chartElement;
     private readonly Dictionary<int, List<(int Depth, double Eval)>> _data = new();
     private readonly Dictionary<int, string> _moveNames = new();
+    // Per PV line: how far the current unchanged-eval stretch reaches. Only materialised as
+    // a point when the eval finally moves — see AddDataPoint.
+    private readonly Dictionary<int, int> _runEnd = new();
 
     private static readonly string[] TraceColors =
     {
@@ -86,9 +89,33 @@ public class CpEvalPlot
         // If same depth seen again for this PV line, update in place
         var existingIdx = points.FindIndex(p => p.Depth == depth);
         if (existingIdx >= 0)
+        {
             points[existingIdx] = (depth, value);
-        else
-            points.Add((depth, value));
+            return;
+        }
+
+        if (points.Count > 0)
+        {
+            var last = points[^1];
+            if (last.Eval == value)
+            {
+                // Unchanged eval: remember how far the flat stretch reaches, but do not
+                // extend the series. A mate proven early repeats the same score for every
+                // remaining iteration — 245 of them at the ply cap — and letting the line
+                // follow would stretch the x-axis until the part that actually moved is
+                // unreadable.
+                _runEnd[key] = depth;
+                return;
+            }
+
+            // The eval moved: close the flat stretch at its real end first, so the line
+            // keeps its step shape instead of sloping across the whole plateau.
+            if (_runEnd.TryGetValue(key, out var endDepth) && endDepth > last.Depth)
+                points.Add((endDepth, last.Eval));
+            _runEnd.Remove(key);
+        }
+
+        points.Add((depth, value));
     }
 
     public async Task UpdateChart(string engineName, int maxLines = 10)
@@ -168,12 +195,14 @@ public class CpEvalPlot
     {
         _data.Clear();
         _moveNames.Clear();
+        _runEnd.Clear();
     }
 
     public async Task ClearChart()
     {
         _data.Clear();
         _moveNames.Clear();
+        _runEnd.Clear();
         if (_chessModule is null || _chartElement.Context is null)
             return;
 

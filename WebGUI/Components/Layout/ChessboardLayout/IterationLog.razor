@@ -1,0 +1,473 @@
+@using System.Globalization
+@using System.Text.RegularExpressions
+@using WebGUI.Services
+@inject IJSRuntime JS
+@inject GlobalSettingsService SettingsService
+@implements IDisposable
+
+@* Iteration log for alpha-beta engines: one row per completed depth of the main line —
+   score, best move, nodes and time — which is the closest AB has to an MCTS root-visit
+   table. Newest iteration sits at the bottom (the scroller is column-reverse, so it
+   sticks there by itself). Rows where the best move changed carry an accent edge, and
+   each row's full PV is in its tooltip — spelling it out took more room than it was
+   worth next to the PV table the panel already shows. *@
+
+@if (view.Count == 0)
+{
+    <div class="il-empty">waiting for search iterations…</div>
+}
+else
+{
+    <div class="il-card @(Compact ? "compact" : null)" style="@CardStyle">
+        @if (!Compact)
+        {
+            <div class="il-top">
+                <span class="il-title">Iteration log</span>
+                <span class="il-meta">@MetaText</span>
+                <input class="il-height" type="range" min="120" max="640" step="20"
+                       @bind="tableHeight" @bind:after="SaveHeight"
+                       title="@($"Table height: {tableHeight}px")" />
+                <button class="il-copy" @onclick="CopyToClipboard"
+                        title="Copy the iteration log as text (paste into a Discord code block)">@copyLabel</button>
+            </div>
+
+            @* No score here on purpose: the newest row sits pinned at the bottom of the log
+               with the same number, and the PV table beside it shows it a third time. *@
+            <div class="il-hero">
+                <div class="il-hero-best">
+                    <span class="il-lbl">Best</span>
+                    <span class="il-bestmove">@BestOf(latest)</span>
+                </div>
+                @if (StableSince is not null)
+                {
+                    <div class="il-hero-best" title="The depth where this move took over, and how long it has held since">
+                        <span class="il-lbl">Since</span>
+                        <span class="il-since">@StableSince</span>
+                    </div>
+                }
+                <div class="il-facts">
+                    <div><span class="il-lbl">D/SD</span><span class="il-val">@DepthText(latest)</span></div>
+                    <div><span class="il-lbl">Nodes</span><span class="il-val">@FormatNodes(latest.Nodes)</span></div>
+                    <div><span class="il-lbl">NPS</span><span class="il-val">@FormatNodes((long)latest.Nps)</span></div>
+                    @if (latest.Hashfull > 0)
+                    {
+                        <div title="Hash table occupancy. Near full, the search slows down and the
+                                    branching factor climbs — raise the engine's Hash option.">
+                            <span class="il-lbl">Hash</span>
+                            <span class="il-val @(latest.Hashfull >= 900 ? "warn" : null)">@($"{latest.Hashfull / 10}%")</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (Compact)
+        {
+            @* The panel supplies the title and the view switch above this card, so only the
+               copy button is missing — without it the panel (and DualAnalysis, which has no
+               full card at all) has no way to reach the copy output. *@
+            <div class="il-top">
+                <button class="il-copy il-copy-only" @onclick="CopyToClipboard"
+                        title="Copy the iteration log as text (paste into a Discord code block)">@copyLabel</button>
+            </div>
+        }
+
+        <div class="il-head">
+            <span class="il-h">D</span>
+            <span class="il-h il-r">Score</span>
+            <span class="il-h">Best</span>
+            @if (!Compact)
+            {
+                <button class="il-h il-r il-h-btn" @onclick="TogglePerIteration" title="@perIterationTitle">@(perIteration ? "ΔNodes" : "Nodes")</button>
+            }
+            <button class="il-h il-r il-h-btn" @onclick="TogglePerIteration" title="@perIterationTitle">@(perIteration ? "ΔT" : "T")</button>
+        </div>
+
+        @* column-reverse: newest first in the DOM ends up visually at the bottom, and the
+           scroller stays pinned there as rows arrive without any scripting. *@
+        <div class="il-scroll">
+            @if (ShowInProgress)
+            {
+                @* First in the DOM, so column-reverse puts it under the newest finished row.
+                   How long this has been sitting there is the signal: an iteration taking
+                   several times the previous one means the engine is struggling. *@
+                <div class="il-row in-progress" title="@(inProgressIsResearch ? "re-searching this depth (fail high/low)" : "searching")">
+                    <span class="il-d">@InProgressDepth</span>
+                    <span class="il-sc il-r">…</span>
+                    <span class="il-best"></span>
+                    @if (!Compact)
+                    {
+                        <span class="il-n il-r"></span>
+                    }
+                    <span class="il-t il-r">@FormatTime(InProgressSeconds)</span>
+                </div>
+            }
+            @foreach (var r in reversed)
+            {
+                <div class="il-row @(r.Changed ? "changed" : null)" title="@RowTitle(r)">
+                    <span class="il-d">@DepthRange(r)</span>
+                    <span class="il-sc il-r" style="@ScoreStyle(r.Row)">
+                        @if (r.Jump != 0)
+                        {
+                            <span class="il-jump @(r.Jump > 0 ? "up" : "down")">@(r.Jump > 0 ? "▲" : "▼")</span>
+                        }@r.Score
+                    </span>
+                    <span class="il-best">@r.Best</span>
+                    @if (!Compact)
+                    {
+                        <span class="il-n il-r">@FormatNodes(perIteration ? r.DeltaNodes : r.Row.Nodes)</span>
+                    }
+                    <span class="il-t il-r">@FormatTime(perIteration ? r.DeltaSeconds : r.Row.Seconds)</span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Iterations of the current search, ascending by depth.</summary>
+    [Parameter] public IReadOnlyList<IterationRow> Rows { get; set; }
+    /// <summary>Position the search ran on — provenance header in the copy output.</summary>
+    [Parameter] public string Fen { get; set; } = "";
+    /// <summary>Panel variant: drops the hero line and the Nodes column so the card fits
+    /// the narrow engine-panel column. The host supplies its own title there.</summary>
+    [Parameter] public bool Compact { get; set; }
+    /// <summary>Engine identity for the meta line, e.g. "Stockfish 17".</summary>
+    [Parameter] public string EngineLabel { get; set; } = "";
+    /// <summary>MultiPV the engine is searching with (the log itself tracks line 1 only).</summary>
+    [Parameter] public int MultiPv { get; set; } = 1;
+    /// <summary>Thread count as configured, e.g. "32T". Empty hides the chip.</summary>
+    [Parameter] public string Threads { get; set; } = "";
+    /// <summary>Latest raw UCI info line(s) — appended verbatim to the copy output.</summary>
+    [Parameter] public string RawInfoLine { get; set; }
+    /// <summary>Whether a search is running — drives the in-progress row at the bottom.</summary>
+    [Parameter] public bool Searching { get; set; }
+
+    // Jump: -1/0/+1 for a score move past the threshold — the engine reconsidering the
+    // position without changing its move, which the accent edge alone would miss.
+    // Row holds the last iteration of a run; FirstDepth is where that run started. Runs of
+    // identical score AND identical best move are merged — in a normal search the score
+    // moves every depth so nothing merges, but once a mate is proven the engine repeats the
+    // same line for every remaining iteration and those collapse to a single row.
+    private sealed record ViewRow(IterationRow Row, bool Changed, long DeltaNodes, double DeltaSeconds,
+                                  double? Ebf, int Jump, double ScoreDelta, int FirstDepth,
+                                  string Best, string Score);
+
+    private const double JumpThreshold = 0.3;
+
+    // How many depths stay in view is a per-user habit, so the slider on the card writes
+    // straight to global settings. The panel variant is sized by its own container.
+    private int tableHeight = 200;
+    private string CardStyle => Compact ? null : $"--il-max-h:{tableHeight}px";
+
+    // Nodes and time arrive cumulative. Per-iteration is what says how expensive each
+    // depth was, so the two columns can switch between the two readings.
+    private bool perIteration;
+    private const string perIterationTitle = "Switch between totals and per-iteration cost";
+
+    private void TogglePerIteration()
+    {
+        perIteration = !perIteration;
+        var settings = SettingsService.Settings;
+        settings.IterationLogPerIteration = perIteration;
+        SettingsService.Save(settings);
+    }
+
+    protected override void OnInitialized()
+    {
+        tableHeight = Math.Clamp(SettingsService.Settings.IterationLogHeight, 120, 640);
+        perIteration = SettingsService.Settings.IterationLogPerIteration;
+    }
+
+    // ── In-progress row ──────────────────────────────────────────────────────────
+    // Timed locally rather than from the engine: the engine only reports a time once the
+    // iteration is done, which is exactly the number we are missing while it runs.
+    private readonly System.Diagnostics.Stopwatch sinceLastDepth = new();
+    private int lastDepthSeen = -1;
+    private System.Timers.Timer tickTimer;
+    private bool inProgressIsResearch;
+
+    private bool ShowInProgress => Searching && latest is not null;
+    private int InProgressDepth => latest is null ? 0 : (inProgressIsResearch ? latest.Depth : latest.Depth + 1);
+    private double InProgressSeconds => sinceLastDepth.Elapsed.TotalSeconds;
+
+    private void UpdateTicker()
+    {
+        // A fail-high/low line updates the row for its own depth in place, so the engine is
+        // still working on that depth rather than the next one.
+        inProgressIsResearch = latest?.Bounded == true;
+        if (latest is not null && latest.Depth != lastDepthSeen)
+        {
+            lastDepthSeen = latest.Depth;
+            sinceLastDepth.Restart();
+        }
+        if (Searching && latest is not null)
+        {
+            if (tickTimer is null)
+            {
+                tickTimer = new System.Timers.Timer(500) { AutoReset = true };
+                tickTimer.Elapsed += OnTick;
+            }
+            tickTimer.Enabled = true;
+        }
+        else
+        {
+            if (tickTimer is not null) tickTimer.Enabled = false;
+            sinceLastDepth.Stop();
+        }
+    }
+
+    private void OnTick(object sender, System.Timers.ElapsedEventArgs e)
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose()
+    {
+        if (tickTimer is not null)
+        {
+            tickTimer.Elapsed -= OnTick;
+            tickTimer.Dispose();
+            tickTimer = null;
+        }
+        sinceLastDepth.Stop();
+    }
+
+    private void SaveHeight()
+    {
+        var settings = SettingsService.Settings;
+        settings.IterationLogHeight = tableHeight;
+        SettingsService.Save(settings);
+    }
+
+    private List<ViewRow> view = new();
+    private List<ViewRow> reversed = new();
+    private IterationRow latest = null;
+
+    protected override void OnParametersSet()
+    {
+        var rows = Rows;
+        view = new List<ViewRow>(rows?.Count ?? 0);
+        if (rows != null)
+        {
+            // Formatted once per row rather than per comparison and per render: both of
+            // these allocate, and the merge loop below would otherwise redo them for every
+            // row it looks at.
+            var bests = new string[rows.Count];
+            var scores = new string[rows.Count];
+            for (var k = 0; k < rows.Count; k++)
+            {
+                bests[k] = BestOf(rows[k]);
+                scores[k] = ScoreText(rows[k]);
+            }
+
+            string prevBest = null;
+            IterationRow prev = null;   // last iteration of the previous run
+            var i = 0;
+            while (i < rows.Count)
+            {
+                var best = bests[i];
+                var score = scores[i];
+                var j = i;
+                while (j + 1 < rows.Count && scores[j + 1] == score && bests[j + 1] == best)
+                    j++;
+                var last = rows[j];
+
+                // Costs are measured across the whole run, from where the previous one
+                // ended. The first run has no predecessor: its totals are also its cost.
+                var dNodes = prev is null ? last.Nodes : Math.Max(0, last.Nodes - prev.Nodes);
+                var dSecs = prev is null ? last.Seconds : Math.Max(0, last.Seconds - prev.Seconds);
+                // EBF compares two single iterations; across a merged run it means nothing.
+                double? ebf = i == j && prev is not null && prev.Nodes > 0
+                    ? (double)last.Nodes / prev.Nodes : null;
+                var dScore = prev is null ? 0 : Comparable(last) - Comparable(prev);
+                var jump = Math.Abs(dScore) >= JumpThreshold ? Math.Sign(dScore) : 0;
+
+                view.Add(new ViewRow(last, prevBest != null && best != prevBest,
+                                     dNodes, dSecs, ebf, jump, dScore, rows[i].Depth, best, score));
+                prevBest = best;
+                prev = last;
+                i = j + 1;
+            }
+        }
+        reversed = Enumerable.Reverse(view).ToList();
+        latest = view.Count > 0 ? view[^1].Row : null;
+        UpdateTicker();
+    }
+
+    // Mate put on the same scale as pawns so a cp→mate transition registers as a jump.
+    private static double Comparable(IterationRow r) =>
+        r.Mate.HasValue ? (r.Mate.Value >= 0 ? 100.0 : -100.0) : r.Cp ?? 0;
+
+    // "d33 · 2.3s" under a Since label — the depth where the current best move took over,
+    // and how long it has held. The engine's confidence, in one field.
+    private string StableSince
+    {
+        get
+        {
+            if (view.Count < 2) return null;
+            var start = 0;
+            for (int i = view.Count - 1; i > 0; i--)
+            {
+                if (view[i].Changed) { start = i; break; }
+            }
+            // Measured from where that iteration *started*, not where it finished: the move
+            // became best somewhere inside that search, and measuring from its end reads
+            // 0.00s whenever the change happened on the newest depth. The running iteration
+            // counts too, via the same clock as the in-progress row. start == 0 means the
+            // move never changed, and then the baseline is the start of the search.
+            var baseline = start == 0 ? 0 : view[start - 1].Row.Seconds;
+            var held = Math.Max(0, latest.Seconds - baseline) + sinceLastDepth.Elapsed.TotalSeconds;
+            return $"d{view[start].Row.Depth} · {FormatTime(held)}";
+        }
+    }
+
+    private string MetaText
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(EngineLabel)) parts.Add(EngineLabel);
+            parts.Add($"MultiPV {Math.Max(1, MultiPv)}");
+            if (!string.IsNullOrWhiteSpace(Threads)) parts.Add(Threads);
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private string RowTitle(ViewRow r)
+    {
+        var parts = new List<string>
+        {
+            r.FirstDepth < r.Row.Depth
+                ? $"depths {r.FirstDepth}-{r.Row.Depth} — unchanged score and move"
+                : $"depth {r.Row.Depth}"
+        };
+        if (r.Row.SelDepth > 0) parts.Add($"seldepth {r.Row.SelDepth}");
+        if (r.Row.Nps > 0) parts.Add($"{FormatNodes((long)r.Row.Nps)} nps");
+        // The other reading of the two columns, so both are always one hover away.
+        parts.Add(perIteration
+            ? $"total {FormatNodes(r.Row.Nodes)} in {FormatTime(r.Row.Seconds)}"
+            : $"this depth {FormatNodes(r.DeltaNodes)} in {FormatTime(r.DeltaSeconds)}");
+        if (r.Ebf is double ebf) parts.Add($"EBF {ebf.ToString("0.00", CultureInfo.InvariantCulture)}");
+        if (r.Row.Hashfull > 0) parts.Add($"hash {r.Row.Hashfull / 10}%");
+        if (r.Jump != 0) parts.Add($"score moved {r.ScoreDelta.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)}");
+        if (r.Changed) parts.Add("best move changed");
+        if (r.Row.Bounded) parts.Add("fail high/low (re-search)");
+        return string.Join(" · ", parts) + "\n" + r.Row.PvSan;
+    }
+
+    // "2-245" for a merged run, plain depth otherwise.
+    private static string DepthRange(ViewRow v) =>
+        v.FirstDepth < v.Row.Depth
+            ? $"{v.FirstDepth}-{v.Row.Depth}"
+            : v.Row.Depth.ToString(CultureInfo.InvariantCulture);
+
+    private static string DepthText(IterationRow r) =>
+        r.SelDepth > r.Depth ? $"{r.Depth}/{r.SelDepth}" : r.Depth.ToString(CultureInfo.InvariantCulture);
+
+    // ── Eval ─────────────────────────────────────────────────────────────────────
+    // One accent hue for every value — the sign carries the meaning, brightness scales
+    // with magnitude so a decisive line stands out without a second colour.
+    private static string ScoreText(IterationRow r)
+    {
+        if (r is null) return "";
+        if (r.Mate.HasValue) return r.Mate.Value >= 0 ? $"M{r.Mate.Value}" : $"-M{Math.Abs(r.Mate.Value)}";
+        if (r.Cp.HasValue) return r.Cp.Value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture);
+        return "–";
+    }
+
+    private static string ScoreStyle(IterationRow r)
+    {
+        if (r is null) return "";
+        var mag = r.Mate.HasValue ? 1.0 : Math.Min(1.0, Math.Abs(r.Cp ?? 0) / 1.2);
+        var alpha = 0.58 + 0.42 * mag;
+        return $"color:rgba(232,200,110,{alpha.ToString("0.00", CultureInfo.InvariantCulture)})";
+    }
+
+    // ── PV ───────────────────────────────────────────────────────────────────────
+    // Short SAN arrives numbered ("38.Bxc6 bxc6", black-to-move as "38.... Bxc6"), so a
+    // standalone number token is dropped and a prefixed one keeps only the move.
+    private static readonly System.Text.RegularExpressions.Regex NumberedMove =
+        new(@"^(\d+)\.+(.*)$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // Only the first move is wanted, so stop at it instead of tokenising the whole variation.
+    private static string BestOf(IterationRow r)
+    {
+        if (r is null || string.IsNullOrWhiteSpace(r.PvSan)) return "";
+        foreach (var t in r.PvSan.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var m = NumberedMove.Match(t);
+            if (!m.Success) return t;
+            var rest = m.Groups[2].Value;
+            if (rest.Length > 0) return rest;
+        }
+        return "";
+    }
+
+    // ── Formatting ───────────────────────────────────────────────────────────────
+    private static string FormatNodes(long nodes) => nodes switch
+    {
+        >= 1_000_000_000 => $"{nodes / 1_000_000_000.0:0.##}B",
+        >= 1_000_000 => $"{nodes / 1_000_000.0:0.##}M",
+        >= 1_000 => $"{nodes / 1_000.0:0.#}K",
+        _ => nodes.ToString(CultureInfo.InvariantCulture)
+    };
+
+    private static string FormatTime(double s) =>
+        s >= 60 ? $"{(int)(s / 60)}:{(s % 60).ToString("00.0", CultureInfo.InvariantCulture)}"
+        : s < 10 ? $"{s.ToString("0.00", CultureInfo.InvariantCulture)}s"
+        : $"{s.ToString("0.0", CultureInfo.InvariantCulture)}s";
+
+    // ── Copy to clipboard: aligned plain text, same values as displayed. ──────────
+    private string copyLabel = "Copy";
+
+    private string BuildCopyText()
+    {
+        var sb = new System.Text.StringBuilder();
+        if (!string.IsNullOrWhiteSpace(Fen)) sb.AppendLine($"FEN: {Fen}");
+        sb.AppendLine(MetaText);
+        // Both readings go out: the columns follow whatever the table is showing, and the
+        // other one plus EBF ride along so a pasted log is self-contained.
+        sb.AppendLine(perIteration
+            ? $"{"D",8}{"Score",9}  {"Best",-8}{"ΔNodes",9}{"ΔT",9}{"EBF",7}"
+            : $"{"D",8}{"Score",9}  {"Best",-8}{"Nodes",9}{"T",9}{"EBF",7}");
+        foreach (var v in view)
+        {
+            var mark = v.Changed ? "*" : " ";
+            var nodes = FormatNodes(perIteration ? v.DeltaNodes : v.Row.Nodes);
+            var time = FormatTime(perIteration ? v.DeltaSeconds : v.Row.Seconds);
+            var ebf = v.Ebf is double e ? e.ToString("0.00", CultureInfo.InvariantCulture) : "-";
+            sb.AppendLine($"{DepthRange(v),8}{v.Score,9}{mark} {v.Best,-8}{nodes,9}{time,9}{ebf,7}");
+        }
+        if (view.Any(v => v.Changed))
+            sb.AppendLine("* = best move changed from the previous depth");
+        if (latest is not null && !string.IsNullOrWhiteSpace(latest.PvSan))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"PV (d{latest.Depth}): {latest.PvSan}");
+        }
+        if (!string.IsNullOrWhiteSpace(RawInfoLine))
+        {
+            sb.AppendLine();
+            sb.AppendLine(RawInfoLine.Trim());
+        }
+        return sb.ToString();
+    }
+
+    private async Task CopyToClipboard()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", BuildCopyText());
+            copyLabel = "Copied ✓";
+            StateHasChanged();
+            await Task.Delay(1500);
+            copyLabel = "Copy";
+        }
+        catch
+        {
+            // Clipboard unavailable (permissions/non-secure context) — leave the label as-is.
+        }
+    }
+}
