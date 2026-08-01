@@ -395,7 +395,9 @@ let playWithPondering
           moveInfoData.tb <- tbhits
           moveInfoData.eps <- eps
 
-          if not (String.IsNullOrEmpty pvLine) then
+          // Skip fail-high/low lines: their PV is cut to the root move, and a move that
+          // ends on one would carry that stump into the PGN comment for good.
+          if not (String.IsNullOrEmpty pvLine) && not (Regex.isBoundLine infoLine) then
             if player1.Name = engine.Name then
               Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
               PVLine1 <- pvLine
@@ -1161,7 +1163,9 @@ let playGeneric
                   moveInfoData.tb <- tbhits
                   moveInfoData.eps <- eps
 
-                  if not (String.IsNullOrEmpty(pvLine)) then
+                  // Skip fail-high/low lines: their PV is cut to the root move, and a move
+                  // that ends on one would carry that stump into the PGN comment for good.
+                  if not (String.IsNullOrEmpty(pvLine)) && not (Regex.isBoundLine line) then
                     if player1.Name = playing.Name then
                       Player1PV <- getShortSanPVFromLongSanPVFast moveList &board pvLine
                       PVLine1 <- pvLine

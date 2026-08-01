@@ -66,6 +66,14 @@ module Engine =
       let mutable nps = 0.0
       let mutable depth = 0
       let mutable Player1PV = String.Empty
+      // Long/UCI form of the same line, kept so a fail-high/low line can reuse it instead
+      // of publishing its own truncated PV (see the isBoundLine guard below).
+      let mutable Player1PVLong = String.Empty
+      // Last (UCI PV, SAN PV) pair per MultiPV index — see convertPv in `regular`. Owned by
+      // the output-reading thread: no other thread may touch it, so a new position sets the
+      // flag below and the reader clears the cache itself on its next line.
+      let sanPvCache = System.Collections.Generic.Dictionary<int, string * string>()
+      let mutable sanPvCacheStale = false
       let mutable callbackFunc : EngineUpdate -> unit = callback //fun update -> ()
       let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
       let name = config.Name
@@ -218,10 +226,33 @@ module Engine =
           if d > depth then
             depth <- d        
           evalList <- eval :: evalList
-          let mPv = if mPv = 0 then 1 else mPv        
-          if not (String.IsNullOrEmpty(pvLine)) && mPv = 1 then
-              Player1PV <- getShortSanPVFromLongSanPVFast moveList &moveBoard pvLine
-          let pvUpdate = if mPv = 1 then Player1PV else getShortSanPVFromLongSanPVFast moveList &moveBoard pvLine       
+          let mPv = if mPv = 0 then 1 else mPv
+          // A fail-high/low line carries a PV cut to the root move; let it through and the
+          // last complete variation is lost — permanently, if the search stops right there.
+          // Score, depth and node counts are real and flow on unchanged.
+          let isBound = EngineProtocol.Regex.isBoundLine line
+          // SAN conversion is the hot cost on this thread: it regenerates every legal move
+          // for every ply of the PV, allocating as it goes. Consecutive info lines usually
+          // repeat the same variation — once a mate is proven the engine repeats it for
+          // hundreds of iterations — so hold the last conversion per MultiPV index. Cleared
+          // with the rest of the PV state whenever a new position is set.
+          let convertPv (mpv: int) (lan: string) =
+            // Cleared here rather than in clearPvCache: this is the only thread allowed to
+            // touch the dictionary, and a position change can arrive on any other.
+            if sanPvCacheStale then
+              sanPvCache.Clear()
+              sanPvCacheStale <- false
+            match sanPvCache.TryGetValue mpv with
+            | true, (cachedLan, cachedSan) when cachedLan = lan -> cachedSan
+            | _ ->
+              let san = getShortSanPVFromLongSanPVFast moveList &moveBoard lan
+              sanPvCache[mpv] <- (lan, san)
+              san
+          if not (String.IsNullOrEmpty(pvLine)) && mPv = 1 && not isBound then
+              Player1PV <- convertPv 1 pvLine
+              Player1PVLong <- pvLine
+          let pvUpdate = if mPv = 1 then Player1PV else convertPv mPv pvLine
+          let pvLineUpdate = if mPv = 1 && isBound then Player1PVLong else pvLine
           let status = 
             { 
               PlayerName = engineName
@@ -234,7 +265,7 @@ module Engine =
               TBhits = tbHits
               WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
               PV = pvUpdate
-              PVLongSAN = pvLine
+              PVLongSAN = pvLineUpdate
               MultiPV = mPv
             }
           callback (Status status)
@@ -243,6 +274,19 @@ module Engine =
           callback (Info (engineName, line))
 
         |None -> ()
+
+      // The cached PV was converted against the board as it stood then; a new position
+      // command invalidates it. Without this, a search that never emits a pv line — value
+      // head runs, instant tablebase or mate returns — publishes the previous position's
+      // variation instead of nothing, and the GUI's "fill empty PV from bestmove" fallback
+      // never fires because the field isn't empty.
+      // Called from whichever thread sends the position, so it must not touch the cache
+      // dictionary itself — only flag it. The two string fields are plain reference
+      // assignments and safe to write from here.
+      let clearPvCache() =
+        Player1PV <- String.Empty
+        Player1PVLong <- String.Empty
+        sanPvCacheStale <- true
 
       let processLine callback (name:string) (line:string)  =
         try
@@ -673,6 +717,7 @@ module Engine =
           | PositionWithMoves command ->
               //let hmm = board.PositionWithMovesIndexed()
               moveBoard.ResetBoardState()
+              clearPvCache()
               moveBoard.PlayCommands command
               let isSet = isChess960Set()
               if moveBoard.IsFRC && not isSet then 
@@ -681,9 +726,10 @@ module Engine =
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
               write command
               commands.Add command
-          | Position fen -> 
+          | Position fen ->
               //board.LoadFen fen
               moveBoard.LoadFen fen
+              clearPvCache()
               if moveBoard.IsFRC then 
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
               elif isChess960Set() && not moveBoard.IsFRC then
@@ -713,6 +759,7 @@ module Engine =
               commands.Add cmd
           | UciNewGame ->
             let cmd = "ucinewgame"
+            clearPvCache()
             write cmd
             commands.Add cmd
           | SetOption option ->

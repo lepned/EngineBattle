@@ -332,6 +332,14 @@ module Regex =
   let v = new Regex(@"V:\s+(-?\d+[.,]\d+)", RegexOptions.Compiled)
   let e = new Regex(@"E:\s+(\d+[.,]\d+)", RegexOptions.Compiled)
 
+  /// True for an aspiration-window fail-high/fail-low line. Such a line reports a partial
+  /// search: its score is a real bound ("at least"/"at most"), but its PV is typically cut
+  /// to the single root move, because no PV is collected below a beta cutoff. Engines only
+  /// print them on large searches, and if the search stops on one, that truncated PV is
+  /// the last thing a GUI (or a PGN comment) would see.
+  let isBoundLine (line: string) =
+    line.Contains "lowerbound" || line.Contains "upperbound"
+
   let getEssentialDataWithEPS (line:string) isWhite =
     if line.StartsWith "info" then
       let eval =
