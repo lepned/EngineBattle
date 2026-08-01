@@ -6,6 +6,7 @@
 @using System.Text;
 @using System.Globalization
 @using WebGUI.Components.Layout.ChessboardLayout
+@using WebGUI.Components.Layout.ExperimentalLayout
 @using Toolbelt.Blazor.HotKeys2
 @using System.Linq
 @using Microsoft.FSharp.Core
@@ -29,21 +30,27 @@
 
 <div class="single-analysis">
     <div class="sa-toolbar">
-        <button class="sa-toolbar-btn" @onclick="BrowsePGNFile" title="Load PGN">
+        @* One button for both: the dialog offers *.pgn and *.epd together and the format is
+           read off the file afterwards, so there is nothing to choose beforehand. *@
+        <button class="sa-toolbar-btn" @onclick="BrowseGamesFile" title="Load a PGN or EPD file">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
             </svg>
-            PGN
+            PGN/EPD
         </button>
-        <button class="sa-toolbar-btn" @onclick="BrowseEPDFile" title="Load EPD">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                <line x1="3" y1="9" x2="21" y2="9"/>
-                <line x1="9" y1="21" x2="9" y2="9"/>
-            </svg>
-            EPD
-        </button>
+        @* Reopen the panel after it has been closed — the file is still loaded. *@
+        @if ((pgnFileLoaded || epdFileLoaded) && gamesColumnCollapsed)
+        {
+            <button class="sa-toolbar-btn" @onclick="() => gamesColumnCollapsed = false"
+                    title="Show the loaded games again">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                </svg>
+                @(pgnFileLoaded ? $"PGN ({games.Count})" : $"EPD ({epdGames.Count})")
+            </button>
+        }
         <div style="position:relative;">
             <button class="sa-toolbar-btn" @onclick="ToggleFrcPopover" title="Chess960 position loader">960@(frcPositionId.HasValue ? $" #{frcPositionId}" : "")</button>
             @if (showFrcPopover)
@@ -68,7 +75,9 @@
         </button>
     </div>
 
-    <div class="sa-main">
+    @* --sa-board carries the chosen board width into the layout, so the wide-screen rules
+       can give the board column a floor instead of letting it be the one that gives way. *@
+    <div class="sa-main @(GamesColumnVisible ? null : "sa-two-col")" style="@($"--sa-board:{boardSizePx}px")">
         <!-- Left Panel: Engine + Chart -->
         <div class="sa-left">
             <EnginePanel @ref="analysisWithEngine" FEN="@fen" OnUCIReceived="OnUCIReceived"
@@ -76,6 +85,7 @@
                          Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
                          PGNgames="games" Player=@searchString OnSearchCompleted="OnSearchCompleted"
                          OnEvalUpdated="OnEvalUpdated" OnLiveStats="OnLiveStatsUpdated"
+                         OnIterations="OnIterationsUpdated"
                          CompactChartLegend="true" StatsPanelKey="single-analysis"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
         </div>
@@ -103,6 +113,8 @@
             <div class="sa-board-wrapper">
                 <ModernChessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
                             MakeMoveListClickable=true MoveListPosition="MoveListPosition.Right" MoveEvals="@moveEvals"
+                            ShowSizeSlider="true" SizeKey="single-analysis"
+                            OnBoardSizeChanged="@(n => { boardSizePx = n; StateHasChanged(); })"
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" OnBoardReset="OnBoardReset" ChessBoard="@board"
                             OnBoardFlipped="f => boardFlipped = f"
                             BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
@@ -110,14 +122,28 @@
             </div>
 
             <div class="sa-candidates">
-                @* All root moves, not just the chart-line count — the card itself scrolls
-                   (users want to inspect the engine's full candidate list). *@
-                <CandidateMoves Stats="@candidateStats" Fen="@candidateFen"
-                                MaxRows="int.MaxValue" Detailed="true"
-                                PreferredLanMove="@candidatePreferred" SourceDescription="@candidateSource"
-                                RawInfoLine="@candidateInfoLine"
-                                FocusedMoves="@analysisWithEngine?.FocusedLanMoves"
-                                OnRowClick="@(t => analysisWithEngine is null ? Task.CompletedTask : analysisWithEngine.HandleCandidateRowClick(t))" />
+                @if (ShowIterationPanel)
+                {
+                    @* Alpha-beta engines report no root visit counts; the per-depth iteration
+                       log is the equivalent view. Its own scroller handles the overflow. *@
+                    <IterationLog Rows="@iterationRows" Fen="@iterationFen"
+                                  Searching="@(analysisWithEngine?.IsSearching ?? false)"
+                                  EngineLabel="@iterationEngine"
+                                  MultiPv="@(analysisWithEngine?.ActiveMultiPv ?? 1)"
+                                  Threads="@(analysisWithEngine?.ThreadsLabel ?? "")"
+                                  RawInfoLine="@iterationInfoLine" />
+                }
+                else
+                {
+                    @* All root moves, not just the chart-line count — the card itself scrolls
+                       (users want to inspect the engine's full candidate list). *@
+                    <CandidateMoves Stats="@candidateStats" Fen="@candidateFen"
+                                    MaxRows="int.MaxValue" Detailed="true" ShowHeightControl="true"
+                                    PreferredLanMove="@candidatePreferred" SourceDescription="@candidateSource"
+                                    RawInfoLine="@candidateInfoLine"
+                                    FocusedMoves="@analysisWithEngine?.FocusedLanMoves"
+                                    OnRowClick="@(t => analysisWithEngine is null ? Task.CompletedTask : analysisWithEngine.HandleCandidateRowClick(t))" />
+                }
             </div>
 
             <div class="sa-save-section">
@@ -152,8 +178,19 @@
             </div>
         </div>
 
+        @* Right panel only exists when there is something in it. It has nothing to show
+           before a file is loaded, and its 280px floor would otherwise be taken off the
+           board's width for no reason — the toolbar carries the load button. *@
+        @if (GamesColumnVisible)
+        {
         <!-- Right Panel: Chart + Game List -->
         <div class="sa-right">
+            <div class="sa-right-head">
+                <span class="sa-right-title" title="@pgnName">@(pgnFileLoaded ? "PGN" : "EPD"): @pgnName</span>
+                <button class="sa-right-close" @onclick="() => gamesColumnCollapsed = true"
+                        title="Close this panel — the file stays loaded and the toolbar brings it back">×</button>
+            </div>
+
             @if (!string.IsNullOrEmpty(currentGame))
             {
                 <div class="sa-game-info">@currentGame</div>
@@ -184,123 +221,34 @@
 
             @if (pgnFileLoaded)
             {
-                <div class="sa-panel-header">@pgnName</div>
-
-                <div class="sa-search">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input type="text" @bind="searchString" @bind:event="oninput" placeholder="Search for player..." />
-                </div>
-
-                <div class="sa-table-container">
-                    <table class="sa-table">
-                        <thead>
-                            <tr>
-                                <th class="sortable @(sortColumn == "GameNumber" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("GameNumber"))">G#</th>
-                                <th class="sortable @(sortColumn == "Ply" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("Ply"))">Ply</th>
-                                <th class="sortable @(sortColumn == "Result" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("Result"))">Result</th>
-                                <th class="sortable @(sortColumn == "Players" ? (sortAscending ? "sorted-asc" : "sorted-desc") : "")" @onclick="@(() => SortBy("Players"))">Players</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var game in FilteredGames.Skip(currentPage * pageSize).Take(pageSize))
-                            {
-                                <tr class="@(selectedItems.Contains(game) ? "selected" : "")" @onclick="@(() => OpenPGNGame(game))">
-                                    <td>@game.GameNumber</td>
-                                    <td>@game.Mainline.Count</td>
-                                    <td>@Helper.GetResultSummary(game)</td>
-                                    <td>@Helper.ShowPlayersSummary(game)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                    <div class="sa-pagination">
-                        <div class="sa-nav-buttons">
-                            <button class="sa-nav-btn" @onclick="FirstPage" disabled="@(currentPage == 0)" title="First page">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="11 17 6 12 11 7"/>
-                                    <polyline points="18 17 13 12 18 7"/>
-                                </svg>
-                            </button>
-                            <button class="sa-nav-btn" @onclick="PreviousPage" disabled="@(currentPage == 0)" title="Previous page">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="15 18 9 12 15 6"/>
-                                </svg>
-                            </button>
-                            <button class="sa-nav-btn" @onclick="NextPage" disabled="@(currentPage >= TotalPages - 1)" title="Next page">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="9 18 15 12 9 6"/>
-                                </svg>
-                            </button>
-                            <button class="sa-nav-btn" @onclick="LastPage" disabled="@(currentPage >= TotalPages - 1)" title="Last page">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="13 17 18 12 13 7"/>
-                                    <polyline points="6 17 11 12 6 7"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <select @bind="pageSize" @bind:after="OnPageSizeChanged">
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                            <option value="250">250</option>
-                        </select>
-                        <span class="sa-pagination-info">
-                            Page @(currentPage + 1) of @TotalPages (@FilteredGames.Count() games)
-                        </span>
-                    </div>
-                </div>
+                @* Same list component the dialog on DualAnalysis uses. *@
+                <PgnGameList Games="@games" SelectedItems="@selectedItems"
+                             SearchString="@searchString" SearchStringChanged="OnGameSearchChanged"
+                             OnGameSelected="OpenPGNGame" />
             }
 
             @if (epdFileLoaded)
             {
-                <div class="sa-panel-header">EPD: @pgnName</div>
-
-                <div class="sa-table-container">
-                    <table class="sa-table sa-epd-table">
-                        <thead>
-                            <tr>
-                                <th>Nr</th>
-                                <th>AM</th>
-                                <th>BM</th>
-                                <th>ID</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @{ var idx = 0; }
-                            @foreach (var epd in epdGames)
-                            {
-                                idx++;
-                                var localIdx = idx;
-                                <tr @onclick="@(() => OpenEPDGame(epd))">
-                                    <td>@localIdx</td>
-                                    <td>@epd.AvoidMove?.Value.ToString()</td>
-                                    <td>@epd.BestMove?.Value.ToString()</td>
-                                    <td>@epd.Id?.Value.ToString()</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                @* Same list component the dialog on DualAnalysis uses. *@
+                <EpdPositionList EPDs="@epdGames" SearchString="@epdSearchString"
+                                 SearchStringChanged="@(t => epdSearchString = t)"
+                                 OnEpdSelected="OpenEPDGame" />
             }
 
-            @if (!pgnFileLoaded && !epdFileLoaded)
-            {
-                <div class="sa-card sa-empty">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                    </svg>
-                    <p>Load a PGN or EPD file to see games here</p>
-                </div>
-            }
         </div>
+        }
     </div>
 </div>
 
 @code {
+    // Mirrors the board's own size setting; only used to give the board column a floor.
+    private int boardSizePx = 700;
+
+    /// <summary>The games/positions column exists only while a file is loaded and the user
+    /// has not closed it. Closing keeps the file — the toolbar brings the panel back.</summary>
+    private bool GamesColumnVisible => (pgnFileLoaded || epdFileLoaded) && !gamesColumnCollapsed;
+    private bool gamesColumnCollapsed;
+
     private int minMoveTimeInSecs = 0;
     private string currentGame = "";
     private int gameIndex = 0;
@@ -373,12 +321,6 @@
     private readonly object _pgnPasteLock = new();
     private readonly Dictionary<string, PgnPasteBuffer> _pgnPasteBuffers = new();
 
-    // Pagination
-    private int currentPage = 0;
-    private int pageSize = 30;
-    private string sortColumn = "GameNumber";
-    private bool sortAscending = true;
-
     private sealed class PgnPasteBuffer
     {
         public StringBuilder Sb { get; } = new StringBuilder();
@@ -386,44 +328,11 @@
         public int ReceivedChunks { get; set; }
     }
 
-    private IEnumerable<PGNTypes.PgnGame> FilteredGames
-    {
-        get
-        {
-            var filtered = games.Where(FilterFunc);
+    // Search text is kept here because EnginePanel takes it as its Player filter too.
+    private void OnGameSearchChanged(string text) => searchString = text;
 
-            filtered = sortColumn switch
-            {
-                "GameNumber" => sortAscending ? filtered.OrderBy(g => g.GameNumber) : filtered.OrderByDescending(g => g.GameNumber),
-                "Ply" => sortAscending ? filtered.OrderBy(g => g.Mainline.Count) : filtered.OrderByDescending(g => g.Mainline.Count),
-                "Result" => sortAscending ? filtered.OrderBy(g => Helper.GetResultSummary(g)) : filtered.OrderByDescending(g => Helper.GetResultSummary(g)),
-                "Players" => sortAscending ? filtered.OrderBy(g => Helper.ShowPlayersSummary(g)) : filtered.OrderByDescending(g => Helper.ShowPlayersSummary(g)),
-                _ => filtered
-            };
-
-            return filtered;
-        }
-    }
-
-    private void SortBy(string column)
-    {
-        if (sortColumn == column)
-            sortAscending = !sortAscending;
-        else
-        {
-            sortColumn = column;
-            sortAscending = true;
-        }
-        currentPage = 0; // Reset to first page when sorting changes
-    }
-
-    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredGames.Count() / (double)pageSize));
-
-    private void FirstPage() => currentPage = 0;
-    private void PreviousPage() { if (currentPage > 0) currentPage--; }
-    private void NextPage() { if (currentPage < TotalPages - 1) currentPage++; }
-    private void LastPage() => currentPage = TotalPages - 1;
-    private void OnPageSizeChanged() => currentPage = 0;
+    // EPD list has its own filter — an id or a move, not a player name.
+    private string epdSearchString = "";
 
     private async Task OnChartTypeChangedAsync()
     {
@@ -434,29 +343,6 @@
         StateHasChanged();
     }
 
-    private bool FilterFunc(PGNTypes.PgnGame game)
-    {
-        if (string.IsNullOrWhiteSpace(searchString))
-            return true;
-
-        string searchTerm = searchString.Trim().ToLower();
-
-        if (game.GameMetaData.White?.ToLower().Contains(searchTerm) == true)
-            return true;
-
-        if (game.GameMetaData.Black?.ToLower().Contains(searchTerm) == true)
-            return true;
-
-        var eval = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Eval");
-        if (eval != null && eval.Value.ToLower().Contains(searchTerm) == true)
-            return true;
-
-        var move = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Move");
-        if (move != null && move.Value.ToLower().Contains(searchTerm) == true)
-            return true;
-
-        return false;
-    }
 
     [JSInvokable]
     public Task OnPgnPasted(string pastedText)
@@ -740,7 +626,7 @@
 
     private async Task NextPGNGame()
     {
-        var filteredGames = games.Where(FilterFunc).ToList();
+        var filteredGames = games.Where(g => PgnGameList.Matches(g, searchString)).ToList();
         if (filteredGames.Count == 0)
             return;
 
@@ -759,7 +645,7 @@
 
     private async Task PreviousPGNGame()
     {
-        var filteredGames = games.Where(FilterFunc).ToList();
+        var filteredGames = games.Where(g => PgnGameList.Matches(g, searchString)).ToList();
         if (filteredGames.Count == 0)
             return;
 
@@ -776,11 +662,21 @@
         }
     }
 
-    private async Task BrowseEPDFile()
+    // Both the toolbar button and the empty panel land here: one dialog for both formats,
+    // with the kind decided from the file afterwards.
+    private async Task BrowseGamesFile()
     {
-        var path = await BrowseFileDialog(SettingsService.Settings.OpeningsFolder, "*.epd", "Select EPD File");
+        var path = await BrowseFileDialog(SettingsService.Settings.PgnOutputFolder,
+                                          GameFileFormat.BrowseFilter, "Select PGN or EPD File");
         if (path == null) return;
+        if (GameFileFormat.IsPgn(path)) LoadPgnFromPath(path); else LoadEpdFromPath(path);
+        StateHasChanged();
+    }
+
+    private void LoadEpdFromPath(string path)
+    {
         epdFileLoaded = true;
+        gamesColumnCollapsed = false;
         pgnFileLoaded = false;
         pgnName = Path.GetFileName(path);
         var allEpds = EPDExtractor.readEPDs(path).ToList();
@@ -788,14 +684,12 @@
             logger.LogWarning("EPD file contains {Total} entries, truncated to 5000", allEpds.Count);
         epdGames = allEpds.Take(5000).ToList();
         gameIndex = 0;
-        StateHasChanged();
     }
 
-    private async Task BrowsePGNFile()
+    private void LoadPgnFromPath(string path)
     {
-        var path = await BrowseFileDialog(SettingsService.Settings.PgnOutputFolder, "*.pgn", "Select PGN File");
-        if (path == null) return;
         epdFileLoaded = false;
+        gamesColumnCollapsed = false;
         pgnFileLoaded = true;
         pgnName = Path.GetFileName(path);
         var allGames = FullPGNParser.parsePgnFile(path).ToList();
@@ -803,7 +697,6 @@
             logger.LogWarning("PGN file contains {Total} games, truncated to 4000", allGames.Count);
         games = allGames.Take(4000).ToList();
         gameIndex = 0;
-        StateHasChanged();
     }
 
     private async Task<string> BrowseFileDialog(string initialDir, string filter, string title)
@@ -844,6 +737,36 @@
     private sealed record CandidateSnapshot(List<NNValues> Stats, string Preferred, string Source, string InfoLine);
     private readonly Dictionary<string, CandidateSnapshot> candidateStatsByFen = new();
 
+    // The same panel slot shows the iteration log for alpha-beta engines, which have no root
+    // visit counts to display. Cached per position on the same terms as the candidate stats.
+    private IReadOnlyList<IterationRow> iterationRows = new List<IterationRow>();
+    private string iterationFen = "";
+    private string iterationEngine = "";
+    private string iterationInfoLine = "";
+    private sealed record IterationSnapshot(IReadOnlyList<IterationRow> Rows, string Engine, string InfoLine);
+    private readonly Dictionary<string, IterationSnapshot> iterationsByFen = new();
+
+    // Prefer what the running engine reports; before it is up, the def's option keys give
+    // the same answer (LogLiveStats is what enables the MCTS views in the first place).
+    private bool ShowIterationPanel =>
+        analysisWithEngine is not null
+            ? !analysisWithEngine.HasLiveStats
+            : Engine?.Options is not null && !Engine.Options.ContainsKey("LogLiveStats");
+
+    private void OnIterationsUpdated((IReadOnlyList<IterationRow> Rows, string Fen) payload)
+    {
+        iterationRows = payload.Rows;
+        iterationFen = payload.Fen;
+        iterationEngine = analysisWithEngine?.EngineIdLabel ?? "";
+        iterationInfoLine = analysisWithEngine?.MainInfoLine ?? "";
+        if (!string.IsNullOrEmpty(payload.Fen))
+        {
+            if (iterationsByFen.Count > 400)
+                iterationsByFen.Clear();
+            iterationsByFen[payload.Fen] = new(iterationRows, iterationEngine, iterationInfoLine);
+        }
+    }
+
     private void OnLiveStatsUpdated((IReadOnlyList<NNValues> Stats, string Fen) payload)
     {
         candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
@@ -868,6 +791,12 @@
         candidatePreferred = cached?.Preferred ?? "";
         candidateSource = cached?.Source ?? "";
         candidateInfoLine = cached?.InfoLine ?? "";
+
+        iterationFen = candidateFen;
+        var cachedIterations = iterationsByFen.GetValueOrDefault(candidateFen);
+        iterationRows = cachedIterations?.Rows ?? new List<IterationRow>();
+        iterationEngine = cachedIterations?.Engine ?? "";
+        iterationInfoLine = cachedIterations?.InfoLine ?? "";
     }
 
     // "Reset board state" = fresh analysis session: without this, positions analyzed
@@ -877,6 +806,7 @@
         analyzedPositions.Clear();
         moveEvals.Clear();
         candidateStatsByFen.Clear();
+        iterationsByFen.Clear();
     }
 
     public async void OnNewFENOnBoard(string newFen)
@@ -1072,6 +1002,7 @@
     {
         if (firstRender)
         {
+            boardSizePx = Math.Clamp(SettingsService.Settings.BoardSizeFor("single-analysis"), 360, 900);
             chessModule = await JsInteropService.ImportModuleAsync(JS);
             keyContext = HotKeys.CreateContext()
                 .Add(ModKey.Ctrl, Key.ArrowRight, (() => NextPGNGame()), "Next game")

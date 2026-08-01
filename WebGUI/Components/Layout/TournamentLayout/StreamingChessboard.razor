@@ -7,24 +7,44 @@
 @inject NotifierService Notifier
 @inject ILogger<StreamingChessboard> Logger
 @inject BoardThemeService ThemeService
+@inject GlobalSettingsService SettingsService
 
 <MudGrid Justify="Justify.Center">
 	<MudItem sm=12>
 		<div class="mt-3 streaming-board" style="height:100%;">
+			@if (ShowSizeSlider)
+			{
+				@* Hidden until the board is hovered: nothing must sit on screen during a
+				   broadcast. It keeps its space while hidden, so revealing it shifts nothing. *@
+				<div class="sb-size-row">
+					<span class="sb-size-label">Board</span>
+					<input class="sb-size-slider" type="range" min="320" max="900" step="20"
+						   @bind="boardSizePx" @bind:after="SaveBoardSize"
+						   title="@(boardSizePx <= 0 ? "Board size: fill column" : $"Board size: {boardSizePx}px")" />
+					<button class="sb-size-reset" @onclick="ResetBoardSize" title="Back to filling the column">auto</button>
+				</div>
+			}
 			@* Inner row sizes to its content (the square board), so the stretched bar
 			   matches the board height exactly — the outer div's height:100% would
 			   otherwise stretch the bar past the board's bottom edge. *@
-			<div style="display:flex; gap:6px; align-items:stretch;">
+			<div style="display:flex; gap:6px; align-items:stretch; justify-content:center;">
 				@if (ShowEvalBar)
 				{
 					<EvalBar Cp="@EvalCp" Mate="@EvalMate" />
 				}
-				<div style="flex:1 1 auto; min-width:0;">
+				<div style="@BoardBoxStyle">
 					<EbChessboard Fen="@(string.IsNullOrEmpty(fen) ? startPos : fen)"
 								  SizePx="null"
 								  LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
 								  Arrows="@BoardArrows" Labels="@BoardLabels" />
 				</div>
+				@if (boardSizePx > 0 && ShowEvalBar)
+				{
+					@* Balances the eval bar so the board itself is centred, not the pair.
+					   Only when the board has a fixed size — in fill-the-column mode the
+					   board takes the remaining width and there is nothing to balance. *@
+					<div style="flex:0 0 16px;"></div>
+				}
 			</div>
 		</div>
 	</MudItem>
@@ -96,6 +116,35 @@
 	[Parameter] public bool ShowMoveList { get; set; } = true;
 	/// <summary>Vertical eval bar beside the board (white perspective; the streaming board never flips).</summary>
 	[Parameter] public bool ShowEvalBar { get; set; }
+	/// <summary>Hover-revealed board-size slider. Off by default so embedded/feed uses stay bare.</summary>
+	[Parameter] public bool ShowSizeSlider { get; set; }
+	/// <summary>Raised after the size changed — the host re-measures the board to resize the
+	/// move list, which is sized from the board's rendered height.</summary>
+	[Parameter] public EventCallback OnBoardSizeChanged { get; set; }
+
+	// 0 = fill the column, i.e. exactly the behaviour before the slider existed.
+	private int boardSizePx;
+
+	// Fixed width when set, otherwise the original fill-the-row flex. max-width keeps a
+	// too-large value from overflowing a narrow column.
+	private string BoardBoxStyle => boardSizePx > 0
+		? $"flex:0 1 {boardSizePx}px; width:{boardSizePx}px; max-width:100%; min-width:0;"
+		: "flex:1 1 auto; min-width:0;";
+
+	private async Task SaveBoardSize()
+	{
+		var settings = SettingsService.Settings;
+		settings.TournamentBoardSizePx = boardSizePx;
+		SettingsService.Save(settings);
+		if (OnBoardSizeChanged.HasDelegate)
+			await OnBoardSizeChanged.InvokeAsync();
+	}
+
+	private Task ResetBoardSize()
+	{
+		boardSizePx = 0;
+		return SaveBoardSize();
+	}
 	[Parameter] public double? EvalCp { get; set; }
 	[Parameter] public int? EvalMate { get; set; }
 	[Parameter] public string OpeningName { get; set; }
@@ -391,6 +440,8 @@
 	protected override void OnInitialized()
 	{
 		Notifier.IsFullScreenRequested += OnFullScreenRequested;
+		var saved = SettingsService.Settings.TournamentBoardSizePx;
+		boardSizePx = saved <= 0 ? 0 : Math.Clamp(saved, 320, 900);
 		fen = startPos;
 	}
 

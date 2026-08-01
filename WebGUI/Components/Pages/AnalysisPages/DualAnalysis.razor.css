@@ -66,12 +66,17 @@
     padding: 4px 10px;
 }
 
-/* Main Grid Layout - 3 columns for dual engines */
+/* Main Grid Layout - 3 columns for dual engines.
+   Middle track is content-sized so the board keeps its slider size when the window is
+   resized; the 380px floor covers windows too narrow for the chosen size. */
 .dual-analysis .da-main {
     display: grid;
-    grid-template-columns: minmax(320px, 1fr) minmax(380px, 1.1fr) minmax(320px, 1fr);
+    grid-template-columns: minmax(320px, 700px) minmax(380px, auto) minmax(320px, 700px);
     gap: 20px;
     align-items: start;
+    /* Both side columns are engine panels, so an uncapped 1fr stretches two of them on a
+       wide screen. Capped they stop filling the window, hence the centring. */
+    justify-content: center;
 }
 
 /* Card Styles */
@@ -595,11 +600,10 @@
     color: rgba(255, 255, 255, 0.4);
 }
 
-/* Chessboard styling override for dark theme */
+/* Width and aspect ratio come from ModernChessboard, which sizes the board from the
+   slider (--mcb-board-size). The 480px cap that used to live here predated the slider and
+   left the centre column sized for the chosen value while the board stayed behind it. */
 .dual-analysis ::deep .chessboard-root {
-    width: 100%;
-    max-width: 480px;
-    aspect-ratio: 1 / 1;
     margin: 0 auto;
 }
 

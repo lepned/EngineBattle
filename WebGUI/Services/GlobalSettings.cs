@@ -38,6 +38,33 @@ public class GlobalSettings
     // when the user flips the in-panel toggle; applied only for engines with LogLiveStats.
     public Dictionary<string, bool> ShowLiveMoveStatsPanel { get; set; } = new();
 
+    // Height in px of the iteration-log table (the scrolling part only), set with the slider
+    // on the card itself. No settings UI — how many depths you want in view is a per-user
+    // habit, not a configuration decision.
+    public int IterationLogHeight { get; set; } = 200;
+
+    // Iteration log: show the Nodes/T columns as per-iteration cost instead of totals.
+    public bool IterationLogPerIteration { get; set; }
+    public int CandidateMovesHeight { get; set; } = 320;
+
+    // Board width in px on the analysis pages (360-900), set with the slider above the
+    // board. The board holds this size while the window is resized — the side panels
+    // absorb the change — and only shrinks below it when the column can no longer fit it.
+    // Used as the default; pages that carry a key keep their own size below, since a dual
+    // board with two engine panels wants a different size than a single one.
+    public int BoardSizePx { get; set; } = 700;
+
+    public Dictionary<string, int> BoardSizePxByPage { get; set; } = new();
+
+    /// <summary>Board width for a page key, falling back to the shared default.</summary>
+    public int BoardSizeFor(string key) =>
+        !string.IsNullOrEmpty(key) && BoardSizePxByPage.TryGetValue(key, out var px) ? px : BoardSizePx;
+
+    // Main tournament board width in px. 0 = fill its column, which is what the page did
+    // before the slider existed — kept separate from BoardSizePx because the tournament
+    // layout is a broadcast layout with different needs.
+    public int TournamentBoardSizePx { get; set; }
+
     // Game Review defaults
     public string ReviewSearchMode { get; set; } = "Time";  // Time, Nodes, Depth
     public int ReviewTimePerMove { get; set; } = 1000;

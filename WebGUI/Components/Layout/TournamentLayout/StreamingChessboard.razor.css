@@ -1,0 +1,48 @@
+/* Board-size control. Invisible until the board is hovered — this page is streamed, so
+   nothing may sit permanently on screen. It keeps its space while hidden, so revealing it
+   never shifts the board. */
+.sb-size-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-bottom: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.streaming-board:hover .sb-size-row {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sb-size-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.sb-size-slider {
+    width: 96px;
+    height: 3px;
+    accent-color: rgba(232, 200, 110, 0.75);
+    cursor: pointer;
+}
+
+.sb-size-reset {
+    border: 1px solid rgba(125, 132, 156, 0.35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.62rem;
+    padding: 0.1rem 0.4rem;
+    cursor: pointer;
+}
+
+.sb-size-reset:hover {
+    color: var(--mud-palette-text-primary);
+    border-color: rgba(125, 132, 156, 0.7);
+}

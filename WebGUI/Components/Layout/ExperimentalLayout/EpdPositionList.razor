@@ -1,0 +1,170 @@
+@using WebGUI.Components.Layout
+
+@* Searchable, sortable list of EPD positions — the PgnGameList of the EPD side, shared by
+   SingleAnalysis's right column and the dialog on DualAnalysis. *@
+
+<div class="pgl">
+    <div class="pgl-search">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" value="@SearchString" @oninput="OnSearchInput" placeholder="Search id or move..." />
+    </div>
+
+    <div class="pgl-table-container" style="@(MaxTableHeight is null ? null : $"max-height:{MaxTableHeight}")">
+        <table class="pgl-table">
+            <thead>
+                <tr>
+                    <th class="sortable @SortClass("Nr")" @onclick="@(() => SortBy("Nr"))">Nr</th>
+                    <th class="sortable @SortClass("Id")" @onclick="@(() => SortBy("Id"))">Id</th>
+                    <th class="sortable @SortClass("AM")" @onclick="@(() => SortBy("AM"))">Avoid</th>
+                    <th class="sortable @SortClass("BM")" @onclick="@(() => SortBy("BM"))">Best</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in PageRows)
+                {
+                    var epd = row.Epd;
+                    <tr class="@(IsSelected(epd) ? "selected" : "")" @onclick="@(() => SelectEpd(epd))">
+                        <td>@row.Nr</td>
+                        <td>@(epd.Id?.Value ?? "-")</td>
+                        <td>@(epd.AvoidMove?.Value ?? "-")</td>
+                        <td>@(epd.BestMove?.Value ?? "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @* Paged rather than one long list: a suite can hold 5000 entries, and rendering
+           them all is 20k nodes for the circuit to diff on every keystroke. *@
+        <div class="pgl-pagination">
+            @if (TotalPages > 1)
+            {
+                <div class="pgl-nav-buttons">
+                    <button class="pgl-nav-btn" @onclick="FirstPage" disabled="@(currentPage == 0)" title="First page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="11 17 6 12 11 7"/>
+                            <polyline points="18 17 13 12 18 7"/>
+                        </svg>
+                    </button>
+                    <button class="pgl-nav-btn" @onclick="PreviousPage" disabled="@(currentPage == 0)" title="Previous page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                    </button>
+                    <button class="pgl-nav-btn" @onclick="NextPage" disabled="@(currentPage >= TotalPages - 1)" title="Next page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                    <button class="pgl-nav-btn" @onclick="LastPage" disabled="@(currentPage >= TotalPages - 1)" title="Last page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="13 17 18 12 13 7"/>
+                            <polyline points="6 17 11 12 6 7"/>
+                        </svg>
+                    </button>
+                </div>
+                <select @bind="pageSize" @bind:after="OnPageSizeChanged">
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                </select>
+            }
+            <span class="pgl-pagination-info">
+                @if (TotalPages > 1)
+                {
+                    <text>Page @(currentPage + 1) of @TotalPages · </text>
+                }
+                @FilteredRows.Count positions
+            </span>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<EPDTypes.EPDEntry> EPDs { get; set; } = new();
+    [Parameter] public EventCallback<EPDTypes.EPDEntry> OnEpdSelected { get; set; }
+    [Parameter] public HashSet<EPDTypes.EPDEntry> SelectedItems { get; set; }
+    [Parameter] public string SearchString { get; set; } = "";
+    [Parameter] public EventCallback<string> SearchStringChanged { get; set; }
+    /// <summary>CSS height cap for the scrolling table; null lets the host's layout decide.</summary>
+    [Parameter] public string MaxTableHeight { get; set; }
+
+    // Nr is the position in the file, so it has to be captured before any sorting.
+    private sealed record Row(int Nr, EPDTypes.EPDEntry Epd);
+
+    private string sortColumn = "Nr";
+    private bool sortAscending = true;
+    private int currentPage;
+    private int pageSize = 50;
+
+    private string SortClass(string column) =>
+        sortColumn == column ? (sortAscending ? "sorted-asc" : "sorted-desc") : "";
+
+    private bool IsSelected(EPDTypes.EPDEntry epd) => SelectedItems?.Contains(epd) == true;
+
+    // Filtering and sorting a 5000-entry suite is not free, and the render reads this three
+    // times (page slice, page count, total). Built once and held until something that
+    // changes it happens — paging through does not.
+    private List<Row> filteredCache;
+
+    private List<Row> FilteredRows => filteredCache ??= BuildRows();
+
+    private List<Row> BuildRows()
+    {
+        var rows = (EPDs ?? new()).Select((e, i) => new Row(i + 1, e)).Where(r => Matches(r.Epd, SearchString));
+        rows = sortColumn switch
+        {
+            "Id" => sortAscending ? rows.OrderBy(r => r.Epd.Id?.Value ?? "") : rows.OrderByDescending(r => r.Epd.Id?.Value ?? ""),
+            "AM" => sortAscending ? rows.OrderBy(r => r.Epd.AvoidMove?.Value ?? "") : rows.OrderByDescending(r => r.Epd.AvoidMove?.Value ?? ""),
+            "BM" => sortAscending ? rows.OrderBy(r => r.Epd.BestMove?.Value ?? "") : rows.OrderByDescending(r => r.Epd.BestMove?.Value ?? ""),
+            _ => sortAscending ? rows.OrderBy(r => r.Nr) : rows.OrderByDescending(r => r.Nr)
+        };
+        return rows.ToList();
+    }
+
+    protected override void OnParametersSet() => filteredCache = null;
+
+    private IEnumerable<Row> PageRows => FilteredRows.Skip(currentPage * pageSize).Take(pageSize);
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredRows.Count / (double)pageSize));
+
+    /// <summary>Id, avoid move and best move — public so hosts stepping through positions
+    /// filter the same way the list does.</summary>
+    public static bool Matches(EPDTypes.EPDEntry epd, string search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return true;
+        var term = search.Trim();
+
+        bool Has(string value) => value?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
+
+        return Has(epd.Id?.Value) || Has(epd.AvoidMove?.Value) || Has(epd.BestMove?.Value);
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        SearchString = e.Value?.ToString() ?? "";
+        filteredCache = null;
+        currentPage = 0;   // a narrower filter can leave the current page empty
+        if (SearchStringChanged.HasDelegate) await SearchStringChanged.InvokeAsync(SearchString);
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column) sortAscending = !sortAscending;
+        else { sortColumn = column; sortAscending = true; }
+        filteredCache = null;
+        currentPage = 0;
+    }
+
+    private void OnPageSizeChanged() => currentPage = 0;
+    private void FirstPage() => currentPage = 0;
+    private void PreviousPage() { if (currentPage > 0) currentPage--; }
+    private void NextPage() { if (currentPage < TotalPages - 1) currentPage++; }
+    private void LastPage() => currentPage = TotalPages - 1;
+
+    private Task SelectEpd(EPDTypes.EPDEntry epd) =>
+        OnEpdSelected.HasDelegate ? OnEpdSelected.InvokeAsync(epd) : Task.CompletedTask;
+}

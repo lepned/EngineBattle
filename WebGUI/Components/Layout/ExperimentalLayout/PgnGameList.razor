@@ -1,0 +1,188 @@
+@using WebGUI.Components.Layout
+
+@* Searchable, sortable, paged list of PGN games. Lifted out of SingleAnalysis's right
+   column so the dialog on DualAnalysis — which has no room for a column — can show the
+   same thing instead of a MudTable in a different visual language. *@
+
+<div class="pgl">
+    <div class="pgl-search">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" value="@SearchString" @oninput="OnSearchInput" placeholder="Search for player..." />
+    </div>
+
+    <div class="pgl-table-container" style="@(MaxTableHeight is null ? null : $"max-height:{MaxTableHeight}")">
+        <table class="pgl-table">
+            <thead>
+                <tr>
+                    <th class="sortable @SortClass("GameNumber")" @onclick="@(() => SortBy("GameNumber"))">G#</th>
+                    <th class="sortable @SortClass("Ply")" @onclick="@(() => SortBy("Ply"))">Ply</th>
+                    <th class="sortable @SortClass("Result")" @onclick="@(() => SortBy("Result"))">Result</th>
+                    <th class="sortable @SortClass("Players")" @onclick="@(() => SortBy("Players"))">Players</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var game in PageGames)
+                {
+                    <tr class="@(IsSelected(game) ? "selected" : "")" @onclick="@(() => SelectGame(game))">
+                        <td>@game.GameNumber</td>
+                        <td>@game.Mainline.Count</td>
+                        <td>@Helper.GetResultSummary(game)</td>
+                        <td>@Helper.ShowPlayersSummary(game)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @* Page controls only when there is more than one page — the game count is worth
+           showing either way. *@
+        <div class="pgl-pagination">
+            @if (TotalPages > 1)
+            {
+                <div class="pgl-nav-buttons">
+                    <button class="pgl-nav-btn" @onclick="FirstPage" disabled="@(currentPage == 0)" title="First page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="11 17 6 12 11 7"/>
+                            <polyline points="18 17 13 12 18 7"/>
+                        </svg>
+                    </button>
+                    <button class="pgl-nav-btn" @onclick="PreviousPage" disabled="@(currentPage == 0)" title="Previous page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                    </button>
+                    <button class="pgl-nav-btn" @onclick="NextPage" disabled="@(currentPage >= TotalPages - 1)" title="Next page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                    <button class="pgl-nav-btn" @onclick="LastPage" disabled="@(currentPage >= TotalPages - 1)" title="Last page">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="13 17 18 12 13 7"/>
+                            <polyline points="6 17 11 12 6 7"/>
+                        </svg>
+                    </button>
+                </div>
+                <select @bind="pageSize" @bind:after="OnPageSizeChanged">
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="250">250</option>
+                </select>
+            }
+            <span class="pgl-pagination-info">
+                @if (TotalPages > 1)
+                {
+                    <text>Page @(currentPage + 1) of @TotalPages · </text>
+                }
+                @FilteredGames.Count games
+            </span>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<PGNTypes.PgnGame> Games { get; set; } = new();
+    /// <summary>Raised on row click.</summary>
+    [Parameter] public EventCallback<PGNTypes.PgnGame> OnGameSelected { get; set; }
+    /// <summary>Rows to mark as selected. Optional.</summary>
+    [Parameter] public HashSet<PGNTypes.PgnGame> SelectedItems { get; set; }
+    /// <summary>Player filter, two-way bound so the host can keep it across reopens.</summary>
+    [Parameter] public string SearchString { get; set; } = "";
+    [Parameter] public EventCallback<string> SearchStringChanged { get; set; }
+    /// <summary>CSS height cap for the scrolling table. Null lets the host's layout decide,
+    /// which is what the inline column does; the dialog passes a viewport-relative value.</summary>
+    [Parameter] public string MaxTableHeight { get; set; }
+
+    private string sortColumn = "GameNumber";
+    private bool sortAscending = true;
+    private int currentPage;
+    private int pageSize = 25;
+
+    private string SortClass(string column) =>
+        sortColumn == column ? (sortAscending ? "sorted-asc" : "sorted-desc") : "";
+
+    private bool IsSelected(PGNTypes.PgnGame game) => SelectedItems?.Contains(game) == true;
+
+    // Filtering and sorting is not free on a 4000-game PGN, and the render reads this three
+    // times (page slice, page count, total). Built once and held until something that
+    // changes it happens — paging through does not.
+    private List<PGNTypes.PgnGame> filteredCache;
+
+    private List<PGNTypes.PgnGame> FilteredGames => filteredCache ??= BuildFiltered();
+
+    protected override void OnParametersSet() => filteredCache = null;
+
+    private List<PGNTypes.PgnGame> BuildFiltered()
+    {
+        {
+            var filtered = (Games ?? new()).Where(FilterFunc);
+            return (sortColumn switch
+            {
+                "GameNumber" => sortAscending ? filtered.OrderBy(g => g.GameNumber) : filtered.OrderByDescending(g => g.GameNumber),
+                "Ply" => sortAscending ? filtered.OrderBy(g => g.Mainline.Count) : filtered.OrderByDescending(g => g.Mainline.Count),
+                "Result" => sortAscending ? filtered.OrderBy(g => Helper.GetResultSummary(g)) : filtered.OrderByDescending(g => Helper.GetResultSummary(g)),
+                "Players" => sortAscending ? filtered.OrderBy(g => Helper.ShowPlayersSummary(g)) : filtered.OrderByDescending(g => Helper.ShowPlayersSummary(g)),
+                _ => filtered
+            }).ToList();
+        }
+    }
+
+    private IEnumerable<PGNTypes.PgnGame> PageGames => FilteredGames.Skip(currentPage * pageSize).Take(pageSize);
+
+    private bool FilterFunc(PGNTypes.PgnGame game) => Matches(game, SearchString);
+
+    /// <summary>Players first, then the Eval and Move tags tournament PGNs carry. Public so
+    /// hosts stepping through the same filtered set (next/previous game) agree with the list.</summary>
+    public static bool Matches(PGNTypes.PgnGame game, string search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return true;
+        var term = search.Trim();
+
+        bool Has(string value) => value?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
+
+        if (Has(game.GameMetaData.White) || Has(game.GameMetaData.Black)) return true;
+
+        var eval = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Eval");
+        if (eval != null && Has(eval.Value)) return true;
+
+        var move = game.GameMetaData.OtherTags?.FirstOrDefault(x => x.Key == "Move");
+        if (move != null && Has(move.Value)) return true;
+
+        return false;
+    }
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredGames.Count / (double)pageSize));
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        SearchString = e.Value?.ToString() ?? "";
+        filteredCache = null;
+        currentPage = 0;   // a narrower filter can leave the current page empty
+        if (SearchStringChanged.HasDelegate) await SearchStringChanged.InvokeAsync(SearchString);
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+            sortAscending = !sortAscending;
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        filteredCache = null;
+        currentPage = 0;
+    }
+
+    private void OnPageSizeChanged() => currentPage = 0;
+    private void FirstPage() => currentPage = 0;
+    private void PreviousPage() { if (currentPage > 0) currentPage--; }
+    private void NextPage() { if (currentPage < TotalPages - 1) currentPage++; }
+    private void LastPage() => currentPage = TotalPages - 1;
+
+    private Task SelectGame(PGNTypes.PgnGame game) =>
+        OnGameSelected.HasDelegate ? OnGameSelected.InvokeAsync(game) : Task.CompletedTask;
+}

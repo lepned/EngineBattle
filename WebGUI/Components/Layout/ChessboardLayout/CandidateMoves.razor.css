@@ -34,6 +34,20 @@
     grid-template-columns: 3.6rem 1fr 4.6rem 3.4rem 3.6rem 3.6rem 3.9rem;
 }
 
+/* Standalone card variant: the table scrolls itself so its height can be set with the
+   legend slider. Hosts that cap the whole panel (engine panel, broadcast) don't set this. */
+.cm-grid.scroll {
+    max-height: var(--cm-max-h, 320px);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(125, 132, 156, 0.45) transparent;
+}
+
+.cm-grid.scroll::-webkit-scrollbar { width: 6px; }
+.cm-grid.scroll::-webkit-scrollbar-thumb { background: rgba(125, 132, 156, 0.45); border-radius: 3px; }
+.cm-grid.scroll::-webkit-scrollbar-track { background: transparent; }
+
 .cm-row { display: contents; }
 .cm-row > * { padding: 0.24rem 0; }
 .cm-row:hover > * { background: rgba(255, 255, 255, 0.04); }
@@ -171,6 +185,21 @@
     margin-right: 0.35rem;
     vertical-align: -1px;
 }
+
+/* Height slider — muted until hovered; a preference, not part of the reading. */
+.cm-legend .cm-height {
+    margin-left: auto;
+    width: 84px;
+    height: 3px;
+    accent-color: rgba(232, 200, 110, 0.75);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+}
+
+.cm-legend .cm-height:hover { opacity: 1; }
+
+.cm-legend .cm-copy.with-slider { margin-left: 0.6rem; }
 
 .cm-legend .cm-copy {
     margin-left: auto;

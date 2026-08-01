@@ -1,3 +1,30 @@
+/* Always reserve the scrollbar gutter. Without it, content that grows past the viewport
+   toggles the vertical scrollbar, the viewport narrows by the scrollbar width, and every
+   fr-based grid column reflows — visible as a jitter on pages with a fluid chessboard. */
+html {
+    scrollbar-gutter: stable;
+}
+
+/* Tournament grid with an explicitly sized main board: the board column takes the width
+   the board needs and the two side columns share the rest, instead of all three being a
+   fixed third. Only from MudBlazor's md breakpoint up — below it the grid stacks the
+   columns, and that must keep working. Both classes are absent until a size is chosen. */
+@media (min-width: 960px) {
+    .mud-grid-item.tp-col-board {
+        flex: 0 0 var(--tp-board-col, 33.3333%);
+        max-width: none;
+    }
+
+    /* min-width:0 is what keeps the board centred. Without it each side column refuses to
+       shrink below its own min-content, and the wide standings/crosstable on the left wins
+       against the charts on the right — pushing the board off centre as it grows. */
+    .mud-grid-item.tp-col-flex {
+        flex: 1 1 0;
+        max-width: none;
+        min-width: 0;
+    }
+}
+
 /* Prevent drawer header from being compressed on short viewports;
    nav menu scrolls independently when viewport is short */
 .mud-drawer-content {
@@ -632,3 +659,174 @@ a, .btn-link {
       color: #888;
     }
 }
+
+/* ── Shared game/position list (PgnGameList, EpdPositionList) ──────────────────
+   Global rather than scoped because two components render the same markup and Blazor
+   scoped CSS cannot be shared between them. */
+/* Ported from SingleAnalysis's right column so the same list can live in a dialog without
+   changing appearance. The palette is spelled out rather than inherited, because the
+   dialog host has no --sa-* variables. */
+.pgl {
+    --pgl-text: #e9eef7;
+    --pgl-muted: #a7b0c3;
+    --pgl-border: rgba(125, 132, 156, 0.18);
+    --pgl-card: rgba(30, 33, 44, 0.92);
+    --pgl-input-bg: rgba(19, 22, 31, 0.75);
+    --pgl-accent: #5ee4c3;
+
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+}
+
+/* ── Search ── */
+.pgl-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--pgl-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 12px;
+    padding: 10px 14px;
+}
+
+.pgl-search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--pgl-text);
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.pgl-search input::placeholder { color: var(--pgl-muted); }
+
+.pgl-search .icon {
+    width: 18px;
+    height: 18px;
+    color: var(--pgl-muted);
+}
+
+/* ── Table ── */
+.pgl-table-container {
+    flex: 1 1 auto;
+    min-height: 160px;
+    overflow-y: auto;
+    border-radius: 14px;
+    border: 1px solid var(--pgl-border);
+    background: var(--pgl-card);
+}
+
+.pgl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.pgl-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.pgl-table th {
+    background: linear-gradient(180deg, rgba(60, 65, 80, 0.95), rgba(45, 50, 65, 0.95));
+    backdrop-filter: blur(8px);
+    padding: 6px 8px;
+    text-align: left;
+    font-weight: 500;
+    color: var(--pgl-muted);
+    border-bottom: 1px solid var(--pgl-border);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    line-height: 1.2;
+}
+
+.pgl-table th:hover { color: var(--pgl-text); }
+.pgl-table th.sortable::after { content: ' \2195'; opacity: 0.5; }
+.pgl-table th.sorted-asc::after { content: ' \2191'; opacity: 1; }
+.pgl-table th.sorted-desc::after { content: ' \2193'; opacity: 1; }
+
+.pgl-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(125, 132, 156, 0.1);
+    color: var(--pgl-text);
+    line-height: 1.4;
+}
+
+.pgl-table tbody tr {
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.pgl-table tbody tr:hover { background: rgba(94, 228, 195, 0.1); }
+.pgl-table tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.15); }
+.pgl-table tbody tr:nth-child(even):hover { background: rgba(94, 228, 195, 0.12); }
+
+.pgl-table tbody tr.selected {
+    background: rgba(94, 228, 195, 0.2);
+    border-left: 3px solid var(--pgl-accent);
+}
+
+/* ── Pagination ── */
+.pgl-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--pgl-border);
+    background: rgba(30, 33, 44, 0.8);
+    border-radius: 0 0 14px 14px;
+}
+
+.pgl-nav-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.pgl-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(94, 228, 195, 0.1);
+    border: 1px solid rgba(94, 228, 195, 0.25);
+    border-radius: 8px;
+    color: var(--pgl-accent);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pgl-nav-btn:hover {
+    background: rgba(94, 228, 195, 0.2);
+    border-color: var(--pgl-accent);
+    transform: scale(1.05);
+}
+
+.pgl-nav-btn:active { transform: scale(0.95); }
+.pgl-nav-btn:disabled { opacity: 0.4; cursor: default; transform: none; }
+.pgl-nav-btn .icon { width: 18px; height: 18px; }
+
+.pgl-pagination select {
+    background: var(--pgl-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 8px;
+    color: var(--pgl-text);
+    padding: 6px 10px;
+    font-size: 0.82rem;
+}
+
+.pgl-pagination-info {
+    font-size: 0.82rem;
+    color: var(--pgl-muted);
+}
+
+/* ── Scrollbar ── */
+.pgl-table-container::-webkit-scrollbar { width: 8px; }
+.pgl-table-container::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
+.pgl-table-container::-webkit-scrollbar-thumb { background: rgba(125, 132, 156, 0.4); border-radius: 4px; }
+.pgl-table-container::-webkit-scrollbar-thumb:hover { background: rgba(125, 132, 156, 0.6); }

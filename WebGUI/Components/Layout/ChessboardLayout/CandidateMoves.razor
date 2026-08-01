@@ -1,5 +1,7 @@
 @using System.Globalization
+@using WebGUI.Services
 @inject IJSRuntime JS
+@inject GlobalSettingsService SettingsService
 
 @* Candidate-move panel for MCTS engines (Lc0/Ceres verbose move stats): top root moves
    by visits, each row showing search share (bar) vs policy prior (tick), nodes, Q and
@@ -11,7 +13,8 @@
 }
 else
 {
-    <div class="cm-grid @(Detailed ? "detailed" : null)">
+    <div class="cm-grid @(Detailed ? "detailed" : null) @(ShowHeightControl ? "scroll" : null)"
+         style="@GridStyle">
         <div class="cm-h">Move</div>
         <div class="cm-h">Search share · <span class="cm-h-prior">▏</span>prior</div>
         <div class="cm-h cm-right">Nodes</div>
@@ -91,7 +94,13 @@ else
         {
             <span>@preferredMark = engine choice (first PV move)</span>
         }
-        <button class="cm-copy" @onclick="CopyToClipboard"
+        @if (ShowHeightControl)
+        {
+            <input class="cm-height" type="range" min="120" max="640" step="20"
+                   @bind="tableHeight" @bind:after="SaveHeight"
+                   title="@($"Table height: {tableHeight}px")" />
+        }
+        <button class="cm-copy @(ShowHeightControl ? "with-slider" : null)" @onclick="CopyToClipboard"
                 title="Copy move stats as text (paste into a Discord code block)">@copyLabel</button>
     </div>
 }
@@ -117,6 +126,24 @@ else
     /// <summary>Latest raw UCI info line(s), top MultiPV first (depth/score/PV + engine
     /// extras) — appended verbatim at the end of the copy output. Not rendered in the table.</summary>
     [Parameter] public string RawInfoLine { get; set; }
+    /// <summary>Adds a height slider to the legend and lets the table scroll itself instead
+    /// of relying on the host to cap it. For the standalone card below the board; hosts that
+    /// already scroll the panel (engine panel, broadcast) leave it off.</summary>
+    [Parameter] public bool ShowHeightControl { get; set; }
+
+    // Persisted so the chosen height survives navigation and restarts, like the iteration log.
+    private int tableHeight = 320;
+    private string GridStyle => ShowHeightControl ? $"--cm-max-h:{tableHeight}px" : null;
+
+    protected override void OnInitialized() =>
+        tableHeight = Math.Clamp(SettingsService.Settings.CandidateMovesHeight, 120, 640);
+
+    private void SaveHeight()
+    {
+        var settings = SettingsService.Settings;
+        settings.CandidateMovesHeight = tableHeight;
+        SettingsService.Save(settings);
+    }
 
     private const string preferredMark = "*";
 

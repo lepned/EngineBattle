@@ -118,12 +118,16 @@
                          OnNewEngineLoaded="OnNewEngineLoaded" />
         </div>
 
-        @* ── Center: Board + Annotated Move List ── *@
-        <div class="gr-center">
+        @* ── Center: Board + Annotated Move List ──
+           The board size rides on the container so the below-board grid, which mirrors the
+           board + move-list columns, stays aligned with it. *@
+        <div class="gr-center" style="@($"--mcb-board-size:{boardSizePx}px")">
             <ModernChessboard @ref="chessBoardRazor" FENposition="@fen" ShowFenField="false"
                         ShowChessNavButtons="true" ShowMoveList="true"
                         MakeMoveListClickable="true"
                         MoveListPosition="MoveListPosition.Right"
+                        ShowSizeSlider="true" SizeKey="game-review"
+                        OnBoardSizeChanged="@(n => { boardSizePx = n; StateHasChanged(); })"
                         MoveEvals="@moveEvals"
                         MoveAnnotations="@moveAnnotations"
                         ChessBoard="@board"
@@ -262,6 +266,8 @@
     // ── State ──
     private Chess.Board board = new();
     private ModernChessboard chessBoardRazor;
+    // Mirrors the board's own size setting; only used to keep the below-board grid aligned.
+    private int boardSizePx = 700;
     private string fen = Chess.startPos;
     private string openingName = "";
     private string openingECO = "";
@@ -363,6 +369,7 @@
 
             // Load Game Review defaults from settings
             var s = SettingsService.Settings;
+            boardSizePx = Math.Clamp(s.BoardSizeFor("game-review"), 360, 900);
             exportFolder = s.PgnOutputFolder;
             searchMode = s.ReviewSearchMode switch
             {

@@ -72,9 +72,10 @@
     overflow-y: auto;
 }
 
+/* Mirrors the board + move-list grid above it, so it must follow the same board size. */
 .gr-below-board {
     display: grid;
-    grid-template-columns: minmax(0, 700px) minmax(0, 280px);
+    grid-template-columns: minmax(0, var(--mcb-board-size, 700px)) minmax(0, 280px);
     gap: 8px;
     align-items: start;
     justify-content: start;

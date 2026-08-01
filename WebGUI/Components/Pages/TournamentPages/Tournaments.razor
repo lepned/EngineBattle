@@ -56,7 +56,7 @@
 
 	<MudGrid Class="pl-3 justify-content-between">
 
-		<MudItem sm="12" md="4" lg="4">
+		<MudItem sm="12" md="4" lg="4" Class="@SideColumnClass">
 
 			<MudItem Class="lhs mb-3 d-flex" lg="12">
 				<MudItem lg="1">
@@ -219,13 +219,18 @@
 
 		</MudItem>
 
-		<MudItem Class="mt-5" sm="12" md="4" lg="4" xl="4" xxl="4">
+		@* The board column follows the board's chosen width (see BoardColumnStyle); the two
+		   side columns then share whatever is left. Both are inert until a size is set. *@
+		<MudItem Class="@($"mt-5 {BoardColumnClass}")" Style="@BoardColumnStyle"
+				 sm="12" md="4" lg="4" xl="4" xxl="4">
 			<StreamingChessboard @ref="streamingBoard" ShowMoveList=true OpeningMoves="@openingMoves" MoveListHeight=@moveListHeight
 								 MoveHistory="@moveHistory" OpeningName="@currentOpeningInPlay" MoveListFontSize="@layoutOptions.Fonts.MoveListFont"
 								 OpeningSansForDeviation="@openingSansForDeviation"
 								 ReferenceSansForDeviation="@referenceSansForDeviation"
 								 ShowCopyFen="@FeedMode"
 								 ShowEvalBar="@SettingsService.Settings.ShowEvalBar"
+								 ShowSizeSlider="true"
+								 OnBoardSizeChanged="OnBoardSizeChanged"
 								 EvalCp="@tournamentEvalCp" EvalMate="@tournamentEvalMate">
 			</StreamingChessboard>
 			<div>
@@ -243,7 +248,7 @@
 
 		</MudItem>
 
-		<MudItem sm="12" md="4" lg="4">
+		<MudItem sm="12" md="4" lg="4" Class="@SideColumnClass">
 
 			<MudItem hidden="@(!runWithLogLiveStats)" Class="my-5">
 				<div style=@liveChartStyle class="chart rhs" @ref=livePlotReference></div>
@@ -2734,6 +2739,48 @@
 				await chessModule.InvokeVoidAsync("resizePlot", chart);
 			}
 		});
+	}
+
+	// ── Main board sizing ────────────────────────────────────────────────────────
+	// Zero (the default) leaves the three-column grid exactly as it always was; the
+	// classes and the width variable below only take effect once a size is chosen, and
+	// the board's "auto" button puts it back.
+	private int TournamentBoardSize => SettingsService.Settings.TournamentBoardSizePx;
+	private bool BoardSizePinned => TournamentBoardSize > 0;
+	private string SideColumnClass => BoardSizePinned ? "tp-col-flex" : "";
+	private string BoardColumnClass => BoardSizePinned ? "tp-col-board" : "";
+
+	// Column width = board + eval bar and its gap + the grid item's own padding. Pinning
+	// the width rather than letting the column size to content matters: the PV lines under
+	// the board are long single lines, and their max-content would blow the column open.
+	private string BoardColumnStyle =>
+		BoardSizePinned
+			? $"--tp-board-col:{TournamentBoardSize + (SettingsService.Settings.ShowEvalBar ? 22 : 0) + 24}px"
+			: null;
+
+	// The columns beside the board changed width: heights must be re-measured, and Plotly
+	// has to be told its containers moved — the charts do not reflow on their own. Hidden
+	// charts are skipped: resizing one measures a zero-size container and breaks it.
+	private async Task OnBoardSizeChanged()
+	{
+		// Re-render first: the column width lives on this component, and measuring before
+		// it has been applied would size the move list against the old grid.
+		await InvokeAsync(StateHasChanged);
+		await OnBrowserResize();
+		if (chessModule is null) return;
+		await Task.Delay(50);
+		var visible = new List<ElementReference>();
+		if (runWithLogLiveStats) { visible.Add(livePlotReference); visible.Add(liveQPlotReference); }
+		if (ShowEval()) visible.Add(evalChart);
+		if (ShowTime()) visible.Add(timeUsageChart);
+		if (ShowNpsSpeedChart()) visible.Add(npsChart);
+		if (ShowEpsSpeedChart()) visible.Add(epsChart);
+		if (ShowNodes()) visible.Add(nodesChart);
+		foreach (var chart in visible)
+		{
+			try { await chessModule.InvokeVoidAsync("resizePlot", chart); }
+			catch (Exception ex) { logger.LogDebug("Chart resize after board resize failed: {Message}", ex.Message); }
+		}
 	}
 
 	private async Task OnSettingAdded(ChessConfigurationService config)

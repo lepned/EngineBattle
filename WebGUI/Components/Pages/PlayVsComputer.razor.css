@@ -138,9 +138,11 @@
     box-shadow: 0 0 0 2px rgba(255, 180, 94, 0.12);
 }
 
+/* Board column follows the chosen board size so the results panel absorbs a resize,
+   the same way the analysis pages do. */
 .play-vs-computer .pvc-main {
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr);
+    grid-template-columns: minmax(420px, auto) minmax(0, 0.9fr);
     gap: 20px;
 }
 

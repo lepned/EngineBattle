@@ -12,10 +12,12 @@
     align-items: center;
 }
 
-/* ── Right mode: board + move list side by side ── */
+/* ── Right mode: board + move list side by side ──
+   The board column follows the chosen board size rather than a fixed cap, so resizing
+   the window moves the surrounding panels instead of the board. */
 .mcb-right-layout {
     display: grid;
-    grid-template-columns: minmax(0, 700px) minmax(0, 280px);
+    grid-template-columns: minmax(0, var(--mcb-board-size, 700px)) minmax(0, 280px);
     gap: 8px;
     align-items: stretch;
     justify-content: start;
@@ -40,7 +42,7 @@
 }
 
 .modern-chessboard .mcb-board-wrapper.mcb-with-left .chessboard-root {
-    flex: 1 1 auto;
+    flex: 0 1 var(--mcb-board-size, 700px);
     min-width: 0;
 }
 
@@ -50,12 +52,50 @@
     align-items: stretch;
 }
 
-/* ── Board sizing (self-contained) ── */
+/* ── Board sizing (self-contained) ──
+   The chosen size wins; max-width only kicks in when the column genuinely cannot hold
+   it, so the board degrades gracefully on a narrow window instead of overflowing. */
 .modern-chessboard ::deep .chessboard-root {
-    width: 100%;
-    max-width: 700px;
+    width: var(--mcb-board-size, 700px);
+    max-width: 100%;
     aspect-ratio: 1 / 1;
     height: auto;
+}
+
+/* ── Board size slider ──
+   Hidden until the board is hovered, same as the tournament board: these pages get
+   streamed and screenshotted too, and a control nobody is touching should not be in the
+   picture. It keeps its space while hidden, so revealing it shifts nothing. */
+.modern-chessboard .mcb-size-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+    padding-bottom: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.modern-chessboard .mcb-board-area:hover .mcb-size-row {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modern-chessboard .mcb-size-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.modern-chessboard .mcb-size-slider {
+    width: 96px;
+    height: 3px;
+    accent-color: rgba(232, 200, 110, 0.75);
+    cursor: pointer;
 }
 
 .modern-chessboard ::deep .board-container-41a68,

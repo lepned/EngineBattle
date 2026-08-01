@@ -14,11 +14,23 @@
 @inject ILogger<ModernChessboard> logger
 @inject OverlaySetting OverlaySetting
 @inject BoardThemeService ThemeService
+@inject GlobalSettingsService SettingsService
 
 <InputFile id="fileInput" OnChange="@OpenPGNFile" hidden />
 
-<div class="modern-chessboard @(MoveListPosition == MoveListPosition.Right ? "mcb-right-layout" : "mcb-below-layout")">
+<div class="modern-chessboard @(MoveListPosition == MoveListPosition.Right ? "mcb-right-layout" : "mcb-below-layout")"
+     style="@($"--mcb-board-size:{boardSizePx}px")">
     <div class="mcb-board-area">
+        @if (ShowSizeSlider)
+        {
+            <div class="mcb-size-row">
+                <span class="mcb-size-label">Board</span>
+                <input class="mcb-size-slider" type="range" min="360" max="900" step="20"
+                       @bind="boardSizePx" @bind:after="SaveBoardSize"
+                       title="@($"Board size: {boardSizePx}px")" />
+            </div>
+        }
+
         @* Player bars follow the board orientation: the side rendered at the bottom
            of the flipped board gets the bottom bar. *@
         @if (ShowPlayerInfo)
@@ -279,6 +291,31 @@
     [Parameter] public RenderFragment BoardRight { get; set; }
     /// <summary>Optional content stacked above the move list in Right layout (e.g. an engine widget).</summary>
     [Parameter] public RenderFragment AboveMoveList { get; set; }
+    /// <summary>Shows the board-size slider above the board. The size itself is global, so a
+    /// board on a page without the slider still renders at whatever size was last chosen.</summary>
+    [Parameter] public bool ShowSizeSlider { get; set; }
+    /// <summary>Persistence key for the board size ("single-analysis", "dual-analysis",
+    /// "game-review"). Empty shares the global default — a page with two engine panels
+    /// beside the board wants a different size than one with a single panel.</summary>
+    [Parameter] public string SizeKey { get; set; } = "";
+    /// <summary>Raised when the slider changes the board size — for hosts with sibling
+    /// elements that have to line up with the board column (Game Review's below-board grid).</summary>
+    [Parameter] public EventCallback<int> OnBoardSizeChanged { get; set; }
+
+    // Board width in px, driving --mcb-board-size. Read once on init; the slider writes it back.
+    private int boardSizePx = 700;
+
+    private async Task SaveBoardSize()
+    {
+        var settings = SettingsService.Settings;
+        if (string.IsNullOrEmpty(SizeKey))
+            settings.BoardSizePx = boardSizePx;
+        else
+            settings.BoardSizePxByPage[SizeKey] = boardSizePx;
+        SettingsService.Save(settings);
+        if (OnBoardSizeChanged.HasDelegate)
+            await OnBoardSizeChanged.InvokeAsync(boardSizePx);
+    }
 
     public record MoveAnnotation(string Symbol, string CssClass, string Label, string BestMoveLine);
 
@@ -1031,6 +1068,7 @@
         Notifier.NotifyFenAndMove += OnNotifyMoveAndFen;
         Notifier.NotifyMovesWithId += OnNotifyMoves;
         Notifier.NotifyDisplaySettings += OnNotifyOverlaySettings;
+        boardSizePx = Math.Clamp(SettingsService.Settings.BoardSizeFor(SizeKey), 360, 900);
         fenWithMoves = startPos;
         fen = startPos;
         UpdateVariationsDisplay();

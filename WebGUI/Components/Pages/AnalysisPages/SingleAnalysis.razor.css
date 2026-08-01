@@ -60,11 +60,23 @@
 }
 
 /* Main Grid Layout - 3 columns */
+/* The middle track is content-sized (auto) rather than proportional, so the board keeps
+   the size chosen with its slider and the side panels absorb any window resize. */
 .single-analysis .sa-main {
     display: grid;
-    grid-template-columns: minmax(320px, 1.0fr) minmax(480px, 1.5fr) minmax(280px, 1fr);
+    grid-template-columns: minmax(320px, 600px) minmax(480px, auto) minmax(320px, 420px);
     gap: 20px;
     align-items: start;
+    /* Side columns are capped rather than proportional: on a wide screen an engine panel
+       stretched to 1200px is just whitespace with a chart in it. Once they stop growing
+       the grid no longer fills the window, so centre it. */
+    justify-content: center;
+}
+
+/* No file loaded: the games column is not rendered at all, so its 280px floor is not
+   held back from the board either. */
+.single-analysis .sa-main.sa-two-col {
+    grid-template-columns: minmax(320px, 600px) minmax(480px, auto);
 }
 
 /* Card Styles */
@@ -121,6 +133,19 @@
     cursor: pointer;
     transition: border-color 0.2s ease;
 }
+
+/* The chart controls sit above a chart, not in a form — they do not need the size of a
+   primary input. Scoped here so the overlay picker above the board is untouched. */
+.single-analysis .sa-chart-controls .sa-select,
+.single-analysis .sa-chart-controls .sa-field input {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    border-radius: 8px;
+}
+
+.single-analysis .sa-chart-controls .sa-select { min-width: 118px; }
+.single-analysis .sa-chart-controls .sa-field input { width: 56px; }
+.single-analysis .sa-chart-controls .sa-field label { font-size: 0.68rem; }
 
 .single-analysis .sa-select:focus {
     border-color: var(--sa-accent);
@@ -263,15 +288,13 @@
 /* Candidate-moves panel below the board (broadcast-style live move stats).
    Fixed max height + scroll: top moves visible at a glance, the engine's full
    candidate list reachable by scrolling. */
+/* Both cards that live here scroll their own table and carry a height slider, so the
+   shell must not clip or scroll them a second time. */
 .single-analysis .sa-candidates {
     background: var(--sa-card);
     border-radius: 16px;
     padding: 10px 14px;
     border: 1px solid var(--sa-border);
-    max-height: 320px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(125, 132, 156, 0.45) transparent;
 }
 
 .single-analysis .sa-candidates::-webkit-scrollbar { width: 6px; }
@@ -363,10 +386,58 @@
 }
 
 /* Right Panel - Game List */
+/* Column reaches to the bottom of the viewport so the list inside can take whatever is
+   left after the header. The offset is the distance from the top of the window down to
+   this column — app bar, page padding and toolbar. */
 .single-analysis .sa-right {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    max-height: calc(100vh - 140px);
+    min-height: 0;
+}
+
+/* The list is a child component, so it has to be told to take the leftover height —
+   otherwise it sizes to its content and runs past the bottom of the column. */
+.single-analysis .sa-right ::deep .pgl {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Header of the games column: which file, and the way out of it. */
+.single-analysis .sa-right-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.single-analysis .sa-right-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--sa-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.single-analysis .sa-right-close {
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    line-height: 1;
+    font-size: 1rem;
+    border: 1px solid var(--sa-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sa-muted);
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.single-analysis .sa-right-close:hover {
+    color: var(--sa-text);
+    border-color: rgba(127, 177, 255, 0.45);
 }
 
 .single-analysis .sa-panel-header {
@@ -592,10 +663,114 @@
     opacity: 0.5;
 }
 
+/* Wide screens: the stats card (iteration log or move stats) moves up beside the board
+   instead of below it. Two thresholds, because the space needed depends on whether the
+   games column is open: without it the content is engine panel + board + move list + card,
+   with it there is a fourth column on top of that. Applied positively in both cases rather
+   than applied-then-undone, so nothing has to be reset in between. */
+@media (min-width: 2200px) {
+    /* The board column's floor is the chosen board plus the move list, and the card's
+       minimum is 0 — so when the window is tight it is the card that gives way, not the
+       board. Without this the grid shares the shortfall evenly and the board, having no
+       floor of its own, ends up the smallest thing on screen. */
+    .single-analysis .sa-main.sa-two-col {
+        grid-template-columns: minmax(320px, 600px) minmax(calc(var(--sa-board, 700px) + 720px), auto);
+    }
+
+    .single-analysis .sa-main.sa-two-col .sa-center {
+        display: grid;
+        grid-template-columns: minmax(calc(var(--sa-board, 700px) + 296px), auto) minmax(420px, 700px);
+        /* The overlay bar covers the board column only. Spanning both centred it across
+           board plus card, which reads as sitting to the right of the board. The empty
+           cell beside it lets the card's top line up with the board's. */
+        grid-template-areas:
+            "overlay ."
+            "board   stats"
+            "save    save";
+        align-items: start;
+    }
+
+    .single-analysis .sa-main.sa-two-col .sa-overlay-controls { grid-area: overlay; }
+    .single-analysis .sa-main.sa-two-col .sa-board-wrapper { grid-area: board; }
+    .single-analysis .sa-main.sa-two-col .sa-save-section { grid-area: save; }
+
+    .single-analysis .sa-main.sa-two-col .sa-candidates {
+        grid-area: stats;
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .single-analysis .sa-main.sa-two-col .sa-candidates ::deep .il-card {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    /* Beside the board the height is decided by the board, not by the card's own slider —
+       !important beats the inline --il-max-h/--cm-max-h those sliders write. */
+    .single-analysis .sa-main.sa-two-col .sa-candidates ::deep .il-scroll,
+    .single-analysis .sa-main.sa-two-col .sa-candidates ::deep .cm-grid.scroll {
+        max-height: none !important;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+}
+
+/* Games column open: same layout, but it needs the games column's width more of window
+   to fit. Below
+   this the card would take its width out of the middle track, and since the board is
+   max-width:100% it is the board that would shrink. */
+@media (min-width: 2560px) {
+    .single-analysis .sa-main {
+        grid-template-columns: minmax(320px, 600px) minmax(calc(var(--sa-board, 700px) + 720px), auto) minmax(320px, 420px);
+    }
+
+    .single-analysis .sa-main .sa-center {
+        display: grid;
+        grid-template-columns: minmax(calc(var(--sa-board, 700px) + 296px), auto) minmax(420px, 700px);
+        grid-template-areas:
+            "overlay ."
+            "board   stats"
+            "save    save";
+        align-items: start;
+    }
+
+    .single-analysis .sa-main .sa-overlay-controls { grid-area: overlay; }
+    .single-analysis .sa-main .sa-board-wrapper { grid-area: board; }
+    .single-analysis .sa-main .sa-save-section { grid-area: save; }
+
+    .single-analysis .sa-main .sa-candidates {
+        grid-area: stats;
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .single-analysis .sa-main .sa-candidates ::deep .il-card {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .single-analysis .sa-main .sa-candidates ::deep .il-scroll,
+    .single-analysis .sa-main .sa-candidates ::deep .cm-grid.scroll {
+        max-height: none !important;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+}
+
 /* Responsive Design */
 @media (max-width: 1400px) {
     .single-analysis .sa-main {
-        grid-template-columns: minmax(300px, 1fr) minmax(350px, 1.2fr) minmax(250px, 0.9fr);
+        grid-template-columns: minmax(300px, 1fr) minmax(350px, auto) minmax(250px, 0.9fr);
+    }
+
+    .single-analysis .sa-main.sa-two-col {
+        grid-template-columns: minmax(300px, 1fr) minmax(350px, auto);
     }
 }
 
@@ -681,10 +856,9 @@
 }
 
 /* Chessboard styling override for dark theme */
+/* Width and aspect ratio come from ModernChessboard, which sizes the board from the
+   slider (--mcb-board-size). The 550px cap that used to live here predated the slider. */
 .single-analysis ::deep .chessboard-root {
-    width: 100%;
-    max-width: 550px;
-    aspect-ratio: 1 / 1;
     margin: 0 auto;
 }
 
