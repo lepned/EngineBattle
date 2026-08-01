@@ -18,7 +18,7 @@
 				   broadcast. It keeps its space while hidden, so revealing it shifts nothing. *@
 				<div class="sb-size-row">
 					<span class="sb-size-label">Board</span>
-					<input class="sb-size-slider" type="range" min="320" max="900" step="20"
+					<input class="sb-size-slider" type="range" min="500" max="900" step="20"
 						   @bind="boardSizePx" @bind:after="SaveBoardSize"
 						   title="@(boardSizePx <= 0 ? "Board size: fill column" : $"Board size: {boardSizePx}px")" />
 					<button class="sb-size-reset" @onclick="ResetBoardSize" title="Back to filling the column">auto</button>
@@ -441,7 +441,7 @@
 	{
 		Notifier.IsFullScreenRequested += OnFullScreenRequested;
 		var saved = SettingsService.Settings.TournamentBoardSizePx;
-		boardSizePx = saved <= 0 ? 0 : Math.Clamp(saved, 320, 900);
+		boardSizePx = saved <= 0 ? 0 : Math.Clamp(saved, 500, 900);
 		fen = startPos;
 	}
 
