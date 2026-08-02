@@ -16,7 +16,16 @@ else
     <div class="cm-grid @(Detailed ? "detailed" : null) @(ShowHeightControl ? "scroll" : null)"
          style="@GridStyle">
         <div class="cm-h">Move</div>
-        <div class="cm-h">Search share · <span class="cm-h-prior">▏</span>prior</div>
+        <div class="cm-h">
+            @if (policyOnly)
+            {
+                <text>Policy share (P%)</text>
+            }
+            else
+            {
+                <text>Search share · <span class="cm-h-prior">▏</span>prior</text>
+            }
+        </div>
         <div class="cm-h cm-right">Nodes</div>
         @if (Detailed)
         {
@@ -47,7 +56,10 @@ else
                         {
                             <span class="cm-pct" style="left:@OutsideLabelLeft(r)">@PctLabel(r.NShare)</span>
                         }
-                        <div class="cm-prior" style="left:@Pct(r.PShare)" title="@($"prior {r.PShare * 100:0.0}%")"></div>
+                        @if (!policyOnly)
+                        {
+                            <div class="cm-prior" style="left:@Pct(r.PShare)" title="@($"prior {r.PShare * 100:0.0}%")"></div>
+                        }
                     </div>
                 </div>
                 <div class="cm-n">@FormatNodes(r.Nodes)</div>
@@ -86,9 +98,19 @@ else
         }
     </div>
     <div class="cm-legend">
-        <span><i class="sw-top"></i>best move</span>
-        <span><i class="sw-n"></i>visit share (N%)</span>
-        <span><i class="sw-p"></i>policy prior (P%)</span>
+        @if (policyOnly)
+        {
+            @* With one node the search never got past the root, so the highest-policy move
+               is the move the engine plays — the top row is the choice, not a favourite. *@
+            <span><i class="sw-top"></i>engine choice (top policy)</span>
+            <span><i class="sw-p"></i>policy (P%) · no move visited</span>
+        }
+        else
+        {
+            <span><i class="sw-top"></i>best move</span>
+            <span><i class="sw-n"></i>visit share (N%)</span>
+            <span><i class="sw-p"></i>policy prior (P%)</span>
+        }
         <span><i class="sw-w"></i>win <i class="sw-d"></i>draw <i class="sw-l"></i>loss</span>
         @if (!string.IsNullOrEmpty(PreferredLanMove))
         {
@@ -173,6 +195,9 @@ else
 
     // Built once per parameter change — the markup reads it twice (empty check + loop).
     private List<Row> rows = new();
+    /// <summary>No move has been visited, so the panel is showing the policy distribution.
+    /// Set by BuildRows; the markup uses it for the headers and the legend.</summary>
+    private bool policyOnly;
 
     protected override void OnParametersSet() => rows = BuildRows();
 
@@ -183,9 +208,14 @@ else
         var stats = Stats?.Where(s => !string.Equals(s.LANMove?.Trim(), "node", StringComparison.OrdinalIgnoreCase)).ToList();
         if (stats == null || stats.Count == 0) return new();
         var total = stats.Sum(s => Math.Max(0L, s.Nodes));
-        if (total <= 0) return new();
+        // A policy-only run (go nodes 1) spends its single visit on the root, so every move
+        // has N=0. There is nothing to rank by visits, but the policy distribution is the
+        // whole point of such a run — rank and fill the bar by P instead. Bailing out here
+        // used to leave the panel on "waiting for engine move stats" with the data in hand.
+        policyOnly = total <= 0;
         var whiteToMove = !Fen.Contains(" b ");
-        var top = stats.OrderByDescending(s => s.Nodes).Take(MaxRows).ToList();
+        var top = (policyOnly ? stats.OrderByDescending(s => s.P) : stats.OrderByDescending(s => s.Nodes))
+                  .Take(MaxRows).ToList();
 
         var result = new List<Row>(top.Count);
         for (int i = 0; i < top.Count; i++)
@@ -196,7 +226,11 @@ else
             var v = whiteToMove ? s.V : -s.V;
             var hasWdl = TryParseWdl(s.Raw, out var w, out var d, out var l);
             if (hasWdl && !whiteToMove) (w, l) = (l, w);
-            result.Add(new Row(san, i == 0, (double)s.Nodes / total, Math.Clamp(s.P / 100.0, 0, 1),
+            var pShare = Math.Clamp(s.P / 100.0, 0, 1);
+            // The bar shows what ranks the list: visit share normally, policy in a
+            // policy-only run.
+            var barShare = policyOnly ? pShare : (double)s.Nodes / total;
+            result.Add(new Row(san, i == 0, barShare, pShare,
                                s.Nodes, q, v, hasWdl, w * 100, d * 100, l * 100, s));
         }
         return result;
@@ -244,6 +278,8 @@ else
         sb.AppendLine($"FEN: {Fen}");
         if (!string.IsNullOrWhiteSpace(SourceDescription))
             sb.AppendLine(SourceDescription);
+        if (policyOnly)
+            sb.AppendLine("Policy only (no move visited) — ranked by P, top move is the engine's choice");
         sb.AppendLine($"{"Move",-8}{"N%",7}{"P%",7}{"Nodes",9}{"Q",8}{"V",8}  WDL%");
         foreach (var r in rows)
         {
@@ -251,7 +287,10 @@ else
             var q = r.Q.ToString("+0.00;-0.00;0.00", inv);
             var v = r.V.ToString("+0.00;-0.00;0.00", inv);
             var wdl = r.HasWdl ? $"{r.W.ToString("0", inv)}-{r.D.ToString("0", inv)}-{r.L.ToString("0", inv)}" : "-";
-            sb.AppendLine($"{san,-8}{(r.NShare * 100).ToString("0.0", inv),7}{(r.PShare * 100).ToString("0.0", inv),7}{FormatNodes(r.Nodes),9}{q,8}{v,8}  {wdl}");
+            // N% is the bar's share, which in a policy-only run is P — printing it twice
+            // would be misleading, so it goes out as a dash.
+            var nPct = policyOnly ? "-" : (r.NShare * 100).ToString("0.0", inv);
+            sb.AppendLine($"{san,-8}{nPct,7}{(r.PShare * 100).ToString("0.0", inv),7}{FormatNodes(r.Nodes),9}{q,8}{v,8}  {wdl}");
         }
         if (rows.Any(IsPreferred))
             sb.AppendLine($"{preferredMark} = engine choice (first PV move)");
