@@ -430,7 +430,23 @@ module Engine =
         |None -> None            
 
       let mutable lastExitCode : int option = None
+      // Ring buffer: a crash writes its stack last, so keeping the newest lines always
+      // preserves it, while a chatty engine cannot grow this without bound over a long
+      // tournament. Trimmed in blocks because RemoveAt(0) shifts the whole list. Guarded by
+      // stderrLock: the process writes from its stderr callback thread while the game thread
+      // reads the whole buffer in getDiagnostics.
+      let stderrMaxLines = 500
       let stderrBuffer = ResizeArray<string>()
+      let stderrLock = obj()
+      let mutable stderrDropped = 0
+
+      let addStderrLine (line: string) =
+        lock stderrLock (fun () ->
+          stderrBuffer.Add line
+          if stderrBuffer.Count > stderrMaxLines + 100 then
+            let excess = stderrBuffer.Count - stderrMaxLines
+            stderrBuffer.RemoveRange(0, excess)
+            stderrDropped <- stderrDropped + excess)
       
       let setupProcess() =
           let mutable pos = moveBoard.Position
@@ -456,7 +472,7 @@ module Engine =
           engineProcess.ErrorDataReceived.Add(fun args ->
                 try
                     if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
-                        stderrBuffer.Add args.Data
+                        addStderrLine args.Data
                         logDebug $"[STDERR {name}]: {args.Data}"
                 with _ -> ()
             )
@@ -592,20 +608,35 @@ module Engine =
               if not ok then
                   failwith "Engine did not respond to isready command."
           
-          if stderrBuffer.Count > 0 then
-             for err in stderrBuffer do
-               logDebug $"[STDERR {name}]: {err}"
+          // Snapshot before enumerating: the stderr callback thread may be appending.
+          let pending = lock stderrLock (fun () -> stderrBuffer.ToArray())
+          for err in pending do
+            logDebug $"[STDERR {name}]: {err}"
           let withLiveLog = optionsMap.ContainsKey("LogLiveStats")
           getAllDefaultOptions()
           callback(EngineUpdate.Ready (name, withLiveLog))
 
       do
           setupProcess()
-      member _.ErrorOutput = stderrBuffer :> seq<string>
+      /// Snapshot rather than the live list — callers enumerate while the process may still
+      /// be writing.
+      member _.ErrorOutput = lock stderrLock (fun () -> stderrBuffer.ToArray()) :> seq<string>
       member _.LastExitCode = lastExitCode
-      member _.GetDiagnostics() = 
-        sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
-            name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
+      member _.GetDiagnostics() =
+        // Snapshot under the lock, format outside: this is only called when a game was
+        // adjudicated because the engine died, and everything the buffer still holds goes
+        // to the log. The dropped count is reported rather than hidden, so a truncated
+        // history is visible instead of being mistaken for the whole story.
+        let lines, dropped =
+          lock stderrLock (fun () -> stderrBuffer.ToArray(), stderrDropped)
+        let header =
+          sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d%s"
+            name (match lastExitCode with Some c -> string c | None -> "N/A") lines.Length
+            (if dropped > 0 then sprintf " (%d older lines dropped)" dropped else "")
+        if lines.Length = 0 then header
+        else
+          sprintf "%s%s%s stderr:%s%s" header Environment.NewLine name Environment.NewLine
+            (String.concat Environment.NewLine lines)
       member _.GetNoneDefaultSetOptions() = nonDefaultValues        
       member _.GetAllDefaultOptions() = dict
       member this.IsLc0 = isLc0
@@ -910,7 +941,23 @@ module Engine =
               proc.Dispose()
       
       let mutable lastExitCode : int option = None
+      // Ring buffer: a crash writes its stack last, so keeping the newest lines always
+      // preserves it, while a chatty engine cannot grow this without bound over a long
+      // tournament. Trimmed in blocks because RemoveAt(0) shifts the whole list. Guarded by
+      // stderrLock: the process writes from its stderr callback thread while the game thread
+      // reads the whole buffer in getDiagnostics.
+      let stderrMaxLines = 500
       let stderrBuffer = ResizeArray<string>()
+      let stderrLock = obj()
+      let mutable stderrDropped = 0
+
+      let addStderrLine (line: string) =
+        lock stderrLock (fun () ->
+          stderrBuffer.Add line
+          if stderrBuffer.Count > stderrMaxLines + 100 then
+            let excess = stderrBuffer.Count - stderrMaxLines
+            stderrBuffer.RemoveRange(0, excess)
+            stderrDropped <- stderrDropped + excess)
 
       let assignThread () =         
         let task = Task.Factory.StartNew(fun () -> 
@@ -941,7 +988,7 @@ module Engine =
             engine.ErrorDataReceived.Add(fun args ->
                 try
                     if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
-                        stderrBuffer.Add args.Data
+                        addStderrLine args.Data
                         printfn "[STDERR %s]: %s" name args.Data
                 with _ -> ()
             )
@@ -1043,9 +1090,21 @@ module Engine =
           }
 
       //let readAsyncWithTimeout (token: CancellationToken) = proc.StandardOutput.ReadLineAsync(token).AsTask()
-      let getDiagnostics() = 
-        sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
-            name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
+      let getDiagnostics() =
+        // Snapshot under the lock, format outside: this is only called when a game was
+        // adjudicated because the engine died, and everything the buffer still holds goes
+        // to the log. The dropped count is reported rather than hidden, so a truncated
+        // history is visible instead of being mistaken for the whole story.
+        let lines, dropped =
+          lock stderrLock (fun () -> stderrBuffer.ToArray(), stderrDropped)
+        let header =
+          sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d%s"
+            name (match lastExitCode with Some c -> string c | None -> "N/A") lines.Length
+            (if dropped > 0 then sprintf " (%d older lines dropped)" dropped else "")
+        if lines.Length = 0 then header
+        else
+          sprintf "%s%s%s stderr:%s%s" header Environment.NewLine name Environment.NewLine
+            (String.concat Environment.NewLine lines)
 
       let readUciOptions() =
           try
@@ -1166,11 +1225,11 @@ module Engine =
          startProcess ()
          
       member _.GetExitCode() = lastExitCode
-      member _.ErrorOutput = stderrBuffer :> seq<string>
+      /// Snapshot rather than the live list — callers enumerate while the process may still
+      /// be writing.
+      member _.ErrorOutput = lock stderrLock (fun () -> stderrBuffer.ToArray()) :> seq<string>
       member _.LastExitCode = lastExitCode
-      member _.GetDiagnostics() = 
-        sprintf "Engine: %s | ExitCode: %s | Stderr lines: %d" 
-            name (match lastExitCode with Some c -> string c | None -> "N/A") stderrBuffer.Count
+      member _.GetDiagnostics() = getDiagnostics()
       member _.GetVerifiedCommands() = createVerifiedOptions configCmds
       member _.InitCommands = initCommands
       member _.Process = proc

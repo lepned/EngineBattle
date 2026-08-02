@@ -105,6 +105,10 @@ let playWithPondering
   let bPlayer = (findTimeSetting player2)
   let mutable wTime = wPlayer.Fixed
   let mutable bTime = bPlayer.Fixed
+  // Fixed for the game, so looked up once rather than on every clock check — the silent
+  // engine poll runs four times a second and the per-line check far more often than that.
+  let wIncr = tourny.TimeControl.GetIncrementTime(player1.Config.TimeControlID)
+  let bIncr = tourny.TimeControl.GetIncrementTime(player2.Config.TimeControlID)
   let moveOverheadInTicks = tourny.MoveOverhead.Ticks
 
   let msg = $"Initializing players: {player1.Name} vs {player2.Name} with pondering enabled"
@@ -182,9 +186,8 @@ let playWithPondering
   // extracted helper to encapsulate all "PROCESS BESTMOVE" logic
   let processBestMove (currentPlaying: ChessEngine) (currentOpponent: ChessEngine) isWhite (line:string)  = async {
     let duration = moveTimer.Elapsed
-    let incr = tourny.TimeControl.GetIncrementTime(currentPlaying.Config.TimeControlID)
     let useNodes = isNodeLimit currentPlaying
-    let playerTime = if isWhite then wTime.Ticks + incr.Ticks else bTime.Ticks + incr.Ticks
+    let playerTime = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
     let remainingTicks = playerTime - duration.Ticks
     let lostOnTime = (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L)
     let mutable posToCheck = board.Position
@@ -205,8 +208,8 @@ let playWithPondering
 
       // Update clocks
       let (currentTime, timeLeft) =
-        if isWhite then GameHelpers.updateClocks duration wTime incr useNodes
-        else GameHelpers.updateClocks duration bTime incr useNodes
+        if isWhite then GameHelpers.updateClocks duration wTime wIncr useNodes
+        else GameHelpers.updateClocks duration bTime bIncr useNodes
       if isWhite then wTime <- currentTime else bTime <- currentTime
       // Repeating moves-to-go: top up the mover's base time when it completes a period.
       // board is pre-move here (MakeMove happens below), so NextMoveNumber() is the move just made.
@@ -505,6 +508,27 @@ let playWithPondering
                   logger.LogCritical diagnosis
                   result <- res
                   continueGame <- false
+
+              // A silent engine still burns clock. Loss on time is otherwise only checked in
+              // processBestMove, i.e. when a move actually arrives, so a crashed or hung
+              // engine is never adjudicated — the channel poll times out every 250ms and the
+              // loop spins with the clock past zero. Windows Error Reporting holding a
+              // crashed process open while it writes a dump keeps HasExited false for
+              // minutes, which is exactly the window this covers.
+              if continueGame && currentPos = board.Position then
+                  let duration = moveTimer.Elapsed
+                  let useNodes = isNodeLimit currentPlaying
+                  let playerTime = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
+                  let remainingTicks = playerTime - duration.Ticks
+                  if (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L) then
+                      let firstTwo = firstTwoEvals fullEvalList
+                      logger.LogCritical("Engine {Engine} lost on time while sending no output (exited: {Exited}). Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}",
+                                         currentPlaying.Name, currentPlaying.HasExited(),
+                                         (if isWhite then wTime.ToTimeSpan().TotalMilliseconds else bTime.ToTimeSpan().TotalMilliseconds),
+                                         duration.TotalMilliseconds)
+                      logger.LogCritical(currentPlaying.GetDiagnostics())
+                      result <- lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo
+                      continueGame <- false
 
               if currentPos <> board.Position then
                   currentPos <- board.Position
@@ -813,11 +837,37 @@ let playGeneric
                   createResultWithEval player1.Name player2.Name gameMoveList resValue (ResultReason.Disconnected playing.Name) dur firstTwoEvals,
                   $"Player has exited/crashed {playing.Name}"
           logger.LogInformation msg
+          // Exit code and the stderr tail, same as the other crash paths — this branch is
+          // the one a process that dies mid-search actually takes, and it was the only one
+          // not saying why.
+          logger.LogCritical(playing.GetDiagnostics())
           callback(EndOfGame res)
           return res
 
         else
-          return! playEngine playing opponent position
+          // A silent engine still burns clock. The loss-on-time check further down only runs
+          // when a line arrives, so without this a crashed or hung engine is never
+          // adjudicated: the read poll returns null every 250ms and the game recurses
+          // forever with the clock past zero. Windows Error Reporting holding a crashed
+          // process open while it writes a dump keeps HasExited false for minutes, which is
+          // exactly the window this covers.
+          let duration = Stopwatch.GetElapsedTime(moveTimer)
+          let useNodes = isNodeLimit playing
+          let isWhite = playing.Name = player1.Name
+          let playerTime = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
+          let remainingTicks = playerTime - duration.Ticks
+          if (not useNodes) && (remainingTicks + moveOverheadInTicks < 0L) then
+            let firstTwoEvals = firstTwoEvals fullEvalList
+            logger.LogCritical("Engine {Engine} lost on time while sending no output (exited: {Exited}). Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}",
+                               playing.Name, playing.HasExited(),
+                               (if isWhite then wTime.ToTimeSpan().TotalMilliseconds else bTime.ToTimeSpan().TotalMilliseconds),
+                               duration.TotalMilliseconds)
+            let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
+            logger.LogCritical(playing.GetDiagnostics())
+            callback(EndOfGame res)
+            return res
+          else
+            return! playEngine playing opponent position
 
       elif line.StartsWith "info engine" then
         MessagesFromEngine ("Ceres", line) |> callback
@@ -872,6 +922,11 @@ let playGeneric
           let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
           let diagnosis = playing.GetDiagnostics()
           logger.LogCritical diagnosis
+          // Every other terminal path in this function raises EndOfGame; this one did not,
+          // so a plain loss on time reached the PGN and the standings through the returned
+          // result but never through the live event, and the GUI only picked it up on the
+          // next periodic sync.
+          callback(EndOfGame res)
           return res
         else
             if duration.TotalMilliseconds < tourny.MinMoveTimeInMS then
