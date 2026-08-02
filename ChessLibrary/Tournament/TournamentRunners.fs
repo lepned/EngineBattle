@@ -100,7 +100,7 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
       Distribution = distribution }
   let plan = ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg
   let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
-  let priorPairs = gamesAlreadyPlayed.Length / gamesPerPair
+  let priorGames = gamesAlreadyPlayed.Length
   let pairings =
     plan
     |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
@@ -108,7 +108,7 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
   let gamesLeftToPlay =
     ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
     |> ChessLibrary.Scheduler.Diff.enforceGameLimits challengers opponents tourny.Rounds tourny.Opening.OpeningsTwice gamesAlreadyPlayed
-    |> ChessLibrary.Scheduler.Diff.applyPairLabels priorPairs gamesPerPair
+    |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
     |> ChessLibrary.Scheduler.Diff.toPairings
 
   PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
@@ -197,14 +197,14 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
       Distribution = Scheduler.Shared }
   let plan = ChessLibrary.Scheduler.RoundRobin.generate scheduleCfg
   let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
-  let priorPairs = gamesAlreadyPlayed.Length / gamesPerPair
+  let priorGames = gamesAlreadyPlayed.Length
   let pairings =
     plan
     |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
     |> ChessLibrary.Scheduler.Diff.toPairings
   let gamesLeftToPlay =
     ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
-    |> ChessLibrary.Scheduler.Diff.applyPairLabels priorPairs gamesPerPair
+    |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
     |> ChessLibrary.Scheduler.Diff.toPairings
 
   PairingHelper.printAllOpeningPairs logger gamesLeftToPlay

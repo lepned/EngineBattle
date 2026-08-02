@@ -158,7 +158,7 @@ let parallelTournamentRun
           then ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg
           else ChessLibrary.Scheduler.RoundRobin.generate scheduleCfg
       let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
-      let priorPairs = gamesAlreadyPlayed.Length / gamesPerPair
+      let priorGames = gamesAlreadyPlayed.Length
       let allPairings =
           plan
           |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
@@ -170,7 +170,7 @@ let parallelTournamentRun
               then ChessLibrary.Scheduler.Diff.enforceGameLimits challengers rest tourny.Rounds tourny.Opening.OpeningsTwice gamesAlreadyPlayed afterDiff
               else afterDiff
           afterLimits
-          |> ChessLibrary.Scheduler.Diff.applyPairLabels priorPairs gamesPerPair
+          |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
           |> ChessLibrary.Scheduler.Diff.toPairings
 
       if tourny.VerboseLogging then

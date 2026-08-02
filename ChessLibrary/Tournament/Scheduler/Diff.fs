@@ -107,25 +107,32 @@ let toPairings (plan: PlannedGame list) : Pairing list =
 //                pairIdx; the color differentiates them.
 //   * colorIdx — 1 or 2 (under `OpeningsTwice`), always 1 with SingleRound.
 //
-// The scheduler emits games in pair-consecutive order, so:
-//   pairIdx  = priorPairs + (positionInPlan / gamesPerPair) + 1
-//   colorIdx = (positionInPlan % gamesPerPair) + 1
+// The scheduler emits games in pair-consecutive order, so with `pos` counted
+// in games from the start of the tournament:
+//   pairIdx  = pos / gamesPerPair + 1
+//   colorIdx = pos % gamesPerPair + 1
 //
-// On resume, `priorPairs = gamesAlreadyPlayed / gamesPerPair`, so the first
-// freshly-played pair picks up exactly one past phase-1's last pair.
+// The offset is therefore games already played, not pairs. Dividing first
+// truncated a half-finished pair away: resuming on an odd game count put the
+// remaining half of that pair at `n.1` instead of `n.2`, and every label after
+// it was one game behind for the rest of the run.
 
-/// Rewrite every `RoundLabel` in a plan using the pair-based scheme. The
-/// plan must already be in pair-consecutive order (the two colors of a
-/// pair must be adjacent in the list when `gamesPerPair = 2`).
+/// Rewrite every `RoundLabel` in a plan using the pair-based scheme.
+/// `priorGames` is how many games precede this plan (0 for a full schedule,
+/// the played-game count when labelling the remainder on resume). The plan
+/// must already be in pair-consecutive order — the two colors of a pair must
+/// be adjacent when `gamesPerPair = 2`.
 let applyPairLabels
-    (priorPairs: int)
+    (priorGames: int)
     (gamesPerPair: int)
     (plan: PlannedGame list)
     : PlannedGame list
     =
     let gamesPerPair = max 1 gamesPerPair
+    let priorGames = max 0 priorGames
     plan
     |> List.mapi (fun i p ->
-        let pairIdx = priorPairs + (i / gamesPerPair) + 1
-        let colorIdx = (i % gamesPerPair) + 1
+        let pos = priorGames + i
+        let pairIdx = pos / gamesPerPair + 1
+        let colorIdx = pos % gamesPerPair + 1
         { p with RoundLabel = sprintf "%d.%d" pairIdx colorIdx })

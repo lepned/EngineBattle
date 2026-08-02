@@ -554,15 +554,28 @@ let ``applyPairLabels: OpeningsTwice=false emits one game per pair (colorIdx alw
     Assert.Equal<string list>([ "1.1"; "2.1"; "3.1" ], labelsFor plan)
 
 [<Fact>]
-let ``applyPairLabels: resume picks up where phase 1 left off (priorPairs offset)`` () =
-    // Phase 1 played 2 complete pairs (4 games). Phase 2 plan should label
+let ``applyPairLabels: resume picks up where phase 1 left off (prior games offset)`` () =
+    // Phase 1 played 2 complete pairs — 4 games. Phase 2 plan should label
     // its first pair as "3.1"/"3.2", not "1.1"/"1.2".
     let plan =
         RoundRobin.generate { rrConfig [ mkEngine "A"; mkEngine "B"; mkEngine "C" ] [ mkOpening 1 ] with OpeningsTwice = true }
-        |> Diff.applyPairLabels 2 2
+        |> Diff.applyPairLabels 4 2
 
     Assert.Equal<string list>(
         [ "3.1"; "3.2"; "4.1"; "4.2"; "5.1"; "5.2" ],
+        labelsFor plan)
+
+[<Fact>]
+let ``applyPairLabels: resume mid-pair labels the remaining game as the second colour`` () =
+    // 5 games played is two complete pairs plus the white half of pair 3, so the
+    // next game is "3.2" — not "3.1". Offsetting by pairs truncated that half
+    // away and left every later label one game behind for the rest of the run.
+    let plan =
+        RoundRobin.generate { rrConfig [ mkEngine "A"; mkEngine "B"; mkEngine "C" ] [ mkOpening 1 ] with OpeningsTwice = true }
+        |> Diff.applyPairLabels 5 2
+
+    Assert.Equal<string list>(
+        [ "3.2"; "4.1"; "4.2"; "5.1"; "5.2"; "6.1" ],
         labelsFor plan)
 
 [<Fact>]
@@ -617,11 +630,11 @@ let ``Resume: Diff.diff + applyPairLabels continues numbering without collision`
     let phase2Cfg = { phase1Cfg with Opponents = phase2Opps; Openings = bigBook }
     let phase2Plan = Gauntlet.generate phase2Cfg
 
-    let priorPairs = played.Length / 2
+    let priorGames = played.Length
     let remaining =
         Diff.diff phase2Plan played
         |> Diff.enforceGameLimits chal phase2Opps 2 true played
-        |> Diff.applyPairLabels priorPairs 2
+        |> Diff.applyPairLabels priorGames 2
 
     Assert.Equal<string list>(
         [ "3.1"; "3.2"; "4.1"; "4.2" ],
@@ -765,7 +778,7 @@ let ``EPD openings: resume via Diff.diff identifies played games by FEN-derived 
     let played = plan |> List.take 2 |> List.map playedPgnOf |> List.toArray
     let remaining =
         Diff.diff plan played
-        |> Diff.applyPairLabels (played.Length / 2) 2
+        |> Diff.applyPairLabels played.Length 2
 
     Assert.Equal(2, remaining.Length)
     Assert.Equal("2.1", remaining.[0].RoundLabel)
