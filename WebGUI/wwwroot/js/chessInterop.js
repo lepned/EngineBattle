@@ -238,17 +238,16 @@ export function resizePlot(chart) {
   }
 }
 
-// react() instead of newPlot(): these are live charts redrawn on every engine update, and
-// newPlot tears the whole plot down and rebuilds it each time. react() keeps the existing
-// DOM and diffs the data internally — same arguments, far less work, and no flicker. On an
-// empty div it initialises the plot just like newPlot, so first call still works.
+// newPlot, not react: react merges into the live _fullLayout instead of rebuilding it, so a
+// search that started with two visited moves kept showing two as the tree opened up, and an
+// axis range from an early draw outlived the layout passed in.
 export function setQdataPlot(chart, layout, arr) {
   var data = arr;
-  Plotly.react(chart, data, layout, { responsive: true, displayModeBar: false });
+  Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
 }
 
 export function setNdataPlot(chart, layout, data) {
-  Plotly.react(chart, data, layout, { responsive: true, displayModeBar: false });
+  Plotly.newPlot(chart, data, layout, { responsive: true, displayModeBar: false });
 }
 
 export function updateQdataPlot(chart, trace, index) {
