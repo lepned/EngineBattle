@@ -23,6 +23,16 @@ open ChessLibrary.WinboardIntegration
 
 module Engine =
 
+  /// Engines that colour their output (Ceres does) leave escape sequences in stderr, and
+  /// those survive into the log where they make a stack trace harder to read than the
+  /// thing it describes. Compiled once; stderr volume is low enough that this never shows
+  /// up in a profile.
+  let private ansiEscape = Regex(string (char 27) + @"\[[0-9;]*[A-Za-z]", RegexOptions.Compiled)
+  let internal stripAnsi (line: string) =
+    if String.IsNullOrEmpty line then line
+    elif line.IndexOf '\u001b' < 0 then line   // the common case: nothing to strip
+    else ansiEscape.Replace(line, "")
+
   // Define a class to manage the chess engine process and communicate with it 
   type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool, ?logToFile: bool)  =
       let logDebug (text: string) = logger.LogDebug text
@@ -441,6 +451,7 @@ module Engine =
       let mutable stderrDropped = 0
 
       let addStderrLine (line: string) =
+        let line = stripAnsi line
         lock stderrLock (fun () ->
           stderrBuffer.Add line
           if stderrBuffer.Count > stderrMaxLines + 100 then
@@ -952,6 +963,7 @@ module Engine =
       let mutable stderrDropped = 0
 
       let addStderrLine (line: string) =
+        let line = stripAnsi line
         lock stderrLock (fun () ->
           stderrBuffer.Add line
           if stderrBuffer.Count > stderrMaxLines + 100 then
