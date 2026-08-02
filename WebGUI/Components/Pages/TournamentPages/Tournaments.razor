@@ -1468,7 +1468,12 @@
 				var explanation = e.Result.Reason.Explanation;
 				var gameTxtResult = e.Result.Result == "1/2-1/2" ? "Draw" : e.Result.Result == "1-0" ? "White wins" : "Black wins";
 				gameResult = $"{gameTxtResult} by {explanation}";
-				var mh = $"{moveHistory}  ({e.Result.Result} : {explanation})";
+				// U+2011, not a plain hyphen: the move list renders each space-separated token
+				// in its own span, and a browser will split "1-0" after the hyphen when the
+				// line runs out. nowrap is no use here — the trailing space lives inside the
+				// span, so it would stop the list wrapping at all.
+				var resultToken = e.Result.Result.Replace('-', '‑');
+				var mh = $"{moveHistory}  ({resultToken} : {explanation})";
 				moveHistory = mh;
 				if (e.Result.Reason != ResultReason.Cancel)
 				{

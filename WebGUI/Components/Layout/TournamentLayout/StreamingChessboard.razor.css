@@ -46,3 +46,16 @@
     color: var(--mud-palette-text-primary);
     border-color: rgba(125, 132, 156, 0.7);
 }
+
+/* The game report at the end of the move list: its own line under the moves rather than a
+   run of tokens trailing the last one. Deliberately uncoloured by outcome — the same style
+   carries a win, a loss and a draw — and skyblue and gold are already the opening and the
+   deviation marker. */
+.mh-result {
+    display: block;
+    margin-top: 0.4rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid rgba(125, 132, 156, 0.25);
+    font-weight: 600;
+    color: var(--mud-palette-text-primary);
+}

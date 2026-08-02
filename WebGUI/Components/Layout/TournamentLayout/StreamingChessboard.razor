@@ -104,6 +104,10 @@
 						}
 					}
 				}
+				@if (!string.IsNullOrWhiteSpace(resultAnnotation))
+				{
+					<div class="mh-result">@resultAnnotation</div>
+				}
 			</div>
 		</MudItem>
 	}
@@ -163,6 +167,8 @@
 	private IReadOnlyList<string> previousReferenceSansForDeviation = Array.Empty<string>();
 	private IReadOnlyList<string> previousOpeningSansForDeviation = Array.Empty<string>();
 	private readonly List<MoveHistoryToken> moveHistoryTokens = new();
+	private string resultAnnotation;
+	private string lastScrolledAnnotation;
 	private int? firstDeviationSanIndex;
 
 	private record MoveHistoryToken(string Text, bool IsSan, int SanIndex);
@@ -172,8 +178,10 @@
 		   token.EndsWith('.') &&
 		   int.TryParse(token.TrimEnd('.'), out _);
 
+	// U+2011 too: the tournament page uses a non-breaking hyphen so "1-0" cannot be split
+	// across lines, and this check would otherwise stop recognising the token.
 	private static bool IsResultToken(string token)
-		=> token is "1-0" or "0-1" or "1/2-1/2" or "*";
+		=> token?.Replace('‑', '-') is "1-0" or "0-1" or "1/2-1/2" or "*";
 
 	private void RebuildMoveHistoryTokensAndDeviation()
 	{
@@ -184,9 +192,19 @@
 		var tokens = moveHistory.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
 		var sanIndex = -1;
+		// The game ends with either a bare result token or a "(1‑0 : reason)" annotation.
+		// It is not a move, so it is kept out of the token stream and rendered as its own
+		// block below the moves rather than flowing after the last one.
+		var annotation = new List<string>();
 		foreach (var token in tokens)
 		{
-			if (IsMoveNumberToken(token) || IsResultToken(token))
+			if (annotation.Count > 0 || token.StartsWith('(') || IsResultToken(token))
+			{
+				annotation.Add(token);
+				continue;
+			}
+
+			if (IsMoveNumberToken(token))
 			{
 				moveHistoryTokens.Add(new MoveHistoryToken(token, false, -1));
 				continue;
@@ -195,6 +213,8 @@
 			sanIndex++;
 			moveHistoryTokens.Add(new MoveHistoryToken(token, true, sanIndex));
 		}
+
+		resultAnnotation = annotation.Count == 0 ? null : string.Join(' ', annotation);
 
 		var opening = OpeningSansForDeviation is null ? Array.Empty<string>() : OpeningSansForDeviation.ToArray();
 		var reference = ReferenceSansForDeviation is null ? Array.Empty<string>() : ReferenceSansForDeviation.ToArray();
@@ -416,6 +436,16 @@
 		{
 			chessJSmodule = await JsInteropService.ImportModuleAsync(JS);
 		}
+
+		// The result report is a block with its own margin, padding and rule, so it adds more
+		// height than a move does. Scrolling from here rather than from a delay after
+		// UpdateMoveHistory means the measurement happens once the DOM already has it.
+		if (chessJSmodule is not null && resultAnnotation != lastScrolledAnnotation)
+		{
+			lastScrolledAnnotation = resultAnnotation;
+			await ScrollToEnd();
+		}
+
 		if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)
 		{
 			moveListFontSize = MoveListFontSize;
