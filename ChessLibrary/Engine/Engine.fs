@@ -441,6 +441,8 @@ module Engine =
         |None -> None            
 
       let mutable lastExitCode : int option = None
+      // Ceres and others exit non-zero on a clean quit; only warn when we didn't ask.
+      let mutable shutdownRequested = false
       // Ring buffer: a crash writes its stack last, so keeping the newest lines always
       // preserves it, while a chatty engine cannot grow this without bound over a long
       // tournament. Trimmed in blocks because RemoveAt(0) shifts the whole list. Guarded by
@@ -494,7 +496,10 @@ module Engine =
                 try
                     lastExitCode <- Some engineProcess.ExitCode
                     if engineProcess.ExitCode <> 0 then
-                        logInformation $"⚠️ Engine {name} exited with code {engineProcess.ExitCode}"
+                        if shutdownRequested then
+                            logDebug $"Engine {name} exited with code {engineProcess.ExitCode} after quit"
+                        else
+                            logInformation $"⚠️ Engine {name} exited unexpectedly with code {engineProcess.ExitCode}"
                 with _ -> ()
             )
           engineProcess.EnableRaisingEvents <- true
@@ -721,6 +726,7 @@ module Engine =
                     printfn "%s" msg 
                     this.GetDiagnostics() |> printfn "%s"
           | Quit -> 
+                shutdownRequested <- true
                 let cmd = "quit"
                 try
                     // Check if the process is still running before attempting to write
@@ -961,6 +967,8 @@ module Engine =
               proc.Dispose()
       
       let mutable lastExitCode : int option = None
+      // Ceres and others exit non-zero on a clean quit; only warn when we didn't ask.
+      let mutable shutdownRequested = false
       // Ring buffer: a crash writes its stack last, so keeping the newest lines always
       // preserves it, while a chatty engine cannot grow this without bound over a long
       // tournament. Trimmed in blocks because RemoveAt(0) shifts the whole list. Guarded by
@@ -1019,7 +1027,11 @@ module Engine =
                 try
                     lastExitCode <- Some engine.ExitCode
                     if engine.ExitCode <> 0 then
-                        printfn "⚠️ Engine %s exited with code %d" name engine.ExitCode
+                        if shutdownRequested then
+                            logDebug (sprintf "Engine %s exited with code %d after quit" name engine.ExitCode)
+                        else
+                            // printfn: visible even where logging is filtered.
+                            printfn "⚠️ Engine %s exited unexpectedly with code %d" name engine.ExitCode
                 with _ -> ()
             )
             engine.EnableRaisingEvents <- true
@@ -1329,6 +1341,7 @@ module Engine =
         
       member this.DoNotValidate() = validate <- false
       member this.StopProcess() =
+        shutdownRequested <- true   // as deliberate as quit; the exit is not unexpected
         try
           if proc.HasExited then
             logInformation (sprintf "Engine %s has already exited" name)
@@ -1417,6 +1430,7 @@ module Engine =
         commands.Add cmd
 
       member this.Quit() = 
+        shutdownRequested <- true
         let cmd = "quit"        
         write cmd
         commands.Add cmd
