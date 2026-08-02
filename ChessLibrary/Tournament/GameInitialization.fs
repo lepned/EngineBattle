@@ -111,7 +111,8 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                 let readyOk = engine.WaitForReadyOk(timeoutInMs)
 
                 if readyOk then
-                    logger.LogDebug("Engine {Engine} ready", engine.Name)
+                    // The one readyok worth Information: the net is loaded.
+                    logger.LogInformation("Engine {Engine} ready", engine.Name)
                     return true
                 else
                     logger.LogError("Engine {Engine} timed out waiting for readyok", engine.Name)

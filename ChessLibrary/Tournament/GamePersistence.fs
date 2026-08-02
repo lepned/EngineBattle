@@ -21,6 +21,13 @@ open ChessLibrary.CustomException
 // Game Metadata Building
 // ============================================================================
 
+/// One-line summary for the log; the full record goes to the PGN file.
+let gameMetadataSummary (gameData: GameMetadata) =
+    let shortHash =
+        if String.IsNullOrEmpty gameData.OpeningHash then "-"
+        else gameData.OpeningHash.Substring(0, min 8 gameData.OpeningHash.Length)
+    sprintf "Game metadata: hash %s, deviations %d" shortHash gameData.Deviations
+
 /// Build GameMetadata from result and pairing
 let buildGameMetadata
     (tourny: Tournament)
@@ -168,30 +175,36 @@ let executeGame
     (callback: Update -> unit)
     : Result =
     let gametimer = Stopwatch.GetTimestamp()
-    try
-        if tourny.PreventMoveDeviation then
-            match replayDictWhite, replayDictBlack with
-            | Some dictWhite, Some dictBlack ->
-                playDoNotDeviate dictWhite dictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
-                |> Async.RunSynchronously
-            | _ ->
-                failwith "Replay dictionaries required for PreventMoveDeviation mode"
-        else
-            if tourny.AllowPondering then
-                playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
-                |> Async.RunSynchronously
-            else
-                play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
-                |> Async.RunSynchronously
-    with
-    | :? EngineStartupException as ex ->
-        let context = createExceptionContext engine1 engine2 pair board tourny
-        EngineFailures.log logger ex context
-        handleGameException logger ex cts gametimer board engine1 engine2 pair
-    | ex ->
-        let context = createExceptionContext engine1 engine2 pair board tourny
-        EngineFailures.log logger ex context
-        handleGameException logger ex cts gametimer board engine1 engine2 pair
+    let res =
+      try
+          if tourny.PreventMoveDeviation then
+              match replayDictWhite, replayDictBlack with
+              | Some dictWhite, Some dictBlack ->
+                  playDoNotDeviate dictWhite dictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
+                  |> Async.RunSynchronously
+              | _ ->
+                  failwith "Replay dictionaries required for PreventMoveDeviation mode"
+          else
+              if tourny.AllowPondering then
+                  playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
+                  |> Async.RunSynchronously
+              else
+                  play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
+                  |> Async.RunSynchronously
+      with
+      | :? EngineStartupException as ex ->
+          let context = createExceptionContext engine1 engine2 pair board tourny
+          EngineFailures.log logger ex context
+          handleGameException logger ex cts gametimer board engine1 engine2 pair
+      | ex ->
+          let context = createExceptionContext engine1 engine2 pair board tourny
+          EngineFailures.log logger ex context
+          handleGameException logger ex cts gametimer board engine1 engine2 pair
+
+    let gameLabel =
+      if tourny.TotalGames > 0 then sprintf "Game %d/%d: " tourny.CurrentGameNr tourny.TotalGames else ""
+    logger.LogInformation("{GameLabel}{GameResult}", gameLabel, res.ToString())
+    res
 
 /// Execute game without deviation prevention
 let executeGameSimple
@@ -230,5 +243,5 @@ let processCompletedGame
     let moveSection = sb.ToString()
     writeGameToPgn pgnAgent tourny gameData moveSection result cts
     if tourny.VerboseLogging then
-        logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+        logger.LogInformation(gameMetadataSummary gameData)
     gameData

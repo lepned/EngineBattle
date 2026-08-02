@@ -64,7 +64,8 @@ let logPosition (logger: ILogger) (board: Board) : unit =
         let fen = board.StartPosition
         let start = $"position fen {fen} moves"
         board.UciMovesPlayed |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
-    logger.LogInformation("{position}", posWithMoves)
+    // Paste-ready for an engine — a debugging aid, so Debug.
+    logger.LogDebug("{position}", posWithMoves)
 
 // ============================================================================
 // Round Text Computation
@@ -136,7 +137,7 @@ let executeGameWithSetup
         writeGameToPgn pgnAgent tourny gameData moveSection result cts
 
         if tourny.VerboseLogging then
-            logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+            logger.LogInformation(gameMetadataSummary gameData)
 
         result
     finally

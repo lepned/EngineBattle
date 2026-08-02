@@ -293,10 +293,10 @@ let annotation (moveAnnotation: MoveAnnotation) (board: Board) (numberMove : str
 
 /// Log the init commands for both engines
 let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: ChessEngine) =
-    logger.LogDebug($"\nInitializing {player1.Name} ....")
+    logger.LogDebug($"Initializing {player1.Name} ....")
     for cmd in player1.GetVerifiedCommands() do
         logger.LogDebug($"{cmd}")
-    logger.LogDebug($"\nInitializing {player2.Name} ....")
+    logger.LogDebug($"Initializing {player2.Name} ....")
     for cmd in player2.GetVerifiedCommands() do
         logger.LogDebug($"{cmd}")
 

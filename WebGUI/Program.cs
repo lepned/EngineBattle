@@ -87,7 +87,9 @@ var log = new LoggerConfiguration()
         path: logPath,
         rollingInterval: RollingInterval.Day,
         rollOnFileSizeLimit: true,
-        fileSizeLimitBytes: 10_000_000)
+        fileSizeLimitBytes: 10_000_000,
+        // Time only: the date is in the file name and the offset never changes mid-file.
+        outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
         .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);

@@ -1184,7 +1184,7 @@
 			{
 				runWithLogLiveStats = true;
 				if (tournament.VerboseLogging)
-					logger.LogInformation("Be sure to include VerboseMoveStats = true to the setoption in order to get LogLiveStat charting");
+					logger.LogInformation("Live stats charting enabled — requires VerboseMoveStats = true in the engine def");
 				searchInfoPlot = new SearchInfoPlot(chessModule, liveQPlotReference, livePlotReference, "Q-value", "", "", Callback);
 			}
 
@@ -1192,7 +1192,7 @@
 			{
 				runWithLogLiveStats = true;
 				if (tournament.VerboseLogging)
-					logger.LogInformation("Be sure to include VerboseMoveStats = true to the setoption in order to get LogLiveStat charting");
+					logger.LogInformation("Live stats charting enabled — requires VerboseMoveStats = true in the engine def");
 				searchInfoPlot = new SearchInfoPlot(chessModule, liveQPlotReference, livePlotReference, "Q-value", "", "", Callback);
 			}
 
@@ -1461,7 +1461,8 @@
 
 			case TournamentTypes.Update.EndOfGame e:
 				if (tournament.VerboseLogging)
-					logger.LogDebug($"Game over: {e.Result.Reason} - deviation counter: {tournament.DeviationCounter}");
+					// Explanation, not ToString — the latter is the short PGN code ("XX").
+					logger.LogDebug($"Game over: {e.Result.Reason.Explanation} - deviation counter: {tournament.DeviationCounter}");
 				tournamentGamesHeader = $"Last result: {e.Result.Reason}";
 				reason = e.Result.Reason.ToString();
 				var explanation = e.Result.Reason.Explanation;
@@ -1497,8 +1498,10 @@
 				if (summary.Count == 2 && pgnGames.Count > 0)
 					resLog += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGames);
 				Console.WriteLine(resLog);
-				if (tournament.VerboseLogging)
-					logger.LogInformation(resLog);
+				// Always written — standings after each game are the point of keeping a log.
+				// Verbose puts them on the console too.
+				logger.Log(tournament.VerboseLogging ? LogLevel.Information : LogLevel.Debug,
+					"{Standings}", StripFences(resLog));
 
 				// Don't pop the between-games crosstable/bracket dialog in feed mode — it's intrusive when
 				// just watching a fed tournament (and the layout flag here comes from the fed config).
@@ -1768,8 +1771,9 @@
 						if (players.Count == 2)
 							consoleInfo += Statistics.Pentanomial.formatSingleMatchupCompact(gameData);
 						Console.WriteLine(consoleInfo);
-						if (tournament.VerboseLogging)
-							logger.LogInformation(consoleInfo);
+						// Zeroed on a fresh start, carried over on a resume.
+						logger.Log(tournament.VerboseLogging ? LogLevel.Information : LogLevel.Debug,
+							"{Standings}", StripFences(consoleInfo));
 						pairings = runner.GetLastestPairings();
 					}
 					else
@@ -1825,12 +1829,11 @@
 						if (scoreTable.Count == 2)
 							consoleRes += Statistics.Pentanomial.formatSingleMatchupCompact(pgnGamesEnd);
 						Console.WriteLine(consoleRes);
-						if (tournament.VerboseLogging)
-							logger.LogDebug(consoleRes);
+						// The one table worth having in every log, verbose or not.
+						logger.LogInformation("{Standings}", StripFences(consoleRes));
 					}
-					var msg = $"\nEnd of tournament: {tourny.Info.Name} with deviation counter: {tourny.Info.DeviationCounter}\n";
-					if (tournament.VerboseLogging)
-						logger.LogDebug(msg);
+					logger.LogInformation("End of tournament: {Name} with deviation counter: {Deviations}",
+						tourny.Info.Name, tourny.Info.DeviationCounter);
 
 					await InvokeAsync(StateHasChanged);
 				}
@@ -1930,12 +1933,11 @@
 
 	private async Task<System.Collections.Generic.List<PGNTypes.PgnGame>> UpdateSpeed(int delayInMs)
 	{
-		if (tournament.VerboseLogging)
-			logger.LogDebug("Speed update started: " + DateTime.Now.ToString());
+		// The entry is timestamped; the wait is what's worth recording.
 		if (delayInMs > 0)
 			await Task.Delay(delayInMs);
 		if (tournament.VerboseLogging)
-			logger.LogDebug("Speed update delay ended: " + DateTime.Now.ToString());
+			logger.LogDebug("Speed update after {Delay}ms delay", delayInMs);
 		if (runner == null)
 			return new System.Collections.Generic.List<PGNTypes.PgnGame>();   // feed mode: no local PGN games
 		var games = runner.GetPGNGames();
@@ -3007,6 +3009,14 @@
 			logger.LogInformation(msg);
 		}
 	}
+
+	// The fences make the console table pasteable into Discord; in the log they only leave
+	// blank lines behind. Collapse those runs, and close with one so the next entry has air.
+	private static readonly System.Text.RegularExpressions.Regex BlankRun =
+		new(@"(\r?\n){3,}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+	private static string StripFences(string table) =>
+		BlankRun.Replace(table.Replace("```", ""), "\n\n").Trim() + System.Environment.NewLine;
 
 	private string GetStyleForResult(string result)
 	{

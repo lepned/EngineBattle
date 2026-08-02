@@ -36,6 +36,7 @@ module Engine =
   // Define a class to manage the chess engine process and communicate with it 
   type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool, ?logToFile: bool)  =
       let logDebug (text: string) = logger.LogDebug text
+      let logTrace (text: string) = logger.LogTrace text
       let logInformation (text: string) = logger.LogInformation text
       let logWarning (text: string) = logger.LogWarning text
       let logError (text: string) = logger.LogError text
@@ -388,7 +389,7 @@ module Engine =
                 // Normal UCI
                 engineProcess.StandardInput.WriteLine(s)
                 logIO ">>>" s
-                logDebug (sprintf "Writing to %s: %s" name s)
+                logTrace (sprintf "Writing to %s: %s" name s)
     
       let assignbackend (option:string) =
         if option.ToLower().Contains("backendoptions") then
@@ -841,8 +842,12 @@ module Engine =
 
 
   let printedEngines = System.Collections.Generic.HashSet<string>()
+  // Not printedEngines: that set is only filled when option validation runs.
+  let loggedVersions = System.Collections.Generic.HashSet<string>()
   let printLock = obj()
-  let resetPrintedEngines () = printedEngines.Clear()
+  let resetPrintedEngines () =
+    printedEngines.Clear()
+    loggedVersions.Clear()
 
   type ChessEngine(config : EngineConfig, initCommands: string seq, logger: ILogger option) =
       let printToConsole txt = printfn "%s" txt
@@ -858,6 +863,10 @@ module Engine =
         match logger with
         | Some log -> log.LogDebug text
         | None -> () // printfn "%s" text
+      let logTrace text =
+        match logger with
+        | Some log -> log.LogTrace text
+        | None -> ()
 
       let initialCommands = initCommands |> ResizeArray
       let defaultTimeoutMs = 180000 * 4 // 12 minutes - some engines take a long time to respond to isready after setting options
@@ -1065,7 +1074,7 @@ module Engine =
                               proc.StandardInput.WriteLine(cmd)                              
                       | None ->
                           // Normal UCI
-                          logDebug (sprintf "Writing to %s: %s" name s)
+                          logTrace (sprintf "Writing to %s: %s" name s)
                           proc.StandardInput.WriteLine(s)
             else
                 printfn "Warning: Attempted to write to disposed engine %s" name  
@@ -1200,7 +1209,11 @@ module Engine =
             match nOk, aOk with
             | true, true ->
                 match uciNameOpt.OptionType, uciAuthorOpt.OptionType with
-                | UciOption.IdAndAuthor(_,_,n), UciOption.IdAndAuthor(_,_,a) -> logInformation (sprintf "Engine name: %s and author: %s" n a)
+                // Engines restart every game; the version is worth one line per run.
+                | UciOption.IdAndAuthor(_,_,n), UciOption.IdAndAuthor(_,_,a) ->
+                    if lock printLock (fun () -> loggedVersions.Add name)
+                    then logInformation (sprintf "Engine %s is %s by %s" name n a)
+                    else logDebug (sprintf "Engine name: %s and author: %s" n a)
                 | _ -> ()
             | _ -> ()
       
@@ -1443,7 +1456,8 @@ module Engine =
                     logCritical (sprintf "Engine %s: read returned null while waiting for readyok" name)
                     return false
                   elif line = "readyok" then
-                    logInformation (sprintf "Engine %s responded with readyok" name)
+                    // Every caller lands here; GameInitialization logs the milestone.
+                    logDebug (sprintf "Engine %s responded with readyok" name)
                     return true
                   else
                     do! Async.Sleep 100

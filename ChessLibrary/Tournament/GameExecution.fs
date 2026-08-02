@@ -775,7 +775,8 @@ let playGeneric
     if cts.IsCancellationRequested then
       let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
       let res = createResult player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur
-      logger.LogCritical($"Cancel requested when engine ready to play: {playing.Name}")
+      // Not Critical — a cancel is not a failure.
+      logger.LogInformation($"Cancel requested when engine ready to play: {playing.Name}")
       callback(EndOfGame res)
       return res
     else
@@ -880,10 +881,9 @@ let playGeneric
           let res = createResultWithEval player1.Name player2.Name gameMoveList "1/2-1/2" ResultReason.Cancel dur firstTwoEvals
           callback(EndOfGame res)
           logger.LogInformation($"Shutdown/cancel detected while {playing.Name} thinking")
-          let diag1 = playing.GetDiagnostics()
-          logger.LogCritical diag1
-          let diag2 = opponent.GetDiagnostics()
-          logger.LogCritical diag2
+          // The user pressed stop — nothing to diagnose.
+          logger.LogDebug(playing.GetDiagnostics())
+          logger.LogDebug(opponent.GetDiagnostics())
           return res
       elif playing.HasExited() then
           do! Async.Sleep 1000

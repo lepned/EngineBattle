@@ -129,21 +129,23 @@ module PairingHelper =
     // ---- PGN logging ------------------------------------------------------
 
     let printAllOpeningPairs (logger: ILogger) (pairings: Pairing list) =
-        let sb = StringBuilder()
-        sb.AppendLine() |> ignore
-        pairings
-        |> List.iteri (fun idx p ->
-            let openingName = PGNHelper.getOpeningInfo p.Opening
-            let opName =
-                if openingName.Contains "No opening name" && not (String.IsNullOrEmpty p.Opening.Fen)
-                then p.Opening.Fen
-                else openingName
-            let msg =
-                sprintf
-                    "Round: %s  (%d): %d. %s, %s vs %s"
-                    p.RoundNr (idx + 1) p.GameNr opName p.White.Name p.Black.Name
-            sb.AppendLine msg |> ignore)
-        logger.LogInformation(sb.ToString())
+        // Silent when nothing is left to play, and no leading blank line — either one made
+        // the entry read as empty.
+        if not (List.isEmpty pairings) then
+            let sb = StringBuilder()
+            pairings
+            |> List.iteri (fun idx p ->
+                let openingName = PGNHelper.getOpeningInfo p.Opening
+                let opName =
+                    if openingName.Contains "No opening name" && not (String.IsNullOrEmpty p.Opening.Fen)
+                    then p.Opening.Fen
+                    else openingName
+                let msg =
+                    sprintf
+                        "Round: %s  (%d): %d. %s, %s vs %s"
+                        p.RoundNr (idx + 1) p.GameNr opName p.White.Name p.Black.Name
+                sb.AppendLine msg |> ignore)
+            logger.LogInformation(sb.ToString())
 
     let getAllOpeningPairs (pairings: Pairing list) : string =
         let sb = StringBuilder()

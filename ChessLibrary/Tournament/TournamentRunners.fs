@@ -278,7 +278,7 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
           let moveSection = sb.ToString()
           writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts
           if tourny.VerboseLogging then
-            logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+            logger.LogInformation(gameMetadataSummary gameData)
 
           // Small delay to let pumps finish their cleanup
           do! Async.Sleep 200
@@ -636,7 +636,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
         let moveSection = sb.ToString()
         writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts
         if tourny.VerboseLogging then
-          logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+          logger.LogInformation(gameMetadataSummary gameData)
 
       do! Async.Sleep 200
 

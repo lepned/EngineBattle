@@ -450,7 +450,7 @@ let parallelTournamentRun
                           if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
                               pgnAgent.Post (ChessLibrary.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
                           if tourny.VerboseLogging then
-                              logger.LogInformation("Game metadata added to result: {pgnData}", gameData)
+                              logger.LogInformation(gameMetadataSummary gameData)
                           return result, pair
                       } |> Async.StartAsTask
                   results.Add res
