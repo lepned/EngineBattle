@@ -238,9 +238,16 @@ let startEngineChannelWriter
                 return ()
             else
                 let! line = engine.ReadLineAsync() |> Async.AwaitTask
-                let inPonder = inPonderMode()
-                let isWhite = isWhite()
-                if not (isNull line) then
+                if isNull line then
+                    // End of stream — the engine closed stdout. Reading again returns null at
+                    // once, so looping here spins a core until the game is cancelled. Complete
+                    // the channel instead: the reader ends the game on ChannelClosedException.
+                    try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
+                    logger.LogInformation("Engine {Engine} closed its output, channel writer stopping", engine.Name)
+                    return ()
+                else
+                    let inPonder = inPonderMode()
+                    let isWhite = isWhite()
                     match line with
                     |line when inPonder && sw.ElapsedMilliseconds > ponderPollIntervalMs && line.StartsWith "info depth" ->
                         match Regex.getEssentialData line (not isWhite) with
@@ -259,7 +266,7 @@ let startEngineChannelWriter
                         engineChannel.Writer.TryWrite(line) |> ignore
                     | _ -> ()
 
-                return! loop()
+                    return! loop()
         with
         | :? OperationCanceledException
         | :? ObjectDisposedException ->

@@ -1176,7 +1176,11 @@ let playGeneric
                 let mutable cont = moreItems
                 while cont do
                   let! newline = playing.ReadLineAsyncWithTimeout cts.Token |> Async.AwaitTask
-                  if newline.StartsWith "bestmove" then
+                  // null means the stream ended or the read was cancelled — not engine output.
+                  // A blank line or an unparseable one is a string and falls through as before.
+                  if isNull newline then
+                    cont <- false
+                  elif newline.StartsWith "bestmove" then
                     cont <- false
                   elif newline.StartsWith "info string node" then
                     cont <- false
