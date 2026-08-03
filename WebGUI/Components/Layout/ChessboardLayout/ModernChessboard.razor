@@ -347,6 +347,7 @@
     private string moveStr;
     private string moveHeader;
     private bool _pendingScrollToCurrentMove;
+    private int _scrollAttempts;
     private DotNetObjectReference<ModernChessboard> objRef;
     private ElementReference board;
     private MudTextField<string> moveListTextField = new();
@@ -519,7 +520,19 @@
     private Task ScrollToCurrentMove()
     {
         _pendingScrollToCurrentMove = true;
+        _scrollAttempts = 0;
         return InvokeAsync(StateHasChanged);
+    }
+
+    // Bounded so a target that never renders cannot cost an interop round trip on every
+    // later render. Retries ride on the renders that are coming anyway — forcing extra ones
+    // here would just burn the attempts before the row had a chance to appear.
+    private const int MaxScrollAttempts = 10;
+
+    private void ClearPendingScroll()
+    {
+        _pendingScrollToCurrentMove = false;
+        _scrollAttempts = 0;
     }
 
     private void OpenPromotionDialog(string move)
@@ -1021,13 +1034,40 @@
         {
             if (_pendingScrollToCurrentMove && chessJSmodule is not null)
             {
-                _pendingScrollToCurrentMove = false;
                 var tok = InlineTokens.FirstOrDefault(t => !t.IsBracket && string.Equals(t.Fen, fen, StringComparison.Ordinal));
-                var targetHash = tok is null ? ChessBoard.CurrentNodeHash : tok.Hash;
-                if (targetHash != 0UL)
-                    await chessJSmodule.InvokeVoidAsync("scrollToMoveListElement", "moveListDiv", $"move-{targetHash}");
-                else
+                if (tok is null)
+                {
+                    // No token carries this FEN. CurrentNodeHash was the old fallback, but
+                    // nothing guarantees it belongs to a rendered move, and a hash with no
+                    // element can never be scrolled to. The last mainline token always has
+                    // one, and on a live feed it is the move we want anyway.
+                    tok = InlineTokens.LastOrDefault(t => !t.IsBracket && !t.IsFromVariation);
+                    // First attempt only: the request is retried on later renders, and one
+                    // line per render would bury the log on a live feed.
+                    if (_scrollAttempts == 0)
+                        logger.LogDebug(
+                            "Move-list scroll: no token for FEN {Fen}; falling back to {Fallback} of {Count} tokens",
+                            fen, tok is null ? "none" : tok.DisplayText, InlineTokens.Count);
+                }
+                var targetHash = tok?.Hash ?? 0UL;
+                if (targetHash == 0UL)
+                {
+                    ClearPendingScroll();
                     await chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
+                }
+                else
+                {
+                    // A move arriving live asks for its scroll before its row exists: the
+                    // render that adds the row can come after this pass, and clearing the
+                    // request here spent it against the previous DOM — the list stayed put
+                    // and the newest moves fell below the fold. Hold the request until the
+                    // element is really there. Navigation looked fine because it rebuilds
+                    // the whole list in the render it triggers itself.
+                    var landed = await chessJSmodule.InvokeAsync<bool>(
+                        "scrollToMoveListElement", "moveListDiv", $"move-{targetHash}");
+                    if (landed || ++_scrollAttempts >= MaxScrollAttempts)
+                        ClearPendingScroll();
+                }
             }
 
             if (MoveListFontSize > 0 && MoveListFontSize != moveListFontSize)

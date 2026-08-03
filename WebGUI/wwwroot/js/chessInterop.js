@@ -327,23 +327,55 @@ export function openBrowserWindow(content) {
   doc.write(" </pre>");
 }
 
-export function scrollToMoveListElement(containerId, elementId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const el = document.getElementById(elementId);
-    if (!el) {
-        // If we can't find the move element (e.g. at root position), fall back to top.
-        container.scrollTop = 0;
-        return;
-    }
-
-    // Scroll within the container using rect deltas (works with inline spans + wrapping/comments).
+// Scroll within the container using rect deltas (works with inline spans + wrapping/comments).
+function centerInContainer(container, el) {
     const cRect = container.getBoundingClientRect();
     const eRect = el.getBoundingClientRect();
-
     const delta = (eRect.top - cRect.top) - (container.clientHeight / 2) + (eRect.height / 2);
     container.scrollTop += delta;
+}
+
+// The move the list is meant to be showing, per container, plus the observer watching that
+// container. A shorter container shows an earlier part of the list at the same scrollTop, so
+// anything that resizes it — the candidate-move panel appearing above when a search starts,
+// a window resize, a font change — silently scrolls the list away from the current move.
+// Re-applying the remembered target on resize covers all of them at the source.
+const moveListTargets = new Map();
+const moveListObservers = new Map();
+
+function watchMoveListResize(containerId) {
+    if (moveListObservers.has(containerId)) {
+        const [observed, obs] = moveListObservers.get(containerId);
+        if (observed.isConnected) return;
+        obs.disconnect();
+    }
+    const container = document.getElementById(containerId);
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const obs = new ResizeObserver(() => {
+        const id = moveListTargets.get(containerId);
+        const c = document.getElementById(containerId);
+        const el = id ? document.getElementById(id) : null;
+        if (c && el) centerInContainer(c, el);
+    });
+    obs.observe(container);
+    moveListObservers.set(containerId, [container, obs]);
+}
+
+// Returns whether the move was found and scrolled to. A miss means the row has not been
+// rendered yet — the caller keeps its request pending and retries after the next render.
+// It must not reposition the list on a miss: scrolling to the top was worse than doing
+// nothing, since the caller then had no way to tell the two apart.
+export function scrollToMoveListElement(containerId, elementId) {
+    const container = document.getElementById(containerId);
+    if (!container) return false;
+
+    const el = document.getElementById(elementId);
+    if (!el) return false;
+
+    centerInContainer(container, el);
+    moveListTargets.set(containerId, elementId);
+    watchMoveListResize(containerId);
+    return true;
 }
 
 export function scrollToEnd(textarea) {

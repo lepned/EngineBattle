@@ -13,7 +13,7 @@
     {
       if (_module == null)
       {
-        _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js?v=1.82.0");
+        _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js?v=1.84.0");
       }
       Module = _module;
       return _module;
