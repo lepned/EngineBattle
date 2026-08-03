@@ -444,3 +444,28 @@
 .bc-waiting {
     color: var(--mud-palette-text-secondary);
 }
+
+/* The iteration log is sized for the engine panel's narrow column, where its 1fr Best
+   column has little room to grow. This column is far wider, so that column stretched and
+   carried the time column out to the edge with a gap in between. Let the card fill the
+   layout as the move-stats table does, but hand the slack to an empty trailing column so
+   the four real ones stay together. */
+/* Fixed, not max-content: the header and every row are separate grids, so max-content is
+   measured per row — "Rae8" made that row wider than "e4" and the time column stepped
+   sideways from one line to the next. 5rem holds the longest SAN ("Qa1xe5+"). */
+.bc-evalchart ::deep .il-card.compact {
+    --il-cols: 3.8rem 4.8rem 5rem 4rem minmax(0, 1fr);
+}
+
+/* Shorter than the move-stats table it shares the slot with, because the leader trail
+   below carries the part of the history you would otherwise scroll back for — the rows
+   themselves only need to show the recent depths. The component's own ceiling is 480. */
+.bc-evalchart ::deep .il-card.compact .il-scroll {
+    max-height: 170px;
+}
+
+/* The header reserves 6px for the scrollbar; the rows did not, so the last column sat
+   flush against the edge. */
+.bc-evalchart ::deep .il-card.compact .il-row {
+    padding-right: 6px;
+}

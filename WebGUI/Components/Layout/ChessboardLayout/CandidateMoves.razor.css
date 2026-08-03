@@ -11,7 +11,12 @@
 
 .cm-grid {
     display: grid;
-    grid-template-columns: 3.6rem 1fr 4.6rem 3.6rem 6.2rem;
+    /* minmax(0, 1fr), not 1fr: the auto floor keeps the bar column from shrinking, and
+       the fixed columns then push the last one out of a narrow panel. */
+    /* Last column holds the 58px WDL bar, a 0.45rem gap and eight monospace characters
+       ("45·38·17"), which is about 7.3rem — 6.2rem clipped the L. The detailed variant
+       below is bar-only and keeps its narrow column. */
+    grid-template-columns: 3.6rem minmax(0, 1fr) 4.6rem 3.6rem 7.6rem;
     gap: 0 0.8rem;
     align-items: center;
 }
@@ -31,7 +36,7 @@
 /* Detailed (analysis) variant adds numeric P and V columns; WDL is bar-only there
    (exact percentages live in the tooltip), so its column shrinks. */
 .cm-grid.detailed {
-    grid-template-columns: 3.6rem 1fr 4.6rem 3.4rem 3.6rem 3.6rem 3.9rem;
+    grid-template-columns: 3.6rem minmax(0, 1fr) 4.6rem 3.4rem 3.6rem 3.6rem 3.9rem;
 }
 
 /* Standalone card variant: the table scrolls itself so its height can be set with the
@@ -39,6 +44,10 @@
 .cm-grid.scroll {
     max-height: var(--cm-max-h, 320px);
     overflow-y: auto;
+    /* Setting one axis makes the other compute from visible to auto, so the width the
+       vertical scrollbar takes was enough to raise a horizontal one. There is nothing to
+       reach sideways here — the columns fit. */
+    overflow-x: hidden;
     scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: rgba(125, 132, 156, 0.45) transparent;

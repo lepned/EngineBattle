@@ -73,14 +73,16 @@ else
         }
 
         <div class="il-head">
-            <span class="il-h">D</span>
+            @* Spelled out: the columns are wide enough at this type size, and "Score",
+               "Best" and "Nodes" were words already — D and T were the odd ones out. *@
+            <span class="il-h">Depth</span>
             <span class="il-h il-r">Score</span>
             <span class="il-h">Best</span>
             @if (!Compact)
             {
                 <button class="il-h il-r il-h-btn" @onclick="TogglePerIteration" title="@perIterationTitle">@(perIteration ? "ΔNodes" : "Nodes")</button>
             }
-            <button class="il-h il-r il-h-btn" @onclick="TogglePerIteration" title="@perIterationTitle">@(perIteration ? "ΔT" : "T")</button>
+            <button class="il-h il-r il-h-btn" @onclick="TogglePerIteration" title="@perIterationTitle">@(perIteration ? "ΔTime" : "Time")</button>
         </div>
 
         @* column-reverse: newest first in the DOM ends up visually at the bottom, and the
@@ -121,6 +123,26 @@ else
                 </div>
             }
         </div>
+
+        @* One line for the search's changes of mind. A single entry means it never moved
+           off its first choice, which the header already says — so it only earns the row
+           when there were at least two. *@
+        @if (trail.Count > 1)
+        {
+            <div class="il-trail" title="Every move that led the search, and the depth it took over at">
+                <span class="il-trail-h">Leaders</span>
+                @for (var t = 0; t < trail.Count; t++)
+                {
+                    @if (t > 0)
+                    {
+                        <span class="il-trail-sep">→</span>
+                    }
+                    <span class="il-trail-item">
+                        <span class="il-trail-d">d@(trail[t].Depth)</span>@trail[t].Move
+                    </span>
+                }
+            </div>
+        }
     </div>
 }
 
@@ -242,6 +264,7 @@ else
     }
 
     private List<ViewRow> view = new();
+    private List<(int Depth, string Move)> trail = new();
     private List<ViewRow> reversed = new();
     private IterationRow latest = null;
 
@@ -292,6 +315,11 @@ else
             }
         }
         reversed = Enumerable.Reverse(view).ToList();
+        // Every move that led the search, with the depth it took over at. The rows already
+        // carry that: the first row is the opening leader and Changed marks each handover.
+        trail = view.Where((r, idx) => idx == 0 || r.Changed)
+                    .Select(r => (Depth: r.FirstDepth, Move: r.Best))
+                    .ToList();
         latest = view.Count > 0 ? view[^1].Row : null;
         UpdateTicker();
     }
@@ -430,8 +458,8 @@ else
         // Both readings go out: the columns follow whatever the table is showing, and the
         // other one plus EBF ride along so a pasted log is self-contained.
         sb.AppendLine(perIteration
-            ? $"{"D",8}{"Score",9}  {"Best",-8}{"ΔNodes",9}{"ΔT",9}{"EBF",7}"
-            : $"{"D",8}{"Score",9}  {"Best",-8}{"Nodes",9}{"T",9}{"EBF",7}");
+            ? $"{"Depth",8}{"Score",9}  {"Best",-8}{"ΔNodes",9}{"ΔTime",9}{"EBF",7}"
+            : $"{"Depth",8}{"Score",9}  {"Best",-8}{"Nodes",9}{"Time",9}{"EBF",7}");
         foreach (var v in view)
         {
             var mark = v.Changed ? "*" : " ";
@@ -442,6 +470,11 @@ else
         }
         if (view.Any(v => v.Changed))
             sb.AppendLine("* = best move changed from the previous depth");
+        if (trail.Count > 1)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Leaders: " + string.Join(" -> ", trail.Select(t => $"d{t.Depth} {t.Move}")));
+        }
         if (latest is not null && !string.IsNullOrWhiteSpace(latest.PvSan))
         {
             sb.AppendLine();

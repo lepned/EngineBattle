@@ -280,7 +280,7 @@
                 {
                     @* AB engines have no root visit counts — the per-depth iteration log is
                        the equivalent view. Compact here; the full card lives under the board. *@
-                    <IterationLog Rows="@iterations" Fen="@fen" Compact="true" Searching="@searchInProgress"
+                    <IterationLog Rows="@iterationCollector.Rows" Fen="@fen" Compact="true" Searching="@searchInProgress"
                                   EngineLabel="@EngineIdLabel" MultiPv="@ActiveChartLines"
                                   Threads="@ThreadsLabel" RawInfoLine="@MainInfoLine" />
                 }
@@ -873,19 +873,11 @@
     // than from EngineStatus alone, because EngineStatus has no time field — Engine.fs
     // emits Status and then the raw Info for the same line on the same thread, so the
     // parsed status of the line being captured is always the last one seen.
-    private static readonly System.Text.RegularExpressions.Regex IterationTimeRegex =
-        new(@"\btime\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-    private static readonly System.Text.RegularExpressions.Regex IterationBoundRegex =
-        new(@"\b(lowerbound|upperbound)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
-    private static readonly System.Text.RegularExpressions.Regex IterationHashfullRegex =
-        new(@"\bhashfull\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Compiled);
-    private readonly object iterationLock = new();
-    private readonly List<IterationRow> iterationsWork = new();
-    private List<IterationRow> iterations = new();
+    private readonly IterationCollector iterationCollector = new();
     private EngineStatus pendingIterationStatus;
 
     /// <summary>Per-depth iteration log of the current search (ascending by depth).</summary>
-    public IReadOnlyList<IterationRow> Iterations => iterations;
+    public IReadOnlyList<IterationRow> Iterations => iterationCollector.Rows;
 
     /// <summary>False for alpha-beta engines — hosts use it to pick between the candidate-move
     /// panel and the iteration log.</summary>
@@ -929,57 +921,12 @@
 
     // Returns true when the line opened a new depth (rather than refining the current one),
     // which is the rate hosts are notified at.
-    private bool CaptureIteration(EngineStatus s, string rawLine)
-    {
-        if (s.Depth <= 0) return false;
-        var m = IterationTimeRegex.Match(rawLine);
-        var seconds = m.Success && long.TryParse(m.Groups[1].Value, out var ms)
-            ? ms / 1000.0
-            : elapsed.TotalSeconds;
-        double? cp = null;
-        int? mate = null;
-        switch (s.Eval)
-        {
-            case EvalType.CP c: cp = c.Info; break;
-            case EvalType.Mate mt: mate = mt.Info; break;
-        }
-        var hf = IterationHashfullRegex.Match(rawLine);
-        var hashfull = hf.Success && int.TryParse(hf.Groups[1].Value, out var permille) ? permille : 0;
-        var row = new IterationRow(s.Depth, s.SD, cp, mate, s.PV ?? "", s.PVLongSAN ?? "",
-                                   s.Nodes, s.NPS, seconds, IterationBoundRegex.IsMatch(rawLine), hashfull);
-        lock (iterationLock)
-        {
-            // Aspiration re-searches repeat a depth; the last line for it wins, so the log
-            // holds one row per depth like an engine's own iteration output.
-            var idx = iterationsWork.FindLastIndex(r => r.Depth == row.Depth);
-            if (idx >= 0)
-            {
-                iterationsWork[idx] = row;
-            }
-            else
-            {
-                iterationsWork.Add(row);
-                // One row per depth, so this is bounded by the engine's ply cap (~245 for
-                // Stockfish) on its own. The limit is only a backstop against an engine
-                // reporting nonsense depths — trimming for size would throw away the early
-                // iterations, which are the ones that carry the information once the
-                // display merges unchanged runs.
-                if (iterationsWork.Count > 512) iterationsWork.RemoveAt(0);
-            }
-            // Publish a snapshot: renders enumerate it on the dispatcher while the engine
-            // reader thread keeps producing.
-            iterations = new List<IterationRow>(iterationsWork);
-            return idx < 0;
-        }
-    }
+    private bool CaptureIteration(EngineStatus s, string rawLine) =>
+        iterationCollector.Capture(s, rawLine, elapsed.TotalSeconds);
 
     private void ClearIterations()
     {
-        lock (iterationLock)
-        {
-            iterationsWork.Clear();
-            iterations = new();
-        }
+        iterationCollector.Clear();
         pendingIterationStatus = null;
     }
 
@@ -1428,7 +1375,7 @@
                             var newDepth = CaptureIteration(pendingIterationStatus, i.Info);
                             if (newDepth && OnIterations.HasDelegate)
                             {
-                                var rowsCopy = iterations;
+                                var rowsCopy = iterationCollector.Rows;
                                 var rowsFen = fen;
                                 await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen)));
                             }

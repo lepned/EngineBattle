@@ -301,3 +301,40 @@
     white-space: nowrap;
 }
 
+
+/* ── Leader trail ──────────────────────────────────────────────────────────── */
+/* The search's changes of mind on one line, under the table. Wraps rather than scrolls:
+   a long search can hand over a dozen times, and a second scroller inside the card would
+   compete with the one above it. */
+.il-trail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem 0.45rem;
+    margin-top: 0.5rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid rgba(125, 132, 156, 0.16);
+    font-size: 0.76rem;
+    color: var(--mud-palette-text-primary);
+}
+
+.il-trail-h {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+    margin-right: 0.15rem;
+}
+
+.il-trail-item { white-space: nowrap; }
+
+/* Depth in the accent used for priors elsewhere, so the move stays the thing you read. */
+.il-trail-d {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 0.68rem;
+    color: var(--il-accent);
+    margin-right: 0.28rem;
+}
+
+.il-trail-sep { color: var(--mud-palette-text-secondary); opacity: 0.55; }

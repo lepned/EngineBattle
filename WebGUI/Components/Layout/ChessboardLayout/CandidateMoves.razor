@@ -13,7 +13,7 @@
 }
 else
 {
-    <div class="cm-grid @(Detailed ? "detailed" : null) @(ShowHeightControl ? "scroll" : null)"
+    <div class="cm-grid @(Detailed ? "detailed" : null) @(Scrolls ? "scroll" : null)"
          style="@GridStyle">
         <div class="cm-h">Move</div>
         <div class="cm-h">
@@ -153,9 +153,21 @@ else
     /// already scroll the panel (engine panel, broadcast) leave it off.</summary>
     [Parameter] public bool ShowHeightControl { get; set; }
 
+    /// <summary>Caps the table and lets it scroll, without the slider — for hosts that want
+    /// the whole move list available at a fixed height, such as a broadcast panel where a
+    /// visible control would be in the way.</summary>
+    [Parameter] public int MaxHeightPx { get; set; }
+
     // Persisted so the chosen height survives navigation and restarts, like the iteration log.
     private int tableHeight = 320;
-    private string GridStyle => ShowHeightControl ? $"--cm-max-h:{tableHeight}px" : null;
+
+    private bool Scrolls => ShowHeightControl || MaxHeightPx > 0;
+
+    // The slider wins when both are set: it is the one the user can actually move.
+    private string GridStyle =>
+        ShowHeightControl ? $"--cm-max-h:{tableHeight}px"
+        : MaxHeightPx > 0 ? $"--cm-max-h:{MaxHeightPx}px"
+        : null;
 
     protected override void OnInitialized() =>
         tableHeight = Math.Clamp(SettingsService.Settings.CandidateMovesHeight, 120, 640);

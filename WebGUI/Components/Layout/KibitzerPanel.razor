@@ -1,6 +1,7 @@
 @using System.Globalization
 @using System.IO
 @using ChessLibrary
+@using WebGUI.Components.Layout.ChessboardLayout
 @implements IAsyncDisposable
 @inject NotifierService Notifier
 @inject OverlaySetting OverlaySetting
@@ -101,6 +102,10 @@
     /// regardless of the overlay checkbox.</summary>
     [Parameter] public EventCallback<(IReadOnlyList<NNValues> Stats, string Fen)> OnLiveStats { get; set; }
 
+    /// <summary>Per-depth iteration rows, raised as each new depth opens. Empty for engines
+    /// that report live move stats — those hosts show the candidate table instead.</summary>
+    [Parameter] public EventCallback<(IReadOnlyList<IterationRow> Rows, string Fen, string InfoLine, bool Searching)> OnIterations { get; set; }
+
     private record EngineFile(string Path, string Name);
 
     private readonly List<EngineFile> engineFiles = new();
@@ -111,6 +116,20 @@
     private bool running;
     private bool waitingForEngine;
     private bool hasLiveStats;
+
+    // Iteration log for alpha-beta engines, which report no root visit counts. The reading
+    // of an info line is shared with EnginePanel — see IterationCollector.
+    private readonly IterationCollector iterationCollector = new();
+    private EngineStatus pendingIterationStatus;
+    private string lastIterationInfoLine = "";
+    private readonly System.Diagnostics.Stopwatch searchTimer = new();
+    private readonly System.Diagnostics.Stopwatch iterationPublish = System.Diagnostics.Stopwatch.StartNew();
+    private bool iterationSkipLogged;
+
+    /// <summary>Per-depth iteration log of the current search, ascending by depth.</summary>
+    public IReadOnlyList<IterationRow> Iterations => iterationCollector.Rows;
+    /// <summary>Newest raw info line, for the iteration log's header readouts.</summary>
+    public string LastInfoLine => lastIterationInfoLine;
     private bool overlayOn = true;
     private int limitSeconds = 5;
     private int pvLines = 3;
@@ -275,6 +294,15 @@
         // even when the eval happens to match the previous position's.
         lastCp = null;
         lastMate = null;
+        // The iteration log belongs to one search. Left standing, its depths are all
+        // already known when the next search reports them, so nothing counts as a new
+        // depth and the host is never told anything again.
+        iterationCollector.Clear();
+        pendingIterationStatus = null;
+        lastIterationInfoLine = "";
+        iterationSkipLogged = false;
+        searchTimer.Restart();
+        iterationPublish.Restart();
     }
 
     /// <summary>Starts (or restarts) a search on the shared board's current position.
@@ -372,7 +400,11 @@
                             data[k] = status;
                             dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
                         }
-                        if (k == 1) await PublishEval(status);
+                        if (k == 1)
+                        {
+                            pendingIterationStatus = status;
+                            await PublishEval(status);
+                        }
                         await InvokeAsync(StateHasChanged);
                     }
                     break;
@@ -388,7 +420,46 @@
                             dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
                         }
                     }
+                    if (!hasLiveStats && OnIterations.HasDelegate)
+                    {
+                        // bestmove ends the search. Without this the host keeps the newest
+                        // row marked as pending, waiting on a depth that will never open.
+                        var doneRows = iterationCollector.Rows;
+                        var doneFen = lastSearchFen;
+                        var doneRaw = lastIterationInfoLine;
+                        await InvokeAsync(() => OnIterations.InvokeAsync((doneRows, doneFen, doneRaw, false)));
+                    }
                     await InvokeAsync(StateHasChanged);
+                    break;
+
+                case EngineUpdate.Info i:
+                    // An engine with live stats has no iteration log by design — the host shows
+                    // the candidate table for it. Only the other case is worth a word.
+                    if (hasLiveStats) break;
+                    if (pendingIterationStatus is null)
+                    {
+                        if (!iterationSkipLogged)
+                        {
+                            iterationSkipLogged = true;
+                            logger.LogDebug("Iteration log idle: an info line arrived before any status");
+                        }
+                        break;
+                    }
+                    lastIterationInfoLine = i.Info;
+                    var opened = iterationCollector.Capture(pendingIterationStatus, i.Info, searchTimer.Elapsed.TotalSeconds);
+                    // Publish on a new depth, and otherwise at most four times a second.
+                    // Depth-only publishing left the host stale for as long as the engine
+                    // spent refining one depth — and empty for that whole time if its rows
+                    // had just been reset by a game switch.
+                    var due = opened || iterationPublish.ElapsedMilliseconds >= 250;
+                    if (due && OnIterations.HasDelegate)
+                    {
+                        iterationPublish.Restart();
+                        var rowsCopy = iterationCollector.Rows;
+                        var rowsFen = lastSearchFen;
+                        var rawCopy = i.Info;
+                        await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen, rawCopy, true)));
+                    }
                     break;
 
                 case EngineUpdate.NNSeq n:

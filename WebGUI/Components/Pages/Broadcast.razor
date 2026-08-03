@@ -131,7 +131,8 @@
                     <AboveMoveList>
                         <KibitzerPanel ChessBoard="@focusBoard" Id="nnInput1"
                                        InitialEngine="Engine" InitialEnginePath="@engineConfigPath"
-                                       OnEvalUpdated="OnKibitzerEval" OnLiveStats="OnKibitzerStats" />
+                                       OnEvalUpdated="OnKibitzerEval" OnLiveStats="OnKibitzerStats"
+                                       OnIterations="OnKibitzerIterations" />
                     </AboveMoveList>
                     <BlackPlayerInfo>
                         <div class="bc-player">
@@ -157,19 +158,32 @@
                     </WhitePlayerInfo>
                 </ModernChessboard>
 
-                @if (g.Plies.Count > 1 || statsSeen)
+                @if (g.Plies.Count > 1 || statsSeen || iterationsSeen)
                 {
                     <div class="bc-evalchart">
-                        @if (statsSeen)
+                        @* One tab slot for whatever the engine can say about the position:
+                           root visits from an MCTS engine, per-depth iterations from an
+                           alpha-beta one. Never both. *@
+                        @if (statsSeen || iterationsSeen)
                         {
                             <div class="bc-viewtabs">
-                                <span class="@(showCandidates ? "on" : "")" @onclick="() => showCandidates = true">Moves</span>
+                                <span class="@(showCandidates ? "on" : "")" @onclick="() => showCandidates = true">@(statsSeen ? "Moves" : "Iterations")</span>
                                 <span class="@(!showCandidates ? "on" : "")" @onclick="() => showCandidates = false">Eval history</span>
                             </div>
                         }
                         @if (statsSeen && showCandidates)
                         {
-                            <CandidateMoves Stats="@candidateStats" Fen="@candidateFen" />
+                            @* Every legal move, capped at roughly eight rows: the panel keeps
+                               one height whatever the position, and the rest is a scroll away.
+                               No slider — a control on screen during a broadcast is noise. *@
+                            <CandidateMoves Stats="@candidateStats" Fen="@candidateFen"
+                                            MaxRows="int.MaxValue" MaxHeightPx="240" />
+                        }
+                        else if (iterationsSeen && showCandidates)
+                        {
+                            <IterationLog Rows="@iterationRows" Fen="@iterationFen" Compact="true"
+                                          Searching="@iterationSearching" EngineLabel="@(Engine?.Name ?? "")"
+                                          RawInfoLine="@iterationInfoLine" />
                         }
                         else if (g.Plies.Count > 1)
                         {
@@ -499,6 +513,27 @@
     private DateTime lastStatsRender = DateTime.MinValue;
     private bool statsRenderPending;
 
+    // Alpha-beta engines produce no root visit stats; these rows are the equivalent view.
+    private IReadOnlyList<IterationRow> iterationRows = Array.Empty<IterationRow>();
+    private string iterationFen = "";
+    private string iterationInfoLine = "";
+    private bool iterationsSeen;
+    private bool iterationSearching;
+
+    private void OnKibitzerIterations((IReadOnlyList<IterationRow> Rows, string Fen, string InfoLine, bool Searching) payload)
+    {
+        iterationRows = payload.Rows ?? Array.Empty<IterationRow>();
+        iterationFen = payload.Fen ?? "";
+        iterationInfoLine = payload.InfoLine ?? "";
+        // From the engine, not from "we have rows": the newest row is drawn as pending while
+        // this is true, and it has to stop when bestmove lands.
+        iterationSearching = payload.Searching;
+        // Only reveal the tab — which one is selected stays the viewer's choice, as it is
+        // for the stats path.
+        if (iterationRows.Count > 0) iterationsSeen = true;
+        StateHasChanged();
+    }
+
     private void OnKibitzerStats((IReadOnlyList<NNValues> Stats, string Fen) payload)
     {
         // Empty payload = engine switched; hide the Moves tab until the new engine
@@ -541,6 +576,13 @@
         engineEvalByPly.Clear();
         candidateStats = new();
         candidateFen = "";
+        // Same for the alpha-beta view: the rows belong to the position that was on the
+        // board, and the next search only reports once it has finished a depth — until
+        // then the previous game's log would sit there looking current.
+        iterationRows = Array.Empty<IterationRow>();
+        iterationFen = "";
+        iterationInfoLine = "";
+        iterationSearching = false;
     }
 
     /// <summary>Lobby card/row click: start the tour's linked round (lichess's pick) and
