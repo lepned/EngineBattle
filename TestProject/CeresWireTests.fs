@@ -253,3 +253,19 @@ let ``celtType reads discriminator and mappers reject wrong type`` () =
     Assert.Equal("gameEnd", celtType gameEndLine)
     Assert.True((mapMove "s" "0" "W" "B" "" "" gameEndLine).IsNone) // wrong type -> None
     Assert.True((mapGameEnd "s" "0" moveLine).IsNone)
+
+[<Fact>]
+let ``a clock past 24 hours survives the CELT mapping uncapped`` () =
+    // 30h = 108_000_000 ms. The bridge used to clamp anything above 23.999h, because the
+    // type it mapped onto could not hold a day — so a long time control silently arrived as
+    // something else. The guard is gone; this is what proves it stays gone, and neither a
+    // live broadcast nor any other test exercises a clock that long.
+    let line = gameStartLine.Replace("\"whiteTimeMs\":60000", "\"whiteTimeMs\":108000000")
+    match mapGameStart "rigA" "0" line with
+    | Some(_, _, _, json) ->
+        match tryParseUpdate json with
+        | Some(Update.StartOfGame g) ->
+            Assert.Equal(30.0, g.WhiteTime.TotalHours, 6)
+            Assert.Equal("30:00:00.000", formatDuration g.WhiteTime)
+        | other -> failwithf "expected StartOfGame, got %A" other
+    | None -> failwith "mapGameStart returned None"
