@@ -6,6 +6,7 @@ open ChessLibrary.EngineTypes
 open ChessLibrary.TournamentTypes
 open ChessLibrary.LiveFeedWire
 open ChessLibrary.CeresWire
+open ChessLibrary.TypesDef.CoreTypes
 
 // CELT/1.0 sample lines (camelCase, as the Ceres TournamentStreamPublisher emits them).
 
@@ -44,7 +45,7 @@ let ``gameStart maps to StartOfGame with names, startPos, round, and envelope`` 
             Assert.Equal(3, g.CurrentGameNr)
             Assert.True(g.WhiteToMove)
             Assert.StartsWith("rnbqkbnr/pp1ppppp", g.StartPos)
-            Assert.Equal("00:01:00.000", g.WhiteTime.ToString("HH:mm:ss.fff"))
+            Assert.Equal("00:01:00.000", formatDuration g.WhiteTime)
         | other -> failwithf "expected StartOfGame, got %A" other
     | None -> failwith "mapGameStart returned None"
 
@@ -68,7 +69,7 @@ let ``move maps to BestMove with eval/100, wdl*1000, SAN, envelope`` () =
             | CP v -> Assert.Equal(1.05, v, 3)               // white move: 105 cp -> 1.05, no flip
             | other -> failwithf "expected CP, got %A" other
             Assert.Equal(13657466L, info.Nodes)
-            Assert.Equal("00:00:58.833", info.TimeLeft.ToString("HH:mm:ss.fff"))
+            Assert.Equal("00:00:58.833", formatDuration info.TimeLeft)
             Assert.Equal("h4", info.MoveAndFen.Move.FromSq)
             Assert.Equal("h5", info.MoveAndFen.Move.ToSq)
             Assert.Equal(23, status.Depth)
@@ -224,15 +225,15 @@ let private parseTC (line: string) =
 let ``toTimeControl maps secondsForAllMoves to fixed + increment`` () =
     let cfg = (parseTC (tcLine """{"kind":"secondsForAllMoves","valueMs":60000,"incrementMs":1000}""")).GetTimeConfig 1
     Assert.False(cfg.NodeLimit)
-    Assert.Equal(60.0, cfg.Fixed.ToTimeSpan().TotalSeconds, 1)
-    Assert.Equal(1.0, cfg.Increment.ToTimeSpan().TotalSeconds, 1)
+    Assert.Equal(60.0, cfg.Fixed.TotalSeconds, 1)
+    Assert.Equal(1.0, cfg.Increment.TotalSeconds, 1)
 
 [<Fact>]
 let ``toTimeControl maps secondsPerMove to 1s fixed + per-move increment`` () =
     let cfg = (parseTC (tcLine """{"kind":"secondsPerMove","valueMs":1500}""")).GetTimeConfig 1
     Assert.False(cfg.NodeLimit)
-    Assert.Equal(1.0, cfg.Fixed.ToTimeSpan().TotalSeconds, 2)        // 1s base
-    Assert.Equal(1.5, cfg.Increment.ToTimeSpan().TotalSeconds, 2)    // increment = per-move time
+    Assert.Equal(1.0, cfg.Fixed.TotalSeconds, 2)        // 1s base
+    Assert.Equal(1.5, cfg.Increment.TotalSeconds, 2)    // increment = per-move time
 
 [<Fact>]
 let ``toTimeControl maps nodesPerMove to a node limit`` () =

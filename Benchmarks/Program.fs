@@ -1,6 +1,7 @@
 open System
 open BenchmarkDotNet.Running
 open Benchmarks.ParserBenchmarks
+open Benchmarks.ClockBenchmarks
 
 [<EntryPoint>]
 let main args =
@@ -16,6 +17,7 @@ let main args =
         printfn "  file        Run file parser benchmarks with BenchmarkDotNet"
         printfn "  comments    Run comment-aware vs no-comments benchmarks"
         printfn "  real        Run real file benchmarks with BenchmarkDotNet"
+        printfn "  clock       Compare TimeOnly vs TimeSpan for the game clock"
         printfn "  all         Run all BenchmarkDotNet benchmarks"
         printfn "  help        Show this help message"
         printfn ""
@@ -53,6 +55,11 @@ let main args =
         BenchmarkRunner.Run<RealFileBenchmarks>() |> ignore
         0
     
+    | ["clock"] ->
+        printfn "Running Clock Type Benchmarks..."
+        BenchmarkRunner.Run<ClockUpdateBenchmarks>() |> ignore
+        0
+
     | ["all"] ->
         printfn "Running All Benchmarks..."
         printfn ""

@@ -11,7 +11,7 @@ module ChessLibrary.CeresWire
 // CELT fields are camelCase (the publisher uses JsonNamingPolicy.CamelCase). Unit conversions:
 //   evalCp (centipawns)  -> EvalType.CP (pawns, /100)
 //   wdl {w,d,l} (0..1)   -> WDL per-mille (*1000), matching EB's own producer
-//   *Ms (milliseconds)   -> TimeOnly (HH:mm:ss.fff)
+//   *Ms (milliseconds)   -> TimeSpan (hh:mm:ss.fff)
 // Known gaps (MVP): CELT carries top-moves but no PV string -> PV = played move only; moves are
 // UCI (no SAN); opening moves are not expanded (board starts at startFEN). Eval is mover's
 // perspective (matches EB's own feed).
@@ -73,11 +73,10 @@ let private getIntOpt (o: JsonObject) (k: string) : int option =
 // Value conversions
 // ---------------------------------------------------------------------------------------------
 
-let private timeOnlyMs (ms: int) =
-    let clamped = float (max 0 ms)
-    // clocks are well under 24h; guard against pathological values
-    let capped = min clamped (float (TimeSpan.FromHours(23.999).TotalMilliseconds))
-    TimeOnly.FromTimeSpan(TimeSpan.FromMilliseconds capped)
+let private durationMs (ms: int) =
+    // No upper guard any more: the 24h cap existed only because TimeOnly could not hold a
+    // value past a day, which a long time control legitimately reaches.
+    TimeSpan.FromMilliseconds(float (max 0 ms))
 
 let private evalCp (o: JsonObject) =
     match getIntOpt o "evalCp" with
@@ -174,13 +173,13 @@ let private toTimeControl (o: JsonObject) : TimeControl option =
         let config =
             match kind with
             | "nodesPerMove" | "nodesForAllMoves" ->
-                { Id = 1; Fixed = timeOnlyMs 0; Increment = timeOnlyMs 0; NodeLimit = true; Nodes = nodes }
+                { Id = 1; Fixed = durationMs 0; Increment = durationMs 0; NodeLimit = true; Nodes = nodes }
             | "secondsPerMove" ->
                 // EB has no per-move (movetime) mode; model it as a small 1s fixed base + an increment
                 // equal to the per-move time, so each move effectively gets ~that time.
-                { Id = 1; Fixed = timeOnlyMs 1000; Increment = timeOnlyMs valueMs; NodeLimit = false; Nodes = 0 }
+                { Id = 1; Fixed = durationMs 1000; Increment = durationMs valueMs; NodeLimit = false; Nodes = 0 }
             | _ -> // secondsForAllMoves / other: fixed + increment
-                { Id = 1; Fixed = timeOnlyMs valueMs; Increment = timeOnlyMs incrMs; NodeLimit = false; Nodes = 0 }
+                { Id = 1; Fixed = durationMs valueMs; Increment = durationMs incrMs; NodeLimit = false; Nodes = 0 }
         Some { TimeConfigs = [ config ]; WmovesToGo = movesToGo; BmovesToGo = movesToGo }
     | _ -> None
 
@@ -242,8 +241,8 @@ let mapGameStart (source: string) (gameId: string) (line: string) : (string * st
               BlackPlayer = { EngineConfig.Empty with Name = black }
               StartPos = startFen
               OpeningMovesAndFen = ResizeArray()
-              WhiteTime = timeOnlyMs (getInt o "whiteTimeMs" 0)
-              BlackTime = timeOnlyMs (getInt o "blackTimeMs" 0)
+              WhiteTime = durationMs (getInt o "whiteTimeMs" 0)
+              BlackTime = durationMs (getInt o "blackTimeMs" 0)
               WhiteToMove = getBool o "whiteToMove" true
               OpeningName = getStr o "openingName" ""
               CurrentGameNr = getInt o "roundNumber" 0
@@ -278,8 +277,8 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (b
               Move = lan
               Ponder = ""
               Eval = ev
-              TimeLeft = timeOnlyMs (getInt o "timeLeftMs" 0)
-              MoveTime = timeOnlyMs (getInt o "moveTimeMs" 0)
+              TimeLeft = durationMs (getInt o "timeLeftMs" 0)
+              MoveTime = durationMs (getInt o "moveTimeMs" 0)
               Nodes = nodes
               NPS = nps
               FEN = fen

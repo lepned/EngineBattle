@@ -53,6 +53,89 @@ module TypesDef =
                 | TimeControlStrategy.AutoDetect -> "AutoDetect"
             writer.WriteStringValue(str)
 
+    // -----------------------------------------------------------------------------
+    // DURATIONS
+    // -----------------------------------------------------------------------------
+    //
+    // Clocks, increments, move overhead and delays are all *amounts of time*. .NET's own
+    // parsing of "hh:mm:ss" rejects an hour field above 23 and a minute or second field
+    // above 59, because those ranges describe a time of day. A duration has no such
+    // ceilings, and users kept running into all three of them: 60 seconds, 60 minutes and
+    // anything past a day.
+    //
+    // The format is exactly hh:mm:ss with an optional .fff, and every field is unbounded.
+    // Days are deliberately not part of it — "30:00:00" says thirty hours more plainly than
+    // TimeSpan's own "1.06:00:00", and one form is one thing to document and to test.
+
+    /// Renders a duration as hh:mm:ss.fff with the hour field carrying everything above a
+    /// day, so the output is always in the same shape the parser accepts.
+    let formatDuration (v: TimeSpan) : string =
+        let sign = if v < TimeSpan.Zero then "-" else ""
+        let a = if v < TimeSpan.Zero then v.Negate() else v
+        sprintf "%s%02d:%02d:%02d.%03d" sign (int a.TotalHours) a.Minutes a.Seconds a.Milliseconds
+
+    /// Parses hh:mm:ss[.fff] with no upper bound on any field. Raises with a message that
+    /// states the format when the input cannot be read.
+    let parseDuration (raw: string) : TimeSpan =
+        let s = if isNull raw then "" else raw.Trim()
+        let fail () : TimeSpan =
+            failwithf
+                "Invalid duration '%s'. Expected hh:mm:ss or hh:mm:ss.fff. Every field may \
+                 overflow — \"00:00:90\" is 90 seconds and \"30:00:00\" is 30 hours. All three \
+                 fields are required, and days are not part of the format."
+                s
+        if s = "" then fail ()
+        else
+        // A dot before the first colon is TimeSpan's day prefix. Refusing it keeps the dot
+        // meaning one thing only, and nothing can already be written that way: the old type
+        // could not hold a day in the first place.
+        let firstColon = s.IndexOf ':'
+        let firstDot = s.IndexOf '.'
+        if firstColon < 0 || (firstDot >= 0 && firstDot < firstColon) then fail ()
+        else
+        let parts = s.Split ':'
+        // Three fields, always. "10:00" is the one input worth refusing outright: .NET reads
+        // it as ten hours while someone writing a time control means ten minutes, and either
+        // guess is a silently wrong game.
+        if parts.Length <> 3 then fail ()
+        else
+        let inv = Globalization.CultureInfo.InvariantCulture
+        let secText, fracText =
+            let sec = parts.[2]
+            let dot = sec.IndexOf '.'
+            if dot < 0 then sec, "" else sec.Substring(0, dot), sec.Substring(dot + 1)
+        let ok, hours = Int64.TryParse(parts.[0], Globalization.NumberStyles.None, inv)
+        let ok2, minutes = Int64.TryParse(parts.[1], Globalization.NumberStyles.None, inv)
+        let ok3, seconds = Int64.TryParse(secText, Globalization.NumberStyles.None, inv)
+        if not (ok && ok2 && ok3) then fail ()
+        elif fracText <> "" && not (fracText |> Seq.forall Char.IsDigit) then fail ()
+        else
+        // Fraction as ticks: pad or truncate to the 7 digits TimeSpan actually stores.
+        let fracTicks =
+            if fracText = "" then 0L
+            else
+                let padded = (fracText + String('0', 7)).Substring(0, 7)
+                match Int64.TryParse(padded, Globalization.NumberStyles.None, inv) with
+                | true, v -> v
+                | _ -> 0L
+        TimeSpan.FromTicks(
+            hours * TimeSpan.TicksPerHour
+            + minutes * TimeSpan.TicksPerMinute
+            + seconds * TimeSpan.TicksPerSecond
+            + fracTicks)
+
+    /// JSON converter for durations. Reading is tolerant of overflowing fields; writing
+    /// normalises, so "00:00:90" is stored back as "00:01:30" and a file always states what
+    /// the value actually became.
+    type DurationConverter() =
+        inherit JsonConverter<TimeSpan>()
+
+        override _.Read(reader: byref<Utf8JsonReader>, _typeToConvert: Type, _options: JsonSerializerOptions) =
+            parseDuration (reader.GetString())
+
+        override _.Write(writer: Utf8JsonWriter, value: TimeSpan, _options: JsonSerializerOptions) =
+            writer.WriteStringValue(formatDuration value)
+
     /// Move annotation detail level for PGN output
     [<RequireQualifiedAccess>]
     type MoveAnnotation =
@@ -428,8 +511,8 @@ module TypesDef =
         BlackPlayer:EngineConfig
         StartPos:string
         OpeningMovesAndFen: ResizeArray<MoveAndFen>
-        WhiteTime : TimeOnly
-        BlackTime : TimeOnly
+        WhiteTime : TimeSpan
+        BlackTime : TimeSpan
         WhiteToMove : bool
         OpeningName : string
         CurrentGameNr : int
@@ -530,8 +613,8 @@ module TypesDef =
         [<JsonIgnore>] mutable PreventMoveDeviationFor: string[]
         mutable Rounds: int
         PauseAfterRound: int
-        DelayBetweenGames: TimeOnly
-        MoveOverhead: TimeOnly
+        DelayBetweenGames: TimeSpan
+        MoveOverhead: TimeSpan
         OrdoExePath: string
         Adjudication: Adjudication
         TestOptions: TestOptions
@@ -636,10 +719,10 @@ module TypesDef =
           if tc.NodeLimit then
                   x.FormatNumberWithK tc.Nodes
           else
-            x.FormatTimeSpan (tc.Fixed.ToTimeSpan()) (tc.Increment.ToTimeSpan())
+            x.FormatTimeSpan (tc.Fixed) (tc.Increment)
             //sprintf "%ds + %.1fs"
-            //    (tc.Fixed.ToTimeSpan().TotalSeconds|> int)
-            //    (tc.Increment.ToTimeSpan().TotalSeconds)
+            //    (tc.Fixed.TotalSeconds|> int)
+            //    (tc.Increment.TotalSeconds)
 
         member x.TimeControlTextForPlayers (id1:int, id2:int) =
           if obj.ReferenceEquals(box x.TimeControl, null) then "" else
@@ -653,29 +736,29 @@ module TypesDef =
 
           let tc1 = x.FindTimeControl id1
           if not moreThanOneTC then
-            x.FormatTimeSpan (tc1.Fixed.ToTimeSpan()) (tc1.Increment.ToTimeSpan())
+            x.FormatTimeSpan (tc1.Fixed) (tc1.Increment)
               //sprintf "%ds + %.1fs"
-              //    (tc1.Fixed.ToTimeSpan().TotalSeconds|> int)
-              //    (tc1.Increment.ToTimeSpan().TotalSeconds)
+              //    (tc1.Fixed.TotalSeconds|> int)
+              //    (tc1.Increment.TotalSeconds)
           else
             let tc2 = x.FindTimeControl id2
             let tc1 =
                 if tc1.NodeLimit then
                   formatNumberWithK tc1.Nodes
                 else
-                  x.FormatTimeSpan (tc1.Fixed.ToTimeSpan()) (tc1.Increment.ToTimeSpan())
+                  x.FormatTimeSpan (tc1.Fixed) (tc1.Increment)
                   //sprintf "%ds + %.1fs"
-                  //  (tc1.Fixed.ToTimeSpan().TotalSeconds|> int)
-                  //  (tc1.Increment.ToTimeSpan().TotalSeconds)
+                  //  (tc1.Fixed.TotalSeconds|> int)
+                  //  (tc1.Increment.TotalSeconds)
             let tc2 =
                 if tc2.NodeLimit then
                   let nodes = formatNumberWithK tc2.Nodes
                   nodes
                 else
-                  x.FormatTimeSpan (tc2.Fixed.ToTimeSpan()) (tc2.Increment.ToTimeSpan())
+                  x.FormatTimeSpan (tc2.Fixed) (tc2.Increment)
                   //sprintf "%ds + %.1fs"
-                  //  (tc2.Fixed.ToTimeSpan().TotalSeconds|> int)
-                  //  (tc2.Increment.ToTimeSpan().TotalSeconds)
+                  //  (tc2.Fixed.TotalSeconds|> int)
+                  //  (tc2.Increment.TotalSeconds)
             sprintf "%s vs %s" tc1 tc2
 
         member x.FormatTimeSpan (fixedTime: TimeSpan) (incrementTime: TimeSpan) : string =
@@ -711,19 +794,19 @@ module TypesDef =
                   if tc1.NodeLimit then
                     sprintf "%dN" tc1.Nodes
                   else
-                    x.FormatTimeSpan (tc1.Fixed.ToTimeSpan()) (tc1.Increment.ToTimeSpan())
+                    x.FormatTimeSpan (tc1.Fixed) (tc1.Increment)
                     //sprintf "%ds + %.1fs"
-                    //  (tc1.Fixed.ToTimeSpan().TotalSeconds|> int)
-                    //  (tc1.Increment.ToTimeSpan().TotalSeconds)
+                    //  (tc1.Fixed.TotalSeconds|> int)
+                    //  (tc1.Increment.TotalSeconds)
 
                 let tc2 =
                   if tc2.NodeLimit then
                     sprintf "%dN" tc2.Nodes
                   else
-                    x.FormatTimeSpan (tc2.Fixed.ToTimeSpan()) (tc2.Increment.ToTimeSpan())
+                    x.FormatTimeSpan (tc2.Fixed) (tc2.Increment)
                     //sprintf "%ds + %.1fs"
-                    //  (tc2.Fixed.ToTimeSpan().TotalSeconds|> int)
-                    //  (tc2.Increment.ToTimeSpan().TotalSeconds)
+                    //  (tc2.Fixed.TotalSeconds|> int)
+                    //  (tc2.Increment.TotalSeconds)
                 sprintf "%s vs %s" tc1 tc2
               else
                 tc1.ToString()
@@ -758,7 +841,7 @@ module TypesDef =
         member x.Summary() =
           let sb = new StringBuilder()
           let mode = x.ModeLabel()
-          let formatTimeOnly (time: TimeOnly) = time.ToString("HH:mm:ss.fff")
+          let formatOverhead (time: TimeSpan) = CoreTypes.formatDuration time
           let openings =
             let book =
               if x.Opening.OpeningsPath.IsSome then Path.GetFileName(x.Opening.OpeningsPath.Value)
@@ -790,7 +873,7 @@ module TypesDef =
           if String.IsNullOrWhiteSpace(gauntlet) |> not then
             sb.AppendLine gauntlet |> ignore
           sb.AppendLine (sprintf "Time: %s | overhead=%s | min move=%dms | pondering=%b"
-                            (x.TimeControlText()) (formatTimeOnly x.MoveOverhead) x.MinMoveTimeInMS x.AllowPondering) |> ignore
+                            (x.TimeControlText()) (formatOverhead x.MoveOverhead) x.MinMoveTimeInMS x.AllowPondering) |> ignore
           sb.AppendLine openings |> ignore
           sb.AppendLine tablebases |> ignore
           sb.AppendLine (x.AdjudicationText()) |> ignore
@@ -845,7 +928,7 @@ module TypesDef =
           printfn "%s" (x.Players())
           printfn "%s" "Engine configuration:"
           for eng in x.EngineSetup.Engines do
-            let moveOverhead = x.MoveOverhead.ToTimeSpan().TotalMilliseconds
+            let moveOverhead = x.MoveOverhead.TotalMilliseconds
             let info : string = eng.Information moveOverhead
             printfn "\t%s: %s" eng.Name info
           //printfn "LC0-version: %s" "v0.31.0-dag+git.dirty built Feb  7 2024 (cuda)" // Example, adjust as needed
@@ -911,8 +994,8 @@ module TypesDef =
               TBAdj = {TablebaseDirectory = String.Empty; UseTBAdjudication = true; TBMen = 6  }
             }
 
-          DelayBetweenGames = TimeOnly.MinValue
-          MoveOverhead = TimeOnly.MinValue
+          DelayBetweenGames = TimeSpan.Zero
+          MoveOverhead = TimeSpan.Zero
           OpeningName = ""
           // Feed fallback (e.g. the Ceres feed, which carries no EB layout) uses Empty's layout —
           // default it to a standings-focused broadcast view with the live PV board shown.

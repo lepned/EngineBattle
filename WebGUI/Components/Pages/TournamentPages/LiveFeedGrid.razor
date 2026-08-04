@@ -399,7 +399,7 @@
                         {
                             var sp = speed.TryGetValue(bm.Info.Player, out var sv) ? sv : (speed[bm.Info.Player] = new Speed());
                             sp.Nodes += bm.Status.Nodes; sp.Nps += bm.Status.NPS; sp.Eps += bm.Status.EPS; sp.N++;
-                            sp.Time += bm.Info.MoveTime.ToTimeSpan();   // total time this engine has spent thinking
+                            sp.Time += bm.Info.MoveTime;   // total time this engine has spent thinking
                         }
                         break;
                     }
@@ -588,9 +588,9 @@
         return toks.Length <= PvMaxPlies ? pv : string.Join(' ', toks.Take(PvMaxPlies)) + " …";
     }
 
-    private static string FmtClock(TimeOnly t)
+    private static string FmtClock(TimeSpan t)
     {
-        var ts = t.ToTimeSpan();
+        var ts = t;
         return ts.TotalHours >= 1
             ? $"{(int)ts.TotalHours}:{ts.Minutes:00}:{ts.Seconds:00}"
             : $"{ts.Minutes}:{ts.Seconds:00}";

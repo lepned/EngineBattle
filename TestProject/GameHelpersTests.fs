@@ -427,8 +427,8 @@ let ``getPositionWithMoves with custom FEN start position`` () =
 
 let private mkTc periodW periodB fixedSec incSec : TimeControl =
     let cfg = { Id = 1
-                Fixed = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(float fixedSec))
-                Increment = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(float incSec))
+                Fixed = TimeSpan.FromSeconds(float fixedSec)
+                Increment = TimeSpan.FromSeconds(float incSec)
                 NodeLimit = false
                 Nodes = 0 }
     { TimeConfigs = [cfg]; WmovesToGo = periodW; BmovesToGo = periodB }
@@ -456,7 +456,7 @@ let ``moves-to-go go-command emits a single valid movestogo`` () =
     let tc = mkTc 20 20 30 0
     let cfg = tc.GetTimeConfig 1
     let union = tc.GetTimeForMove cfg 8
-    let cmd = TimeControlCommands.uciTimeCommand union (TimeOnly(0,0,30)) (TimeOnly(0,0,30))
+    let cmd = TimeControlCommands.uciTimeCommand union (TimeSpan(0, 0, 30)) (TimeSpan(0, 0, 30))
     Assert.Contains("movestogo 12", cmd)
     Assert.DoesNotContain("movestogo 12 12", cmd)   // not the old invalid two-number form
 
@@ -465,5 +465,55 @@ let ``no moves-to-go produces a command without movestogo`` () =
     let tc = mkTc 0 0 30 1
     let cfg = tc.GetTimeConfig 1
     let union = tc.GetTimeForMove cfg 5
-    let cmd = TimeControlCommands.uciTimeCommand union (TimeOnly(0,0,30)) (TimeOnly(0,0,30))
+    let cmd = TimeControlCommands.uciTimeCommand union (TimeSpan(0, 0, 30)) (TimeSpan(0, 0, 30))
     Assert.DoesNotContain("movestogo", cmd)
+
+// ============================================================================
+// Long time controls — the ceiling TimeOnly imposed at 24 hours
+// ============================================================================
+
+[<Fact>]
+let ``a time control past 24 hours survives into the UCI go command`` () =
+    // 30h + 30s. The old type could not hold the fixed time at all, and the Ceres bridge
+    // capped anything above 23.999h on the way in.
+    let cfg = { Id = 1
+                Fixed = TimeSpan.FromHours 30.0
+                Increment = TimeSpan.FromSeconds 30.0
+                NodeLimit = false
+                Nodes = 0 }
+    let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
+    let union = tc.GetTime cfg
+    let cmd = TimeControlCommands.uciTimeCommand union cfg.Fixed cfg.Fixed
+    // 30h = 108_000_000 ms, and UCI carries plain milliseconds.
+    Assert.Contains("wtime 108000000", cmd)
+    Assert.Contains("winc 30000", cmd)
+
+[<Fact>]
+let ``GetFullTimeInMS adds fixed and increment past a day`` () =
+    let cfg = { Id = 1
+                Fixed = TimeSpan.FromHours 30.0
+                Increment = TimeSpan.FromSeconds 30.0
+                NodeLimit = false
+                Nodes = 0 }
+    let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
+    Assert.Equal(108_030_000, tc.GetFullTimeInMS 1)
+
+[<Fact>]
+let ``clockAfterMove awards the increment exactly once`` () =
+    // 30s left, 2s increment, 10s spent -> 22s. The value published to the GUI and the wire
+    // used to add the increment a second time and read 24s for the whole game; every delta
+    // between moves was still right, which is why a constant offset went unnoticed.
+    Assert.Equal(TimeSpan.FromSeconds 22.0,
+                 clockAfterMove (TimeSpan.FromSeconds 10.0) (TimeSpan.FromSeconds 30.0) (TimeSpan.FromSeconds 2.0))
+
+[<Fact>]
+let ``clockAfterMove keeps the sign when a move overruns`` () =
+    // The overrun is the point: it is what the loss-on-time check reads. Clamping belongs
+    // where the clock is stored, not in the arithmetic.
+    Assert.Equal(TimeSpan.FromSeconds -10.0,
+                 clockAfterMove (TimeSpan.FromSeconds 40.0) (TimeSpan.FromSeconds 30.0) TimeSpan.Zero)
+
+[<Fact>]
+let ``clockAfterMove works past a day`` () =
+    Assert.Equal(TimeSpan.FromHours 29.5,
+                 clockAfterMove (TimeSpan.FromMinutes 30.0) (TimeSpan.FromHours 30.0) TimeSpan.Zero)

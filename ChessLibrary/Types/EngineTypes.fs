@@ -50,7 +50,7 @@ module EngineTypes =
         | Position of fen: string
         | UciNewGame
         | GoMoveTime of ms: int
-        | GoTimeControl of TC: UnionType * wTime: TimeOnly * bTime: TimeOnly
+        | GoTimeControl of TC: UnionType * wTime: TimeSpan * bTime: TimeSpan
         | GoValue
         | GoNodes of nodes: int
         | GoInfinite
@@ -144,8 +144,8 @@ module EngineTypes =
         Move: string
         Ponder: string
         Eval: EvalType
-        TimeLeft: TimeOnly
-        MoveTime: TimeOnly
+        TimeLeft: TimeSpan
+        MoveTime: TimeSpan
         Nodes: int64
         NPS: float
         FEN: string
@@ -162,8 +162,8 @@ module EngineTypes =
             Move = ""
             Ponder = ""
             Eval = EvalType.NA
-            TimeLeft = TimeOnly.MinValue
-            MoveTime = TimeOnly.MinValue
+            TimeLeft = TimeSpan.Zero
+            MoveTime = TimeSpan.Zero
             Nodes = 0L
             NPS = 0.0
             FEN = startPosition

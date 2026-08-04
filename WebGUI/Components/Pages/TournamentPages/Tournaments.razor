@@ -359,8 +359,8 @@
 	private string blackLongPV = "";
 	private string whiteLongPV = "";
 	private bool whiteToMove = true;
-	private TimeOnly whiteTimeOnly;
-	private TimeOnly blackTimeOnly;
+	private TimeSpan whiteClock;
+	private TimeSpan blackClock;
 	private string moveTimer;
 	private List<Result> results = new();
 	private List<Pairing> pairings = new();
@@ -1260,7 +1260,7 @@
 		timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
 		oneSecondTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
 		var limit = TimeSpan.FromSeconds(30);
-		TimeOnly tOnly;
+		TimeSpan tOnly;
 		var lastToPlay = whiteToMove;
 
 		while (oneSecondTimer != null && await oneSecondTimer.WaitForNextTickAsync())
@@ -1277,33 +1277,33 @@
 				else
 				{
 					var t = Stopwatch.GetElapsedTime(start);
-					var elapsed = new TimeOnly(t.Ticks);
+					var elapsed = t;
 					moveTimer = OneSecondMoveTimeFormatted(elapsed);
 
 					if (whiteToMove)
 					{
-						var ticks = whiteTimeOnly.Ticks - t.Ticks;
+						var ticks = whiteClock.Ticks - t.Ticks;
 						if (ticks < limit.Ticks)
 						{
 							//logger.LogInformation("White player is low on time");
 							oneSecondTimer = null;
 						}
 						whiteMoveTime = moveTimer;
-						tOnly = new TimeOnly(Math.Max(0, ticks));
+						tOnly = new TimeSpan(Math.Max(0, ticks));
 						whiteTime = TimeLeftFormatted(tOnly);
 						await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
 					}
 
 					else
 					{
-						var ticks = blackTimeOnly.Ticks - t.Ticks;
+						var ticks = blackClock.Ticks - t.Ticks;
 						if (ticks < limit.Ticks)
 						{
 							//logger.LogInformation("Black player is low on time");
 							oneSecondTimer = null;
 						}
 						blackMoveTime = moveTimer;
-						tOnly = new TimeOnly(Math.Max(0, ticks));
+						tOnly = new TimeSpan(Math.Max(0, ticks));
 						blackTime = TimeLeftFormatted(tOnly);
 						await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
 					}
@@ -1333,23 +1333,23 @@
 				else
 				{
 					var t = Stopwatch.GetElapsedTime(start);
-					var elapsed = new TimeOnly(t.Ticks);
+					var elapsed = t;
 					moveTimer = MoveTimeFormatted(elapsed);
 
 					if (whiteToMove)
 					{
-						var ticks = whiteTimeOnly.Ticks - t.Ticks;
+						var ticks = whiteClock.Ticks - t.Ticks;
 						whiteMoveTime = moveTimer;
-						tOnly = new TimeOnly(Math.Max(0, ticks));
+						tOnly = new TimeSpan(Math.Max(0, ticks));
 						whiteTime = MoveTimeFormatted(tOnly);
 						await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
 					}
 
 					else
 					{
-						var ticks = blackTimeOnly.Ticks - t.Ticks;
+						var ticks = blackClock.Ticks - t.Ticks;
 						blackMoveTime = moveTimer;
-						tOnly = new TimeOnly(Math.Max(0, ticks));
+						tOnly = new TimeSpan(Math.Max(0, ticks));
 						blackTime = MoveTimeFormatted(tOnly);
 						await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
 					}
@@ -1562,7 +1562,7 @@
 				npsList.AddData(white, b.Info.NPS, true);				
 				if (whiteHasEps || blackHasEps)
 					epsList.AddData(white, b.Status.EPS, true);
-				timeUsageList.AddData(white, b.Info.MoveTime.ToTimeSpan().TotalSeconds, false);
+				timeUsageList.AddData(white, b.Info.MoveTime.TotalSeconds, false);
 				var pv = b.Info.PV;
 				var pvLong = b.Info.LongPV;
 				if (b.Info.Player == blackPlayer)
@@ -1571,9 +1571,9 @@
 					blackPV = pv;
 					blackLongPV = pvLong;
 					DrawP = b.Info.AdjDrawML;
-					blackTimeOnly = b.Info.TimeLeft;
+					blackClock = b.Info.TimeLeft;
 					blackTime = oneSecondTimer != null ? TimeLeftFormatted(b.Info.TimeLeft) : MoveTimeFormatted(b.Info.TimeLeft);
-					whiteMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeOnly.MinValue) : MoveTimeFormatted(TimeOnly.MinValue);
+					whiteMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeSpan.Zero) : MoveTimeFormatted(TimeSpan.Zero);
 					BlackMoveAndFen = b.Info.MoveAndFen;
 				}
 				else
@@ -1582,9 +1582,9 @@
 					whitePV = pv;
 					whiteLongPV = pvLong;
 					DrawP = b.Info.AdjDrawML;
-					whiteTimeOnly = b.Info.TimeLeft;
+					whiteClock = b.Info.TimeLeft;
 					whiteTime = oneSecondTimer != null ? TimeLeftFormatted(b.Info.TimeLeft) : MoveTimeFormatted(b.Info.TimeLeft);
-					blackMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeOnly.MinValue) : MoveTimeFormatted(TimeOnly.MinValue);
+					blackMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeSpan.Zero) : MoveTimeFormatted(TimeSpan.Zero);
 					WhiteMoveAndFen = b.Info.MoveAndFen;
 				}
 
@@ -1618,13 +1618,13 @@
 			case TournamentTypes.Update.Time t:
 				if (t.Player == blackPlayer)
 				{
-					blackTimeOnly = t.Time;
-					blackTime = TimeLeftFormatted(blackTimeOnly);
+					blackClock = t.Time;
+					blackTime = TimeLeftFormatted(blackClock);
 				}
 				else
 				{
-					whiteTimeOnly = t.Time;
-					whiteTime = TimeLeftFormatted(whiteTimeOnly);
+					whiteClock = t.Time;
+					whiteTime = TimeLeftFormatted(whiteClock);
 				}
 				break;
 
@@ -1672,7 +1672,7 @@
 					if (results.Count > 5)
 					{
 						double avgTimePerGame = results.Average(e => e.GameTime);
-						double totalDelay = gamesLeftForEstimate * (tournament.DelayBetweenGames.ToTimeSpan().TotalMilliseconds + 15000);
+						double totalDelay = gamesLeftForEstimate * (tournament.DelayBetweenGames.TotalMilliseconds + 15000);
 						var timeLeft = (avgTimePerGame * gamesLeftForEstimate) + totalDelay;
 						var timespan = TimeSpan.FromMilliseconds(timeLeft);
 						duration = TimeSpan.FromSeconds(Math.Round(timespan.TotalSeconds));
@@ -1998,16 +1998,16 @@
 			whiteEngineLogo = "Img/chessLogo.jpg";
 		else
 			whiteEngineLogo = info.WhitePlayer.LogoPath;
-		whiteTimeOnly = info.WhiteTime;
-		whiteTime = TimeLeftFormatted(whiteTimeOnly);
+		whiteClock = info.WhiteTime;
+		whiteTime = TimeLeftFormatted(whiteClock);
 		blackPlayer = info.BlackPlayer.Name;
 		blackDev = info.BlackPlayer.Dev;
 		if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
 			blackEngineLogo = "Img/chessLogo.jpg";
 		else
 			blackEngineLogo = info.BlackPlayer.LogoPath;
-		blackTimeOnly = info.BlackTime;
-		blackTime = TimeLeftFormatted(blackTimeOnly);
+		blackClock = info.BlackTime;
+		blackTime = TimeLeftFormatted(blackClock);
 		whiteToMove = info.WhiteToMove;
 		WhiteEngineConfig = info.WhitePlayer;
 		BlackEngineConfig = info.BlackPlayer;
@@ -2015,8 +2015,8 @@
 		Engine1.PlayerName = whitePlayer;
 		Engine2 = EngineStatus.Empty;
 		Engine2.PlayerName = blackPlayer;
-		blackMoveTime = TimeLeftFormatted(TimeOnly.MinValue);
-		whiteMoveTime = TimeLeftFormatted(TimeOnly.MinValue);
+		blackMoveTime = TimeLeftFormatted(TimeSpan.Zero);
+		whiteMoveTime = TimeLeftFormatted(TimeSpan.Zero);
 		if (runner != null)
 			pairings = runner.GetLastestPairings();   // feed mode: pairings arrive via PairingList events
 		ResetGameState();
@@ -2077,9 +2077,21 @@
 		}
 	}
 
-	private string MoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss.f"); //(“HH:mm:ss.fff”);
-	private string OneSecondMoveTimeFormatted(TimeOnly time) => time.ToString("HH:mm:ss");
-	private string TimeLeftFormatted(TimeOnly time) => time.ToString("HH:mm:ss");
+	// TimeSpan has no "HH" specifier, and its "hh" wraps at a day — which a long time
+	// control now legitimately passes. Hours are carried whole, and a clock that has run
+	// past zero is clamped here: the overshoot is real internally, where adjudication
+	// needs it, but on screen a negative clock reads as a bug.
+	private static string ClockText(TimeSpan t, bool tenths = false)
+	{
+		if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+		return tenths
+			? $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}.{t.Milliseconds / 100}"
+			: $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
+	}
+
+	private string MoveTimeFormatted(TimeSpan time) => ClockText(time, tenths: true);
+	private string OneSecondMoveTimeFormatted(TimeSpan time) => ClockText(time);
+	private string TimeLeftFormatted(TimeSpan time) => ClockText(time);
 
 	private void FinalStatusReceived(EngineStatus info)
 	{

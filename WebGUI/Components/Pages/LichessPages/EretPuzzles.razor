@@ -363,7 +363,7 @@
           {
               try
               {
-                  var timeConfig = TimeControlTypes.TimeControlCommands.getFixedTime(new TimeOnly(0, 0, data.TimeInSeconds));
+                  var timeConfig = TimeControlTypes.TimeControlCommands.getFixedTime(new TimeSpan(0, 0, data.TimeInSeconds));
                   var nodesConfig = TimeControlTypes.TimeControlCommands.getNodeTime(data.Nodes);
                   if (data.RunWithNodeLimit)
                   {

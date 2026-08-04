@@ -98,21 +98,21 @@ let scheduleSummary (t: Tournament) =
 let timeControlTextForPlayer (t: Tournament) (id: int) =
     let tc = t.TimeControl.GetTimeConfig id
     if tc.NodeLimit then formatNumberWithK tc.Nodes
-    else formatTimeSpan (tc.Fixed.ToTimeSpan()) (tc.Increment.ToTimeSpan())
+    else formatTimeSpan (tc.Fixed) (tc.Increment)
 
 let timeControlTextForPlayers (t: Tournament) (id1: int) (id2: int) =
     let moreThanOneTC = id1 <> id2
     let tc1 = t.TimeControl.GetTimeConfig id1
     if not moreThanOneTC then
-        formatTimeSpan (tc1.Fixed.ToTimeSpan()) (tc1.Increment.ToTimeSpan())
+        formatTimeSpan (tc1.Fixed) (tc1.Increment)
     else
         let tc2 = t.TimeControl.GetTimeConfig id2
         let tc1Text =
             if tc1.NodeLimit then formatNumberWithKShort tc1.Nodes
-            else formatTimeSpan (tc1.Fixed.ToTimeSpan()) (tc1.Increment.ToTimeSpan())
+            else formatTimeSpan (tc1.Fixed) (tc1.Increment)
         let tc2Text =
             if tc2.NodeLimit then formatNumberWithKShort tc2.Nodes
-            else formatTimeSpan (tc2.Fixed.ToTimeSpan()) (tc2.Increment.ToTimeSpan())
+            else formatTimeSpan (tc2.Fixed) (tc2.Increment)
         sprintf "%s vs %s" tc1Text tc2Text
 
 let timeControlText (t: Tournament) =
@@ -131,10 +131,10 @@ let timeControlText (t: Tournament) =
                 let tc2 = t.TimeControl.GetTimeConfig tc2Id
                 let tc1Text =
                     if tc1.NodeLimit then sprintf "%dN" tc1.Nodes
-                    else formatTimeSpan (tc1.Fixed.ToTimeSpan()) (tc1.Increment.ToTimeSpan())
+                    else formatTimeSpan (tc1.Fixed) (tc1.Increment)
                 let tc2Text =
                     if tc2.NodeLimit then sprintf "%dN" tc2.Nodes
-                    else formatTimeSpan (tc2.Fixed.ToTimeSpan()) (tc2.Increment.ToTimeSpan())
+                    else formatTimeSpan (tc2.Fixed) (tc2.Increment)
                 sprintf "%s vs %s" tc1Text tc2Text
             else
                 tc1.ToString()
@@ -171,7 +171,7 @@ let adjudicationText (t: Tournament) =
 let summary (t: Tournament) =
     let sb = StringBuilder()
     let mode = modeLabel t
-    let formatTimeOnly (time: TimeOnly) = time.ToString("HH:mm:ss.fff")
+    let formatDurationText (time: TimeSpan) = TypesDef.CoreTypes.formatDuration time
     let openings =
         let book =
             if t.Opening.OpeningsPath.IsSome then Path.GetFileName t.Opening.OpeningsPath.Value
@@ -200,7 +200,7 @@ let summary (t: Tournament) =
     if not (String.IsNullOrWhiteSpace gauntlet) then
         sb.AppendLine gauntlet |> ignore
     sb.AppendLine(sprintf "Time: %s | overhead=%s | min move=%dms | pondering=%b"
-                    (timeControlText t) (formatTimeOnly t.MoveOverhead) t.MinMoveTimeInMS t.AllowPondering) |> ignore
+                    (timeControlText t) (formatDurationText t.MoveOverhead) t.MinMoveTimeInMS t.AllowPondering) |> ignore
     sb.AppendLine openings |> ignore
     sb.AppendLine tablebases |> ignore
     sb.AppendLine(adjudicationText t) |> ignore
@@ -250,7 +250,7 @@ let printTournamentSummary (t: Tournament) =
     printfn "%s" (t.Players())
     printfn "%s" "Engine configuration:"
     for eng in t.EngineSetup.Engines do
-        let moveOverhead = t.MoveOverhead.ToTimeSpan().TotalMilliseconds
+        let moveOverhead = t.MoveOverhead.TotalMilliseconds
         let info: string = eng.Information moveOverhead
         printfn "\t%s: %s" eng.Name info
     printfn "Hardware: %s + CPU %s" t.GPU t.CPU

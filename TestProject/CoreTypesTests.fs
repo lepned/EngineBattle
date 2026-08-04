@@ -116,17 +116,17 @@ let ``WDLType Value returns correct WDL`` () =
 // Test for TimeControl
 [<Fact>]
 let ``TimeControl GetTimeConfig returns correct config`` () =
-    let timeControl = { TimeConfigs = [{ Id = 1; Fixed = TimeOnly.MinValue; Increment = TimeOnly.MinValue; NodeLimit = false; Nodes = 0 }]; WmovesToGo = 0; BmovesToGo = 0 }
+    let timeControl = { TimeConfigs = [{ Id = 1; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero; NodeLimit = false; Nodes = 0 }]; WmovesToGo = 0; BmovesToGo = 0 }
     let config = timeControl.GetTimeConfig 1
     Assert.Equal(1, config.Id)
 
 [<Fact>]
 let ``TimeControl ToString formats correctly`` () =
-    let config1 = { Id = 1; Fixed = TimeOnly.FromTimeSpan(System.TimeSpan.FromSeconds(60.0)); Increment = TimeOnly.FromTimeSpan(System.TimeSpan.FromSeconds(1.0)); NodeLimit = false; Nodes = 0 }
+    let config1 = { Id = 1; Fixed = TimeSpan.FromSeconds(60.0); Increment = TimeSpan.FromSeconds(1.0); NodeLimit = false; Nodes = 0 }
     Assert.Equal("1' + 1''", config1.ToString())
-    let config2 = { Id = 2; Fixed = TimeOnly.FromTimeSpan(System.TimeSpan.FromSeconds(90.0)); Increment = TimeOnly.FromTimeSpan(System.TimeSpan.FromSeconds(10.0)); NodeLimit = false; Nodes = 0 }
+    let config2 = { Id = 2; Fixed = TimeSpan.FromSeconds(90.0); Increment = TimeSpan.FromSeconds(10.0); NodeLimit = false; Nodes = 0 }
     Assert.Equal("1.5' + 10''", config2.ToString())
-    let config3 = { Id = 2; Fixed = TimeOnly.FromTimeSpan(System.TimeSpan.FromMinutes(90.0)); Increment = TimeOnly.FromTimeSpan(System.TimeSpan.FromSeconds(30.0)); NodeLimit = false; Nodes = 0 }
+    let config3 = { Id = 2; Fixed = TimeSpan.FromMinutes(90.0); Increment = TimeSpan.FromSeconds(30.0); NodeLimit = false; Nodes = 0 }
     Assert.Equal("90' + 30''", config3.ToString())
 
 [<Fact>]
@@ -260,3 +260,76 @@ let ``FullAnnotation includes all fields`` () =
     Assert.Contains("q2=", result)
     Assert.Contains("p1=", result)
     Assert.Contains("pt=", result)
+
+// ============================================================================
+// Duration parsing — hh:mm:ss[.fff] with no ceiling on any field
+// ============================================================================
+
+[<Theory>]
+// The three ceilings users kept hitting, none of which apply to a duration.
+[<InlineData("00:00:60", 60_000.0)>]
+[<InlineData("00:60:00", 3_600_000.0)>]
+[<InlineData("30:00:00", 108_000_000.0)>]
+// Ordinary values must be unchanged.
+[<InlineData("00:03:00.000", 180_000.0)>]
+[<InlineData("00:00:20.000", 20_000.0)>]
+[<InlineData("00:00:00.100", 100.0)>]
+[<InlineData("00:00:00", 0.0)>]
+// Overflow in more than one field at once, and a fraction alongside it.
+[<InlineData("00:00:90.500", 90_500.0)>]
+[<InlineData("01:90:90", 9_090_000.0)>]
+let ``parseDuration reads every field without an upper bound`` (text: string) (expectedMs: float) =
+    Assert.Equal(expectedMs, (parseDuration text).TotalMilliseconds, 3)
+
+[<Theory>]
+// Two fields are ambiguous: .NET reads "10:00" as ten hours, a user means ten minutes.
+[<InlineData("10:00")>]
+[<InlineData("90")>]
+// Days are not part of the format, so TimeSpan's own long form is refused rather than
+// silently accepted with a different meaning for the dot.
+[<InlineData("1.06:00:00")>]
+[<InlineData("")>]
+[<InlineData("abc")>]
+[<InlineData("00:0a:00")>]
+[<InlineData("-00:01:00")>]
+let ``parseDuration refuses input it would have to guess at`` (text: string) =
+    Assert.ThrowsAny<exn>(fun () -> parseDuration text |> ignore)
+
+[<Theory>]
+// Normalised on the way out: the file states what the value became.
+[<InlineData("00:00:90", "00:01:30.000")>]
+[<InlineData("00:60:00", "01:00:00.000")>]
+// Hours carry everything above a day rather than growing a day field.
+[<InlineData("30:00:00", "30:00:00.000")>]
+[<InlineData("00:00:00.100", "00:00:00.100")>]
+[<InlineData("00:03:00.000", "00:03:00.000")>]
+let ``formatDuration writes the canonical shape`` (input: string) (expected: string) =
+    Assert.Equal(expected, formatDuration (parseDuration input))
+
+[<Fact>]
+let ``formatDuration round-trips through parseDuration`` () =
+    for text in [ "00:00:00"; "00:00:00.001"; "00:03:00.000"; "30:00:00"; "00:00:90.500" ] do
+        let once = parseDuration text
+        Assert.Equal(once, parseDuration (formatDuration once))
+
+[<Fact>]
+let ``DurationConverter reads existing config values and normalises on write`` () =
+    let options = JsonSerializerOptions()
+    options.Converters.Add(DurationConverter())
+    // Exactly the strings in the shipped tournament template.
+    let json = """{"DelayBetweenGames":"00:00:20.000","MoveOverhead":"00:00:00.100"}"""
+    let doc = JsonSerializer.Deserialize<Map<string, TimeSpan>>(json, options)
+    Assert.Equal(20_000.0, doc.["DelayBetweenGames"].TotalMilliseconds, 3)
+    Assert.Equal(100.0, doc.["MoveOverhead"].TotalMilliseconds, 3)
+    let back = JsonSerializer.Serialize(doc, options)
+    Assert.Contains("00:00:20.000", back)
+    Assert.Contains("00:00:00.100", back)
+
+[<Fact>]
+let ``a duration past a day survives the JSON round trip`` () =
+    let options = JsonSerializerOptions()
+    options.Converters.Add(DurationConverter())
+    let json = """{"Fixed":"30:00:00"}"""
+    let doc = JsonSerializer.Deserialize<Map<string, TimeSpan>>(json, options)
+    Assert.Equal(30.0, doc.["Fixed"].TotalHours, 6)
+    Assert.Contains("30:00:00.000", JsonSerializer.Serialize(doc, options))

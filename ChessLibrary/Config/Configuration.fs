@@ -16,7 +16,7 @@ open GameAnalysis
 module ConsoleHelper =
 
   let displayTournament (tournament: Tournament) =
-    let timeFormat (time:TimeOnly) = time.ToString("HH:mm:ss.fff")
+    let timeFormat (time:TimeSpan) = TypesDef.CoreTypes.formatDuration time
     printfn "Name: %s" tournament.Name
     printfn "Description: %s" tournament.Description
     printfn "OS: %s" tournament.OS
@@ -428,7 +428,7 @@ module Validation =
 
   let validateDelayBetweenGames (tourny: Tournament) (configs: EngineConfig list) =
       let nodelimit = configs |> List.map (fun e -> tourny.FindTimeControl e.TimeControlID) |> List.forall (fun e -> e.NodeLimit)
-      if tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds < 2 && not nodelimit then
+      if tourny.DelayBetweenGames.TotalSeconds < 2 && not nodelimit then
           Errors ["Delay between games very low - consider to increase it to at least 5 seconds in tournament.json"]
       else Ok
 
@@ -488,10 +488,17 @@ module Validation =
 
 module JSON =
 
-  let private createJsonOptions() =
-      let options = JsonSerializerOptions(AllowTrailingCommas = true)
+  /// Every options object in this module is built here. A converter registered in one
+  /// place cannot be forgotten by a call site that constructs its own options — which is
+  /// exactly how the tournament file, the one holding the durations, ended up bypassing the
+  /// registration it needed.
+  let private addConverters (options: JsonSerializerOptions) =
       options.Converters.Add(TypesDef.CoreTypes.TimeControlStrategyConverter())
+      options.Converters.Add(TypesDef.CoreTypes.DurationConverter())
       options
+
+  let private createJsonOptions() =
+      addConverters (JsonSerializerOptions(AllowTrailingCommas = true))
 
   let readEngineConfig path =
       let json = File.ReadAllText(path)
@@ -537,7 +544,7 @@ module JSON =
           try
               use reader = new StreamReader(path)
               let json = reader.ReadToEnd()
-              let tournament = JsonSerializer.Deserialize<Tournament>(json, JsonSerializerOptions(AllowTrailingCommas = true))
+              let tournament = JsonSerializer.Deserialize<Tournament>(json, createJsonOptions())
               let tournament =
                   if obj.ReferenceEquals(box tournament.MoveAnnotation, null) then
                       { tournament with MoveAnnotation = MoveAnnotation.Standard }
@@ -553,7 +560,7 @@ module JSON =
 
   let writeTournamentJson (tournament: Tournament) (path: string) : unit =
       try
-          let options = JsonSerializerOptions(WriteIndented = true)
+          let options = addConverters (JsonSerializerOptions(WriteIndented = true))
           options.AllowTrailingCommas <- true
           options.PreferredObjectCreationHandling <- JsonObjectCreationHandling.Populate
           let json = JsonSerializer.Serialize(tournament,options)
@@ -583,7 +590,7 @@ module JSON =
 
   let generateCeresJsonFiles (baseConfig: EngineConfig) (onnxFolderPath: string) (outputFolderPath: string) =
       let onnxFiles = Directory.GetFiles(onnxFolderPath, "*.onnx")
-      let writeOptions = JsonSerializerOptions(WriteIndented = true)
+      let writeOptions = addConverters (JsonSerializerOptions(WriteIndented = true))
 
       for onnxFile in onnxFiles do
         let newConfig = makeEngineConfigFile baseConfig onnxFile
@@ -596,7 +603,7 @@ module JSON =
 
   let generateLc0sonFiles (baseConfig: EngineConfig) (networkFolderPath: string) (outputFolderPath: string) =
       let networkFiles = Directory.GetFiles(networkFolderPath, "*.pb.gz")
-      let writeOptions = JsonSerializerOptions(WriteIndented = true)
+      let writeOptions = addConverters (JsonSerializerOptions(WriteIndented = true))
 
       for networkFile in networkFiles do
         let newConfig = makeEngineConfigFile baseConfig networkFile

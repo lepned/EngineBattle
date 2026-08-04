@@ -910,18 +910,18 @@
         }
         else if (IsCustomTimeControl && customLimitMode == "Infinite")
         {
-            var big = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(300));
-            var zero = TimeOnly.FromTimeSpan(TimeSpan.Zero);
+            var big = TimeSpan.FromMinutes(300);
+            var zero = TimeSpan.Zero;
             var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
             analyzer.Play(incrCommand);
         }
         else
         {
-            var timeOnlyWhite = new TimeOnly(whiteTime.Ticks);
-            var timeOnlyBlack = new TimeOnly(blackTime.Ticks);
-            var incWhite = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(whiteIncrementSeconds));
-            var incBlack = TimeOnly.FromTimeSpan(TimeSpan.FromSeconds(blackIncrementSeconds));
-            var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(timeOnlyWhite, timeOnlyBlack, incWhite, incBlack);
+            var clockWhite = whiteTime;
+            var clockBlack = blackTime;
+            var incWhite = TimeSpan.FromSeconds(whiteIncrementSeconds);
+            var incBlack = TimeSpan.FromSeconds(blackIncrementSeconds);
+            var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(clockWhite, clockBlack, incWhite, incBlack);
             analyzer.Play(incrCommand);
         }
 

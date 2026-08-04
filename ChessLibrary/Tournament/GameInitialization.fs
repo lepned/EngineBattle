@@ -142,7 +142,7 @@ let appendGameDescription (sb:StringBuilder) (tourny:Tournament) (player1:ChessE
     let tcWhite = tourny.TimeControl.GetTimeConfig player1.Config.TimeControlID
     let tcBlack = tourny.TimeControl.GetTimeConfig player2.Config.TimeControlID
     let tournyData = "{TournamentOptions: " + tourny.PGNSummary() + (if isEpd then sprintf " FEN=%s;" fen else "")
-    let moveOverheadMs = tourny.MoveOverhead.ToTimeSpan().TotalMilliseconds
+    let moveOverheadMs = tourny.MoveOverhead.TotalMilliseconds
     let whiteEngineData = $" WhiteEngineOptions: TimeControl: {tcWhite.ToString()}; {player1.Config.Information moveOverheadMs}"
     let blackEngineData = $"BlackEngineOptions: TimeControl: {tcBlack.ToString()}; {player2.Config.Information moveOverheadMs}"
     let wCmds = if player1.IsLc0 then $" (White commands: {UciOptions.createCommandsFromConfig player1.Config})" else ""
@@ -199,7 +199,7 @@ let initEngines openingDelayMs (tourny:Tournament) (engine1: ChessEngine) (engin
         try
             do! Async.Sleep 200
 
-            let delayBetweenGamesMs = tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int
+            let delayBetweenGamesMs = tourny.DelayBetweenGames.TotalMilliseconds |> int
 
             //Pass logger to waitForEngineIsReady
             let startEngines = [

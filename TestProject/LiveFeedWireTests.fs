@@ -65,8 +65,8 @@ let private bmi =
         Move = "e2e4"
         Ponder = "c7c5"
         Eval = CP 0.35
-        TimeLeft = TimeOnly(0, 4, 45)
-        MoveTime = TimeOnly(0, 0, 15)
+        TimeLeft = TimeSpan(0, 4, 45)
+        MoveTime = TimeSpan(0, 0, 15)
         Nodes = 45000000L
         NPS = 3000000.0
         FEN = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
@@ -115,8 +115,8 @@ let private sgi =
       BlackPlayer = mkPlayer "B"
       StartPos = startPosition
       OpeningMovesAndFen = ResizeArray([ maf ])
-      WhiteTime = TimeOnly(0, 5, 0)
-      BlackTime = TimeOnly(0, 5, 0)
+      WhiteTime = TimeSpan(0, 5, 0)
+      BlackTime = TimeSpan(0, 5, 0)
       WhiteToMove = true
       OpeningName = "Sicilian"
       CurrentGameNr = 42
@@ -131,7 +131,7 @@ let private coreSamples: Update list =
       Update.Eval("A", CP 0.2)
       Update.Status status
       Update.PonderStatus ponder
-      Update.Time("A", TimeOnly(0, 4, 30))
+      Update.Time("A", TimeSpan(0, 4, 30))
       Update.NNSeq(ResizeArray([ nn ]))
       Update.StartOfGame sgi
       Update.MessagesFromEngine("A", "loaded net")
@@ -171,7 +171,7 @@ let ``BestMove decodes its key fields`` () =
         Assert.Equal(CP 0.35, i.Eval)
         Assert.Equal(bmi.FEN, i.FEN)
         Assert.Equal("1. e4", i.MoveHistory)
-        Assert.Equal(TimeOnly(0, 4, 45), i.TimeLeft)
+        Assert.Equal(TimeSpan(0, 4, 45), i.TimeLeft)
         Assert.Equal("e4", i.MoveAndFen.ShortSan)
         Assert.Equal(28, s.Depth)
         Assert.Equal(45000000L, s.Nodes)

@@ -198,7 +198,7 @@ module TestPath =
               {tourny with EngineSetup = engineSetup }
             else 
               tourny         
-        {tourny with MinMoveTimeInMS = 0; ConsoleOnly = true; DelayBetweenGames = TimeOnly.MinValue }        
+        {tourny with MinMoveTimeInMS = 0; ConsoleOnly = true; DelayBetweenGames = TimeSpan.Zero }        
       |_ -> //backup plan
         let dir = DirectoryInfo(Environment.CurrentDirectory).Parent.Parent.Parent.Parent.FullName
         let path = Path.Combine(dir,"WebGUI", "Data","tournamentEmpty.json")
@@ -246,7 +246,7 @@ module Eret =
   
   let eretPath = "C:/Dev/Chess/Puzzles/ERET_VESELY203.epd"
   let eretPath2 = "C:/Dev/Chess/Puzzles/chad_tactics-100M.epd"  
-  let timeConfig = UnionType.FixedTime (TimeOnly(0,0,5)) //10 seconds
+  let timeConfig = UnionType.FixedTime (TimeSpan(0,0,5)) //10 seconds
   let timeConfig2 = UnionType.Nodes 1_000_000
 
   /// <summary>
@@ -338,7 +338,7 @@ module Program =
     let normalizedPath = normalizePath path
     let data = loadEretConfig normalizedPath
     printfn "Processing ERET puzzle file: %s" path 
-    let time = UnionType.FixedTime (TimeOnly(0,0,data.TimeInSeconds))
+    let time = UnionType.FixedTime (TimeSpan(0,0,data.TimeInSeconds))
     let nodes = UnionType.Nodes data.Nodes
     let engineConfigs = 
         data.Engines 
@@ -2137,7 +2137,7 @@ module Program =
                                     PgnOutPath = pgn
                                     ConsoleOnly = true
                                     MinMoveTimeInMS = 0
-                                    DelayBetweenGames = TimeOnly.MinValue
+                                    DelayBetweenGames = TimeSpan.Zero
                                     // Self-play loads two copies of the net per concurrency level, so concurrency 2
                                     // means 4 simultaneous TensorRT engines — big nets OOM the GPU. Clamp to 1
                                     // regardless of the template; this also enables PreventMoveDeviation.
@@ -2300,7 +2300,7 @@ module Program =
                                 PreventMoveDeviation = tournament.TestOptions.NumberOfGamesInParallelConsoleOnly <= 1 
                                 MinMoveTimeInMS = 0
                                 ConsoleOnly = true
-                                DelayBetweenGames = TimeOnly.MinValue
+                                DelayBetweenGames = TimeSpan.Zero
                             }
                         if tournament.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase) then
                           printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)

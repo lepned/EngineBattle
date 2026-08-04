@@ -583,10 +583,10 @@ module TunerRunner =
   let private buildNodeTimeControl targetNodes (tc: TimeControl) =
     let configs =
       if tc.TimeConfigs |> List.isEmpty then
-        [ { Id = 1; Fixed = TimeOnly(0,0,1); Increment = TimeOnly.MinValue; NodeLimit = true; Nodes = targetNodes } ]
+        [ { Id = 1; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = targetNodes } ]
       else
         tc.TimeConfigs
-        |> List.map (fun c -> { c with NodeLimit = true; Nodes = targetNodes; Fixed = TimeOnly(0,0,1); Increment = TimeOnly.MinValue })
+        |> List.map (fun c -> { c with NodeLimit = true; Nodes = targetNodes; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero })
     { tc with TimeConfigs = configs; WmovesToGo = 0; BmovesToGo = 0 }
 
   let internal buildMatchTournament (cfg: TuneConfig) (baseTournament: Tournament) (engineA: EngineConfig) (engineB: EngineConfig) (opponentNodes: int) pgnPath (referencePgnPath: string) (preventDeviationFor: string[]) =
@@ -597,8 +597,8 @@ module TunerRunner =
         let tcId = tc.TimeConfigs |> List.head |> fun t -> t.Id
         tc, tcId, tcId
       else
-        let baseConf = { Id = 1; Fixed = TimeOnly(0,0,1); Increment = TimeOnly.MinValue; NodeLimit = true; Nodes = cfg.TargetNodes }
-        let oppConf  = { Id = 2; Fixed = TimeOnly(0,0,1); Increment = TimeOnly.MinValue; NodeLimit = true; Nodes = oppNodes }
+        let baseConf = { Id = 1; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = cfg.TargetNodes }
+        let oppConf  = { Id = 2; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = oppNodes }
         let tc = { baseTournament.TimeControl with TimeConfigs = [ baseConf; oppConf ]; WmovesToGo = 0; BmovesToGo = 0 }
         tc, 1, 2
     let roundsNeeded =
@@ -641,7 +641,7 @@ module TunerRunner =
         PreventMoveDeviationFor = if preventDeviationFor <> null then preventDeviationFor else [||]
         Rounds = roundsNeeded
         Challengers = 0
-        DelayBetweenGames = TimeOnly.MinValue
+        DelayBetweenGames = TimeSpan.Zero
         MinMoveTimeInMS = 0
         OrdoExePath = ""
         PgnOutPath = pgnPath
@@ -1082,7 +1082,7 @@ module TunerRunner =
         acc
     | "eret" ->
         let eretCfg = setup.EretConfig |> Option.defaultWith (fun () -> failwith "EretConfig not loaded for eret evalMode")
-        let time = UnionType.FixedTime (TimeOnly(0,0,eretCfg.TimeInSeconds))
+        let time = UnionType.FixedTime (TimeSpan(0,0,eretCfg.TimeInSeconds))
         let nodes = UnionType.Nodes eretCfg.Nodes
         let timeControl = if eretCfg.RunWithNodeLimit then nodes else time
         let engines = seq { (engineCfg, 0) }

@@ -5,9 +5,9 @@ open System
 module TimeControlTypes =
 
   type UnionType =
-    | FixedTime of InMSFixed: TimeOnly
-    | WithIncrement of InMSFixed: TimeOnly * IncrementMS: TimeOnly
-    | WithMoves of InMSFixed: TimeOnly * IncrementMS: TimeOnly * Wmoves: int * Bmoves: int
+    | FixedTime of InMSFixed: TimeSpan
+    | WithIncrement of InMSFixed: TimeSpan * IncrementMS: TimeSpan
+    | WithMoves of InMSFixed: TimeSpan * IncrementMS: TimeSpan * Wmoves: int * Bmoves: int
     | Nodes of nodes: int
     with
       member x.GetFixedtime() =
@@ -15,15 +15,15 @@ module TimeControlTypes =
         | FixedTime time -> time
         | WithIncrement (t, _) -> t
         | WithMoves (t, _, _, _) -> t
-        | Nodes _ -> TimeOnly.MinValue
+        | Nodes _ -> TimeSpan.Zero
       member x.GetIncrementTime() =
         match x with
-        | FixedTime _ -> TimeOnly.MinValue
+        | FixedTime _ -> TimeSpan.Zero
         | WithIncrement (_, incr) -> incr
         | WithMoves (_, incr, _, _) -> incr
-        | Nodes _ -> TimeOnly.MinValue
+        | Nodes _ -> TimeSpan.Zero
 
-  type TimeConfig = { Id: int; Fixed: TimeOnly; Increment: TimeOnly; NodeLimit: bool; Nodes: int }
+  type TimeConfig = { Id: int; Fixed: TimeSpan; Increment: TimeSpan; NodeLimit: bool; Nodes: int }
     with
       member x.Times (fraction: double) =
         let fixedTicks = float x.Fixed.Ticks
@@ -31,12 +31,12 @@ module TimeControlTypes =
         let incrTicks = float x.Increment.Ticks
         let newIncrTicks = incrTicks * fraction |> int64
         let newNodes = float x.Nodes * fraction |> int32
-        { x with Fixed = new TimeOnly(newFixedTicks); Increment = new TimeOnly(newIncrTicks); Nodes = newNodes }
+        { x with Fixed = TimeSpan(newFixedTicks); Increment = TimeSpan(newIncrTicks); Nodes = newNodes }
       member x.ShortString() =
         if x.NodeLimit then
           sprintf "Node limit=%d " x.Nodes
         else
-          sprintf "%ds + %.1fs " (x.Fixed.ToTimeSpan().TotalSeconds |> int) (x.Increment.ToTimeSpan().TotalSeconds)
+          sprintf "%ds + %.1fs " (x.Fixed.TotalSeconds |> int) (x.Increment.TotalSeconds)
       member x.FormatTimeSpan (fixedTime: TimeSpan) (incrementTime: TimeSpan) : string =
         let totalFixedMinutes = fixedTime.TotalMinutes
         let totalFixedSeconds = fixedTime.TotalSeconds
@@ -61,7 +61,7 @@ module TimeControlTypes =
         if x.NodeLimit then
           sprintf "Node limit=%d" x.Nodes
         else
-          x.FormatTimeSpan (x.Fixed.ToTimeSpan()) (x.Increment.ToTimeSpan())
+          x.FormatTimeSpan x.Fixed x.Increment
 
   type TimeControl =
     { TimeConfigs: TimeConfig list; WmovesToGo: int; BmovesToGo: int }
@@ -96,11 +96,11 @@ module TimeControlTypes =
         (x.GetTimeConfig idx).Increment
       member x.TimeInfo(idx: int) =
         let config = x.GetTimeConfig idx
-        sprintf "%fs + %fs" (config.Fixed.ToTimeSpan().TotalSeconds) (config.Increment.ToTimeSpan().TotalSeconds)
+        sprintf "%fs + %fs" config.Fixed.TotalSeconds config.Increment.TotalSeconds
       member x.GetFullTimeInMS(idx: int) =
         let config = x.GetTimeConfig idx
-        let fixedMs = int (TimeSpan(config.Fixed.Ticks).TotalMilliseconds)
-        let incrMs = int (TimeSpan(config.Increment.Ticks).TotalMilliseconds)
+        let fixedMs = int config.Fixed.TotalMilliseconds
+        let incrMs = int config.Increment.TotalMilliseconds
         (fixedMs + incrMs)
       /// Moves per (repeating) time-control period; 0 = not a moves-to-go control.
       /// Symmetric for now: both sides use max(W,B).
@@ -118,30 +118,30 @@ module TimeControlTypes =
           x.GetTime config
 
   module TimeControlCommands =
-    let createTimeControlWithIncrementWithPonder (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) : string =
-      let white = int (TimeSpan(wtime.Ticks).TotalMilliseconds)
-      let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
-      let wInc = int (TimeSpan(winc.Ticks).TotalMilliseconds)
-      let bInc = int (TimeSpan(binc.Ticks).TotalMilliseconds)
+    let createTimeControlWithIncrementWithPonder (wtime: TimeSpan) (btime: TimeSpan) (winc: TimeSpan) (binc: TimeSpan) : string =
+      let white = int wtime.TotalMilliseconds
+      let black = int btime.TotalMilliseconds
+      let wInc = int winc.TotalMilliseconds
+      let bInc = int binc.TotalMilliseconds
       sprintf "go ponder wtime %d btime %d winc %d binc %d" white black wInc bInc
 
-    let createTimeControlWithIncrement (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) : string =
-      let white = int (TimeSpan(wtime.Ticks).TotalMilliseconds)
-      let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
-      let wInc = int (TimeSpan(winc.Ticks).TotalMilliseconds)
-      let bInc = int (TimeSpan(binc.Ticks).TotalMilliseconds)
+    let createTimeControlWithIncrement (wtime: TimeSpan) (btime: TimeSpan) (winc: TimeSpan) (binc: TimeSpan) : string =
+      let white = int wtime.TotalMilliseconds
+      let black = int btime.TotalMilliseconds
+      let wInc = int winc.TotalMilliseconds
+      let bInc = int binc.TotalMilliseconds
       sprintf "go wtime %d btime %d winc %d binc %d" white black wInc bInc
 
-    let createTimeControl (wtime: TimeOnly) (btime: TimeOnly) : string =
-      let white = int (TimeSpan(wtime.Ticks).TotalMilliseconds)
-      let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
+    let createTimeControl (wtime: TimeSpan) (btime: TimeSpan) : string =
+      let white = int wtime.TotalMilliseconds
+      let black = int btime.TotalMilliseconds
       sprintf "go wtime %d btime %d" white black
 
-    let createTimeControlWithMovesToGo (wtime: TimeOnly) (btime: TimeOnly) (winc: TimeOnly) (binc: TimeOnly) (wmoves: int) (bmoves: int) : string =
-      let white = int (TimeSpan(wtime.Ticks).TotalMilliseconds)
-      let black = int (TimeSpan(btime.Ticks).TotalMilliseconds)
-      let wincMs = int (TimeSpan(winc.Ticks).TotalMilliseconds)
-      let bincMs = int (TimeSpan(binc.Ticks).TotalMilliseconds)
+    let createTimeControlWithMovesToGo (wtime: TimeSpan) (btime: TimeSpan) (winc: TimeSpan) (binc: TimeSpan) (wmoves: int) (bmoves: int) : string =
+      let white = int wtime.TotalMilliseconds
+      let black = int btime.TotalMilliseconds
+      let wincMs = int winc.TotalMilliseconds
+      let bincMs = int binc.TotalMilliseconds
       // UCI movestogo is a SINGLE value for the side to move; wmoves==bmoves here
       // (symmetric repeating period), so emit one (bmoves kept for signature compatibility).
       ignore bmoves
@@ -150,7 +150,7 @@ module TimeControlTypes =
     let createNodes nodes =
       sprintf "go nodes %d" nodes
 
-    let getFixedTime (time: TimeOnly) = FixedTime time
+    let getFixedTime (time: TimeSpan) = FixedTime time
     let getNodeTime (nodes: int) = Nodes nodes
 
     let uciTimeCommand (time: UnionType) wTime bTime =

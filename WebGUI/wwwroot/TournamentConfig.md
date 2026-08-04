@@ -23,8 +23,16 @@ This document provides an overview of the `tournament.json` configuration file u
 - **Challengers**: Number of challengers in the tournament.
 - **Rounds**: Number of rounds in the tournament.
 - **PauseAfterRound**: Pause duration after each round in seconds.
-- **DelayBetweenGames**: Delay between games in HH:MM:SS:MMM format.
-- **MoveOverhead**: Move overhead time in HH:MM:SS:MMM format.
+- **DelayBetweenGames**: Delay between games, e.g. `00:00:20`.
+- **MoveOverhead**: Move overhead time, e.g. `00:00:00.100`.
+
+> **Time format**: `hh:mm:ss` with an optional `.fff` for milliseconds. No field has an upper
+> limit, so `00:00:90` is ninety seconds, `00:60:00` is an hour and `30:00:00` is thirty hours.
+> All three fields are required — `10:00` is rejected rather than guessed at, since it reads as
+> ten hours to a parser and ten minutes to a person. Days are not part of the format: write long
+> controls in hours. Values are normalised when EngineBattle saves the file, so `00:00:90`
+> becomes `00:01:30` and the file always states what the value actually is.
+
 
 ### Adjudication Options
 
@@ -142,8 +150,8 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
 
 - **TimeConfigs**: List of time control configurations, which can be used in engineDef.json.
   - **Id**: Time control ID.
-  - **Fixed**: Fixed time control in HH:MM:SS:MMM format.
-  - **Increment**: Increment time control in HH:MM:SS:MMM format.
+  - **Fixed**: Fixed time for the whole game, e.g. `00:03:00`.
+  - **Increment**: Added after each move, e.g. `00:00:02`.
   - **NodeLimit**: Enable or disable node limit.
   - **Nodes**: Number of nodes for the time control.
 - **WmovesToGo** / **BmovesToGo**: Moves per repeating time-control period (e.g. `40` = "40 moves, then more time"). `0` (default) = sudden-death/increment with no `movestogo`. When `> 0`, EB sends a counting-down UCI `movestogo` each move and tops up the base time (`Fixed`) at every period boundary, with the **same base repeating** each period. Symmetric only (both sides use `max(W,B)`); multi-stage controls such as `40/90 + 30/30` are not supported.

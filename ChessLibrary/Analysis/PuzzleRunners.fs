@@ -181,7 +181,7 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
   let epdPath = data.PuzzleFile
   let isnodes, nodes, time =
     match timeConfig with
-    | UnionType.FixedTime t -> false, -1, t.ToTimeSpan().TotalMilliseconds |> int
+    | UnionType.FixedTime t -> false, -1, t.TotalMilliseconds |> int
     | UnionType.Nodes n -> true, n, 0
     |_ -> false, -1, 0
 
@@ -278,7 +278,7 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
 
   let isnodes, nodes, time =
     match timeConfig with
-    | UnionType.FixedTime t -> false, -1, t.ToTimeSpan().TotalMilliseconds |> int
+    | UnionType.FixedTime t -> false, -1, t.TotalMilliseconds |> int
     | UnionType.Nodes n -> true, n, 0
     |_ -> false, -1, 0
 

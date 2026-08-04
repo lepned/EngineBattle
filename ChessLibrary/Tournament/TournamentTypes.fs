@@ -19,7 +19,7 @@ type Update =
     | Eval of Player:string * Type: EvalType
     | Status of Engine:EngineStatus
     | PonderStatus of Engine:EnginePonderStatus
-    | Time of Player:string * Time: TimeOnly
+    | Time of Player:string * Time: TimeSpan
     | NNSeq of NNSeq: ResizeArray<NNValues>
     | StartOfGame of Game:StartGameInfo
     | EndOfTournament of Info: Tournament

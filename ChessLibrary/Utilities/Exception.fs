@@ -80,7 +80,7 @@ module CustomException =
         GameNumber   : int
         MoveNumber   : int
         TimeControl  : string
-        TimeRemaining: TimeSpan option   // cheaper than TimeOnly here; null-safe
+        TimeRemaining: TimeSpan option   // option rather than a sentinel: absent is not zero
         PositionFen  : string
         LastCommand  : string option
         TimestampUtc : DateTime

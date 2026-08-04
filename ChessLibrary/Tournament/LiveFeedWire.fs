@@ -80,17 +80,16 @@ let private asObj (n: JsonNode) : JsonObject option =
     | :? JsonObject as o -> Some o
     | _ -> None
 
-let private timeStr (t: TimeOnly) = t.ToString("HH:mm:ss.fff", inv)
+let private timeStr (t: TimeSpan) = TypesDef.CoreTypes.formatDuration t
 
 let private parseTime (s: string) =
     if String.IsNullOrWhiteSpace s then
-        TimeOnly.MinValue
+        TimeSpan.Zero
     else
-        match TimeOnly.TryParseExact(s, [| "HH:mm:ss.fff"; "HH:mm:ss" |], inv, Globalization.DateTimeStyles.None) with
-        | true, t -> t
-        | _ -> (match TimeOnly.TryParse(s, inv) with
-                | true, t -> t
-                | _ -> TimeOnly.MinValue)
+        // Same two shapes as before, hh:mm:ss with or without the fraction. A feed is not a
+        // place to reject a peer over formatting, so anything unreadable stays zero rather
+        // than throwing the way the config parser does.
+        try TypesDef.CoreTypes.parseDuration s with _ -> TimeSpan.Zero
 
 let private spanStr (ts: TimeSpan) = ts.ToString("c")
 

@@ -32,27 +32,17 @@ let lostOnTimeResult (playing: string) (opponent: string) (isWhite: bool) (gameM
     let player1, player2 = if isWhite then playing, opponent else opponent, playing
     Formatting.createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals
 
-/// Updates the clocks after a move, returning (currentTime, timeLeft)
-let updateClocks
-    (duration: TimeSpan)
-    (pFixedTime: TimeOnly)
-    (pIncr: TimeOnly)
-    (useNodes: bool) =
-
-    // how many ticks remain after the move (considering increment)
-    let currentTicksLeft = pFixedTime.Ticks + pIncr.Ticks - duration.Ticks
-    // clamp at zero, update clocks and compute "time left" after increment
-    let ticks = max currentTicksLeft 0L
-    if useNodes then
-        // Node-limit mode: keep times unchanged; report current active as-is
-        let currentTime = pFixedTime
-        // In node-limit mode we also keep timeLeft the same since clocks are irrelevant
-        let timeLeft = pFixedTime
-        (currentTime, timeLeft)
-    else
-        let updatedTimePlaying = TimeOnly ticks
-        let timeLeft = TimeOnly (ticks + pIncr.Ticks)
-        (updatedTimePlaying, timeLeft)
+/// The clock after a completed move: what was left, plus the increment earned by completing
+/// it, minus the time actually spent.
+///
+/// Signed on purpose. An engine that overran leaves a negative here, and that is precisely
+/// what the loss-on-time check needs — the previous version clamped at zero, threw the
+/// overshoot away, and a second copy of this same arithmetic then lived in the caller to
+/// recover it. One expression, read by both, cannot drift from itself.
+///
+/// Clamping belongs where the value is stored or shown, not here.
+let clockAfterMove (duration: TimeSpan) (remaining: TimeSpan) (increment: TimeSpan) =
+    remaining + increment - duration
 
 /// Checks if the app is shutting down
 let isAppShuttingDown (cts: CancellationTokenSource) =

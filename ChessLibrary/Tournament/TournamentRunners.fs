@@ -40,7 +40,7 @@ module TournamentUtils =
 
   let estimateTournamentAndGameTime (pairs:int) (tourny:Tournament) (pairings: Pairing seq) =
     let movesEst = tourny.Adjudication.DrawOption.MinDrawMove + tourny.Adjudication.DrawOption.DrawMoveLength + 15
-    let delay = tourny.DelayBetweenGames.ToTimeSpan().TotalSeconds
+    let delay = tourny.DelayBetweenGames.TotalSeconds
     let mutable secs = 0.0
     for p in pairings do
       let whiteTc = tourny.FindTimeControl p.White.TimeControlID
@@ -152,7 +152,7 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
         let result = executeGameWithSetup logger tourny board pair epdBook sb cts replayDicts replayList pgnGameWriterAgent tryGetUserAdjudication callback roundTxt
         results <- result :: results
 
-        do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+        do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
         board.ResetBoardState()
         gameNr <- gameNr + 1
         if gameNr % 2 = 0 then
@@ -284,7 +284,7 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
           do! Async.Sleep 200
 
           cleanupEnginesConditional engine1 engine2 forceStopEngines numberOfPlayers cts
-          do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+          do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
           board.ResetBoardState()
           gameNr <- gameNr + 1
           if gameNr % 2 = 0 then
@@ -1348,7 +1348,7 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
           if hasOddGame && tourny.SwissOptions.UniquePerMatchOnly then
             localOpeningIndex := !localOpeningIndex + 1
           if gamesRemaining > 0 && not cts.IsCancellationRequested then
-            do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+            do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
   }
 
   let mutable roundNumber = roundToStart
@@ -1731,7 +1731,7 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
             writeLadderState ladderAgent state
             // Delay between individual games within a match
             if gamesRemaining > 0 && not matchInfo.IsDecided && not cts.IsCancellationRequested then
-              do! Async.Sleep(tourny.DelayBetweenGames.ToTimeSpan().TotalMilliseconds |> int)
+              do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
   }
 
   let processMatchResult (matchInfo: LadderMatch) =
