@@ -1,0 +1,72 @@
+@* What this tournament is, in the shape a viewer reads it: name and format on one line,
+   the setup as a sentence, and the two adjudication rules as separate boxes — they are
+   conditions, not another bullet in a list. Replaces four bullets in a MudPaper where the
+   format, the openings and both rules all had the same weight. *@
+
+<div class="ts" style="@FontVars">
+    <div class="ts-head">
+        <span class="ts-name">@Name</span>
+        @if (!string.IsNullOrWhiteSpace(Mode))
+        {
+            <span class="ts-badge">
+                @Mode
+                @if (!string.IsNullOrWhiteSpace(Pairing))
+                {
+                    <span class="ts-badge-sep">·</span>
+                    @Pairing
+                }
+            </span>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Description) || !string.IsNullOrWhiteSpace(Setup))
+    {
+        <p class="ts-desc">
+            @if (!string.IsNullOrWhiteSpace(Description))
+            {
+                @Description
+                @if (!string.IsNullOrWhiteSpace(Setup))
+                {
+                    <span class="ts-sep"> · </span>
+                }
+            }
+            @Setup
+        </p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(WinRule) || !string.IsNullOrWhiteSpace(DrawRule))
+    {
+        <div class="ts-rules">
+            @if (!string.IsNullOrWhiteSpace(WinRule))
+            {
+                <div class="ts-rule">
+                    <span class="ts-rule-label">Win rule</span>
+                    <span class="ts-rule-value">@WinRule</span>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(DrawRule))
+            {
+                <div class="ts-rule">
+                    <span class="ts-rule-label">Draw rule</span>
+                    <span class="ts-rule-value">@DrawRule</span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Name { get; set; }
+    /// <summary>Format, e.g. "1-Gauntlet" or "6-player RR".</summary>
+    [Parameter] public string Mode { get; set; }
+    /// <summary>"Double" or "Single" — whether each opening is played both ways.</summary>
+    [Parameter] public string Pairing { get; set; }
+    [Parameter] public string Description { get; set; }
+    /// <summary>Rounds, games and openings as one sentence.</summary>
+    [Parameter] public string Setup { get; set; }
+    [Parameter] public string WinRule { get; set; }
+    [Parameter] public string DrawRule { get; set; }
+    [Parameter] public int FontSize { get; set; }
+
+    private string FontVars => $"--ts-font:{(FontSize > 0 ? FontSize : 14)}px";
+}

@@ -1,0 +1,126 @@
+/* Tournament header bar. Values are monospace with tabular figures so nothing shifts as
+   counters tick; labels are small, uppercase and quiet, because on a stream the viewer
+   reads the numbers and only glances at what they are. */
+.ib {
+    --ib-text: var(--mud-palette-text-primary);
+    --ib-muted: var(--mud-palette-text-secondary);
+    --ib-accent: #5ee4c3;
+    --ib-border: var(--mud-palette-lines-default);
+
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 8px 18px;
+    border-bottom: 1px solid var(--ib-border);
+    color: var(--ib-text);
+    font-size: var(--ib-font, 14px);
+}
+
+/* Live dot: sits on its own now that the wordmark is gone. */
+.ib-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a5062;
+    flex: 0 0 8px;
+    align-self: center;
+    margin-right: 4px;
+}
+
+.ib-dot.live {
+    background: var(--ib-accent);
+    box-shadow: 0 0 0 3px rgba(94, 228, 195, 0.15);
+}
+
+/* ── Fields ── */
+.ib-fields {
+    display: flex;
+    align-items: flex-start;
+    gap: 26px;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.ib-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ib-label {
+    font-size: calc(var(--ib-font, 14px) * 0.62);
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ib-muted);
+    white-space: nowrap;
+}
+
+/* The layout option sizes the banner as a whole; values sit below it so the setting can
+   stay where the user had it without the numbers growing to header size. */
+.ib-value {
+    font-size: calc(var(--ib-font, 14px) * 0.82);
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Head to head ── */
+.ib-h2h {
+    display: inline-flex;
+    align-items: baseline;
+}
+
+.ib-h2h-n {
+    display: inline-block;
+    text-align: center;
+}
+
+.ib-h2h-sep {
+    margin: 0 5px;
+    color: var(--ib-muted);
+}
+
+/* ── Progress ── */
+.ib-progress {
+    display: flex;
+    align-items: flex-start;
+    gap: 26px;
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding-left: 28px;
+    border-left: 1px solid var(--ib-border);
+}
+
+.ib-field-game { min-width: 150px; }
+
+.ib-game-nr { color: var(--ib-accent); }
+
+.ib-bar {
+    height: 3px;
+    margin-top: 5px;
+    border-radius: 2px;
+    background: rgba(125, 132, 156, 0.25);
+    overflow: hidden;
+}
+
+.ib-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--ib-accent);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+}
+
+/* Narrow windows: the wordmark and its divider are the first thing worth dropping. */
+@media (max-width: 1200px) {
+    .ib { gap: 18px; padding: 8px 12px; }
+    .ib-fields, .ib-progress { gap: 16px; }
+    .ib-progress { padding-left: 16px; }
+}

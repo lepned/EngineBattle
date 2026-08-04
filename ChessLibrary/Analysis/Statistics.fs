@@ -472,6 +472,23 @@ module Pentanomial =
   let formatAllMatchupsDefault (games: seq<PgnGame>) =
     formatAllMatchups games 200
 
+  /// Completed and incomplete pairs for one matchup — either colour order — together with
+  /// the total across every matchup. The per-matchup figure is the sample size behind that
+  /// pair's error bar; the total only says how much has been played.
+  let pairsForMatchup (games: seq<PgnGame>) (a: string) (b: string) =
+    let data = calculateAllMatchups games
+    let a = if isNull a then "" else a.Trim()
+    let b = if isNull b then "" else b.Trim()
+    let isMatch (x: string, y: string) =
+      let x, y = x.Trim(), y.Trim()
+      (x = a && y = b) || (x = b && y = a)
+    let completed, incomplete =
+      match data |> List.tryFind (fst >> isMatch) with
+      | Some (_, c) -> c.CompletedPairs, c.IncompletePairs
+      | None -> 0, 0
+    let total = data |> List.sumBy (fun (_, c) -> c.CompletedPairs)
+    completed, incomplete, total
+
   let formatSingleMatchupCompact (games: seq<PgnGame>) =
     let data = calculateAllMatchups games
     match data with

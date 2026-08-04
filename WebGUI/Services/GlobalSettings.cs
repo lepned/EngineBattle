@@ -32,6 +32,10 @@ public class GlobalSettings
     public int DefaultMultiPV { get; set; } = 10;
     public double MinPolicyThreshold { get; set; } = 0.05;
     public bool ShowEvalBar { get; set; } = true;             // vertical eval bar beside analysis/review boards
+    // Rollout switch, not a permanent fork: the old InfoBanner is kept only until the new
+    // header has been through enough real broadcasts, then it goes. Off by default while
+    // the new one is still being built — the shipped default should be the proven page.
+    public bool UseNewTournamentBanner { get; set; } = false; // true = new tournament header
 
     // Remembered last choice of the below-chart panel (live move stats vs PV table),
     // keyed per host page ("single-analysis", "dual-analysis"). No settings UI — written

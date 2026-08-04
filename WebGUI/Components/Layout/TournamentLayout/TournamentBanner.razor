@@ -1,0 +1,154 @@
+@using System.Linq
+
+@* Tournament header, label above value, grouped by what each number is for: identity, then
+   the setup that does not change, then live state, then progress on the right.
+   Replaces InfoBanner, which is two rows of MudItems held in alignment by hand-tuned lg
+   spans with labels and values at the same weight. Both are wired up while this one is
+   being proven on real broadcasts; InfoBanner goes when it is. Pick one on /appearance.
+
+   Every field stays mounted whether or not it has a value. One that appears mid-run
+   changes the banner's height, which pushes the page past the scrollbar threshold, which
+   narrows the viewport, which makes every responsive chart below redraw a few pixels
+   smaller. That was a long afternoon to find once. *@
+
+<div class="ib" style="@FontVars">
+    @* No wordmark here: the app bar already carries it, and two of them read as a mistake.
+       The live dot stays — it says something the app bar does not. *@
+    <span class="ib-dot @(IsLive ? "live" : null)" title="@(IsLive ? "Tournament running" : "Idle")"></span>
+
+    <div class="ib-fields">
+        @Field("Hardware", Info?.Hardware)
+        @Field("TC", Info?.TCText)
+        @Field("Round", Info?.Round)
+        @Field("50m", move50)
+        @Field("R3", R3.ToString())
+        @* Win and draw rules next to the counters that run against them: "Draw 10p" says
+           nothing on its own, but beside "≤0.3 ×5 @20" it reads as progress. *@
+        @Field("Win rule", WinRule, WinRuleText)
+        @Field("Draw rule", DrawRule, DrawRuleText)
+        @Field("Draw", $"{DrawP}p")
+        @if (Info != null && Info.UseTBAdj)
+        {
+            @Field("TB", TB.ToString())
+        }
+        @if (Info != null && Info.UseDevCounter)
+        {
+            @Field("Dev", Info.DevCounter.ToString())
+        }
+        @Field("Result", Info?.ResultTxt?.Trim())
+
+        @* Mounted even before there is a head-to-head to show: it arrives with the first
+           finished game, and a field that appears then reflows the whole banner. *@
+        <div class="ib-field">
+            <span class="ib-label">H2H</span>
+            <span class="ib-value ib-h2h">
+                @if (H2HGroups.Length == 3)
+                {
+                    @for (int i = 0; i < H2HGroups.Length; i++)
+                    {
+                        <span class="ib-h2h-n" style="@($"min-width:{H2HMaxDigits}ch")">@H2HGroups[i]</span>
+                        @if (i < H2HGroups.Length - 1)
+                        {
+                            <span class="ib-h2h-sep">–</span>
+                        }
+                    }
+                }
+                else
+                {
+                    <text>–</text>
+                }
+            </span>
+        </div>
+    </div>
+
+    @* The bar is the tallest thing in this row, so mounting it only once a game count
+       arrived grew the banner mid-run — enough to bring in the page scrollbar and resize
+       every responsive chart below it. Keep it mounted and let the fill be empty. *@
+    <div class="ib-progress">
+        <div class="ib-field ib-field-game">
+            <span class="ib-label">Game</span>
+            <span class="ib-value">
+                @if (HasGames)
+                {
+                    <span class="ib-game-nr">@Info.GameNr</span><text> / @Info.TotalGames</text>
+                }
+                else
+                {
+                    <span class="ib-game-nr">–</span>
+                }
+            </span>
+            <div class="ib-bar" title="@(HasGames ? $"{GamePercent:0}% of the tournament played" : null)">
+                <span style="@($"width:{GamePercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%")"></span>
+            </div>
+        </div>
+
+        @* Pairs, not games: the pentanomial error is computed from completed pairs, so this
+           is the sample size that decides whether the Elo figure means anything yet. *@
+        @Field("Pairs", PairsText, PairsTitle)
+
+        @* Same reasoning: both fill in once the tournament is running, and Field already
+           renders an en dash for an empty value. *@
+        @Field("Time left", Info?.TimeLeftTxt)
+        @Field("Ends (UTC)", Info?.TournamentEndsTxt)
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Move50 { get; set; }
+    [Parameter] public int R3 { get; set; }
+    [Parameter] public int DrawP { get; set; }
+    [Parameter] public int TB { get; set; }
+    [Parameter] public int FontSize { get; set; }
+    [Parameter] public InfoBannerInfo Info { get; set; }
+    /// <summary>Lights the dot at the head of the bar. Off leaves it grey — a dot that
+    /// always says "live" says nothing.</summary>
+    [Parameter] public bool IsLive { get; set; }
+    /// <summary>Adjudication rules as short tokens, e.g. "≥5 ×5". The full sentence goes in
+    /// the matching *Text parameter and is shown on hover.</summary>
+    [Parameter] public string WinRule { get; set; }
+    [Parameter] public string WinRuleText { get; set; }
+    [Parameter] public string DrawRule { get; set; }
+    [Parameter] public string DrawRuleText { get; set; }
+
+    private string move50 => $"{Move50 / 2}.{Move50 % 2}";
+
+    // One size drives both label and value, so the layout option still controls the banner
+    // as a whole rather than only one of the two type sizes.
+    private string FontVars => $"--ib-font:{(FontSize > 0 ? FontSize : 14)}px";
+
+    private bool HasGames => Info is { TotalGames: > 0 };
+
+    private double GamePercent =>
+        HasGames ? Math.Clamp(100.0 * Info.GameNr / Info.TotalGames, 0, 100) : 0;
+
+    private string PairsText => Info is { Pairs: > 0 } ? Info.Pairs.ToString() : null;
+
+    private string PairsTitle
+    {
+        get
+        {
+            if (Info is not { Pairs: > 0 }) return null;
+            var inc = Info.IncompletePairs > 0 ? $" (+{Info.IncompletePairs} incomplete)" : "";
+            // The total only earns its place in a gauntlet, where this matchup is a slice of it.
+            var all = Info.PairsTotal > Info.Pairs ? $", {Info.PairsTotal} across the tournament" : "";
+            return $"{Info.Pairs} completed pairs in this matchup{inc}{all} — the pentanomial error is computed from completed pairs";
+        }
+    }
+
+    private RenderFragment Field(string label, string value, string title = null) => @<div class="ib-field" title="@title">
+        <span class="ib-label">@label</span>
+        <span class="ib-value">@(string.IsNullOrWhiteSpace(value) ? "–" : value)</span>
+    </div>;
+
+    private string[] H2HGroups
+    {
+        get
+        {
+            var raw = (Info?.HeadToHead ?? string.Empty).Trim();
+            var parts = raw.Split('-', StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToArray();
+            return string.IsNullOrEmpty(raw) || parts.Length != 3 ? Array.Empty<string>() : parts;
+        }
+    }
+
+    private int H2HMaxDigits => H2HGroups.Length == 0 ? 1 : Math.Max(1, H2HGroups.Max(g => g.Length));
+}

@@ -1,0 +1,85 @@
+/* No surface of its own: the page has no defined background to sit a card on, so a filled,
+   bordered panel reads as pasted onto the layout rather than part of it. Typography carries
+   the structure instead; only the rule boxes keep a border, because they are the one part
+   that has to read as separate. */
+.ts {
+    --ts-muted: var(--mud-palette-text-secondary);
+    --ts-border: var(--mud-palette-lines-default);
+
+    padding: 4px 2px;
+    font-size: var(--ts-font, 14px);
+}
+
+/* ── Name and format ── */
+.ts-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 10px;
+}
+
+.ts-name {
+    font-weight: 700;
+    font-size: calc(var(--ts-font, 14px) * 1.15);
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ts-badge {
+    margin-left: auto;
+    flex: 0 0 auto;
+    font-size: calc(var(--ts-font, 14px) * 0.62);
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ts-muted);
+    white-space: nowrap;
+}
+
+.ts-badge-sep { margin: 0 5px; opacity: 0.6; }
+
+/* ── Description ── */
+.ts-desc {
+    margin: 0;
+    font-size: calc(var(--ts-font, 14px) * 0.86);
+    line-height: 1.5;
+    color: var(--ts-muted);
+}
+
+.ts-sep { opacity: 0.6; }
+
+/* ── Rules ──
+   Side by side, and each one boxed: they are conditions the games are judged by, not two
+   more facts in the paragraph above. */
+.ts-rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.ts-rule {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 11px;
+    border: 1px solid var(--ts-border);
+    border-radius: 10px;
+    min-width: 0;
+}
+
+.ts-rule-label {
+    font-size: calc(var(--ts-font, 14px) * 0.62);
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ts-muted);
+}
+
+.ts-rule-value {
+    font-size: calc(var(--ts-font, 14px) * 0.88);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+}

@@ -179,6 +179,20 @@
                 </div>
             </div>
 
+            <div class="appearance-section @SectionClass("banner")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("banner")'>
+                    <span class="section-title">Tournament header <span class="scope-badge all">Tournament page</span></span>
+                    <span class="collapse-indicator">@Indicator("banner")</span>
+                </h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="useNewTournamentBanner" @bind:after="Apply" />
+                        Use the new tournament header
+                    </label>
+                    <small>Label above value, with the win and draw rules beside the counters that run against them, and a progress bar for the games played. Turn it off to go back to the old two-row header while the new one is being proven.</small>
+                </div>
+            </div>
+
             </div>
             <div class="controls-col">
 
@@ -434,6 +448,7 @@
     private string whiteMoveArrowColor = "#cfece0";
     private string blackMoveArrowMode = "auto";
     private string blackMoveArrowColor = "#383231";
+    private bool useNewTournamentBanner;
     private string policyLabelMode = "auto";
     private string policyLabelColor = "#FFEB3B";
     private string policyLabelStyle = "circle";
@@ -521,6 +536,7 @@
         moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
         if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
         showEvalBar = s.ShowEvalBar;
+        useNewTournamentBanner = s.UseNewTournamentBanner;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
         arrowMode = string.IsNullOrEmpty(s.BoardArrowColor) ? "auto" : "custom";
@@ -573,6 +589,7 @@
         merged.BoardHighlightStyle = highlightStyle;
         merged.BoardMoveHighlightColor = moveHighlightMode == "custom" ? moveHighlightColor : "";
         merged.ShowEvalBar = showEvalBar;
+        merged.UseNewTournamentBanner = useNewTournamentBanner;
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
         merged.BoardArrowWidth = arrowWidth;

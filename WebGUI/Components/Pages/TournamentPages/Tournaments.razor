@@ -50,8 +50,24 @@
 <div class="main-screen" id="tournamentPage">
 	<div class="rhs lhs infoB">
 
-		<InfoBanner FontSize=@layoutOptions.Fonts.InfoBannerFont R3="@r3" TB="TB"
-					Move50="move50" DrawP="DrawP" Info="infoBannerInfo"></InfoBanner>
+		@* Two headers while the new one is being proven on real broadcasts — switchable on
+		   /appearance, and the old one goes once it has been. Both read the same
+		   InfoBannerInfo; the fields the new one adds are simply ignored by the old. *@
+		@if (SettingsService.Settings.UseNewTournamentBanner)
+		{
+			@* The dot follows the running-game marker the banner already carries, rather
+			   than a flag that would only ever say "yes". *@
+			<TournamentBanner FontSize=@layoutOptions.Fonts.InfoBannerFont R3="@r3" TB="TB"
+							  Move50="move50" DrawP="DrawP" Info="infoBannerInfo"
+							  IsLive="@(infoBannerInfo?.ResultTxt?.Trim() == "*")"
+							  WinRule="@WinRuleToken" WinRuleText="@WinRuleText"
+							  DrawRule="@DrawRuleToken" DrawRuleText="@DrawRuleText" />
+		}
+		else
+		{
+			<InfoBanner FontSize=@layoutOptions.Fonts.InfoBannerFont R3="@r3" TB="TB"
+						Move50="move50" DrawP="DrawP" Info="infoBannerInfo" />
+		}
 	</div>
 
 	<MudGrid Class="pl-3 justify-content-between">
@@ -62,16 +78,27 @@
 				<MudItem lg="1">
 				</MudItem>
 				<MudItem lg="10">
-					<MudText Class="mt-4" Typo="Typo.h6">@tournament?.Name</MudText>
-					<MudText Class="pl-3" Style=@descriptionStyle>@tournament?.Description</MudText>
-					<MudPaper>
-						<ul class="pt-4 pb-4" style="list-style-type: disc; list-style-position:inside;">
-							<li style=@descriptionStyle>@Gauntlet</li>
-							<li style=@descriptionStyle>@(GetOpening())</li>
-							<li style=@descriptionStyle>@(GetWin())</li>
-							<li style=@descriptionStyle>@(GetDraw())</li>
-						</ul>
-					</MudPaper>
+					@* Same switch as the header above: the point of a fallback is to get back
+					   a page that has actually been in service, not a half-new one. *@
+					@if (SettingsService.Settings.UseNewTournamentBanner)
+					{
+						<TournamentSummary Name="@tournament?.Name" Mode="@ModeBadge" Pairing="@PairingBadge"
+										   Description="@tournament?.Description" Setup="@SetupLine"
+										   FontSize="@layoutOptions.Fonts.TournamentDescFont" />
+					}
+					else
+					{
+						<MudText Class="mt-4" Typo="Typo.h6">@tournament?.Name</MudText>
+						<MudText Class="pl-3" Style=@descriptionStyle>@tournament?.Description</MudText>
+						<MudPaper>
+							<ul class="pt-4 pb-4" style="list-style-type: disc; list-style-position:inside;">
+								<li style=@descriptionStyle>@Gauntlet</li>
+								<li style=@descriptionStyle>@(GetOpening())</li>
+								<li style=@descriptionStyle>@(GetWin())</li>
+								<li style=@descriptionStyle>@(GetDraw())</li>
+							</ul>
+						</MudPaper>
+					}
 				</MudItem>
 				<MudItem lg="1">
 				</MudItem>
@@ -882,6 +909,48 @@
 				$"{tournament.Challengers}-Gauntlet ({(tournament.Opening.OpeningsTwice ? "double" : "single")}), {@tournament.Rounds} rounds, {totalNumberOfPairs} total games" :
 				$"{tournament.EngineSetup.Engines.Count()}-player {(tournament.Opening.OpeningsTwice ? "double" : "single")} Round robin, {@tournament.Rounds} rounds, {totalNumberOfPairs} total games";
 
+	// Parts for TournamentSummary. The mode summaries below stay as they are — the badge is
+	// just the format, and the sentence is what used to be two of the four bullets.
+	string ModeBadge => tournament == null ? "" :
+		IsCupMode ? "Cup" :
+		IsSwissMode ? "Swiss" :
+		IsLadderMode ? "Ladder" :
+		IsGauntletMode ? $"{tournament.Challengers}-Gauntlet" :
+		$"{tournament.EngineSetup.Engines.Count()}-player RR";
+
+	string PairingBadge => tournament == null ? "" : tournament.Opening.OpeningsTwice ? "Double" : "Single";
+
+	string SetupLine
+	{
+		get
+		{
+			if (tournament == null) return "";
+			var format =
+				IsCupMode ? GetCupSummary() :
+				IsSwissMode ? GetSwissSummary() :
+				IsLadderMode ? $"{tournament.EngineSetup.Engines.Count()} engines, {tournament.LadderOptions.GamePairsPerMatch} game pairs per match" :
+				$"{tournament.Rounds} rounds, {totalNumberOfPairs} games";
+			var order = tournament.Opening.RandomOpenings ? "random" : "sequential";
+			var twice = tournament.Opening.OpeningsTwice ? " ×2" : "";
+			var openings = $"{tournament.GetOpeningFileName()}, {tournament.Opening.OpeningsPly} ply, {order}{twice}";
+			return $"{format} · {openings}";
+		}
+	}
+
+	// Two forms of the same rule: a token for the banner, which is a strip of short values,
+	// and the sentence for its tooltip.
+	string WinRuleToken => tournament == null ? "" :
+		$"≥{tournament.Adjudication.WinOption.MinWinScore} ×{tournament.Adjudication.WinOption.WinMoveLength}";
+
+	string WinRuleText => tournament == null ? "" :
+		$"Win: evals ≥ {tournament.Adjudication.WinOption.MinWinScore} for {tournament.Adjudication.WinOption.WinMoveLength} moves";
+
+	string DrawRuleToken => tournament == null ? "" :
+		$"≤{tournament.Adjudication.DrawOption.MaxDrawScore} ×{tournament.Adjudication.DrawOption.DrawMoveLength} @{tournament.Adjudication.DrawOption.MinDrawMove}";
+
+	string DrawRuleText => tournament == null ? "" :
+		$"Draw: after {tournament.Adjudication.DrawOption.MinDrawMove} moves, evals ≤ {tournament.Adjudication.DrawOption.MaxDrawScore} for {tournament.Adjudication.DrawOption.DrawMoveLength} moves";
+
 	bool IsGauntletMode => tournament != null && tournament.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase);
 	bool IsCupMode => tournament != null && tournament.TournamentMode.Equals("Cup", StringComparison.OrdinalIgnoreCase);
 	bool IsSwissMode => tournament != null && tournament.TournamentMode.Equals("Swiss", StringComparison.OrdinalIgnoreCase);
@@ -988,6 +1057,62 @@
 		}
 
 		return $"Tournament time: {Tsec}, game time: {Gsec}";
+	}
+
+	// Keeps the banner's text and its progress figures in step; they come from the same
+	// clamped numbers, so the bar can never disagree with the label beside it.
+	void ApplyGameProgress()
+	{
+		if (infoBannerInfo == null) return;
+		infoBannerInfo.Game = GetDisplayedGameText();
+		var total = tournament == null ? 0 : (tournament.TotalGames > 0 ? tournament.TotalGames : totalNumberOfPairs);
+		infoBannerInfo.TotalGames = total;
+		infoBannerInfo.GameNr = tournament == null ? 0 : Math.Min(tournament.CurrentGameNr, Math.Max(0, total));
+		ApplyCarriedBannerFields();
+	}
+
+	// Held on the component, not only on the banner: the banner object is rebuilt on every
+	// game start and on a settings change, and the count is only recomputed at the end of a
+	// game. ApplyGameProgress puts it back so it does not blink to a dash in between.
+	private int pairsCompleted;
+	private int pairsIncomplete;
+	private int pairsTotal;
+
+	// Pairs come from the PGN, not from the result list: an unfinished pair is only visible
+	// once both games of an opening are on disk. Scoped to the matchup that just finished,
+	// to match H2H beside it — with no names given, the last game in the file decides, which
+	// is what keeps the figure frozen on that matchup between games.
+	void ApplyPairCount(System.Collections.Generic.List<PGNTypes.PgnGame> games, string white = null, string black = null)
+	{
+		if (games == null || games.Count == 0)
+		{
+			pairsCompleted = 0;
+			pairsIncomplete = 0;
+			pairsTotal = 0;
+		}
+		else
+		{
+			if (string.IsNullOrWhiteSpace(white) || string.IsNullOrWhiteSpace(black))
+			{
+				var last = games[games.Count - 1];
+				white = last.GameMetaData.White;
+				black = last.GameMetaData.Black;
+			}
+			var pairs = Statistics.Pentanomial.pairsForMatchup(games, white, black);
+			pairsCompleted = pairs.Item1;
+			pairsIncomplete = pairs.Item2;
+			pairsTotal = pairs.Item3;
+		}
+		ApplyCarriedBannerFields();
+	}
+
+	// Fields the banner must not lose when it is rebuilt at every game start.
+	void ApplyCarriedBannerFields()
+	{
+		if (infoBannerInfo == null) return;
+		infoBannerInfo.Pairs = pairsCompleted;
+		infoBannerInfo.IncompletePairs = pairsIncomplete;
+		infoBannerInfo.PairsTotal = pairsTotal;
 	}
 
 	string GetDisplayedGameText()
@@ -1498,6 +1623,7 @@
 				var pgnGames = await UpdateSpeed(0);
 				if (pgnGames.Count > 0)
 					GameAnalysis.PGNCalculator.populatePentanomialError(summary, pgnGames);
+				ApplyPairCount(pgnGames, e.Result.Player1, e.Result.Player2);
 				await InvokeAsync(StateHasChanged);
 				var resLog = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(summary, table);
 				if (summary.Count == 2 && pgnGames.Count > 0)
@@ -1701,7 +1827,7 @@
 					infoBannerInfo = new InfoBannerInfo(tournament);
 					infoBannerInfo.TournamentEndsTxt = InfoBannerInfo.GetTournamentEnd(duration);
 					infoBannerInfo.TimeLeftTxt = InfoBannerInfo.Duration(duration);
-					infoBannerInfo.Game = GetDisplayedGameText();
+					ApplyGameProgress();
 					infoBannerInfo.Round = roundNr;
 					var playerTcId = start.Game.WhiteToMove ? start.Game.WhitePlayer.TimeControlID : start.Game.BlackPlayer.TimeControlID;
 					infoBannerInfo.TCText = tournament.TimeControlTextForPlayer(playerTcId);
@@ -1772,6 +1898,7 @@
 						}
 						gameData ??= runner.GetPGNGames();
 						GameAnalysis.PGNCalculator.populatePentanomialError(players, gameData);
+						ApplyPairCount(gameData);
 						var consoleInfo = GameAnalysis.OrdoHelper.getResultsAndPairsInConsoleFormat(players, table);
 						if (players.Count == 2)
 							consoleInfo += Statistics.Pentanomial.formatSingleMatchupCompact(gameData);
@@ -1820,6 +1947,7 @@
 						GameAnalysis.OrdoHelper.populatePairData(scoreTable, table);
 						GameAnalysis.PGNCalculator.populateSpeedMetrics(scoreTable, pgnGamesEnd);
 						GameAnalysis.PGNCalculator.populatePentanomialError(scoreTable, pgnGamesEnd);
+						ApplyPairCount(pgnGamesEnd);
 						if (pairings.Count == 0)
 						{
 							infoBannerInfo = new InfoBannerInfo(tournament);
@@ -3074,7 +3202,7 @@
 		var bannerEnd = infoBannerInfo.TournamentEndsTxt;
 		var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;
 		infoBannerInfo = new InfoBannerInfo(tournament);
-		infoBannerInfo.Game = GetDisplayedGameText();
+		ApplyGameProgress();
 		infoBannerInfo.TimeLeftTxt = bannerTime;
 		infoBannerInfo.TournamentEndsTxt = bannerEnd;
 		infoBannerInfo.Round = roundNr;

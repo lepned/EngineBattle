@@ -25,6 +25,10 @@ namespace WebGUI.Services
     public string Hardware { get; set; }
     public string TCText { get; set; }
     public string Game { get; set; }
+    // Same figures as Game, kept apart so the banner can draw a progress bar without
+    // parsing "28/200" back into numbers.
+    public int GameNr { get; set; }
+    public int TotalGames { get; set; }
     public string Round { get; set; }
     public string Move50 { get; set; }
     public string Draw { get; set; }
@@ -38,6 +42,12 @@ namespace WebGUI.Services
     public bool UseDevCounter { get; set; }
     public int DevCounter { get; set; }
     public string HeadToHead { get; set; }
+    // Pentanomial pairs for the matchup being played, kept apart from Played because the
+    // error bars are computed from pairs, not games. PairsTotal is every matchup together
+    // and only appears in the tooltip, where a gauntlet needs it for context.
+    public int Pairs { get; set; }
+    public int IncompletePairs { get; set; }
+    public int PairsTotal { get; set; }
 
     public InfoBannerInfo()
     {
@@ -48,6 +58,8 @@ namespace WebGUI.Services
       Hardware = tourny.Hardware();
       TCText = tourny.TimeControlText();
       Game = tourny.CurrentGameNr == 0 ? "" : $"{tourny.CurrentGameNr}/{tourny.TotalGames}";
+      GameNr = tourny.CurrentGameNr;
+      TotalGames = tourny.TotalGames;
       // Round is set from the runner's live `Update.RoundNr` callback
       // (pair.RoundNr, which is the Scheduler-assigned label). Leaving this
       // blank here avoids a stale formula-derived value flashing in the
