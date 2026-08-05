@@ -74,20 +74,24 @@
 
 		<MudItem sm="12" md="4" lg="4" Class="@SideColumnClass">
 
-			<MudItem Class="lhs mb-3 d-flex" lg="12">
-				<MudItem lg="1">
+			@* Same switch as the header above: a fallback should restore a page that has
+			   actually been in service, not a half-new one. It sits out here rather than
+			   inside the lg="1" spacers because those are the old layout — a percentage
+			   gutter that moved with the window. The deck sets its own inset in CSS. *@
+			@if (SettingsService.Settings.UseNewTournamentBanner)
+			{
+				<MudItem Class="lhs mb-3" lg="12">
+					<TournamentSummary Name="@tournament?.Name" Mode="@ModeBadge" Pairing="@PairingBadge"
+									   Description="@tournament?.Description" Setup="@SetupLine"
+									   FontSize="@layoutOptions.Fonts.TournamentDescFont" />
 				</MudItem>
-				<MudItem lg="10">
-					@* Same switch as the header above: the point of a fallback is to get back
-					   a page that has actually been in service, not a half-new one. *@
-					@if (SettingsService.Settings.UseNewTournamentBanner)
-					{
-						<TournamentSummary Name="@tournament?.Name" Mode="@ModeBadge" Pairing="@PairingBadge"
-										   Description="@tournament?.Description" Setup="@SetupLine"
-										   FontSize="@layoutOptions.Fonts.TournamentDescFont" />
-					}
-					else
-					{
+			}
+			else
+			{
+				<MudItem Class="lhs mb-3 d-flex" lg="12">
+					<MudItem lg="1">
+					</MudItem>
+					<MudItem lg="10">
 						<MudText Class="mt-4" Typo="Typo.h6">@tournament?.Name</MudText>
 						<MudText Class="pl-3" Style=@descriptionStyle>@tournament?.Description</MudText>
 						<MudPaper>
@@ -98,11 +102,11 @@
 								<li style=@descriptionStyle>@(GetDraw())</li>
 							</ul>
 						</MudPaper>
-					}
+					</MudItem>
+					<MudItem lg="1">
+					</MudItem>
 				</MudItem>
-				<MudItem lg="1">
-				</MudItem>
-			</MudItem>
+			}
 			<MudItem>
 				<div class="lhs">
 

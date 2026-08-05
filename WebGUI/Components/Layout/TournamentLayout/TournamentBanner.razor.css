@@ -36,7 +36,7 @@
 .ib-fields {
     display: flex;
     align-items: flex-start;
-    gap: 26px;
+    gap: 32px;
     flex: 1 1 auto;
     min-width: 0;
     flex-wrap: wrap;
@@ -82,19 +82,21 @@
     text-align: center;
 }
 
+/* No margin: "12–4–9" is one figure; spacing the dash broke it into three. Any air left
+   comes from ib-h2h-n centring a short number in its fixed-width box. */
 .ib-h2h-sep {
-    margin: 0 5px;
     color: var(--ib-muted);
 }
 
-/* ── Progress ── */
+/* ── Progress ──
+   Padding stays wider than the field gap: it separates two groups, not two fields. */
 .ib-progress {
     display: flex;
     align-items: flex-start;
-    gap: 26px;
+    gap: 32px;
     margin-left: auto;
     flex: 0 0 auto;
-    padding-left: 28px;
+    padding-left: 34px;
     border-left: 1px solid var(--ib-border);
 }
 
@@ -121,6 +123,6 @@
 /* Narrow windows: the wordmark and its divider are the first thing worth dropping. */
 @media (max-width: 1200px) {
     .ib { gap: 18px; padding: 8px 12px; }
-    .ib-fields, .ib-progress { gap: 16px; }
-    .ib-progress { padding-left: 16px; }
+    .ib-fields, .ib-progress { gap: 20px; }
+    .ib-progress { padding-left: 22px; }
 }

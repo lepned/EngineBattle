@@ -1,20 +1,41 @@
-/* No surface of its own: the page has no defined background to sit a card on, so a filled,
-   bordered panel reads as pasted onto the layout rather than part of it. Typography carries
-   the structure instead; only the rule boxes keep a border, because they are the one part
-   that has to read as separate. */
-.ts {
-    --ts-muted: var(--mud-palette-text-secondary);
-    --ts-border: var(--mud-palette-lines-default);
+/* Filled with a wash of the page's own text colour rather than --mud-palette-surface, which
+   in a light theme is often identical to the background. A few percent of the foreground
+   over whatever is behind it works in either theme without naming one. The border carries
+   the shape; the gradient is barely there, just enough that the fill is not flat.
 
-    padding: 4px 2px;
+   Every colour is declared twice: a theme-neutral grey first for browsers without
+   color-mix(), then the real value. */
+.ts {
+    /* text-secondary alone reads washed out at these sizes. */
+    --ts-muted: var(--mud-palette-text-secondary);
+    --ts-muted: color-mix(in srgb, var(--mud-palette-text-primary) 72%, var(--mud-palette-text-secondary));
+
+    --ts-tint-top: rgba(127, 127, 127, 0.055);
+    --ts-tint-top: color-mix(in srgb, var(--mud-palette-text-primary) 3%, transparent);
+    --ts-tint-bottom: rgba(127, 127, 127, 0.022);
+    --ts-tint-bottom: color-mix(in srgb, var(--mud-palette-text-primary) 1.2%, transparent);
+    --ts-hairline: rgba(127, 127, 127, 0.21);
+    --ts-hairline: color-mix(in srgb, var(--mud-palette-lines-default) 60%, transparent);
+
+    /* Left inset, on top of the 12px the MudGrid item already gives. 6px would sit flush
+       with the banner's text edge above; more indents the deck deliberately. */
+    --ts-gutter: 24px;
+
+    margin: 14px var(--ts-gutter) 0;
+    padding: 15px 17px 16px;
+    border: 1px solid var(--ts-hairline);
+    border-radius: 10px;
+    background: linear-gradient(to bottom, var(--ts-tint-top), var(--ts-tint-bottom));
     font-size: var(--ts-font, 14px);
 }
 
-/* ── Name and format ── */
+/* ── Name and format ──
+   Badge right, name left. It needs the deck's edge to align against — before, it floated
+   at wherever the grid column stopped. The gap is a minimum, for long names. */
 .ts-head {
     display: flex;
     align-items: baseline;
-    gap: 14px;
+    gap: 10px;
     margin-bottom: 10px;
 }
 
@@ -22,6 +43,9 @@
     font-weight: 700;
     font-size: calc(var(--ts-font, 14px) * 1.15);
     letter-spacing: -0.01em;
+    /* overflow:hidden also drops this item's automatic flex minimum to zero, so a long name
+       ellipsises and the badge keeps its place rather than being pushed out of the row. */
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -40,46 +64,23 @@
 
 .ts-badge-sep { margin: 0 5px; opacity: 0.6; }
 
-/* ── Description ── */
+/* ── Description and setup ──
+   Three steps of weight, not two: the name, then the description as a subheading, then the
+   setup as quiet detail. At the same size and colour the last two read as one wrapped
+   paragraph rather than a heading and its parameters. Tabular figures on the setup keep the
+   round and game counts from jittering as they change. */
 .ts-desc {
     margin: 0;
-    font-size: calc(var(--ts-font, 14px) * 0.86);
+    font-size: calc(var(--ts-font, 14px) * 0.95);
+    font-weight: 500;
+    line-height: 1.45;
+    color: var(--mud-palette-text-primary);
+}
+
+.ts-setup {
+    margin: 5px 0 0;
+    font-size: calc(var(--ts-font, 14px) * 0.78);
     line-height: 1.5;
     color: var(--ts-muted);
-}
-
-.ts-sep { opacity: 0.6; }
-
-/* ── Rules ──
-   Side by side, and each one boxed: they are conditions the games are judged by, not two
-   more facts in the paragraph above. */
-.ts-rules {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 10px;
-    margin-top: 14px;
-}
-
-.ts-rule {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px 11px;
-    border: 1px solid var(--ts-border);
-    border-radius: 10px;
-    min-width: 0;
-}
-
-.ts-rule-label {
-    font-size: calc(var(--ts-font, 14px) * 0.62);
-    font-weight: 700;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-    color: var(--ts-muted);
-}
-
-.ts-rule-value {
-    font-size: calc(var(--ts-font, 14px) * 0.88);
     font-variant-numeric: tabular-nums;
-    line-height: 1.3;
 }
