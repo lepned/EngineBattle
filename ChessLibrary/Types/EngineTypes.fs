@@ -268,6 +268,17 @@ module EngineTypes =
 
 
         // Parsing helper functions...
+        /// An eval token: a mate score as "M5"/"-M5", otherwise centipawns. Invariant because
+        /// evalRegex only matches a dot and the writer is sprintf "%.2f" — a locale-sensitive
+        /// parse silently returns the 0.0 default instead. Covered by ParserTests.
+        let parseEvalToken (value: string) =
+          match value.[0] with
+          | '-' when value.Length > 1 && value.[1] = 'M' -> -200.0
+          | 'M' -> 200.0
+          | _ ->
+            match Double.TryParse(value, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+            | true, num -> num
+            | _ -> 0.0
         let parseRegex myDefault format line (regex: Regex) =
           let test = regex.Match(line)
           if test.Success then test.Groups.[1].Value |> format else myDefault
@@ -286,11 +297,7 @@ module EngineTypes =
         let parseEvalRegex line =
           let test = evalRegex.Match(line)
           if test.Success then
-              let value = test.Groups.[1].Value
-              match value.[0] with
-              | '-' when value.Length > 1 && value.[1] = 'M' -> -200.0
-              | 'M' -> 200.0
-              | _ -> match System.Double.TryParse(value) with | true, num -> num | _ -> 0.0
+              parseEvalToken test.Groups.[1].Value
           else 0.0
         let evalParser line = parseEvalRegex line
         let intParser line regex = parseRegex 0 int line regex
@@ -331,12 +338,7 @@ module EngineTypes =
                   else
                     let d = mateRegex.Match(line)
                     if d.Success then
-                      let value = d.Groups.[1].Value
-                      let eval =
-                        match value.[0] with
-                        | '-' when value.Length > 1 && value.[1] = 'M' -> -200.0
-                        | 'M' -> 200.0
-                        | _ -> match System.Double.TryParse(value) with | true, num -> num | _ -> 0.0
+                      let eval = parseEvalToken d.Groups.[1].Value
                       let depth = int d.Groups.[3].Value
                       let time = float d.Groups.[4].Value
                       { EngineMoveStat.Empty with Player = player; wv = eval * (if isBlack then -1.0 else 1.0); d = depth; mt = int64 (time * 1000.0) }

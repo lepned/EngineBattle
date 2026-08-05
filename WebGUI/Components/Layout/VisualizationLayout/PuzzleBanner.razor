@@ -47,7 +47,7 @@
 			// Split the string by comma
 			var parts = tuple.Item2.Split(',');
 
-			if (parts.Length > 1 && double.TryParse(parts[0].Trim(), out double value))
+			if (parts.Length > 1 && double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
 				return value;
 
 			// Default value when there's no second part or it can't be parsed

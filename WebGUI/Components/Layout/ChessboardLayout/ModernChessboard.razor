@@ -792,12 +792,16 @@
     }
 
     // ── Overlay display ──
+    // Invariant, like CandidateMoves and the Plotly hover strings: these numbers sit beside
+    // that table on the same screen, and a comma here against a dot there reads as a bug.
+    private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+
     private string FormatNodes(double nodes)
     {
-        if (nodes > 1_000_000_000) return (nodes / 1_000_000_000).ToString("F1") + "B";
-        else if (nodes > 1_000_000) return (nodes / 1_000_000).ToString("F1") + "M";
-        else if (nodes > 1_000) return (nodes / 1_000).ToString("F1") + "K";
-        else return nodes.ToString("F0");
+        if (nodes > 1_000_000_000) return (nodes / 1_000_000_000).ToString("F1", Inv) + "B";
+        else if (nodes > 1_000_000) return (nodes / 1_000_000).ToString("F1", Inv) + "M";
+        else if (nodes > 1_000) return (nodes / 1_000).ToString("F1", Inv) + "K";
+        else return nodes.ToString("F0", Inv);
     }
 
     private record OverlayEntry(string FromSq, string ToSq, string Text);
@@ -813,12 +817,12 @@
 
         Func<NNValues, string> text = currentOverlaySetting switch
         {
-            OverlaySettings.Policy => e => e.P.ToString("F1"),
-            OverlaySettings.SearchPolicy => e => (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1"),
-            OverlaySettings.Q => e => e.Q.ToString("F2"),
-            OverlaySettings.V => e => e.V.ToString("F2"),
-            OverlaySettings.QVDiff => e => (e.Q - e.V).ToString("F2"),
-            OverlaySettings.E => e => (2 * e.E).ToString("F2"),
+            OverlaySettings.Policy => e => e.P.ToString("F1", Inv),
+            OverlaySettings.SearchPolicy => e => (e.Nodes * 100.0 / (double)firstMove.Nodes).ToString("F1", Inv),
+            OverlaySettings.Q => e => e.Q.ToString("F2", Inv),
+            OverlaySettings.V => e => e.V.ToString("F2", Inv),
+            OverlaySettings.QVDiff => e => (e.Q - e.V).ToString("F2", Inv),
+            OverlaySettings.E => e => (2 * e.E).ToString("F2", Inv),
             OverlaySettings.Nodes => e => FormatNodes(e.Nodes),
             _ => null
         };

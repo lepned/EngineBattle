@@ -2170,6 +2170,14 @@ module Program =
   /// </summary>
   [<EntryPoint>]
   let main argv =
+    // Invariant culture before anything formats or parses a number — see WebGUI/Program.cs
+    // for the reproduction. This side writes the PGN files, where a comma decimal would not
+    // just look wrong but corrupt what every other tool reads back.
+    Globalization.CultureInfo.DefaultThreadCurrentCulture <- Globalization.CultureInfo.InvariantCulture
+    Globalization.CultureInfo.DefaultThreadCurrentUICulture <- Globalization.CultureInfo.InvariantCulture
+    Threading.Thread.CurrentThread.CurrentCulture <- Globalization.CultureInfo.InvariantCulture
+    Threading.Thread.CurrentThread.CurrentUICulture <- Globalization.CultureInfo.InvariantCulture
+
     ConsoleUtils.originalColor <- Console.ForegroundColor
     
     let test = false

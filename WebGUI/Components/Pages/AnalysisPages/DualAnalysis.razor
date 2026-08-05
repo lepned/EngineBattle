@@ -127,7 +127,7 @@
                     <label>Min Policy</label>
                     <input type="range" min="0" max="0.10" step="0.005"
                            value="@overlaySettings.MinPolicyThreshold"
-                           @onchange="@(e => OnMinPolicyChanged(double.Parse(e.Value?.ToString() ?? "0.03")))" />
+                           @onchange="@(e => OnMinPolicyChanged(double.Parse(e.Value?.ToString() ?? "0.03", CultureInfo.InvariantCulture)))" />
                     <span class="da-slider-value">@overlaySettings.MinPolicyThreshold.ToString("P1")</span>
                 </div>
             </div>

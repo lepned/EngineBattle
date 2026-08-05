@@ -1,5 +1,6 @@
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using MudBlazor.Services;
@@ -91,6 +92,18 @@ var log = new LoggerConfiguration()
         // Time only: the date is in the file name and the offset never changes mid-file.
         outputTemplate: "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
         .CreateLogger();
+
+// Invariant culture for the whole process, before anything formats or parses a number.
+// Not tidiness — reproduced on a machine forced to a comma-decimal locale: Razor renders
+// `value="@someDouble"` through ToString(), a slider emitted value="0,03", which is not a
+// valid HTML float, so the browser discarded it and the control silently stopped working.
+// Every `value="@x"` and `style="...@x..."` in the markup is the same latent bug, invisible
+// at the call site, so they cannot be annotated individually.
+// Do not add UseRequestLocalization — it sets culture per request and undoes all of this.
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
 
 var builder = WebApplication.CreateBuilder(args);
 // Host shutdown timeout

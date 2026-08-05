@@ -1235,3 +1235,20 @@ module PGNWriterTests =
                 Assert.False(outputText.Contains("Ceres", StringComparison.OrdinalIgnoreCase))
         finally
             File.Delete(outputFile)
+
+// EB writes eval annotations with sprintf "%.2f", so a PGN always carries "wv=0.35" with a
+// dot, and evalRegex only matches a dot. Parsing that back under a comma locale must not
+// fall through to the 0.0 default — that would silently flatten every eval in the file.
+[<Theory>]
+[<InlineData("nb-NO")>]
+[<InlineData("hu-HU")>]
+let ``eval annotations parse under a comma-decimal locale`` (culture: string) =
+    let original = System.Threading.Thread.CurrentThread.CurrentCulture
+    try
+        System.Threading.Thread.CurrentThread.CurrentCulture <- System.Globalization.CultureInfo culture
+        Assert.Equal(0.35, ChessLibrary.EngineTypes.Annotation.parseEvalToken "0.35")
+        Assert.Equal(-1.5, ChessLibrary.EngineTypes.Annotation.parseEvalToken "-1.50")
+        Assert.Equal(200.0, ChessLibrary.EngineTypes.Annotation.parseEvalToken "M5")
+        Assert.Equal(-200.0, ChessLibrary.EngineTypes.Annotation.parseEvalToken "-M5")
+    finally
+        System.Threading.Thread.CurrentThread.CurrentCulture <- original

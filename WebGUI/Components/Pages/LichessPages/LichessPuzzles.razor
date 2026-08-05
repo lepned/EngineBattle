@@ -941,7 +941,7 @@
                       .Select(tuple =>
                       {
                     var parts = tuple.Item2.Split(",");
-                    if (parts.Length > 1 && double.TryParse(parts[0].Trim(), out double value))
+                    if (parts.Length > 1 && double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
                         return (tuple.Item1, value, tuple.Item2);
                     return (tuple.Item1, tuple.Item1.Rating, tuple.Item2);
                 })

@@ -83,7 +83,7 @@
             <label>Search limit</label>
             <input type="number"
                    value="@(searchMode == SearchMode.Nodes ? numberOfNodes : numberOfTimeMs)"
-                   @onchange="@(e => OnLimitChanged(double.Parse(e.Value?.ToString() ?? "1")))" />
+                   @onchange="@(e => OnLimitChanged(double.Parse(e.Value?.ToString() ?? "1", CultureInfo.InvariantCulture)))" />
         </div>
 
         <div class="ep-toggle-group">

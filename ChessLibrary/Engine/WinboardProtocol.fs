@@ -200,7 +200,8 @@ module WinboardProtocol =
         let m = cometTellicsRegex.Match(line)
         if m.Success then
             try
-                let scoreFloat = Double.Parse(m.Groups.[1].Value)
+                // Engine output, so invariant regardless of the host's locale.
+                let scoreFloat = Double.Parse(m.Groups.[1].Value, Globalization.CultureInfo.InvariantCulture)
                 let depth = Int32.Parse(m.Groups.[2].Value)
                 let npsValue = Int32.Parse(m.Groups.[3].Value)
                 let pvRaw = m.Groups.[4].Value
