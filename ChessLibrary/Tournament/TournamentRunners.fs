@@ -111,7 +111,7 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
     |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
     |> ChessLibrary.Scheduler.Diff.toPairings
 
-  PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
+  PairingHelper.logOpeningPairs logger gamesLeftToPlay
   let totalGames = pairings.Length
   tourny.TotalGames <- totalGames
   let numberOfGamesPlayed = gamesAlreadyPlayed.Length
@@ -207,7 +207,7 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
     |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
     |> ChessLibrary.Scheduler.Diff.toPairings
 
-  PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
+  PairingHelper.logOpeningPairs logger gamesLeftToPlay
   let totalGames = pairings.Length
   tourny.TotalGames <- totalGames
 

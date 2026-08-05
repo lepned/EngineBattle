@@ -1996,9 +1996,7 @@ module Program =
                         if verbose then
                             printfn "MessagesFromEngine: Player - %s, Message - %s" player message
                     | PairingList pairings ->
-                        let openings = PairingHelper.getAllOpeningPairs (pairings |> Seq.toList)
-                        //if verbose then 
-                        printfn "%s" openings
+                        printfn "%s" (PairingHelper.getOpeningPairs (pairings |> Seq.toList))
                     | PeriodicResults results ->
                         match results |> Seq.tryHead with
                         | Some _ -> printfn "Partial update after game %d" results.Count

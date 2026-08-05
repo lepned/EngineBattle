@@ -19,7 +19,7 @@ open ChessUtilities
 /// All actual pairing algorithms now live in `Scheduler/`. Anything here is
 /// either (a) a re-export of a Scheduler function, (b) a small `Pairing`-
 /// centric helper that hasn't yet earned its own module (played-set tracking,
-/// PGN logging), or (c) a thin adapter to a Scheduler function.
+/// schedule dumps), or (c) a thin adapter to a Scheduler function.
 module PairingHelper =
 
     // ---- Shuffle / rotation (Scheduler.Shared) ----------------------------
@@ -126,40 +126,42 @@ module PairingHelper =
               Distribution = Scheduler.Shared }
         Scheduler.RoundRobin.generate cfg |> Scheduler.Diff.toPairings
 
-    // ---- PGN logging ------------------------------------------------------
+    // ---- Schedule dumps for the console and log ----------------------------
 
-    let printAllOpeningPairs (logger: ILogger) (pairings: Pairing list) =
+    /// How many pairings a startup dump prints. The UI still receives every pairing — capping
+    /// the dump is not capping the schedule — but a few thousand lines in the console or the
+    /// log file buries everything else, and nobody reads past the first screen.
+    [<Literal>]
+    let MaxPairingsLogged = 50
+
+    /// GameNr, not a position in the list: the list is often the games *left* to play, where a
+    /// position restarts at 1 while GameNr keeps counting. GameNr is also what the "G%d" line
+    /// prints when the game starts, so a schedule line can be matched to a game.
+    let private pairingLine (p: Pairing) =
+        let openingName = PGNHelper.getOpeningInfo p.Opening
+        let opName =
+            if openingName.Contains "No opening name" && not (String.IsNullOrEmpty p.Opening.Fen)
+            then p.Opening.Fen
+            else openingName
+        sprintf "Round %s, game %d: %s, %s vs %s" p.RoundNr p.GameNr opName p.White.Name p.Black.Name
+
+    let private dump (pairings: Pairing list) =
+        let sb = StringBuilder()
+        pairings
+        |> List.truncate MaxPairingsLogged
+        |> List.iter (fun p -> sb.AppendLine(pairingLine p) |> ignore)
+        let total = List.length pairings
+        if total > MaxPairingsLogged then
+            sb.AppendLine(sprintf "... and %d more (%d pairings in total)" (total - MaxPairingsLogged) total)
+            |> ignore
+        sb.ToString()
+
+    let logOpeningPairs (logger: ILogger) (pairings: Pairing list) =
         // Silent when nothing is left to play, and no leading blank line — either one made
         // the entry read as empty.
-        if not (List.isEmpty pairings) then
-            let sb = StringBuilder()
-            pairings
-            |> List.iteri (fun idx p ->
-                let openingName = PGNHelper.getOpeningInfo p.Opening
-                let opName =
-                    if openingName.Contains "No opening name" && not (String.IsNullOrEmpty p.Opening.Fen)
-                    then p.Opening.Fen
-                    else openingName
-                let msg =
-                    sprintf
-                        "Round: %s  (%d): %d. %s, %s vs %s"
-                        p.RoundNr (idx + 1) p.GameNr opName p.White.Name p.Black.Name
-                sb.AppendLine msg |> ignore)
-            logger.LogInformation(sb.ToString())
+        if not (List.isEmpty pairings) then logger.LogInformation(dump pairings)
 
-    let getAllOpeningPairs (pairings: Pairing list) : string =
-        let sb = StringBuilder()
-        sb.AppendLine() |> ignore
-        pairings
-        |> List.iteri (fun idx p ->
-            let openingName = PGNHelper.getOpeningInfo p.Opening
-            let opName =
-                if openingName.Contains "No opening name"
-                then p.Opening.Fen
-                else openingName
-            let msg =
-                sprintf
-                    "Round: %s (%d): %d. %s, %s vs %s"
-                    p.RoundNr p.GameNr (idx + 1) opName p.White.Name p.Black.Name
-            sb.AppendLine msg |> ignore)
-        sb.ToString()
+    /// The same text for the console, with a blank line above it to separate it from the
+    /// startup banner.
+    let getOpeningPairs (pairings: Pairing list) : string =
+        if List.isEmpty pairings then "" else "\n" + dump pairings

@@ -174,7 +174,7 @@ let parallelTournamentRun
           |> ChessLibrary.Scheduler.Diff.toPairings
 
       if tourny.VerboseLogging then
-          PairingHelper.printAllOpeningPairs logger gamesLeftToPlay
+          PairingHelper.logOpeningPairs logger gamesLeftToPlay
 
       let totalGames = allPairings.Length
       tourny.TotalGames <- totalGames
