@@ -10,6 +10,7 @@
 		<Compile Include="BoardTests.fs" />
 		<Compile Include="MoveGenTests.fs" />
 		<Compile Include="CoreTypesTests.fs" />
+		<Compile Include="TimeControlFormatTests.fs" />
 		<Compile Include="PentanomialTests.fs" />
 		<Compile Include="ParserTests.fs" />
 		<Compile Include="PairingTests.fs" />

@@ -31,7 +31,6 @@
 		<Compile Include="Types\GameGraphTypes.fs" />
 
 		<!-- Tournament formatting (depends on types) -->
-		<Compile Include="Tournament\TournamentFormatting.fs" />
 
 		<!-- Move generation (depends on QBBOperations, types) -->
 		<Compile Include="Chess\MoveGeneration.fs" />

@@ -706,70 +706,10 @@ module TypesDef =
 
         member x.FindTimeControl id = x.TimeControl.GetTimeConfig id
 
-        member x.FormatNumberWithK (number: int) =
-            if number < 1000 then
-                sprintf "%d nodes" number
-            else
-                let num = float number
-                sprintf "%.1fK nodes" (num / 1000.0)
-
         member x.TimeControlTextForPlayer (id:int) =
           if obj.ReferenceEquals(box x.TimeControl, null) then "" else
           let tc = x.FindTimeControl id
-          if tc.NodeLimit then
-                  x.FormatNumberWithK tc.Nodes
-          else
-            x.FormatTimeSpan (tc.Fixed) (tc.Increment)
-            //sprintf "%ds + %.1fs"
-            //    (tc.Fixed.TotalSeconds|> int)
-            //    (tc.Increment.TotalSeconds)
-
-        member x.TimeControlTextForPlayers (id1:int, id2:int) =
-          if obj.ReferenceEquals(box x.TimeControl, null) then "" else
-          let moreThanOneTC = id1 <> id2
-          let formatNumberWithK (number: int) =
-            if number < 1000 then
-                sprintf "%d n" number
-            else
-                let num = float number
-                sprintf "%.1fK n" (num / 1000.0)
-
-          let tc1 = x.FindTimeControl id1
-          if not moreThanOneTC then
-            x.FormatTimeSpan (tc1.Fixed) (tc1.Increment)
-              //sprintf "%ds + %.1fs"
-              //    (tc1.Fixed.TotalSeconds|> int)
-              //    (tc1.Increment.TotalSeconds)
-          else
-            let tc2 = x.FindTimeControl id2
-            let tc1 =
-                if tc1.NodeLimit then
-                  formatNumberWithK tc1.Nodes
-                else
-                  x.FormatTimeSpan (tc1.Fixed) (tc1.Increment)
-                  //sprintf "%ds + %.1fs"
-                  //  (tc1.Fixed.TotalSeconds|> int)
-                  //  (tc1.Increment.TotalSeconds)
-            let tc2 =
-                if tc2.NodeLimit then
-                  let nodes = formatNumberWithK tc2.Nodes
-                  nodes
-                else
-                  x.FormatTimeSpan (tc2.Fixed) (tc2.Increment)
-                  //sprintf "%ds + %.1fs"
-                  //  (tc2.Fixed.TotalSeconds|> int)
-                  //  (tc2.Increment.TotalSeconds)
-            sprintf "%s vs %s" tc1 tc2
-
-        member x.FormatTimeSpan (fixedTime: TimeSpan) (incrementTime: TimeSpan) : string =
-                let totalFixedMinutes = fixedTime.TotalMinutes
-                let totalFixedSeconds = fixedTime.TotalSeconds
-                let totalIncrementSeconds = float incrementTime.Seconds + (float incrementTime.Milliseconds / 1000.0) + float incrementTime.Minutes * 60.0 + float incrementTime.Hours * 3600.0
-                let fixedTimePart =
-                    if totalFixedMinutes >= 1.0 then sprintf "%.0f'" totalFixedMinutes
-                    else sprintf "%.0f''" totalFixedSeconds
-                let incrementTimePart = if incrementTime.Milliseconds > 0 then sprintf "%.1f''" totalIncrementSeconds else sprintf "%.0f''" totalIncrementSeconds
-                sprintf "%s + %s" fixedTimePart incrementTimePart
+          tc.ToString()
 
         member x.TimeControlText() =
           // A tournament delivered over the live feed may carry no TimeControl (e.g. Tournament.Empty);
@@ -787,27 +727,8 @@ module TypesDef =
             else
               let tcs = x.EngineSetup.Engines |> Seq.filter(fun e -> e.TimeControlID <> tc1.Id) |> Seq.map(fun e -> e.TimeControlID) |> Seq.distinct
               if tcs |> Seq.length = 1 then
-                let tc2 = tcs |> Seq.head
-                let tc2 = x.FindTimeControl tc2
-                let tc1 = x.FindTimeControl tc1.Id
-                let tc1 =
-                  if tc1.NodeLimit then
-                    sprintf "%dN" tc1.Nodes
-                  else
-                    x.FormatTimeSpan (tc1.Fixed) (tc1.Increment)
-                    //sprintf "%ds + %.1fs"
-                    //  (tc1.Fixed.TotalSeconds|> int)
-                    //  (tc1.Increment.TotalSeconds)
-
-                let tc2 =
-                  if tc2.NodeLimit then
-                    sprintf "%dN" tc2.Nodes
-                  else
-                    x.FormatTimeSpan (tc2.Fixed) (tc2.Increment)
-                    //sprintf "%ds + %.1fs"
-                    //  (tc2.Fixed.TotalSeconds|> int)
-                    //  (tc2.Increment.TotalSeconds)
-                sprintf "%s vs %s" tc1 tc2
+                let tc2 = x.FindTimeControl (tcs |> Seq.head)
+                sprintf "%s vs %s" (tc1.ToString()) (tc2.ToString())
               else
                 tc1.ToString()
 

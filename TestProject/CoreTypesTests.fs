@@ -120,12 +120,14 @@ let ``TimeControl GetTimeConfig returns correct config`` () =
     let config = timeControl.GetTimeConfig 1
     Assert.Equal(1, config.Id)
 
+// A seconds remainder used to print as a decimal here ("1.5'") and as a rounded whole
+// minute in the banner ("2'"). Both now render m:ss. TimeControlFormatTests is the spec.
 [<Fact>]
 let ``TimeControl ToString formats correctly`` () =
     let config1 = { Id = 1; Fixed = TimeSpan.FromSeconds(60.0); Increment = TimeSpan.FromSeconds(1.0); NodeLimit = false; Nodes = 0 }
     Assert.Equal("1' + 1''", config1.ToString())
     let config2 = { Id = 2; Fixed = TimeSpan.FromSeconds(90.0); Increment = TimeSpan.FromSeconds(10.0); NodeLimit = false; Nodes = 0 }
-    Assert.Equal("1.5' + 10''", config2.ToString())
+    Assert.Equal("1:30' + 10''", config2.ToString())
     let config3 = { Id = 2; Fixed = TimeSpan.FromMinutes(90.0); Increment = TimeSpan.FromSeconds(30.0); NodeLimit = false; Nodes = 0 }
     Assert.Equal("90' + 30''", config3.ToString())
 

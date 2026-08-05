@@ -1,8 +1,46 @@
 namespace ChessLibrary
 
 open System
+open System.Globalization
 
 module TimeControlTypes =
+
+  /// Time control as the banner and console quote it: one tick is minutes, two is seconds,
+  /// so "1:30' + 2''" is a ninety second base with a two second increment. Bases under a
+  /// minute stay in seconds ("30'' + 0.5''"); increments stay in seconds at any size.
+  /// TimeControlFormatTests is the spec.
+  // int64 throughout: "999999:0:0" is a legal config and that many seconds overflows int32,
+  // which saturates silently rather than throwing.
+  let formatTimeControl (fixedTime: TimeSpan) (incrementTime: TimeSpan) : string =
+    // Whole values drop the decimal point.
+    let secondsText (totalSeconds: float) =
+      let rounded = Math.Round(totalSeconds, 3)
+      if rounded = Math.Floor rounded then string (int64 rounded)
+      else rounded.ToString("0.###", CultureInfo.InvariantCulture)
+
+    let fixedPart =
+      // Round once, so the branch and the digits agree: 59.9997s must not print "60''".
+      let total = Math.Round(fixedTime.TotalSeconds, 3)
+      if total < 60.0 then sprintf "%s''" (secondsText total)
+      else
+        let wholeSeconds = int64 (Math.Round total)
+        let minutes, seconds = wholeSeconds / 60L, wholeSeconds % 60L
+        if seconds = 0L then sprintf "%d'" minutes
+        else sprintf "%d:%02d'" minutes seconds
+
+    sprintf "%s + %s''" fixedPart (secondsText incrementTime.TotalSeconds)
+
+  /// The other half of a time control: "1 node", "800 nodes", "10.0K nodes", "1.5M nodes".
+  let formatNodes (nodes: int) : string =
+    if nodes = 1 then "1 node"   // 1-node searches are routine in puzzle testing
+    elif nodes < 1000 then sprintf "%d nodes" nodes
+    else
+      // k picks the unit — rounded, or 999999 stays in the K branch and prints "1000.0K".
+      // It must not also produce the M digits: rounding nodes->k->M is a second rounding,
+      // and 1349960 comes out "1.4M" that way instead of "1.3M". Each unit off the source.
+      let k = Math.Round(float nodes / 1000.0, 1)
+      if k < 1000.0 then sprintf "%.1fK nodes" k
+      else sprintf "%.1fM nodes" (float nodes / 1_000_000.0)
 
   type UnionType =
     | FixedTime of InMSFixed: TimeSpan
@@ -32,36 +70,9 @@ module TimeControlTypes =
         let newIncrTicks = incrTicks * fraction |> int64
         let newNodes = float x.Nodes * fraction |> int32
         { x with Fixed = TimeSpan(newFixedTicks); Increment = TimeSpan(newIncrTicks); Nodes = newNodes }
-      member x.ShortString() =
-        if x.NodeLimit then
-          sprintf "Node limit=%d " x.Nodes
-        else
-          sprintf "%ds + %.1fs " (x.Fixed.TotalSeconds |> int) (x.Increment.TotalSeconds)
-      member x.FormatTimeSpan (fixedTime: TimeSpan) (incrementTime: TimeSpan) : string =
-        let totalFixedMinutes = fixedTime.TotalMinutes
-        let totalFixedSeconds = fixedTime.TotalSeconds
-        let totalIncrementSeconds =
-          float incrementTime.Seconds +
-          (float incrementTime.Milliseconds / 1000.0) +
-          float incrementTime.Minutes * 60.0 +
-          float incrementTime.Hours * 3600.0
-        let fixedTimePart =
-          if totalFixedMinutes >= 1.0 then
-              if fixedTime.Seconds > 0 then
-                  sprintf "%.1f'" totalFixedMinutes
-              else
-                  sprintf "%.0f'" totalFixedMinutes
-          else sprintf "%.0f''" totalFixedSeconds
-        let incrementTimePart =
-          if incrementTime.Milliseconds > 0 then
-              sprintf "%.1f''" totalIncrementSeconds
-          else sprintf "%.0f''" totalIncrementSeconds
-        sprintf "%s + %s" fixedTimePart incrementTimePart
       override x.ToString() =
-        if x.NodeLimit then
-          sprintf "Node limit=%d" x.Nodes
-        else
-          x.FormatTimeSpan x.Fixed x.Increment
+        if x.NodeLimit then formatNodes x.Nodes
+        else formatTimeControl x.Fixed x.Increment
 
   type TimeControl =
     { TimeConfigs: TimeConfig list; WmovesToGo: int; BmovesToGo: int }
