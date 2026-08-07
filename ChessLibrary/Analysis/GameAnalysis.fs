@@ -3,6 +3,7 @@ module ChessLibrary.GameAnalysis
 open System
 open System.IO
 open System.Text
+open System.Collections.Generic
 open CliWrap
 open CliWrap.Buffered
 
@@ -478,33 +479,102 @@ module PGNCalculator =
 
   let createStatsCrossTableSummary (results: Result list) (challengerList: string list) players =
 
+      // Arbitrary user PGNs legitimately contain unscored games ("*" for
+      // unfinished/aborted, or an empty Result). Skip those here instead of
+      // failing the whole crosstable — the old failwith escaped out of a sort
+      // comparer and killed the OrdoResults circuit.
+      let results =
+          results
+          |> List.filter (fun r -> r.Result = "1-0" || r.Result = "0-1" || r.Result = "1/2-1/2")
+
+      // One-pass indexes. The old code re-filtered the FULL result list per player
+      // pair (and the sort projection re-scanned it per comparison), which is
+      // O(players² × games) — a TCEC archive (27,896 games, 1384 engine names)
+      // effectively never finished. With the indexes this is O(games + players²).
+      let playerGames = Dictionary<string, ResizeArray<Result>>()
+      let pairGames = Dictionary<struct (string * string), ResizeArray<Result>>()
+      let pairKey (a: string) (b: string) =
+          if String.CompareOrdinal(a, b) <= 0 then struct (a, b) else struct (b, a)
+      let addTo (dict: Dictionary<'k, ResizeArray<Result>>) key r =
+          match dict.TryGetValue key with
+          | true, l -> l.Add r
+          | _ ->
+              let l = ResizeArray<Result>()
+              l.Add r
+              dict.[key] <- l
+      // Distinct players in first-appearance order (opponentsList's original ordering)
+      let seenPlayers = HashSet<string>()
+      let orderedPlayers = ResizeArray<string>()
+      for r in results do
+          addTo playerGames r.Player1 r
+          addTo playerGames r.Player2 r
+          addTo pairGames (pairKey r.Player1 r.Player2) r
+          if seenPlayers.Add r.Player1 then orderedPlayers.Add r.Player1
+          if seenPlayers.Add r.Player2 then orderedPlayers.Add r.Player2
+
+      let emptyGames = ResizeArray<Result>()
+      let gamesOf p =
+          match playerGames.TryGetValue p with
+          | true, l -> l
+          | _ -> emptyGames
+      let gamesBetween p1 p2 =
+          match pairGames.TryGetValue (pairKey p1 p2) with
+          | true, l -> l
+          | _ -> emptyGames
+
+      let computeScore player =
+          let games = gamesOf player
+          if games.Count = 0 then 0.0, 0.0
+          else
+              let mutable score = 0.0
+              for r in games do
+                  score <- score +
+                      (match r.Result with
+                       | "1-0" -> if r.Player1 = player then 1.0 else 0.0
+                       | "0-1" -> if r.Player1 = player then 0.0 else 1.0
+                       | "1/2-1/2" -> 0.5
+                       | _ -> failwith "Invalid result")
+              score, score / float games.Count
+      let scoreCache = Dictionary<string, float * float>()
       let scoreOfPlayer player =
-          let games =
-            results
-            |> List.filter (fun r -> r.Player1 = player || r.Player2 = player)
-          games
-          |> List.sumBy (fun r ->
-              match r.Result with
-              | "1-0" -> if r.Player1 = player then 1.0 else 0.0
-              | "0-1" -> if r.Player1 = player then 0.0 else 1.0
-              | "1/2-1/2" -> 0.5
-              | _ -> failwith "Invalid result"
-          )
-          |> fun score -> score, score / float games.Length
+          match scoreCache.TryGetValue player with
+          | true, s -> s
+          | _ ->
+              let s = computeScore player
+              scoreCache.[player] <- s
+              s
 
       let statsBetween p1 p2 =
-          let matches = results
-                        |> List.filter (fun r -> (r.Player1 = p1 && r.Player2 = p2) || (r.Player1 = p2 && r.Player2 = p1))
-          let wins, draws, losses =
-              matches
-              |> List.fold (fun (w, d, l) m ->
-                  match m.Result with
-                  | "1-0" -> if m.Player1 = p1 then (w+1, d, l) else (w, d, l+1)
-                  | "0-1" -> if m.Player1 = p1 then (w, d, l+1) else (w+1, d, l)
-                  | "1/2-1/2" -> (w, d+1, l)
-                  | _ -> failwith "Invalid result"
-              ) (0, 0, 0)
-          { Wins = wins; Draws = draws; Losses = losses }
+          let mutable w, d, l = 0, 0, 0
+          for m in gamesBetween p1 p2 do
+              match m.Result with
+              | "1-0" -> if m.Player1 = p1 then w <- w + 1 else l <- l + 1
+              | "0-1" -> if m.Player1 = p1 then l <- l + 1 else w <- w + 1
+              | "1/2-1/2" -> d <- d + 1
+              | _ -> failwith "Invalid result"
+          { Wins = w; Draws = d; Losses = l }
+
+      // Same semantics as the standalone opponentsList, driven by the pair index:
+      // opponents in first-appearance order, per-opponent results in game order,
+      // opponents with no games removed.
+      let opponentsListFast p1 =
+          orderedPlayers
+          |> Seq.filter (fun p2 -> p1 <> p2)
+          |> Seq.choose (fun p2 ->
+              let matches = gamesBetween p1 p2
+              if matches.Count = 0 then None
+              else
+                  let strings =
+                      matches
+                      |> Seq.map (fun m ->
+                          match m.Result with
+                          | "1-0" -> if m.Player1 = p1 then "1" else "0"
+                          | "0-1" -> if m.Player1 = p1 then "0" else "1"
+                          | "1/2-1/2" -> "1/2"
+                          | _ -> failwith "Invalid result")
+                      |> Seq.toArray
+                  Some (p2, strings))
+          |> Seq.toArray
 
       let sorted = players |> List.sortByDescending (fun p -> if challengerList |> List.contains p then (10000. + snd (scoreOfPlayer p)) else snd (scoreOfPlayer p)) |> List.toArray
 
@@ -514,7 +584,7 @@ module PGNCalculator =
                           |> Array.filter (fun p2 -> p1 <> p2) // Exclude self
                           |> Array.map (fun p2 -> (p2, statsBetween p1 p2))
           let score, eff = scoreOfPlayer p1
-          { Player = p1; Alias = p1; Challenger = challengerList |> List.contains p1 ; Rank = idx + 1; ResultsAgainst = opponentsList results p1; StatsAgainst = statsList; TotalScore = score; Eff = eff }
+          { Player = p1; Alias = p1; Challenger = challengerList |> List.contains p1 ; Rank = idx + 1; ResultsAgainst = opponentsListFast p1; StatsAgainst = statsList; TotalScore = score; Eff = eff }
       )
 
   let generateSmallStatCrossTable (results:Result seq) (challengerList: string seq) players =
@@ -544,7 +614,8 @@ module PGNCalculator =
     let sb = new StringBuilder()
     sb.AppendLine "\n```\n" |> ignore
     sb.AppendLine "Idealized UHO ELO calculation (glbchess)\n" |> ignore
-    let width = cross |> Seq.map(fun e -> e.Player.Length) |> Seq.max
+    // Empty when the crosstable was skipped (player count over the limit)
+    let width = if Seq.isEmpty cross then 8 else cross |> Seq.map(fun e -> e.Player.Length) |> Seq.max
     let header = sprintf "%-*s : %7s %6s %7s %10s" width "# PLAYER" "ELO" "ERROR" "POINTS" "PairsWDL"
     sb.AppendLine header |> ignore
 
@@ -580,9 +651,26 @@ module PGNCalculator =
           if speed.Value.EPS > 0.0 then
             player.EPS <- speed.Value.EPS
 
+  /// Hard cap for crosstable computation: entries carry per-opponent stats for every
+  /// player pair (quadratic in players). Tournaments are far below this; archive PGNs
+  /// (a TCEC "everything" file has 1384 engine names) skip the crosstable entirely —
+  /// standings and pentanomial stay available, only pair columns come up empty.
+  let maxCrosstablePlayers = 30
+
   let getEngineDataResults results =
     let allResults = getResultsFromPGNGames results
-    let cross = generateCrosstableEntries allResults
+    let distinctPlayerCount =
+      let seen = HashSet<string>()
+      for r in allResults do
+        seen.Add r.Player1 |> ignore
+        seen.Add r.Player2 |> ignore
+      seen.Count
+    let cross =
+      if distinctPlayerCount <= maxCrosstablePlayers then
+        generateCrosstableEntries allResults
+      else
+        printfn "Crosstable skipped: %d players exceeds the limit of %d" distinctPlayerCount maxCrosstablePlayers
+        ResizeArray()
     let playerRes = getFullStatFromResults allResults |> Seq.toList
     populateSpeedMetrics playerRes results
     populatePentanomialError playerRes results

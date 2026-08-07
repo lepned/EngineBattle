@@ -186,7 +186,10 @@ module ConsoleHelper =
       let appendLine (txt:string) = sb.AppendLine txt |> ignore
       sb.Clear() |> ignore
       appendLine "\n```\n"
-      let longestName = engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
+      // PGNs without EB stat annotations (external/archive files) produce no stats
+      let longestName =
+        if Seq.isEmpty engineStats then 10
+        else engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
       let includeEps = engineStats |> Seq.exists (fun e -> e.AvgEPS > 0.0)
       writeEngineStatHeader longestName includeEps |> appendLine
       for engineStat in engineStats do
@@ -201,7 +204,9 @@ module ConsoleHelper =
       sb.Clear() |> ignore
       appendLine "\n```\n"
       let includeEps = engineStats |> Seq.exists (fun e -> e.EPS > 0.0)
-      let longestName = engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
+      let longestName =
+        if Seq.isEmpty engineStats then 10
+        else engineStats |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
       writeSummaryEngineStatHeader longestName includeEps |> appendLine
       for engineStat in engineStats do
         writeSummaryEngineStats engineStat longestName includeEps |> appendLine

@@ -386,7 +386,8 @@ let findDeviationDetailsAlt (collection: GameStore array) =
       let rec loop moveIndex (gamesLeft:GameStore array) (devs: DeviationDetail list) =
           // Determine the minimum move count across all games.
           let minMoves =
-                gamesLeft |> Array.map (fun gs -> gs.Board.MovesAndFenPlayed.Count) |> Array.min
+                if gamesLeft.Length = 0 then 0
+                else gamesLeft |> Array.map (fun gs -> gs.Board.MovesAndFenPlayed.Count) |> Array.min
           if gamesLeft.Length = 0 || moveIndex >= minMoves then
               Some devs
           else
