@@ -2303,7 +2303,7 @@ module Program =
                         tournament <- 
                             {tourny with 
                                 EngineSetup = engineSetup
-                                PreventMoveDeviation = tournament.TestOptions.NumberOfGamesInParallelConsoleOnly <= 1 
+                                PreventMoveDeviation = tourny.TestOptions.NumberOfGamesInParallelConsoleOnly <= 1
                                 MinMoveTimeInMS = 0
                                 ConsoleOnly = true
                                 DelayBetweenGames = TimeSpan.Zero
