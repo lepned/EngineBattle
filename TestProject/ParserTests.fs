@@ -1324,6 +1324,22 @@ let ``concurrent parses do not interleave state`` () =
         Assert.Equal<string list>(expectedSans, mainlineSans game))
     |> ignore
 
+[<Theory>]
+[<InlineData("1-0", "1-0")>]
+[<InlineData("0-1", "0-1")>]
+[<InlineData("1/2-1/2", "1/2-1/2")>]
+[<InlineData("½-½", "1/2-1/2")>]
+let ``movetext result token is recognized without a Result header`` (token: string) (expected: string) =
+    let pgn = $"""[Event "NoResultHeader"]
+[White "A"]
+[Black "B"]
+
+1. e4 e5 2. Nf3 Nc6 {token}
+"""
+    let game = FullPGNParser.parsePgnString pgn |> Seq.exactlyOne
+    Assert.Equal(expected, game.GameMetaData.Result)
+    Assert.Equal<string list>([ "e4"; "e5"; "Nf3"; "Nc6" ], mainlineSans game)
+
 [<Fact>]
 let ``re-enumerating a parsed sequence yields the same games`` () =
     let pgn = """[Event "A"]

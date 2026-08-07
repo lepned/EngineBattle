@@ -339,6 +339,23 @@ let ``computeValueLoss penalizes low Q on mate`` () =
     let result = computeValueLoss nn "e2e4" "mateIn2 middlegame" true
     Assert.Equal(0.0625, result, 6)
 
+// ---------------------------------------------------------------------------
+// ERET bm/am matching (PuzzleRunners.sanMatchesAny)
+// ---------------------------------------------------------------------------
+
+[<Theory>]
+[<InlineData("Qe4", "Qe4", true)>]      // exact match
+[<InlineData("Qe4", "e4", false)>]      // pawn push must not substring-match bm Qe4
+[<InlineData("Qxe4+", "Qxe4", true)>]   // EPD check suffix vs board SAN without it
+[<InlineData("Nf3#", "Nf3", true)>]     // mate suffix
+[<InlineData("O-O", "0-0", true)>]      // EPD castling notation vs board notation
+[<InlineData("O-O-O", "0-0-0", true)>]
+[<InlineData("O-O", "0-0-0", false)>]   // short vs long castle must not match
+[<InlineData("Qe4 Rf7", "Rf7", true)>]  // multi-move bm list
+[<InlineData("Qe4 Rf7", "Rf1", false)>]
+let ``ERET bm and am matching is exact per token`` (moveList: string) (played: string) (expected: bool) =
+    Assert.Equal(expected, ChessLibrary.PuzzleRunners.sanMatchesAny moveList played)
+
 [<Fact>]
 let ``computeValueLoss zero for high Q on mate`` () =
     // Q=0.97, threshold=0.95 → max(0, 0.95-0.97)² = 0

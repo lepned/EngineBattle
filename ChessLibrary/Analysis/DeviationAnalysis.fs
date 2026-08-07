@@ -515,7 +515,9 @@ let printDeviationsToConsole (summary: DeviationPlayerSummary seq) =
   appendLine "\n```\n"
   appendLine "Game deviations (devs) summary (not validated):\n"
   //find longest player name and add 2 chars
-  let longest = summary |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
+  let longest =
+    if Seq.isEmpty summary then 10
+    else summary |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
   writeSummaryHeader longest |> appendLine
   for player in summary do
     writeSummaryForPlayer player longest |> appendLine

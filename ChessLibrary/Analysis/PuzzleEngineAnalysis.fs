@@ -552,15 +552,16 @@ let performPositionEvalTestOnEpdPositions (limits : ResizeArray<TimeControlTypes
             if not ct.IsCancellationRequested then
               let fen = epd.FEN
               board.LoadFen fen
+              // limits is parallel to the FULL engine list, so index globally — the old
+              // chunk-local mapi handed engines beyond the first chunk another engine's
+              // limit (and chunking never throttled anyway; maxDegreeOfParallelism does).
               let evals =
                   engines
-                  |> Array.chunkBySize chunkSize
-                  |> Array.collect(fun chunk ->
-                      chunk |> Array.mapi(fun idx eng -> async {
+                  |> Array.mapi(fun idx eng -> async {
                       let! (eval, move) = bestMoveByEvalForLimit limits[idx] eng fen
                       return (eval, move), limits[idx], eng.Name
-                      }))
-                  |> Async.Parallel
+                      })
+                  |> fun comps -> Async.Parallel(comps, maxDegreeOfParallelism = chunkSize)
                   |> Async.RunSynchronously
                   |> Array.map(fun ((eval, move), limit, name) -> abs eval, move, limit, name)
 
@@ -631,15 +632,14 @@ let performPositionEvalTestOnPgnGames (limits : ResizeArray<TimeControlTypes.Tim
               for move in moves do
                   board.PlaySanMove move
               let fen = board.FEN()
+              // Same global-index + throttle fix as the EPD variant above.
               let evals =
                   engines
-                  |> Array.chunkBySize chunkSize
-                  |> Array.collect(fun chunk ->
-                      chunk |> Array.mapi(fun idx eng -> async {
+                  |> Array.mapi(fun idx eng -> async {
                       let! (eval, move) = bestMoveByEvalForLimit limits[idx] eng fen
                       return (eval, move), limits[idx], eng.Name
-                     }))
-                  |> Async.Parallel
+                     })
+                  |> fun comps -> Async.Parallel(comps, maxDegreeOfParallelism = chunkSize)
                   |> Async.RunSynchronously
                   |> Array.map(fun ((eval, move), limit, name) -> abs eval, move, limit, name)
 

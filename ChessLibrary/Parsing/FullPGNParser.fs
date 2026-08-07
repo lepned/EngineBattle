@@ -351,8 +351,13 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
           if st.Result = "" then st.Result <- "*"
           st.ResultFoundInMovetext <- true
 
-        // Move number (1. or 1... or just digits followed by dots)
-        elif isDigit c0 && not (c0 = '0' && p + 1 < len && spanLine[p + 1] = '-') then
+        // Move number (1. or 1... or just digits followed by dots).
+        // Exempt result tokens so they reach the result branch below: "0-1" (0 followed
+        // by '-'), "1-0" (1 followed by '-') and "1/2-1/2" (1 followed by '/') — a move
+        // number is always followed by a digit, '.' or whitespace, never '-' or '/'.
+        elif isDigit c0
+             && not (c0 = '0' && p + 1 < len && spanLine[p + 1] = '-')
+             && not (c0 = '1' && p + 1 < len && (spanLine[p + 1] = '-' || spanLine[p + 1] = '/')) then
           let mutable nr = 0
           while p < len && isDigit(spanLine[p]) do
             nr <- nr * 10 + (int spanLine[p] - int '0')

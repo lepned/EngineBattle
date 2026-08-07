@@ -131,6 +131,11 @@
 			logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
 			return;
 		}
+		if (games.Count == 0)
+		{
+			logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
+			return;
+		}
 		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = DeviationAnalysis.analyzeDeviations(games);
 		GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
 		var pentaDefault = Statistics.Pentanomial.formatPerEngineDefault(games);

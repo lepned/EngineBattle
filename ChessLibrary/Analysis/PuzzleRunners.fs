@@ -15,6 +15,20 @@ open ChessLibrary.PuzzleEngineAnalysis
 open ChessLibrary.PuzzleEngineAgent
 open ChessLibrary.PuzzleDataUtils
 
+/// Normalize a SAN token for EPD bm/am comparison: strip check/mate/annotation
+/// suffixes and unify castling notation (EPD suites write O-O; the board emits 0-0).
+/// 'O' only ever appears in SAN as castling, so the replacement is safe.
+let normalizeSanToken (san: string) =
+    san.Trim().TrimEnd('+', '#', '!', '?').Replace('O', '0')
+
+/// True when the played SAN matches any move in an EPD bm/am list ("Qe4 Rf7").
+/// Exact token equality after normalization — substring matching wrongly accepted
+/// e.g. the pawn push e4 for bm Qe4, and never matched castling (O-O vs 0-0).
+let sanMatchesAny (moveList: string) (playedSan: string) =
+    let played = normalizeSanToken playedSan
+    moveList.Split([| ' '; ','; ';' |], StringSplitOptions.RemoveEmptyEntries)
+    |> Array.exists (fun m -> normalizeSanToken m = played)
+
 /// Only value-head (LC0/Ceres only)
 let runValueHeadTest
     (input    : PuzzleInput,
@@ -233,10 +247,10 @@ let runEretTests (timeConfig: UnionType) (engineConfigs: (EngineConfig * int) se
 
                   let correct =
                       match puzzle.BestMove with
-                      | Some bm -> bm.Contains shortSanMove
+                      | Some bm -> sanMatchesAny bm shortSanMove
                       | None ->
                           match puzzle.AvoidMove with
-                          | Some am -> am.Contains shortSanMove |> not
+                          | Some am -> sanMatchesAny am shortSanMove |> not
                           | None -> false
 
                   puzzlePolicyEngine.UciNewGame()

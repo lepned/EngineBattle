@@ -391,9 +391,15 @@ let writeRawPgnGamesAdjustedToFile (filePath: string) (games: PgnGame seq) =
   let mutable round = 0
 
   let sortByRound (round:string) =
+         // External PGNs use non-numeric rounds ("?", "", "4.1.2") — sort those first
+         // instead of throwing FormatException out of the PGN tools.
+         let parseInt (s: string) =
+             match Int32.TryParse s with
+             | true, v -> v
+             | _ -> 0
          match round.Split '.' with
-         | [|rNr|] -> int rNr * 1000
-         | [|rNr; rest|] -> int rNr * 1000 + (rest |> int)
+         | [|rNr|] -> parseInt rNr * 1000
+         | [|rNr; rest|] -> parseInt rNr * 1000 + parseInt rest
          | _ -> -1
 
   let groupGames =

@@ -251,7 +251,8 @@ module OrdoHelper =
   let printStatsMatrix (table: CrossTableEntry seq) =
     let endOfLine = "\n```\n"
     let players = table |> Seq.map (fun t -> t.Player) |> Seq.toArray
-    let longest = (players |> Seq.map String.length |> Seq.max) + 2
+    // Empty table (e.g. non-PGN input parsed to zero games) must not crash Seq.max
+    let longest = if Array.isEmpty players then 8 else (players |> Seq.map String.length |> Seq.max) + 2
     let columnWidth = 13
 
     let getShortenedString (s: string) =
@@ -307,7 +308,9 @@ module OrdoHelper =
 
       appendLine "\n```\n"
 
-      let longest = engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
+      let longest =
+          if Seq.isEmpty engines then 10
+          else engines |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> e.Player.Length + 2
 
       // In a two player table, the first player is always the challenger
       let players =
