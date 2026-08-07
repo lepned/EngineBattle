@@ -34,7 +34,7 @@ module TournamentUtils =
           valid <- engine.PassedValidation
           engine.PrintNonDefaultValues()
         engine.StopProcess()
-        Async.Sleep(1000) |> ignore
+        do! Async.Sleep 1000
       if valid then
         RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green "\nTournament validation was successful"
       else

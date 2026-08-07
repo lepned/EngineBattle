@@ -253,9 +253,15 @@ let parallelTournamentRun
               pairingCh.Writer.TryWrite(pair) |> ignore
           pairingCh.Writer.Complete()
 
-          // 2) build one engine‐pool channel per engine‐name, capacity = parallelism
           // Track all spawned engines for cleanup safety net
           let allEngines = ResizeArray<ChessEngine>()
+
+          try // safety net: ensure engine processes are killed even if async fails before teardown
+
+          // 2) build one engine‐pool channel per engine‐name, capacity = parallelism.
+          // Built inside the safety net: a createEngine/initEngine failure mid-pool must
+          // not leak the engines already spawned. Each engine is registered before init
+          // so an init failure still gets it killed by the finally below.
           let enginePools =
               tourny.EngineSetup.Engines
               |> List.toArray
@@ -272,21 +278,26 @@ let parallelTournamentRun
                               assignDeviceToConfig e gpu
                             else e
                           let eng = EngineHelper.createEngine (cfg, Some logger)
-                          EngineHelper.initEngine 0 eng
                           lock allEngines (fun () -> allEngines.Add(eng))
+                          EngineHelper.initEngine 0 eng
                           ch.Writer.TryWrite(eng) |> ignore
                           eng.Name, ch )
                   engines )
               |> Array.concat
               |> Map.ofArray
 
-          try // safety net: ensure engine processes are killed even if async fails before teardown
-
           // 3) PGN agent: use external if provided, else create local
           let pgnAgent, ownsAgent =
               match externalPgnAgent with
               | Some a -> a, false
               | None -> ChessLibrary.FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+          // Dispose the owned agent (open FileStream on the output PGN) on every exit
+          // path, not just the happy path.
+          use _pgnGuard =
+              { new IDisposable with
+                  member _.Dispose() =
+                      if ownsAgent then
+                          try pgnAgent.Post(ChessLibrary.FullPGNParser.Dispose) with _ -> () }
 
           // a thread‐safe result collector
           let results = System.Collections.Concurrent.ConcurrentBag<Result>()
@@ -523,8 +534,6 @@ let parallelTournamentRun
           // tee it here while the recorder/HTTP sinks are still alive. No-op when no feed is set.
           emitFeed "" (Update.EndOfTournament tourny)
           let games = pgnAgent.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply))
-          if ownsAgent then
-              pgnAgent.Post(ChessLibrary.FullPGNParser.Dispose)
           if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then
               let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
               let path = Path.GetFileNameWithoutExtension(tourny.PgnOutPath) + "_ordered" + ".pgn"

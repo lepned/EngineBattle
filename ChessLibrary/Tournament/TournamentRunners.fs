@@ -56,6 +56,21 @@ module TournamentUtils =
 
 open TournamentUtils
 
+/// Runs the given cleanup on every exit path of the enclosing async (bind with `use`),
+/// so PGN/state agents are not leaked when a runner throws mid-tournament (e.g. a stale
+/// state file naming players missing from the engine list). Owned PGN agents hold an
+/// open FileStream on the output PGN.
+let private onRunnerExit (cleanup: unit -> unit) =
+  { new IDisposable with
+      member _.Dispose() = try cleanup() with _ -> () }
+
+/// Standard cleanup for a runner-owned PGN agent
+let private pgnAgentGuard (ownsAgent: bool) (agent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage>) =
+  onRunnerExit (fun () ->
+    if ownsAgent then
+      agent.Post(FullPGNParser.Dispose)
+      agent.Dispose())
+
 let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
   let mutable gameNr = 0
   let sbDev = new StringBuilder()
@@ -125,6 +140,7 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
       match pgnAgent with
       | Some a -> a, false
       | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+    use _pgnGuard = pgnAgentGuard ownsAgent pgnGameWriterAgent
     tourny.CurrentGameNr <- numberOfGamesPlayed
     let (tTime, gTime) = estimateTournamentAndGameTime (gamesLeftToPlay.Length) tourny gamesLeftToPlay
     let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
@@ -161,9 +177,6 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
 
     let res = ResizeArray<Result>(results)
     callback (Update.PeriodicResults res)
-    if ownsAgent then
-      pgnGameWriterAgent.Post(FullPGNParser.Dispose)
-      pgnGameWriterAgent.Dispose()
     return results
 }
 
@@ -219,6 +232,7 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
       match pgnAgent with
       | Some a -> a, false
       | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+    use _pgnGuard = pgnAgentGuard ownsAgent pgnGameWriterAgent
     callback (Update.TotalNumberOfPairs pairings.Length)
     callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
     tourny.CurrentGameNr <- numberOfGamesPlayed
@@ -295,9 +309,6 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
 
       let res = ResizeArray<Result>(results)
       callback (Update.PeriodicResults res)
-      if ownsAgent then
-        pgnGameWriterAgent.Post(FullPGNParser.Dispose)
-        pgnGameWriterAgent.Dispose()
       return results
     finally
       if engine1 <> Unchecked.defaultof<ChessEngine> then
@@ -386,11 +397,13 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
     match pgnAgent with
     | Some a -> a, false
     | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+  use _pgnGuard = pgnAgentGuard ownsAgent pgnGameWriterAgent
   let replayList = ResizeArray<GameReplay>()
   let replayDicts = createReplayDicts tourny.EngineSetup.Engines
   let getReplayDictForPlayer (name:string) = replayDicts.[name]
   let cupBracketPath = resolveCupBracketPath()
   let cupBracketAgent = TournamentState.startCupBracketReaderWriter cupBracketPath
+  use _stateGuard = onRunnerExit (fun () -> cupBracketAgent.Post DisposeCupBracket)
   let mutable matchId = 1
   let mutable openingIndex = 0
   let loadBracket () =
@@ -709,6 +722,32 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
       let pair = pairs.[matchIndex]
       let matchInfo = round.Matches.[matchIndex]
       let playerA, playerB = pair
+      // Propagate a decided match's winner into the next round's slot BEFORE the
+      // bracket write that persists the decision. A crash between "winner persisted"
+      // and "slot propagated" used to leave a TBD slot on disk, and the resume path
+      // silently dropped that match. Idempotent: re-applying sets the same slot.
+      let propagateWinnerIfDecided () =
+        if matchInfo.IsDecided && roundNumber < totalRounds then
+          let winnerPlayer =
+            match matchInfo.Winner with
+            | Some name when name = playerA.Name -> Some playerA
+            | Some name when name = playerB.Name -> Some playerB
+            | _ -> None
+          match winnerPlayer with
+          | Some player ->
+              ensureRound (roundNumber + 1)
+              match bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1) with
+              | Some next ->
+                  let nextIndex = matchIndex / 2
+                  let nextMatch = next.Matches.[nextIndex]
+                  let updated =
+                    if matchIndex % 2 = 0 then
+                      { nextMatch with PlayerA = player.Name; PlayerARating = player.Rating }
+                    else
+                      { nextMatch with PlayerB = player.Name; PlayerBRating = player.Rating }
+                  next.Matches.[nextIndex] <- updated
+              | None -> ()
+          | None -> ()
       if matchInfo.IsDecided then
         ()
       else
@@ -744,19 +783,23 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
           if matchInfo.ScoreA > matchInfo.ScoreB + float gamesRemaining then
             matchInfo.IsDecided <- true
             matchInfo.Winner <- Some matchInfo.PlayerA
+            propagateWinnerIfDecided ()
             writeCupBracket cupBracketAgent bracket
           elif matchInfo.ScoreB > matchInfo.ScoreA + float gamesRemaining then
             matchInfo.IsDecided <- true
             matchInfo.Winner <- Some matchInfo.PlayerB
+            propagateWinnerIfDecided ()
             writeCupBracket cupBracketAgent bracket
           elif gamesRemaining = 0 then
             if matchInfo.ScoreA > matchInfo.ScoreB then
               matchInfo.IsDecided <- true
               matchInfo.Winner <- Some matchInfo.PlayerA
+              propagateWinnerIfDecided ()
               writeCupBracket cupBracketAgent bracket
             elif matchInfo.ScoreB > matchInfo.ScoreA then
               matchInfo.IsDecided <- true
               matchInfo.Winner <- Some matchInfo.PlayerB
+              propagateWinnerIfDecided ()
               writeCupBracket cupBracketAgent bracket
 
         while matchInfo.IsDecided |> not && not cts.IsCancellationRequested do
@@ -815,7 +858,9 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
                   RoundNr = $"{matchInfo.RoundNumber}.{matchInfo.Games.Count + 1}"
                   OpeningHash = openingHash }
               let! result = playPairing pairing
-              if result.Reason <> ResultReason.Cancel then
+              // NotStarted is Result.Empty from a cancellation race — a game that never
+              // ran must not be scored or persisted any more than a cancelled one.
+              if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
                 let game : CupGame =
                   { GameNr = gameNr
                     White = white.Name
@@ -860,6 +905,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
                 if matchInfo.IsDecided && gamesRemaining > 0 then
                   tourny.TotalGames <- tourny.TotalGames - gamesRemaining
                   callback (Update.TotalNumberOfPairs tourny.TotalGames)
+                propagateWinnerIfDecided ()
                 writeCupBracket cupBracketAgent bracket
       match matchInfo.Winner with
       | Some name when name = playerA.Name ->
@@ -903,10 +949,6 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
 
   let res = ResizeArray<Result>(results)
   callback (Update.PeriodicResults res)
-  if ownsAgent then
-    pgnGameWriterAgent.Post(FullPGNParser.Dispose)
-    pgnGameWriterAgent.Dispose()
-  cupBracketAgent.Post DisposeCupBracket
   return results
   finally
     if engine1 <> Unchecked.defaultof<ChessEngine> then
@@ -989,12 +1031,14 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
     match pgnAgent with
     | Some a -> a, false
     | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+  use _pgnGuard = pgnAgentGuard ownsAgent pgnGameWriterAgent
   let replayList = ResizeArray<GameReplay>()
   let replayDicts = createReplayDicts tourny.EngineSetup.Engines
   let getReplayDictForPlayer (name:string) = replayDicts.[name]
 
   let swissPath = resolveSwissPath ()
   let swissAgent = TournamentState.startSwissStateReaderWriter swissPath
+  use _stateGuard = onRunnerExit (fun () -> swissAgent.Post DisposeSwissState)
   let mutable openingIndex = 0
   let mutable pairId = 1
 
@@ -1312,7 +1356,8 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
                   RoundNr = $"{pairing.RoundNumber}.{roundGameNumber}"
                   OpeningHash = openingHash }
               let! result = playPairing pairingGame
-              if result.Reason <> ResultReason.Cancel then
+              // NotStarted is Result.Empty from a cancellation race — never played, never scored
+              if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
                 let game : SwissTypes.SwissGame =
                   { GameNr = gameNr
                     White = white.Name
@@ -1428,10 +1473,6 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
 
   let res = ResizeArray<Result>(results)
   callback (Update.PeriodicResults res)
-  if ownsAgent then
-    pgnGameWriterAgent.Post(FullPGNParser.Dispose)
-    pgnGameWriterAgent.Dispose()
-  swissAgent.Post DisposeSwissState
   return results
 }
 
@@ -1490,11 +1531,13 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
     match pgnAgent with
     | Some a -> a, false
     | None -> FullPGNParser.startPgnGameReaderWriter tourny.PgnOutPath, true
+  use _pgnGuard = pgnAgentGuard ownsAgent pgnGameWriterAgent
   let replayList = ResizeArray<GameReplay>()
   let replayDicts = createReplayDicts tourny.EngineSetup.Engines
 
   let ladderPath = resolveLadderPath ()
   let ladderAgent = TournamentState.startLadderStateReaderWriter ladderPath
+  use _stateGuard = onRunnerExit (fun () -> ladderAgent.Post TournamentTypes.DisposeLadderState)
   let mutable openingIndex = 0
   let mutable matchId = 1
 
@@ -1689,7 +1732,8 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
               RoundNr = $"{state.CurrentClimbNumber}.{matchInfo.Games.Count + 1}"
               OpeningHash = openingHash }
           let! result = playPairing pairing
-          if result.Reason <> ResultReason.Cancel then
+          // NotStarted is Result.Empty from a cancellation race — never played, never scored
+          if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
             let game : LadderGame =
               { GameNr = gameNr
                 White = white.Name
@@ -1843,9 +1887,5 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
 
   let res = ResizeArray<Result>(results)
   callback (Update.PeriodicResults res)
-  if ownsAgent then
-    pgnGameWriterAgent.Post(FullPGNParser.Dispose)
-    pgnGameWriterAgent.Dispose()
-  ladderAgent.Post TournamentTypes.DisposeLadderState
   return results
 }

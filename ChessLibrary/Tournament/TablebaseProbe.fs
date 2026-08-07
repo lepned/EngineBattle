@@ -130,9 +130,11 @@ let runFathomSafe (tablebasePath: string) (fen: string) (timeoutMs:int) : string
         use proc = new Process(StartInfo = startInfo)
         if not (proc.Start()) then None
         else
+            // Drain stdout concurrently: reading only after WaitForExit deadlocks when
+            // Fathom's output exceeds the pipe buffer (child blocks writing, wait times out).
+            let outputTask = proc.StandardOutput.ReadToEndAsync()
             if proc.WaitForExit(timeoutMs) then
-                let out = proc.StandardOutput.ReadToEnd()
-                Some out
+                Some outputTask.Result
             else
                 try proc.Kill(true) with _ -> ()
                 None

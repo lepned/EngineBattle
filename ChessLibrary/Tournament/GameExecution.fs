@@ -133,7 +133,9 @@ let playWithPondering
   callback(StartOfGame gameStartInfo)
   // Always send UCI_Chess960 so EB is authoritative about the variant,
   // overriding any misconfigured engine.json setting.
-  let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+  // Read the variant from this game's board, not the shared tournament record —
+  // parallel workers write tourny.IsChess960 concurrently (mixed FRC/standard books).
+  let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" board.IsFRC }
   player1.AddSetOption chess960Option
   player2.AddSetOption chess960Option
   if tourny.MoveOverhead.Ticks > 0 then
@@ -684,7 +686,9 @@ let playGeneric
   
   // Send UCI_Chess960 so EB is authoritative about the variant,
   // overriding any misconfigured engine.json.
-  let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" tourny.IsChess960 }
+  // Read the variant from this game's board, not the shared tournament record —
+  // parallel workers write tourny.IsChess960 concurrently (mixed FRC/standard books).
+  let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" board.IsFRC }
   player1.AddSetOption chess960Option
   player2.AddSetOption chess960Option
   if not skipEngineInit then
