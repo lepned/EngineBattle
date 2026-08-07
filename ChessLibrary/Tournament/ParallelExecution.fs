@@ -440,20 +440,25 @@ let parallelTournamentRun
                                   OtherTags = pair.Opening.GameMetaData.OtherTags
                               }
 
-                          if tourny.PreventMoveDeviation then
+                          // Cancel results (crashed/aborted games) must not seed replay state or
+                          // reach the PGN — a written game counts in standings/SPRT and makes
+                          // Scheduler.Diff treat the pair as played on resume.
+                          let isCancelled = result.Reason = MiscTypes.ResultReason.Cancel
+                          if tourny.PreventMoveDeviation && not isCancelled then
                               lock replayLock (fun () ->
                                   for kvp in localWhiteDict do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value
                                   for kvp in localBlackDict do replayDicts.[pair.Black.Name].[kvp.Key] <- kvp.Value
                                   addToReplayList replayList tourny result gameData (ResizeArray(currentBoard.UciMovesPlayed)))
 
                           let moveSection = sb.ToString()
-                          if not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
+                          if not isCancelled && not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
                               pgnAgent.Post (ChessLibrary.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
                           if tourny.VerboseLogging then
                               logger.LogInformation(gameMetadataSummary gameData)
                           return result, pair
                       } |> Async.StartAsTask
-                  results.Add res
+                  if res.Reason <> MiscTypes.ResultReason.Cancel then
+                      results.Add res
 
               finally
                   if not (enginePools.[pair.White.Name].Writer.TryWrite(wEng)) then

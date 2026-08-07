@@ -269,16 +269,18 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
           let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
           let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
 
+          let isCancelled = result.Reason = ResultReason.Cancel
           let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
-          results <- result :: results
+          if not isCancelled then
+            results <- result :: results
 
-          // Process completed game: build metadata, add to replay, write PGN
-          let gameData = buildGameMetadata tourny pair result roundTxt
-          addToReplayList replayList tourny result gameData board.UciMovesPlayed
-          let moveSection = sb.ToString()
-          writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts
-          if tourny.VerboseLogging then
-            logger.LogInformation(gameMetadataSummary gameData)
+            // Process completed game: build metadata, add to replay, write PGN
+            let gameData = buildGameMetadata tourny pair result roundTxt
+            addToReplayList replayList tourny result gameData board.UciMovesPlayed
+            let moveSection = sb.ToString()
+            writeGameToPgnSimple pgnGameWriterAgent tourny gameData moveSection result cts
+            if tourny.VerboseLogging then
+              logger.LogInformation(gameMetadataSummary gameData)
 
           // Small delay to let pumps finish their cleanup
           do! Async.Sleep 200
