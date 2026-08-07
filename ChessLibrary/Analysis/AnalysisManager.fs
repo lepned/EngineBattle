@@ -32,11 +32,11 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
     member x.Engine = engine
     member x.TryGetMovePolicyAndTopForPosSequence(player:string, qMin:float, qMax:float) =
       let distEngine = distributionEngine()
-      tryGetMovePolicyAndTopForPosSequence distEngine board player 0.4 0.6 //(qMin qMax)
+      tryGetMovePolicyAndTopForPosSequence distEngine board player qMin qMax
 
     member x.TryGetMoveQAndTopForPosSequence(player:string, qMin:float, qMax:float) =
       let distEngine = distributionEngine()
-      tryGetMoveQAndTopForPosSequence distEngine board player 0.4 0.6 //(qMin qMax)
+      tryGetMoveQAndTopForPosSequence distEngine board player qMin qMax
 
     member x.Stop() =
       engine.SendUCICommand Stop

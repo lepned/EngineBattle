@@ -41,6 +41,10 @@ type private ParserState =
     mutable WhiteSan: string
     mutable BlackSan: string
     mutable PendingComment: string
+    // Multi-line { comment } state: set when a '{' was not closed on its line;
+    // subsequent lines are comment text until the matching '}'
+    mutable InComment: bool
+    mutable CommentAcc: string
     // Variation-aware tree state
     mutable CurrentPly: int
     MainlinePly: ResizeArray<PlyMove>
@@ -78,6 +82,8 @@ type private ParserState =
       WhiteSan = ""
       BlackSan = ""
       PendingComment = ""
+      InComment = false
+      CommentAcc = ""
       CurrentPly = 0
       MainlinePly = mainline
       RootVariations = ResizeArray<PlyLine>()
@@ -124,6 +130,8 @@ let private resetState (st: ParserState) =
   st.WhiteSan <- ""
   st.BlackSan <- ""
   st.PendingComment <- ""
+  st.InComment <- false
+  st.CommentAcc <- ""
   st.CurrentPly <- 0
   st.MainlinePly.Clear()
   st.RootVariations.Clear()
@@ -177,6 +185,13 @@ let private tryUpdateLastNodeComment (st: ParserState) (cmt: string) =
         | _ -> false
   else
     false
+
+/// Attach a completed comment to the most recent move, or hold it as pending
+/// (a comment before any move applies to the next one).
+let private attachComment (st: ParserState) (comment: string) =
+  let attached = tryUpdateLastNodeComment st comment
+  if not attached then
+    st.PendingComment <- if st.PendingComment = "" then comment else st.PendingComment + " " + comment
 
 /// Record a parsed SAN token as the next move, using the WhiteSan toggle
 /// (empty = white to move) with the FEN black-to-move special case.
@@ -273,6 +288,29 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
   let spanLine = line.AsSpan()
   let len = spanLine.Length
   let mutable p = 0
+
+  // Continuation of a { comment } opened on a previous line: everything up to the
+  // closing '}' is comment text, not movetext.
+  if st.InComment then
+    let mutable q = p
+    while q < len && spanLine[q] <> '}' do q <- q + 1
+    if q >= len then
+      // The whole line is still inside the comment
+      let piece = line.Trim()
+      if piece <> "" then
+        st.CommentAcc <- if st.CommentAcc = "" then piece else st.CommentAcc + " " + piece
+      p <- len
+    else
+      let piece = (new string(spanLine.Slice(0, q))).Trim()
+      let full =
+        if st.CommentAcc = "" then piece
+        elif piece = "" then st.CommentAcc
+        else st.CommentAcc + " " + piece
+      st.InComment <- false
+      st.CommentAcc <- ""
+      attachComment st full
+      p <- q + 1
+
   // Skip leading whitespace
   while p < len && Char.IsWhiteSpace(spanLine[p]) do p <- p + 1
 
@@ -304,12 +342,20 @@ let private parseMoveTextLine (st: ParserState) (line: string) =
           let comment =
             if p > startComment then new string(spanLine.Slice(startComment, p - startComment).Trim())
             else ""
-          if p < len && spanLine[p] = '}' then p <- p + 1
+          if p < len && spanLine[p] = '}' then
+            p <- p + 1
+            attachComment st comment
+          else
+            // No '}' on this line — the comment continues on subsequent lines.
+            // Previously the continuation was parsed as movetext (phantom moves).
+            st.InComment <- true
+            st.CommentAcc <- comment
 
-          // Always try to attach to the most recent move first
-          let attached = tryUpdateLastNodeComment st comment
-          if not attached then
-            st.PendingComment <- if st.PendingComment = "" then comment else st.PendingComment + " " + comment
+        // Rest-of-line comment: ';' is legal mid-line in PGN, not just line-initial
+        elif c0 = ';' then
+          let comment = if p + 1 < len then new string(spanLine.Slice(p + 1).Trim()) else ""
+          if comment <> "" then attachComment st comment
+          p <- len
 
         // Variation start (
         elif c0 = '(' then
@@ -508,11 +554,13 @@ let parsePgnStringHelper (content: string) withRaw : seq<PgnGame> =
         if withRaw then
           rawLines.Add(currentLine)
         if String.IsNullOrEmpty trimmed then
-          if inMoveText && (hasGame st || st.Result <> "") then
+          if st.InComment then
+            () // blank line inside a multi-line comment is not a game boundary
+          elif inMoveText && (hasGame st || st.Result <> "") then
             yield emitGame()
             resetState st
             inMoveText <- false
-        elif trimmed.Length > 0 && trimmed[0] = '[' then
+        elif not st.InComment && trimmed.Length > 0 && trimmed[0] = '[' then
           if inMoveText && (hasGame st || st.Result <> "") then
             yield emitGame()
             resetState st
@@ -565,13 +613,15 @@ let parsePgnFileHelper (pgnFilePath: string) withRaw : seq<PgnGame> =
         let currentLine = reader.ReadLine()
         let trimmed = currentLine.TrimStart()
         if String.IsNullOrEmpty trimmed then
-          if inMoveText && (hasGame st || st.Result <> "") then
+          if st.InComment then
+            mayAddRaw currentLine // blank line inside a multi-line comment is not a game boundary
+          elif inMoveText && (hasGame st || st.Result <> "") then
             yield emitGame()
             resetState st
             inMoveText <- false
           elif rawLines.Count > 0 then
             mayAddRaw currentLine
-        elif trimmed.Length > 0 && trimmed[0] = '[' then
+        elif not st.InComment && trimmed.Length > 0 && trimmed[0] = '[' then
           if inMoveText && (hasGame st || st.Result <> "") then
             yield emitGame()
             resetState st

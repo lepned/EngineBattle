@@ -217,13 +217,17 @@ let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
               |> Seq.toArray
               |> Array.findIndex(fun x -> x.LANMove = move)
               |> (+) 1
+          // The played move can be absent from qList (mate relabeling above can skip
+          // it); findIndex would crash the whole sweep — treat as "no data" instead.
           let qrankForMovePlayed =
               qList
               |> Seq.sortByDescending(fun x -> x.Q)
               |> Seq.toArray
-              |> Array.findIndex(fun x -> x.LANMove = move)
-              |> (+) 1
-          Some (qrankForMovePlayed,policyRanked, movePolicy, topPolicy)
+              |> Array.tryFindIndex(fun x -> x.LANMove = move)
+              |> Option.map ((+) 1)
+          match qrankForMovePlayed with
+          | Some qrank -> Some (qrank, policyRanked, movePolicy, topPolicy)
+          | None -> None
       |None -> None
 
 

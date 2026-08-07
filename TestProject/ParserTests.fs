@@ -1341,6 +1341,35 @@ let ``movetext result token is recognized without a Result header`` (token: stri
     Assert.Equal<string list>([ "e4"; "e5"; "Nf3"; "Nc6" ], mainlineSans game)
 
 [<Fact>]
+let ``multi-line brace comment does not inject phantom moves`` () =
+    let pgn = """[Event "MultiLineComment"]
+[White "A"]
+[Black "B"]
+[Result "*"]
+
+1. e4 {a long comment
+mentioning 2. Nf3 and Bc4 moves} e5 2. Nf3 *
+"""
+    let game = FullPGNParser.parsePgnString pgn |> Seq.exactlyOne
+    Assert.Equal<string list>([ "e4"; "e5"; "Nf3" ], mainlineSans game)
+    Assert.Equal<string list>([ "w"; "b"; "w" ], mainlineColors game)
+    Assert.Equal("a long comment mentioning 2. Nf3 and Bc4 moves", game.Mainline[0].Comment)
+
+[<Fact>]
+let ``mid-line semicolon comment does not inject phantom moves`` () =
+    let pgn = """[Event "SemicolonComment"]
+[White "A"]
+[Black "B"]
+[Result "*"]
+
+1. e4 e5 ; best by test
+2. Nf3 Nc6 *
+"""
+    let game = FullPGNParser.parsePgnString pgn |> Seq.exactlyOne
+    Assert.Equal<string list>([ "e4"; "e5"; "Nf3"; "Nc6" ], mainlineSans game)
+    Assert.Equal("best by test", game.Mainline[1].Comment)
+
+[<Fact>]
 let ``re-enumerating a parsed sequence yields the same games`` () =
     let pgn = """[Event "A"]
 [White "Alpha"]
