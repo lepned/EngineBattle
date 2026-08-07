@@ -123,10 +123,11 @@ let extractTimeAndNodesForPlayer (moves: EngineMoveStat array) =
 /// <param name="moves">The array of engine move statistics.</param>
 /// <returns>The average NPS.</returns>
 let calculateAvgNpsSimple (moves: EngineMoveStat array) =
-  moves
-  |> Array.map (fun e -> float e.s)
-  |> Array.filter (fun e -> e > 0)
-  |> Array.average
+  let vals =
+    moves
+    |> Array.map (fun e -> float e.s)
+    |> Array.filter (fun e -> e > 0)
+  if Array.isEmpty vals then 0.0 else Array.average vals
 
 /// Debugs the engine move statistics.
 /// <param name="moves">The array of engine move statistics.</param>
@@ -206,10 +207,11 @@ let calculateAvgNPS (moves: EngineMoveStat array) =
 /// <param name="moves">The array of engine move statistics.</param>
 /// <returns>The average depth.</returns>
 let calculateAvgDepth (moves: EngineMoveStat array) =
-    moves
-    |> Array.map (fun e -> float e.d)
-    |> Array.filter (fun e -> e > 0)
-    |> Array.average
+    let vals =
+      moves
+      |> Array.map (fun e -> float e.d)
+      |> Array.filter (fun e -> e > 0)
+    if Array.isEmpty vals then 0.0 else Array.average vals
 
 /// Calculates the average self-depth.
 /// <param name="moves">The array of engine move statistics.</param>
@@ -263,17 +265,20 @@ let calculateAvgN2 (moves: EngineMoveStat array) =
 let calculateAvgTopP (moves: EngineMoveStat array) =
     //let test = moves |> Array.filter (fun e -> abs e.wv > 0.5 && abs e.wv < 1.5)
     let moves = moves |> Array.filter (fun e -> e.n > 0 && abs e.wv < 5.0)
-    let pMoves = moves |> Array.sumBy (fun e -> if e.p1 = e.pt then 1 else 0)
-    float pMoves / float moves.Length
+    if Array.isEmpty moves then 0.0
+    else
+      let pMoves = moves |> Array.sumBy (fun e -> if e.p1 = e.pt then 1 else 0)
+      float pMoves / float moves.Length
 
 /// Calculates the average number of nodes.
 /// <param name="moves">The array of engine move statistics.</param>
 /// <returns>The average number of nodes.</returns>
 let calculateAvgNodes (moves: EngineMoveStat array) =
-  moves
-  |> Array.filter (fun e -> e.n > 0L)
-  |> Array.map (fun e -> float e.n)
-  |> Array.average
+  let vals =
+    moves
+    |> Array.filter (fun e -> e.n > 0L)
+    |> Array.map (fun e -> float e.n)
+  if Array.isEmpty vals then 0.0 else Array.average vals
 
 /// Calculates the number of games for a player.
 /// <param name="player">The player name.</param>
@@ -320,7 +325,8 @@ let calculateNodeRatioPerMovePerGame maxMoves (game:PgnGame) =
             let n1 = float move.n1
             let n2 = float move.n2
             let nodes = float move.n
-            //let timeF = float move.mt / float move.tl
+            // n can be 0 when the n= annotation is missing — keep NaN/Inf out of the charts
+            let ratio a b = if b = 0.0 then 0.0 else a / b
             {
               Player = p
               GameNr = nr
@@ -329,9 +335,9 @@ let calculateNodeRatioPerMovePerGame maxMoves (game:PgnGame) =
               N2avg = n2
               Q1 = move.q1
               Q2 = move.q2
-              FractN1N = n1 / nodes
-              FractN2N = n2 / nodes
-              FractN2N1 = n2 / n1
+              FractN1N = ratio n1 nodes
+              FractN2N = ratio n2 nodes
+              FractN2N1 = ratio n2 n1
               MoveTimeMs = move.mt
               TimeLeftMs = move.tl
               TopPMovePercent = 0.0
@@ -371,6 +377,9 @@ let calculateNodeRatioPerGame maxMoves (game:PgnGame) =
         let topP = calculateAvgTopP moves
         //let nodesAvg = calculateAvgNodes moves
 
+        // Zero averages (engine reported no stats) must not become Infinity/NaN
+        // in the charts — plot 0 instead.
+        let ratio a b = if b = 0.0 then 0.0 else a / b
         {
           Player = p
           GameNr = game.GameNumber
@@ -379,9 +388,9 @@ let calculateNodeRatioPerGame maxMoves (game:PgnGame) =
           N2avg = n2Avg
           Q1 = 0.0
           Q2 = 0.0
-          FractN1N = n1Avg / nodesAvg
-          FractN2N = n2Avg / nodesAvg
-          FractN2N1 = n2Avg / n1Avg
+          FractN1N = ratio n1Avg nodesAvg
+          FractN2N = ratio n2Avg nodesAvg
+          FractN2N1 = ratio n2Avg n1Avg
           MoveTimeMs = avgMs
           TimeLeftMs = 0
           TopPMovePercent = topP
