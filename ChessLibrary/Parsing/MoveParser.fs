@@ -44,9 +44,10 @@ module ConvertTo =
   /// <param name="side">The side to move.</param>
   /// <returns>The standard SAN move.</returns>
   let standardSAN(longSan: string, move: TMove, moves: TMove array, side) =
-      // Check if the input is valid
+      // Fail loudly on malformed input: returning a placeholder string here would flow
+      // onward as if it were a real SAN move (move lists, PVs, written PGNs).
       if (longSan.Length < 4 || longSan.Length > 5) then
-         "Invalid input"
+         failwithf "standardSAN: malformed long SAN '%s'" longSan
 
       elif (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
         if move.To = 6uy then

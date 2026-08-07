@@ -141,7 +141,7 @@ The handler normalizes scores to **White's** perspective on the stated premise "
 - **LOW — PGN agent swallows write/read failures to `Debug.WriteLine`.** `FullPGNParser.fs:757-786`: failed `WriteGame` silently drops the game; `GetPGNGames`/`GetResults` reply empty on error — in Release the SPRT callback can observe "0 games" with no diagnostic.
 - **LOW — Glicko-2 volatility math mis-bracketed (currently dead code).** `Statistics.fs:110-113`: denominator cancellation makes the Brent root wrong; landmine if `Glicko2.update` is ever wired up.
 - **LOW — NaN/Infinity leakage in per-move statistics.** `PGNStatistics.fs:263-267` (`0/0 = NaN` when the filter passes nothing), `:382-384` (divide by possibly-zero averages) → NaN/Inf flow into `SearchData` charts. — **FIXED 2026-08-08** *(empty-guard in `calculateAvgTopP` + safe-ratio in both node-ratio builders; also guarded the three remaining unguarded `Array.average` helpers — `calculateAvgNpsSimple`/`calculateAvgDepth`/`calculateAvgNodes` — to match their siblings)*
-- **LOW — `standardSAN` returns the literal string "Invalid input" as a SAN move.** `MoveParser.fs:48-49`; callers (`Board.fs:1331/1366`) would record it as the move's SAN.
+- **LOW — `standardSAN` returns the literal string "Invalid input" as a SAN move.** `MoveParser.fs:48-49`; callers (`Board.fs:1331/1366`) would record it as the move's SAN. — **FIXED 2026-08-08** *(now `failwithf` with the offending input — loud at the source instead of silently written into PGNs; branch is unreachable for `moveToStr`-produced inputs)*
 - Note: `ChessLibrary/Config/ArgsParser.fs` no longer exists (only referenced in stale `.fsproj.Backup*.tmp` files).
 
 ---
