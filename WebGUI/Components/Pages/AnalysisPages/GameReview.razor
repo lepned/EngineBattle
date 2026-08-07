@@ -335,6 +335,9 @@
     private int progressTotal;
     private double progressPercent;
     private CancellationTokenSource analysisCts;
+    // Loop-level token for "Review All": StartAnalysis owns (and nulls) analysisCts per game,
+    // so the loop must not read that field between games.
+    private CancellationTokenSource reviewAllCts;
 
     // Export
     private string exportFolder = "";
@@ -583,15 +586,15 @@
     {
         if (games == null || games.Count == 0 || engineConfig == null) return;
         reviewingAll = true;
-        analysisCts?.Dispose();
-        analysisCts = new CancellationTokenSource();
+        reviewAllCts?.Dispose();
+        reviewAllCts = new CancellationTokenSource();
         allResults.Clear();
 
         try
         {
             for (int i = 0; i < games.Count; i++)
             {
-                if (analysisCts.Token.IsCancellationRequested) break;
+                if (reviewAllCts.Token.IsCancellationRequested) break;
 
                 reviewAllCurrentGame = i;
                 gameIndex = i;
@@ -607,6 +610,8 @@
         finally
         {
             reviewingAll = false;
+            reviewAllCts?.Dispose();
+            reviewAllCts = null;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -941,6 +946,7 @@
     {
         reviewingAll = false;
         ReviewService.Cancel();
+        try { reviewAllCts?.Cancel(); } catch (ObjectDisposedException) { }
         analysisCts?.Cancel();
     }
 
@@ -1180,6 +1186,9 @@
     public async ValueTask DisposeAsync()
     {
         ReviewService.Cancel();
+        try { reviewAllCts?.Cancel(); } catch (ObjectDisposedException) { }
+        try { reviewAllCts?.Dispose(); } catch (ObjectDisposedException) { }
+        reviewAllCts = null;
         try { analysisCts?.Cancel(); } catch (ObjectDisposedException) { }
         try { analysisCts?.Dispose(); } catch (ObjectDisposedException) { }
         analysisCts = null;

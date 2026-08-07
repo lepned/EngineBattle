@@ -1334,13 +1334,22 @@
 
 	private async void CancelTournament()
 	{
-		TournamentSvc.Cancel();
-		timer?.Dispose();
-		oneSecondTimer?.Dispose();
-		await Notifier.NotifyFullScreenRequested(false);
-		await Task.Delay(200);
-		await InvokeAsync(OnBrowserResize);
-		await chessModule.InvokeVoidAsync("triggerResizeEvent");
+		try
+		{
+			TournamentSvc.Cancel();
+			timer?.Dispose();
+			oneSecondTimer?.Dispose();
+			await Notifier.NotifyFullScreenRequested(false);
+			await Task.Delay(200);
+			await InvokeAsync(OnBrowserResize);
+			await chessModule.InvokeVoidAsync("triggerResizeEvent");
+		}
+		catch (Exception ex)
+		{
+			// async void, may run off the dispatcher (called fire-and-forget from Update):
+			// an escaping exception (e.g. JS interop after the tab closed) kills the process.
+			logger.LogError(ex, "Error cancelling tournament");
+		}
 	}
 
 	private (bool ok, string errors) ValidateTournamentJson()
@@ -2065,6 +2074,12 @@
 		catch (Exception ex) when (ex is TaskCanceledException or ObjectDisposedException)
 		{
 			// Circuit disposed (e.g. user navigated away) — safe to ignore
+		}
+		catch (Exception ex)
+		{
+			// Update runs as async void on the tournament worker thread: any exception
+			// escaping here is unhandled on a thread-pool thread and kills the process.
+			logger.LogError(ex, "Error handling tournament update");
 		}
 	}
 
