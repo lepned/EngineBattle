@@ -15,6 +15,25 @@ open ChessLibrary.EngineProtocol
 open ChessLibrary.Statistics
 open ChessLibrary.RuntimeUtilities
 
+/// Read a line from the engine, failing fast when the stream has closed (the process
+/// exited). Null means EOF only — a live engine that stays silent (e.g. it did not
+/// understand a command) simply blocks in the read; no timeout is applied by design.
+/// Without this, EOF either NullReferenceExceptions on StartsWith or hot-spins forever
+/// in the IsNullOrEmpty-ignore loops, wedging the whole puzzle sweep.
+let private readLineChecked (engine: ChessEngine) =
+    let line = engine.ReadLine()
+    if isNull line then
+        failwithf "Engine %s closed its output (process exited) during puzzle analysis" engine.Name
+    line
+
+let private readLineCheckedAsync (engine: ChessEngine) = async {
+    let! line = engine.ReadLineAsync() |> Async.AwaitTask
+    if isNull line then
+        return failwithf "Engine %s closed its output (process exited) during puzzle analysis" engine.Name
+    else
+        return line
+}
+
 let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async {
    let cmd = sprintf "position fen %s" fen
    engine.UciNewGame()
@@ -26,7 +45,7 @@ let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async 
    let mutable move = ""
 
    while cont do
-     let! line = engine.ReadLineAsync() |> Async.AwaitTask
+     let! line = readLineCheckedAsync engine
      if line.StartsWith "bestmove" then
        move <- line
        cont <- false
@@ -54,7 +73,7 @@ let bestMoveByEvalWithTimeAsync (timeInMs:int) (engine: ChessEngine) (fen: strin
    let mutable move = ""
 
    while cont do
-     let! line = engine.ReadLineAsync() |> Async.AwaitTask
+     let! line = readLineCheckedAsync engine
      if line.StartsWith "bestmove" then
        move <- line
        cont <- false
@@ -85,7 +104,7 @@ let bestMoveByEval (nodes:int) (engine: ChessEngine) (fen: string) =
   let mutable infoDepth = ""
   let mutable move = ""
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       move <- line
       cont <- false
@@ -112,7 +131,7 @@ let bestQ (nodes:int) (engine: ChessEngine) (pos: EPDEntry) (board:Board inref) 
     let mutable cont = true
     let mutable infoString = ""
     while cont do
-      let line = engine.ReadLine()
+      let line = readLineChecked engine
       if line.StartsWith "bestmove" then
         cont <- false
       elif line.StartsWith "info string node" then
@@ -140,7 +159,7 @@ let solvePuzzleSearch (nodes: int) (engine: ChessEngine) (pos: string) =
   engine.Position pos
   engine.GoNodes nodes
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       bestmove <- line.Split().[1]
       cont <- false
@@ -159,7 +178,7 @@ let solvePuzzleSearch (nodes: int) (engine: ChessEngine) (pos: string) =
       nnList.Add(nnMsg)
       let mutable contNN = not (line.StartsWith "info string node")
       while contNN do
-          let newline = engine.ReadLine()
+          let newline = readLineChecked engine
           if newline.StartsWith "info string node" then
               contNN <- false
           elif newline.StartsWith "info string" then
@@ -276,7 +295,7 @@ let bestPolicyMoveWithPolicy (bm:string) (nodes:int) (engine: ChessEngine) (pos:
   engine.GoNodes nodes
   let list = ResizeArray<NNValues>()
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
       infoString <- line
@@ -288,7 +307,7 @@ let bestPolicyMoveWithPolicy (bm:string) (nodes:int) (engine: ChessEngine) (pos:
       let moreItems = if line.StartsWith "info string node" then false else true
       let mutable contNN = moreItems
       while contNN do
-          let newline = engine.ReadLine()
+          let newline = readLineChecked engine
           if newline.StartsWith "info string node" then
               contNN <- false
           else
@@ -319,7 +338,7 @@ let bestMoveAllPoliciesWithLegalMoveNodes (engine: ChessEngine) (pos:string) =
   engine.GoNodes legalMoveCount
   let list = ResizeArray<NNValues>()
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
       infoString <- line
@@ -331,7 +350,7 @@ let bestMoveAllPoliciesWithLegalMoveNodes (engine: ChessEngine) (pos:string) =
       let moreItems = if line.StartsWith "info string node" then false else true
       let mutable contNN = moreItems
       while contNN do
-          let newline = engine.ReadLine()
+          let newline = readLineChecked engine
           if newline.StartsWith "info string node" then
               contNN <- false
           else
@@ -348,7 +367,7 @@ let bestPolicyMoveAllPolicies (nodes:int) (engine: ChessEngine) (pos:string) =
   engine.GoNodes nodes
   let list = ResizeArray<NNValues>()
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
       infoString <- line
@@ -360,7 +379,7 @@ let bestPolicyMoveAllPolicies (nodes:int) (engine: ChessEngine) (pos:string) =
       let moreItems = if line.StartsWith "info string node" then false else true
       let mutable contNN = moreItems
       while contNN do
-          let newline = engine.ReadLine()
+          let newline = readLineChecked engine
           if newline.StartsWith "info string node" then
               contNN <- false
           else
@@ -377,7 +396,7 @@ let bestPolicyMove (nodes:int) (engine: ChessEngine) (pos:string)  =
   engine.GoNodes nodes
   let list = ResizeArray<NNValues>()
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
       infoString <- line
@@ -389,7 +408,7 @@ let bestPolicyMove (nodes:int) (engine: ChessEngine) (pos:string)  =
       let moreItems = if line.StartsWith "info string node" then false else true
       let mutable contNN = moreItems
       while contNN do
-          let newline = engine.ReadLine()
+          let newline = readLineChecked engine
           if newline.StartsWith "info string node" then
               contNN <- false
           else
@@ -410,7 +429,7 @@ let bestMoveWithTime (timeInMs:int) (engine: ChessEngine) (pos:string) =
   engine.Go timeInMs
   let list = ResizeArray<NNValues>()
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
       infoString <- line
@@ -422,7 +441,7 @@ let bestMoveWithTime (timeInMs:int) (engine: ChessEngine) (pos:string) =
       let moreItems = if line.StartsWith "info string node" then false else true
       let mutable contNN = moreItems
       while contNN do
-          let newline = engine.ReadLine()
+          let newline = readLineChecked engine
           if newline.StartsWith "info string node" then
               contNN <- false
           else
@@ -452,7 +471,7 @@ let bestQPuzzleValueOnly (engine:ChessEngine) (pos: Position) =
   else
     engine.GoNodes 1
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
       infoString <- line
@@ -467,7 +486,7 @@ let evaluatePositionV (nodes:int) (engine: ChessEngine) (pos:string) : float =
   engine.Position pos
   engine.GoNodes nodes
   while cont do
-    let line = engine.ReadLine()
+    let line = readLineChecked engine
     if line.StartsWith "bestmove" then
       cont <- false
     elif line.StartsWith "info string node" then

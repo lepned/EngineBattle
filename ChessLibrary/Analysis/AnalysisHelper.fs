@@ -41,6 +41,15 @@ let waitForEngineIsReady (engine: ChessEngine) = async {
       return false
 }
 
+/// Read a line from the engine, failing fast when the stream has closed (the process
+/// exited). Null means EOF only — a live engine that stays silent (e.g. it did not
+/// understand a command) simply blocks in the read; no timeout is applied by design.
+let private readLineChecked (engine: ChessEngine) =
+    let line = engine.ReadLine()
+    if isNull line then
+        failwithf "Engine %s closed its output (process exited) during analysis" engine.Name
+    line
+
 let run (engine:ChessEngine) (tourny:Tournament) (board:Board) (name, fen) =
   let mutable status = EngineStatus.Empty
   let tc = tourny.FindTimeControl engine.Config.TimeControlID
@@ -58,7 +67,11 @@ let run (engine:ChessEngine) (tourny:Tournament) (board:Board) (name, fen) =
 
   let rec start _ =  task {
     let! line = engine.ReadLineAsync()
-    if line.StartsWith "bestmove" then
+    if isNull line then
+      // EOF: the engine process exited mid-analysis — return what was collected
+      printfn "\n%s closed its output (process exited) during analysis of %s" engine.FullName name
+      return status
+    elif line.StartsWith "bestmove" then
       printfn "\n%s\n\t%s FEN %s  Move: %s" engine.FullName name fen line
       return status
     elif line.StartsWith "info depth" then
@@ -141,7 +154,7 @@ let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
           engine.GoNodes 1
           let mutable cont = true
           while cont do
-            let line = engine.ReadLine()
+            let line = readLineChecked engine
             if String.IsNullOrEmpty line then
               () //ignore
             elif line.StartsWith "bestmove" then
@@ -152,7 +165,7 @@ let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
               let moreItems = if line.StartsWith "info string node" then false else true
               let mutable contNN = moreItems
               while contNN do
-                  let newline = engine.ReadLine()
+                  let newline = readLineChecked engine
                   if newline.StartsWith "info string node" then
                       contNN <- false
                   else
@@ -166,7 +179,7 @@ let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
           let mutable res = None
           let mutable cont = true
           while cont do
-            let line = engine.ReadLine()
+            let line = readLineChecked engine
             if String.IsNullOrEmpty line then
               () //ignore
             elif line.StartsWith "bestmove" then
@@ -237,7 +250,7 @@ let tryGetMovePolicyAndTop (move:string) (engine: ChessEngine) (pos:string)  =
       engine.GoNodes 1
       let list = ResizeArray<NNValues>()
       while cont do
-        let line = engine.ReadLine()
+        let line = readLineChecked engine
         if String.IsNullOrEmpty line then
           () //ignore
         elif line.StartsWith "bestmove" then
@@ -250,7 +263,7 @@ let tryGetMovePolicyAndTop (move:string) (engine: ChessEngine) (pos:string)  =
           let moreItems = if line.StartsWith "info string node" then false else true
           let mutable contNN = moreItems
           while contNN do
-              let newline = engine.ReadLine()
+              let newline = readLineChecked engine
               if newline.StartsWith "info string node" then
                   contNN <- false
               else
