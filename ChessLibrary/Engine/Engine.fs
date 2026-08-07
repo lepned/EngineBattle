@@ -80,7 +80,6 @@ module Engine =
       let mutable numberOfNodes = 0L
       let mutable evalList : MiscTypes.EvalType list = []
       let mutable fullEvalList :MiscTypes.EvalType list = []
-      let mutable nps = 0.0
       let mutable depth = 0
       let mutable Player1PV = String.Empty
       // Long/UCI form of the same line, kept so a fail-high/low line can reuse it instead
@@ -220,7 +219,7 @@ module Engine =
               Eval= eval
               TimeLeft = TimeSpan.Zero
               MoveTime = TimeSpan.Zero
-              NPS=nps
+              NPS=0.0 // not tracked on the bestmove path; Status updates carry the live NPS
               Nodes=numberOfNodes
               FEN = fen
               PV=pv 
@@ -1472,17 +1471,21 @@ module Engine =
     
       member this.ReadUciOptions() = readUciOptions()         
 
-      member this.WaitForReadyOk(?timeoutMs: int) = 
+      member this.WaitForReadyOk(?timeoutMs: int) =
         let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
+        // The high floor is intentional for UCI engines: neural-net engines can spend
+        // many minutes building a TRT profile on their first init.
         let timeoutInMs = if timeoutInMs < 60000 then defaultTimeoutMs else timeoutInMs
-        let cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutInMs))
-        let rec readUntilReady() = async {
+        // The loop takes its CancellationTokenSource explicitly so each protocol branch
+        // controls its own timeout (the Winboard 1s CTS used to be shadowed and unused).
+        let readUntilReady (cts: CancellationTokenSource) (timeoutForLog: int) =
+          let rec loop() = async {
               try
                 if this.HasExited() then
                   logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
                   return false
                 elif cts.Token.IsCancellationRequested then
-                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutForLog)
                   return false
                 else
                   let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
@@ -1496,26 +1499,27 @@ module Engine =
                     return true
                   else
                     do! Async.Sleep 100
-                    return! readUntilReady()
+                    return! loop()
               with
-              | :? OperationCanceledException -> 
-                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutInMs)
+              | :? OperationCanceledException ->
+                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutForLog)
                   return false
               | ex ->
                   logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
                   return false
             }
+          loop()
         match winboardHandler with
         | Some handler when not handler.Features.Ping ->
             // Winboard v1 engine without ping support - assume ready after initialization
             logInformation (sprintf "Engine %s is using Winboard protocol without ping support, assuming ready" name)
             true
         | Some handler ->
-            // Winboard v2 with ping support - wait for pong/readyok
-            let cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.0))
-            write "isready"            
-            let res = readUntilReady() |> Async.RunSynchronously
-            cts.Dispose()
+            // Winboard v2 with ping support: these engines answer promptly or not at
+            // all — the long NN-engine init timeout does not apply here.
+            use cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.0))
+            write "isready"
+            let res = readUntilReady cts 1000 |> Async.RunSynchronously
             if res then res
             else
                 // If ping/readied failed for Winboard engine, assume ready to avoid blocking game start
@@ -1523,10 +1527,9 @@ module Engine =
                 true
         | None ->
             // Normal UCI engine
+            use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutInMs))
             write "isready"
-            let res = readUntilReady() |> Async.RunSynchronously
-            cts.Dispose()
-            res
+            readUntilReady cts timeoutInMs |> Async.RunSynchronously
       
       member this.IsRunning
         with get () = isRunning 

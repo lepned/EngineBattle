@@ -4,7 +4,6 @@ open System
 open System.Text
 open System.Text.RegularExpressions
 open System.Collections.Generic
-open System.Diagnostics
 
 open TypesDef.CoreTypes
 open MiscTypes
@@ -192,43 +191,6 @@ module UCI =
         | (true, value) when not (String.IsNullOrWhiteSpace(value)) -> Some (sprintf "setoption name %s value %s" key value)
         | _ -> None
     | None -> None
-
-  let getUCIOptionsAsync exePath = async {
-    // Create a new process start info
-    let psi = ProcessStartInfo()
-    psi.FileName <- exePath
-    psi.RedirectStandardInput <- true
-    psi.RedirectStandardOutput <- true
-    psi.UseShellExecute <- false
-    psi.CreateNoWindow <- true
-
-    // Create the process and start it
-    let proc = new Process()
-    proc.StartInfo <- psi
-    proc.Start() |> ignore
-
-    // Send the 'uci' command
-    let sw = proc.StandardInput
-    sw.WriteLine("uci\n")
-
-    // Read the output
-    let output = ResizeArray<string>()
-    let sr = proc.StandardOutput
-
-    let rec readLinesAsync () = async {
-        let! line = sr.ReadLineAsync() |> Async.AwaitTask
-        if line <> "uciok" then
-            if not (String.IsNullOrEmpty(line)) then
-              output.Add(line)
-            return! readLinesAsync ()
-    }
-    do! readLinesAsync()
-
-    // Close the process
-    proc.Kill()
-    proc.Close()
-    return output
-    }
 
 /// UCI info string parsing with compiled regex patterns
 module Regex =
