@@ -1,51 +1,57 @@
 #nullable enable
 namespace WebGUI.Services;
 
+/// <summary>Immutable snapshot of one PV update — read it once to get a consistent
+/// PVMoves/StartFEN pair.</summary>
+public sealed record PVSnapshot(
+    string EngineName, string EngineId, string PVMoves, string StartFEN,
+    int Depth, long Nodes, string Eval, bool IsSearching)
+{
+    public static readonly PVSnapshot Empty = new("", "", "", "", 0, 0L, "", false);
+}
+
 /// <summary>
 /// Observable state for Principal Variation updates.
 /// Used to push live PV updates from EnginePanel to PVBoardLive dialog.
+/// Update() is called from engine-callback threads; state is published as a single
+/// atomically-swapped snapshot so a subscriber can never pair a new PVMoves with the
+/// previous StartFEN (which replayed the PV on the wrong position).
 /// </summary>
 public class PVState
 {
-    public string EngineName { get; private set; } = "";
-    public string EngineId { get; private set; } = "";
-    public string PVMoves { get; private set; } = "";
-    public string StartFEN { get; private set; } = "";
-    public int Depth { get; private set; }
-    public long Nodes { get; private set; }
-    public string Eval { get; private set; } = "";
-    public bool IsSearching { get; private set; }
+    private PVSnapshot _current = PVSnapshot.Empty;
+
+    /// <summary>Consistent view of the latest update — prefer this over the
+    /// individual properties when reading more than one field.</summary>
+    public PVSnapshot Current => _current;
+
+    public string EngineName => _current.EngineName;
+    public string EngineId => _current.EngineId;
+    public string PVMoves => _current.PVMoves;
+    public string StartFEN => _current.StartFEN;
+    public int Depth => _current.Depth;
+    public long Nodes => _current.Nodes;
+    public string Eval => _current.Eval;
+    public bool IsSearching => _current.IsSearching;
 
     public event Action? OnUpdate;
 
     public void Update(string engineName, string engineId, string pvMoves, string startFen,
                        int depth, long nodes, string eval, bool isSearching)
     {
-        EngineName = engineName;
-        EngineId = engineId;
-        PVMoves = pvMoves;
-        StartFEN = startFen;
-        Depth = depth;
-        Nodes = nodes;
-        Eval = eval;
-        IsSearching = isSearching;
-
+        _current = new PVSnapshot(engineName, engineId, pvMoves, startFen, depth, nodes, eval, isSearching);
         OnUpdate?.Invoke();
     }
 
     public void SetSearching(bool isSearching)
     {
-        IsSearching = isSearching;
+        _current = _current with { IsSearching = isSearching };
         OnUpdate?.Invoke();
     }
 
     public void Clear()
     {
-        PVMoves = "";
-        Depth = 0;
-        Nodes = 0;
-        Eval = "";
-        IsSearching = false;
+        _current = _current with { PVMoves = "", Depth = 0, Nodes = 0, Eval = "", IsSearching = false };
         OnUpdate?.Invoke();
     }
 }

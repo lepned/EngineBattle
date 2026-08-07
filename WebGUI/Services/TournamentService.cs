@@ -75,6 +75,15 @@ namespace WebGUI.Services
             lock (_lock) { _subscriber = null; }
         }
 
+        /// <summary>Compare-and-clear: only clears the slot if it still holds this handler.
+        /// A second tab's dispose must not silence the tab that currently owns the feed.</summary>
+        public void Unsubscribe(Action<TournamentTypes.Update> handler)
+        {
+            // Delegate value equality (same target + method), not reference equality:
+            // Subscribe(Update) and Unsubscribe(Update) create distinct delegate instances.
+            lock (_lock) { if (Equals(_subscriber, handler)) _subscriber = null; }
+        }
+
         public Tournament.Manager.Runner CreateRunner(ILogger logger, ShutdownTokenProvider shutdown)
         {
             if (IsRunning)

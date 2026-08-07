@@ -310,6 +310,7 @@
             var tail = GetQuery("tail");
             if (!string.IsNullOrEmpty(tail))
             {
+                startedReplay = true;
                 _ = Replayer.TailFileAsync(tail);
             }
             else
@@ -320,6 +321,7 @@
                 {
                     var n = int.TryParse(GetQuery("games"), out var gx) ? gx : 4;
                     var speed = int.TryParse(GetQuery("speed"), out var ms) ? ms : 600;
+                    startedReplay = true;
                     _ = Replayer.ReplayGamesConcurrentlyAsync(replay, n, speed);
                 }
             }
@@ -609,11 +611,15 @@
         return null;
     }
 
+    // Set when THIS page started a tail/replay; the replayer is a singleton, so a grid
+    // tab closing must not stop a replay another tab (or the Tournaments page) started.
+    private bool startedReplay;
+
     public void Dispose()
     {
         if (handler != null) JsonFeedSvc.UnsubscribeMulti(handler);
         CeresBridge.Changed -= OnBridgeChanged;
-        Replayer.Stop();
+        if (startedReplay) Replayer.Stop();
     }
 
     private sealed class GameVM

@@ -139,6 +139,9 @@
           desc = $"Played incorrect move on board {indexFailed + 1}: {movePlayedInShortSan} (P:{movePlayedPolicy}), correct move is: {correctMoveInShortSan} (P:{correctMovePolicy})";
         }
       }
+      // Blazor does not re-render after OnAfterRenderAsync on its own — without this
+      // the header/board stay blank until some parent re-render happens by accident.
+      StateHasChanged();
       await Task.CompletedTask;
     }
   }

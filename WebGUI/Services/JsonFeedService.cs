@@ -59,16 +59,38 @@ namespace WebGUI.Services
             lock (_lock) { _subscriber = null; }
         }
 
+        /// <summary>Compare-and-clear: only clears the slot if it still holds this handler.
+        /// A second feed tab's dispose must not silence the tab that owns the feed.</summary>
+        public void Unsubscribe(Action<TournamentTypes.Update> handler)
+        {
+            // Delegate value equality (same target + method), not reference equality:
+            // Subscribe(Update) and Unsubscribe(Update) create distinct delegate instances.
+            lock (_lock) { if (Equals(_subscriber, handler)) _subscriber = null; }
+        }
+
         /// <summary>Subscribe to the demultiplexed stream: handler receives (gameId, update) for every
         /// event, where gameId is the envelope stream key ("" for the single/global game). Used by the
         /// multi-game grid view and focused per-game views. Multiple subscribers are supported (one per
         /// open view) so a grid and a focused tab don't clobber each other.</summary>
         public void SubscribeMulti(Action<string, TournamentTypes.Update> handler)
         {
+            // Catch-up, then live: build the snapshot under the lock but deliver it
+            // OUTSIDE — replaying hundreds of events while holding _lock blocked every
+            // Ingest and risked lock-order deadlock with handlers hopping onto the
+            // Blazor dispatcher. The subscriber is registered after the replay so live
+            // events can't interleave out of order with the snapshot (an event landing
+            // during the replay window is skipped; the next status/results refresh
+            // covers it).
+            List<(string, TournamentTypes.Update)> snapshot;
+            lock (_lock) { snapshot = BuildSnapshot(); }
+            try
+            {
+                foreach (var (key, u) in snapshot) handler(key, u);
+            }
+            catch (Exception) { /* subscriber tearing down — ignore */ }
             lock (_lock)
             {
                 if (!_multiSubscribers.Contains(handler)) _multiSubscribers.Add(handler);
-                ReplaySnapshot(handler);   // bring a mid-run subscriber up to current state
             }
         }
 
@@ -198,37 +220,36 @@ namespace WebGUI.Services
             }
         }
 
-        // Replay current state to a newly-subscribed view: tournament header, accumulated results
-        // (as PeriodicResults → standings), then each active game's start/status/last-move.
-        private void ReplaySnapshot(Action<string, TournamentTypes.Update> handler)
+        // Build the catch-up event list for a newly-subscribed view: tournament header,
+        // accumulated results (as PeriodicResults → standings), then each active game's
+        // start/status/last-move. Called under _lock; delivery happens outside it.
+        private List<(string, TournamentTypes.Update)> BuildSnapshot()
         {
-            try
+            var events = new List<(string, TournamentTypes.Update)>();
+            if (_startOfTournament != null)
+                events.Add(("", _startOfTournament));
+            if (_results.Count > 0)
+                events.Add(("", TournamentTypes.Update.NewPeriodicResults(new List<CoreTypes.Result>(_results))));
+            // Replay thread-tagged results ("…/rN") as individual EndOfGame events so a late joiner
+            // can rebuild pentanomial (paired by thread). Standings already covered above (dedup'd).
+            for (int i = 0; i < _results.Count; i++)
             {
-                if (_startOfTournament != null)
-                    handler("", _startOfTournament);
-                if (_results.Count > 0)
-                    handler("", TournamentTypes.Update.NewPeriodicResults(new List<CoreTypes.Result>(_results)));
-                // Replay thread-tagged results ("…/rN") as individual EndOfGame events so a late joiner
-                // can rebuild pentanomial (paired by thread). Standings already covered above (dedup'd).
-                for (int i = 0; i < _results.Count; i++)
-                {
-                    var id = _resultIds[i];
-                    var board = id.Substring(id.LastIndexOf('/') + 1);
-                    if (board.StartsWith("r"))
-                        handler(id, TournamentTypes.Update.NewEndOfGame(_results[i]));
-                }
-                foreach (var (key, snap) in _snaps)
-                {
-                    if (snap.Start != null) handler(key, snap.Start);
-                    foreach (var st in snap.StatusByPlayer.Values) handler(key, st);
-                    if (snap.LastBestMove != null) handler(key, snap.LastBestMove);
-                }
-                // Last: if the tournament already finished, tell the new subscriber so it renders the
-                // completed state instead of looking like a live-but-quiet feed.
-                if (_endOfTournament != null)
-                    handler("", _endOfTournament);
+                var id = _resultIds[i];
+                var board = id.Substring(id.LastIndexOf('/') + 1);
+                if (board.StartsWith("r"))
+                    events.Add((id, TournamentTypes.Update.NewEndOfGame(_results[i])));
             }
-            catch (Exception) { /* subscriber tearing down — ignore */ }
+            foreach (var (key, snap) in _snaps)
+            {
+                if (snap.Start != null) events.Add((key, snap.Start));
+                foreach (var st in snap.StatusByPlayer.Values) events.Add((key, st));
+                if (snap.LastBestMove != null) events.Add((key, snap.LastBestMove));
+            }
+            // Last: if the tournament already finished, tell the new subscriber so it renders the
+            // completed state instead of looking like a live-but-quiet feed.
+            if (_endOfTournament != null)
+                events.Add(("", _endOfTournament));
+            return events;
         }
     }
 }

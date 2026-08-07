@@ -874,48 +874,56 @@
                         break;
                 }
 
-                if (ValueScores.Any())
+                // Re-sort on the dispatcher: Update callbacks add to these lists via
+                // InvokeAsync, and enumerating them here on the Task.Run thread raced
+                // still-queued adds ("Collection was modified" → empty results table).
+                // Queued behind those adds, this also guarantees the file-export below
+                // sees the complete lists.
+                await InvokeAsync(() =>
                 {
-                    ValueScores =
-                  ValueScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Value") || e.Type.StartsWith("vTop")))
-                  .OrderBy(e => e.Filter)
-                  .ThenByDescending(e => e.RatingAvg)
-                  .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-                  .ToList();
-                }
+                    if (ValueScores.Any())
+                    {
+                        ValueScores =
+                      ValueScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Value") || e.Type.StartsWith("vTop")))
+                      .OrderBy(e => e.Filter)
+                      .ThenByDescending(e => e.RatingAvg)
+                      .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+                      .ToList();
+                    }
 
-                if (PolicyScores.Any())
-                {
-                    PolicyScores =
-                  PolicyScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Policy") || e.Type.StartsWith("pTop")))
-                  .OrderBy(e => e.Filter)
-                  .ThenByDescending(e => e.RatingAvg)
-                  .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-                  .ToList();
-                }
+                    if (PolicyScores.Any())
+                    {
+                        PolicyScores =
+                      PolicyScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Policy") || e.Type.StartsWith("pTop")))
+                      .OrderBy(e => e.Filter)
+                      .ThenByDescending(e => e.RatingAvg)
+                      .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+                      .ToList();
+                    }
 
-                if (SearchScores.Any())
-                {
-                    SearchScores =
-                  SearchScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Search"))
-                  .OrderBy(e => e.Filter)
-                  .ThenByDescending(e => e.RatingAvg)
-                  .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-                  .ToList();
-                }
+                    if (SearchScores.Any())
+                    {
+                        SearchScores =
+                      SearchScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Search"))
+                      .OrderBy(e => e.Filter)
+                      .ThenByDescending(e => e.RatingAvg)
+                      .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+                      .ToList();
+                    }
 
-                if (SolveScores.Any())
-                {
-                    SolveScores =
-                  SolveScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Solve"))
-                  .OrderBy(e => e.Filter)
-                  .ThenByDescending(e => e.RatingAvg)
-                  .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
-                  .ToList();
-                }
+                    if (SolveScores.Any())
+                    {
+                        SolveScores =
+                      SolveScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Solve"))
+                      .OrderBy(e => e.Filter)
+                      .ThenByDescending(e => e.RatingAvg)
+                      .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))
+                      .ToList();
+                    }
 
-                // Auto-select first available tab
-                activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
+                    // Auto-select first available tab
+                    activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
+                });
 
                 var normalized = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
                 var table = CreateCombinedScoresTable(data.PuzzleFile);

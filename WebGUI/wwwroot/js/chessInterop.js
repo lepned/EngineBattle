@@ -61,10 +61,23 @@ export function calculateHeightByElementId(id) {
   return height;
 }
 
+// Single-slot resize hook: registering replaces any previous listener, and the page
+// unregisters on dispose. The old anonymous-listener version accumulated one permanent
+// listener (pinning its DotNetObjectReference) per page visit in the same tab.
+let resizeHandler = null;
 export function registerResizeEvent(dotnetReference) {
-  window.addEventListener("resize", () => {
+  unregisterResizeEvent();
+  resizeHandler = () => {
     dotnetReference.invokeMethodAsync('OnBrowserResize');
-  });
+  };
+  window.addEventListener("resize", resizeHandler);
+}
+
+export function unregisterResizeEvent() {
+  if (resizeHandler) {
+    window.removeEventListener("resize", resizeHandler);
+    resizeHandler = null;
+  }
 }
 
 // This function triggers the resize event on the window.

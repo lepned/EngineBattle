@@ -382,10 +382,21 @@ namespace WebGUI.Plotting
                 ? $"{move.SANMove}<br>{pPart}<br>Q: %{{y:.2f}}{vPart}<extra></extra>"
                 : $"{move.SANMove}<br>N: %{{y:.1%}}<br>{pPart}<br>Q: {Inv2(move.Q)}{vPart}<extra></extra>";
 
+            // A move that entered the reported set mid-search has fewer y samples than
+            // there are ticks; Plotly pairs index-wise from the start, which shifted the
+            // whole trajectory left onto the earliest node counts. Align the series to
+            // the most recent ticks instead (SetConvergenceChart defends the same way).
+            var yVals = nDict[move.SANMove].ToArray();
+            var xVals = NumberOfNodesSearched.Count > yVals.Length
+                ? NumberOfNodesSearched.Skip(NumberOfNodesSearched.Count - yVals.Length).ToArray()
+                : NumberOfNodesSearched.ToArray();
+            if (yVals.Length > xVals.Length)
+                yVals = yVals.Skip(yVals.Length - xVals.Length).ToArray();
+
             return new
             {
-                x = NumberOfNodesSearched.ToArray(),
-                y = nDict[move.SANMove].ToArray(),
+                x = xVals,
+                y = yVals,
                 type = "scatter",
                 line = new { color = color },
                 name = CompactLegend ? move.SANMove : FormatMove(move, qChartSelected),
@@ -509,6 +520,9 @@ namespace WebGUI.Plotting
             var shapes = new List<object>();
             var annotations = new List<object>();
 
+            // Only the "hardest window" highlight is conditional. The chart itself must
+            // always render — a game where every move was policy rank 1 (bestAvg <= 0 →
+            // no window) or a 1-ply sequence previously produced NO chart at all.
             if (bestStart >= 0 && bestEnd >= 0)
             {
                 shapes.Add(new
@@ -549,33 +563,31 @@ namespace WebGUI.Plotting
                     line = new { color = "rgba(255,193,7,0.55)", width = 1, dash = "dot" },
                     layer = "below"
                 });
+            }
 
-                double centerX = (bestStart + bestEnd) / 2.0 + 1.0;
-                var startLbl = tickText[bestStart] ?? (bestStart + 1).ToString();
-                var endLbl = tickText[bestEnd] ?? (bestEnd + 1).ToString();
-
-                if (clipped > 0)
+            if (clipped > 0)
+            {
+                // small badge in top-right to indicate clipping
+                annotations.Add(new
                 {
-                    // small badge in top-right to indicate clipping
-                    annotations.Add(new
-                    {
-                        x = 1.0,
-                        y = 1.0,
-                        xref = "paper",
-                        yref = "paper",
-                        xanchor = "right",
-                        yanchor = "top",
-                        text = $"Clipped {clipped} plies > {usedMax}",
-                        showarrow = false,
-                        bgcolor = "rgba(30,31,36,0.9)",
-                        bordercolor = "#616161",
-                        borderwidth = 1,
-                        borderpad = 3,
-                        font = new { size = fontSizeLegend - 2, color = "rgba(245,245,245,0.9)" },
-                        opacity = 1.0
-                    });
-                }
+                    x = 1.0,
+                    y = 1.0,
+                    xref = "paper",
+                    yref = "paper",
+                    xanchor = "right",
+                    yanchor = "top",
+                    text = $"Clipped {clipped} plies > {usedMax}",
+                    showarrow = false,
+                    bgcolor = "rgba(30,31,36,0.9)",
+                    bordercolor = "#616161",
+                    borderwidth = 1,
+                    borderpad = 3,
+                    font = new { size = fontSizeLegend - 2, color = "rgba(245,245,245,0.9)" },
+                    opacity = 1.0
+                });
+            }
 
+            {
                 var xaxis = new
                 {
                     showgrid = false,
@@ -1160,8 +1172,12 @@ namespace WebGUI.Plotting
                 potentialMoves.Add(topPolicy);
             }
 
-            var maxNumberOfLines = Math.Min(numberOfLines, potentialMoves.Count);
+            // When the top-policy move was appended beyond the requested line count it
+            // must render too: the old Min() cut exactly that final index, so the red
+            // "top policy" highlight landed on an ordinary move at N-1 while the real
+            // top-policy trajectory was invisible.
             bool topPolicyNotInMoveList = potentialMoves.Count > numberOfLines;
+            var maxNumberOfLines = topPolicyNotInMoveList ? potentialMoves.Count : Math.Min(numberOfLines, potentialMoves.Count);
             var moves = potentialMoves;
 
             if (NvaluesDict.Count == 0)

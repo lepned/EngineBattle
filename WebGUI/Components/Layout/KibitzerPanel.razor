@@ -474,7 +474,9 @@
                             await InvokeAsync(() => OnLiveStats.InvokeAsync((stats, statsFen)));
                         }
                         if (overlayOn)
-                            await Notifier.MovesWithId(n.NNSeq, Id);
+                            // Marshal like the neighboring publishes: subscribers
+                            // (ModernChessboard overlay) mutate component state
+                            await InvokeAsync(() => Notifier.MovesWithId(n.NNSeq, Id));
                     }
                     break;
             }

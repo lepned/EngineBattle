@@ -336,14 +336,17 @@
         fenList.Clear();
         moveList.Clear();
 
-        var startFen = string.IsNullOrWhiteSpace(state.StartFEN) ? startPos : state.StartFEN;
+        // Read one consistent snapshot: PVMoves and StartFEN must come from the SAME
+        // update or the PV replays on the wrong position.
+        var snap = state.Current;
+        var startFen = string.IsNullOrWhiteSpace(snap.StartFEN) ? startPos : snap.StartFEN;
         board.ResetBoardState();
         board.LoadFen(startFen);
         fenList.Add(startFen);
 
-        if (!string.IsNullOrWhiteSpace(state.PVMoves))
+        if (!string.IsNullOrWhiteSpace(snap.PVMoves))
         {
-            var moves = state.PVMoves.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var moves = snap.PVMoves.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             foreach (var move in moves)
             {
                 if (move.Length < 4 || move.Length > 5)

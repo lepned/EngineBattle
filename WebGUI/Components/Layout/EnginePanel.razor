@@ -518,6 +518,7 @@
         if (analyzer == null)
             return;
 
+        NoteSearchStarted(ChessBoard?.FEN());
         if (searchMode == SearchMode.Nodes)
         {
             analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
@@ -1013,6 +1014,7 @@
 
         searchInProgress = true;
         ResetSearchTimer();
+        NoteSearchStarted(ChessBoard?.FEN());
         analyzer?.GoInfinite();
         StartSearchTimer();
         await InvokeAsync(StateHasChanged);
@@ -1390,10 +1392,20 @@
                     whitePV = b.Item.PV;
                     searchInProgress = false;
                     waitingForEngine = false;
+                    // Attribute the result to the position the search actually ran on.
+                    // A stopped search's bestmove can arrive after navigation; writing it
+                    // onto the current board marked the NEW position as analyzed (auto-
+                    // search then skipped it forever) and attached the old eval to it.
+                    pendingSearchFens.TryDequeue(out var searchedFen);
+                    var staleResult =
+                        !string.IsNullOrEmpty(searchedFen)
+                        && ChessBoard != null
+                        && !string.Equals(searchedFen, ChessBoard.FEN(), StringComparison.Ordinal);
                     var commentEval = data.ContainsKey(1) ? data[1].Eval : b.Item.Eval;
                     var commentNodes = data.ContainsKey(1) ? data[1].Nodes : b.Item.Nodes;
                     var evalComment = $"{{{commentEval}/{commentNodes.ToString("N0")}}}";
-                    ChessBoard.SetCommentOnCurrentEdge(evalComment);
+                    if (!staleResult)
+                        ChessBoard.SetCommentOnCurrentEdge(evalComment);
                     StopSearchTimer();
                     // The timer that would have drawn it is gone now, so draw whatever the
                     // last lines added before the search ended.
@@ -1406,7 +1418,11 @@
                         data[1] = new EngineStatus(s.PlayerName, s.Eval, s.Nodes, s.NPS, s.EPS, s.Depth, s.SD, s.TBhits, s.WDL, b.Item.PV, b.Item.Move, s.MultiPV);
                         dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
                     }
-                    if (OnSearchCompleted.HasDelegate)
+                    if (staleResult)
+                    {
+                        logger.LogDebug("Dropping stale search result for {Fen}", searchedFen);
+                    }
+                    else if (OnSearchCompleted.HasDelegate)
                     {
                         var evalStr = commentEval switch
                         {
@@ -2072,7 +2088,21 @@
     // is mutated on the dispatcher, so the task must never touch it (same pattern as
     // KibitzerPanel). Immutable tuple — the reference write is atomic and a coalesced
     // start picks up the newest snapshot.
-    private (string PosCmd, string Go) latestAutoSearch;
+    private (string PosCmd, string Go, string Fen) latestAutoSearch;
+
+    // FEN of each in-flight search, enqueued when the go is actually issued and
+    // dequeued when its bestmove arrives. A stopped search's bestmove can land after
+    // navigation (even after the NEXT search's go was sent), and must not be
+    // attributed to the new position: it marked the new position as analyzed (so
+    // auto-search skipped it forever) and attached the old eval to the new edge/ply.
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> pendingSearchFens = new();
+
+    private void NoteSearchStarted(string searchFen)
+    {
+        // Bound the queue: a bestmove can be lost on abnormal engine output
+        while (pendingSearchFens.Count > 4) pendingSearchFens.TryDequeue(out _);
+        pendingSearchFens.Enqueue(searchFen ?? "");
+    }
 
     private string BuildAutoGoCommand()
     {
@@ -2130,7 +2160,7 @@
                 // must never touch it (racing the board's owner page corrupts the
                 // move list mid-render: "Collection was modified").
                 if (!ChessBoard.AnyLegalMove()) return;
-                latestAutoSearch = (ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand());
+                latestAutoSearch = (ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand(), ChessBoard.FEN());
                 if (Interlocked.CompareExchange(ref autoSearchQueued, 1, 0) == 0)
                 {
                     _ = Task.Run(async () => {
@@ -2149,7 +2179,10 @@
                                 }
                                 else
                                 {
-                                    var (posCmd, goCmd) = latestAutoSearch;
+                                    var (posCmd, goCmd, searchFen) = latestAutoSearch;
+                                    // Enqueue next to the actual go: coalesced starts
+                                    // (CAS above) send only the newest snapshot once.
+                                    NoteSearchStarted(searchFen);
                                     a.PlayPrepared(posCmd, goCmd);
                                 }
                             }

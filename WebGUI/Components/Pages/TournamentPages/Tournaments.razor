@@ -3236,13 +3236,22 @@
 
     public async ValueTask DisposeAsync()
     {
-        TournamentSvc.Unsubscribe();
+        // Handler-checked unsubscribe: the services hold a single global subscriber
+        // slot, and a second tab's dispose used to null out the slot the FIRST tab
+        // still owned — freezing it while the tournament ran on headless.
+        TournamentSvc.Unsubscribe(Update);
         TournamentSvc.StopRecording();
         if (startedReplay) Replayer.Stop();
-        JsonFeedSvc.Unsubscribe();
+        JsonFeedSvc.Unsubscribe(Update);
         if (feedMultiHandler != null) JsonFeedSvc.UnsubscribeMulti(feedMultiHandler);
         Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;
+        try
+        {
+            if (chessModule != null) await chessModule.InvokeVoidAsync("unregisterResizeEvent");
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
         if (keyContext != null) await keyContext.DisposeAsync();
         dotNetRef?.Dispose();
 		if (timer != null)

@@ -8,16 +8,19 @@
     <thead>
       <tr>
         <th class="cross-modern-head cross-modern-head-player">Player (Pairs)</th>
-        @{ var crossTable = CrossTable.ToArray(); }
-        @foreach (var challenger in crossTable)
+        @{
+          var crossTable = CrossTable.ToArray();
+          // Column order = rank-1's opponent order (that is what the header shows).
+          // Every row renders its cells by name lookup in this order — rows whose own
+          // ResultsAgainst order differed used to land under the wrong column (the old
+          // reorder was computed but never used, and crashed when rank 1 wasn't first).
+          var headerOpponents =
+            (crossTable.FirstOrDefault(e => e.Rank == 1) ?? crossTable.FirstOrDefault())
+            ?.ResultsAgainst.Select(t => t.Item1).ToArray() ?? Array.Empty<string>();
+        }
+        @foreach (var name in headerOpponents)
         {
-          if (challenger.Rank == 1)
-          {
-            foreach (var item in challenger.ResultsAgainst)
-            {
-              <th class="cross-modern-head">@item.Item1</th>
-            }
-          }
+          <th class="cross-modern-head">@name</th>
         }
       </tr>
     </thead>
@@ -33,32 +36,26 @@
               @RenderWdlTotals(entry)
             </div>
           </td>
-          @if (entry.Rank == 1)
+          @foreach (var oppName in headerOpponents)
           {
-            orderList = entry.ResultsAgainst.ToArray();
-          }
-
-          @foreach (var opponent in entry.ResultsAgainst)
-          {
-            Tuple<string, string[]>[] resultAgainstArray = entry.ResultsAgainst;
-            if (entry.Rank != 1)
+            var opponent = entry.ResultsAgainst.FirstOrDefault(o => o.Item1 == oppName);
+            if (opponent == null)
             {
-              resultAgainstArray =
-              resultAgainstArray
-              .OrderBy(s => Array.IndexOf(orderList, s))
-              .ToArray();
+              <td class="cross-modern-cell"></td>
             }
-
-            var res = CalculatePairs(entry.Player, opponent.Item1, opponent.Item2);
-            <td class="cross-modern-cell">
-              <span class="cross-modern-pair">
-                <span class="cross-win">+@res.W</span>
-                <span class="cross-sep">=</span>
-                <span class="cross-draw">@res.D</span>
-                <span class="cross-sep">-</span>
-                <span class="cross-loss">@res.L</span>
-              </span>
-            </td>
+            else
+            {
+              var res = CalculatePairs(entry.Player, opponent.Item1, opponent.Item2);
+              <td class="cross-modern-cell">
+                <span class="cross-modern-pair">
+                  <span class="cross-win">+@res.W</span>
+                  <span class="cross-sep">=</span>
+                  <span class="cross-draw">@res.D</span>
+                  <span class="cross-sep">-</span>
+                  <span class="cross-loss">@res.L</span>
+                </span>
+              </td>
+            }
           }
         </tr>
       }
@@ -75,7 +72,6 @@
 
   private int fontSize = 8;
   private string gameResultHeader = "No games played";
-  Tuple<string, string[]>[] orderList;
 
   private List<string> LossCombinations = new List<string> { "00", "01/2", "1/20", };
   private List<string> WinCombinations = new List<string> { "11", "11/2", "1/21" };
