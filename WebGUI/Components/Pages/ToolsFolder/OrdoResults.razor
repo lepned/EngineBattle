@@ -26,10 +26,19 @@
 	</div>
 
 	<div class="tool-controls">
-		<button class="tool-upload-btn" @onclick="BrowsePgnFile">Load pgn file</button>
+		<button class="tool-upload-btn" @onclick="BrowsePgnFile" disabled="@isProcessing">Load pgn file</button>
 	</div>
 
 	<div class="file-name">@fileOpenName</div>
+
+	@if (isProcessing)
+	{
+		<div class="file-name" style="display:flex; align-items:center; gap:10px;">
+			<MudProgressCircular Indeterminate="true" Size="Size.Small" />
+			<span>@processingStatus</span>
+			<button class="tool-upload-btn" @onclick="CancelProcessing">Cancel</button>
+		</div>
+	}
 
 	<h2>Ordo-like table</h2>
 	<div class="tool-table-container" style="max-width:1300px">
@@ -102,8 +111,21 @@
 		return baseSpeed;
 	}
 
+	private bool isProcessing;
+	private string processingStatus = "";
+	private System.Threading.CancellationTokenSource processingCts;
+
+	private void CancelProcessing() => processingCts?.Cancel();
+
+	private void SetStatus(string status)
+	{
+		processingStatus = status;
+		StateHasChanged();
+	}
+
 	private async Task BrowsePgnFile()
 	{
+		if (isProcessing) return;
 		var initialDir = SettingsService.Settings.PgnOutputFolder;
 		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
 		{
@@ -121,61 +143,100 @@
 		var pgnName = Path.GetFileName(fullPath);
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
-		List<ChessLibrary.PGNTypes.PgnGame> games;
+
+		// All heavy stages run OFF the dispatcher: previously the whole pipeline ran
+		// inline in this dialog continuation, so on a big PGN the dialog could not
+		// even close until the multi-minute analysis finished.
+		processingCts?.Dispose();
+		processingCts = new System.Threading.CancellationTokenSource();
+		var ct = processingCts.Token;
+		isProcessing = true;
+		SetStatus("Parsing PGN…");
 		try
 		{
-			games = FullPGNParser.parsePgnFile(fullPath).ToList();
+			List<ChessLibrary.PGNTypes.PgnGame> games;
+			try
+			{
+				games = await Task.Run(() => FullPGNParser.parsePgnFile(fullPath).ToList(), ct);
+			}
+			catch (Exception ex) when (ex is not OperationCanceledException)
+			{
+				logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+				return;
+			}
+			if (games.Count == 0)
+			{
+				logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
+				return;
+			}
+			ct.ThrowIfCancellationRequested();
+
+			// Standings/crosstable only — deviation analysis is for EB's own tournaments
+			// (repeated openings) and does not belong in generic PGN result parsing; on a
+			// TCEC archive it multiplied the runtime tenfold for a meaningless number.
+			SetStatus($"Computing standings for {games.Count:N0} games…");
+			var (consoleRes, engineStats, cross, allResults) =
+				await Task.Run(() => GameAnalysis.PGNCalculator.getEngineDataResults(games), ct);
+			ct.ThrowIfCancellationRequested();
+
+			SetStatus("Computing pentanomial…");
+			var pentaDefault = await Task.Run(() =>
+			{
+				// Console dump only for crosstables of sane size — with an archive PGN
+				// (1384 engines) this printed a 1384-line table for no benefit
+				if (cross.Count <= 30)
+					GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
+				return Statistics.Pentanomial.formatPerEngineDefault(games);
+			}, ct);
+			logger.LogInformation("Pentanomial results:\n{Penta}", pentaDefault);
+			testDuration = allResults.Sum(r => r.GameTime);
+			var testTime = TimeSpan.FromMilliseconds(testDuration);
+			var msg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and  {testTime.Minutes} minutes";
+			logger.LogInformation(msg);
+			logger.LogInformation(consoleRes);
+			var ordered = engineStats.OrderByDescending(e => e.Points).ThenBy(e => e.Played).ToList();
+			engineLineData.AddRange(ordered);
+			logger.LogInformation("PGN file parsed {File}", pgnName);
+			StateHasChanged();
+			if (!string.IsNullOrEmpty(executablePath))
+			{
+				// User-triggered one-shot analysis: draw-rate calibration (-D) for
+				// tournament-sized PGNs; on huge archives the calibrated simulations
+				// take far beyond any reasonable timeout, so fall back to the fast
+				// uncalibrated mode there. The token makes Cancel work here too.
+				var useDrawModel = games.Count <= 2000;
+				SetStatus(useDrawModel ? "Running Ordo (draw-rate calibrated)…" : "Running Ordo…");
+				var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine, useDrawModel);
+				var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
+				Console.WriteLine(ordoCommandString);
+				var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, 300.0, ct);
+				Console.WriteLine(ordo);
+			}
+
+			// The full W-D-L matrix is quadratic in players: for an archive PGN with
+			// 1384 engines it was a 27 MB string logged as one line. Cap it at a size
+			// a human could actually read.
+			if (cross.Count > 2 && cross.Count <= 30)
+			{
+				var crossTableConsole = await Task.Run(() => GameAnalysis.OrdoHelper.printStatsMatrix(cross), ct);
+				logger.LogInformation(crossTableConsole);
+			}
+			logger.LogInformation("Done with calculation");
+		}
+		catch (OperationCanceledException)
+		{
+			logger.LogInformation("PGN analysis cancelled by user");
 		}
 		catch (Exception ex)
 		{
-			logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
-			return;
+			logger.LogError(ex, "PGN analysis failed for {File}", pgnName);
 		}
-		if (games.Count == 0)
+		finally
 		{
-			logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
-			return;
+			isProcessing = false;
+			processingStatus = "";
+			StateHasChanged();
 		}
-		var (allResults, consoleRes, devSummary, engineStats, cross, fraction) = DeviationAnalysis.analyzeDeviations(games);
-		GameAnalysis.PGNCalculator.idealizedEloPrint(cross);
-		var pentaDefault = Statistics.Pentanomial.formatPerEngineDefault(games);
-		//var pentaAlt = Utilities.Pentanomial.formatAllMatchups(games, 200);
-		//var both = pentaAlt + "\n\n" + pentaDefault;
-		logger.LogInformation("Pentanomial results:\n{Penta}", pentaDefault);
-		testDuration = allResults.Sum(r => r.GameTime);
-		var testTime = TimeSpan.FromMilliseconds(testDuration);
-		var msg = $"Total test duration: {testTime.Days} days, {testTime.Hours} hours and  {testTime.Minutes} minutes";
-		logger.LogInformation(msg);
-		if (devSummary.Count() > 0)
-		{
-			var consoleDeviationSummary = DeviationAnalysis.printDeviationsToConsole(devSummary);
-			logger.LogInformation("Fraction of games with deviation: {Fraction}", fraction);
-			logger.LogInformation(consoleDeviationSummary);
-		}
-		logger.LogInformation(consoleRes);
-		var ordered = engineStats.OrderByDescending(e => e.Points).ThenBy(e => e.Played).ToList();
-		engineLineData.AddRange(ordered);
-		//UpdateSpeed(games, playerRes, engineLineData);
-		logger.LogInformation("PGN file parsed {File}", pgnName);
-		StateHasChanged();
-		if (!string.IsNullOrEmpty(executablePath))
-		{
-			// Or the appropriate path on macOS/Linux. User-triggered one-shot analysis:
-			// use the accurate draw-rate-calibrated mode with a timeout sized for it.
-			var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine, true);
-			var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
-			Console.WriteLine(ordoCommandString);
-			var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, 300.0, System.Threading.CancellationToken.None);
-			Console.WriteLine(ordo);
-		}
-
-		if (cross.Count > 2)
-		{
-			var crossTableConsole = GameAnalysis.OrdoHelper.printStatsMatrix(cross);
-			logger.LogInformation(crossTableConsole);
-		}
-		logger.LogInformation("Done with calculation");
-		StateHasChanged();
 	}
 
 	protected override Task OnInitializedAsync()

@@ -16,7 +16,7 @@
 	<div class="tool-subtitle">NPS and EPS by piece count from PGN games</div>
 
 	<div class="tool-controls">
-		<button class="tool-upload-btn" @onclick="BrowsePgnFile">Load pgn file</button>
+		<button class="tool-upload-btn" @onclick="BrowsePgnFile" disabled="@isProcessing">Load pgn file</button>
 		<div class="tool-input-group" style="margin-bottom:0">
 			<label>Engine filter</label>
 			<select class="tool-input" style="width:220px" @bind="selectedEngine" @bind:after="OnEngineChanged">
@@ -30,6 +30,19 @@
 	</div>
 
 	<div class="file-name">@fileOpenName</div>
+
+	@if (isProcessing)
+	{
+		<div class="file-name" style="display:flex; align-items:center; gap:10px;">
+			<MudProgressCircular Indeterminate="true" Size="Size.Small" />
+			<span>@processingStatus</span>
+		</div>
+	}
+
+	@if (!string.IsNullOrEmpty(noStatsMessage))
+	{
+		<div class="file-name" style="color:#d0a060;">@noStatsMessage</div>
+	}
 
 	<div class="tool-table-container" style="max-width:900px">
 		<table class="tool-table sortable">
@@ -192,8 +205,13 @@
 		PGNStatistics.printPieceCountDataPerPgnFile(dummyOutputFilePath, pieceCountDataPerPgnFile);
 	}
 
+	private bool isProcessing;
+	private string processingStatus = "";
+	private string noStatsMessage = "";
+
 	private async Task BrowsePgnFile()
 	{
+		if (isProcessing) return;
 		var initialDir = SettingsService.Settings.PgnOutputFolder;
 		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
 		{
@@ -211,28 +229,59 @@
 		fileOpenName = pgnName;
 		logger.LogInformation("PGN file opened {File}", pgnName);
 
-		List<ChessLibrary.PGNTypes.PgnGame> games;
+		isProcessing = true;
+		processingStatus = "Parsing PGN…";
+		noStatsMessage = "";
+		StateHasChanged();
 		try
 		{
-			games = FullPGNParser.parsePgnFile(filePath).ToList();
+			List<ChessLibrary.PGNTypes.PgnGame> games;
+			try
+			{
+				games = await Task.Run(() => FullPGNParser.parsePgnFile(filePath).ToList());
+			}
+			catch (Exception ex)
+			{
+				logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+				return;
+			}
+			if (games.Count == 0)
+			{
+				logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
+				return;
+			}
+			logger.LogInformation("PGN file parsed {File}", pgnName);
+
+			processingStatus = $"Computing backend metrics for {games.Count:N0} games…";
+			StateHasChanged();
+			// keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
+			pieceCountDataPerPgnFile = await Task.Run(() => PGNStatistics.calculatePieceCountDataPerPgnFile(games));
+			logger.LogInformation("Groups: {Count}", pieceCountDataPerPgnFile.Length);
+			if (pieceCountDataPerPgnFile.Length == 0)
+			{
+				// pcs= is only written with MoveAnnotation=Full, and only engines that
+				// report EPS (Ceres with LogLiveStats) produce nonzero eps= values
+				noStatsMessage = "No piece-count/EPS data found in this PGN — backend metrics needs a tournament played with MoveAnnotation=Full and an engine reporting EPS (e.g. Ceres).";
+				logger.LogWarning("No piece-count/EPS data in {File} — requires MoveAnnotation=Full and EPS-reporting engines", pgnName);
+				currentPage = 0;
+				return;
+			}
+			currentPage = 0;
+			StateHasChanged();
+
+			// attempt to plot automatically after load (filtered by current selection)
+			await PlotPieceCountChart();
 		}
 		catch (Exception ex)
 		{
-			logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
-			return;
+			logger.LogError(ex, "Backend metrics calculation failed for {File}", pgnName);
 		}
-		logger.LogInformation("PGN file parsed {File}", pgnName);
-
-		// keep the grouped data (F# shape) and notify UI; table reads FlattenedRows
-		pieceCountDataPerPgnFile = PGNStatistics.calculatePieceCountDataPerPgnFile(games);
-		logger.LogInformation("Groups: {Count}", pieceCountDataPerPgnFile.Length);
-		currentPage = 0;
-		StateHasChanged();
-
-		// attempt to plot automatically after load (filtered by current selection)
-		await PlotPieceCountChart();
-
-		StateHasChanged();
+		finally
+		{
+			isProcessing = false;
+			processingStatus = "";
+			StateHasChanged();
+		}
 	}
 
 

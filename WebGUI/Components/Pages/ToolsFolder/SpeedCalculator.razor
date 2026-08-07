@@ -12,7 +12,7 @@
   <div class="tool-subtitle">NPS, depth and node statistics per engine and game</div>
 
   <div class="tool-controls">
-    <button class="tool-upload-btn" @onclick="BrowsePgnFile">Load pgn file</button>
+    <button class="tool-upload-btn" @onclick="BrowsePgnFile" disabled="@isProcessing">Load pgn file</button>
     <div class="tool-input-group" style="margin-bottom:0">
       <label>Min move time (secs)</label>
       <input type="number" class="tool-input" style="width:120px" @bind="minMoveTimeInSecs" min="0" step="1" />
@@ -20,6 +20,19 @@
   </div>
 
   <div class="file-name">@fileOpenName</div>
+
+  @if (isProcessing)
+  {
+    <div class="file-name" style="display:flex; align-items:center; gap:10px;">
+      <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+      <span>@processingStatus</span>
+    </div>
+  }
+
+  @if (!string.IsNullOrEmpty(noStatsMessage))
+  {
+    <div class="file-name" style="color:#d0a060;">@noStatsMessage</div>
+  }
 
   <div class="tool-tab-bar">
     <button class="tool-tab @(activeView == ViewMode.Median ? "active" : "")" @onclick='() => SetView(ViewMode.Median)'>Median</button>
@@ -217,8 +230,13 @@
   private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
   private void ResetPage() { currentPage = 0; }
 
+  private bool isProcessing;
+  private string processingStatus = "";
+  private string noStatsMessage = "";
+
   private async Task BrowsePgnFile()
   {
+    if (isProcessing) return;
     var initialDir = SettingsService.Settings.PgnOutputFolder;
     var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
     {
@@ -236,51 +254,87 @@
     fileOpenName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
 
-    List<ChessLibrary.PGNTypes.PgnGame> games;
+    // Heavy work off the dispatcher so the dialog closes and the page stays live
+    isProcessing = true;
+    processingStatus = "Parsing PGN…";
+    noStatsMessage = "";
+    StateHasChanged();
     try
     {
-        games = FullPGNParser.parsePgnFile(filePath).ToList();
+      List<ChessLibrary.PGNTypes.PgnGame> games;
+      try
+      {
+        games = await Task.Run(() => FullPGNParser.parsePgnFile(filePath).ToList());
+      }
+      catch (Exception ex)
+      {
+        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+        return;
+      }
+      if (games.Count == 0)
+      {
+        logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
+        return;
+      }
+
+      processingStatus = $"Computing speed statistics for {games.Count:N0} games…";
+      StateHasChanged();
+      var (allRes, allIndividualGames) = await Task.Run(() =>
+      {
+        var summary = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games, minMoveTimeInSecs);
+        var perGame = PGNStatistics.calculateMedianAndAvgSpeedPerGameInPgnFile(games)
+          .Where(e => e.AvgNps > 0)
+          .OrderBy(e => e.GameNr)
+          .ToList();
+        return (summary, perGame);
+      });
+
+      // Engines with no stat data at all (e.g. TCEC "compact" archives strip every
+      // engine comment) would show as all-zero rows — skip them instead.
+      bool hasStats(SummaryEngineStat e) => e.AvgNPS > 0 || e.AvgNodes > 0 || e.AvgDepth > 0;
+      medianSpeedTable =
+        allRes.Where(e => e.Median && hasStats(e))
+        .OrderByDescending(e => e.AvgNPS).ToList();
+      averageSpeedTable =
+        allRes.Where(e => e.Median == false && hasStats(e))
+            .OrderByDescending(e => e.AvgNPS).ToList();
+      if (medianSpeedTable.Count == 0)
+      {
+        noStatsMessage = "No engine stat comments found in this PGN — nothing to compute speed from.";
+        logger.LogWarning("No engine stat comments found in {File} — nothing to compute speed from", pgnName);
+        allGamesSpeedTable = new();
+        currentPage = 0;
+        return;
+      }
+
+      logger.LogInformation("PGN file parsed {File}", pgnName);
+
+      logger.LogInformation("\nMedian speed calculated\n");
+      var summaryText = ConsoleHelper.writeSummaryEngineStatsToConsole(medianSpeedTable);
+      logger.LogInformation(summaryText);
+
+      logger.LogInformation("\nAverage speed calculated\n");
+      var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(averageSpeedTable);
+      logger.LogInformation(avgSummary);
+
+      allGamesSpeedTable = allIndividualGames;
+      logger.LogInformation("\nSpeed per game calculated\n");
+      var consoleSummary = ConsoleHelper.writeEngineStatsToConsole(allIndividualGames);
+      logger.LogInformation(consoleSummary);
+
+      currentPage = 0;
+      logger.LogInformation("Done with calculation");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
-        return;
+      logger.LogError(ex, "Speed calculation failed for {File}", pgnName);
     }
-    var allRes = PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(games,minMoveTimeInSecs);
-    var minMoveTimeInMs = minMoveTimeInSecs * 1000;
-    medianSpeedTable =
-      allRes.Where(e => e.Median )
-      .OrderByDescending(e => e.AvgNPS).ToList();
-    averageSpeedTable =
-      allRes.Where(e => e.Median == false)
-          .OrderByDescending(e => e.AvgNPS).ToList();
-
-    logger.LogInformation("PGN file parsed {File}", pgnName);
-
-    logger.LogInformation("\nMedian speed calculated\n");
-    var summary = ConsoleHelper.writeSummaryEngineStatsToConsole(medianSpeedTable);
-    logger.LogInformation(summary);
-
-    logger.LogInformation("\nAverage speed calculated\n");
-    var avgSummary = ConsoleHelper.writeSummaryEngineStatsToConsole(averageSpeedTable);
-    logger.LogInformation(avgSummary);
-
-    StateHasChanged();
-
-    var allIndividualGames =
-      PGNStatistics.calculateMedianAndAvgSpeedPerGameInPgnFile(games)
-      .Where(e => e.AvgNps > 0)
-      .OrderBy(e => e.GameNr)
-      .ToList();
-
-    allGamesSpeedTable = allIndividualGames;
-    logger.LogInformation("\nSpeed per game calculated\n");
-    var consoleSummary = ConsoleHelper.writeEngineStatsToConsole(allIndividualGames);
-    logger.LogInformation(consoleSummary);
-
-    currentPage = 0;
-    logger.LogInformation("Done with calculation");
-    StateHasChanged();
+    finally
+    {
+      isProcessing = false;
+      processingStatus = "";
+      StateHasChanged();
+    }
   }
 
   private string FormatNodes(double nodes)

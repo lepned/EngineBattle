@@ -12,10 +12,18 @@
   <div class="tool-subtitle">Node distribution and search statistics from LogLiveStats</div>
 
   <div class="tool-controls">
-    <button class="tool-upload-btn" @onclick="BrowsePgnFile">Load pgn file</button>
+    <button class="tool-upload-btn" @onclick="BrowsePgnFile" disabled="@isProcessing">Load pgn file</button>
   </div>
 
   <div class="file-name">@fileOpenName</div>
+
+  @if (isProcessing)
+  {
+    <div class="file-name" style="display:flex; align-items:center; gap:10px;">
+      <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+      <span>@processingStatus</span>
+    </div>
+  }
 
   <div class="tool-tab-bar">
     <button class="tool-tab @(activeView == ViewMode.Summary ? "active" : "")" @onclick='() => SetView(ViewMode.Summary)'>Summary</button>
@@ -207,8 +215,12 @@
   private void NextPage() { if (currentPage < totalPages - 1) currentPage++; }
   private void ResetPage() { currentPage = 0; }
 
+  private bool isProcessing;
+  private string processingStatus = "";
+
   private async Task BrowsePgnFile()
   {
+    if (isProcessing) return;
     var initialDir = SettingsService.Settings.PgnOutputFolder;
     var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
     {
@@ -226,38 +238,63 @@
     fileOpenName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
 
-    List<ChessLibrary.PGNTypes.PgnGame> games;
+    isProcessing = true;
+    processingStatus = "Parsing PGN…";
+    StateHasChanged();
     try
     {
-        games = FullPGNParser.parsePgnFile(filePath).ToList();
+      List<ChessLibrary.PGNTypes.PgnGame> games;
+      try
+      {
+        games = await Task.Run(() => FullPGNParser.parsePgnFile(filePath).ToList());
+      }
+      catch (Exception ex)
+      {
+        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
+        return;
+      }
+      if (games.Count == 0)
+      {
+        logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
+        return;
+      }
+
+      processingStatus = $"Computing search metrics for {games.Count:N0} games…";
+      StateHasChanged();
+      var (summaryOfLogLiveStats, allIndividualGamesWithLogLiveStats, allIndividualMovesPerGamesWithLogLiveStats) =
+        await Task.Run(() =>
+        {
+          var summary =
+            PGNStatistics.calculateNodeRatioPerPGNfile(games)
+            .ToList();
+          var perGame =
+            PGNStatistics.calculateNodeRatioPerGameInPgnFile(games, 100000)
+            .OrderBy(e => e.GameNr)
+            .ToList();
+          var perMove =
+            PGNStatistics.calculateNodeRatioPerMovePerGameInPgnFile(games, 1000)
+            .OrderByDescending(e => e.N2avg)
+            .ToList();
+          return (summary, perGame, perMove);
+        });
+
+      nodeRatios = allIndividualGamesWithLogLiveStats;
+      nodePerMoveRatios = allIndividualMovesPerGamesWithLogLiveStats;
+      nodeSummaryRatio = summaryOfLogLiveStats;
+      currentPage = 0;
+
+      logger.LogInformation("Done with calculation");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Failed to parse PGN file {File}", pgnName);
-        return;
+      logger.LogError(ex, "Search metrics calculation failed for {File}", pgnName);
     }
-
-    var summaryOfLogLiveStats =
-      PGNStatistics.calculateNodeRatioPerPGNfile(games)
-      .ToList();
-
-    var allIndividualGamesWithLogLiveStats =
-      PGNStatistics.calculateNodeRatioPerGameInPgnFile(games, 100000)
-      .OrderBy(e => e.GameNr)
-      .ToList();
-
-    var allIndividualMovesPerGamesWithLogLiveStats =
-      PGNStatistics.calculateNodeRatioPerMovePerGameInPgnFile(games, 1000)
-      .OrderByDescending(e => e.N2avg)
-      .ToList();
-
-    nodeRatios = allIndividualGamesWithLogLiveStats;
-    nodePerMoveRatios = allIndividualMovesPerGamesWithLogLiveStats;
-    nodeSummaryRatio = summaryOfLogLiveStats;
-    currentPage = 0;
-
-    logger.LogInformation("Done with calculation");
-    StateHasChanged();
+    finally
+    {
+      isProcessing = false;
+      processingStatus = "";
+      StateHasChanged();
+    }
   }
   private string FormatTime(Int64 mt, Int64 tl)
   {
