@@ -64,6 +64,12 @@ module Engine =
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
       let isCeres = (Regex.Match(config.Path, "ceres", RegexOptions.IgnoreCase)).Success
       let moveBoard = Chess.Board()
+      // moveBoard is written by whichever thread sends a position command and read by the
+      // stdout reader thread while parsing info/bestmove lines against it. Every access
+      // goes through this lock; a position set therefore waits for the line currently
+      // being parsed instead of mutating the board underneath it. (sanPvCache stays
+      // reader-thread-only by design and needs no lock.)
+      let moveBoardLock = obj()
       let winboardHandler = createHandlerIfNeeded config (Some logger)
       let mutable commands = ResizeArray<string>()
       let isChess960Set () = 
@@ -167,37 +173,46 @@ module Engine =
             return ok
         } |> Async.RunSynchronously
 
-      let bestLine callback (engineName:string) (line:string)  =        
+      let bestLine callback (engineName:string) (line:string)  =
         let move, ponder = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
         callback (Done engineName)
-        match tryGetTMoveFromUciNotation &moveBoard move with
-        |Some tmove ->
-          //let mutable moveAdj = tmove
-          let shortSan = getSanNotationFromTMove &moveBoard tmove    
-          let eval = 
-            if evalList.Length > 0 then 
-              evalList.[0] 
-            else 
+        // Snapshot everything board-derived under the lock, then build the record and
+        // invoke callbacks outside it.
+        let snapshot =
+          lock moveBoardLock (fun () ->
+            match tryGetTMoveFromUciNotation &moveBoard move with
+            | Some tmove ->
+                let shortSan = getSanNotationFromTMove &moveBoard tmove
+                let moveNum = moveBoard.MoveNumber()
+                let whiteToMove = moveBoard.Position.STM = 0uy
+                let fen = BoardHelper.posToFen moveBoard.Position
+                let mutable posToCheck = moveBoard.Position
+                let piecesLeft = PositionOps.numberOfPieces &posToCheck
+                let isCastling = tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY
+                Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling)
+            | None -> None)
+        match snapshot with
+        |Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling) ->
+          let eval =
+            if evalList.Length > 0 then
+              evalList.[0]
+            else
               if fullEvalList.Length > 0 then fullEvalList[0] else MiscTypes.EvalType.CP 0.0
           let pv =
             if String.IsNullOrEmpty(Player1PV) then
-              let moveNum = moveBoard.MoveNumber()
-              let prefix = if moveBoard.Position.STM = 0uy then sprintf "%d." moveNum else sprintf "%d..." moveNum
+              let prefix = if whiteToMove then sprintf "%d." moveNum else sprintf "%d..." moveNum
               prefix + shortSan
             else Player1PV
-          let fen = BoardHelper.posToFen moveBoard.Position
-          let moveDetail = 
+          let moveDetail =
             {
               LongSan = move
               FromSq = move[0..1]
               ToSq = move[2..3]
               Color = "w"
-              IsCastling = (tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY) 
+              IsCastling = isCastling
               Comments = String.Empty
-              }                 
+              }
           let moveAndFen = {Move = moveDetail; ShortSan=shortSan; FenAfterMove = fen}
-          let mutable posToCheck = moveBoard.Position
-          let piecesLeft = PositionOps.numberOfPieces &posToCheck
           let bestMove = 
             { Player=engineName
               Move=move
@@ -224,13 +239,15 @@ module Engine =
           depth <- 0
         |_ ->
           let msg = $"{engineName} played an illegal move here: {line} "
-          let boardState = $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.Position.Ply} "
+          let boardState =
+            lock moveBoardLock (fun () ->
+              $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.Position.Ply} ")
           printfn "%s" msg
           printfn "%s" boardState
 
       let regular callback (engineName:string) (line:string) =
         let mutable avgNps = 0.0
-        let isWhite = moveBoard.Position.STM = 0uy
+        let isWhite = lock moveBoardLock (fun () -> moveBoard.Position.STM = 0uy)
         match EngineProtocol.Regex.getEssentialDataWithEPS line isWhite with
         |Some (d, eval, nodes, nps, eps, pvLine, tbHits, wdl, sd, mPv ) ->         
           numberOfNodes <- nodes
@@ -256,7 +273,7 @@ module Engine =
             match sanPvCache.TryGetValue mpv with
             | true, (cachedLan, cachedSan) when cachedLan = lan -> cachedSan
             | _ ->
-              let san = getShortSanPVFromLongSanPVFast moveList &moveBoard lan
+              let san = lock moveBoardLock (fun () -> getShortSanPVFromLongSanPVFast moveList &moveBoard lan)
               sanPvCache[mpv] <- (lan, san)
               san
           if not (String.IsNullOrEmpty(pvLine)) && mPv = 1 && not isBound then
@@ -341,7 +358,7 @@ module Engine =
             match state with
             |InMoveStatMode list ->
               if line.StartsWith "info string node" then
-                makeShortSan list &moveBoard
+                lock moveBoardLock (fun () -> makeShortSan list &moveBoard)
                 callback (NNSeq list)
                 state <- Start
             | RegularSearchMode ->
@@ -679,7 +696,7 @@ module Engine =
       member this.ShutDownEngine() = this.SendUCICommand UCICommand.Quit
       member this.HasExited = engineProcess.HasExited
       
-      member this.CurrentPositionCommand() = moveBoard.PositionWithMovesFromGraph()
+      member this.CurrentPositionCommand() = lock moveBoardLock (fun () -> moveBoard.PositionWithMovesFromGraph())
 
       member this.SetAllOptions (allOptions: Dictionary<string,obj>) =
         for opt in allOptions do
@@ -764,24 +781,28 @@ module Engine =
               write cmd
               commands.Add cmd
           | PositionWithMoves command ->
-              //let hmm = board.PositionWithMovesIndexed()
-              moveBoard.ResetBoardState()
-              clearPvCache()
-              moveBoard.PlayCommands command
+              let isFrc =
+                lock moveBoardLock (fun () ->
+                  moveBoard.ResetBoardState()
+                  clearPvCache()
+                  moveBoard.PlayCommands command
+                  moveBoard.IsFRC)
               let isSet = isChess960Set()
-              if moveBoard.IsFRC && not isSet then 
+              if isFrc && not isSet then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
-              elif isSet && not moveBoard.IsFRC then
+              elif isSet && not isFrc then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
               write command
               commands.Add command
           | Position fen ->
-              //board.LoadFen fen
-              moveBoard.LoadFen fen
-              clearPvCache()
-              if moveBoard.IsFRC then 
+              let isFrc =
+                lock moveBoardLock (fun () ->
+                  moveBoard.LoadFen fen
+                  clearPvCache()
+                  moveBoard.IsFRC)
+              if isFrc then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
-              elif isChess960Set() && not moveBoard.IsFRC then
+              elif isChess960Set() && not isFrc then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
               let cmd = (sprintf "position fen %s" fen)
               write cmd
