@@ -102,11 +102,24 @@ namespace WebGUI.Services.Broadcast
             var roundId = ExtractRoundId(roundIdOrUrl);
             if (string.IsNullOrEmpty(roundId)) { SetStatus("invalid round id/url"); return; }
 
-            _ = StopAsync().AsTask();
+            // Detach and dispose the old client in the background WITHOUT StopAsync:
+            // its "stopped" status used to land after the new client's "connecting"/
+            // "connected" and stick. Late callbacks from the old client (an in-flight
+            // Flush can still deliver a game after _games.Clear()) are generation-gated
+            // below, so an old round's game can no longer leak into the new grid.
+            var old = _client;
+            _client = null;
+            if (old != null) _ = old.DisposeAsync().AsTask();
+
             lock (_lock) _games.Clear();
             RoundId = roundId;
             IsRunning = true;
-            _client = new LichessBroadcastClient(roundId, OnGamePgn, SetStatus);
+            LichessBroadcastClient? created = null;
+            created = new LichessBroadcastClient(
+                roundId,
+                pgn => { if (ReferenceEquals(_client, created)) OnGamePgn(pgn); },
+                s => { if (ReferenceEquals(_client, created)) SetStatus(s); });
+            _client = created;
             _client.Start();
             SetStatus("connecting");
         }
