@@ -1230,8 +1230,15 @@ module Engine =
             assignThread ()
             let ok = readUciOptions()
             if not ok then
-              logCritical "Engine did not respond to UCI command."
-              failwith "Engine did not respond to UCI command."
+              // Winboard note: initializeWinboard only returns false when the process
+              // EXITED during init or a hard I/O failure occurred — a healthy-but-quiet
+              // v1 engine takes the fallback-true paths and never lands here.
+              let msg =
+                match winboardHandler with
+                | Some _ -> sprintf "Winboard engine %s exited or failed during initialization (path: %s)" name config.Path
+                | None -> sprintf "Engine %s did not respond to the uci command (path: %s)" name config.Path
+              logCritical msg
+              raise (CustomException.EngineStartupException msg)
             //configCmds |> Seq.iter (fun cmd -> printfn "%s"  (sprintf "Initial command for %s: %s" name cmd))
             //let options = createVerifiedOptions configCmds
             //options |> Seq.iter (fun cmd -> printfn "%s" (sprintf "Verified command for %s: %s" name cmd))
@@ -1294,6 +1301,19 @@ module Engine =
                   // which re-logged it as an "unexpected error".)
                   RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
         with
+        | :? CustomException.EngineStartupException ->
+            // Fail fast (user decision 2026-08-08): a binary that never answers "uci"
+            // must fail at creation with a clear message instead of limping into
+            // WaitForReadyOk timeouts mid-tournament. Kill the started-but-mute
+            // process so it is not leaked, then let the exception propagate — every
+            // creation path (tournament runners, pools, GUI pages, validation)
+            // catches it. Option-validation failures keep the non-throwing
+            // passed=false flow.
+            passed <- false
+            try
+              if proc <> null && not proc.HasExited then proc.Kill(true)
+            with _ -> ()
+            reraise()
         | :? OperationCanceledException ->
             passed <- false
             logCritical "Engine initialization timed out."
@@ -1302,7 +1322,7 @@ module Engine =
             logCritical "Engine channel was closed unexpectedly."
         | ex ->
             passed <- false
-            logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)      
+            logCritical (sprintf "An unexpected error occurred while starting engine %s: \n%s" name ex.Message)
       
       do
          startProcess ()

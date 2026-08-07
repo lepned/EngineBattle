@@ -29,11 +29,17 @@ module TournamentUtils =
       Validation.validateTournamentInput tourny
       let mutable valid = tourny.EngineSetup.Engines.Length > 1
       for engConfig in tourny.EngineSetup.Engines do
-        let engine = EngineHelper.createEngine (engConfig, None)
-        if valid then
-          valid <- engine.PassedValidation
-          engine.PrintNonDefaultValues()
-        engine.StopProcess()
+        try
+          let engine = EngineHelper.createEngine (engConfig, None)
+          if valid then
+            valid <- engine.PassedValidation
+            engine.PrintNonDefaultValues()
+          engine.StopProcess()
+        with ex ->
+          // createEngine fails fast on a dead binary — report it and keep
+          // validating the remaining engines
+          valid <- false
+          RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Engine %s failed to start: %s" engConfig.Name ex.Message)
         do! Async.Sleep 1000
       if valid then
         RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Green "\nTournament validation was successful"
