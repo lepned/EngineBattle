@@ -561,3 +561,28 @@ let ``En passant capture exd6 should remove the d5 pawn`` () =
     Assert.Contains("/p7/", newFen)
     // Rank 6 was "1np4p" (b6=n,c6=p,h6=p), now should have white P on d6: "1npP3p"
     Assert.Contains("/1npP3p/", newFen)
+
+// ============================================================================
+// Castling SAN lookup and repetition-count regression tests
+// ============================================================================
+
+[<Fact>]
+let ``GetSanFromUci recognizes castling in standard chess`` () =
+    let board = Board()
+    board.LoadFen "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+    Assert.Equal<string option>(Some "0-0", board.GetSanFromUci "e1g1")
+    Assert.Equal<string option>(Some "0-0-0", board.GetSanFromUci "e1c1")
+    board.LoadFen "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1"
+    Assert.Equal<string option>(Some "0-0", board.GetSanFromUci "e8g8")
+    Assert.Equal<string option>(Some "0-0-0", board.GetSanFromUci "e8c8")
+
+[<Fact>]
+let ``ClaimThreeFoldRep counts the start position occurrence`` () =
+    let board = Board()
+    // Knight shuffle: the start position recurs after every four plies
+    for uci in ["g1f3"; "g8f6"; "f3g1"; "f6g8"] do
+        board.PlayUciMove uci
+    Assert.False(board.ClaimThreeFoldRep())   // second occurrence of the start position
+    for uci in ["g1f3"; "g8f6"; "f3g1"; "f6g8"] do
+        board.PlayUciMove uci
+    Assert.True(board.ClaimThreeFoldRep())    // third occurrence: claimable

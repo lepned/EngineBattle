@@ -34,6 +34,10 @@ type Board() =
     let mutable game = Array.init MAX_PLY (fun _ -> Position.Default)
     let mutable position = game.[0]    
     let mutable hashKeys = ResizeArray<uint64>()
+    // Hash of the game's starting position (reset/LoadFen). hashKeys only records
+    // positions reached by MakeMove (indexed per move — see DeviationAnalysis), so the
+    // start position's own occurrence must be counted separately in RepetitionNr.
+    let mutable rootPositionHash = 0UL
     let mutable lastHistoryTokens : string array option = None
     let sbPool = StringBuilderPool(10,20)
     let moves = ResizeArray<TMove>()
@@ -375,6 +379,7 @@ type Board() =
       isFRC <- PositionOps.isFRC &position
       numberOfMoves <- 0L
       let rootHash = Hash.hashBoard position
+      rootPositionHash <- rootHash
       resetGraph startPos rootHash
       updatePathFromCurrent()
       lastHistoryTokens <- None
@@ -394,9 +399,9 @@ type Board() =
       startPos <- BoardHelper.posToFen position
       mostCurrentFEN <- startPos
       let rootHash = Hash.hashBoard position
+      rootPositionHash <- rootHash
       resetGraph startPos rootHash
       updatePathFromCurrent()
-      ZobrishHash.initializeZobristTables()
     do
         initBoard ()
     
@@ -447,6 +452,9 @@ type Board() =
         // Try to move the graph cursor to the matching node for this FEN.
         let fenStr = this.FEN()
         let hash = Hash.hashBoard position
+        // A freshly loaded FEN is the game's starting position for repetition purposes
+        // (tournaments reset the board and then LoadFen the opening).
+        rootPositionHash <- hash
         setCurrentGraphNodeFromHash fenStr hash
         updatePathFromCurrent()
 
@@ -549,8 +557,9 @@ type Board() =
           else
             sb.Append($" {lan}") |> ignore
         sb.Append(" *") |> ignore
+        let result = sb.ToString()
         sbPool.Return(sb)
-        sb.ToString()
+        result
 
       let ensureDirectory () =
         match System.IO.Path.GetDirectoryName path with
@@ -648,8 +657,9 @@ type Board() =
             sb.Append(prefix).Append(withComment) |> ignore
 
       tokens |> List.iter appendToken
+      let result = sb.ToString().Trim()
       sbPool.Return(sb)
-      sb.ToString().Trim()
+      result
 
     member this.IsFRC
       with get() = isFRC
@@ -1091,8 +1101,9 @@ type Board() =
             sb.Append $" {moveStr.ShortSan}" |> ignore
             moveNr <- moveNr + 1
             nr <- nr + 1
+      let result = sb.ToString().TrimStart()
       sbPool.Return(sb)
-      sb.ToString().TrimStart()
+      result
 
     member this.GetSanMoveHistory() =
       let sb = sbPool.Get()
@@ -1111,22 +1122,24 @@ type Board() =
           sb.Append $" {moveStr}" |> ignore
           moveNr <- moveNr + 1
         nr <- nr + 1
+      let result = sb.ToString().TrimStart()
       sbPool.Return(sb)
-      sb.ToString().TrimStart()
+      result
 
     member this.GetOpeningMoves() =
       let sb = sbPool.Get()      
       let mutable nr = 0
       let mutable moveNr = 1
       for moveStr in this.OpeningMovesPlayed do
-        if nr % 2 = 0 then                        
+        if nr % 2 = 0 then
           sb.Append $" {moveNr}. {moveStr}" |> ignore
         else
           sb.Append $" {moveStr}" |> ignore
           moveNr <- moveNr + 1
         nr <- nr + 1
+      let result = sb.ToString().TrimStart()
       sbPool.Return(sb)
-      sb.ToString().TrimStart()        
+      result
 
     member this.InlineTokensFromGraph () =
       let tokens = ResizeArray<InlineMoveToken>()
@@ -1251,10 +1264,8 @@ type Board() =
       iPosition <- iPosition + 1
       makeMove &move &position
 
-    member this.ClaimThreeFoldRep () =       
-      let key = this.PositionHash()
-      let keys = hashKeys |> Seq.sumBy (fun e -> if e = key then 1 else 0)
-      keys >= 3
+    member this.ClaimThreeFoldRep () =
+      this.RepetitionNr() >= 3
     
     member this.InsufficientMaterial() =
       let piecesLeft = PositionOps.numberOfPieces &position
@@ -1284,6 +1295,9 @@ type Board() =
         else
           false
     
+    /// Positional undo only: rewinds the position stack but does NOT pop hashKeys,
+    /// MovesPlayed, or the SAN/UCI/FEN lists. Pair with MakeMoveNoHash (perft-style
+    /// search); after a full PlayXxxMove the side lists keep the phantom entry.
     member this.UndoMove () =
       iPosition <- iPosition - 1
       position <- game.[iPosition]
@@ -1299,7 +1313,11 @@ type Board() =
 
     member this.RepetitionNr() =
       let key = this.PositionHash()
-      hashKeys |> Seq.sumBy (fun e -> if e = key then 1 else 0)     
+      let inGame = hashKeys |> Seq.sumBy (fun e -> if e = key then 1 else 0)
+      // hashKeys never contains the start position (it only records positions reached
+      // by MakeMove), so count its occurrence here — otherwise a shuffle back to the
+      // starting position is undercounted by one and threefold is claimed a repetition late.
+      if key = rootPositionHash then inGame + 1 else inGame
     
     member this.GetLegalMoves() =
       let moveList = this.GenerateMoves()
@@ -1351,17 +1369,21 @@ type Board() =
           let mStr = TMoveOps.moveToStr &tmove this.Position.STM
           if (mStr.Trim().ToLower()) = move.Trim().ToLower() then
             if (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
-              //since it could be a chess960 game we need to check if move to is to the same square as the short rook or the long rook
-              let toSq = int tmove.To
-              let rookM = PositionOps.rooksM &position
-              let rookShortSq = MSB(rookM) |> int
-              let rookLongSq = LSB(rookM) |> int
-              if rookShortSq = toSq then
-                Some "0-0"
-              elif rookLongSq = toSq then
-                Some "0-0-0"
-              else
-                None              
+              // Standard castling targets g1/c1 (to = 6/2); FRC castling targets the
+              // rook's initial square — same dual check as GetLegalMoves.
+              let toSq = tmove.To
+              let kr, qr =
+                if position.STM = 0uy then
+                  position.RookInfo.WhiteKRInitPlacement,
+                  position.RookInfo.WhiteQRInitPlacement
+                else
+                  position.RookInfo.BlackKRInitPlacement,
+                  position.RookInfo.BlackQRInitPlacement
+              if toSq = 2uy then Some "0-0-0"
+              elif toSq = 6uy then Some "0-0"
+              elif kr = toSq then Some "0-0"
+              elif qr = toSq then Some "0-0-0"
+              else None
             else
               let san = ConvertTo.standardSAN(move, tmove, moveList, this.Position.STM)
               Some san

@@ -67,6 +67,12 @@ module ZobrishHash =
     for i in 0..1 do
         ZobristSide.[i] <- getRand64 ()
 
+  // Populate the tables exactly once, in the module's static initializer: the CLR runs
+  // it (under its own lock) before any thread can read a table, so no Board needs to
+  // call initializeZobristTables and no hash can ever be computed against empty or
+  // half-written tables.
+  do initializeZobristTables ()
+
   /// Which piece type (0..5) do P2,P1,P0 represent, or -1 if empty?
   let getPieceCode (pos: Position) (s: int) =
     let occ = (1UL <<< s)

@@ -107,7 +107,7 @@ let perft (board:Board) depth =
       let moves = board.GenerateMoves ()
       for move in moves do
         if not ( BoardHelper.Illegal &move &pos) then
-          board.MakeMove (&move)
+          board.MakeMoveNoHash (&move)
           nodes <- nodes + perft (depth - 1)
           board.UndoMove () //position move undo
       nodes
@@ -158,7 +158,7 @@ let perftOpt depth fen =
         //board.PrintPosition "Illegal move"
         () //do nothing
       elif depth > 1 then       
-        board.MakeMove (&move)
+        board.MakeMoveNoHash (&move)
         nodes <- nodes + perft (depth - 1)
         board.UndoMove() //position move undo
       else              
@@ -180,7 +180,7 @@ let perftOptChecked (record:Chess960Record) depth =
       if BoardHelper.Illegal &move &pos then
         () //do nothing
       elif depth > 1 then       
-        board.MakeMove (&move)
+        board.MakeMoveNoHash (&move)
         nodes <- nodes + perft (depth - 1)
         board.UndoMove() //position move undo
       else              
@@ -231,7 +231,7 @@ let runPerft0 depth fen =
       for move in moves do        
         pos <- board.Position
         if not ( BoardHelper.Illegal &move &pos) then        
-          board.MakeMove(&move)
+          board.MakeMoveNoHash(&move)
           nodes <- nodes + perft (depth - 1)
           board.UndoMove ()
       nodes
@@ -253,7 +253,7 @@ let runPerft1 depth fen =
     else      
       for move in moves do
         if not ( BoardHelper.Illegal &move &pos) then        
-          board.MakeMove(&move)
+          board.MakeMoveNoHash(&move)
           nodes <- nodes + perft (depth - 1)
           board.UndoMove()
       nodes
@@ -271,7 +271,7 @@ let divide depth fen =
     let mutable nodes = 1L
     if not ( BoardHelper.Illegal &move &position) then        
       if depth > 0 then
-        board.MakeMove &move
+        board.MakeMoveNoHash &move
         nodes <- perft board (depth - 1)
         board.UndoMove()
         printfn $"  {MoveTypes.TMoveOps.moveToStr &move position.STM}:   {nodes:N0}"
