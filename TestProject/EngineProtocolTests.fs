@@ -108,3 +108,31 @@ let ``extractOptionDefaults and createDefaultSetOptionCommandForName resolve def
     Assert.Equal(Some "setoption name Hash value 16", cmdHash)
     Assert.Equal(Some "setoption name Ponder value false", cmdPonder)
     Assert.True(cmdMissing.IsNone)
+
+module UciOpt = ChessLibrary.UciOption
+
+[<Fact>]
+let ``combo option with single-word values parses each var`` () =
+    let line = "option name Analysis Contempt type combo default Both var Off var White var Black var Both"
+    match UciOpt.parseOption line with
+    | Some opt ->
+        Assert.Equal("Analysis Contempt", opt.Name)
+        match opt.OptionType with
+        | UciOpt.Combo (values, def) ->
+            Assert.Equal<string list>([ "Off"; "White"; "Black"; "Both" ], values)
+            Assert.Equal("Both", def)
+        | _ -> failwith "Expected combo option"
+    | None -> failwith "Option did not parse"
+
+[<Fact>]
+let ``combo option with multi-word values parses each var run`` () =
+    let line = "option name Style type combo default Very Solid var Very Solid var Risky var Normal"
+    match UciOpt.parseOption line with
+    | Some opt ->
+        match opt.OptionType with
+        | UciOpt.Combo (values, def) ->
+            // The old parse produced ["Very";"Solid";"var";"Risky";"var";"Normal"] with default "Very"
+            Assert.Equal<string list>([ "Very Solid"; "Risky"; "Normal" ], values)
+            Assert.Equal("Very Solid", def)
+        | _ -> failwith "Expected combo option"
+    | None -> failwith "Option did not parse"

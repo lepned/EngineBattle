@@ -1875,12 +1875,13 @@ module HardwareInfo =
         let key = footprintCacheKey config
         footprintCache.GetOrAdd(key, fun _ ->
             let engine = createEngine (config, None)
-            initEngine 0 engine
-            // snapshot working‐set
-            let ws = uint64 engine.Process.WorkingSet64
-            // clean up
-            engine.StopProcess()
-            ws)
+            try
+                initEngine 0 engine
+                // snapshot working‐set
+                uint64 engine.Process.WorkingSet64
+            finally
+                // initEngine can throw (WaitForReadyOk failure) — never leak the process
+                try engine.StopProcess() with _ -> ())
 
   /// Sequentially walk your configs, measuring memory usage one at a time, after each measurement we GC to reclaim EVERYTHING.
   let footPrints (configs: EngineConfig seq) : (string * uint64)[] =

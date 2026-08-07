@@ -45,11 +45,6 @@ let parseOption (line: string) =
             parts.[index + 1..] |> String.concat " " |> Some
         | _ -> None
 
-    let getValuesAfter (keyword: string) =
-        match tryFindIndex keyword with
-        | Some index when index + 1 < parts.Length -> Some (parts.[index + 1 ..] |> Array.toList)
-        | _ -> None
-
     let tryParseInt64 (s:string) =
         match Int64.TryParse s with
         | true, v -> Some v
@@ -72,8 +67,27 @@ let parseOption (line: string) =
             let defaultVal = getValue "default" |> Option.bind tryParseInt64 |> Option.defaultValue 0L
             Spin (min, max, defaultVal)
         | Some t when t.Equals("combo", StringComparison.OrdinalIgnoreCase) ->
-            let defaultVal = getValue "default" |> Option.defaultValue ""
-            let values = getValuesAfter "var" |> Option.defaultValue []
+            // Combo values are multi-word: each value is the token run between successive
+            // "var" keywords ("var Very Solid var Risky" → ["Very Solid"; "Risky"]), and
+            // the default runs from "default" to the first "var". The old single-token
+            // parse kept literal "var" entries and rejected legitimate multi-word values.
+            let varIndices =
+                parts
+                |> Array.indexed
+                |> Array.filter (fun (_, p) -> p.Equals("var", StringComparison.OrdinalIgnoreCase))
+                |> Array.map fst
+            let values =
+                [ for i in 0 .. varIndices.Length - 1 do
+                    let start = varIndices.[i] + 1
+                    let stop = if i + 1 < varIndices.Length then varIndices.[i + 1] - 1 else parts.Length - 1
+                    if start <= stop then
+                        yield String.Join(" ", parts.[start .. stop]) ]
+            let defaultVal =
+                match tryFindIndex "default" with
+                | Some di ->
+                    let stop = if varIndices.Length > 0 then varIndices.[0] - 1 else parts.Length - 1
+                    if di + 1 <= stop then String.Join(" ", parts.[di + 1 .. stop]) else ""
+                | None -> ""
             Combo (values, defaultVal)
         | Some t when t.Equals("button", StringComparison.OrdinalIgnoreCase) -> Button
         | Some t when t.Equals("string", StringComparison.OrdinalIgnoreCase) ->
