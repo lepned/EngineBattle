@@ -73,8 +73,12 @@ module OrdoHelper =
   //glbchess uses this ordo commmand:
   //ordo-win64.exe -Q -a 0 -A "Stockfish 17" -D -U "0,1,2,3,4,5,6,7,8,9,10" -s 2000 -n 6  -C ordo_CFS_matrix.csv -o ordo_rating.txt -c ordo_rating.csv -- Ceres.pgn
 
-  // Function to create the command with specified executable path, file, and engine name
-  let createOrdoCommand (executablePath: string) (fileName: string) (engineName: string) =
+  // Function to create the command with specified executable path, file, and engine name.
+  // autoDrawRate adds Ordo's -D (--draw-auto): calibrate the Elo scale to the actual
+  // draw rate of the games. Accurate, but re-fitting the draw model inside each of the
+  // -s error simulations is ~200x slower (0.4s → 75s on a 200-game PGN), so periodic
+  // in-tournament summaries run without it and only the final summary uses it.
+  let createOrdoCommand (executablePath: string) (fileName: string) (engineName: string) (autoDrawRate: bool) =
     // Test if the executable exists
     if not (File.Exists(executablePath)) then
         ConsoleUtils.redConsole "Ordo executable not found"
@@ -84,9 +88,9 @@ module OrdoHelper =
         match String.IsNullOrEmpty engineName with
         | false -> ["-A"; engineName.Trim()] // Engine name as an argument
         | true -> [] // Do not include the -A argument if engineName is not provided
+    let drawArgs = if autoDrawRate then ["-D"] else []
     let baseArgsAfterEngine = [
         "-N"; "0";
-        "-D";
         "-z"; defaultZValue;
         "-n"; defaultThreads;
         "-s"; defaultSkillLevel;
@@ -96,7 +100,7 @@ module OrdoHelper =
     ]
     Cli.Wrap(executablePath)
         .WithWorkingDirectory(Path.GetDirectoryName(executablePath))
-        .WithArguments(baseArgsBeforeEngine @ engineArgs @ baseArgsAfterEngine)
+        .WithArguments(baseArgsBeforeEngine @ engineArgs @ drawArgs @ baseArgsAfterEngine)
 
   let calcPadding (minPadding: int) (delta: int) (selector: 'a -> string) (data: seq<'a>) =
     let lengths = data |> Seq.map (selector >> String.length)
@@ -150,11 +154,11 @@ module OrdoHelper =
 
 
     // Execute the command asynchronously and capture the output
-  let runCommandAsync (cmd:Command) (engineData : PlayerResult seq) (cancellationToken: System.Threading.CancellationToken) =
+  let runCommandAsync (cmd:Command) (engineData : PlayerResult seq) (timeoutSeconds: float) (cancellationToken: System.Threading.CancellationToken) =
       task {
           try
               use cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-              cts.CancelAfter(TimeSpan.FromSeconds(10.0))
+              cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds))
               let sb = new StringBuilder()
               let! result = cmd.ExecuteBufferedAsync(cts.Token)
               //let msg = removeTopThreeLines (result.StandardOutput.Trim())
@@ -168,7 +172,7 @@ module OrdoHelper =
               return sb.ToString()
           with
           | :? OperationCanceledException ->
-              return "Ordo command execution timed out after 10 second"
+              return sprintf "Ordo command execution timed out after %.0f seconds" timeoutSeconds
           | ex -> return sprintf "An error occurred: %s" (ex.Message)
       }
 

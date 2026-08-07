@@ -160,11 +160,12 @@
 		StateHasChanged();
 		if (!string.IsNullOrEmpty(executablePath))
 		{
-			// Or the appropriate path on macOS/Linux
-			var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine);
+			// Or the appropriate path on macOS/Linux. User-triggered one-shot analysis:
+			// use the accurate draw-rate-calibrated mode with a timeout sized for it.
+			var cmd = GameAnalysis.OrdoHelper.createOrdoCommand(executablePath, fullPath, refEngine, true);
 			var ordoCommandString = $"\n Ordo command: {cmd.Arguments} \n";
 			Console.WriteLine(ordoCommandString);
-			var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, System.Threading.CancellationToken.None);
+			var ordo = await GameAnalysis.OrdoHelper.runCommandAsync(cmd, engineLineData, 300.0, System.Threading.CancellationToken.None);
 			Console.WriteLine(ordo);
 		}
 

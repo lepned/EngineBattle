@@ -252,9 +252,12 @@ module Manager =
                 latest <- next
             let (capturedData, ordoPath, pgnPath) = latest
             try
-                let cmd = OrdoHelper.createOrdoCommand ordoPath pgnPath ""
+                // Periodic summaries skip -D (draw-rate auto-calibration): with the
+                // error simulations it takes minutes instead of sub-second. The final
+                // end-of-tournament pass runs once WITH -D (see SendResponse).
+                let cmd = OrdoHelper.createOrdoCommand ordoPath pgnPath "" false
                 Console.WriteLine($"\n Ordo command: {cmd.Arguments} \n")
-                let! ordo = OrdoHelper.runCommandAsync cmd capturedData cts.Token |> Async.AwaitTask
+                let! ordo = OrdoHelper.runCommandAsync cmd capturedData 15.0 cts.Token |> Async.AwaitTask
                 callback.Invoke (Update.GameSummary ordo)
             with e ->
                 Console.WriteLine($"Ordo error: {e.Message}")
@@ -317,6 +320,25 @@ module Manager =
           with e ->
               let msg = $"Error generating periodic results: {e.Message}"
               printfn "%s" msg
+      | EndOfTournament _ ->
+          callback.Invoke update
+          // Final summary: one accurate Ordo pass with automatic draw-rate calibration
+          // (-D). Runs inline (not via the agent) so it is guaranteed to finish before
+          // the console host exits, with a timeout sized for -D + 1000 simulations.
+          try
+              let ordoPath = executablePath()
+              if String.IsNullOrEmpty ordoPath |> not && tournament.ConsoleOnly then
+                  let pgnGames = x.GetPGNGames()
+                  if pgnGames.Count > 0 then
+                      let _, data, _, _ = PGNCalculator.getEngineDataResults pgnGames
+                      let cmd = OrdoHelper.createOrdoCommand ordoPath tournament.PgnOutPath "" true
+                      Console.WriteLine($"\n Final Ordo pass (draw-rate calibrated, may take a while): {cmd.Arguments} \n")
+                      let ordo =
+                          OrdoHelper.runCommandAsync cmd (data |> Seq.toArray) 300.0 cts.Token
+                          |> Async.AwaitTask |> Async.RunSynchronously
+                      callback.Invoke (Update.GameSummary ordo)
+          with e ->
+              Console.WriteLine($"Final Ordo error: {e.Message}")
       |_ -> callback.Invoke update
         
     member _.AddTournament tourny = tournament <- tourny 
