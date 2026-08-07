@@ -54,11 +54,17 @@ module Engine =
           else
               None
 
+      // StreamWriter is not thread-safe: ">>>" lines come from the command thread while
+      // "<<<" lines come from the process-output callback thread, and Quit disposes the
+      // writer while buffered output events may still be in flight.
+      let engineLogLock = obj()
       let logIO (direction: string) (text: string) =
           match engineLogWriter with
           | Some sw ->
               let ts = DateTime.Now.ToString("HH:mm:ss.fff")
-              sw.WriteLine($"[{ts}] {direction} {text}")
+              lock engineLogLock (fun () ->
+                try sw.WriteLine($"[{ts}] {direction} {text}")
+                with :? ObjectDisposedException -> ())
           | None -> ()
 
       let isLc0 = (Regex.Match(config.Path, "lc0", RegexOptions.IgnoreCase)).Success
@@ -173,76 +179,88 @@ module Engine =
         } |> Async.RunSynchronously
 
       let bestLine callback (engineName:string) (line:string)  =
-        let move, ponder = line.Split().[1], if line.Contains "ponder" then (line.Split().[3]) else ""
+        // Parse defensively: a bare "bestmove", short lines and "bestmove (none)"
+        // (Stockfish in terminal positions) must still fire Done so a waiting caller
+        // completes — previously the token access threw before Done and the exception
+        // was silently swallowed by processLine's catch.
+        let tokens = line.Split([|' '|], StringSplitOptions.RemoveEmptyEntries)
         callback (Done engineName)
-        // Snapshot everything board-derived under the lock, then build the record and
-        // invoke callbacks outside it.
-        let snapshot =
-          lock moveBoardLock (fun () ->
-            match tryGetTMoveFromUciNotation &moveBoard move with
-            | Some tmove ->
-                let shortSan = getSanNotationFromTMove &moveBoard tmove
-                let moveNum = moveBoard.MoveNumber()
-                let whiteToMove = moveBoard.Position.STM = 0uy
-                let fen = BoardHelper.posToFen moveBoard.Position
-                let mutable posToCheck = moveBoard.Position
-                let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                let isCastling = tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY
-                Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling)
-            | None -> None)
-        match snapshot with
-        |Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling) ->
-          let eval =
-            if evalList.Length > 0 then
-              evalList.[0]
-            else
-              if fullEvalList.Length > 0 then fullEvalList[0] else MiscTypes.EvalType.CP 0.0
-          let pv =
-            if String.IsNullOrEmpty(Player1PV) then
-              let prefix = if whiteToMove then sprintf "%d." moveNum else sprintf "%d..." moveNum
-              prefix + shortSan
-            else Player1PV
-          let moveDetail =
-            {
-              LongSan = move
-              FromSq = move[0..1]
-              ToSq = move[2..3]
-              Color = "w"
-              IsCastling = isCastling
-              Comments = String.Empty
-              }
-          let moveAndFen = {Move = moveDetail; ShortSan=shortSan; FenAfterMove = fen}
-          let bestMove = 
-            { Player=engineName
-              Move=move
-              Ponder= ponder
-              Eval= eval
-              TimeLeft = TimeSpan.Zero
-              MoveTime = TimeSpan.Zero
-              NPS=0.0 // not tracked on the bestmove path; Status updates carry the live NPS
-              Nodes=numberOfNodes
-              FEN = fen
-              PV=pv 
-              LongPV = pv
-              MoveAndFen = moveAndFen
-              MoveHistory = ""
-              Move50 = 0
-              R3 = 1
-              PiecesLeft = piecesLeft
-              AdjDrawML = 10
-              }
-                    
-          callback(BestMove bestMove)
-          fullEvalList <- eval::fullEvalList
-          evalList <- []
-          depth <- 0
-        |_ ->
-          let msg = $"{engineName} played an illegal move here: {line} "
-          let boardState =
+        if tokens.Length < 2 || tokens.[1] = "(none)" then
+          logDebug (sprintf "%s: bestmove line carries no move: '%s'" engineName line)
+        else
+          let move = tokens.[1]
+          let ponder =
+            match tokens |> Array.tryFindIndex ((=) "ponder") with
+            | Some i when i + 1 < tokens.Length -> tokens.[i + 1]
+            | _ -> ""
+          // Snapshot everything board-derived under the lock, then build the record and
+          // invoke callbacks outside it.
+          let snapshot =
             lock moveBoardLock (fun () ->
-              $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.Position.Ply} ")
-          printfn "%s" msg
-          printfn "%s" boardState
+              match tryGetTMoveFromUciNotation &moveBoard move with
+              | Some tmove ->
+                  let shortSan = getSanNotationFromTMove &moveBoard tmove
+                  let moveNum = moveBoard.MoveNumber()
+                  let whiteToMove = moveBoard.Position.STM = 0uy
+                  let fen = BoardHelper.posToFen moveBoard.Position
+                  let mutable posToCheck = moveBoard.Position
+                  let piecesLeft = PositionOps.numberOfPieces &posToCheck
+                  let isCastling = tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY
+                  Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling)
+              | None -> None)
+          match snapshot with
+          |Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling) ->
+            let eval =
+              if evalList.Length > 0 then
+                evalList.[0]
+              else
+                if fullEvalList.Length > 0 then fullEvalList[0] else MiscTypes.EvalType.CP 0.0
+            let pv =
+              if String.IsNullOrEmpty(Player1PV) then
+                let prefix = if whiteToMove then sprintf "%d." moveNum else sprintf "%d..." moveNum
+                prefix + shortSan
+              else Player1PV
+            let moveDetail =
+              {
+                LongSan = move
+                FromSq = move[0..1]
+                ToSq = move[2..3]
+                Color = "w"
+                IsCastling = isCastling
+                Comments = String.Empty
+                }
+            let moveAndFen = {Move = moveDetail; ShortSan=shortSan; FenAfterMove = fen}
+            let bestMove =
+              { Player=engineName
+                Move=move
+                Ponder= ponder
+                Eval= eval
+                TimeLeft = TimeSpan.Zero
+                MoveTime = TimeSpan.Zero
+                NPS=0.0 // not tracked on the bestmove path; Status updates carry the live NPS
+                Nodes=numberOfNodes
+                FEN = fen
+                PV=pv
+                LongPV = pv
+                MoveAndFen = moveAndFen
+                MoveHistory = ""
+                Move50 = 0
+                R3 = 1
+                PiecesLeft = piecesLeft
+                AdjDrawML = 10
+                }
+
+            callback(BestMove bestMove)
+            fullEvalList <- eval::fullEvalList
+            evalList <- []
+            depth <- 0
+          |_ ->
+            let msg = $"{engineName} played an illegal move here: {line} "
+            let boardState =
+              lock moveBoardLock (fun () ->
+                $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.Position.Ply} ")
+            printfn "%s" msg
+            printfn "%s" boardState
 
       let regular callback (engineName:string) (line:string) =
         let mutable avgNps = 0.0
@@ -522,42 +540,48 @@ module Engine =
           
           
           engineProcess.OutputDataReceived.Add(fun args ->
-              if not (String.IsNullOrEmpty args.Data) then
-                logIO "<<<" args.Data
-                match winboardHandler with
-                | Some handler ->
-                    // Translate Winboard output to UCI
-                    logDebug $"[{name}] Received output: {args.Data}"
-                    let translated = handler.ProcessOutput(args.Data)
-                    match translated with
-                    | Some uciLine ->
-                        logDebug $"[{name}] Translated to UCI: {uciLine}"
-                        // Handle UCI-translated output
-                        if inUciResponsMode then
-                          if uciLine = "uciok" then
-                            inUciResponsMode <- false
+              try
+                if not (String.IsNullOrEmpty args.Data) then
+                  logIO "<<<" args.Data
+                  match winboardHandler with
+                  | Some handler ->
+                      // Translate Winboard output to UCI
+                      logDebug $"[{name}] Received output: {args.Data}"
+                      let translated = handler.ProcessOutput(args.Data)
+                      match translated with
+                      | Some uciLine ->
+                          logDebug $"[{name}] Translated to UCI: {uciLine}"
+                          // Handle UCI-translated output
+                          if inUciResponsMode then
+                            if uciLine = "uciok" then
+                              inUciResponsMode <- false
+                            else
+                              UciOption.addOptionToMap optionsMap uciLine
+                          elif inIsreadyMode then
+                            if uciLine = "readyok" then
+                              inIsreadyMode <- false
                           else
-                            UciOption.addOptionToMap optionsMap uciLine
-                        elif inIsreadyMode then
-                          if uciLine = "readyok" then
-                            inIsreadyMode <- false
+                            processLine callbackFunc name uciLine
+                      | None ->
+                          // Not translated - this is normal for some Winboard output
+                          logDebug $"[{name}] Output not translated (normal for some Winboard output)"
+                  | None ->
+                      // Normal UCI processing
+                      if inUciResponsMode then
+                        if args.Data = "uciok" then
+                          inUciResponsMode <- false
                         else
-                          processLine callbackFunc name uciLine
-                    | None ->
-                        // Not translated - this is normal for some Winboard output
-                        logDebug $"[{name}] Output not translated (normal for some Winboard output)"
-                | None ->
-                    // Normal UCI processing
-                    if inUciResponsMode then  
-                      if args.Data = "uciok" then              
-                        inUciResponsMode <- false
+                          UciOption.addOptionToMap optionsMap args.Data
+                      elif inIsreadyMode then
+                        if args.Data = "readyok" then
+                          inIsreadyMode <- false
                       else
-                        UciOption.addOptionToMap optionsMap args.Data
-                    elif inIsreadyMode then
-                      if args.Data = "readyok" then
-                        inIsreadyMode <- false           
-                    else 
-                      processLine callbackFunc name args.Data)
+                        processLine callbackFunc name args.Data
+              with ex ->
+                  // An exception escaping this handler is unhandled on a threadpool
+                  // thread and terminates the whole host process (the stderr handler
+                  // below already guards the same way).
+                  logError (sprintf "Error processing output line from %s: %s" name ex.Message))
           if engineProcess.Start() then
               // Ensure LF newline and immediate flush so WriteLine uses LF on all platforms
               engineProcess.StandardInput.NewLine <- "\n"
@@ -769,7 +793,7 @@ module Engine =
                     engineProcess.Close()
                     engineProcess.Dispose()
                     match engineLogWriter with
-                    | Some sw -> sw.Dispose()
+                    | Some sw -> lock engineLogLock (fun () -> sw.Dispose())
                     | None -> ()
                     printfn "Engine %s has been shut down." name
                 with
@@ -1265,8 +1289,10 @@ module Engine =
                     if String.IsNullOrEmpty diagnostics |> not then
                        RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkYellow (sprintf "Engine diagnostics: %s" diagnostics))
                 else
+                  // passed is already false; the offending options were printed in red
+                  // above. (A raise here was only caught by this function's own catch-all,
+                  // which re-logged it as an "unexpected error".)
                   RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Some setoptions did not pass validation (check for red lines in console) for %s" name)
-                  raise (System.Exception(sprintf "Some setoptions did not pass validation for %s" name))
         with
         | :? OperationCanceledException ->
             passed <- false
