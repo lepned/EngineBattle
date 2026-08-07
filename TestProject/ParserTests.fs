@@ -1252,3 +1252,90 @@ let ``eval annotations parse under a comma-decimal locale`` (culture: string) =
         Assert.Equal(-200.0, ChessLibrary.EngineTypes.Annotation.parseEvalToken "-M5")
     finally
         System.Threading.Thread.CurrentThread.CurrentCulture <- original
+
+// ============================================================================
+// Parser state isolation and variation color/ply regression tests
+// ============================================================================
+
+let private mainlineSans (game: PgnGame) = game.Mainline |> Seq.map (fun m -> m.San) |> Seq.toList
+let private mainlineColors (game: PgnGame) = game.Mainline |> Seq.map (fun m -> m.Color) |> Seq.toList
+let private mainlinePlies (game: PgnGame) = game.Mainline |> Seq.map (fun m -> m.Ply) |> Seq.toList
+
+[<Fact>]
+let ``variation on a white move gets white color and the parent's ply`` () =
+    let pgn = """[Event "VarTest"]
+[White "A"]
+[Black "B"]
+[Result "*"]
+
+1. e4 (1. d4) 1... e5 2. Nf3 *
+"""
+    let game = FullPGNParser.parsePgnString pgn |> Seq.exactlyOne
+    Assert.Equal<string list>([ "e4"; "e5"; "Nf3" ], mainlineSans game)
+    Assert.Equal<string list>([ "w"; "b"; "w" ], mainlineColors game)
+    Assert.Equal<int list>([ 0; 1; 2 ], mainlinePlies game)
+    let variation = game.Mainline[0].Variations[0]
+    let d4 = variation[0]
+    Assert.Equal("d4", d4.San)
+    Assert.Equal("w", d4.Color)
+    Assert.Equal(0, d4.Ply)
+
+[<Fact>]
+let ``odd-length variation on a black move does not flip subsequent mainline colors`` () =
+    let pgn = """[Event "VarTest"]
+[White "A"]
+[Black "B"]
+[Result "*"]
+
+1. e4 e5 (1... c5) 2. Nf3 Nc6 *
+"""
+    let game = FullPGNParser.parsePgnString pgn |> Seq.exactlyOne
+    Assert.Equal<string list>([ "e4"; "e5"; "Nf3"; "Nc6" ], mainlineSans game)
+    Assert.Equal<string list>([ "w"; "b"; "w"; "b" ], mainlineColors game)
+    Assert.Equal<int list>([ 0; 1; 2; 3 ], mainlinePlies game)
+    let variation = game.Mainline[1].Variations[0]
+    let c5 = variation[0]
+    Assert.Equal("c5", c5.San)
+    Assert.Equal("b", c5.Color)
+    Assert.Equal(1, c5.Ply)
+
+[<Fact>]
+let ``concurrent parses do not interleave state`` () =
+    let pgnA = """[Event "A"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 *
+"""
+    let pgnB = """[Event "B"]
+[White "Gamma"]
+[Black "Delta"]
+[Result "*"]
+
+1. d4 d5 2. c4 c6 3. Nc3 Nf6 *
+"""
+    Parallel.For(0, 200, fun i ->
+        let content, expectedWhite, expectedSans =
+            if i % 2 = 0 then pgnA, "Alpha", [ "e4"; "e5"; "Nf3"; "Nc6" ]
+            else pgnB, "Gamma", [ "d4"; "d5"; "c4"; "c6"; "Nc3"; "Nf6" ]
+        let game = FullPGNParser.parsePgnString content |> Seq.exactlyOne
+        Assert.Equal(expectedWhite, game.GameMetaData.White)
+        Assert.Equal<string list>(expectedSans, mainlineSans game))
+    |> ignore
+
+[<Fact>]
+let ``re-enumerating a parsed sequence yields the same games`` () =
+    let pgn = """[Event "A"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 *
+"""
+    let games = FullPGNParser.parsePgnString pgn
+    let first = games |> Seq.toList
+    let second = games |> Seq.toList
+    Assert.Equal(first.Length, second.Length)
+    Assert.Equal(1, second.Head.GameNumber)
+    Assert.Equal<string list>(mainlineSans first.Head, mainlineSans second.Head)

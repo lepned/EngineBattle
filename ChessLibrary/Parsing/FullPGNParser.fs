@@ -10,46 +10,83 @@ open ChessLibrary.MiscTypes
 open TypesDef.CoreTypes
 
 // ============================================================================
-// Shared state for parsing
+// Parser state
 // ============================================================================
 
-// Header state
-let mutable private gameNumber = 0
-let mutable private event' = ""
-let mutable private site = ""
-let mutable private date = ""
-let mutable private round = ""
-let mutable private white = ""
-let mutable private black = ""
-let mutable private result = ""
-let mutable private resultFoundInMovetext = false
-let mutable private fen = ""
-let mutable private reason = ResultReason.NotStarted
-let mutable private openingHash = ""
-let mutable private gameTime = 0L
-let mutable private plyCount = 0
-let mutable private openingName = ""
-let mutable private deviations = 0
-let private otherTags = ResizeArray<Header>()
+// All parse state lives in a per-parse instance created inside each seq { }.
+// This makes concurrent parses (Blazor pages, tournament workers, the PGN
+// agent's GetPGNGames) independent, and makes re-enumerating a returned seq
+// start from a fresh state instead of continuing from stale module state.
+type private ParserState =
+  { // Header state
+    mutable GameNumber: int
+    mutable Event: string
+    mutable Site: string
+    mutable Date: string
+    mutable Round: string
+    mutable White: string
+    mutable Black: string
+    mutable Result: string
+    mutable ResultFoundInMovetext: bool
+    mutable Fen: string
+    mutable Reason: ResultReason
+    mutable OpeningHash: string
+    mutable GameTime: int64
+    mutable PlyCount: int
+    mutable OpeningName: string
+    mutable Deviations: int
+    OtherTags: ResizeArray<Header>
+    // Movetext state
+    mutable CurrentMoveNr: int
+    mutable WhiteSan: string
+    mutable BlackSan: string
+    mutable PendingComment: string
+    // Variation-aware tree state
+    mutable CurrentPly: int
+    MainlinePly: ResizeArray<PlyMove>
+    RootVariations: ResizeArray<PlyLine>
+    mutable CurrentLine: PlyLine
+    LineStack: Stack<PlyLine>
+    PlyStack: Stack<int>
+    // Saved WhiteSan/BlackSan across '(' ')' so a variation gets the parent
+    // move's color and the mainline color toggle survives odd-length variations
+    SanStack: Stack<string * string>
+    mutable LastParsedSan: string option
+    // NAG state
+    PendingNags: ResizeArray<int> }
 
-let mutable private currentMoveNr = 1
-let mutable private whiteSan = ""
-let mutable private blackSan = ""
-let mutable private whiteComment = ""
-let mutable private blackComment = ""
-let mutable private pendingComment = ""
-
-// Variation-aware tree state
-let mutable private currentPly = 0
-let private mainlinePly = ResizeArray<PlyMove>(128)
-let private rootVariations = ResizeArray<PlyLine>()
-let mutable private currentLine: PlyLine = mainlinePly
-let private lineStack = Stack<PlyLine>()
-let private plyStack = Stack<int>()
-let mutable private lastParsedSan: string option = None
-
-// NAG state
-let mutable private pendingNags = ResizeArray<int>()
+  static member Create() =
+    let mainline = ResizeArray<PlyMove>(128)
+    { GameNumber = 0
+      Event = ""
+      Site = ""
+      Date = ""
+      Round = ""
+      White = ""
+      Black = ""
+      Result = ""
+      ResultFoundInMovetext = false
+      Fen = ""
+      Reason = ResultReason.NotStarted
+      OpeningHash = ""
+      GameTime = 0L
+      PlyCount = 0
+      OpeningName = ""
+      Deviations = 0
+      OtherTags = ResizeArray<Header>()
+      CurrentMoveNr = 1
+      WhiteSan = ""
+      BlackSan = ""
+      PendingComment = ""
+      CurrentPly = 0
+      MainlinePly = mainline
+      RootVariations = ResizeArray<PlyLine>()
+      CurrentLine = mainline
+      LineStack = Stack<PlyLine>()
+      PlyStack = Stack<int>()
+      SanStack = Stack<string * string>()
+      LastParsedSan = None
+      PendingNags = ResizeArray<int>() }
 
 // ============================================================================
 // Helper functions (inline for performance)
@@ -65,52 +102,52 @@ let inline private isPromoPiece c = isPiece c || c = 'k' || c = 'q' || c = 'r' |
 // State management
 // ============================================================================
 
-let private resetState () =
-  event' <- ""
-  site <- ""
-  date <- ""
-  round <- ""
-  white <- ""
-  black <- ""
-  result <- ""
-  resultFoundInMovetext <- false
-  fen <- ""
-  reason <- ResultReason.NotStarted
-  openingHash <- ""
-  gameTime <- 0L
-  plyCount <- 0
-  openingName <- ""
-  deviations <- 0
-  otherTags.Clear()
-  currentMoveNr <- 1
-  whiteSan <- ""
-  blackSan <- ""
-  whiteComment <- ""
-  blackComment <- ""
-  pendingComment <- ""
-  currentPly <- 0
-  mainlinePly.Clear()
-  rootVariations.Clear()
-  currentLine <- mainlinePly
-  lineStack.Clear()
-  plyStack.Clear()
-  lastParsedSan <- None
-  pendingNags.Clear()
+/// Reset per-game state (GameNumber intentionally survives across games)
+let private resetState (st: ParserState) =
+  st.Event <- ""
+  st.Site <- ""
+  st.Date <- ""
+  st.Round <- ""
+  st.White <- ""
+  st.Black <- ""
+  st.Result <- ""
+  st.ResultFoundInMovetext <- false
+  st.Fen <- ""
+  st.Reason <- ResultReason.NotStarted
+  st.OpeningHash <- ""
+  st.GameTime <- 0L
+  st.PlyCount <- 0
+  st.OpeningName <- ""
+  st.Deviations <- 0
+  st.OtherTags.Clear()
+  st.CurrentMoveNr <- 1
+  st.WhiteSan <- ""
+  st.BlackSan <- ""
+  st.PendingComment <- ""
+  st.CurrentPly <- 0
+  st.MainlinePly.Clear()
+  st.RootVariations.Clear()
+  st.CurrentLine <- st.MainlinePly
+  st.LineStack.Clear()
+  st.PlyStack.Clear()
+  st.SanStack.Clear()
+  st.LastParsedSan <- None
+  st.PendingNags.Clear()
 
-let private hasGame () =
-   whiteSan <> "" || blackSan <> "" || mainlinePly.Count > 0
+let private hasGame (st: ParserState) =
+   st.WhiteSan <> "" || st.BlackSan <> "" || st.MainlinePly.Count > 0
 
-let private hasHeaders () =
-  white <> "" || black <> "" || event' <> "" || result <> ""
+let private hasHeaders (st: ParserState) =
+  st.White <> "" || st.Black <> "" || st.Event <> "" || st.Result <> ""
 
 // ============================================================================
 // PlyMove tree management
 // ============================================================================
 
-let private appendPlyMove (san: string) (color: string) =
-  let ply = currentPly
+let private appendPlyMove (st: ParserState) (san: string) (color: string) =
+  let ply = st.CurrentPly
   let moveNr = (ply / 2) + 1
-  let nags = if pendingNags.Count > 0 then pendingNags |> Seq.toList else []
+  let nags = if st.PendingNags.Count > 0 then st.PendingNags |> Seq.toList else []
   let node =
     { Ply = ply
       MoveNumber = moveNr
@@ -119,22 +156,20 @@ let private appendPlyMove (san: string) (color: string) =
       Comment = ""
       Nags = nags
       Variations = ResizeArray() }
-  currentLine.Add node
-  currentPly <- currentPly + 1
-  lastParsedSan <- Some san
-  pendingNags.Clear()
+  st.CurrentLine.Add node
+  st.CurrentPly <- st.CurrentPly + 1
+  st.LastParsedSan <- Some san
+  st.PendingNags.Clear()
   if color = "b" then
-      whiteSan <- ""
-      blackSan <- ""
-      whiteComment <- ""
-      blackComment <- ""
+      st.WhiteSan <- ""
+      st.BlackSan <- ""
 
-let private tryUpdateLastNodeComment (cmt: string) =
+let private tryUpdateLastNodeComment (st: ParserState) (cmt: string) =
   if not (String.IsNullOrWhiteSpace cmt) then
-    match currentLine |> Seq.tryLast with
+    match st.CurrentLine |> Seq.tryLast with
     | Some node -> node.Comment <- cmt; true
     | None ->
-        match rootVariations |> Seq.tryLast with
+        match st.RootVariations |> Seq.tryLast with
         | Some line when line.Count > 0 ->
             let lastNode = line[line.Count - 1]
             lastNode.Comment <- cmt
@@ -143,11 +178,52 @@ let private tryUpdateLastNodeComment (cmt: string) =
   else
     false
 
+/// Record a parsed SAN token as the next move, using the WhiteSan toggle
+/// (empty = white to move) with the FEN black-to-move special case.
+let private recordSanMove (st: ParserState) (san: string) =
+  if st.WhiteSan = "" then
+    if st.MainlinePly.Count = 0 && st.Fen <> "" && st.Fen.Contains(" b ") then
+      st.BlackSan <- san
+      appendPlyMove st san "b"
+      if st.PendingComment <> "" then
+        tryUpdateLastNodeComment st st.PendingComment |> ignore
+        st.PendingComment <- ""
+    else
+      st.WhiteSan <- san
+      appendPlyMove st san "w"
+      if st.PendingComment <> "" then
+        tryUpdateLastNodeComment st st.PendingComment |> ignore
+        st.PendingComment <- ""
+  else
+    st.BlackSan <- san
+    appendPlyMove st san "b"
+
+/// Enter a variation: save line/ply/color-toggle state, then position the
+/// parser so the variation's first move replaces the last move of the current
+/// line (same ply, same color). The saved state is restored on ')'.
+let private lineStackPush (st: ParserState) (variationLine: PlyLine) =
+  st.LineStack.Push st.CurrentLine
+  st.PlyStack.Push st.CurrentPly
+  st.SanStack.Push (st.WhiteSan, st.BlackSan)
+  match st.CurrentLine |> Seq.tryLast with
+  | Some parent ->
+      st.CurrentPly <- parent.Ply
+      if parent.Color = "w" then
+        // Variation replaces a white move: next parsed move is white
+        st.WhiteSan <- ""
+        st.BlackSan <- ""
+      else
+        // Variation replaces a black move: next parsed move is black
+        st.WhiteSan <- parent.San
+        st.BlackSan <- ""
+  | None -> () // Variation with no preceding move: keep current ply/toggle
+  st.CurrentLine <- variationLine
+
 // ============================================================================
 // Text-based header parsing
 // ============================================================================
 
-let private parseHeaderTexLine (line: string) =
+let private parseHeaderTexLine (st: ParserState) (line: string) =
   let spanLine = line.AsSpan()
   let openBracket = spanLine.IndexOf('[')
   let closeBracket = spanLine.LastIndexOf(']')
@@ -159,41 +235,41 @@ let private parseHeaderTexLine (line: string) =
       let key = headerSpan.Slice(0, firstQuote).Trim().ToString()
       let value = headerSpan.Slice(firstQuote + 1, lastQuote - firstQuote - 1).ToString()
       match key with
-      | "Event" -> event' <- value
-      | "Site" -> site <- value
-      | "Date" -> date <- value
-      | "Round" -> round <- value
-      | "White" -> white <- value
-      | "Black" -> black <- value
-      | "Result" -> result <- value
-      | "FEN" | "Fen" -> fen <- value
+      | "Event" -> st.Event <- value
+      | "Site" -> st.Site <- value
+      | "Date" -> st.Date <- value
+      | "Round" -> st.Round <- value
+      | "White" -> st.White <- value
+      | "Black" -> st.Black <- value
+      | "Result" -> st.Result <- value
+      | "FEN" | "Fen" -> st.Fen <- value
       | "Reason" ->
-          try reason <- stringToResultReason value
+          try st.Reason <- stringToResultReason value
           with _ -> () // Ignore invalid reason values
-      | "OpeningHash" -> openingHash <- value
+      | "OpeningHash" -> st.OpeningHash <- value
       | "GameTime" ->
           match Int64.TryParse(value) with
-          | true, v -> gameTime <- v
+          | true, v -> st.GameTime <- v
           | _ -> ()
       | "Ply" ->
           match Int32.TryParse(value) with
-          | true, v -> plyCount <- v
+          | true, v -> st.PlyCount <- v
           | _ -> ()
       | "Opening" ->
-          openingName <- value
-          otherTags.Add({ Key = key; Value = value })
+          st.OpeningName <- value
+          st.OtherTags.Add({ Key = key; Value = value })
       | "Deviations" ->
           match Int32.TryParse(value) with
-          | true, v -> deviations <- v
+          | true, v -> st.Deviations <- v
           | _ -> ()
-      | _ -> otherTags.Add({ Key = key; Value = value })
+      | _ -> st.OtherTags.Add({ Key = key; Value = value })
 
 // ============================================================================
 // Span-based movetext parsing (iterative, with variation stack)
 // ============================================================================
 
 /// Parse movetext from a span, handling variations iteratively with an explicit stack
-let private parseMoveTextLine (line: string) =
+let private parseMoveTextLine (st: ParserState) (line: string) =
   let spanLine = line.AsSpan()
   let len = spanLine.Length
   let mutable p = 0
@@ -204,7 +280,7 @@ let private parseMoveTextLine (line: string) =
   if p < len && (spanLine[p] = ';' || spanLine[p] = '%') then
     // Line comment - extract and store as pending
     if p + 1 < len then
-      pendingComment <- new string(spanLine.Slice(p + 1).Trim())
+      st.PendingComment <- new string(spanLine.Slice(p + 1).Trim())
     p <- len
   else
     while p < len do
@@ -229,64 +305,34 @@ let private parseMoveTextLine (line: string) =
             if p > startComment then new string(spanLine.Slice(startComment, p - startComment).Trim())
             else ""
           if p < len && spanLine[p] = '}' then p <- p + 1
-          let mutable i = p
-          while i < len && Char.IsWhiteSpace(spanLine[i]) do i <- i + 1
-          let tailResultOnly =
-            if i >= len then
-              false
-            else
-              let tail = spanLine.Slice(i)
-              let mutable after = i
-              let mutable matched = true
-              if tail.StartsWith("1-0") then
-                after <- i + 3
-              elif tail.StartsWith("0-1") then
-                after <- i + 3
-              elif tail.StartsWith("1/2-1/2") then
-                after <- i + 7
-              elif tail.StartsWith("*") then
-                after <- i + 1
-              elif tail.StartsWith("Ť-Ť") then
-                after <- i + 3
-              else
-                matched <- false
-              if not matched then
-                false
-              else
-                while after < len && Char.IsWhiteSpace(spanLine[after]) do after <- after + 1
-                after >= len
 
           // Always try to attach to the most recent move first
-          let attached = tryUpdateLastNodeComment comment
+          let attached = tryUpdateLastNodeComment st comment
           if not attached then
-            pendingComment <- if pendingComment = "" then comment else pendingComment + " " + comment
+            st.PendingComment <- if st.PendingComment = "" then comment else st.PendingComment + " " + comment
 
         // Variation start (
         elif c0 = '(' then
           p <- p + 1
           // Push current line and ply onto stack
           let variationLine = ResizeArray<PlyMove>()
-          match currentLine |> Seq.tryLast with
+          match st.CurrentLine |> Seq.tryLast with
           | Some parent -> parent.Variations.Add variationLine
-          | None -> rootVariations.Add variationLine
-          lineStack.Push currentLine
-          plyStack.Push currentPly
-          // Set ply to parent's ply + 1 for the variation
-          let parentPly =
-            match currentLine |> Seq.tryLast with
-            | Some node -> node.Ply
-            | None -> currentPly - 1
-          currentPly <- parentPly + 1
-          currentLine <- variationLine
+          | None -> st.RootVariations.Add variationLine
+          lineStackPush st variationLine
 
         // Variation end )
         elif c0 = ')' then
           p <- p + 1
           // Pop back to parent line
-          if lineStack.Count > 0 then
-            currentLine <- lineStack.Pop()
-          if plyStack.Count > 0 then
-            currentPly <- plyStack.Pop()
+          if st.LineStack.Count > 0 then
+            st.CurrentLine <- st.LineStack.Pop()
+          if st.PlyStack.Count > 0 then
+            st.CurrentPly <- st.PlyStack.Pop()
+          if st.SanStack.Count > 0 then
+            let (w, b) = st.SanStack.Pop()
+            st.WhiteSan <- w
+            st.BlackSan <- b
 
         // NAG ($1, $14, etc.)
         elif c0 = '$' then
@@ -296,14 +342,14 @@ let private parseMoveTextLine (line: string) =
           if p > startNag then
             let nagStr = new string(spanLine.Slice(startNag, p - startNag))
             match Int32.TryParse(nagStr) with
-            | true, nagVal -> pendingNags.Add(nagVal)
+            | true, nagVal -> st.PendingNags.Add(nagVal)
             | _ -> ()
 
         // Game termination *
         elif c0 = '*' then
           p <- p + 1
-          if result = "" then result <- "*"
-          resultFoundInMovetext <- true
+          if st.Result = "" then st.Result <- "*"
+          st.ResultFoundInMovetext <- true
 
         // Move number (1. or 1... or just digits followed by dots)
         elif isDigit c0 && not (c0 = '0' && p + 1 < len && spanLine[p + 1] = '-') then
@@ -315,22 +361,22 @@ let private parseMoveTextLine (line: string) =
           while p < len && Char.IsWhiteSpace(spanLine[p]) do p <- p + 1
           // Skip dots (including Unicode ellipsis …)
           while p < len && (spanLine[p] = '.' || spanLine[p] = '…') do p <- p + 1
-          if nr > 0 then currentMoveNr <- nr
+          if nr > 0 then st.CurrentMoveNr <- nr
 
         // Result tokens (1-0, 0-1, 1/2-1/2, ½-½)
         elif c0 = '1' || (c0 = '0' && p + 1 < len && spanLine[p + 1] = '-' && (p + 2 >= len || spanLine[p + 2] <> '0')) || c0 = '½' then
           let tail = spanLine.Slice(p)
           if tail.StartsWith("1-0".AsSpan()) then
-            if result = "" then result <- "1-0"; resultFoundInMovetext <- true
+            if st.Result = "" then st.Result <- "1-0"; st.ResultFoundInMovetext <- true
             p <- p + 3
           elif tail.StartsWith("0-1".AsSpan()) then
-            if result = "" then result <- "0-1"; resultFoundInMovetext <- true
+            if st.Result = "" then st.Result <- "0-1"; st.ResultFoundInMovetext <- true
             p <- p + 3
           elif tail.StartsWith("1/2-1/2".AsSpan()) then
-            if result = "" then result <- "1/2-1/2"; resultFoundInMovetext <- true
+            if st.Result = "" then st.Result <- "1/2-1/2"; st.ResultFoundInMovetext <- true
             p <- p + 7
           elif tail.StartsWith("½-½".AsSpan()) then
-            if result = "" then result <- "1/2-1/2"; resultFoundInMovetext <- true
+            if st.Result = "" then st.Result <- "1/2-1/2"; st.ResultFoundInMovetext <- true
             p <- p + 3
           else
             // Fallback: maybe it's a SAN move starting with 0 (0-0 castling)
@@ -344,24 +390,7 @@ let private parseMoveTextLine (line: string) =
               // Annotation symbols
               while p < len && (spanLine[p] = '!' || spanLine[p] = '?') do p <- p + 1
               if san <> "" then
-                if whiteSan = "" then
-                  if mainlinePly.Count = 0 && fen <> "" && fen.Contains(" b ") then
-                    blackSan <- san
-                    appendPlyMove san "b"
-                    if pendingComment <> "" then
-                      blackComment <- pendingComment
-                      tryUpdateLastNodeComment pendingComment |> ignore
-                      pendingComment <- ""
-                  else
-                    whiteSan <- san
-                    appendPlyMove san "w"
-                    if pendingComment <> "" then
-                      whiteComment <- pendingComment
-                      tryUpdateLastNodeComment pendingComment |> ignore
-                      pendingComment <- ""
-                else
-                  blackSan <- san
-                  appendPlyMove san "b"
+                recordSanMove st san
             else
               p <- p + 1
 
@@ -395,24 +424,7 @@ let private parseMoveTextLine (line: string) =
           if p > start then
             let san = new string(spanLine.Slice(start, p - start))
             if san <> "" then
-              if whiteSan = "" then
-                if mainlinePly.Count = 0 && fen <> "" && fen.Contains(" b ") then
-                  blackSan <- san
-                  appendPlyMove san "b"
-                  if pendingComment <> "" then
-                    blackComment <- pendingComment
-                    tryUpdateLastNodeComment pendingComment |> ignore
-                    pendingComment <- ""
-                else
-                  whiteSan <- san
-                  appendPlyMove san "w"
-                  if pendingComment <> "" then
-                    whiteComment <- pendingComment
-                    tryUpdateLastNodeComment pendingComment |> ignore
-                    pendingComment <- ""
-              else
-                blackSan <- san
-                appendPlyMove san "b"
+              recordSanMove st san
           else
             p <- p + 1
 
@@ -430,40 +442,37 @@ let private parseMoveTextLine (line: string) =
 let inline moveNumberCount ply =
   if ply % 2 = 0 then ply / 2 else (ply / 2) + 1
 
-let private buildGameFull (raw:string) : PgnGame =
-  gameNumber <- gameNumber + 1
+let private buildGameFull (st: ParserState) (raw: string) : PgnGame =
+  st.GameNumber <- st.GameNumber + 1
   let metadata: GameMetadata =
-    { Event = event'
-      Site = site
-      Date = date
-      Round = round
-      White = white
-      Black = black
-      Result = result
-      Reason = reason
-      OpeningHash = openingHash
-      GameTime = gameTime
-      Moves = moveNumberCount mainlinePly.Count
-      OpeningName = openingName
-      Fen = fen
-      Deviations = deviations
+    { Event = st.Event
+      Site = st.Site
+      Date = st.Date
+      Round = st.Round
+      White = st.White
+      Black = st.Black
+      Result = st.Result
+      Reason = st.Reason
+      OpeningHash = st.OpeningHash
+      GameTime = st.GameTime
+      Moves = moveNumberCount st.MainlinePly.Count
+      OpeningName = st.OpeningName
+      Fen = st.Fen
+      Deviations = st.Deviations
       StartEvals = []
-      OtherTags = otherTags |> Seq.toList }
+      OtherTags = st.OtherTags |> Seq.toList }
   {
-    GameNumber = gameNumber
+    GameNumber = st.GameNumber
     GameMetaData = metadata
-    Mainline = ResizeArray(mainlinePly)
-    RootVariations = ResizeArray(rootVariations)
-    Comments = pendingComment
-    Fen = fen
+    Mainline = ResizeArray(st.MainlinePly)
+    RootVariations = ResizeArray(st.RootVariations)
+    Comments = st.PendingComment
+    Fen = st.Fen
     Raw = raw
   }
 
-let private buildGame() : PgnGame =
-  buildGameFull ""
-
-let private buildGameWithRaw raw : PgnGame =
-  buildGameFull raw
+let private buildGame (st: ParserState) : PgnGame =
+  buildGameFull st ""
 
 // ============================================================================
 // Public API
@@ -471,20 +480,22 @@ let private buildGameWithRaw raw : PgnGame =
 
 /// Parse a PGN string, yielding full PgnGame records
 let parsePgnStringHelper (content: string) withRaw : seq<PgnGame> =
-  let rawLines = ResizeArray<string>()
-  gameNumber <- 0
-  resetState()
-  let mutable inMoveText = false
-
-  let buildGame () =
-    if withRaw then
-      let raw = String.concat "\n" rawLines
-      rawLines.Clear()
-      buildGameWithRaw raw
-    else
-      rawLines.Clear()
-      buildGame()
   seq {
+      // State is created per enumeration: concurrent and repeated enumerations
+      // are fully independent.
+      let st = ParserState.Create()
+      let rawLines = ResizeArray<string>()
+      let mutable inMoveText = false
+
+      let emitGame () =
+        if withRaw then
+          let raw = String.concat "\n" rawLines
+          rawLines.Clear()
+          buildGameFull st raw
+        else
+          rawLines.Clear()
+          buildGame st
+
       use reader = new StringReader(content)
       let mutable currentLine = reader.ReadLine()
       while currentLine <> null do
@@ -492,28 +503,28 @@ let parsePgnStringHelper (content: string) withRaw : seq<PgnGame> =
         if withRaw then
           rawLines.Add(currentLine)
         if String.IsNullOrEmpty trimmed then
-          if inMoveText && (hasGame() || result <> "") then
-            yield buildGame()
-            resetState()
+          if inMoveText && (hasGame st || st.Result <> "") then
+            yield emitGame()
+            resetState st
             inMoveText <- false
         elif trimmed.Length > 0 && trimmed[0] = '[' then
-          if inMoveText && (hasGame() || result <> "") then
-            yield buildGame()
-            resetState()
+          if inMoveText && (hasGame st || st.Result <> "") then
+            yield emitGame()
+            resetState st
             inMoveText <- false
-          parseHeaderTexLine trimmed
+          parseHeaderTexLine st trimmed
         else
           inMoveText <- true
-          parseMoveTextLine trimmed
-          if resultFoundInMovetext && result <> "" && (result = "1-0" || result = "0-1" || result = "1/2-1/2" || result = "*") then
-            yield buildGame()
-            resetState()
+          parseMoveTextLine st trimmed
+          if st.ResultFoundInMovetext && st.Result <> "" && (st.Result = "1-0" || st.Result = "0-1" || st.Result = "1/2-1/2" || st.Result = "*") then
+            yield emitGame()
+            resetState st
             inMoveText <- false
 
         currentLine <- reader.ReadLine()
 
-      if hasGame() || result <> "" then
-        yield buildGame()
+      if hasGame st || st.Result <> "" then
+        yield emitGame()
       }
 
 let parsePgnString (content: string) : seq<PgnGame> =
@@ -521,28 +532,27 @@ let parsePgnString (content: string) : seq<PgnGame> =
 
 let parsePgnStringWithRaw (content: string) : seq<PgnGame> =
   parsePgnStringHelper content true
-    /// Parse a PGN file, yielding full PgnGame records with Raw field populated
 
+/// Parse a PGN file, yielding full PgnGame records with Raw field populated
 let parsePgnFileHelper (pgnFilePath: string) withRaw : seq<PgnGame> =
-  let rawLines = ResizeArray<string>()
-  gameNumber <- 0
-  resetState()
-  let mutable inMoveText = false
-
-  let mayAddRaw line =
-    if withRaw then
-      rawLines.Add(line)
-
-  let buildGameWithRaw () =
-    let game = buildGame()
-    let raw = String.concat "\n" rawLines
-    rawLines.Clear()
-    if withRaw then
-      { game with Raw = raw }
-    else
-      game
-
   seq {
+      let st = ParserState.Create()
+      let rawLines = ResizeArray<string>()
+      let mutable inMoveText = false
+
+      let mayAddRaw (line: string) =
+        if withRaw then
+          rawLines.Add(line)
+
+      let emitGame () =
+        let game = buildGame st
+        let raw = String.concat "\n" rawLines
+        rawLines.Clear()
+        if withRaw then
+          { game with Raw = raw }
+        else
+          game
+
       let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)
       use reader = new StreamReader(pgnFilePath, options)
 
@@ -550,30 +560,30 @@ let parsePgnFileHelper (pgnFilePath: string) withRaw : seq<PgnGame> =
         let currentLine = reader.ReadLine()
         let trimmed = currentLine.TrimStart()
         if String.IsNullOrEmpty trimmed then
-          if inMoveText && (hasGame() || result <> "") then
-            yield buildGameWithRaw()
-            resetState()
+          if inMoveText && (hasGame st || st.Result <> "") then
+            yield emitGame()
+            resetState st
             inMoveText <- false
           elif rawLines.Count > 0 then
             mayAddRaw currentLine
         elif trimmed.Length > 0 && trimmed[0] = '[' then
-          if inMoveText && (hasGame() || result <> "") then
-            yield buildGameWithRaw()
-            resetState()
+          if inMoveText && (hasGame st || st.Result <> "") then
+            yield emitGame()
+            resetState st
             inMoveText <- false
           mayAddRaw currentLine
-          parseHeaderTexLine trimmed
+          parseHeaderTexLine st trimmed
         else
           mayAddRaw currentLine
           inMoveText <- true
-          parseMoveTextLine trimmed
-          if resultFoundInMovetext && result <> "" && (result = "1-0" || result = "0-1" || result = "1/2-1/2" || result = "*") then
-              yield buildGameWithRaw()
-              resetState()
+          parseMoveTextLine st trimmed
+          if st.ResultFoundInMovetext && st.Result <> "" && (st.Result = "1-0" || st.Result = "0-1" || st.Result = "1/2-1/2" || st.Result = "*") then
+              yield emitGame()
+              resetState st
               inMoveText <- false
 
-      if hasGame() || result <> "" then
-        yield buildGameWithRaw()
+      if hasGame st || st.Result <> "" then
+        yield emitGame()
   }
 
 let parsePgnFileWithRaw (pgnFilePath: string) : seq<PgnGame> = parsePgnFileHelper pgnFilePath true
@@ -631,10 +641,9 @@ let parseFullPgnGame (pgn:string) =
 
 /// Parse only headers from a PGN file (span-based, skips movetext for performance)
 let parsePgnFileHeadersOnly (pgnFilePath: string): seq<PgnGame> =
-  gameNumber <- 0
-  resetState()
-  let mutable inMoveText = false
   seq {
+      let st = ParserState.Create()
+      let mutable inMoveText = false
       let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)
       use reader = new StreamReader(pgnFilePath, options)
 
@@ -644,22 +653,22 @@ let parsePgnFileHeadersOnly (pgnFilePath: string): seq<PgnGame> =
 
         if String.IsNullOrEmpty trimmed then
           // Empty line - transition from headers to movetext or end of game
-          if inMoveText && hasHeaders() then
+          if inMoveText && hasHeaders st then
             // End of game - yield without parsing moves
-            yield buildGame()
-            resetState()
+            yield buildGame st
+            resetState st
             inMoveText <- false
-          elif hasHeaders() && not inMoveText then
+          elif hasHeaders st && not inMoveText then
             // Empty line after headers - now in movetext section
             inMoveText <- true
         elif trimmed.Length > 0 && trimmed[0] = '[' then
           // Header line
-          if inMoveText && hasHeaders() then
+          if inMoveText && hasHeaders st then
             // New game starting - yield previous
-            yield buildGame()
-            resetState()
+            yield buildGame st
+            resetState st
             inMoveText <- false
-          parseHeaderTexLine trimmed
+          parseHeaderTexLine st trimmed
         else
           // Movetext line - just mark we're in movetext, don't parse
           inMoveText <- true
@@ -667,56 +676,55 @@ let parsePgnFileHeadersOnly (pgnFilePath: string): seq<PgnGame> =
           let trimmedStr = trimmed.ToString()
           if trimmedStr = "1-0" || trimmedStr = "0-1" || trimmedStr = "1/2-1/2" || trimmedStr = "*" ||
              trimmedStr.EndsWith(" 1-0") || trimmedStr.EndsWith(" 0-1") || trimmedStr.EndsWith(" 1/2-1/2") || trimmedStr.EndsWith(" *") then
-            if result = "" then
-              if trimmedStr.Contains("1-0") then result <- "1-0"
-              elif trimmedStr.Contains("0-1") then result <- "0-1"
-              elif trimmedStr.Contains("1/2-1/2") then result <- "1/2-1/2"
-              elif trimmedStr.Contains("*") then result <- "*"
+            if st.Result = "" then
+              if trimmedStr.Contains("1-0") then st.Result <- "1-0"
+              elif trimmedStr.Contains("0-1") then st.Result <- "0-1"
+              elif trimmedStr.Contains("1/2-1/2") then st.Result <- "1/2-1/2"
+              elif trimmedStr.Contains("*") then st.Result <- "*"
 
       // Handle last game
-      if hasHeaders() then
-        yield buildGame()
+      if hasHeaders st then
+        yield buildGame st
   }
 
 /// Parse only headers from a PGN string (span-based, skips movetext for performance)
 let parsePgnStringHeadersOnly (content: string): seq<PgnGame> =
-  gameNumber <- 0
-  resetState()
-  let mutable inMoveText = false
   seq {
+      let st = ParserState.Create()
+      let mutable inMoveText = false
       use reader = new StringReader(content)
       let mutable currentLine = reader.ReadLine()
 
       while currentLine <> null do
         let trimmed = currentLine.TrimStart()
         if String.IsNullOrEmpty trimmed then
-          if inMoveText && hasHeaders() then
-            yield buildGame()
-            resetState()
+          if inMoveText && hasHeaders st then
+            yield buildGame st
+            resetState st
             inMoveText <- false
-          elif hasHeaders() && not inMoveText then
+          elif hasHeaders st && not inMoveText then
             inMoveText <- true
         elif trimmed.Length > 0 && trimmed[0] = '[' then
-          if inMoveText && hasHeaders() then
-            yield buildGame()
-            resetState()
+          if inMoveText && hasHeaders st then
+            yield buildGame st
+            resetState st
             inMoveText <- false
-          parseHeaderTexLine trimmed
+          parseHeaderTexLine st trimmed
         else
           inMoveText <- true
           let trimmedStr = trimmed.ToString()
           if trimmedStr = "1-0" || trimmedStr = "0-1" || trimmedStr = "1/2-1/2" || trimmedStr = "*" ||
              trimmedStr.EndsWith(" 1-0") || trimmedStr.EndsWith(" 0-1") || trimmedStr.EndsWith(" 1/2-1/2") || trimmedStr.EndsWith(" *") then
-            if result = "" then
-              if trimmedStr.Contains("1-0") then result <- "1-0"
-              elif trimmedStr.Contains("0-1") then result <- "0-1"
-              elif trimmedStr.Contains("1/2-1/2") then result <- "1/2-1/2"
-              elif trimmedStr.Contains("*") then result <- "*"
+            if st.Result = "" then
+              if trimmedStr.Contains("1-0") then st.Result <- "1-0"
+              elif trimmedStr.Contains("0-1") then st.Result <- "0-1"
+              elif trimmedStr.Contains("1/2-1/2") then st.Result <- "1/2-1/2"
+              elif trimmedStr.Contains("*") then st.Result <- "*"
 
         currentLine <- reader.ReadLine()
 
-      if hasHeaders() then
-        yield buildGame()
+      if hasHeaders st then
+        yield buildGame st
 }
 
 type PgnGameMessage =
