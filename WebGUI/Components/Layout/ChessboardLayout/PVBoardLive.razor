@@ -570,8 +570,17 @@
 
     private async void Close()
     {
-        if (OnClose.HasDelegate)
-            await OnClose.InvokeAsync();
+        // async void (Escape/overlay click): an exception in the host's OnClose handler
+        // would otherwise tear down the circuit unobserved
+        try
+        {
+            if (OnClose.HasDelegate)
+                await OnClose.InvokeAsync();
+        }
+        catch (Exception)
+        {
+            // host handler failed while closing — nothing sensible to do here
+        }
     }
 
     public async ValueTask DisposeAsync()

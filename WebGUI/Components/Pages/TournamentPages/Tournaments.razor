@@ -1424,6 +1424,7 @@
 						if (ticks < limit.Ticks)
 						{
 							//logger.LogInformation("White player is low on time");
+							oneSecondTimer?.Dispose();
 							oneSecondTimer = null;
 						}
 						whiteMoveTime = moveTimer;
@@ -1438,6 +1439,7 @@
 						if (ticks < limit.Ticks)
 						{
 							//logger.LogInformation("Black player is low on time");
+							oneSecondTimer?.Dispose();
 							oneSecondTimer = null;
 						}
 						blackMoveTime = moveTimer;

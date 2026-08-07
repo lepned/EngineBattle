@@ -13,7 +13,14 @@ public class OpeningExplorerService
     public OpeningExplorerService(IWebHostEnvironment env, ILogger<OpeningExplorerService> logger)
     {
         _logger = logger;
-        Task.Run(() => Load(env.WebRootPath));
+        // Observe the background load: an unreadable/locked file must log its real
+        // cause instead of becoming an unobserved task exception with the service
+        // silently returning null lookups forever.
+        _ = Task.Run(() =>
+        {
+            try { Load(env.WebRootPath); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to load opening data"); }
+        });
     }
 
     private void Load(string webRootPath)

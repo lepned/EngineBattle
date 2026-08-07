@@ -31,7 +31,10 @@
 
     public async Task<string> ReadTextAsync()
     {
+      // Module is only set after some component ran ImportModuleAsync — a paste that
+      // races the first page's OnAfterRenderAsync must not NullReference
       var mod = _interopService.Module;
+      if (mod == null) return string.Empty;
       return await mod.InvokeAsync<string>("readTextFromClipboard");
     }
   }

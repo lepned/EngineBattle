@@ -75,11 +75,12 @@ namespace WebGUI.Services
                 lock (_lock)
                 {
                     if (_cts == cts)
-                    {
-                        _cts.Dispose();
                         _cts = null;
-                    }
                 }
+                // Dispose this call's own CTS unconditionally: when superseded by a newer
+                // replay the field no longer points at it and it used to leak together
+                // with its registration on externalToken.
+                cts.Dispose();
             }
             return dispatched;
         }
@@ -153,11 +154,12 @@ namespace WebGUI.Services
                 lock (_lock)
                 {
                     if (_cts == cts)
-                    {
-                        _cts.Dispose();
                         _cts = null;
-                    }
                 }
+                // Dispose this call's own CTS unconditionally: when superseded by a newer
+                // replay the field no longer points at it and it used to leak together
+                // with its registration on externalToken.
+                cts.Dispose();
             }
             return dispatched;
         }
@@ -232,11 +234,12 @@ namespace WebGUI.Services
                 lock (_lock)
                 {
                     if (_cts == cts)
-                    {
-                        _cts.Dispose();
                         _cts = null;
-                    }
                 }
+                // Dispose this call's own CTS unconditionally: when superseded by a newer
+                // replay the field no longer points at it and it used to leak together
+                // with its registration on externalToken.
+                cts.Dispose();
             }
         }
 

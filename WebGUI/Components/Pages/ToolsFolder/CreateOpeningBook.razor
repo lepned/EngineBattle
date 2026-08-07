@@ -299,8 +299,10 @@
 			await Task.Run(() =>
 			{
 				var fileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
-				var directory = Path.GetDirectoryName(epdToPgnFileName);
-				if (string.IsNullOrEmpty(directory))
+				// epdToPgnFileName IS the output directory (filled by the folder browser) —
+				// Path.GetDirectoryName on it returned its PARENT, writing the PGN one level up.
+				var directory = epdToPgnFileName?.Trim();
+				if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
 				{
 					SetStatus("Output directory path is not valid.", true);
 					return;

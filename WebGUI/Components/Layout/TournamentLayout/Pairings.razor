@@ -30,8 +30,8 @@ style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
         }
         else
         {
-          <tr class="data-row" style=$"min-height: {tableHeight}px;">
-            <td class="data-cell" colspan="3">No pairings available</td>           
+          <tr class="data-row" style="@($"height: {tableHeight}px;")">
+            <td class="data-cell" colspan="3">No pairings available</td>
           </tr>
         }
 

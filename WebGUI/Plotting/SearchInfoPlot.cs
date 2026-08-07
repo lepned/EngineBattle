@@ -768,7 +768,7 @@ namespace WebGUI.Plotting
                 name = "All moves",
                 marker = new
                 {
-                    color = System.Drawing.Color.GhostWhite,
+                    color = "#F8F8FF", // GhostWhite as a CSS string — the Color struct serializes to a JSON object Plotly ignores
                     opacity = 0.95,
                     line = new { color = "#1e1f24", width = 1 }
                 },
@@ -894,7 +894,7 @@ namespace WebGUI.Plotting
                 name = "White",
                 marker = new
                 {
-                    color = System.Drawing.Color.GhostWhite,
+                    color = "#F8F8FF", // GhostWhite as a CSS string — the Color struct serializes to a JSON object Plotly ignores
                     opacity = 0.95,
                     line = new { color = "#1e1f24", width = 1 }
                 },
@@ -1028,7 +1028,7 @@ namespace WebGUI.Plotting
                 name = "All moves",
                 marker = new
                 {
-                    color = System.Drawing.Color.GhostWhite,
+                    color = "#F8F8FF", // GhostWhite as a CSS string — the Color struct serializes to a JSON object Plotly ignores
                     opacity = 0.95,
                     line = new { color = "#1e1f24", width = 1 }
                 },

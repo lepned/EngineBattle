@@ -67,7 +67,7 @@
                 <div style="display:flex; align-items:center; justify-content:left;">
                     @for (int i = 0; i < H2HGroups.Length; i++)
                     {
-                        <span style="@($"display:inline-block; text-align:center; min-width:" + H2HMaxDigits + "ch;  {FontNormal} line-height:1;")">@H2HGroups[i]</span>
+                        <span style="@($"display:inline-block; text-align:center; min-width:{H2HMaxDigits}ch; {FontNormal} line-height:1;")">@H2HGroups[i]</span>
                         if (i < H2HGroups.Length - 1)
                         {
                             <span style="margin:0 4px;">-</span>

@@ -1136,6 +1136,9 @@
 
     public void Dispose()
     {
+        // Stop a running autoplay loop — it would otherwise keep stepping the board
+        // and firing OnMoveMadeOnBoard every 400ms after navigation away
+        stopAutoPlay = true;
         this.keyContext?.DisposeAsync();
         Notifier.NotifyFenToBoard -= OnReceivedFen;
         Notifier.NotifyFen -= OnReceivedFen;

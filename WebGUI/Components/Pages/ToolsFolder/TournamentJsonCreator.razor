@@ -634,7 +634,20 @@
 
         if (action == "activate")
         {
-            var (errs, warns) = ValidateTournamentJson(edited);
+            // The validator throws on type-mismatched JSON the user typed in the preview
+            // (e.g. "TournamentMode": 5 parses but GetValue<string>() throws)
+            List<string> errs, warns;
+            try
+            {
+                (errs, warns) = ValidateTournamentJson(edited);
+            }
+            catch (Exception ex)
+            {
+                statusMessage = $"Invalid tournament JSON: {ex.Message}";
+                statusType = "error";
+                await ShowPreviewDialog(fileName, edited, new List<string> { ex.Message }, new List<string>());
+                return;
+            }
             if (errs.Count > 0)
             {
                 statusMessage = "Still has validation errors:\n" + string.Join("\n", errs);

@@ -1,4 +1,3 @@
-﻿
 
 
 using static ChessLibrary.TypesDef.CoreTypes;
@@ -40,6 +39,10 @@ namespace WebGUI.Services
     //public EnginePlayerDef PlayerDef { get; set; }
   }
 
+  // Every notify method captures the event field once before invoking: these fire from
+  // engine-callback/tournament threads while components unsubscribe on the circuit
+  // thread, and a second read of the field can be null after the last handler detached
+  // (await null → NullReferenceException on the engine thread).
   public class NotifierService
   {
     public NotifierService()
@@ -47,169 +50,193 @@ namespace WebGUI.Services
     }
     public async Task NotifyEngineToReset(bool resetEngine)
     {
-      if (ResetEngine != null)
-        await ResetEngine.Invoke(resetEngine);
+      var handler = ResetEngine;
+      if (handler != null)
+        await handler.Invoke(resetEngine);
     }
 
     public async Task NotifyFullScreenRequested(bool isFullScreenRequested)
     {
-      if (IsFullScreenRequested != null)
-        await IsFullScreenRequested.Invoke(isFullScreenRequested);
+      var handler = IsFullScreenRequested;
+      if (handler != null)
+        await handler.Invoke(isFullScreenRequested);
     }
     public async Task NotifyUpdateRequested(int size)
     {
-      if (UpdateRequested != null)
-        await UpdateRequested.Invoke(size);
+      var handler = UpdateRequested;
+      if (handler != null)
+        await handler.Invoke(size);
     }
 
     public async Task RefreshNavMenu(bool refreshNavMenu)
     {
-      if (RefreshNavMenuRequested != null)
-        await RefreshNavMenuRequested.Invoke(refreshNavMenu);
+      var handler = RefreshNavMenuRequested;
+      if (handler != null)
+        await handler.Invoke(refreshNavMenu);
     }
     public async Task NotifyDarkMode(bool isDarkMode)
     {
-      if (IsDarkMode != null)
-        await IsDarkMode.Invoke(isDarkMode);
+      var handler = IsDarkMode;
+      if (handler != null)
+        await handler.Invoke(isDarkMode);
     }
     public async Task UpdateFen(string fen)
     {
-      if (NotifyFen != null)
-        await NotifyFen?.Invoke(fen);
+      var handler = NotifyFen;
+      if (handler != null)
+        await handler.Invoke(fen);
     }
 
     public async Task UpdateFenToBoard(string fen)
     {
-      if (NotifyFenToBoard != null)
-        await NotifyFenToBoard?.Invoke(fen);
+      var handler = NotifyFenToBoard;
+      if (handler != null)
+        await handler.Invoke(fen);
     }
 
     public async Task Moves(List<NNValues> moves)
     {
-      if (NotifyMoves != null)
-        await NotifyMoves?.Invoke(moves);
+      var handler = NotifyMoves;
+      if (handler != null)
+        await handler.Invoke(moves);
     }
 
     public async Task MovesWithId(List<NNValues> moves, string id)
     {
-      if (NotifyMovesWithId != null)
-        await NotifyMovesWithId?.Invoke(moves, id);
+      var handler = NotifyMovesWithId;
+      if (handler != null)
+        await handler.Invoke(moves, id);
     }
 
     public async Task UpdateDisplaySettings(OverlaySettings settings, string id)
     {
-      if (NotifyDisplaySettings != null)
-        await NotifyDisplaySettings?.Invoke(settings, id);
+      var handler = NotifyDisplaySettings;
+      if (handler != null)
+        await handler.Invoke(settings, id);
     }
 
     public async Task UpdateFenMoveToBoard(MoveAndFen input)
     {
-      if (NotifyFenAndMove != null)
-        await NotifyFenAndMove?.Invoke(input);
+      var handler = NotifyFenAndMove;
+      if (handler != null)
+        await handler.Invoke(input);
     }
 
     public async Task OnNextTick(bool isWhite, string timeLeft, string moveTime)
     {
-      if (NextTick != null)
-      {
-        await NextTick.Invoke(isWhite, timeLeft, moveTime);
-      }
+      var handler = NextTick;
+      if (handler != null)
+        await handler.Invoke(isWhite, timeLeft, moveTime);
     }
-    
+
     public async Task UpdatePV(string pv, string fen, string player, int depth, int id)
     {
-      if (NotifyPV != null)
-        await NotifyPV?.Invoke(pv, fen, player, depth, id);
+      var handler = NotifyPV;
+      if (handler != null)
+        await handler.Invoke(pv, fen, player, depth, id);
     }
     public async Task UpdatePGN(PgnGame game, string id, string color, int moveNr)
     {
-      if (NotifyPGN != null)
-        await NotifyPGN?.Invoke(game, id, color, moveNr);
+      var handler = NotifyPGN;
+      if (handler != null)
+        await handler.Invoke(game, id, color, moveNr);
     }
 
     public async Task UpdateOnPuzzleData(CsvPuzzleData input)
     {
-      if (NotifyPuzzleData != null)
-        await NotifyPuzzleData?.Invoke(input);
-      //await Task.CompletedTask;
+      var handler = NotifyPuzzleData;
+      if (handler != null)
+        await handler.Invoke(input);
     }
 
     public async Task UpdateFenAndMove(MoveAndFen input)
     {
-      if (NotifyFenAndMove != null)
-        await NotifyFenAndMove?.Invoke(input);
+      var handler = NotifyFenAndMove;
+      if (handler != null)
+        await handler.Invoke(input);
     }
 
     public async Task UpdateOpeningDone(MoveAndFen input)
     {
-      if (NotifyOpeningDone != null)
-        await NotifyOpeningDone?.Invoke(input);
+      var handler = NotifyOpeningDone;
+      if (handler != null)
+        await handler.Invoke(input);
     }
 
     public async Task UpdateFenWithMoves(string fen)
     {
-      if (NotifyFenWithMoves != null)
-        await NotifyFenWithMoves?.Invoke(fen);
+      var handler = NotifyFenWithMoves;
+      if (handler != null)
+        await handler.Invoke(fen);
     }
 
     public async Task UpdateMove(string move, bool invokeMove = true)
     {
-      if (NotifyMove != null)
-        await NotifyMove?.Invoke(move, invokeMove);
+      var handler = NotifyMove;
+      if (handler != null)
+        await handler.Invoke(move, invokeMove);
     }
     public async Task UndoMove(string move)
     {
-      if (NotifyUndoMove != null)
-        await NotifyUndoMove?.Invoke(move);
+      var handler = NotifyUndoMove;
+      if (handler != null)
+        await handler.Invoke(move);
     }
 
     public async Task CallNext()
     {
-      if (NotifyCallNext != null)
-        await NotifyCallNext?.Invoke();
+      var handler = NotifyCallNext;
+      if (handler != null)
+        await handler.Invoke();
     }
 
     public async Task AnnotateMove(string move)
     {
-      if (NotifyAnnotateMove != null)
-        await NotifyAnnotateMove?.Invoke(move);
+      var handler = NotifyAnnotateMove;
+      if (handler != null)
+        await handler.Invoke(move);
     }
 
     public async Task UpdateCompleteGame(string[] moves, string fen)
     {
-      if (NotifyCompleteGame != null)
-        await NotifyCompleteGame?.Invoke(moves, fen);
-      await Task.CompletedTask;
+      var handler = NotifyCompleteGame;
+      if (handler != null)
+        await handler.Invoke(moves, fen);
     }
 
     public async Task AddedEngineInTournament(List<EngineItem> engines)
     {
-      if (NotifyAddedEngine != null)
-        await NotifyAddedEngine?.Invoke(engines);
+      var handler = NotifyAddedEngine;
+      if (handler != null)
+        await handler.Invoke(engines);
     }
 
     public async Task SettingLoaded(ChessConfigurationService config)
     {
-      if (SettingAdded != null)
-        await SettingAdded?.Invoke(config);
+      var handler = SettingAdded;
+      if (handler != null)
+        await handler.Invoke(config);
     }
 
     public async Task AddedDumpInfo(string text)
     {
-      if (DumpInfoAdded != null)
-        await DumpInfoAdded?.Invoke(text);
+      var handler = DumpInfoAdded;
+      if (handler != null)
+        await handler.Invoke(text);
     }
 
     public async Task NotifyCupUpdated()
     {
-      if (CupUpdated != null)
-        await CupUpdated?.Invoke();
+      var handler = CupUpdated;
+      if (handler != null)
+        await handler.Invoke();
     }
 
     public async Task NotifyLadderUpdated()
     {
-      if (LadderUpdated != null)
-        await LadderUpdated?.Invoke();
+      var handler = LadderUpdated;
+      if (handler != null)
+        await handler.Invoke();
     }
 
     public event Func<bool, string, string, Task> NextTick;

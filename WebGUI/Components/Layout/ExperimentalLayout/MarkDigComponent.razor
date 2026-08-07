@@ -13,16 +13,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var filePath = Path.Combine(Environment.ContentRootPath, "wwwroot", FileName);
-
         try
         {
+            var filePath = Path.Combine(Environment.ContentRootPath, "wwwroot", FileName ?? "");
             var raw = await File.ReadAllTextAsync(filePath);
             var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
             markdownContent = Markdig.Markdown.ToHtml(raw, pipeline);
         }
-        catch (FileNotFoundException)
+        catch (Exception)
         {
+            // Missing file, missing subfolder (DirectoryNotFoundException), bad path —
+            // show the not-found message instead of crashing the embedding page
             markdownContent = $"<p>Documentation file not found: {FileName}</p>";
         }
     }

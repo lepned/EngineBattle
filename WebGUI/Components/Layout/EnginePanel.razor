@@ -2198,7 +2198,7 @@
             .Add(Key.Escape, (Func<Task>)(async () => await ResetEngine()), "reset engine")
             .Add(ModKey.Ctrl, Key.s, (() => ToggleOptimisticAndBase()), "toggle optimistic and baseline")
             .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await InvokeAsync(GoInfinite)), "go search")
-            .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => { analyzer.Stop(); await InvokeAsync(StateHasChanged); }), "stop search")
+            .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => { analyzer?.Stop(); await InvokeAsync(StateHasChanged); }), "stop search")
             .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
             .Add(ModKey.Ctrl, Key.q, (Func<Task>)(async () => await DoQAnalysis()), "check Q-rank")
             .Add(ModCode.Ctrl | ModCode.Alt, Code.P, (() => CheckAllGamesAnalysis()), "check all games policy")
@@ -2314,6 +2314,10 @@
     {
         Notifier.NotifyFen -= OnNotifyFen;
         disposeCts.Cancel();
+        // Disposed mid-search the 100ms uiTimer would otherwise stay alive forever:
+        // HandleUpdate early-returns after disposeCts, so the final BestMove can no
+        // longer stop it.
+        StopSearchTimer();
         try { analyzer?.Stop(); } catch { }
         analyzer?.Quit();
         logger.LogInformation("Disposing {page}", "EnginePanel");

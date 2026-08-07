@@ -177,7 +177,14 @@ namespace WebGUI.Services.Ceres
 
                 case "move":
                 {
-                    var st = _games.TryGetValue(threadId, out var g) ? g : new GameState();
+                    // Store the fallback state (mid-game reconnect before a gameStart):
+                    // otherwise every LastFen/MoveHistory update is discarded and all
+                    // subsequent moves map with empty context until the next game.
+                    if (!_games.TryGetValue(threadId, out var st))
+                    {
+                        st = new GameState();
+                        _games[threadId] = st;
+                    }
                     var mv = CeresWire.mapMove(_source, gameId, st.White, st.Black, st.LastFen, st.MoveHistory, line);
                     if (mv != null) { json = mv.Value.Item1; st.LastFen = mv.Value.Item2; st.MoveHistory = mv.Value.Item3; }
                     break;
@@ -185,7 +192,11 @@ namespace WebGUI.Services.Ceres
 
                 case "interim":
                 {
-                    var st = _games.TryGetValue(threadId, out var g) ? g : new GameState();
+                    if (!_games.TryGetValue(threadId, out var st))
+                    {
+                        st = new GameState();
+                        _games[threadId] = st;
+                    }
                     json = Opt(CeresWire.mapInterim(_source, gameId, st.White, st.Black, st.LastFen, line));
                     break;
                 }
