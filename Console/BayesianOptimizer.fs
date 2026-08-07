@@ -265,20 +265,25 @@ module BayesianOptimizer =
 
   let private clamp lo hi x = max lo (min hi x)
 
-  /// Optimize acquisition by multi-start random + coordinate-wise refinement
-  let optimizeAcquisition (gp: GPModel) (fBest: float) (d: int) (active: bool[]) (rng: Random) : float[] =
+  /// Optimize acquisition by multi-start random + coordinate-wise refinement.
+  /// `baseline` supplies the inactive (frozen) coordinates: all GP training points
+  /// carry the frozen dims at their actual values, so EI must be evaluated on that
+  /// same slice — with 0.0 instead, any frozen parameter away from the range midpoint
+  /// inflated every Matern distance and distorted the argmax (and the EI logged later
+  /// at the corrected point never matched the one that was maximized).
+  let optimizeAcquisition (gp: GPModel) (fBest: float) (d: int) (active: bool[]) (baseline: float[]) (rng: Random) : float[] =
     let nRandom = 1000
     let nRefine = 20
     let stepSize = 0.05
 
     // Phase 1: random candidates
-    let mutable bestX = Array.create d 0.0
+    let mutable bestX = Array.copy baseline
     let mutable bestEi = -infinity
 
     for _ in 1 .. nRandom do
       let candidate = Array.init d (fun i ->
         if active.[i] then rng.NextDouble() * 2.0 - 1.0
-        else 0.0)
+        else baseline.[i])
       let ei = expectedImprovement gp fBest candidate
       if ei > bestEi then
         bestEi <- ei
@@ -395,7 +400,7 @@ module BayesianOptimizer =
       let gp = fitGP currentHyp xs ysStd yMean yStd None
       let fBest = (bestObs.Y - yMean) / yStd
 
-      let xNew = optimizeAcquisition gp fBest d active rng
+      let xNew = optimizeAcquisition gp fBest d active startX rng
       // Copy inactive dims from startX
       for i in 0 .. d - 1 do
         if not active.[i] then xNew.[i] <- startX.[i]
@@ -1314,8 +1319,15 @@ module BayesianOptimizer =
       printfn ""
       printfn "=== BO Phase: %s (design=%d, iterations=%d) ===" phase.Name initialDesignSize phase.Iterations
 
-      // Phase 1: initial design via LHS (skip if resuming with existing observations)
-      if observations.Count = 0 then
+      // Phase 1: initial design via LHS. A resume mid-design COMPLETES the remaining
+      // points (the old `observations.Count = 0` guard silently truncated the design
+      // to however many points had run before the interruption). phaseRng is
+      // deterministic per phase, so the regenerated samples match the original run.
+      let designEvalsTotal = initialDesignSize + 1  // +1: the current-best evaluation
+      if observations.Count < designEvalsTotal then
+        let alreadyDone = observations.Count
+        if alreadyDone > 0 then
+          printfn "\n--- Resuming initial design (%d of %d evaluations done) ---" alreadyDone designEvalsTotal
         let designRadius =
           if phaseIndex = 0 then 1.0
           elif cfg.InitialDesignRadius > 0.0 then cfg.InitialDesignRadius
@@ -1326,23 +1338,25 @@ module BayesianOptimizer =
           else centeredLatinHypercubeSample initialDesignSize d active bestX designRadius phaseRng
         // Initial design uses minimum budget (iteration 0 of phase)
         let restoreDesign = scaleGameBudget 0 phase.Iterations
-        for sample in lhsSamples do
-          if shouldStop() then () else
-          // Copy inactive dims from current bestX
-          for i in 0 .. d - 1 do
-            if not active.[i] then sample.[i] <- bestX.[i]
-          snapToGrid sample
-          let y, games = evaluateCandidate sample
-          observations.Add({ X = Array.copy sample; Y = y; Games = games })
-          saveCheckpoint()
+        try
+          for sampleIdx in alreadyDone .. lhsSamples.Length - 1 do
+            let sample = lhsSamples.[sampleIdx]
+            if shouldStop() then () else
+            // Copy inactive dims from current bestX
+            for i in 0 .. d - 1 do
+              if not active.[i] then sample.[i] <- bestX.[i]
+            snapToGrid sample
+            let y, games = evaluateCandidate sample
+            observations.Add({ X = Array.copy sample; Y = y; Games = games })
+            saveCheckpoint()
 
-        // Also evaluate current best
-        if not (shouldStop()) then
-          let y0, games0 = evaluateCandidate bestX
-          observations.Add({ X = Array.copy bestX; Y = y0; Games = games0 })
-          saveCheckpoint()
-
-        restoreDesign()
+          // Also evaluate current best (the final design evaluation)
+          if observations.Count = initialDesignSize && not (shouldStop()) then
+            let y0, games0 = evaluateCandidate bestX
+            observations.Add({ X = Array.copy bestX; Y = y0; Games = games0 })
+            saveCheckpoint()
+        finally
+          restoreDesign()
 
       // Find current best from observations and sync bestX
       let mutable bestObs =
@@ -1376,7 +1390,7 @@ module BayesianOptimizer =
 
         // Per-iteration RNG — deterministic from seed + phase + iteration, so resume is reproducible
         let iterRng = Random(cfg.Seed + 7919 + phaseIndex * 100003 + (iterationInPhase + 1) * 997)
-        let xNew = optimizeAcquisition gp fBest d active iterRng
+        let xNew = optimizeAcquisition gp fBest d active bestX iterRng
         // Copy inactive dims
         for i in 0 .. d - 1 do
           if not active.[i] then xNew.[i] <- bestX.[i]
@@ -1415,8 +1429,11 @@ module BayesianOptimizer =
             (iterationInPhase + 1) phase.Iterations (candidateCount + 1) predMuLogit (sigmoid predMuLogit) predStdLogit eiVal
 
           let restoreIter = scaleGameBudget iterationInPhase phase.Iterations
-          let yNew, games = evaluateCandidate xNew
-          restoreIter()
+          let yNew, games =
+            // Restore in finally: an exception in evaluateCandidate must not leave all
+            // subsequent matches (incl. confirmation/validation) at the scaled budget.
+            try evaluateCandidate xNew
+            finally restoreIter()
           observations.Add({ X = Array.copy xNew; Y = yNew; Games = games })
 
           if yNew > bestObs.Y then

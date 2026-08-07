@@ -35,7 +35,14 @@ module BlazorInterop =
                 if endWithConsole then
                     currentDir.Parent
                 else
-                    currentDir.Parent.Parent.Parent.Parent
+                    // bin/Release/netX.0 layout: four levels up to the solution root.
+                    // Guard the chain — from a shallow cwd (e.g. C:\EB) Parent is null.
+                    let mutable dir = currentDir
+                    for _ in 1 .. 4 do
+                        if dir <> null && dir.Parent <> null then dir <- dir.Parent
+                    dir
+            if isNull parent then
+                failwithf "Cannot locate the WebGUI project from '%s' — run the gui command from the repo (Console folder or build output)." currentDir.FullName
             let path = Path.Combine(parent.FullName, "WebGUI")
             let blazorProjectPath = path
             let psi = ProcessStartInfo()
@@ -658,9 +665,14 @@ module Program =
         | None -> ()
         printfn ""
 
-        // Create engines once, reuse across all positions
+        // Create engines once, reuse across all positions. Engine1's process must be
+        // stopped even when engine2's creation throws (bad path, failed start).
         let engine1 = ChessLibrary.EngineHelper.createEngine(config1, None)
-        let engine2 = ChessLibrary.EngineHelper.createEngine(config2, None)
+        let engine2 =
+            try ChessLibrary.EngineHelper.createEngine(config2, None)
+            with ex ->
+                try engine1.StopProcess() with _ -> ()
+                raise ex
         try
 
         let mutable totalAgreements = 0
@@ -2320,7 +2332,10 @@ module Program =
                     | None -> 
                         printfn "Tournamentjson config file not found..."                        
                 | Verb (Benchmark path) ->
-                    BenchmarkRunner.runBenchmark path
+                    try
+                        BenchmarkRunner.runBenchmark path
+                    with ex ->
+                        eprintfn "Benchmark failed: %s" ex.Message
                 | Verb (Tune path) ->
                     Console.CancelKeyPress.Add(fun args ->
                         args.Cancel <- true

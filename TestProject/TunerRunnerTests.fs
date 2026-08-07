@@ -37,6 +37,21 @@ let ``denormalize and normalize are stable for log scale`` () =
     Assert.InRange(n, -1.0, 1.0)
     Assert.Equal(v, roundTrip, 0)
 
+[<Theory>]
+[<InlineData(0.0, 1.0, 0.25, 0.5, 0.75)>]    // grid {0,0.25,0.5,0.75,1}: old rounding gave 0.8
+[<InlineData(0.0, 10.0, 2.5, 0.5, 7.5)>]     // grid {0,2.5,5,7.5,10}: old rounding gave 8
+[<InlineData(0.0, 1.0, 0.125, 0.75, 0.875)>] // grid step 0.125: old rounding gave 0.9
+[<InlineData(0.0, 2.0, 0.01, 0.37, 1.37)>]   // decimal-aligned steps unchanged
+let ``denormalize snaps to the exact step grid`` (min: float) (max: float) (step: float) (norm: float) (expected: float) =
+    let p: TunerRunner.TuneParameterDef =
+        { Name = "p"
+          Option = null
+          Min = min
+          Max = max
+          Step = step
+          Scale = "linear" }
+    Assert.Equal(expected, TunerRunner.denormalizeParameterValue p norm, 12)
+
 [<Fact>]
 let ``sprt accepts h1 for strong positive score`` () =
     let sprt: TunerRunner.SprtConfig =

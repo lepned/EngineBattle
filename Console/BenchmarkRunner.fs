@@ -310,6 +310,11 @@ module BenchmarkRunner =
     | None -> ()
 
     let engine = ChessLibrary.EngineHelper.createEngine(baselineConfig, None)
+    // Stop the engine on every exit path — a readyok failure mid-benchmark used to
+    // propagate out and orphan the process.
+    use _engineGuard =
+        { new IDisposable with
+            member _.Dispose() = try engine.StopProcess() with _ -> () }
     engine.TryToUpdateOption "smartpruningfactor" "0"
     engine.TryToUpdateOption "moveoverhead" "0"
     
@@ -366,7 +371,6 @@ module BenchmarkRunner =
             select s
         } |> Seq.toList
 
-    engine.StopProcess()
     let best = pickBestCombination summaries
     let summaryText = formatSummaryText summaries best
     let summaryPath = resolveSummaryPath config

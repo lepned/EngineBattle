@@ -320,6 +320,16 @@ module CustomParser =
         | (true, value) -> value
         | _ -> failwithf "Unable to parse integer from '%s'" s
 
+    /// Bounds-checked flag-value access: "a engine --nodes" prints a usage error
+    /// instead of IndexOutOfRangeException
+    let private valueOf (args: string[]) i =
+        if i + 1 < args.Length then args.[i + 1]
+        else failwithf "Missing value for option %s" args.[i]
+
+    let private twoValuesOf (args: string[]) i =
+        if i + 2 < args.Length then args.[i + 1], args.[i + 2]
+        else failwithf "Missing name/value pair for option %s" args.[i]
+
     let rec private parseArgs (args: string[]) index (acc: CLIArguments list) =
         if index >= args.Length then List.rev acc
         else
@@ -359,17 +369,17 @@ module CustomParser =
                     let mutable showOptions = false
                     while i < args.Length && args.[i].StartsWith("--") do
                         match args.[i].ToLower() with
-                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--movetime" -> movetime <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--depth" -> depth <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--fen" -> fen <- args.[i + 1]; i <- i + 2
-                        | "--args" -> engineArgs <- Some args.[i + 1]; i <- i + 2
+                        | "--nodes" -> nodes <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--depth" -> depth <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--fen" -> fen <- valueOf args i; i <- i + 2
+                        | "--args" -> engineArgs <- Some (valueOf args i); i <- i + 2
                         | "--moves" ->
                             i <- i + 1
                             while i < args.Length && not (args.[i].StartsWith("--")) do
                                 moves <- args.[i] :: moves; i <- i + 1
                             moves <- List.rev moves
-                        | "--uci" -> uciOptions <- (args.[i + 1], args.[i + 2]) :: uciOptions; i <- i + 3
+                        | "--uci" -> uciOptions <- (twoValuesOf args i) :: uciOptions; i <- i + 3
                         | "--options" -> showOptions <- true; i <- i + 1
                         | unknown -> failwithf "Unknown analyze option: %s" unknown
                     let p = { Engine = engine; Fen = fen; Nodes = nodes; MoveTime = movetime
@@ -392,16 +402,16 @@ module CustomParser =
                     let mutable uci2 = []
                     while i < args.Length && args.[i].StartsWith("--") do
                         match args.[i].ToLower() with
-                        | "--fen" -> fen <- args.[i + 1]; i <- i + 2
-                        | "--positions" -> positions <- Some args.[i + 1]; i <- i + 2
-                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--movetime" -> movetime <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--depth" -> depth <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--fen" -> fen <- valueOf args i; i <- i + 2
+                        | "--positions" -> positions <- Some (valueOf args i); i <- i + 2
+                        | "--nodes" -> nodes <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--depth" -> depth <- Some (parseInt (valueOf args i)); i <- i + 2
                         | "--threshold" ->
-                            threshold <- Some (Double.Parse(args.[i + 1], System.Globalization.CultureInfo.InvariantCulture))
+                            threshold <- Some (Double.Parse(valueOf args i, System.Globalization.CultureInfo.InvariantCulture))
                             i <- i + 2
-                        | "--uci1" -> uci1 <- (args.[i + 1], args.[i + 2]) :: uci1; i <- i + 3
-                        | "--uci2" -> uci2 <- (args.[i + 1], args.[i + 2]) :: uci2; i <- i + 3
+                        | "--uci1" -> uci1 <- (twoValuesOf args i) :: uci1; i <- i + 3
+                        | "--uci2" -> uci2 <- (twoValuesOf args i) :: uci2; i <- i + 3
                         | unknown -> failwithf "Unknown compare option: %s" unknown
                     let p = { Engine1 = engine1; Engine2 = engine2; Fen = fen
                               PositionsFile = positions; Nodes = nodes; MoveTime = movetime
@@ -426,16 +436,16 @@ module CustomParser =
                     let mutable uciOptions = []
                     while i < args.Length && args.[i].StartsWith("--") do
                         match args.[i].ToLower() with
-                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--movetime" -> movetime <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--depth" -> depth <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--fen" -> fen <- args.[i + 1]; i <- i + 2
+                        | "--nodes" -> nodes <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--movetime" -> movetime <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--depth" -> depth <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--fen" -> fen <- valueOf args i; i <- i + 2
                         | "--moves" ->
                             i <- i + 1
                             while i < args.Length && not (args.[i].StartsWith("--")) do
                                 moves <- args.[i] :: moves; i <- i + 1
                             moves <- List.rev moves
-                        | "--uci" -> uciOptions <- (args.[i + 1], args.[i + 2]) :: uciOptions; i <- i + 3
+                        | "--uci" -> uciOptions <- (twoValuesOf args i) :: uciOptions; i <- i + 3
                         | unknown -> failwithf "Unknown piecevalues option: %s" unknown
                     let p = { Engine = engine; Fen = fen; Moves = moves
                               Nodes = nodes; MoveTime = movetime; Depth = depth
@@ -457,14 +467,14 @@ module CustomParser =
                     let mutable uciOptions = []
                     while i < args.Length && args.[i].StartsWith("--") do
                         match args.[i].ToLower() with
-                        | "--sample" -> sample <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--nodes" -> nodes <- Some (parseInt args.[i + 1]); i <- i + 2
+                        | "--sample" -> sample <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--nodes" -> nodes <- Some (parseInt (valueOf args i)); i <- i + 2
                         | "--by-phase" | "--byphase" -> byPhase <- true; i <- i + 1
                         | "--outcome" -> outcome <- true; i <- i + 1
                         | "--pgneval" -> pgnEval <- true; i <- i + 1
-                        | "--player" -> player <- Some args.[i + 1]; i <- i + 2
-                        | "--bootstrap" | "--ci" -> bootstrap <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--uci" -> uciOptions <- (args.[i + 1], args.[i + 2]) :: uciOptions; i <- i + 3
+                        | "--player" -> player <- Some (valueOf args i); i <- i + 2
+                        | "--bootstrap" | "--ci" -> bootstrap <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--uci" -> uciOptions <- (twoValuesOf args i) :: uciOptions; i <- i + 3
                         | unknown -> failwithf "Unknown pvfit option: %s" unknown
                     let p = { Engine = engine; Positions = positions; Sample = sample
                               Nodes = nodes; ByPhase = byPhase; Outcome = outcome; PgnEval = pgnEval
@@ -480,8 +490,8 @@ module CustomParser =
                     let mutable out = None
                     while i < args.Length && args.[i].StartsWith("--") do
                         match args.[i].ToLower() with
-                        | "--rounds" -> rounds <- Some (parseInt args.[i + 1]); i <- i + 2
-                        | "--out" -> out <- Some args.[i + 1]; i <- i + 2
+                        | "--rounds" -> rounds <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--out" -> out <- Some (valueOf args i); i <- i + 2
                         | unknown -> failwithf "Unknown pvbatch option: %s" unknown
                     parseArgs args i (Verb (PvBatch { Template = template; NetFolder = netFolder; Rounds = rounds; Out = out }) :: acc)
                 else failwith "Missing parameters for pvbatch (requires: <templateTournament.json> <netFolder>)"

@@ -280,13 +280,19 @@ module TunerRunner =
 
   let internal clamp lo hi x = max lo (min hi x)
 
-  let private quantize (step: float) (value: float) =
+  let internal quantize (step: float) (value: float) =
     let n = Math.Round(value / step)
     let result = n * step
-    // Round to step-implied decimal places to avoid IEEE 754 noise
-    // e.g. step=0.05 → 2 decimals, step=0.1 → 1, step=1.0 → 0
-    let decimals = max 0 (int (ceil (-log10 step)))
-    Math.Round(result, decimals)
+    // Round away IEEE 754 noise WITHOUT leaving the step grid: take the decimal places
+    // from the step's own decimal representation. ceil(-log10 step) was one digit short
+    // for steps like 0.25 (needs 2, got 1) or 2.5 (needs 1, got 0), so grid point 0.75
+    // silently became 0.8 and 7.5 became 8 — off-grid values fed to the engine.
+    let decimals =
+      try
+        let d = System.Decimal step
+        int ((System.Decimal.GetBits(d).[3] >>> 16) &&& 0xFF)
+      with _ -> 15
+    Math.Round(result, min 15 decimals)
 
   let internal resolveParameters (cfg: TuneConfig) (engineCfg: EngineConfig) =
     cfg.Parameters
