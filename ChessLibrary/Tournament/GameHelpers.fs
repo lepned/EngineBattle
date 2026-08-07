@@ -205,8 +205,11 @@ let firstTwoEvals fullEvalList =
     | [x] -> [x]
     | x::y::_ -> [x; y]
 
-/// Start a background writer that reads from engine.ReadLineAsync()
-/// and writes lines into the provided channel for the duration of the game.
+/// Start a background writer that reads engine output and writes lines into the
+/// provided channel for the duration of the game. The read is cancellable: when the
+/// per-game CTS is cancelled the parked ReadLineAsync aborts immediately, so a stale
+/// writer can never hold the StreamReader across a game boundary and swallow the next
+/// game's readyok (engines are reused across games in 2-player RR/Cup).
 let startEngineChannelWriter
     (engine: ChessEngine)
     (engineChannel: Channel<string>)
@@ -227,13 +230,19 @@ let startEngineChannelWriter
                 logger.LogInformation("Engine channel writer for {Engine} is stopping due to cancellation", engine.Name)
                 return ()
             else
-                let! line = engine.ReadLineAsync() |> Async.AwaitTask
+                // Cancellable read (also applies Winboard output translation); returns
+                // null on cancellation, end of stream, or read error.
+                let! line = engine.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
                 if isNull line then
-                    // End of stream — the engine closed stdout. Reading again returns null at
-                    // once, so looping here spins a core until the game is cancelled. Complete
-                    // the channel instead: the reader ends the game on ChannelClosedException.
+                    // Null means cancellation (game over) or the engine closed stdout.
+                    // Reading again returns null at once, so looping here spins a core.
+                    // Complete the channel instead: the reader ends the game on
+                    // ChannelClosedException.
                     try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
-                    logger.LogInformation("Engine {Engine} closed its output, channel writer stopping", engine.Name)
+                    if cts.Token.IsCancellationRequested then
+                        logger.LogInformation("Engine channel writer for {Engine} stopped by cancellation", engine.Name)
+                    else
+                        logger.LogInformation("Engine {Engine} closed its output, channel writer stopping", engine.Name)
                     return ()
                 else
                     let inPonder = inPonderMode()
