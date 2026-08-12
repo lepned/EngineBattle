@@ -223,6 +223,82 @@ let ``PV conversion skips an unmatched move and continues`` () =
     let sanPv = convertPv startposFen "e2e4 e7e5 e2e5 g1f3"
     Assert.Equal("1.e4 e5 2.Nf3", sanPv)
 
+// ===== FRC castling with ambiguous rook configurations =====
+// A Shredder-FEN rights letter is authoritative and classified relative to the KING;
+// a second own rook on the back rank beyond the castle rook must not confuse
+// identification (parser guess, canKingReach* masks, Illegal castle branch).
+
+let private playCastleAndGetFen fen san =
+    let board = makeBoard fen
+    board.PlaySanMove san
+    board.FEN()
+
+[<Fact>]
+let ``FRC kingside castle with extra rook beyond the castle rook`` () =
+    // Kf1, castle rook g1 (right G), maneuvered rook h1: 0-0 = king->g1, rook->f1, h1 stays
+    let board = makeBoard "6k1/8/8/8/8/8/8/5KRR w G - 0 1"
+    Assert.Equal(6uy, board.Position.RookInfo.WhiteKRInitPlacement)
+    let sans = board.GetLegalMoves() |> Seq.map snd |> Set.ofSeq
+    Assert.Contains("0-0", sans)
+    let after = playCastleAndGetFen "6k1/8/8/8/8/8/8/5KRR w G - 0 1" "0-0"
+    Assert.StartsWith("6k1/8/8/8/8/8/8/5RKR b", after)
+
+[<Fact>]
+let ``FRC queenside castle with extra rook beyond the castle rook`` () =
+    // Kc1, castle rook b1 (right B), extra rook a1: 0-0-0 = king stays c1, rook->d1
+    let board = makeBoard "6k1/8/8/8/8/8/8/RRK5 w B - 0 1"
+    Assert.Equal(1uy, board.Position.RookInfo.WhiteQRInitPlacement)
+    let sans = board.GetLegalMoves() |> Seq.map snd |> Set.ofSeq
+    Assert.Contains("0-0-0", sans)
+    Assert.DoesNotContain("0-0", sans)
+    let after = playCastleAndGetFen "6k1/8/8/8/8/8/8/RRK5 w B - 0 1" "0-0-0"
+    Assert.StartsWith("6k1/8/8/8/8/8/8/R1KR4 b", after)
+
+[<Fact>]
+let ``FRC kingside castle labeled and played correctly when rook stays on its square`` () =
+    // Kd1, castle rook f1 (right F), extra rook h1: 0-0 = king->g1, rook stays f1
+    let board = makeBoard "6k1/8/8/8/8/8/8/3K1R1R w F - 0 1"
+    Assert.Equal(5uy, board.Position.RookInfo.WhiteKRInitPlacement)
+    let sans = board.GetLegalMoves() |> Seq.map snd |> Set.ofSeq
+    Assert.Contains("0-0", sans)
+    let after = playCastleAndGetFen "6k1/8/8/8/8/8/8/3K1R1R w F - 0 1" "0-0"
+    Assert.StartsWith("6k1/8/8/8/8/8/8/5RKR b", after)
+
+[<Fact>]
+let ``FRC black mirror: queenside castle with extra rook`` () =
+    // black: Ra8, castle rook b8 (right b), Kc8: 0-0-0 = king stays c8, rook->d8
+    let board = makeBoard "rrk5/8/8/8/8/8/8/6K1 b b - 0 1"
+    Assert.Equal(1uy, board.Position.RookInfo.BlackQRInitPlacement)
+    let sans = board.GetLegalMoves() |> Seq.map snd |> Set.ofSeq
+    Assert.Contains("0-0-0", sans)
+    let after = playCastleAndGetFen "rrk5/8/8/8/8/8/8/6K1 b b - 0 1" "0-0-0"
+    Assert.StartsWith("r1kr4/8/8/8/8/8/8/6K1 w", after)
+
+[<Fact>]
+let ``missing black queenside rook stores the no-rook sentinel, not a phantom h-file rook`` () =
+    // black has only the h-right and its a-rook is off the back rank: BlackQR must be 15
+    // (the old -56 wrap decoded the sentinel to 7, colliding with the real KR and routing
+    // black's short castle through the long-castle legality test — caught by the 960 sweep)
+    let board = makeBoard "1qbbn1kr/1ppQpppp/r7/6n1/p1P5/P7/1P1PPPPP/R1BBNNKR b HAh - 0 10"
+    Assert.Equal(15uy, board.Position.RookInfo.BlackQRInitPlacement)
+    Assert.Equal(7uy, board.Position.RookInfo.BlackKRInitPlacement)
+    let sans = board.GetLegalMoves() |> Seq.map snd |> Set.ofSeq
+    Assert.Contains("0-0", sans)
+
+[<Fact>]
+let ``castling right letter without a rook on that square is stripped`` () =
+    // pre-existing behavior, must survive the parser rework
+    let board = makeBoard "r5k1/pp4r1/2n1b1pR/q1p1p2Q/P3P3/2NP4/1P3PP1/4K1N1 w G - 0 19"
+    Assert.Equal(0uy, board.Position.CastleFlags)
+
+[<Fact>]
+let ``standard FRC start position still parses rook placements correctly`` () =
+    let board = makeBoard "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"
+    Assert.Equal(7uy, board.Position.RookInfo.WhiteKRInitPlacement)
+    Assert.Equal(5uy, board.Position.RookInfo.WhiteQRInitPlacement)
+    Assert.Equal(7uy, board.Position.RookInfo.BlackKRInitPlacement)
+    Assert.Equal(5uy, board.Position.RookInfo.BlackQRInitPlacement)
+
 [<Fact>]
 let ``pinned rook has no legal moves off the pin file`` () =
     // black rook on e6 pinned by white queen on e4 against king on e8

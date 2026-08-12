@@ -304,11 +304,15 @@ module BoardHelper =
     cursor <- cursor + 2
     
     //set the rook initial positions for castling
+    // black placements are absolute squares (56-63); the no-rook sentinel 15 must be
+    // stored as-is — subtracting 56 from it wraps and decodes to 7, i.e. a phantom rook
+    // on the h-file (harmless while RookInfo was write-only here, fatal now that
+    // canKingReach*/Illegal read it)
     let (wKr,wQr),(bKr,bQr) = PositionOps.getRookPositionsForCastling &pos
-    pos.RookInfo.WhiteKRInitPlacement <- (byte)wKr 
-    pos.RookInfo.WhiteQRInitPlacement <- (byte)wQr 
-    pos.RookInfo.BlackKRInitPlacement <- (byte)(bKr-56) 
-    pos.RookInfo.BlackQRInitPlacement <- (byte)(bQr-56)
+    pos.RookInfo.WhiteKRInitPlacement <- (byte)wKr
+    pos.RookInfo.WhiteQRInitPlacement <- (byte)wQr
+    pos.RookInfo.BlackKRInitPlacement <- (if bKr >= 56 && bKr <= 63 then byte (bKr - 56) else 15uy)
+    pos.RookInfo.BlackQRInitPlacement <- (if bQr >= 56 && bQr <= 63 then byte (bQr - 56) else 15uy)
     
     if fen.[cursor] <> '-' then  
         let mutable i = cursor
@@ -325,36 +329,46 @@ module BoardHelper =
                 i <- i + 1
             cursor <- i + 1
         else //chess960 castling logic
+          // A Shredder-FEN rights letter names the castle rook's FILE and is authoritative:
+          // it OVERRIDES the guessed RookInfo placements. The side (king/queen) is determined
+          // relative to the KING's square - a right can only persist while the king is on its
+          // initial square, which always lies between the initial rooks, so letter-file vs
+          // king-file is unambiguous. (The old code matched letters against placements guessed
+          // from the outermost back-rank rooks, which misclassified positions where a second
+          // own rook sits on the back rank beyond the castle rook.) A letter with no own rook
+          // on that square is silently stripped, as before.
+          // Note: parsing happens in the white-to-move frame (changeSide runs at the end),
+          // so PM = white pieces here regardless of the side-to-move field.
+          let whiteKingSq = int (QBBOperations.LSB (PositionOps.kings &pos &&& pos.PM &&& QBBOperations.firstRank))
+          let blackKingSq = int (QBBOperations.LSB (PositionOps.kings &pos &&& ~~~pos.PM &&& QBBOperations.lastRank))
+          let rooks = PositionOps.rooks &pos
           while i < len && fen.[i] <> ' ' do
             let cur = fen.[i]
-            let color = if Char.IsUpper cur then true else false
-            let curRookPlacement = charToNumber cur color             
             match cur with
-            | _ when Char.IsUpper cur -> // Adjust for white's castling flags in Chess960                
-                if pos.RookInfo.WhiteKRInitPlacement = (byte)curRookPlacement then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x02uy                  
-                elif pos.RookInfo.WhiteQRInitPlacement = (byte)curRookPlacement then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                elif Set.contains cur normalCastle then
-                  match cur with
-                  | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
-                  | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
-                  | _ -> ()
-                else
-                  ()
-            | _ when Char.IsLower cur -> // Adjust for black's castling flags in Chess960
-                if pos.RookInfo.BlackKRInitPlacement = (byte)(curRookPlacement-56) then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x20uy                  
-                elif pos.RookInfo.BlackQRInitPlacement = (byte)(curRookPlacement-56) then
-                  pos.CastleFlags <- pos.CastleFlags ||| 0x10uy 
-                elif Set.contains cur normalCastle then
-                  match cur with
-                  | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
-                  | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
-                  | _ -> ()
-                else
-                  ()
-            | '-' -> () // No castling available
+            | 'K' -> pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
+            | 'Q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
+            | 'k' -> pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
+            | 'q' -> pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
+            | _ when cur >= 'A' && cur <= 'H' -> // white file letter
+                let file = int cur - int 'A'
+                let hasRook = (rooks &&& pos.PM &&& (1UL <<< file)) <> 0UL
+                if hasRook && whiteKingSq <= 7 then
+                  if file > whiteKingSq then
+                    pos.RookInfo.WhiteKRInitPlacement <- byte file
+                    pos.CastleFlags <- pos.CastleFlags ||| 0x02uy
+                  elif file < whiteKingSq then
+                    pos.RookInfo.WhiteQRInitPlacement <- byte file
+                    pos.CastleFlags <- pos.CastleFlags ||| 0x01uy
+            | _ when cur >= 'a' && cur <= 'h' -> // black file letter
+                let file = int cur - int 'a'
+                let hasRook = (rooks &&& ~~~pos.PM &&& (1UL <<< (56 + file))) <> 0UL
+                if hasRook && blackKingSq >= 56 && blackKingSq <= 63 then
+                  if 56 + file > blackKingSq then
+                    pos.RookInfo.BlackKRInitPlacement <- byte file
+                    pos.CastleFlags <- pos.CastleFlags ||| 0x20uy
+                  elif 56 + file < blackKingSq then
+                    pos.RookInfo.BlackQRInitPlacement <- byte file
+                    pos.CastleFlags <- pos.CastleFlags ||| 0x10uy
             | _ -> ()
             i <- i + 1
         cursor <- i + 1        

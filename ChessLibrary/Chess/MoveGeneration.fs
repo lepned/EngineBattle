@@ -135,34 +135,32 @@ let Illegal (move: TMove inref) (position: Position inref) =
     let mutable legal = true
 
     if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
-       let rooks = PositionOps.rooksM &position
-       let shortM = MSB rooks |> byte
-       let rook = ExtractLSB rooks
        let kings = PositionOps.kings &position
        let kingExt = kings &&& PositionOps.sideToMove &position
        king <- toSq
        kingsq <- int move.To
-       if toSq = rook then //chess960 castling
-         //remove the king from the old occupation
-         newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rook
-         if rook > kingExt then
-            king <- 1UL <<< 6
-            kingsq <- 6
-         else
-            king <- 1UL <<< 2
-            kingsq <- 2
+       // castle rooks come from RookInfo, not from scanning back-rank rooks (a second own
+       // rook on the back rank would otherwise be mistaken for the castle rook)
+       let shortSq =
+         if position.STM = PositionOps.WHITE then int position.RookInfo.WhiteKRInitPlacement
+         else int position.RookInfo.BlackKRInitPlacement
+       let longSq =
+         if position.STM = PositionOps.WHITE then int position.RookInfo.WhiteQRInitPlacement
+         else int position.RookInfo.BlackQRInitPlacement
+       if longSq <= 7 && int move.To = longSq then //chess960 long castling: king lands on c1
+         let rookBit = 1UL <<< longSq
+         //remove the king and rook from the old occupation
+         newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rookBit
+         king <- 1UL <<< 2
+         kingsq <- 2
          //add the king to the new occupation
          newoccupation <- newoccupation ||| king
-       elif shortM = move.To then //chess960 castling
-         let rookS = 1UL <<< (int shortM)
+       elif shortSq <= 7 && int move.To = shortSq then //chess960 short castling: king lands on g1
+         let rookBit = 1UL <<< shortSq
          //remove the king and rook from the old occupation
-         newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rookS
-         if rookS > kingExt then
-            king <- 1UL <<< 6
-            kingsq <- 6
-         else
-            king <- 1UL <<< 2
-            kingsq <- 2
+         newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rookBit
+         king <- 1UL <<< 6
+         kingsq <- 6
          //add the king to the new occupation
          newoccupation <- newoccupation ||| king
 
@@ -373,17 +371,28 @@ let PositionOpsToString(label: string, position: Position inref) =
     add (sprintf "\nIs FRC PositionOps: %b" chess960)
     sb.ToString()
 
-let inline canKingReachLongRook (pos:Position inref) =    
-    let kingSq = LSB (PositionOps.kings &pos &&& pos.PM) |> int    
-    let rookLong = LSB (PositionOps.rooksM &pos) |> int // Long castling rook
-    let occRow1WithoutKingAndRook = PositionOps.occupation &pos &&& QBBOperations.firstRank &&& (~~~((1UL <<< kingSq) ||| (1UL <<< rookLong)))    
-    (LongRookKingMask[rookLong][kingSq] &&& occRow1WithoutKingAndRook) = 0UL
+// The castle rook comes from RookInfo (its recorded initial placement), NOT from
+// MSB/LSB over all own back-rank rooks: a second own rook maneuvered to the back rank
+// outside the castle rook would otherwise be mistaken for it and suppress a legal castle.
+let inline canKingReachLongRook (pos:Position inref) =
+    let kingSq = LSB (PositionOps.kings &pos &&& pos.PM) |> int
+    let rookLong =
+      if pos.STM = PositionOps.WHITE then int pos.RookInfo.WhiteQRInitPlacement
+      else int pos.RookInfo.BlackQRInitPlacement
+    if rookLong > 7 || kingSq > 7 then false
+    else
+      let occRow1WithoutKingAndRook = PositionOps.occupation &pos &&& QBBOperations.firstRank &&& (~~~((1UL <<< kingSq) ||| (1UL <<< rookLong)))
+      (LongRookKingMask[rookLong][kingSq] &&& occRow1WithoutKingAndRook) = 0UL
 
-let inline canKingReachShortRook (pos:Position inref) =    
-    let kingSq = LSB (PositionOps.kings &pos &&& pos.PM) |> int    
-    let rookShort = MSB (PositionOps.rooksM &pos) |> int // short castling rook
-    let occRow1WithoutKingAndRook = PositionOps.occupation &pos &&& QBBOperations.firstRank &&& (~~~((1UL <<< kingSq) ||| (1UL <<< rookShort)))
-    ShortRookKingMask[rookShort][kingSq] &&& occRow1WithoutKingAndRook = 0UL
+let inline canKingReachShortRook (pos:Position inref) =
+    let kingSq = LSB (PositionOps.kings &pos &&& pos.PM) |> int
+    let rookShort =
+      if pos.STM = PositionOps.WHITE then int pos.RookInfo.WhiteKRInitPlacement
+      else int pos.RookInfo.BlackKRInitPlacement
+    if rookShort > 7 || kingSq > 7 then false
+    else
+      let occRow1WithoutKingAndRook = PositionOps.occupation &pos &&& QBBOperations.firstRank &&& (~~~((1UL <<< kingSq) ||| (1UL <<< rookShort)))
+      ShortRookKingMask[rookShort][kingSq] &&& occRow1WithoutKingAndRook = 0UL
 
 let generateQuiets (moves: TMove Span) (index: int outref) (position : _ inref) isFRC =
     let occupation = PositionOps.occupation &position

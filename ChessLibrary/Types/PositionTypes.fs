@@ -141,35 +141,24 @@ module PositionTypes =
       let isFRC (pos: Position inref) = isStandardChessPosition &pos |> not
 
       //get the rook index from the bitboard where 0 is a1 , 7 is h1, 56 is a8 and 63 is h8
+      /// Best-guess castle-rook placements when no Shredder-FEN rights letters pin them
+      /// down: rooks are classified relative to the KING (kingside = right of it,
+      /// queenside = left of it), taking the outermost rook on each side (the X-FEN
+      /// convention; also matches standard chess). Rights letters in the FEN parser
+      /// override this guess. 15 = no rook on that side.
       let getRookPositionsForCastling (pos:Position inref) =
-        let mKingSq = QBBOperations.MSB (kings &pos &&& pos.PM &&& firstRank)
-        let oKingSq = QBBOperations.MSB (kings &pos &&& ~~~pos.PM &&& lastRank)
-        let rookM = rooksM &pos
-        let rookO = rooksO &pos
-        let ksM = QBBOperations.MSB rookM
-        let qsM = QBBOperations.LSB rookM
-        let ksO = QBBOperations.MSB rookO
-        let qsO = QBBOperations.LSB rookO
-        let nRooksM = QBBOperations.Pop rookM
-        let nRooksO = QBBOperations.Pop rookO
-        let mKr, mQr =
-            if nRooksM > 1UL then
-                (int ksM, int qsM)
-            elif nRooksM = 1UL && mKingSq < ksM then
-                (int ksM, 15)
-            elif nRooksM = 1UL && mKingSq > ksM then
-                (15, int qsM)
+        let classify (kingBB: uint64) (rooks: uint64) =
+            if kingBB = 0UL then (15, 15)
             else
-                (15, 15)
-        let oKr, oQr =
-            if nRooksO > 1UL then
-                (int ksO, int qsO)
-            elif nRooksO = 1UL && oKingSq < ksO then
-                (int ksO, 15)
-            elif nRooksO = 1UL && oKingSq > ksO then
-                (15, int qsO)
-            else
-                (15, 15)
+                let kingSq = int (QBBOperations.MSB kingBB)
+                // double shift keeps the shift amount <= 63 (kingSq can be 63 for the h8 king)
+                let above = rooks &&& (0xFFFFFFFFFFFFFFFFUL <<< kingSq <<< 1)
+                let below = rooks &&& ~~~(0xFFFFFFFFFFFFFFFFUL <<< kingSq)
+                let kr = if above <> 0UL then int (QBBOperations.MSB above) else 15
+                let qr = if below <> 0UL then int (QBBOperations.LSB below) else 15
+                (kr, qr)
+        let mKr, mQr = classify (kings &pos &&& pos.PM &&& firstRank) (rooksM &pos)
+        let oKr, oQr = classify (kings &pos &&& ~~~pos.PM &&& lastRank) (rooksO &pos)
         if pos.STM = WHITE then
           (mKr,mQr),(oKr,oQr)
         else
