@@ -83,16 +83,16 @@ let antiDiagonalMask =
   |]
 
 let LongRookKingMask =
-  [
-    [0UL; 15UL; 15UL; 15UL; 31UL; 63UL; 127UL; 0UL]
-    [0UL; 0UL; 14UL; 14UL; 30UL; 62UL; 126UL; 0UL]
-    [0UL; 0UL; 0UL; 12UL; 28UL; 60UL; 124UL; 0UL]
-    [0UL; 0UL; 0UL; 0UL; 28UL; 60UL; 124UL; 0UL]
-    [0UL; 0UL; 0UL; 0UL; 0UL; 60UL; 124UL; 0UL]
-    [0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 124UL; 0UL]
-    [0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL]
-    [0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL]
-  ]
+  [|
+    [|0UL; 15UL; 15UL; 15UL; 31UL; 63UL; 127UL; 0UL|]
+    [|0UL; 0UL; 14UL; 14UL; 30UL; 62UL; 126UL; 0UL|]
+    [|0UL; 0UL; 0UL; 12UL; 28UL; 60UL; 124UL; 0UL|]
+    [|0UL; 0UL; 0UL; 0UL; 28UL; 60UL; 124UL; 0UL|]
+    [|0UL; 0UL; 0UL; 0UL; 0UL; 60UL; 124UL; 0UL|]
+    [|0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 124UL; 0UL|]
+    [|0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL|]
+    [|0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL; 0UL|]
+  |]
 
 let ShortRookKingMask =
   [|
@@ -204,20 +204,26 @@ let BishopAttacks =
   [|0x8040201008040200UL;0x0080402010080500UL;0x0000804020110A00UL;0x0000008041221400UL;
     0x0000000182442800UL;0x0000010204885000UL;0x000102040810A000UL;0x102040810204000UL  |]
 
-let extractLSBsFromFiles bitboard = 
-  FileMasks
-  |> Array.map (fun fileMask -> ExtractLSB (bitboard &&& fileMask)) 
-  |> Array.fold (fun acc lsb -> acc ||| lsb) 0UL
+// plain loops, not Array.map/fold: these run inside the castle attack-checks on every
+// move generation with live castling rights, and the pipeline version allocated an
+// 8-element array per call (67MB per kiwipete perft run before the fix)
+let extractLSBsFromFiles bitboard =
+  let mutable acc = 0UL
+  for i in 0 .. FileMasks.Length - 1 do
+    acc <- acc ||| ExtractLSB (bitboard &&& FileMasks.[i])
+  acc
 
-let extractLSBsFromDiagonals bitboard = 
-  diagonalMasks
-  |> Array.map (fun diagonal -> ExtractLSB (bitboard &&& diagonal)) 
-  |> Array.fold (fun acc lsb -> acc ||| lsb) 0UL
+let extractLSBsFromDiagonals bitboard =
+  let mutable acc = 0UL
+  for i in 0 .. diagonalMasks.Length - 1 do
+    acc <- acc ||| ExtractLSB (bitboard &&& diagonalMasks.[i])
+  acc
 
-let extractLSBsFromAntiDiagonals bitboard = 
-  antiDiagonalMask
-  |> Array.map (fun diagonal -> ExtractLSB (bitboard &&& diagonal)) 
-  |> Array.fold (fun acc lsb -> acc ||| lsb) 0UL
+let extractLSBsFromAntiDiagonals bitboard =
+  let mutable acc = 0UL
+  for i in 0 .. antiDiagonalMask.Length - 1 do
+    acc <- acc ||| ExtractLSB (bitboard &&& antiDiagonalMask.[i])
+  acc
  
 //create bishop masks for each square
 let createBishopMask startSq finalSq =
@@ -266,10 +272,13 @@ let getBishopMaskWithOccupancy fromSq toSq occupancy =
   ((BishopAntiDiagonalMasks.[fromSq, toSq] &&& occupancy) |> extractLSBsFromAntiDiagonals)
 
 let setBitsInRange (fromSquare: int) (toSquare: int) : uint64 =
+    // contiguous bit run [lower..upper], allocation-free (was a Seq.fold over a list;
+    // getLSBRowOneMask calls this inside the castle attack-check hot path)
     let lowerSquare = min fromSquare toSquare
     let upperSquare = max fromSquare toSquare
-    let mask = Seq.fold (fun acc bit -> acc ||| (1UL <<< bit)) 0UL [lowerSquare..upperSquare]
-    mask
+    let count = upperSquare - lowerSquare + 1
+    if count >= 64 then 0xFFFFFFFFFFFFFFFFUL
+    else ((1UL <<< count) - 1UL) <<< lowerSquare
 
 //create rook masks for each square
 let createRookMask startSq finalSq =
