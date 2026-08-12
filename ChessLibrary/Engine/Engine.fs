@@ -197,9 +197,8 @@ module Engine =
           // invoke callbacks outside it.
           let snapshot =
             lock moveBoardLock (fun () ->
-              match tryGetTMoveFromUciNotation &moveBoard move with
-              | Some tmove ->
-                  let shortSan = getSanNotationFromTMove &moveBoard tmove
+              match tryGetMoveAndSanFromUci &moveBoard move with
+              | Some (tmove, shortSan) ->
                   let moveNum = moveBoard.MoveNumber()
                   let whiteToMove = moveBoard.Position.STM = 0uy
                   let fen = BoardHelper.posToFen moveBoard.Position
@@ -1841,9 +1840,8 @@ module EngineHelper =
           async {
               if moveCount > 0 then
                   let! bestMove1 = getBestMove engine1                
-                  match tryGetTMoveFromUciNotation &board bestMove1 with
-                  |Some tmove ->
-                    let shortSan = getSanNotationFromTMove &board tmove
+                  match tryGetMoveAndSanFromUci &board bestMove1 with
+                  |Some (tmove, shortSan) ->
                     board.SanMovesPlayed.Add(shortSan)
                     board.UciMovesPlayed.Add(bestMove1)
                     board.MakeMove &tmove
@@ -1853,9 +1851,8 @@ module EngineHelper =
                   |_ -> ()
 
                   let! bestMove2 = getBestMove engine2
-                  match tryGetTMoveFromUciNotation &board bestMove2 with
-                  |Some tmove ->
-                    let shortSan = getSanNotationFromTMove &board tmove
+                  match tryGetMoveAndSanFromUci &board bestMove2 with
+                  |Some (tmove, shortSan) ->
                     board.SanMovesPlayed.Add(shortSan)
                     board.UciMovesPlayed.Add(bestMove2)
                     board.MakeMove &tmove

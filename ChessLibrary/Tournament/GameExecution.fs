@@ -232,10 +232,10 @@ let playWithPondering
       lastMovePlayed <- move
       let mutable shortSan = String.Empty
 
-      match tryGetTMoveFromUciNotation &board move with
-      | Some tmove ->
+      match tryGetMoveAndSanFromUci &board move with
+      | Some (tmove, san) ->
           let mutable moveAdj = tmove
-          shortSan <- getSanNotationFromTMove &board tmove
+          shortSan <- san
           board.UciMovesPlayed.Add(move)
           gameMoveList.Add(shortSan)
           board.MakeMove(&moveAdj)
@@ -962,10 +962,10 @@ let playGeneric
                 moveInfoData.mt <- int64 duration.TotalMilliseconds
                 moveInfoData.pcs <- byte piecesLeft
 
-                match tryGetTMoveFromUciNotation &board move with
-                |Some tmove ->
+                match tryGetMoveAndSanFromUci &board move with
+                |Some (tmove, san) ->
                   let mutable moveAdj = tmove
-                  let mutable shortSan = getSanNotationFromTMove &board tmove
+                  let mutable shortSan = san
                   // Deviation logic only when replay dictionaries provided
                   let shouldPreventForPlayer =
                     tourny.PreventMoveDeviationFor |> isNull ||
@@ -995,9 +995,9 @@ let playGeneric
                       board.MakeMove &tmove
 
                   elif deviated then
-                    match tryGetTMoveFromUciNotation &board oldMove with
-                    |Some orgMove ->
-                      shortSan <- getSanNotationFromTMove &board orgMove
+                    match tryGetMoveAndSanFromUci &board oldMove with
+                    |Some (orgMove, orgSan) ->
+                      shortSan <- orgSan
                       tourny.DeviationCounter <- tourny.DeviationCounter + 1
                       move <- oldMove
                       board.UciMovesPlayed.Add(move)

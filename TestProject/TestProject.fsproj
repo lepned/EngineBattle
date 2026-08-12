@@ -9,6 +9,7 @@
 	<ItemGroup>
 		<Compile Include="BoardTests.fs" />
 		<Compile Include="MoveGenTests.fs" />
+		<Compile Include="MoveGenLegalityTests.fs" />
 		<Compile Include="CoreTypesTests.fs" />
 		<Compile Include="TimeControlFormatTests.fs" />
 		<Compile Include="PentanomialTests.fs" />
