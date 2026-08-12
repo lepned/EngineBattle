@@ -308,9 +308,6 @@ module MoveTypes =
       // get sanLong from Tmove
       let getUciNotation (move: TMove) side = moveToStr &move side
 
-      let getTmoveFromSanMove (moves : TMove array) (moveLong: string) stm =
-        moves |> Array.tryFind(fun m -> getUciNotation m stm = moveLong)
-
       let pieceOnSquare p sq = getPieceOnSquare &p sq
 
       let foundRookOnSquare p (moves : TMove array) =
@@ -318,66 +315,76 @@ module MoveTypes =
           moves
           |> Array.tryFind (fun m -> (pieceOnSquare p m.To) = piece)
 
-      let getSameCastlingMoveSanMove (moves : TMove array) (moveLong: string) stm =
-        moves
-        |> Array.filter(fun m -> isCastlingMove m)
+      /// Numeric UCI-token matcher over the first `count` entries of `moves`: parses
+      /// "e2e4"/"e7e8q" once into relative-frame squares and compares TMove fields
+      /// directly — no per-candidate string building. Match semantics are identical to
+      /// exact string comparison against moveToStr output (lowercase only, 4 or 5 chars).
+      let tryFindMoveByUciNotation (moves: TMove array) (count: int) (stm: byte) (uci: string) =
+        if uci.Length < 4 || uci.Length > 5 then None
+        else
+          let f0 = int uci.[0] - int 'a'
+          let r0 = int uci.[1] - int '1'
+          let f1 = int uci.[2] - int 'a'
+          let r1 = int uci.[3] - int '1'
+          if f0 < 0 || f0 > 7 || r0 < 0 || r0 > 7 || f1 < 0 || f1 > 7 || r1 < 0 || r1 > 7 then None
+          else
+            let fromSq = byte (AbsSq(r0 * 8 + f0, int stm))
+            let toSq = byte (AbsSq(r1 * 8 + f1, int stm))
+            let promoChar = if uci.Length = 5 then uci.[4] else ' '
+            let mutable result = None
+            let mutable i = 0
+            while result.IsNone && i < count do
+              let m = moves.[i]
+              if m.From = fromSq && m.To = toSq then
+                let promoIdx = int m.Promotion
+                let pChar = if promoIdx >= 0 && promoIdx < promo.Length then promo.[promoIdx] else ' '
+                if pChar = promoChar then result <- Some m
+              i <- i + 1
+            result
 
-      let getShortSanMoveFromTmove (moves : TMove array) (move: TMove) (pos : Position) =
+      /// Count-aware SAN conversion over the first `count` entries of `moves` —
+      /// single pass, no intermediate array allocations. `moves` must be the legal
+      /// move list of the position (disambiguation counts alternatives from it).
+      let getShortSanMoveFromTmoveN (moves : TMove array) (count: int) (move: TMove) (pos : Position) =
         if isCastlingMove move then
           if move.To < move.From then
             "0-0-0"
           elif move.To > move.From then
             "0-0"
-          //elif move.To = move.From then
-          //  if move.From = 2uy then "0-0-0" else "0-0"
           else
             failwith "Invalid castling move"
         else
           let movedPiece = getPiece move
           let promoPiece = getPromoPiece move
           let castling = isCastlingMove move
-          let numberToSq = dictNumberToName &pos.STM //if pos.STM = 0uy then QBBOperations.squareNumberToNameDictWhite else QBBOperations.squareNumberToNameDictBlack
-          let allMovesToSameSquare =
-            moves |> Array.filter(fun m -> m.To = move.To && getPiece m = movedPiece && promoPiece = m.Promotion && castling = isCastlingMove m )
+          let numberToSq = dictNumberToName &pos.STM
+          let fromName = numberToSq.[int move.From]
+          // one pass: count same-destination alternatives and their file/rank collisions
+          let mutable sameSquare = 0
+          let mutable sameFile = 0
+          let mutable sameRank = 0
+          for i in 0 .. count - 1 do
+            let m = moves.[i]
+            if m.To = move.To && getPiece m = movedPiece && promoPiece = m.Promotion && castling = isCastlingMove m then
+              sameSquare <- sameSquare + 1
+              let name = numberToSq.[int m.From]
+              if name.[0] = fromName.[0] then sameFile <- sameFile + 1
+              if name.[1] = fromName.[1] then sameRank <- sameRank + 1
 
-          //debugging
-          //let files =
-          //  allMovesToSameSquare
-          //  |> Array.map (fun m -> numberToSq.[int m.From][0] )
-          //let ranks =
-          //  allMovesToSameSquare
-          //  |> Array.map (fun m -> numberToSq.[int m.From].[1])
-          //let distF = files |> Array.distinct |> Array.length
-          //let distR = ranks |> Array.distinct |> Array.length
-
-          if allMovesToSameSquare.Length > 1 then
-            //check if the moves are from the same file
-            let sq = numberToSq.[int move.From]
-            let isFileAmbiguous =
-              allMovesToSameSquare
-              |> Array.filter (fun m -> numberToSq.[int m.From].[0] = sq.[0])
-              |> Array.length > 1
-
-            //if file is ambiguous - we need to use rank instead
-            if isFileAmbiguous then
-              let isRankAmbiguous =
-                allMovesToSameSquare
-                |> Array.filter (fun m -> numberToSq.[int m.From].[1] = sq.[1])
-                |> Array.length > 1
-              if isRankAmbiguous then
+          if sameSquare > 1 then
+            //file is ambiguous when another same-destination move shares the from-file
+            if sameFile > 1 then
+              if sameRank > 1 then
                 //both file and rank are ambiguous - we need to use both
-                let both = numberToSq.[int move.From].ToString()
-                //let longSan move = getSanLong move pos.STM
-                //let sanMoves = allMovesToSameSquare |> Array.fold (fun acc m -> acc + longSan m + " ") ""
-                //printfn "Ambiguous move to square : %s all available moves: %s" both sanMoves
-                getShortSan both move pos.STM
+                getShortSan fromName move pos.STM
               else
-                let rank = numberToSq.[int move.From].[1].ToString()
-                getShortSan rank move pos.STM
+                getShortSan (fromName.[1].ToString()) move pos.STM
             else //we need to use file
-              let file = numberToSq.[int move.From].[0].ToString()
-              getShortSan file move pos.STM
+              getShortSan (fromName.[0].ToString()) move pos.STM
           else
             getShortSan "" move pos.STM
+
+      let getShortSanMoveFromTmove (moves : TMove array) (move: TMove) (pos : Position) =
+        getShortSanMoveFromTmoveN moves moves.Length move pos
 
       // (Additional functions for converting moves to SAN strings, disambiguation, etc.)

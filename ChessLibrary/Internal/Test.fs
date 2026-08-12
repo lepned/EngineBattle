@@ -261,7 +261,6 @@ let bigPerftTestSample depth =
   printfn $"\nStarting small perft test on start position {Chess.startPos}"
   for i = 0 to 5 do
     Perft.perftOpt depth Chess.startPos
-    Perft.runPerft0 depth Chess.startPos
    
   printfn $"\nStarting small perft test on position {Perft.pos2}"
   Perft.divide depth Perft.pos2

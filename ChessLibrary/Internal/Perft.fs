@@ -96,24 +96,25 @@ let timeIt f depth =
   printfn $"Nodes: {result:N0} - NPS: {nps:N0}"
   result
 
+// GenerateMoves is legal-only (Phase 3 movegen rework), so the walkers below need no
+// per-move legality filtering. The reference pseudo-legal + Illegal walker lives in
+// TestProject/MoveGenLegalityTests.fs (perftReference) as the permanent cross-check.
 let perft (board:Board) depth =
   let rec perft depth =
     if depth = 0 then
       1L
     else
       let mutable nodes = 0L
-      //let mutable index = 0
-      let mutable pos = board.Position
       let moves = board.GenerateMoves ()
       for move in moves do
-        if not ( BoardHelper.Illegal &move &pos) then
-          board.MakeMoveNoHash (&move)
-          nodes <- nodes + perft (depth - 1)
-          board.UndoMove () //position move undo
+        board.MakeMoveNoHash (&move)
+        nodes <- nodes + perft (depth - 1)
+        board.UndoMove () //position move undo
       nodes
   perft depth
 
-// Fast perft for testing only (skips hash tracking - not for real games)
+// Fast perft for testing only (skips hash tracking - not for real games).
+// GenerateMovesToBuffer emits legal moves only, so leaves are bulk-counted directly.
 let perftFast (board:Board) depth =
   let maxDepth = max depth 10
   let buffer = Array.zeroCreate<MoveTypes.TMove> (256 * maxDepth)
@@ -121,22 +122,19 @@ let perftFast (board:Board) depth =
   let rec search depth offset =
     if depth = 0 then 1L
     else
-      let mutable nodes = 0L
-      let pos = board.Position
       let bufferSpan = buffer.AsSpan(offset, 256)
       let count = board.GenerateMovesToBuffer(bufferSpan)
-
-      for i = 0 to count - 1 do
-        let mutable move = buffer.[offset + i]
-        if not (BoardHelper.Illegal &move &pos) then
-          if depth = 1 then
-            // Bulk leaf counting - no make/unmake needed
-            nodes <- nodes + 1L
-          else
-            board.MakeMoveNoHash(&move)
-            nodes <- nodes + search (depth - 1) (offset + 256)
-            board.UndoMove()
-      nodes
+      if depth = 1 then
+        // Bulk leaf counting - the move list is already legal-only
+        int64 count
+      else
+        let mutable nodes = 0L
+        for i = 0 to count - 1 do
+          let mutable move = buffer.[offset + i]
+          board.MakeMoveNoHash(&move)
+          nodes <- nodes + search (depth - 1) (offset + 256)
+          board.UndoMove()
+        nodes
   search depth 0
 
 let perftOpt depth fen = 
@@ -150,44 +148,35 @@ let perftOpt depth fen =
   board.PrintPosition "Perft start"
   let rec perft depth =
     let mutable nodes = 0L
-    let mutable pos = board.Position
     let moves = board.GenerateMoves ()
     for move in moves do
-      //printfn $"Move {i}: {TMove.moveToStr &move pos.STM}"
-      if ( BoardHelper.Illegal &move &pos) then
-        //board.PrintPosition "Illegal move"
-        () //do nothing
-      elif depth > 1 then       
+      if depth > 1 then
         board.MakeMoveNoHash (&move)
         nodes <- nodes + perft (depth - 1)
         board.UndoMove() //position move undo
-      else              
+      else
           nodes <- nodes + 1L
           board.CollectStat &move
     nodes
   timeIt (fun _ -> perft depth) depth |> ignore
-  printfn $"Captures: {board.Captures:N0} Castles: {board.Castles:N0} EP: {board.EP:N0}" 
+  printfn $"Captures: {board.Captures:N0} Castles: {board.Castles:N0} EP: {board.EP:N0}"
   
 let perftOptChecked (record:Chess960Record) depth = 
   let board = Board()  
   board.LoadFen(record.FEN)
   let rec perft depth =
     let mutable nodes = 0L
-    let mutable pos = board.Position
     let moves = board.GenerateMoves()
-    for move in moves do      
-      //printfn $"Move {i}: {TMove.moveToStr &move pos.STM}"
-      if BoardHelper.Illegal &move &pos then
-        () //do nothing
-      elif depth > 1 then       
+    for move in moves do
+      if depth > 1 then
         board.MakeMoveNoHash (&move)
         nodes <- nodes + perft (depth - 1)
         board.UndoMove() //position move undo
-      else              
+      else
           nodes <- nodes + 1L
           board.CollectStat &move
     nodes
- 
+
   let res = perft depth
   let correct = getNumberFromRecord depth record
   if res = correct then
@@ -214,76 +203,22 @@ let perftOptCheckedFast (record:Chess960Record) depth =
     RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
       $"\nPosition {record.PositionNumber} depth {depth}: ERROR FEN: {record.FEN}\n\tcorrect number of positions are {correct:N0}, you got {res:N0} ({diff})"
 
-let runPerft0 depth fen =
-  let board = Board() 
-  board.LoadFen(fen)  
-  if board.IsFRC then
-    printfn "Chess960 position"
-  else
-    printfn "Standard position"
-  let mutable pos = board.Position
-  let rec perft depth = 
-    let mutable nodes = 0L
-    if depth = 0 then 
-      1L
-    else      
-      let moves = board.GenerateMoves()
-      for move in moves do        
-        pos <- board.Position
-        if not ( BoardHelper.Illegal &move &pos) then        
-          board.MakeMoveNoHash(&move)
-          nodes <- nodes + perft (depth - 1)
-          board.UndoMove ()
-      nodes
-  timeIt (fun _ -> perft depth) depth |> ignore
-  printfn $"Captures: {board.Captures:N0} Castles: {board.Castles:N0} EP: {board.EP:N0}" 
-
-let runPerft1 depth fen =
-  let board = Board()
-  board.LoadFen(fen)  
-  let rec perft depth =
-    let mutable nodes = 0L    
-    let moves = board.GenerateMoves()
-    let mutable pos = board.Position
-    if depth = 1 then
-      for move in moves do
-        if not ( BoardHelper.Illegal &move &pos) then 
-          nodes <- nodes + 1L
-      nodes
-    else      
-      for move in moves do
-        if not ( BoardHelper.Illegal &move &pos) then        
-          board.MakeMoveNoHash(&move)
-          nodes <- nodes + perft (depth - 1)
-          board.UndoMove()
-      nodes
-  timeIt (fun _ -> perft depth) depth
-
 let divide depth fen =
   let board = Board()
-  board.LoadFen(fen) 
+  board.LoadFen(fen)
   let mutable position = board.Position
   let mutable total = 0L
-  let mutable index = 0
   let moves = board.GenerateMoves ()
   printfn "\nDivide with depth = %d started\n" depth
-  for move in moves do    
+  for move in moves do
     let mutable nodes = 1L
-    if not ( BoardHelper.Illegal &move &position) then        
-      if depth > 0 then
-        board.MakeMoveNoHash &move
-        nodes <- perft board (depth - 1)
-        board.UndoMove()
-        printfn $"  {MoveTypes.TMoveOps.moveToStr &move position.STM}:   {nodes:N0}"
-      total <- total + nodes
+    if depth > 0 then
+      board.MakeMoveNoHash &move
+      nodes <- perft board (depth - 1)
+      board.UndoMove()
+      printfn $"  {MoveTypes.TMoveOps.moveToStr &move position.STM}:   {nodes:N0}"
+    total <- total + nodes
   printfn $"\nTotalt: {total:N0}"
-
-
-let runPerftTests from to' =
-  let board = Board()
-  board.LoadFen()
-  for i = from to to' do
-    divide i ""
 
 module StandardPositions =
 

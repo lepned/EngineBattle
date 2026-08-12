@@ -1229,25 +1229,30 @@ type Board() =
           emitLine main 0 (rootVariations.Length > 0) false false
           tokens |> Seq.toList
    
+    /// Generates LEGAL moves only (since the Phase 3 movegen rework; previously pseudo-legal)
     member this.GenerateMoves () =
       let mutable index = 0
       let span = moveList.Value.AsSpan()
-      generateCaptures span &index &position
-      generateQuiets span &index &position isFRC
+      let ctx = MoveGeneration.createLegalityContext &position
+      generateLegalCaptures span &index &position &ctx
+      generateLegalQuiets span &index &position isFRC &ctx
       span.Slice(0, index).ToArray()
 
+    /// Generates LEGAL moves only into the provided buffer, returns the count
     member this.GenerateMovesToBuffer (buffer: TMove Span) : int =
       let mutable index = 0
-      generateCaptures buffer &index &position
-      generateQuiets buffer &index &position isFRC
+      let ctx = MoveGeneration.createLegalityContext &position
+      generateLegalCaptures buffer &index &position &ctx
+      generateLegalQuiets buffer &index &position isFRC &ctx
       index
 
-    /// Thread-safe move generation that allocates a fresh buffer per call
+    /// Thread-safe LEGAL move generation that allocates a fresh buffer per call
     member this.GenerateMovesThreadSafe() =
         let span = Span<TMove>(Array.zeroCreate<TMove>(256))
         let mutable index = 0
-        generateCaptures span &index &position
-        generateQuiets span &index &position this.IsFRC
+        let ctx = MoveGeneration.createLegalityContext &position
+        generateLegalCaptures span &index &position &ctx
+        generateLegalQuiets span &index &position this.IsFRC &ctx
         span.Slice(0, index).ToArray()
           
     member this.MakeMove (move:TMove inref) =
@@ -1320,12 +1325,11 @@ type Board() =
       if key = rootPositionHash then inGame + 1 else inGame
     
     member this.GetLegalMoves() =
+      // GenerateMoves emits legal moves only; SAN conversion stays lazy
       let moveList = this.GenerateMoves()
 
       seq {
         for move in moveList do
-          let legal = BoardHelper.Illegal &move &position |> not
-          if legal then
             let longSan = TMoveOps.moveToStr &move position.STM
             if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
               //since it could be a chess960 game we need to check if move to is to the same square as the kingside rook or the queenside rook
@@ -1351,8 +1355,8 @@ type Board() =
       }
     
     member this.AnyLegalMove() =
-      this.GenerateMoves ()
-      |> Array.exists(fun m -> BoardHelper.Illegal &m &position |> not)      
+      let span = moveList.Value.AsSpan()
+      this.GenerateMovesToBuffer(span) > 0
 
     member this.IsMate() =
       MoveGeneration.InCheck &position <> 0UL && this.AnyLegalMove() |> not     
@@ -1362,53 +1366,49 @@ type Board() =
     
     member this.GetSanFromUci (move:string) =
       let moveList = this.GenerateMoves ()
-      let rec loop moves =
-        match moves with
-        | [] -> None
-        | tmove::t -> 
-          let mStr = TMoveOps.moveToStr &tmove this.Position.STM
-          if (mStr.Trim().ToLower()) = move.Trim().ToLower() then
-            if (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
-              // Standard castling targets g1/c1 (to = 6/2); FRC castling targets the
-              // rook's initial square — same dual check as GetLegalMoves.
-              let toSq = tmove.To
-              let kr, qr =
-                if position.STM = 0uy then
-                  position.RookInfo.WhiteKRInitPlacement,
-                  position.RookInfo.WhiteQRInitPlacement
-                else
-                  position.RookInfo.BlackKRInitPlacement,
-                  position.RookInfo.BlackQRInitPlacement
-              if toSq = 2uy then Some "0-0-0"
-              elif toSq = 6uy then Some "0-0"
-              elif kr = toSq then Some "0-0"
-              elif qr = toSq then Some "0-0-0"
-              else None
-            else
-              let san = ConvertTo.standardSAN(move, tmove, moveList, this.Position.STM)
-              Some san
+      // numeric matching (case-insensitive like the old string comparison: lower the input once)
+      match TMoveOps.tryFindMoveByUciNotation moveList moveList.Length position.STM (move.Trim().ToLower()) with
+      | Some tmove ->
+          if (tmove.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
+            // Standard castling targets g1/c1 (to = 6/2); FRC castling targets the
+            // rook's initial square — same dual check as GetLegalMoves.
+            let toSq = tmove.To
+            let kr, qr =
+              if position.STM = 0uy then
+                position.RookInfo.WhiteKRInitPlacement,
+                position.RookInfo.WhiteQRInitPlacement
+              else
+                position.RookInfo.BlackKRInitPlacement,
+                position.RookInfo.BlackQRInitPlacement
+            if toSq = 2uy then Some "0-0-0"
+            elif toSq = 6uy then Some "0-0"
+            elif kr = toSq then Some "0-0"
+            elif qr = toSq then Some "0-0-0"
+            else None
           else
-            loop t
-      loop (moveList|>Array.toList)    
+            let san = ConvertTo.standardSAN(move, tmove, moveList, this.Position.STM)
+            Some san
+      | None -> None
 
     member this.GetUciFromSan (san: string) =
-      let islegal move = this.IllegalMove &move |> not
+      // GenerateMoves is legal-only; the legality callback can no longer reject anything
+      let islegal _ = true
       let moveList = this.GenerateMoves()
       match TMoveOps.getTMoveFromShortSan san moveList position.STM islegal with
       | Some move -> Some (TMoveOps.getUciNotation move position.STM)
       | None -> None
 
     member this.FindEpMove move =
-        let islegal move = this.IllegalMove &move |> not
+        let islegal _ = true
         let moveList = this.GenerateMoves()
         match TMoveOps.getTMoveFromShortSan move moveList position.STM islegal with
         |Some tmove -> (tmove.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
-        |None -> false        
+        |None -> false
 
     member this.PlayUciMove move =
       let moveList = this.GenerateMoves()
 
-      match TMoveOps.getTmoveFromSanMove moveList move position.STM with
+      match TMoveOps.tryFindMoveByUciNotation moveList moveList.Length position.STM move with
       |Some tmove ->
         this.UciMovesPlayed.Add(move)
         let shortSan = TMoveOps.getShortSanMoveFromTmove moveList tmove position
@@ -1467,8 +1467,8 @@ type Board() =
         updatePathFromCurrent()
       |None -> ()    
 
-    member this.PlayOpeningMove (fromSan: string) = 
-      let islegal move = this.IllegalMove &move |> not      
+    member this.PlayOpeningMove (fromSan: string) =
+      let islegal _ = true // GenerateMoves is legal-only
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
       | Some move ->
@@ -1515,7 +1515,7 @@ type Board() =
       this.PlaySanMoveWithComments san String.Empty
 
     member this.PlaySanMoveWithComments (san: string) (comments: string) =
-      let islegal move = this.IllegalMove &move |> not
+      let islegal _ = true // GenerateMoves is legal-only
       let moveList = this.GenerateMoves ()
       match TMoveOps.getTMoveFromShortSan san moveList position.STM islegal with
       | Some move ->

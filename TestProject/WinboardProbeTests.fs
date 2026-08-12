@@ -286,8 +286,9 @@ let ``Winboard move output formats parse`` () =
     let bishopBoard = withFen "8/8/8/8/8/8/2B5/4K3 w - - 0 1"
     assertBestmove "bestmove c2h7" "move Bh7" bishopBoard
 
-    // SAN with move number and ellipsis
-    let blackPawnBoard = withFen "8/8/8/3p4/8/8/8/4K3 b - - 0 1"
+    // SAN with move number and ellipsis (position needs a black king — GenerateMoves is
+    // legal-only and a side without a king has no legal moves)
+    let blackPawnBoard = withFen "7k/8/8/3p4/8/8/8/4K3 b - - 0 1"
     assertBestmove "bestmove d5d4" "1. ... d4" blackPawnBoard
 
 // ===== PV normalization tests =====
@@ -321,8 +322,8 @@ let ``Winboard PV formats normalize`` () =
     let board3 = withFen fen1
     assertPvContains [ "g6h7" ] "1 -13 0 234 Bh7 Nc3 e6" board3
 
-    // SAN PV with move number only
-    let board4 = withFen "8/8/8/3p4/8/8/8/4K3 b - - 0 1"
+    // SAN PV with move number only (black king required — GenerateMoves is legal-only)
+    let board4 = withFen "7k/8/8/3p4/8/8/8/4K3 b - - 0 1"
     assertPvContains [ "d5d4" ] "1 -13 0 234 1. d4" board4
 
 // ===== WinboardHandler integration tests =====

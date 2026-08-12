@@ -378,87 +378,12 @@ module BoardHelper =
   let loadFen (fenOption: string option, position: Position outref) =
     position <- getPosFromFen fenOption
   
-  let Illegal (move: TMove inref) (position: _ inref) =
-      let from = 1UL <<< int move.From
-      let mutable toSq = 1UL <<< int move.To
-      let mutable king = 0UL
-      let mutable kingsq = 0
-      let mutable newoccupation = ((PositionOps.occupation &position) ^^^ from) ||| toSq
-      let mutable newopposing = (PositionOps.opposing &position) &&& ~~~toSq
-      let mutable legal = true
-      
-      if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then         
-         let rooks = PositionOps.rooksM &position
-         let shortM = MSB rooks |> byte
-         let rook = ExtractLSB rooks
-         let kings = PositionOps.kings &position
-         let kingExt = kings &&& PositionOps.sideToMove &position
-         king <- toSq
-         kingsq <- int move.To
-         if toSq = rook then //chess960 castling
-           //remove the king from the old occupation
-           newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rook
-           if rook > kingExt then
-              king <- 1UL <<< 6
-              kingsq <- 6
-           else
-              king <- 1UL <<< 2
-              kingsq <- 2
-           //add the king to the new occupation
-           newoccupation <- newoccupation ||| king
-         elif shortM = move.To then //chess960 castling
-           let rookS = 1UL <<< (int shortM)
-           //remove the king and rook from the old occupation
-           newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rookS
-           if rookS > kingExt then
-              king <- 1UL <<< 6
-              kingsq <- 6
-           else
-              king <- 1UL <<< 2
-              kingsq <- 2
-           //add the king to the new occupation
-           newoccupation <- newoccupation ||| king
+  /// Reference per-move legality test. The implementation lives in MoveGeneration.Illegal
+  /// (moved there so the LegalityContext fast path can fall back to it for EP/castle moves);
+  /// this alias keeps the historical BoardHelper.Illegal call sites working unchanged.
+  let Illegal (move: TMove inref) (position: Position inref) =
+      MoveGeneration.Illegal &move &position
 
-      elif legal && (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.KING then          
-          king <- toSq
-          kingsq <- int move.To
-          if (kingsq > 63) then
-            legal <- false
-
-      else
-          king <- PositionOps.kings &position &&& PositionOps.sideToMove &position        
-          kingsq <- int (LSB king)
-          if (kingsq > 63) then
-            legal <- false
-          if legal && (move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY then
-              let epmask = toSq >>> 8
-              newopposing <- newopposing ^^^ epmask
-              newoccupation <- newoccupation ^^^ epmask
-      if legal then
-        let mutable mask = KnightDest.[kingsq] &&& newopposing
-        if legal && mask <> 0UL && (mask &&& PositionOps.knights &position) > 0UL then
-            legal <- false
-
-        mask <- (((king <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((king <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& newopposing
-        if legal && mask <> 0UL && (mask &&& PositionOps.pawns &position) > 0UL then
-            legal <- false
-
-        mask <- PositionOps.queenOrBishops &position &&& newopposing
-        if legal && mask <> 0UL && (mask &&& GenBishop(kingsq, newoccupation)) > 0UL then
-            legal <- false
-
-        mask <- PositionOps.queenOrRooks &position &&& newopposing
-        if legal && mask <> 0UL && (mask &&& GenRook(kingsq, newoccupation)) > 0UL then
-            legal <- false
-
-        if legal then 
-          mask <- newopposing &&& KingDest.[kingsq]
-          mask <> 0UL && (mask &&& PositionOps.kings &position) > 0UL
-        else
-          true
-      else
-        true
-  
   let posToFen (position : Position) =
     let stm = position.STM
     let mutable pos = position

@@ -14,19 +14,23 @@ let printBinaryView label (number : uint64) =
   let binary = Convert.ToString(int64 number, 2) |> binaryReversed 
   printfn "%s\n%s" label binary
 
+// GenRook/GenBishop return standard attack-set semantics: the origin square is NOT
+// included. (The raw QBB span construction keeps the origin bit; it is masked out here
+// so attack-map uses — e.g. the LegalityContext king-danger map — need no per-call
+// compensation. All other consumers mask the origin anyway via ~occupation/opposing.)
 let inline GenRook(sq:int, occupation:uint64) =
   let occupation = occupation ^^^ (1UL <<< sq) // remove the selected piece from the occupation */
-  ((0x8080808080808080UL >>> (63 ^^^ int (LSB((0x0101010101010101UL <<< sq) &&& (occupation ||| 0xFF00000000000000UL))))) &&& 
+  (((0x8080808080808080UL >>> (63 ^^^ int (LSB((0x0101010101010101UL <<< sq) &&& (occupation ||| 0xFF00000000000000UL))))) &&&
     (0x0101010101010101UL <<< int (MSB((0x8080808080808080UL >>> (63 ^^^ sq)) &&&  (occupation ||| 0x00000000000000FFUL))))) |||
    ((0xFF00000000000000UL >>> (63 ^^^ int (LSB((0x00000000000000FFUL <<< sq) &&&  (occupation ||| 0x8080808080808080UL))))) &&&
-    (0x00000000000000FFUL <<< int (MSB((0xFF00000000000000UL >>> (63 ^^^ sq)) &&&  (occupation ||| 0x0101010101010101UL)))))
-  
+    (0x00000000000000FFUL <<< int (MSB((0xFF00000000000000UL >>> (63 ^^^ sq)) &&&  (occupation ||| 0x0101010101010101UL)))))) &&& ~~~(1UL <<< sq)
+
 let inline GenBishop(sq:int, occupation:uint64) =
   let occupation = occupation ^^^ (1UL <<< sq)
-  (((0x8040201008040201UL >>> (63 ^^^ int (LSB((0x8040201008040201UL <<< sq) &&& (occupation ||| 0xFF80808080808080UL))))) &&& 
+  ((((0x8040201008040201UL >>> (63 ^^^ int (LSB((0x8040201008040201UL <<< sq) &&& (occupation ||| 0xFF80808080808080UL))))) &&&
     (0x8040201008040201UL <<< int (MSB((0x8040201008040201UL >>> (63 ^^^ sq)) &&& (occupation ||| 0x01010101010101FFUL))))) |||
     ((0x8102040810204081UL >>> (63 ^^^ int (LSB((0x8102040810204081UL <<< sq) &&& (occupation ||| 0xFF01010101010101UL))))) &&&
-    (0x8102040810204081UL <<< int (MSB((0x8102040810204081UL >>> (63 ^^^ sq)) &&& (occupation ||| 0x80808080808080FFUL))))))
+    (0x8102040810204081UL <<< int (MSB((0x8102040810204081UL >>> (63 ^^^ sq)) &&& (occupation ||| 0x80808080808080FFUL))))))) &&& ~~~(1UL <<< sq)
 
 let inline BBPieces (piece: TPieceType, position: Position inref) =
     match piece with
@@ -57,6 +61,231 @@ let InCheck(position: Position inref) =
     (GenBishop(kingsq, occupations) &&& (PositionOps.bishops &position ||| PositionOps.queens &position)) |||
     ((((king <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((king <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& PositionOps.pawns &position) |||
     (KingDest[kingsq] &&& PositionOps.kings &position)) &&& opposing)
+
+/// Full rook rays from each square on an empty board (excludes the square itself)
+let rookRays = Array.init 64 (fun sq -> GenRook(sq, 1UL <<< sq))
+/// Full bishop rays from each square on an empty board (excludes the square itself)
+let bishopRays = Array.init 64 (fun sq -> GenBishop(sq, 1UL <<< sq))
+
+/// betweenBB.[from * 64 + to] = squares strictly between two aligned squares (0 if not aligned).
+/// lineBB.[from * 64 + to] = the full rank/file/diagonal through both squares incl. endpoints (0 if not aligned).
+let betweenBB, lineBB =
+    let between = Array.zeroCreate<uint64> 4096
+    let line = Array.zeroCreate<uint64> 4096
+    let dirs = [| (1, 0); (-1, 0); (0, 1); (0, -1); (1, 1); (1, -1); (-1, 1); (-1, -1) |]
+    for sq1 in 0 .. 63 do
+        let f1, r1 = sq1 % 8, sq1 / 8
+        for (df, dr) in dirs do
+            let mutable f = f1 + df
+            let mutable r = r1 + dr
+            let mutable path = 0UL
+            while f >= 0 && f < 8 && r >= 0 && r < 8 do
+                between.[sq1 * 64 + (r * 8 + f)] <- path
+                path <- path ||| (1UL <<< (r * 8 + f))
+                f <- f + df
+                r <- r + dr
+    let axes = [| (1, 0); (0, 1); (1, 1); (1, -1) |]
+    for sq1 in 0 .. 63 do
+        let f1, r1 = sq1 % 8, sq1 / 8
+        for (df, dr) in axes do
+            let mutable lineMask = 1UL <<< sq1
+            for s in [| 1; -1 |] do
+                let mutable f = f1 + df * s
+                let mutable r = r1 + dr * s
+                while f >= 0 && f < 8 && r >= 0 && r < 8 do
+                    lineMask <- lineMask ||| (1UL <<< (r * 8 + f))
+                    f <- f + df * s
+                    r <- r + dr * s
+            let mutable rest = lineMask &&& ~~~(1UL <<< sq1)
+            while rest <> 0UL do
+                line.[sq1 * 64 + int (LSB rest)] <- lineMask
+                rest <- ClearLSB rest
+    between, line
+
+/// Full line through a square in one direction pair (both ways, incl. the square itself)
+let private buildLineDir (df: int) (dr: int) =
+    Array.init 64 (fun sq ->
+        let f0, r0 = sq % 8, sq / 8
+        let mutable mask = 1UL <<< sq
+        for s in [| 1; -1 |] do
+            let mutable f = f0 + df * s
+            let mutable r = r0 + dr * s
+            while f >= 0 && f < 8 && r >= 0 && r < 8 do
+                mask <- mask ||| (1UL <<< (r * 8 + f))
+                f <- f + df * s
+                r <- r + dr * s
+        mask)
+
+/// Diagonal through each square in the +9 direction (up-right in the relative frame)
+let diagLinesNE = buildLineDir 1 1
+/// Diagonal through each square in the +7 direction (up-left in the relative frame)
+let diagLinesNW = buildLineDir -1 1
+
+/// Reference per-move legality test (moved verbatim from BoardHelper.Illegal, which now
+/// delegates here). Materializes the post-move occupancy and probes all attacks to the king.
+/// Kept as the exact reference: isIllegalCtx falls back to it for EP and castle moves and is
+/// differential-tested against it.
+let Illegal (move: TMove inref) (position: Position inref) =
+    let from = 1UL <<< int move.From
+    let mutable toSq = 1UL <<< int move.To
+    let mutable king = 0UL
+    let mutable kingsq = 0
+    let mutable newoccupation = ((PositionOps.occupation &position) ^^^ from) ||| toSq
+    let mutable newopposing = (PositionOps.opposing &position) &&& ~~~toSq
+    let mutable legal = true
+
+    if (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY then
+       let rooks = PositionOps.rooksM &position
+       let shortM = MSB rooks |> byte
+       let rook = ExtractLSB rooks
+       let kings = PositionOps.kings &position
+       let kingExt = kings &&& PositionOps.sideToMove &position
+       king <- toSq
+       kingsq <- int move.To
+       if toSq = rook then //chess960 castling
+         //remove the king from the old occupation
+         newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rook
+         if rook > kingExt then
+            king <- 1UL <<< 6
+            kingsq <- 6
+         else
+            king <- 1UL <<< 2
+            kingsq <- 2
+         //add the king to the new occupation
+         newoccupation <- newoccupation ||| king
+       elif shortM = move.To then //chess960 castling
+         let rookS = 1UL <<< (int shortM)
+         //remove the king and rook from the old occupation
+         newoccupation <- newoccupation &&& ~~~kingExt &&& ~~~rookS
+         if rookS > kingExt then
+            king <- 1UL <<< 6
+            kingsq <- 6
+         else
+            king <- 1UL <<< 2
+            kingsq <- 2
+         //add the king to the new occupation
+         newoccupation <- newoccupation ||| king
+
+    elif legal && (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.KING then
+        king <- toSq
+        kingsq <- int move.To
+        if (kingsq > 63) then
+          legal <- false
+
+    else
+        king <- PositionOps.kings &position &&& PositionOps.sideToMove &position
+        kingsq <- int (LSB king)
+        if (kingsq > 63) then
+          legal <- false
+        if legal && (move.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY then
+            let epmask = toSq >>> 8
+            newopposing <- newopposing ^^^ epmask
+            newoccupation <- newoccupation ^^^ epmask
+    if legal then
+      let mutable mask = KnightDest.[kingsq] &&& newopposing
+      if legal && mask <> 0UL && (mask &&& PositionOps.knights &position) > 0UL then
+          legal <- false
+
+      mask <- (((king <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((king <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& newopposing
+      if legal && mask <> 0UL && (mask &&& PositionOps.pawns &position) > 0UL then
+          legal <- false
+
+      mask <- PositionOps.queenOrBishops &position &&& newopposing
+      if legal && mask <> 0UL && (mask &&& GenBishop(kingsq, newoccupation)) > 0UL then
+          legal <- false
+
+      mask <- PositionOps.queenOrRooks &position &&& newopposing
+      if legal && mask <> 0UL && (mask &&& GenRook(kingsq, newoccupation)) > 0UL then
+          legal <- false
+
+      if legal then
+        mask <- newopposing &&& KingDest.[kingsq]
+        mask <> 0UL && (mask &&& PositionOps.kings &position) > 0UL
+      else
+        true
+    else
+      true
+
+/// Per-position legality data computed once, replacing per-move Illegal probes when a whole
+/// move list is filtered. Checkers/pins/danger are all in the QBB side-to-move-relative frame.
+[<Struct>]
+type LegalityContext =
+    { KingSq: int
+      Checkers: uint64
+      CheckMask: uint64
+      Pinned: uint64
+      KingDanger: uint64 }
+
+let createLegalityContext (position: Position inref) =
+    let occ = PositionOps.occupation &position
+    let own = PositionOps.sideToMove &position
+    let opposing = PositionOps.opposing &position
+    let king = PositionOps.kings &position &&& own
+    if king = 0UL then
+        // malformed position (no own king): everything is illegal, matching Illegal's kingsq guard
+        { KingSq = 64; Checkers = 0UL; CheckMask = 0UL; Pinned = 0UL; KingDanger = 0xFFFFFFFFFFFFFFFFUL }
+    else
+        let kingSq = int (LSB king)
+        let checkers =
+            ((KnightDest.[kingSq] &&& PositionOps.knights &position) |||
+             (GenRook(kingSq, occ) &&& PositionOps.queenOrRooks &position) |||
+             (GenBishop(kingSq, occ) &&& PositionOps.queenOrBishops &position) |||
+             ((((king <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((king <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& PositionOps.pawns &position)) &&& opposing
+        // Non-king moves must land inside this mask: anywhere when not in check, on the
+        // checker or a blocking square in single check, nowhere in double check.
+        let checkMask =
+            if checkers = 0UL then 0xFFFFFFFFFFFFFFFFUL
+            elif ClearLSB checkers = 0UL then betweenBB.[kingSq * 64 + int (LSB checkers)] ||| checkers
+            else 0UL
+        let enemyRQ = PositionOps.queenOrRooks &position &&& opposing
+        let enemyBQ = PositionOps.queenOrBishops &position &&& opposing
+        // pinned = own pieces that are the single blocker between the king and an enemy slider
+        let mutable pinned = 0UL
+        let mutable snipers = (rookRays.[kingSq] &&& enemyRQ) ||| (bishopRays.[kingSq] &&& enemyBQ)
+        while snipers <> 0UL do
+            let sniperSq = int (LSB snipers)
+            let btw = betweenBB.[kingSq * 64 + sniperSq] &&& occ
+            if btw <> 0UL && ClearLSB btw = 0UL && (btw &&& own) <> 0UL then
+                pinned <- pinned ||| btw
+            snipers <- ClearLSB snipers
+        // enemy attack map with our king removed from occupancy, so a king retreating
+        // along a slider's check ray is still seen as attacked
+        let occNoKing = occ ^^^ king
+        let enemyPawns = PositionOps.pawns &position &&& opposing
+        let mutable danger =
+            ((enemyPawns >>> 9) &&& 0x7F7F7F7F7F7F7F7FUL) ||| ((enemyPawns >>> 7) &&& 0xFEFEFEFEFEFEFEFEUL)
+        let enemyKing = PositionOps.kings &position &&& opposing
+        if enemyKing <> 0UL then
+            danger <- danger ||| KingDest.[int (LSB enemyKing)]
+        let mutable enemyKnights = PositionOps.knights &position &&& opposing
+        while enemyKnights <> 0UL do
+            danger <- danger ||| KnightDest.[int (LSB enemyKnights)]
+            enemyKnights <- ClearLSB enemyKnights
+        let mutable rq = enemyRQ
+        while rq <> 0UL do
+            danger <- danger ||| GenRook(int (LSB rq), occNoKing)
+            rq <- ClearLSB rq
+        let mutable bq = enemyBQ
+        while bq <> 0UL do
+            danger <- danger ||| GenBishop(int (LSB bq), occNoKing)
+            bq <- ClearLSB bq
+        { KingSq = kingSq; Checkers = checkers; CheckMask = checkMask; Pinned = pinned; KingDanger = danger }
+
+/// Context-based legality test. Must agree with Illegal for every move produced by
+/// generateCaptures/generateQuiets (differential-tested in MoveGenLegalityTests).
+/// EP and castle moves delegate to the reference test: both are rare and carry the
+/// tricky edge cases (horizontal EP pin, FRC castling occupancy).
+let isIllegalCtx (ctx: LegalityContext inref) (move: TMove inref) (position: Position inref) =
+    if (move.MoveType &&& (TPieceType.CASTLE ||| TPieceType.EP)) <> TPieceType.EMPTY then
+        Illegal &move &position
+    elif (move.MoveType &&& TPieceType.PIECE_MASK) = TPieceType.KING then
+        int move.To > 63 || (ctx.KingDanger &&& (1UL <<< int move.To)) <> 0UL
+    else
+        let toBit = 1UL <<< int move.To
+        if (ctx.Pinned &&& (1UL <<< int move.From)) <> 0UL then
+            (lineBB.[ctx.KingSq * 64 + int move.From] &&& toBit &&& ctx.CheckMask) = 0UL
+        else
+            (toBit &&& ctx.CheckMask) = 0UL
 
 
 let squareNumbersReversed =
@@ -311,6 +540,197 @@ let generateCaptures (moves: TMove Span) (index: int outref) (position : Positio
         let square = int (LSB ep)
         moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.EP ||| TPieceType.CAPTURE; From = byte square; To = (40uy + PositionOps.enPass(&position)); Promotion = TPieceType.EMPTY }
         index <- index + 1
+        ep <- ClearLSB ep
+
+/// Legal-only variant of generateQuiets: destinations are masked with the LegalityContext
+/// during generation (checkMask for unpinned pieces, pin line for pinned ones, ~KingDanger
+/// for the king), so no post-generation legality filtering is needed. Castling and EP are
+/// still routed through the reference Illegal test (rare, bit-exact parity).
+/// Output must equal the old pseudo-legal list filtered by Illegal, in the same order —
+/// differential-tested in MoveGenLegalityTests.
+let generateLegalQuiets (moves: TMove Span) (index: int outref) (position: Position inref) isFRC (ctx: LegalityContext inref) =
+    let occupation = PositionOps.occupation &position
+    let checkMask = ctx.CheckMask
+    let pinned = ctx.Pinned
+    let kingSq = ctx.KingSq &&& 63
+
+    // generate moves from king to knight
+    for piece in TPieceType.pieceTraversal do
+      let mutable pieces = BBPieces(piece, &position) &&& PositionOps.sideToMove &position
+      while (pieces <> 0UL) do
+        let square = int (LSB(pieces))
+        let legalMask =
+          if piece = TPieceType.KING then ~~~ctx.KingDanger
+          elif (pinned &&& (1UL <<< square)) <> 0UL then checkMask &&& lineBB.[kingSq * 64 + square]
+          else checkMask
+        let mutable destinations = ~~~occupation &&& BBDestinations(piece, square, occupation) &&& legalMask
+        while (destinations <> 0UL) do
+            moves.[index] <- { MoveType = piece; From = byte square; To = byte (LSB(destinations)); Promotion = TPieceType.EMPTY }
+            index <- index + 1
+            destinations <- ClearLSB destinations
+        pieces <- ClearLSB pieces
+
+    // pawn pushes: unpinned pawns batched; a pinned pawn can only push when pinned along
+    // the king's file, so those fold into the same batch (their push stays on the pin line
+    // by construction) and emission order matches the pseudo-legal generator
+    let ownPawns = PositionOps.pawns &position &&& PositionOps.sideToMove &position
+    let kingFileMask = 0x0101010101010101UL <<< (kingSq &&& 7)
+    let pushablePawns = (ownPawns &&& ~~~pinned) ||| (ownPawns &&& pinned &&& kingFileMask)
+    // the single-push set stays unmasked for deriving double pushes: the intermediate
+    // square need not be inside the check mask
+    let onePush = ((pushablePawns <<< 8) &&& ~~~occupation) &&& 0x00FFFFFFFFFFFFFFUL
+    let mutable push1 = onePush &&& checkMask
+    while (push1 <> 0UL) do
+      let square = int (LSB push1)
+      moves.[index] <-  { MoveType = TPieceType.PAWN; From = byte (square - 8); To = byte square; Promotion = TPieceType.EMPTY }
+      index <- index + 1
+      push1 <- ClearLSB push1
+
+    let mutable push2 = (onePush <<< 8) &&& ~~~occupation &&& 0x00000000FF000000UL &&& checkMask
+    while (push2 <> 0UL) do
+      let square = int (LSB push2)
+      moves.[index] <-  { MoveType = TPieceType.PAWN; From = byte (square - 16); To = byte square; Promotion = TPieceType.EMPTY }
+      index <- index + 1
+      push2 <- ClearLSB push2
+
+    // castling: same generation-time attack checks as generateQuiets, then the emitted
+    // move must additionally pass the reference Illegal test (bit-exact with old pipeline)
+    if (PositionOps.CanCastleLM &position && canKingReachLongRook &position) then
+        let longRookSq =
+          if position.STM = PositionOps.WHITE then
+            position.RookInfo.WhiteQRInitPlacement
+          else
+            position.RookInfo.BlackQRInitPlacement
+        let kingSqC = LSB(PositionOps.kings &position &&& position.PM) |> int
+        let opposing = PositionOps.opposing &position
+        let rookOcc = getRookMaskWithOccupancy kingSqC 2 occupation
+        let bishopOcc = getBishopMaskWithOccupancy kingSqC 2 occupation
+        let knightAttacks = (getKnightMask kingSqC 2) &&& PositionOps.knights &position
+        let pawnAttacks = (getPawnMask kingSqC 2) &&& PositionOps.pawns &position
+        let kingAttacks = (getKingMask kingSqC 2) &&& PositionOps.kings &position
+        let rookBishop = (rookOcc &&& PositionOps.queenOrRooks &position) ||| (bishopOcc &&& PositionOps.queenOrBishops &position)
+        let attacks = (rookBishop ||| knightAttacks ||| pawnAttacks ||| kingAttacks) &&& opposing
+        if attacks = 0UL then
+          let mutable mv =
+            if isFRC then
+              { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSqC; To = byte longRookSq; Promotion = TPieceType.EMPTY }
+            else
+              { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSqC; To = 2uy; Promotion = TPieceType.EMPTY }
+          if not (Illegal &mv &position) then
+            moves.[index] <- mv
+            index <- index + 1
+
+    if (PositionOps.CanCastleSM &position && canKingReachShortRook &position) then
+        let shortRookSq =
+          if position.STM = PositionOps.WHITE then
+            position.RookInfo.WhiteKRInitPlacement
+          else
+            position.RookInfo.BlackKRInitPlacement
+        let kingSqC = LSB(PositionOps.kings &position &&& position.PM) |> int
+        let opposing = PositionOps.opposing &position
+        let rookOcc = getRookMaskWithOccupancy kingSqC 6 occupation
+        let bishopOcc = getBishopMaskWithOccupancy kingSqC 6 occupation
+        let knightAttacks = (getKnightMask kingSqC 6) &&& PositionOps.knights &position
+        let pawnAttacks = (getPawnMask kingSqC 6) &&& PositionOps.pawns &position
+        let kingAttacks = (getKingMask kingSqC 6) &&& PositionOps.kings &position
+        let rookBishop = (rookOcc &&& PositionOps.queenOrRooks &position) ||| (bishopOcc &&& PositionOps.queenOrBishops &position)
+        let attacks = (rookBishop ||| knightAttacks ||| pawnAttacks ||| kingAttacks) &&& opposing
+        if attacks = 0UL then
+          let mutable mv =
+            if isFRC then
+              { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSqC; To = byte shortRookSq; Promotion = TPieceType.EMPTY }
+            else
+              { MoveType = TPieceType.KING ||| TPieceType.CASTLE; From = byte kingSqC; To = 6uy; Promotion = TPieceType.EMPTY }
+          if not (Illegal &mv &position) then
+            moves.[index] <- mv
+            index <- index + 1
+
+/// Legal-only variant of generateCaptures (see generateLegalQuiets for the masking rules).
+/// Pinned pawns fold into the batched capture shifts only when their pin line matches the
+/// capture direction (+9 → NE diagonal through the king, +7 → NW diagonal).
+let generateLegalCaptures (moves: TMove Span) (index: int outref) (position: Position inref) (ctx: LegalityContext inref) =
+    let occupation = PositionOps.occupation &position
+    let opposing = PositionOps.opposing &position
+    let checkMask = ctx.CheckMask
+    let pinned = ctx.Pinned
+    let kingSq = ctx.KingSq &&& 63
+
+    // generate moves from king to knight
+    for piece in TPieceType.pieceTraversal do
+      let mutable pieces = BBPieces(piece, &position) &&& PositionOps.sideToMove &position
+      while (pieces <> 0UL) do
+        let square = int (LSB pieces)
+        let legalMask =
+          if piece = TPieceType.KING then ~~~ctx.KingDanger
+          elif (pinned &&& (1UL <<< square)) <> 0UL then checkMask &&& lineBB.[kingSq * 64 + square]
+          else checkMask
+        let mutable destinations = opposing &&& BBDestinations(piece, square, occupation) &&& legalMask
+        while (destinations <> 0UL) do
+            moves.[index] <-  { MoveType = piece ||| TPieceType.CAPTURE; From = byte square; To = byte (LSB destinations); Promotion = TPieceType.EMPTY }
+            index <- index + 1
+            destinations <- ClearLSB destinations
+        pieces <- ClearLSB pieces
+
+    let pawns = PositionOps.pawns &position &&& PositionOps.sideToMove &position
+    let freePawns = pawns &&& ~~~pinned
+    let neCapturers = freePawns ||| (pawns &&& pinned &&& diagLinesNE.[kingSq])
+    let nwCapturers = freePawns ||| (pawns &&& pinned &&& diagLinesNW.[kingSq])
+
+    //right pawn captures (rpc)
+    let mutable rpc = (neCapturers <<< 9) &&& 0x00FEFEFEFEFEFEFEUL &&& opposing &&& checkMask
+    while (rpc <> 0UL) do
+      let square = int (LSB rpc)
+      moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.CAPTURE; From = byte (square - 9); To = byte square; Promotion = TPieceType.EMPTY }
+      index <- index + 1
+      rpc <- ClearLSB rpc
+
+    //left pawn captures (lpc)
+    let mutable lpc = (nwCapturers <<< 7) &&& 0x007F7F7F7F7F7F7FUL &&& opposing &&& checkMask
+    while (lpc <> 0UL) do
+      let square = int (LSB lpc)
+      moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.CAPTURE; From = byte (square - 7); To = byte square; Promotion = TPieceType.EMPTY }
+      index <- index + 1
+      lpc <- ClearLSB lpc
+
+    // Generate pawn promotions
+    if (pawns &&& 0x00FF000000000000UL) <> 0UL then
+      //left promo captures
+      let mutable promoL = (neCapturers <<< 9) &&& 0xFE00000000000000UL &&& opposing &&& checkMask
+      while (promoL <> 0UL) do
+        for piece in TPieceType.piecePromoTraversal do
+          let square = LSB promoL
+          moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE; From = byte (square - 9UL); To = byte square; Promotion = piece }
+          index <- index + 1
+        promoL <- ClearLSB promoL
+
+      //right promo captures
+      let mutable promoR = (nwCapturers <<< 7) &&& 0x7F00000000000000UL  &&& opposing &&& checkMask
+      while (promoR <> 0UL) do
+        for piece in TPieceType.piecePromoTraversal do
+          let square = int (LSB promoR)
+          moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO ||| TPieceType.CAPTURE; From = byte (square - 7); To = byte square; Promotion = piece }
+          index <- index + 1
+        promoR <- ClearLSB promoR
+
+      // no capture promotions (file-pinned pawns fold in like regular pushes)
+      let kingFileMask = 0x0101010101010101UL <<< (kingSq &&& 7)
+      let promoPushSrc = freePawns ||| (pawns &&& pinned &&& kingFileMask)
+      let mutable promoNoC = (promoPushSrc <<< 8) &&& ~~~occupation &&& 0xFF00000000000000UL &&& checkMask
+      while (promoNoC <> 0UL) do
+        for piece in TPieceType.piecePromoTraversal do
+          let square = int (LSB promoNoC)
+          moves.[index] <-  { MoveType = TPieceType.PAWN ||| TPieceType.PROMO; From = byte (square - 8); To = byte square; Promotion = piece }
+          index <- index + 1
+        promoNoC <- ClearLSB promoNoC
+
+    if (position.EnPassant <> 8uy) then
+      let mutable ep = pawns &&& EnPassant[int position.EnPassant]
+      while (ep <> 0UL) do
+        let square = int (LSB ep)
+        let mutable mv = { MoveType = TPieceType.PAWN ||| TPieceType.EP ||| TPieceType.CAPTURE; From = byte square; To = (40uy + PositionOps.enPass(&position)); Promotion = TPieceType.EMPTY }
+        if not (Illegal &mv &position) then
+          moves.[index] <- mv
+          index <- index + 1
         ep <- ClearLSB ep
 
 let makeMove (move : TMove inref) (position : Position byref) =
