@@ -2,6 +2,7 @@ open System
 open BenchmarkDotNet.Running
 open Benchmarks.ParserBenchmarks
 open Benchmarks.ClockBenchmarks
+open Benchmarks.MoveGenBenchmarks
 
 [<EntryPoint>]
 let main args =
@@ -18,6 +19,8 @@ let main args =
         printfn "  comments    Run comment-aware vs no-comments benchmarks"
         printfn "  real        Run real file benchmarks with BenchmarkDotNet"
         printfn "  clock       Compare TimeOnly vs TimeSpan for the game clock"
+        printfn "  movegen       Run movegen/legality benchmarks with BenchmarkDotNet"
+        printfn "  movegenquick  Run quick movegen baseline (no BenchmarkDotNet, instant results)"
         printfn "  all         Run all BenchmarkDotNet benchmarks"
         printfn "  help        Show this help message"
         printfn ""
@@ -58,6 +61,17 @@ let main args =
     | ["clock"] ->
         printfn "Running Clock Type Benchmarks..."
         BenchmarkRunner.Run<ClockUpdateBenchmarks>() |> ignore
+        0
+
+    | ["movegen"] ->
+        printfn "Running MoveGen Benchmarks..."
+        BenchmarkRunner.Run<PerftBenchmarks>() |> ignore
+        BenchmarkRunner.Run<LegalityFilterBenchmarks>() |> ignore
+        BenchmarkRunner.Run<PvConversionBenchmarks>() |> ignore
+        0
+
+    | ["movegenquick"] ->
+        runMoveGenQuick()
         0
 
     | ["all"] ->
