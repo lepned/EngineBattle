@@ -87,7 +87,7 @@
                          OnEvalUpdated="OnEvalUpdated" OnLiveStats="OnLiveStatsUpdated"
                          OnIterations="OnIterationsUpdated"
                          CompactChartLegend="true" StatsPanelKey="single-analysis"
-                         SuppressAutoOverlay="() => showInsightPins || showInsightDanger"
+                         SuppressAutoOverlay="() => AnyInsightsOn"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
         </div>
 
@@ -121,6 +121,9 @@
                     </label>
                     <label class="sa-insight-check" title="Squares around each king it cannot step to (red) and its escape squares (green)">
                         <input type="checkbox" @bind="showInsightDanger" @bind:after="OnInsightsToggled" /> King danger
+                    </label>
+                    <label class="sa-insight-check" title="Pieces that are undefended or attacked by something cheaper (amber), with lines from their attackers">
+                        <input type="checkbox" @bind="showInsightHanging" @bind:after="OnInsightsToggled" /> Hanging
                     </label>
                 </div>
             </div>
@@ -305,14 +308,17 @@
     // is covered without per-handler wiring. Mutually exclusive with the policy overlay.
     private bool showInsightPins;
     private bool showInsightDanger;
+    private bool showInsightHanging;
     private string insightsFen;
     private BoardUtils.PositionInsights cachedInsights;
+
+    private bool AnyInsightsOn => showInsightPins || showInsightDanger || showInsightHanging;
 
     private BoardUtils.PositionInsights Insights
     {
         get
         {
-            if (!showInsightPins && !showInsightDanger) return null;
+            if (!AnyInsightsOn) return null;
             if (fen != insightsFen)
             {
                 insightsFen = fen;
@@ -323,8 +329,8 @@
         }
     }
 
-    private IReadOnlyList<EbArrow> InsightArrows => InsightShapes.Arrows(Insights, showInsightPins);
-    private IReadOnlyList<EbCircle> InsightCircles => InsightShapes.Circles(Insights, showInsightPins, showInsightDanger);
+    private IReadOnlyList<EbArrow> InsightArrows => InsightShapes.Arrows(Insights, showInsightPins, showInsightHanging);
+    private IReadOnlyList<EbCircle> InsightCircles => InsightShapes.Circles(Insights, showInsightPins, showInsightDanger, showInsightHanging);
 
     private ElementReference pgnChart;
     private IJSObjectReference chessModule;
@@ -942,7 +948,7 @@
             Engine = engineConf.EngineConfig;
             engineConfigPath = engineConf.SourceFilePath ?? "";
             showOverlayControls = Engine?.Options?.Keys.Contains("LogLiveStats") ?? false;
-            if (showOverlayControls && !(showInsightPins || showInsightDanger))
+            if (showOverlayControls && !AnyInsightsOn)
             {
                 selectedOverlay = OverlaySettings.Policy;
                 overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
@@ -975,9 +981,9 @@
     private async Task OnOverlayChanged()
     {
         // Exclusivity: picking an engine overlay switches the insights overlay off.
-        if (selectedOverlay != OverlaySettings.None && (showInsightPins || showInsightDanger))
+        if (selectedOverlay != OverlaySettings.None && AnyInsightsOn)
         {
-            showInsightPins = showInsightDanger = false;
+            showInsightPins = showInsightDanger = showInsightHanging = false;
             SaveInsightsSetting();
         }
         overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
@@ -987,7 +993,7 @@
     private async Task OnInsightsToggled()
     {
         // Exclusivity: switching an insights layer on clears the engine overlay.
-        if ((showInsightPins || showInsightDanger) && selectedOverlay != OverlaySettings.None)
+        if (AnyInsightsOn && selectedOverlay != OverlaySettings.None)
         {
             selectedOverlay = OverlaySettings.None;
             overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
@@ -996,18 +1002,17 @@
         SaveInsightsSetting();
     }
 
+    // Stored as "+"-joined tokens ("pins+danger+hanging"); absent = off. Token parsing
+    // keeps values written before the hanging layer existed working unchanged.
     private void SaveInsightsSetting()
     {
         var s = SettingsService.Settings;
-        var mode = (showInsightPins, showInsightDanger) switch
-        {
-            (true, true) => "pins+danger",
-            (true, false) => "pins",
-            (false, true) => "danger",
-            _ => null
-        };
-        if (mode == null) s.PositionInsightsOverlay.Remove("single-analysis");
-        else s.PositionInsightsOverlay["single-analysis"] = mode;
+        var tokens = new List<string>();
+        if (showInsightPins) tokens.Add("pins");
+        if (showInsightDanger) tokens.Add("danger");
+        if (showInsightHanging) tokens.Add("hanging");
+        if (tokens.Count == 0) s.PositionInsightsOverlay.Remove("single-analysis");
+        else s.PositionInsightsOverlay["single-analysis"] = string.Join("+", tokens);
         SettingsService.Save(s);
     }
 
@@ -1015,8 +1020,10 @@
     {
         if (SettingsService.Settings.PositionInsightsOverlay.TryGetValue("single-analysis", out var mode))
         {
-            showInsightPins = mode is "pins" or "pins+danger";
-            showInsightDanger = mode is "danger" or "pins+danger";
+            var tokens = mode.Split('+', StringSplitOptions.RemoveEmptyEntries);
+            showInsightPins = tokens.Contains("pins");
+            showInsightDanger = tokens.Contains("danger");
+            showInsightHanging = tokens.Contains("hanging");
         }
     }
 
@@ -1091,7 +1098,7 @@
             if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
             {
                 showOverlayControls = true;
-                if (!(showInsightPins || showInsightDanger))
+                if (!AnyInsightsOn)
                 {
                     selectedOverlay = OverlaySettings.Policy;
                     overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);

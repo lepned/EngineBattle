@@ -62,6 +62,22 @@ let InCheck(position: Position inref) =
     ((((king <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((king <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& PositionOps.pawns &position) |||
     (KingDest[kingsq] &&& PositionOps.kings &position)) &&& opposing)
 
+/// All pieces of BOTH colors attacking `sq` (STM-relative frame) — mask the result with
+/// sideToMove/opposing at the call site. Pawn capture directions differ per color, so the
+/// enemy term probes up-board and the own term down-board. `occupation` is a parameter
+/// (rather than read from the position) so an exchange pass can re-probe with a front
+/// attacker removed; pass PositionOps.occupation for the plain query.
+let attackersTo (sq: int) (occupation: uint64) (position: Position inref) : uint64 =
+    let bit = 1UL <<< sq
+    let opposing = position.PM ^^^ PositionOps.occupation &position
+    let pawns = PositionOps.pawns &position
+    (KnightDest.[sq] &&& PositionOps.knights &position) |||
+    (GenRook(sq, occupation) &&& PositionOps.queenOrRooks &position) |||
+    (GenBishop(sq, occupation) &&& PositionOps.queenOrBishops &position) |||
+    (KingDest.[sq] &&& PositionOps.kings &position) |||
+    ((((bit <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((bit <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& pawns &&& opposing) |||
+    ((((bit >>> 9) &&& 0x7F7F7F7F7F7F7F7FUL) ||| ((bit >>> 7) &&& 0xFEFEFEFEFEFEFEFEUL)) &&& pawns &&& position.PM)
+
 /// Full rook rays from each square on an empty board (excludes the square itself)
 let rookRays = Array.init 64 (fun sq -> GenRook(sq, 1UL <<< sq))
 /// Full bishop rays from each square on an empty board (excludes the square itself)

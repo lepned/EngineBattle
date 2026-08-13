@@ -10,6 +10,7 @@ public static class InsightShapes
     public const string PinColor = "#E67E22";
     public const string CheckColor = "#D63031";
     public const string EscapeColor = "#27AE60";
+    public const string HangingColor = "#F1C40F";
 
     private static IEnumerable<BoardUtils.SideInsights> BothSides(BoardUtils.PositionInsights ins)
     {
@@ -17,30 +18,41 @@ public static class InsightShapes
         yield return ins.Black;
     }
 
-    /// <summary>Pin rays (attacker→pinned solid, pinned→king thin line) and checker→king arrows.</summary>
-    public static IReadOnlyList<EbArrow> Arrows(BoardUtils.PositionInsights ins, bool pinsChecks)
+    /// <summary>Pin rays (attacker→pinned solid, pinned→king thin line), checker→king
+    /// arrows, and thin attacker→victim lines for hanging pieces.</summary>
+    public static IReadOnlyList<EbArrow> Arrows(BoardUtils.PositionInsights ins, bool pinsChecks, bool hanging = false)
     {
-        if (ins == null || !pinsChecks) return Array.Empty<EbArrow>();
+        if (ins == null || (!pinsChecks && !hanging)) return Array.Empty<EbArrow>();
         var list = new List<EbArrow>();
         foreach (var side in BothSides(ins))
         {
             if (string.IsNullOrEmpty(side.King)) continue;   // kingless side (test positions)
-            foreach (var pin in side.Pins)
+            if (pinsChecks)
             {
-                list.Add(new EbArrow(pin.Attacker, pin.Pinned, PinColor, 0.75));
-                list.Add(new EbArrow(pin.Pinned, pin.King, PinColor, 0.3, 0.8, "line"));
+                foreach (var pin in side.Pins)
+                {
+                    list.Add(new EbArrow(pin.Attacker, pin.Pinned, PinColor, 0.75));
+                    list.Add(new EbArrow(pin.Pinned, pin.King, PinColor, 0.3, 0.8, "line"));
+                }
+                foreach (var checker in side.Checkers)
+                    list.Add(new EbArrow(checker, side.King, CheckColor, 0.6));
             }
-            foreach (var checker in side.Checkers)
-                list.Add(new EbArrow(checker, side.King, CheckColor, 0.6));
+            if (hanging)
+            {
+                foreach (var h in side.HangingPieces)
+                    foreach (var attacker in h.Attackers)
+                        list.Add(new EbArrow(attacker, h.Square, HangingColor, 0.5, 0.8, "line"));
+            }
         }
         return list;
     }
 
-    /// <summary>Pinned/checker/checked-king discs and block dots (pinsChecks), plus red
-    /// danger tint and green escape dots around each king (dangerZone).</summary>
-    public static IReadOnlyList<EbCircle> Circles(BoardUtils.PositionInsights ins, bool pinsChecks, bool dangerZone)
+    /// <summary>Pinned/checker/checked-king discs and block dots (pinsChecks), red danger
+    /// tint and green escape dots around each king (dangerZone), and amber discs on
+    /// hanging pieces (hanging).</summary>
+    public static IReadOnlyList<EbCircle> Circles(BoardUtils.PositionInsights ins, bool pinsChecks, bool dangerZone, bool hanging = false)
     {
-        if (ins == null || (!pinsChecks && !dangerZone)) return Array.Empty<EbCircle>();
+        if (ins == null || (!pinsChecks && !dangerZone && !hanging)) return Array.Empty<EbCircle>();
         var list = new List<EbCircle>();
         foreach (var side in BothSides(ins))
         {
@@ -62,6 +74,11 @@ public static class InsightShapes
                     list.Add(new EbCircle(danger, CheckColor, 0.25, 0.95));
                 foreach (var escape in side.KingEscapeSquares)
                     list.Add(new EbCircle(escape, EscapeColor, 0.5, 0.4));
+            }
+            if (hanging)
+            {
+                foreach (var h in side.HangingPieces)
+                    list.Add(new EbCircle(h.Square, HangingColor, 0.35, 0.95));
             }
         }
         return list;

@@ -49,8 +49,11 @@
         <label style="margin-right:12px;">
             <input type="checkbox" @bind="showInsights" /> Pins + checks
         </label>
-        <label>
+        <label style="margin-right:12px;">
             <input type="checkbox" @bind="showDangerZone" /> King danger zone
+        </label>
+        <label>
+            <input type="checkbox" @bind="showHanging" /> Hanging pieces
         </label>
         <div style="display:flex; gap:8px; margin-top:8px;">
             <button @onclick="SetRuyPin">Ruy pin</button>
@@ -60,7 +63,8 @@
         </div>
         <div style="opacity:0.7; margin-top:4px;">
             Orange: pin ray (attacker → pinned piece → king). Red: checker → king, faint dots = blocking squares.<br />
-            Danger zone: red tint = king-adjacent squares the king may not step to, green dots = escape squares.
+            Danger zone: red tint = king-adjacent squares the king may not step to, green dots = escape squares.<br />
+            Amber: hanging piece (undefended or attacked by something cheaper), thin lines from its attackers.
         </div>
     </fieldset>
 </div>
@@ -80,7 +84,7 @@
                 ? $"Selected {selectedSquare} — click a target square to move"
                 : "Click a piece, then a target square, to move it (free move, no legality check yet)")
         </p>
-        @if (showInsights || showDangerZone)
+        @if (showInsights || showDangerZone || showHanging)
         {
             <p style="margin-top:4px; min-height:1.2em; opacity:0.85;">@InsightsSummary</p>
         }
@@ -147,6 +151,7 @@
 
     private bool showInsights;
     private bool showDangerZone;
+    private bool showHanging;
     private string insightsFen;
     private BoardUtils.PositionInsights cachedInsights;
 
@@ -161,7 +166,7 @@
     {
         get
         {
-            if (!showInsights && !showDangerZone) return null;
+            if (!showInsights && !showDangerZone && !showHanging) return null;
             if (fen != insightsFen)
             {
                 insightsFen = fen;
@@ -177,7 +182,7 @@
         get
         {
             var list = new List<EbArrow>(DemoArrows);
-            list.AddRange(InsightShapes.Arrows(Insights, showInsights));
+            list.AddRange(InsightShapes.Arrows(Insights, showInsights, showHanging));
             return list;
         }
     }
@@ -187,7 +192,7 @@
         get
         {
             var list = new List<EbCircle>(DemoCircles);
-            list.AddRange(InsightShapes.Circles(Insights, showInsights, showDangerZone));
+            list.AddRange(InsightShapes.Circles(Insights, showInsights, showDangerZone, showHanging));
             return list;
         }
     }
@@ -212,6 +217,9 @@
                 if (showDangerZone)
                     parts.Add($"{name} K{side.King} escapes: "
                               + (side.KingEscapeSquares.Length > 0 ? string.Join(", ", side.KingEscapeSquares) : "none"));
+                if (showHanging)
+                    foreach (var h in side.HangingPieces)
+                        parts.Add($"{name} {h.Square} hanging (attackers: {string.Join(", ", h.Attackers)})");
             }
             return parts.Count > 0 ? "Insights: " + string.Join(" · ", parts) : "Insights: no pins or checks";
         }

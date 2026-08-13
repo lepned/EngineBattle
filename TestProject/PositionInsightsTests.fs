@@ -12,6 +12,8 @@ let private sorted (xs: string[]) = xs |> Array.sort
 
 let private pinTriple (p: PinInfo) = (p.Attacker, p.Pinned, p.King)
 
+let private hangingPair (h: HangingInfo) = (h.Square, sorted h.Attackers)
+
 [<Fact>]
 let ``Start position has no pins and no checks for either side`` () =
     let i = getPositionInsights "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -30,6 +32,8 @@ let ``Start position has no pins and no checks for either side`` () =
     Assert.Empty(i.White.KingEscapeSquares)
     Assert.Empty(i.Black.KingDangerSquares)
     Assert.Empty(i.Black.KingEscapeSquares)
+    Assert.Empty(i.White.HangingPieces)
+    Assert.Empty(i.Black.HangingPieces)
 
 [<Fact>]
 let ``White pawn pinned by bishop, white to move`` () =
@@ -107,3 +111,89 @@ let ``Multiple simultaneous pins are all reported`` () =
     let i = getPositionInsights "4k3/4r3/8/b7/8/8/3BR3/4K3 w - - 0 1"
     let pins = i.White.Pins |> Array.map pinTriple |> Array.sort
     Assert.Equal<(string * string * string)[]>([| ("a5", "d2", "e1"); ("e7", "e2", "e1") |], pins)
+
+// --- Hanging pieces -------------------------------------------------------
+
+[<Fact>]
+let ``Attacked and undefended piece is hanging`` () =
+    // Rd2 attacks the undefended Nd5 up the open d-file; nothing attacks white.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/8/8/3n4/8/8/3R4/4K3 %s - - 0 1" stm)
+        Assert.Equal<(string * string[])[]>([| ("d5", [| "d2" |]) |], i.Black.HangingPieces |> Array.map hangingPair)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``Defended piece attacked by equal value is not hanging`` () =
+    // Nc3 attacks Nd5, which Rd7 defends -> equal trade, not hanging. But Nd5 also
+    // attacks Nc3, which nothing defends -> the WHITE knight is the hanging one.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/3r4/8/3n4/8/2N5/8/4K3 %s - - 0 1" stm)
+        Assert.Empty(i.Black.HangingPieces)
+        Assert.Equal<(string * string[])[]>([| ("c3", [| "d5" |]) |], i.White.HangingPieces |> Array.map hangingPair)
+
+[<Fact>]
+let ``Defended rook attacked by a pawn is hanging (cheaper attacker)`` () =
+    // Rd5 is defended by Rd8, but the e4 pawn attacks it: losing the exchange either way.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "3rk3/8/8/3r4/4P3/8/8/4K3 %s - - 0 1" stm)
+        Assert.Equal<(string * string[])[]>([| ("d5", [| "e4" |]) |], i.Black.HangingPieces |> Array.map hangingPair)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``Defender pinned off its ray does not defend`` () =
+    // Re7 is pinned to Ke8 by Re2, so its rank-7 "defense" of Nb7 does not count:
+    // Bf3 wins the knight. Re7 itself is defended by the king against the equal rook.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/1n2r3/8/8/8/5B2/4R3/4K3 %s - - 0 1" stm)
+        Assert.Equal<(string * string[])[]>([| ("b7", [| "f3" |]) |], i.Black.HangingPieces |> Array.map hangingPair)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``Pinned knight cannot defend`` () =
+    // Ruy-style skeleton with d7 EMPTY so Bb5 really pins Nc6 (with a pawn on d7 the
+    // diagonal has two blockers and there is no pin). e5's only "defender" is the
+    // pinned knight — a pinned knight can never recapture — so e5 hangs to Nf3.
+    // The unprotected Nc6 itself also hangs to the bishop.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/8/2n5/1B2p3/8/5N2/8/4K3 %s - - 0 1" stm)
+        let hanging = i.Black.HangingPieces |> Array.map hangingPair |> Array.sortBy fst
+        Assert.Equal<(string * string[])[]>([| ("c6", [| "b5" |]); ("e5", [| "f3" |]) |], hanging)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``King-only defense still counts`` () =
+    // f7 is attacked by Bc4 but defended by Ke8 — not hanging (static heuristic:
+    // the king is a normal defender).
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/5p2/8/8/2B5/8/8/4K3 %s - - 0 1" stm)
+        Assert.Empty(i.Black.HangingPieces)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``Two attackers overwhelm a single defender`` () =
+    // Nd5 is defended once (Rd7) but attacked twice (Nc3 and Bg2 through f3/e4):
+    // NxN RxN BxR wins the exchange, so the knight is hanging. White's Nc3 is
+    // attacked by Nd5 but pawn-defended by b2 — an equal trade, not hanging.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/3r4/8/3n4/8/2N5/1P4B1/4K3 %s - - 0 1" stm)
+        Assert.Equal<(string * string[])[]>([| ("d5", [| "c3"; "g2" |]) |], i.Black.HangingPieces |> Array.map hangingPair)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``Rook battery does not win a pawn-defended pawn`` () =
+    // Rd2 (with Rd1 x-raying behind it) attacks d5, defended by the c6 pawn:
+    // Rxd5 cxd5 Rxd5 loses the exchange, so nothing hangs. Exercises the x-ray
+    // join in the exchange loop.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/8/2p5/3p4/8/8/3R4/3RK3 %s - - 0 1" stm)
+        Assert.Empty(i.Black.HangingPieces)
+        Assert.Empty(i.White.HangingPieces)
+
+[<Fact>]
+let ``King attacker does not trigger the cheaper-attacker rule`` () =
+    // Kd4 attacks the c6-defended d5 pawn: defended and the king's "value" never
+    // undercuts the victim, so nothing hangs.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/8/2p5/3p4/3K4/8/8/8 %s - - 0 1" stm)
+        Assert.Empty(i.Black.HangingPieces)
+        Assert.Empty(i.White.HangingPieces)
