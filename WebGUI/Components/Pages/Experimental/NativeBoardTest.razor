@@ -1,5 +1,6 @@
 @page "/boardtest"
 @using WebGUI.Components.Layout.ChessboardLayout
+@using ChessLibrary
 
 <PageTitle>Native board test</PageTitle>
 
@@ -42,6 +43,26 @@
         </label>
         <div style="opacity:0.7; margin-top:4px;">Best shown with the Italian position.</div>
     </fieldset>
+
+    <fieldset style="border:1px solid #666; border-radius:6px; padding:10px 14px;">
+        <legend>Insights (movegen)</legend>
+        <label style="margin-right:12px;">
+            <input type="checkbox" @bind="showInsights" /> Pins + checks
+        </label>
+        <label>
+            <input type="checkbox" @bind="showDangerZone" /> King danger zone
+        </label>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+            <button @onclick="SetRuyPin">Ruy pin</button>
+            <button @onclick="SetCrossPin">Cross pin</button>
+            <button @onclick="SetRookCheck">Rook check</button>
+            <button @onclick="SetDoubleCheck">Double check</button>
+        </div>
+        <div style="opacity:0.7; margin-top:4px;">
+            Orange: pin ray (attacker → pinned piece → king). Red: checker → king, faint dots = blocking squares.<br />
+            Danger zone: red tint = king-adjacent squares the king may not step to, green dots = escape squares.
+        </div>
+    </fieldset>
 </div>
 
 <div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;">
@@ -52,13 +73,17 @@
                       LightSquareColor="@lightColor" DarkSquareColor="@darkColor"
                       LastMoveFrom="@lastFrom" LastMoveTo="@lastTo"
                       SelectedSquare="@selectedSquare"
-                      Arrows="@DemoArrows" Circles="@DemoCircles" Labels="@DemoLabels"
+                      Arrows="@AllArrows" Circles="@AllCircles" Labels="@DemoLabels"
                       OnSquareClicked="OnSquareClicked" />
         <p style="margin-top:8px; min-height:1.2em;">
             @(selectedSquare is not null
                 ? $"Selected {selectedSquare} — click a target square to move"
                 : "Click a piece, then a target square, to move it (free move, no legality check yet)")
         </p>
+        @if (showInsights || showDangerZone)
+        {
+            <p style="margin-top:4px; min-height:1.2em; opacity:0.85;">@InsightsSummary</p>
+        }
     </div>
 </div>
 
@@ -110,6 +135,134 @@
     private void SetStart() { fen = StartFen; lastFrom = lastTo = selectedSquare = null; }
     private void SetItalian() { fen = ItalianFen; lastFrom = "f8"; lastTo = "c5"; selectedSquare = null; }
     private void SetEndgame() { fen = EndgameFen; lastFrom = lastTo = selectedSquare = null; }
+
+    // ------------------------------------------------------------------
+    // Movegen insights (pins + checks) via BoardUtils.getPositionInsights,
+    // derived from the same LegalityContext the legal move generator uses.
+    // ------------------------------------------------------------------
+    private const string RuyPinFen = "r1bqkbnr/ppp2ppp/2np4/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4";
+    private const string CrossPinFen = "4k3/4r3/8/8/4Q3/8/8/4K3 w - - 0 1";
+    private const string RookCheckFen = "R3k3/8/8/8/8/8/8/4K3 b - - 0 1";
+    private const string DoubleCheckFen = "4k3/8/8/1B6/8/8/8/4R1K1 b - - 0 1";
+
+    private const string PinColor = "#E67E22";
+    private const string CheckColor = "#D63031";
+    private const string EscapeColor = "#27AE60";
+
+    private bool showInsights;
+    private bool showDangerZone;
+    private string insightsFen;
+    private BoardUtils.PositionInsights cachedInsights;
+
+    private void SetRuyPin() { fen = RuyPinFen; lastFrom = lastTo = selectedSquare = null; showInsights = true; }
+    private void SetCrossPin() { fen = CrossPinFen; lastFrom = lastTo = selectedSquare = null; showInsights = true; }
+    private void SetRookCheck() { fen = RookCheckFen; lastFrom = lastTo = selectedSquare = null; showInsights = true; }
+    private void SetDoubleCheck() { fen = DoubleCheckFen; lastFrom = lastTo = selectedSquare = null; showInsights = true; }
+
+    // Computation is microseconds, but the FEN input rerenders per keystroke — cache
+    // by FEN and swallow parse errors while the user is mid-edit.
+    private BoardUtils.PositionInsights Insights
+    {
+        get
+        {
+            if (!showInsights && !showDangerZone) return null;
+            if (fen != insightsFen)
+            {
+                insightsFen = fen;
+                try { cachedInsights = BoardUtils.getPositionInsights(fen); }
+                catch { cachedInsights = null; }
+            }
+            return cachedInsights;
+        }
+    }
+
+    private IEnumerable<BoardUtils.SideInsights> BothSides
+    {
+        get
+        {
+            var ins = Insights;
+            if (ins == null) yield break;
+            yield return ins.White;
+            yield return ins.Black;
+        }
+    }
+
+    private IReadOnlyList<EbArrow> AllArrows
+    {
+        get
+        {
+            var list = new List<EbArrow>(DemoArrows);
+            if (showInsights)
+            {
+                foreach (var side in BothSides)
+                {
+                    foreach (var pin in side.Pins)
+                    {
+                        list.Add(new EbArrow(pin.Attacker, pin.Pinned, PinColor, 0.75));
+                        list.Add(new EbArrow(pin.Pinned, pin.King, PinColor, 0.3, 0.8, "line"));
+                    }
+                    foreach (var checker in side.Checkers)
+                        list.Add(new EbArrow(checker, side.King, CheckColor, 0.6));
+                }
+            }
+            return list;
+        }
+    }
+
+    private IReadOnlyList<EbCircle> AllCircles
+    {
+        get
+        {
+            var list = new List<EbCircle>(DemoCircles);
+            foreach (var side in BothSides)
+            {
+                if (showInsights)
+                {
+                    foreach (var pin in side.Pins)
+                        list.Add(new EbCircle(pin.Pinned, PinColor, 0.35, 0.95));
+                    foreach (var checker in side.Checkers)
+                        list.Add(new EbCircle(checker, CheckColor, 0.45, 0.9));
+                    foreach (var block in side.CheckBlockSquares)
+                        list.Add(new EbCircle(block, CheckColor, 0.18, 0.45));
+                    if (side.InCheck)
+                        list.Add(new EbCircle(side.King, CheckColor, 0.35, 0.95));
+                }
+                if (showDangerZone)
+                {
+                    foreach (var danger in side.KingDangerSquares)
+                        list.Add(new EbCircle(danger, CheckColor, 0.25, 0.95));
+                    foreach (var escape in side.KingEscapeSquares)
+                        list.Add(new EbCircle(escape, EscapeColor, 0.5, 0.4));
+                }
+            }
+            return list;
+        }
+    }
+
+    private string InsightsSummary
+    {
+        get
+        {
+            var ins = Insights;
+            if (ins == null) return "Insights: (invalid FEN)";
+            var parts = new List<string>();
+            foreach (var (side, name) in new[] { (ins.White, "White"), (ins.Black, "Black") })
+            {
+                if (showInsights)
+                {
+                    foreach (var pin in side.Pins)
+                        parts.Add($"{name} {pin.Pinned} pinned by {pin.Attacker}");
+                    if (side.InCheck)
+                        parts.Add($"{name} in check from {string.Join(", ", side.Checkers)}"
+                                  + (side.CheckBlockSquares.Length > 0 ? $" (block: {string.Join(", ", side.CheckBlockSquares)})" : ""));
+                }
+                if (showDangerZone)
+                    parts.Add($"{name} K{side.King} escapes: "
+                              + (side.KingEscapeSquares.Length > 0 ? string.Join(", ", side.KingEscapeSquares) : "none"));
+            }
+            return parts.Count > 0 ? "Insights: " + string.Join(" · ", parts) : "Insights: no pins or checks";
+        }
+    }
 
     // Click-to-move: first click selects a piece, second click moves it.
     // Free movement for now — legality wiring against ChessLibrary comes with the

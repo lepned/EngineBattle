@@ -130,6 +130,104 @@ let makeShortSan (moves: NNValues seq) (board: Board inref) =
         nnMove.LANMove <- transformedLanMove
       | None -> ()
 
+// ---------------------------------------------------------------------------
+// Position insights for GUI overlays (pins / checks), derived from the movegen
+// LegalityContext. Display-only helpers — not on any hot path.
+// ---------------------------------------------------------------------------
+
+/// An absolute pin: the enemy slider (Attacker), the single own piece between it and
+/// the king (Pinned), and the King square. All squares are absolute board names
+/// ("e4"), regardless of side to move (the QBB frame flip is handled internally).
+type PinInfo = { Attacker: string; Pinned: string; King: string }
+
+/// Pins/checks for one color. CheckBlockSquares are the squares where a block or
+/// capture resolves the check — populated only for single checks (a double check
+/// cannot be blocked). KingDangerSquares/KingEscapeSquares cover the king's
+/// NEIGHBORHOOD only (adjacent squares not occupied by own pieces): danger = the
+/// king may not step there because the square is enemy-attacked (attack map computed
+/// with the king removed from occupancy, so retreating along a check ray counts as
+/// attacked); escape = the king may legally step or capture there.
+type SideInsights =
+  { King: string
+    IsSideToMove: bool
+    InCheck: bool
+    Checkers: string[]
+    CheckBlockSquares: string[]
+    Pins: PinInfo[]
+    KingDangerSquares: string[]
+    KingEscapeSquares: string[] }
+
+type PositionInsights = { White: SideInsights; Black: SideInsights }
+
+let private emptySideInsights isStm =
+  { King = ""; IsSideToMove = isStm; InCheck = false
+    Checkers = [||]; CheckBlockSquares = [||]; Pins = [||]
+    KingDangerSquares = [||]; KingEscapeSquares = [||] }
+
+/// Insights for the side to move of the given position. The position's bitboards are
+/// in the QBB side-to-move-relative frame; the STM-aware name dictionary maps frame
+/// squares back to absolute names.
+let private sideInsightsFromPosition (position: Position inref) isStm =
+  let ctx = createLegalityContext &position
+  if ctx.KingSq > 63 then emptySideInsights isStm
+  else
+    let names =
+      if position.STM = PositionOps.WHITE then QBBOperations.squareNumberToNameDictWhite
+      else QBBOperations.squareNumberToNameDictBlack
+    let name (sq: int) = names.[sq]
+    let squaresOf (bb: uint64) =
+      let ret = ResizeArray<string>()
+      let mutable b = bb
+      while b <> 0UL do
+        ret.Add(name (int (QBBOperations.LSB b)))
+        b <- QBBOperations.ClearLSB b
+      ret.ToArray()
+    // Re-run the createLegalityContext sniper loop to recover attacker->pinned pairs
+    // (ctx.Pinned is only the bitboard of pinned pieces, without their attackers)
+    let occ = PositionOps.occupation &position
+    let own = PositionOps.sideToMove &position
+    let opposing = PositionOps.opposing &position
+    let enemyRQ = PositionOps.queenOrRooks &position &&& opposing
+    let enemyBQ = PositionOps.queenOrBishops &position &&& opposing
+    let pins = ResizeArray<PinInfo>()
+    let mutable snipers = (rookRays.[ctx.KingSq] &&& enemyRQ) ||| (bishopRays.[ctx.KingSq] &&& enemyBQ)
+    while snipers <> 0UL do
+      let sniperSq = int (QBBOperations.LSB snipers)
+      let btw = betweenBB.[ctx.KingSq * 64 + sniperSq] &&& occ
+      if btw <> 0UL && QBBOperations.ClearLSB btw = 0UL && (btw &&& own) <> 0UL then
+        pins.Add { Attacker = name sniperSq; Pinned = name (int (QBBOperations.LSB btw)); King = name ctx.KingSq }
+      snipers <- QBBOperations.ClearLSB snipers
+    let inCheck = ctx.Checkers <> 0UL
+    let blockSquares =
+      if inCheck && QBBOperations.ClearLSB ctx.Checkers = 0UL then
+        squaresOf (betweenBB.[ctx.KingSq * 64 + int (QBBOperations.LSB ctx.Checkers)])
+      else [||]
+    // king neighborhood: own-occupied squares are excluded entirely (blocked either
+    // way); the rest splits into attacked (danger) and steppable (escape, including
+    // captures of undefended enemy pieces)
+    let kingAdj = QBBOperations.KingDest.[ctx.KingSq] &&& ~~~own
+    { King = name ctx.KingSq
+      IsSideToMove = isStm
+      InCheck = inCheck
+      Checkers = squaresOf ctx.Checkers
+      CheckBlockSquares = blockSquares
+      Pins = pins.ToArray()
+      KingDangerSquares = squaresOf (kingAdj &&& ctx.KingDanger)
+      KingEscapeSquares = squaresOf (kingAdj &&& ~~~ctx.KingDanger) }
+
+/// Computes pins and checks for BOTH colors of a FEN position, for GUI overlay
+/// display. The non-moving side is evaluated on a side-swapped copy (pins and check
+/// facts are properties of the position, not of whose turn it is). Throws on a
+/// malformed FEN — callers rendering live user input should catch.
+let getPositionInsights (fen: string) : PositionInsights =
+  let mutable pos = BoardHelper.getPosFromFen (Some fen)
+  let stmSide = sideInsightsFromPosition &pos true
+  let mutable flipped = PositionOps.copy &pos
+  PositionOps.changeSide &flipped
+  let otherSide = sideInsightsFromPosition &flipped false
+  if pos.STM = PositionOps.WHITE then { White = stmSide; Black = otherSide }
+  else { White = otherSide; Black = stmSide }
+
 let makeRandomMove (rnd: Random) (board: Board inref) =
   // GenerateMoves is legal-only — no post-filter needed
   let moveList = board.GenerateMoves()
