@@ -252,13 +252,17 @@ In order to use the console mode you need to start the application from the Cons
 
 ` dotnet run -c release tournamentjson <fullPathToYourTournament.json> `
 
-There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel in the console mode. This setting is called `NumberOfGamesInParallelConsoleOnly` and can be set to any number you like. The default value is 2 but values up-to 4 games can be recommended for a strong GPU. If you run games in parallel 'PreventMoveDeviation' feature will be disabled, see below.
+There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This setting is called `NumberOfGamesInParallel` (the old name `NumberOfGamesInParallelConsoleOnly` is still accepted) and can be set to any number you like. Values up to 4 games can be recommended for a strong GPU.
 
 Note that parallel play applies to Round Robin and Gauntlet tournaments; Cup, Swiss and Ladder modes manage their pairings round by round and always run sequentially.
 
-### Watching Parallel Games Live in the WebGUI
+### Running Parallel Games in the WebGUI
 
-Parallel console games do not have to run invisibly: the console runner can broadcast every game to the WebGUI's live grid, giving you one live board per concurrent game.
+Parallel play also works directly in the WebGUI: start a Round Robin or Gauntlet tournament with `NumberOfGamesInParallel` above 1 from the Tournament page (Ctrl+R) and the browser navigates to the multi-board grid (`/tournament-grid`) — one live tile per concurrent game, with standings and pentanomial stats filling in as games finish. Clicking a tile opens the single-board live view for that game. Single-game user adjudication (Ctrl+Alt+W/B/D) is not available during parallel runs, and the end-of-tournament Ordo summary is console-only, as for sequential GUI runs.
+
+### Watching Parallel Console Games Live in the WebGUI
+
+Parallel console games do not have to run invisibly either: the console runner can broadcast every game to the WebGUI's live grid, giving you one live board per concurrent game.
 
 1. Start the WebGUI as usual (`dotnet run --project WebGUI -c Release`).
 2. Add a `LiveFeed` section to your `tournament.json` (or set the `EB_LIVEFEED_URL` environment variable, which overrides the JSON):
@@ -281,7 +285,7 @@ The WebGUI does not have to run on the same machine as the tournament — point 
 
 The **"PreventMoveDeviation"** feature is designed to enhance engine testing by enforcing a consistent move order across different game formats. Stockfish, for example, typically deviates from earlier games played in the same position—about twice per game—which can introduce inconsistencies in testing.
 
-**Important**: This feature requires **single-threaded tournament execution** because the deviation prevention logic must sequentially compare each engine's move choice against its previous play history in the same position. Running games in parallel would prevent this cross-reference mechanism from working correctly.
+**Note on parallel play**: The feature also works with `NumberOfGamesInParallel` above 1 — the replay history is shared across concurrent games under a lock. Sequential execution remains the most deterministic setup, because with parallel games the order in which positions enter the shared history depends on game timing.
 
 By strictly adhering to a reference-based move order and tracking position hashes, this feature ensures that recurring board states are consistently recognized, even when transpositions occur. This controlled approach is beneficial in both gauntlet tournaments—where one or more engines play against every other participant—and in normal round-robin tournaments, where engines are prevented from deviating from moves they have previously played in the same position. As a result, testers can evaluate and compare engine performance with greater precision under these uniform conditions.
 

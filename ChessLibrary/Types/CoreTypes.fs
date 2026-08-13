@@ -547,6 +547,7 @@ module TypesDef =
 
   // Tournament details, including methods for summarizing configuration.
   module Tournament =
+    open System.Text.Json
     open LayoutTypes
     open TimeControlTypes
 
@@ -577,7 +578,60 @@ module TypesDef =
       { [<JsonIgnore>] mutable Engines: CoreTypes.EngineConfig list
         EngineDefFolder: string
         EngineDefList: string list }
-    type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallelConsoleOnly: int; GPUs: int[] }
+    // NumberOfGamesInParallel was called NumberOfGamesInParallelConsoleOnly before parallel
+    // play reached the WebGUI; TestOptionsConverter below still accepts the old JSON name on load.
+    type TestOptions = { PolicyTest: bool; ValueTest: bool; WriteToConsole: bool; NumberOfGamesInParallel: int; GPUs: int[] }
+
+    /// JSON converter for TestOptions: reads NumberOfGamesInParallelConsoleOnly (pre-rename)
+    /// as an alias for NumberOfGamesInParallel; always writes the new name.
+    type TestOptionsConverter() =
+        inherit JsonConverter<TestOptions>()
+
+        override _.Read(reader: byref<Utf8JsonReader>, _typeToConvert: Type, _options: JsonSerializerOptions) =
+            if reader.TokenType <> JsonTokenType.StartObject then
+                failwith $"Unexpected token for TestOptions: {reader.TokenType}"
+            let mutable policyTest = false
+            let mutable valueTest = false
+            let mutable writeToConsole = false
+            let mutable parallelGames = 1
+            let mutable gpus : int[] = null
+            while reader.Read() && reader.TokenType <> JsonTokenType.EndObject do
+                let name = reader.GetString()
+                reader.Read() |> ignore
+                match name with
+                | "PolicyTest" -> policyTest <- reader.GetBoolean()
+                | "ValueTest" -> valueTest <- reader.GetBoolean()
+                | "WriteToConsole" -> writeToConsole <- reader.GetBoolean()
+                | "NumberOfGamesInParallel" | "NumberOfGamesInParallelConsoleOnly" ->
+                    parallelGames <- reader.GetInt32()
+                | "GPUs" ->
+                    if reader.TokenType = JsonTokenType.Null then gpus <- null
+                    else
+                        let items = ResizeArray<int>()
+                        while reader.Read() && reader.TokenType <> JsonTokenType.EndArray do
+                            items.Add(reader.GetInt32())
+                        gpus <- items.ToArray()
+                | _ -> reader.Skip()
+            { PolicyTest = policyTest
+              ValueTest = valueTest
+              WriteToConsole = writeToConsole
+              NumberOfGamesInParallel = parallelGames
+              GPUs = gpus }
+
+        override _.Write(writer: Utf8JsonWriter, value: TestOptions, _options: JsonSerializerOptions) =
+            writer.WriteStartObject()
+            writer.WriteBoolean("PolicyTest", value.PolicyTest)
+            writer.WriteBoolean("ValueTest", value.ValueTest)
+            writer.WriteBoolean("WriteToConsole", value.WriteToConsole)
+            writer.WriteNumber("NumberOfGamesInParallel", value.NumberOfGamesInParallel)
+            if isNull value.GPUs then
+                writer.WriteNull("GPUs")
+            else
+                writer.WritePropertyName("GPUs")
+                writer.WriteStartArray()
+                for g in value.GPUs do writer.WriteNumberValue(g)
+                writer.WriteEndArray()
+            writer.WriteEndObject()
 
     /// Optional live-feed output for streaming a tournament to the WebGUI grid (see
     /// LiveFeedContract.md). All-empty / missing in JSON => no feed (normal tournament).
@@ -907,7 +961,7 @@ module TypesDef =
           CupOptions = { RoundPairIncrements = []; SeedingStrategy = "ByRating"; UniquePerMatchOnly = false; BracketPath = "wwwroot/cup_bracket.json"; RandomOpenings = false }
           SwissOptions = { GamesPerMatch = 2; Rounds = 0; SeedGroupCount = 4; UniquePerMatchOnly = false; RandomOpenings = false; AllowExtraPairsOnTie = false; StatePath = "wwwroot/swiss_state.json" }
           LadderOptions = { GamePairsPerMatch = 4; RandomOpenings = false; StatePath = "wwwroot/ladder_state.json" }
-          TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallelConsoleOnly = 1; GPUs = null }
+          TestOptions = {WriteToConsole = false; PolicyTest = false; ValueTest = false; NumberOfGamesInParallel = 1; GPUs = null }
           Adjudication =
             {
               DrawOption = {MinDrawMove = 0; MaxDrawScore = 0.0; DrawMoveLength = 0 }

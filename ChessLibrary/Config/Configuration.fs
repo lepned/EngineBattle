@@ -40,7 +40,7 @@ module ConsoleHelper =
     printfn $"Win adjudication: {tournament.AdjudicationText()}"
     printfn $"Policy head test: {tournament.TestOptions.PolicyTest}"
     printfn $"Value head test: {tournament.TestOptions.ValueTest}"
-    printfn $"Number of games in parallel: {tournament.TestOptions.NumberOfGamesInParallelConsoleOnly}"
+    printfn $"Number of games in parallel: {tournament.TestOptions.NumberOfGamesInParallel}"
     if tournament.TestOptions.GPUs <> null && tournament.TestOptions.GPUs.Length > 0 then
       let gpuList = String.Join(", ", tournament.TestOptions.GPUs)
       printfn $"GPUs: {gpuList}"
@@ -490,6 +490,9 @@ module Validation =
       if isRRorGauntlet && tourny.Opening.RandomOpenings && not tourny.Opening.OpeningsTwice then
           ConsoleUtils.printInColor ConsoleColor.Yellow
               "Warning: RandomOpenings is enabled but OpeningsTwice is false. Each engine pair will play each opening from only one color side. Set OpeningsTwice to true for balanced color distribution."
+      if tourny.TestOptions.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
+          ConsoleUtils.printInColor ConsoleColor.Yellow
+              $"Warning: NumberOfGamesInParallel = {tourny.TestOptions.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."
 
 module JSON =
 
@@ -500,6 +503,7 @@ module JSON =
   let private addConverters (options: JsonSerializerOptions) =
       options.Converters.Add(TypesDef.CoreTypes.TimeControlStrategyConverter())
       options.Converters.Add(TypesDef.CoreTypes.DurationConverter())
+      options.Converters.Add(TypesDef.Tournament.TestOptionsConverter())
       options
 
   let private createJsonOptions() =

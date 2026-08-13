@@ -49,6 +49,7 @@ let parallelTournamentRun
   (logger: ILogger)
   (tourny: Tournament)
   (callback: Update -> unit)
+  (taggedSink: (string -> Update -> unit) option)
   (cts: CancellationTokenSource)
   (externalPgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
   // Ladder, Cup, and Swiss manage their own pairings — dispatch directly
@@ -220,8 +221,12 @@ let parallelTournamentRun
               let line = LiveFeedWire.withGameId gid (LiveFeedWire.serializeUpdate u)
               liveFeedRecorder |> Option.iter (fun r -> r.RecordLine line)
               liveFeedHttpSink |> Option.iter (fun s -> s.Send line)
+      // Tagged fan-out to every sink, including the in-process one (WebGUI multi-board grid).
+      let emitAll (gid: string) (u: Update) =
+          emitFeed gid u
+          taggedSink |> Option.iter (fun s -> s gid u)
       callback (Update.StartOfTournament startInfo)
-      emitFeed "" (Update.StartOfTournament startInfo)
+      emitAll "" (Update.StartOfTournament startInfo)
 
       let replayList = ResizeArray<GameReplay>()
       let replayDicts =
@@ -236,7 +241,7 @@ let parallelTournamentRun
           let memBased =
               HardwareInfo.concurrencyLevel
                   tourny.EngineSetup.Engines
-                  tourny.TestOptions.NumberOfGamesInParallelConsoleOnly
+                  tourny.TestOptions.NumberOfGamesInParallel
           let gpuBased =
               if gpus <> null && gpus.Length > 1 then
                   max memBased gpus.Length
@@ -401,15 +406,16 @@ let parallelTournamentRun
 
                           let sb = StringBuilder()
                           Update.RoundNr pair.RoundNr |> callback
+                          emitAll "" (Update.RoundNr pair.RoundNr)
 
                           let localWhiteDict = ReferenceGameReplay()
                           let localBlackDict = ReferenceGameReplay()
 
-                          // Per-game callback: stamp this game's events with its GameNr for the live feed.
+                          // Per-game callback: stamp this game's events with its worker slot for the live feed.
                           let gameCallback =
-                              if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome then
+                              if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome || taggedSink.IsSome then
                                   let gid = string slot
-                                  fun (u: Update) -> emitFeed gid u; callback u
+                                  fun (u: Update) -> emitAll gid u; callback u
                               else callback
 
                           let! result =
@@ -532,7 +538,7 @@ let parallelTournamentRun
           // distinct "Completed" state (vs a silently dropped feed). The internal callback's own
           // EndOfTournament fires later in Tournament.fs — after these sinks are disposed — so we
           // tee it here while the recorder/HTTP sinks are still alive. No-op when no feed is set.
-          emitFeed "" (Update.EndOfTournament tourny)
+          emitAll "" (Update.EndOfTournament tourny)
           let games = pgnAgent.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply))
           if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then
               let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()

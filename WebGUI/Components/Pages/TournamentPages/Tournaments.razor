@@ -28,6 +28,7 @@
 @inject LiveFeedReplayer Replayer
 @inject NavigationManager Nav
 @inject GlobalSettingsService SettingsService
+@inject ISnackbar Snackbar
 
 
 <PageTitle> Tournament page </PageTitle>
@@ -635,8 +636,19 @@
 
 	void CloseResultDialog() => resultDialogReference?.Close();
 
+	// The parallel runner has no adjudication channel reader, so "the current game" is
+	// undefined and the request would be a silent no-op — surface that instead.
+	bool AdjudicationBlocked()
+	{
+		if (!TournamentSvc.IsParallelRun)
+			return false;
+		Snackbar.Add("User adjudication is not available while games run in parallel.", Severity.Info);
+		return true;
+	}
+
 	async Task WhiteWins()
 	{
+		if (AdjudicationBlocked()) return;
 		reason = "White wins by user";
 		gameResult = "1-0";
 		runner?.AdjudicateGame(activeGameNr, "1-0");
@@ -647,6 +659,7 @@
 
 	async Task BlackWins()
 	{
+		if (AdjudicationBlocked()) return;
 		reason = "Black wins by user";
 		gameResult = "0-1";
 		runner?.AdjudicateGame(activeGameNr, "0-1");
@@ -656,6 +669,7 @@
 	}
 	async Task DrawGame()
 	{
+		if (AdjudicationBlocked()) return;
 		reason = "Draw by user";
 		gameResult = "1/2-1/2";
 		runner?.AdjudicateGame(activeGameNr, "1/2-1/2");
@@ -1505,8 +1519,16 @@
 		}
 	}
 
+	// Bumped whenever a newer board state is applied (live BestMove, new StartOfGame). The
+	// opening animation checks it so it can never paint stale opening positions over a game
+	// that is already past the opening — which happens on feed catch-up (mid-join snapshot)
+	// and with the parallel runner, whose pre-initialized engines start moving immediately
+	// instead of waiting out the opening-animation delay like the sequential GUI runner.
+	private int boardSyncGen = 0;
+
 	private async Task PlayOpeningMoves(List<MoveAndFen> moves)
-	{        
+	{
+		var gen = boardSyncGen;
 		moveHistory = string.Empty;
 		openingMoves = string.Empty;
 		var isWhite = true;
@@ -1521,10 +1543,17 @@
 		{
 			foreach (var move in moves)
 			{
+				// Always accumulate the opening move-list text; animate the board only while
+				// no newer position has been applied. Once the generation changes, finish the
+				// bookkeeping instantly with no delays and no board writes.
 				CreateOpeningMoves(move);
 				isWhite = !isWhite;
+				if (boardSyncGen != gen)
+					continue;
 				await Task.Delay(tournament.MinMoveTimeInMS);
 				await InvokeAsync(StateHasChanged);
+				if (boardSyncGen != gen)
+					continue;
 				await streamingBoard.OnNotifyMoveAndFen(move);
 				if (pvBoardDuo != null)
 					await pvBoardDuo.SetPVMoveWithAnnotation(move, true);
@@ -1534,7 +1563,8 @@
 		if (moves.Count > 0)
 		{
 			var move = moves.Last();
-			fen = move.FenAfterMove;
+			if (boardSyncGen == gen)
+				fen = move.FenAfterMove;
 			await Notifier.UpdateOpeningDone(move);
 		}
 		await DoChartUpdates();
@@ -1684,8 +1714,9 @@
 				break;
 
 			case TournamentTypes.Update.BestMove b:
+				boardSyncGen++;   // live position — stop any opening animation still running
 				moveHistory = b.Info.MoveHistory;
-				FinalStatusReceived(b.Status);		
+				FinalStatusReceived(b.Status);
 				board.LoadFen(b.Info.MoveAndFen.FenAfterMove);
 				var found = openingExplorer.Lookup(board.PositionHash());
 				if (found != null)					
@@ -2117,6 +2148,7 @@
 
 	private async Task GameStartedReceived(StartGameInfo info)
 	{
+		boardSyncGen++;   // new game supersedes any older opening animation still in flight
 		SetGameParams(info);
 		board.ResetBoardState();
 		currentOpeningInPlay = info.OpeningName;
@@ -2418,6 +2450,11 @@
 			oneSecondTimer.Dispose();
 
 		StateHasChanged();
+
+		// Parallel runs render on the multi-board grid; this single-game page would only
+		// flicker between concurrent games.
+		if (TournamentSvc.IsParallelRun)
+			Nav.NavigateTo("/tournament-grid");
 	}
 
 	private async Task StartTournamentFlow()
@@ -2979,6 +3016,16 @@
 	{
 		if (firstRender)
 		{
+			if (!FeedMode && TournamentSvc.IsRunning && TournamentSvc.IsParallelRun)
+			{
+				// Parallel run: the internal (untagged) stream interleaves every board, so this
+				// page would flip between concurrent games. Watch one board big instead — the
+				// same page in focused feed mode, driven by that board's tagged stream. forceLoad
+				// because both routes map to this component and this instance's first-render
+				// setup is already consumed.
+				Nav.NavigateTo("/tournament-feed?game=1", forceLoad: true);
+				return;
+			}
 			chessModule = await JsInteropService.ImportModuleAsync(JS);
 			dotNetRef = DotNetObjectReference.Create(this);
 			await chessModule.InvokeVoidAsync("registerResizeEvent", dotNetRef);
@@ -3003,9 +3050,11 @@
 				if (!string.IsNullOrEmpty(recordPath))
 					TournamentSvc.StartRecording(recordPath);
 			}
-			if (TournamentSvc.IsRunning && runner != null)
+			if (TournamentSvc.IsRunning && runner != null && !FeedMode)
 			{
-				// Reconnect to a running tournament
+				// Reconnect to a running tournament (internal untagged stream — local page only;
+				// a feed view during a local run must use the tagged JsonFeedService stream below,
+				// otherwise a focused ?game view would show every board interleaved)
 				tournament = runner.Tournament();
 				results = runner.GetResults();
 				scoreTable = runner.GetPlayerResults(results);

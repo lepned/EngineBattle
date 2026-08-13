@@ -179,7 +179,7 @@ and `pgneval` regressions and appends a row to `summary.csv`
 has `rounds` games) and **fault-tolerant** (a failing net is logged and the batch continues).
 
 > **Memory caveat (big nets).** Self-play loads **two** copies of the net per concurrency
-> level, so the template's `NumberOfGamesInParallelConsoleOnly` must be **1** for large nets —
+> level, so the template's `NumberOfGamesInParallel` must be **1** for large nets —
 > at 2 you get 4 simultaneous TensorRT engines and the GPU OOMs. The batch sets
 > `PreventMoveDeviation` automatically when parallel ≤ 1.
 

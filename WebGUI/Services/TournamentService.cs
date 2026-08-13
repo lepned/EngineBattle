@@ -16,6 +16,11 @@ namespace WebGUI.Services
         public bool IsRunning { get; private set; }
         public Tournament.Manager.Runner? CurrentRunner => _runner;
 
+        /// <summary>True when the loaded tournament will use the parallel runner with more than
+        /// one concurrent game (RR/Gauntlet). Pages use this to route to the grid view and to
+        /// disable single-game user adjudication.</summary>
+        public bool IsParallelRun => _runner?.IsParallelRun ?? false;
+
         /// <summary>True while updates are being recorded to an NDJSON file.</summary>
         public bool IsRecording { get { lock (_lock) { return _recorder != null; } } }
 
@@ -52,10 +57,11 @@ namespace WebGUI.Services
             try { recorder?.Record(update); }
             catch (Exception) { /* recording is best-effort */ }
 
-            // Live JSON bridge: when a feed view (/tournament-feed) is listening, drive it in real time
-            // through the wire contract (serialize -> JsonFeedService -> parse -> dispatch). This is the
-            // live end-to-end test path; it engages automatically only when a feed view is subscribed.
-            if (_jsonFeed.HasSubscriber)
+            // Live JSON bridge: when a feed view (/tournament-feed or the grid) is listening, drive it
+            // in real time through the wire contract (serialize -> JsonFeedService -> parse -> dispatch).
+            // Parallel runs skip this untagged tee: their events arrive gameId-stamped through the
+            // tagged sink instead, and an untagged copy would create a phantom ""-key tile in the grid.
+            if (_jsonFeed.HasSubscriber && !IsParallelRun)
             {
                 try { _jsonFeed.Ingest(LiveFeedWire.serializeUpdate(update)); }
                 catch (Exception) { /* bridge is best-effort */ }
@@ -88,9 +94,24 @@ namespace WebGUI.Services
         {
             if (IsRunning)
                 throw new InvalidOperationException("Tournament already running. Cancel first.");
-            _runner = new Tournament.Manager.Runner(logger, HandleUpdate, true, false);
+            _runner = NewRunner(logger);
             _runner.LinkCancellation(shutdown.Token);
             return _runner;
+        }
+
+        private Tournament.Manager.Runner NewRunner(ILogger logger)
+        {
+            var runner = new Tournament.Manager.Runner(logger, HandleUpdate, true, false);
+            // In-process tagged tee for the multi-board grid: gameId-stamped wire lines go straight
+            // into JsonFeedService (no HTTP loopback, no file). Only the parallel runner invokes the
+            // sink; sequential runs never see it. JsonFeedService caches per-game snapshots even with
+            // no subscriber, so a grid opened mid-run gets catch-up.
+            runner.SetTaggedSink((gid, u) =>
+            {
+                try { _jsonFeed.Ingest(LiveFeedWire.withGameId(gid, LiveFeedWire.serializeUpdate(u))); }
+                catch (Exception) { /* bridge is best-effort */ }
+            });
+            return runner;
         }
 
         public void MarkRunning() => IsRunning = true;
@@ -108,7 +129,7 @@ namespace WebGUI.Services
                 if (!IsRunning) _runner.InvalidateTournament();
                 return _runner;
             }
-            _runner = new Tournament.Manager.Runner(logger, HandleUpdate, true, false);
+            _runner = NewRunner(logger);
             return _runner;
         }
     }

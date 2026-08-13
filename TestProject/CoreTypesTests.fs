@@ -66,6 +66,31 @@ let ``Tournament JSON with LiveFeed deserializes the section`` () =
     Assert.Equal("http://localhost:5018/api/livefeed", t.LiveFeed.Url)
     Assert.Equal("rig-A", t.LiveFeed.Source)
 
+// Backward compat: the pre-rename TestOptions key must still set NumberOfGamesInParallel.
+[<Fact>]
+let ``TestOptions old NumberOfGamesInParallelConsoleOnly key is read as alias`` () =
+    let json = """{ "Name":"old config", "TournamentMode":"RR",
+                    "TestOptions": { "PolicyTest":false, "ValueTest":false, "WriteToConsole":true,
+                                     "NumberOfGamesInParallelConsoleOnly": 4, "GPUs": [0,1] } }"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    opts.Converters.Add(TestOptionsConverter())
+    let t = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.Equal(4, t.TestOptions.NumberOfGamesInParallel)
+    Assert.True(t.TestOptions.WriteToConsole)
+    Assert.Equal<int[]>([|0;1|], t.TestOptions.GPUs)
+
+[<Fact>]
+let ``TestOptions new NumberOfGamesInParallel key round-trips and writes the new name`` () =
+    let json = """{ "TestOptions": { "PolicyTest":true, "ValueTest":false, "WriteToConsole":false,
+                                     "NumberOfGamesInParallel": 3, "GPUs": null } }"""
+    let opts = JsonSerializerOptions(AllowTrailingCommas = true)
+    opts.Converters.Add(TestOptionsConverter())
+    let t = JsonSerializer.Deserialize<Tournament>(json, opts)
+    Assert.Equal(3, t.TestOptions.NumberOfGamesInParallel)
+    let written = JsonSerializer.Serialize(t.TestOptions, opts)
+    Assert.Contains("NumberOfGamesInParallel", written)
+    Assert.DoesNotContain("ConsoleOnly", written)
+
 // Test for ResultReason
 [<Fact>]
 let ``ResultReason ToString returns correct abbreviation`` () =

@@ -153,21 +153,37 @@ module Manager =
       lastLoadError <- msg
       Tournament.Empty
   
+  /// RR/Gauntlet are the only modes the parallel runner actually plays in parallel
+  /// (unknown modes fall back to RR, matching the sequential dispatch below).
+  /// Cup/Swiss/Ladder must stay on the sequential runners when started from the GUI:
+  /// routing them through parallelTournamentRun would drop user adjudication and cup resume.
+  let isParallelCapableMode (tournament: Tournament) =
+    let mode =
+      if String.IsNullOrWhiteSpace tournament.TournamentMode then ""
+      else tournament.TournamentMode.Trim().ToLowerInvariant()
+    match mode with
+    | "ladder" | "cup" | "swiss" -> false
+    | _ -> true
+
   let startTournament
     (cts:CancellationTokenSource)
     (tournament : Tournament)
     (logger:ILogger)
     sendResponse
+    (taggedSink: (string -> Update -> unit) option)
     consoleMode
     (tryGetUserAdjudication: unit -> UserAdjudication option)
     (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()
+      let useParallel =
+        consoleMode ||
+        (tournament.TestOptions.NumberOfGamesInParallel > 1 && isParallelCapableMode tournament)
       let tourny =
         //let nodeLimit = tournament.EngineSetup.Engines |> List.map(fun e -> tournament.FindTimeControl e.TimeControlID) |> List.forall(fun e -> e.NodeLimit)
-        if consoleMode then
-          ParallelExecution.parallelTournamentRun logger tournament sendResponse cts pgnAgent
+        if useParallel then
+          ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink cts pgnAgent
         else
           let mode =
             if String.IsNullOrWhiteSpace tournament.TournamentMode then "RR"
@@ -239,6 +255,7 @@ module Manager =
     let mutable resultsFromPGN = ResizeArray<Result>()
     let mutable pgnReader = None
     let mutable consoleMode = consoleOnly
+    let mutable taggedSink : (string -> Update -> unit) option = None
     let executablePath() = tournament.OrdoExePath
 
     // Serializes Ordo calls on a background thread with "latest wins" draining
@@ -341,7 +358,17 @@ module Manager =
               Console.WriteLine($"Final Ordo error: {e.Message}")
       |_ -> callback.Invoke update
         
-    member _.AddTournament tourny = tournament <- tourny 
+    member _.AddTournament tourny = tournament <- tourny
+
+    /// In-process gameId-tagged update sink (WebGUI multi-board grid). Set before Run().
+    member _.SetTaggedSink (sink: Action<string, Update>) =
+      taggedSink <- Some (fun gid u -> sink.Invoke(gid, u))
+
+    /// True when this tournament will use the parallel runner with more than one
+    /// concurrent game (RR/Gauntlet only) — the GUI uses this to route to the grid
+    /// view and to disable single-game user adjudication.
+    member _.IsParallelRun =
+      tournament.TestOptions.NumberOfGamesInParallel > 1 && isParallelCapableMode tournament
 
     member _.AdjudicateGame(gameNr: int, result: string) =
       let isValid =
@@ -375,7 +402,7 @@ module Manager =
                 Some a
             else None
         resultsFromPGN <- x.GetResults()
-        startTournament cts tournament logger x.SendResponse consoleMode tryDequeueUserAdjudication agent
+        startTournament cts tournament logger x.SendResponse taggedSink consoleMode tryDequeueUserAdjudication agent
       with
       | :? OperationCanceledException ->
         logger.LogInformation("Tournament cancelled.")

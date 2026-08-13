@@ -628,7 +628,7 @@ module TunerRunner =
           PolicyTest = false
           ValueTest = false
           WriteToConsole = false
-          NumberOfGamesInParallelConsoleOnly = cfg.ParallelGames
+          NumberOfGamesInParallel = cfg.ParallelGames
           GPUs = if cfg.GPUs <> null then cfg.GPUs else baseTournament.TestOptions.GPUs }
 
     let eA = { engineA with TimeControlID = tcIdA }

@@ -34,6 +34,7 @@ let private inv = System.Globalization.CultureInfo.InvariantCulture
 let private tournamentOpts =
     let o = JsonSerializerOptions(AllowTrailingCommas = true)
     o.Converters.Add(TimeControlStrategyConverter())
+    o.Converters.Add(TestOptionsConverter())
     o
 
 let private js (s: string) : JsonNode = (JsonValue.Create(if isNull s then "" else s) :> JsonNode)

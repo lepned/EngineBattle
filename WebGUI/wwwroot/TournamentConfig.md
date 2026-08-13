@@ -54,7 +54,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **PolicyTest**: Enable or disable policy tests.
 - **ValueTest**: Enable or disable value tests - WIP.
 - **WriteToConsole**: Enable or disable writing to console - WIP.
-- **NumberOfGamesInParallelConsoleOnly**: Number of games to run in parallel in console mode. Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. Parallel play disables PreventMoveDeviation.
+- **NumberOfGamesInParallel**: Number of games to run in parallel (console and WebGUI). Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. PreventMoveDeviation still works in parallel play (replay data is shared across concurrent games). In the WebGUI, starting a tournament with a value above 1 opens the multi-board grid (`/tournament-grid`); single-game user adjudication is not available during parallel runs. The old name `NumberOfGamesInParallelConsoleOnly` is still accepted when loading.
 
 ### LiveFeed (optional)
 
@@ -204,7 +204,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
     "PolicyTest": false,
     "ValueTest": false,
     "WriteToConsole": false,
-    "NumberOfGamesInParallelConsoleOnly": 2
+    "NumberOfGamesInParallel": 2
   },
 
   "Opening": {

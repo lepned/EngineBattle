@@ -1,4 +1,4 @@
-{
+﻿{
   "Name": "Demo tournament",
   "Description": "Testing features",
   "OS": "Win11 x64",
@@ -41,7 +41,7 @@
     "PolicyTest": false,
     "ValueTest": false,
     "WriteToConsole": false,
-    "NumberOfGamesInParallelConsoleOnly": 1
+    "NumberOfGamesInParallel": 1
   },
 
   "Opening": {

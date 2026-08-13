@@ -2048,7 +2048,7 @@ module Program =
         let results = runner.Run()
         let endTime = Stopwatch.GetElapsedTime start
         let gamesPlayed = results |> Seq.length
-        let msg = $"Tournament completed - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallelConsoleOnly}"
+        let msg = $"Tournament completed - Duration: {formatHms endTime}, Games: {gamesPlayed}, Parallel: {tourny.TestOptions.NumberOfGamesInParallel}"
         Console.WriteLine msg
         logger.LogInformation(msg)
         if File.Exists tourny.PgnOutPath then            
@@ -2151,7 +2151,7 @@ module Program =
                                     // Self-play loads two copies of the net per concurrency level, so concurrency 2
                                     // means 4 simultaneous TensorRT engines — big nets OOM the GPU. Clamp to 1
                                     // regardless of the template; this also enables PreventMoveDeviation.
-                                    TestOptions = { templateTourny.TestOptions with NumberOfGamesInParallelConsoleOnly = 1 }
+                                    TestOptions = { templateTourny.TestOptions with NumberOfGamesInParallel = 1 }
                                     PreventMoveDeviation = true }
                             printfn "  running %d-game nodes=1 self-play..." rounds
                             runTournament tourny logger
@@ -2315,7 +2315,7 @@ module Program =
                         tournament <- 
                             {tourny with 
                                 EngineSetup = engineSetup
-                                PreventMoveDeviation = tourny.TestOptions.NumberOfGamesInParallelConsoleOnly <= 1
+                                PreventMoveDeviation = tourny.TestOptions.NumberOfGamesInParallel <= 1
                                 MinMoveTimeInMS = 0
                                 ConsoleOnly = true
                                 DelayBetweenGames = TimeSpan.Zero

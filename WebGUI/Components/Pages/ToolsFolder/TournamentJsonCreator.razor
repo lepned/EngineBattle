@@ -244,8 +244,9 @@
         <div class="section-body">
             <div class="two-col">
                 <div class="field-group">
-                    <label>Parallel Games (console only)</label>
+                    <label>Parallel Games</label>
                     <input type="number" @bind="parallelGames" min="1" max="64" />
+                    <small>Concurrent games (Round Robin and Gauntlet only — Cup, Swiss and Ladder always run sequentially). Each game runs its own engine processes; watch RAM/GPU headroom.</small>
                 </div>
                 <div class="field-group">
                     <label>Delay Between Games (seconds)</label>
@@ -551,12 +552,19 @@
             root["PgnOutPath"] = pgnOutPath;
 
             // Advanced
-            root["TestOptions"]!["NumberOfGamesInParallelConsoleOnly"] = parallelGames;
+            root["TestOptions"]!["NumberOfGamesInParallel"] = parallelGames;
+            // Drop the pre-rename key if the base template still carries it (both keys in one
+            // file would be ambiguous; the loader accepts either name).
+            (root["TestOptions"] as JsonObject)?.Remove("NumberOfGamesInParallelConsoleOnly");
 
             var generatedJson = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             var genWarnings = new List<string>();
             if (generateWarning != null)
                 genWarnings.Add(generateWarning);
+            if (parallelGames > 1 && tournamentMode is "Cup" or "Swiss" or "Ladder")
+                genWarnings.Add($"Parallel Games = {parallelGames} has no effect in {tournamentMode} mode — Cup, Swiss and Ladder always run sequentially.");
+            if (parallelGames > 1 && preventMoveDeviation)
+                genWarnings.Add("PreventMoveDeviation with parallel games: replay dictionaries are shared across concurrent games, so deviation prevention is less deterministic than in sequential play.");
 
             statusMessage = "";
             await ShowPreviewDialog("tournament.json", generatedJson, new List<string>(), genWarnings);

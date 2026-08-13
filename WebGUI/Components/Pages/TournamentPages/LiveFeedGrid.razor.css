@@ -33,6 +33,9 @@
 
 .reset-btn { padding: 3px 10px; font-size: 0.85rem; cursor: pointer; }
 
+.stop-btn { color: #e66; border-color: #a44; }
+.stop-btn.armed { color: #fff; background: #b33; border-color: #b33; font-weight: 600; }
+
 .lan-url {
     display: flex;
     align-items: center;

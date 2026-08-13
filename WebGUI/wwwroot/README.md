@@ -5,19 +5,19 @@
 **EngineBattle** is a comprehensive tool for running tournaments, testing, analyzing, and comparing chess engines. It supports engines using the **UCI** and **Winboard/XBoard** protocols. With puzzle-based testing, detailed analysis, tournament management, and interactive visualizations, it is ideal for chess developers, researchers, and streamers.
 
 ![Tournament](WebGUI/wwwroot/Img/Tournament.png)
-*Example: Tournament GUI â€” follow live games, standings, and results with interactive visualizations.*
+*Example: Tournament GUI — follow live games, standings, and results with interactive visualizations.*
 
 ---
 
-## ðŸš€ Key Features
+## 🚀 Key Features
 
-### ðŸ§© Puzzles
+### 🧩 Puzzles
 
 - **ERET Puzzles:** Test engine performance using The Eigenmann Rapid Engine Test (ERET) puzzles designed for precise evaluation of chess positions.
 - **Lichess Puzzles:** Direct integration with Lichess puzzles, supporting policy head tests, value head tests, and combined evaluations.
 - **Visualization of Puzzles:** Automatically visualize puzzles that engines fail, clearly showing correct versus incorrect moves on an chessboard.
 
-### ðŸŽ¯ Tournament Features
+### 🎯 Tournament Features
 
 - **Prevent Move Deviation option:** Ensures consistent move ordering across game formats, beneficial in gauntlet and round-robin tournaments, even when transpositions occur.
 - **Fischer Random Chess (Chess960):** Supports Chess960, facilitating tests and tournaments with randomized starting positions.
@@ -44,7 +44,7 @@ EngineBattle supports five tournament formats configured via `TournamentMode` in
 See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [SwissMode.md](SwissMode.md), [CupMode.md](CupMode.md), and [LadderMode.md](LadderMode.md) for mode-specific notes.
 
 
-### ðŸ” Analysis Mode
+### 🔍 Analysis Mode
 
 - **Intuitive Analysis Interface:** User-friendly interface for convenient position analysis, featuring search charts similar to those used in tournament mode. Includes overlay options to display additional information for MCTS engines like Lc0 and Ceres.
 - **Dual-Engine Comparison:** Compare two engines simultaneously with side-by-side analysis, move lists, and detailed graphical evaluations.
@@ -52,7 +52,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Focus Mode:** Restrict engine search to specific candidate moves for targeted position exploration.
 - **UCI Script Loading:** Load a text file of UCI commands to quickly configure engine parameters during analysis.
 
-### ðŸ“š PGN and EPD Tools
+### 📚 PGN and EPD Tools
 
 - **Speed Calculation:** Benchmark chess engines by calculating their median and average speeds from a PGN-file, including out of book speed. (first search).
 - **Ordo Tables:** Automatically generate Ordo rating tables to rank engine performance based on tournament outcomes.
@@ -63,7 +63,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Move Deviation Finder:** Easily identify and visualize deviations by chess engines compared to a reference engine in a PGN file, presented clearly with summary tables and visualized with chessboards.
 - **Out-of-Book Evaluation:** Evaluate opening positions right after book exits using one or more engines to filter out openings that are too drawish or too one-sided for engine matches.
 
-### ðŸ“ˆ Visualization and Statistics
+### 📈 Visualization and Statistics
 
 - **Live MCTS Charts:** Real-time visualization of Monte Carlo Tree Search (MCTS) engine internals, including N-Plot and Q-Plot charts for engines like Lc0 and Ceres.
 - **Evaluation Charts:** Visual representation of engine evaluation statistics throughout tournaments.
@@ -72,23 +72,23 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Nodes Per Move (NPM) Charts:** Clearly depict nodes used per move by each engine in tournaments.
 - **Configurable Search Charts:** Customize the number of moves displayed and configure delta Q values to filter inferior moves from visualizations.
 
-### ðŸ’» Console Mode
+### 💻 Console Mode
 
 - **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
 - **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (accessible via Tools > Test Canvas in the GUI menu).
 
-### âš™ï¸ Global Settings
+### ⚙️ Global Settings
 
 - **Persistent Preferences:** A dedicated settings page to configure default paths, search modes, MultiPV, analysis defaults, game review parameters, and more. Settings persist across sessions.
 
-### ðŸŽ¥ Streaming and Community Features
+### 🎥 Streaming and Community Features
 
 - **Streamer-Friendly Tournaments:** Optimized tournament mode for engaging chess engine streaming, making it easy to share standings and results in real time.
 - **Web Application:** Runs seamlessly in browsers, providing live console logs, pairings, standings, and results, ideal for live updates via Discord and other community platforms.
 
 ---
 
-## ðŸ“¦ Quick Start
+## 📦 Quick Start
 
 Pre-built binaries are available from [GitHub Releases](https://github.com/lepned/EngineBattle/releases).
 
@@ -98,8 +98,8 @@ Choose a variant:
 
 | Variant | Size | .NET Runtime Required? |
 |---------|------|----------------------|
-| **Self-contained** | ~58 MB | No â€” everything is bundled |
-| **Framework-dependent** | ~16 MB | Yes â€” install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
+| **Self-contained** | ~58 MB | No — everything is bundled |
+| **Framework-dependent** | ~16 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
 
 Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **osx-arm64**
 
@@ -112,7 +112,7 @@ Extract the zip and run:
 
 Your browser opens automatically. If not, navigate to the localhost URL shown in the console.
 
-> **Windows note:** Windows may show a SmartScreen warning for unsigned executables. To bypass this, right-click `EngineBattle.exe` â†’ **Properties** â†’ check **Unblock** â†’ **OK**, then run it normally.
+> **Windows note:** Windows may show a SmartScreen warning for unsigned executables. To bypass this, right-click `EngineBattle.exe` → **Properties** → check **Unblock** → **OK**, then run it normally.
 
 ### 3. First Run
 
@@ -120,7 +120,7 @@ A blank `tournament.json` is auto-created next to the executable on first startu
 
 ---
 
-## ðŸ›  Build from Source
+## 🛠 Build from Source
 
 For developers who want to modify the code, use the CLI console commands, or run the latest unreleased changes.
 
@@ -182,16 +182,16 @@ Before you can do much with the GUI, you need to configure all the engines you w
 #folder structure example
 
 Engines/
-â”œâ”€â”€ EngineDefs/
-â”‚   â”œâ”€â”€ SFDef.json
-â”‚   â”œâ”€â”€ Lc0Def.json
-â”‚   â””â”€â”€ DragonDef.json
-â”œâ”€â”€ LC0/
-â”‚   â””â”€â”€ Lc0.exe
-â”œâ”€â”€ SF/
-â”‚   â””â”€â”€ SF.exe
-â””â”€â”€ Dragon/
-    â””â”€â”€ Dragon.exe
+├── EngineDefs/
+│   ├── SFDef.json
+│   ├── Lc0Def.json
+│   └── DragonDef.json
+├── LC0/
+│   └── Lc0.exe
+├── SF/
+│   └── SF.exe
+└── Dragon/
+    └── Dragon.exe
 ```
 
 3. Set the `OpeningsPath` and the `PgnOutPath` and time settings. Time controls, `MoveOverhead`, and `DelayBetweenGames` (or any other time settings) are specified in `HH:MM:SS:MMM` (MMM = milliseconds).
@@ -210,7 +210,7 @@ Log files are written to a `logs/` folder in the current working directory. Logs
 ## Running a Tournament
 
 Use your browser's built-in zoom function to adjust the GUI size to your preference. For streaming, it's recommended to set the zoom level to 80% or 90%, depending on your screen resolution and size.
-Press F11 to enter full-screen mode â€” this is also recommended for the best streaming experience.
+Press F11 to enter full-screen mode — this is also recommended for the best streaming experience.
 
 To operate a tournament, you only need two keys:
 
@@ -252,13 +252,17 @@ In order to use the console mode you need to start the application from the Cons
 
 ` dotnet run -c release tournamentjson <fullPathToYourTournament.json> `
 
-There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel in the console mode. This setting is called `NumberOfGamesInParallelConsoleOnly` and can be set to any number you like. The default value is 2 but values up-to 4 games can be recommended for a strong GPU. If you run games in parallel 'PreventMoveDeviation' feature will be disabled, see below.
+There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This setting is called `NumberOfGamesInParallel` (the old name `NumberOfGamesInParallelConsoleOnly` is still accepted) and can be set to any number you like. Values up to 4 games can be recommended for a strong GPU.
 
 Note that parallel play applies to Round Robin and Gauntlet tournaments; Cup, Swiss and Ladder modes manage their pairings round by round and always run sequentially.
 
-### Watching Parallel Games Live in the WebGUI
+### Running Parallel Games in the WebGUI
 
-Parallel console games do not have to run invisibly: the console runner can broadcast every game to the WebGUI's live grid, giving you one live board per concurrent game.
+Parallel play also works directly in the WebGUI: start a Round Robin or Gauntlet tournament with `NumberOfGamesInParallel` above 1 from the Tournament page (Ctrl+R) and the browser navigates to the multi-board grid (`/tournament-grid`) — one live tile per concurrent game, with standings and pentanomial stats filling in as games finish. Clicking a tile opens the single-board live view for that game. Single-game user adjudication (Ctrl+Alt+W/B/D) is not available during parallel runs, and the end-of-tournament Ordo summary is console-only, as for sequential GUI runs.
+
+### Watching Parallel Console Games Live in the WebGUI
+
+Parallel console games do not have to run invisibly either: the console runner can broadcast every game to the WebGUI's live grid, giving you one live board per concurrent game.
 
 1. Start the WebGUI as usual (`dotnet run --project WebGUI -c Release`).
 2. Add a `LiveFeed` section to your `tournament.json` (or set the `EB_LIVEFEED_URL` environment variable, which overrides the JSON):
@@ -279,11 +283,11 @@ The WebGUI does not have to run on the same machine as the tournament — point 
 
 ### PreventMoveDeviation Feature
 
-The **"PreventMoveDeviation"** feature is designed to enhance engine testing by enforcing a consistent move order across different game formats. Stockfish, for example, typically deviates from earlier games played in the same positionâ€”about twice per gameâ€”which can introduce inconsistencies in testing.
+The **"PreventMoveDeviation"** feature is designed to enhance engine testing by enforcing a consistent move order across different game formats. Stockfish, for example, typically deviates from earlier games played in the same position—about twice per game—which can introduce inconsistencies in testing.
 
-**Important**: This feature requires **single-threaded tournament execution** because the deviation prevention logic must sequentially compare each engine's move choice against its previous play history in the same position. Running games in parallel would prevent this cross-reference mechanism from working correctly.
+**Note on parallel play**: The feature also works with `NumberOfGamesInParallel` above 1 — the replay history is shared across concurrent games under a lock. Sequential execution remains the most deterministic setup, because with parallel games the order in which positions enter the shared history depends on game timing.
 
-By strictly adhering to a reference-based move order and tracking position hashes, this feature ensures that recurring board states are consistently recognized, even when transpositions occur. This controlled approach is beneficial in both gauntlet tournamentsâ€”where one or more engines play against every other participantâ€”and in normal round-robin tournaments, where engines are prevented from deviating from moves they have previously played in the same position. As a result, testers can evaluate and compare engine performance with greater precision under these uniform conditions.
+By strictly adhering to a reference-based move order and tracking position hashes, this feature ensures that recurring board states are consistently recognized, even when transpositions occur. This controlled approach is beneficial in both gauntlet tournaments—where one or more engines play against every other participant—and in normal round-robin tournaments, where engines are prevented from deviating from moves they have previously played in the same position. As a result, testers can evaluate and compare engine performance with greater precision under these uniform conditions.
 
 ### Live Plot Charts for MCTS Engines
 The live plot charts (N-Plot and Q-Plot) are particularly useful for visualizing the internal thinking or search process of Monte Carlo Tree Search (MCTS) engines like Lc0 and Ceres. These charts provide insights into how these engines evaluate positions and make decisions during the game.
@@ -336,7 +340,7 @@ Analysis mode uses a `AnalyzeConfig.json` file - [Link to AnalyzeConfig.json](An
 The dual analysis mode is designed to compare two engines at a time, displaying their evaluations, moves, and search statistics in a clear and concise manner.
 
 ![Analysis](WebGUI/wwwroot/Img/AnalysisMode.png)
-*Example: Dual analysis mode â€” compare two engines side by side with synchronized move lists and evaluations.*
+*Example: Dual analysis mode — compare two engines side by side with synchronized move lists and evaluations.*
 
 
 ## Puzzle Testing Mode
@@ -349,7 +353,7 @@ This mode is ideal for developers and researchers who want to test engine capabi
 For more information about how to run Lichess puzzles, see [LichessPuzzle.md](LichessPuzzle.md).
 
 ![Puzzle](WebGUI/wwwroot/Img/PuzzleDemo.png)
-*Example: Visualization of a failed puzzle â€” the engine's move (red) vs. the correct move (green).*
+*Example: Visualization of a failed puzzle — the engine's move (red) vs. the correct move (green).*
 
 ### ERET Testing Mode
 

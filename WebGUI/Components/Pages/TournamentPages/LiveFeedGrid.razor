@@ -7,6 +7,7 @@
 @using static ChessLibrary.MiscTypes
 @implements IDisposable
 @inject JsonFeedService JsonFeedSvc
+@inject TournamentService TournamentSvc
 @inject LiveFeedReplayer Replayer
 @inject WebGUI.Services.Ceres.CeresFeedBridge CeresBridge
 @inject NavigationManager Nav
@@ -22,6 +23,13 @@
     @if (!string.IsNullOrEmpty(machine)) { <span class="hdr-meta" title="Host machine">@machine</span> }
     @if (!string.IsNullOrEmpty(timeControl)) { <span class="hdr-meta" title="Time control">@timeControl</span> }
     <button class="reset-btn" @onclick="ResetAll" title="Clear standings and boards for a fresh tournament">Reset</button>
+    @if (TournamentSvc.IsRunning)
+    {
+        <button class="reset-btn stop-btn @(stopArmed ? "armed" : "")" @onclick="StopTournament"
+                title="@(stopArmed ? "Click again to stop the running tournament" : "Stop the tournament running on this machine")">
+            @(stopArmed ? "Confirm stop" : "Stop tournament")
+        </button>
+    }
     <span class="ceres-connect">
         <input type="text" placeholder="Ceres host:port (e.g. 192.168.0.50:7440)" @bind="ceresHostPort" />
         @if (!CeresBridge.IsConnected)
@@ -287,6 +295,31 @@
             tournamentComplete = false;
         }
         JsonFeedSvc.Reset();
+        StateHasChanged();
+    }
+
+    // Two-step stop for the locally running tournament: first click arms, second click (within
+    // 3 s) cancels. A misclick can't kill a long run, without needing a dialog on this page.
+    private bool stopArmed;
+    private System.Threading.Timer stopDisarmTimer;
+
+    private void StopTournament()
+    {
+        if (!stopArmed)
+        {
+            stopArmed = true;
+            stopDisarmTimer?.Dispose();
+            stopDisarmTimer = new System.Threading.Timer(_ =>
+            {
+                stopArmed = false;
+                _ = InvokeAsync(StateHasChanged);
+            }, null, 3000, System.Threading.Timeout.Infinite);
+            return;
+        }
+        stopDisarmTimer?.Dispose();
+        stopDisarmTimer = null;
+        stopArmed = false;
+        TournamentSvc.Cancel();
         StateHasChanged();
     }
 
@@ -620,6 +653,7 @@
         if (handler != null) JsonFeedSvc.UnsubscribeMulti(handler);
         CeresBridge.Changed -= OnBridgeChanged;
         if (startedReplay) Replayer.Stop();
+        stopDisarmTimer?.Dispose();
     }
 
     private sealed class GameVM
