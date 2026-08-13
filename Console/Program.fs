@@ -626,6 +626,75 @@ module Program =
     with ex ->
         printfn "Error during analysis: %s" ex.Message
 
+  /// Position-query verb: machine-readable JSON for validator/tooling use (python-chess
+  /// differential testing etc.). Data goes to stdout only; errors to stderr, exit 1.
+  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) =
+    let jsonOpts indented =
+        System.Text.Json.JsonSerializerOptions(
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            WriteIndented = indented)
+    let sanPvOf (fen: string) (uciMoves: string) =
+        let board = ChessLibrary.Chess.Board()
+        board.LoadFen fen
+        let buffer = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
+        ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast buffer &board uciMoves
+    try
+        match epdPath with
+        | Some path ->
+            // Batch mode: NDJSON per EPD position — insights + status + full legal move
+            // list (the movegen/SAN differential-testing payload).
+            let opts = jsonOpts false
+            for e in ChessLibrary.EPDExtractor.readEPDs path do
+                let status = ChessLibrary.BoardUtils.getPositionStatus e.FEN
+                let record =
+                    {| Fen = e.FEN
+                       Status = status.Status
+                       InsufficientMaterial = status.InsufficientMaterial
+                       LegalMoves = ChessLibrary.BoardUtils.legalMovesOf e.FEN
+                       Insights = ChessLibrary.BoardUtils.getPositionInsights e.FEN |}
+                printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, opts))
+        | None ->
+            let insights = ChessLibrary.BoardUtils.getPositionInsights fen
+            let status = ChessLibrary.BoardUtils.getPositionStatus fen
+            let legalMoves = ChessLibrary.BoardUtils.legalMovesOf fen
+            let sanPv = pv |> Option.map (sanPvOf fen)
+            let parts = fen.Split(' ')
+            let stm = if parts.Length > 1 then parts.[1] else "w"
+            match square with
+            | Some sq ->
+                let atts = ChessLibrary.BoardUtils.attackersOf fen sq
+                let record =
+                    {| Fen = fen
+                       SideToMove = stm
+                       Status = status.Status
+                       InsufficientMaterial = status.InsufficientMaterial
+                       LegalMoves = legalMoves
+                       Insights = insights
+                       Pv = Option.toObj pv
+                       SanPv = Option.toObj sanPv
+                       Square = sq
+                       AttackersWhite = atts.White
+                       AttackersBlack = atts.Black
+                       Attacks = ChessLibrary.BoardUtils.attacksFrom fen sq
+                       IsPinned = ChessLibrary.BoardUtils.isPinned fen sq
+                       PinRay = ChessLibrary.BoardUtils.pinRay fen sq
+                       SafeDestinations = ChessLibrary.BoardUtils.getSafeDestinations fen sq |}
+                printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, jsonOpts true))
+            | None ->
+                let record =
+                    {| Fen = fen
+                       SideToMove = stm
+                       Status = status.Status
+                       InsufficientMaterial = status.InsufficientMaterial
+                       LegalMoves = legalMoves
+                       Insights = insights
+                       Pv = Option.toObj pv
+                       SanPv = Option.toObj sanPv |}
+                printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, jsonOpts true))
+    with ex ->
+        eprintfn "query error: %s" ex.Message
+        exit 1
+
   let runCompare (p: CliParser.CompareParams) =
     try
         let config1 = resolveEngineConfig p.Engine1 p.UciOptions1
@@ -2277,7 +2346,8 @@ module Program =
         | [] -> 
             printfn "No arguments provided to console app"
         | _ -> 
-            printfn "\nArguments provided to console app: %A" cliArgs
+            // stderr, not stdout: scriptable verbs (query) must own stdout for their JSON
+            eprintfn "\nArguments provided to console app: %A" cliArgs
             for arg in cliArgs do
                 match arg with
                 | Verb (Perft (depth, sampleSize)) ->
@@ -2287,6 +2357,8 @@ module Program =
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
+                | Verb (Query (fen, square, epd, pv)) ->
+                    runQuery fen square epd pv
                 | Verb (PieceValues p) ->
                     runPieceValues p
                 | Verb (PieceValueFit p) ->

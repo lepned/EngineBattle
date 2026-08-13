@@ -154,7 +154,28 @@ dotnet run -c release -- eretjson <fullPathToEretConfig.json>
 dotnet run -c release -- analyze <engine> [fen] [options]
 dotnet run -c release -- compare <engine1> <engine2> [options]
 dotnet run -c release -- tune <fullPathToTunerConfig.json>
+dotnet run -c release -- query <fen|startpos> [square] [--pv "<uci moves>"]
+dotnet run -c release -- query --epd <file.epd>
 ```
+
+#### Position queries (`query`)
+
+Machine-readable JSON on stdout (diagnostics go to stderr), intended for validator and
+tooling use — e.g. differential testing against python-chess by piping positions through
+EB as an oracle. For a FEN it emits `status` (`checkmate`/`stalemate`/`check`/`ok`),
+`insufficientMaterial` (dead-position approximation: kings only, kings plus one minor,
+or kings plus same-colored bishops), the full `legalMoves` list as UCI + SAN pairs
+(castling SAN is spelled `0-0`), and both colors' insights (king, checkers, check-block
+squares, pins as attacker/pinned/king triples, king danger/escape squares, and hanging
+pieces judged by static exchange evaluation). With a square argument it adds per-square
+data: `attackersWhite`/`attackersBlack`, the piece's attack set (`attacks`), `isPinned`
+and the `pinRay` (full king–pinner line), and `safeDestinations` — every legal move of
+that piece with its net material outcome (`net` > 0 wins material, 0 safe, < 0 the piece
+can be won on that square). `--pv "e2e4 e7e5 ..."` adds `sanPv`, the numbered SAN
+rendering of a UCI move sequence (diffable against python-chess `variation_san`).
+`--epd` streams one compact JSON object per EPD position (NDJSON) including `status`
+and `legalMoves` — a full movegen + SAN differential test in one pipe. All squares are
+absolute names like `e4`; field names are camelCase.
 
 ---
 

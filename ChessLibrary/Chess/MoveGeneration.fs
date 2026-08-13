@@ -71,9 +71,13 @@ let attackersTo (sq: int) (occupation: uint64) (position: Position inref) : uint
     let bit = 1UL <<< sq
     let opposing = position.PM ^^^ PositionOps.occupation &position
     let pawns = PositionOps.pawns &position
+    // GenRook/GenBishop XOR the origin out of the occupancy they receive — correct for
+    // occupied origins, but for an EMPTY query square the XOR plants a phantom blocker
+    // that collapses the span. Forcing the bit in first makes the internal XOR a no-op
+    // remove in both cases (and changes nothing for occupied squares).
     (KnightDest.[sq] &&& PositionOps.knights &position) |||
-    (GenRook(sq, occupation) &&& PositionOps.queenOrRooks &position) |||
-    (GenBishop(sq, occupation) &&& PositionOps.queenOrBishops &position) |||
+    (GenRook(sq, occupation ||| bit) &&& PositionOps.queenOrRooks &position) |||
+    (GenBishop(sq, occupation ||| bit) &&& PositionOps.queenOrBishops &position) |||
     (KingDest.[sq] &&& PositionOps.kings &position) |||
     ((((bit <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((bit <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)) &&& pawns &&& opposing) |||
     ((((bit >>> 9) &&& 0x7F7F7F7F7F7F7F7FUL) ||| ((bit >>> 7) &&& 0xFEFEFEFEFEFEFEFEUL)) &&& pawns &&& position.PM)

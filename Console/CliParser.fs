@@ -73,6 +73,7 @@ type VerbResult =
     | Validate of configFile:string
     | Elo of path:string
     | Speed of path:string
+    | Query of fen:string * square:string option * epd:string option * pv:string option
 
 
 type CLIArguments =
@@ -350,6 +351,27 @@ module CustomParser =
                             10
                     parseArgs args (nextIndex) (Verb (Perft (depth, sampleSize)) :: acc)
                 else failwith "Missing parameter for PERFT"
+            | "query" | "q" -> // Position-query verb: JSON insights/attacks for a FEN (validator use)
+                if index + 1 < args.Length then
+                    if args.[index + 1] = "--epd" then
+                        if index + 2 < args.Length then
+                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None)) :: acc)
+                        else failwith "Missing EPD file after query --epd"
+                    else
+                        let fen =
+                            if args.[index + 1].Equals("startpos", StringComparison.OrdinalIgnoreCase) then
+                                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                            else args.[index + 1]
+                        let square, afterSquare =
+                            if index + 2 < args.Length && args.[index + 2].Length = 2 && not (args.[index + 2].StartsWith("--")) then
+                                Some args.[index + 2], index + 3
+                            else None, index + 2
+                        let pv, nextIndex =
+                            if afterSquare + 1 < args.Length && args.[afterSquare] = "--pv" then
+                                Some args.[afterSquare + 1], afterSquare + 2
+                            else None, afterSquare
+                        parseArgs args nextIndex (Verb (Query (fen, square, None, pv)) :: acc)
+                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<uci moves>\"] | --epd <file>"
             | "analyze" | "a" -> // Handle the Analyze verb
                 if index + 1 < args.Length then
                     let engine = args.[index + 1]

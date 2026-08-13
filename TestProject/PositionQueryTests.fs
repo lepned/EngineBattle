@@ -1,0 +1,177 @@
+module PositionQueryTests
+
+open System
+open Xunit
+open ChessLibrary
+open ChessLibrary.BoardUtils
+
+/// Tests for the position-query facade (attackersOf/attacksFrom/isPinned/pinRay/
+/// between/ray) — python-chess-style per-square API used for validator work. As with
+/// the insights tests, black-to-move positions are the critical cases: a missing frame
+/// flip reports vertically mirrored squares.
+
+let private sorted (xs: string[]) = xs |> Array.sort
+
+// --- attackersOf ----------------------------------------------------------
+
+[<Fact>]
+let ``attackersOf splits attackers and defenders by color`` () =
+    // Rd2 attacks the knight; the white king "attacks" (defends) its own rook square.
+    for stm in [ "w"; "b" ] do
+        let fen = sprintf "4k3/8/8/3n4/8/8/3R4/4K3 %s - - 0 1" stm
+        let d5 = attackersOf fen "d5"
+        Assert.Equal<string[]>([| "d2" |], d5.White)
+        Assert.Empty(d5.Black)
+        let d2 = attackersOf fen "d2"
+        Assert.Equal<string[]>([| "e1" |], d2.White)
+        Assert.Empty(d2.Black)
+
+[<Fact>]
+let ``attackersOf of an empty contested square sees both colors`` () =
+    // e4 knight and e5 knight both attack d3/d6-ish squares; use c4: white Ne4? Use a
+    // simple contested square: both rooks on the d-file attack d4.
+    for stm in [ "w"; "b" ] do
+        let fen = sprintf "3rk3/8/8/8/8/8/8/3RK3 %s - - 0 1" stm
+        let d4 = attackersOf fen "d4"
+        Assert.Equal<string[]>([| "d1" |], d4.White)
+        Assert.Equal<string[]>([| "d8" |], d4.Black)
+
+// --- attacksFrom ----------------------------------------------------------
+
+[<Fact>]
+let ``attacksFrom pawn gives capture directions only, for both colors`` () =
+    for stm in [ "w"; "b" ] do
+        let fen = sprintf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR %s KQkq - 0 1" stm
+        Assert.Equal<string[]>([| "d3"; "f3" |], sorted (attacksFrom fen "e2"))
+        Assert.Equal<string[]>([| "d6"; "f6" |], sorted (attacksFrom fen "e7"))
+        // edge pawn: single capture direction, no wrap
+        Assert.Equal<string[]>([| "b3" |], attacksFrom fen "a2")
+        Assert.Equal<string[]>([| "g6" |], attacksFrom fen "h7")
+
+[<Fact>]
+let ``attacksFrom includes own-occupied targets and stops sliders at blockers`` () =
+    for stm in [ "w"; "b" ] do
+        let fen = sprintf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR %s KQkq - 0 1" stm
+        // knight attack set includes the own-occupied d2
+        Assert.Equal<string[]>([| "a3"; "c3"; "d2" |], sorted (attacksFrom fen "b1"))
+        // rook ray stops at (and includes) the first blocker in each direction
+        Assert.Equal<string[]>([| "a2"; "b1" |], sorted (attacksFrom fen "a1"))
+        // empty square -> empty set
+        Assert.Empty(attacksFrom fen "e4")
+
+// --- isPinned / pinRay ----------------------------------------------------
+
+[<Fact>]
+let ``cross pin reports both pinned pieces with the e-file ray`` () =
+    // e-file: Ke1, Qe4 (white, pinned by Re7), Re7 (black, pinned by Qe4), Ke8.
+    let efile = [| "e1"; "e2"; "e3"; "e4"; "e5"; "e6"; "e7"; "e8" |]
+    for stm in [ "w"; "b" ] do
+        let fen = sprintf "4k3/4r3/8/8/4Q3/8/8/4K3 %s - - 0 1" stm
+        Assert.True(isPinned fen "e4")
+        Assert.True(isPinned fen "e7")
+        Assert.Equal<string[]>(efile, sorted (pinRay fen "e4"))
+        Assert.Equal<string[]>(efile, sorted (pinRay fen "e7"))
+        // kings are never pinned; empty squares are not pinned
+        Assert.False(isPinned fen "e1")
+        Assert.False(isPinned fen "d4")
+        Assert.Empty(pinRay fen "d4")
+
+// --- between / ray --------------------------------------------------------
+
+[<Fact>]
+let ``between and ray follow python-chess geometry`` () =
+    Assert.Equal<string[]>([| "e2"; "e3"; "e4"; "e5"; "e6"; "e7" |], sorted (between "e1" "e8"))
+    Assert.Empty(between "a1" "h7")
+    Assert.Equal<string[]>([| "a1"; "b2"; "c3"; "d4"; "e5"; "f6"; "g7"; "h8" |], sorted (ray "a1" "h8"))
+    Assert.Equal<string[]>([| "a4"; "b4"; "c4"; "d4"; "e4"; "f4"; "g4"; "h4" |], sorted (ray "c4" "f4"))
+    Assert.Empty(ray "e4" "d7")
+    Assert.Throws<ArgumentException>(fun () -> between "z9" "a1" |> ignore) |> ignore
+
+// --- legalMovesOf / getPositionStatus -------------------------------------
+
+[<Fact>]
+let ``start position has twenty legal moves in both notations`` () =
+    for stm in [ "w"; "b" ] do
+        let ms = legalMovesOf (sprintf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR %s KQkq - 0 1" stm)
+        Assert.Equal(20, ms.Length)
+        let uci = if stm = "w" then "e2e4" else "e7e5"
+        let san = if stm = "w" then "e4" else "e5"
+        Assert.True(ms |> Array.exists (fun m -> m.Uci = uci))
+        Assert.True(ms |> Array.exists (fun m -> m.San = san))
+
+[<Fact>]
+let ``status detects checkmate stalemate check and ok`` () =
+    Assert.Equal("ok", (getPositionStatus "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").Status)
+    // fool's mate: 1.f3 e5 2.g4 Qh4#
+    Assert.Equal("checkmate", (getPositionStatus "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3").Status)
+    // Kh8 boxed by Qf7 + Kg6, not in check
+    Assert.Equal("stalemate", (getPositionStatus "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").Status)
+    Assert.Equal("check", (getPositionStatus "R3k3/8/8/8/8/8/8/4K3 b - - 0 1").Status)
+
+[<Fact>]
+let ``insufficient material follows the dead-position approximation`` () =
+    Assert.True((getPositionStatus "8/8/4k3/8/8/4K3/8/8 w - - 0 1").InsufficientMaterial)      // K vs K
+    Assert.True((getPositionStatus "8/8/4k3/8/2B5/4K3/8/8 w - - 0 1").InsufficientMaterial)    // KB vs K
+    Assert.True((getPositionStatus "8/8/4k3/8/2B1B3/4K3/8/8 w - - 0 1").InsufficientMaterial)  // bishops on one color
+    Assert.False((getPositionStatus "8/8/4k3/8/1B2B3/4K3/8/8 w - - 0 1").InsufficientMaterial) // opposite-color bishops
+    Assert.False((getPositionStatus "8/8/4k3/8/2B2N2/4K3/8/8 w - - 0 1").InsufficientMaterial) // two minors incl. knight
+    Assert.False((getPositionStatus "8/8/4k3/8/2B5/3PK3/8/8 w - - 0 1").InsufficientMaterial)  // pawn on the board
+
+// --- duality property: attacksFrom <-> attackersOf ------------------------
+
+/// Independent FEN parse (deliberately NOT using ChessLibrary) mapping occupied
+/// squares to their color, so the duality check has no shared code with the API.
+let private occupiedSquares (fen: string) =
+    let placement = fen.Split(' ').[0]
+    let ranks = placement.Split('/')
+    [ for r in 0 .. 7 do
+        let rankStr = ranks.[r]
+        let rank = 7 - r
+        let mutable file = 0
+        for c in rankStr do
+            if Char.IsDigit c then file <- file + (int c - int '0')
+            else
+                let sq = sprintf "%c%d" (char (int 'a' + file)) (rank + 1)
+                yield sq, (if Char.IsUpper c then "w" else "b")
+                file <- file + 1 ]
+
+let private assertDuality (fen: string) =
+    let occupied = occupiedSquares fen
+    let colorOf = dict occupied
+    for (sq, color) in occupied do
+        // forward: every square the piece attacks lists it as an attacker of that color
+        for target in attacksFrom fen sq do
+            let atts = attackersOf fen target
+            let bucket = if color = "w" then atts.White else atts.Black
+            Assert.True(Array.contains sq bucket,
+                sprintf "%s: %s attacks %s but is missing from attackersOf" fen sq target)
+    // backward: every listed attacker really attacks the square
+    for file in 'a' .. 'h' do
+        for rank in '1' .. '8' do
+            let target = string file + string rank
+            let atts = attackersOf fen target
+            for attacker in Array.append atts.White atts.Black do
+                Assert.True(colorOf.ContainsKey attacker, sprintf "%s: attacker %s of %s is an empty square" fen attacker target)
+                Assert.True(Array.contains target (attacksFrom fen attacker),
+                    sprintf "%s: attackersOf(%s) lists %s but attacksFrom disagrees" fen target attacker)
+
+[<Fact>]
+let ``attacksFrom and attackersOf are dual on fixed positions`` () =
+    [ "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"   // kiwipete
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 0 1"
+      "4k3/4r3/8/8/4Q3/8/8/4K3 w - - 0 1"
+      "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 b - - 0 1" ]                            // TalkChess pos 3
+    |> List.iter assertDuality
+
+[<Fact>]
+let ``attacksFrom and attackersOf are dual along random games`` () =
+    // Random walks from the start position: every visited position must satisfy the
+    // duality. Fixed seeds keep the walk deterministic.
+    for seed in [ 1; 7; 42 ] do
+        let rnd = Random(seed)
+        let mutable board = Chess.Board()
+        board.LoadFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        for _ in 1 .. 12 do
+            makeRandomMove rnd &board |> ignore
+            assertDuality (board.FEN())

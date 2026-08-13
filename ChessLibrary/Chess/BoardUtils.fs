@@ -386,6 +386,172 @@ let getSafeDestinations (fen: string) (fromSquare: string) : SafeDestination[] =
         results.Add { Dest = dest; Net = net; IsCapture = isCapture }
   results.ToArray()
 
+// ---------------------------------------------------------------------------
+// Position queries — python-chess-style per-square API (attackers/attacks/pin/
+// ray/between) with absolute square names, for validator and tooling use.
+// FEN-based and stateless; invalid square names throw ArgumentException.
+// ---------------------------------------------------------------------------
+
+/// Squares of each color's pieces attacking one square.
+type SquareAttackers = { White: string[]; Black: string[] }
+
+let private absSquareIndex (square: string) =
+  if isNull square || square.Length <> 2 then invalidArg "square" (sprintf "Invalid square name '%s'" square)
+  let file = int square.[0] - int 'a'
+  let rank = int square.[1] - int '1'
+  if file < 0 || file > 7 || rank < 0 || rank > 7 then invalidArg "square" (sprintf "Invalid square name '%s'" square)
+  rank * 8 + file
+
+/// Frame bitboard -> absolute names, using the dictionary matching the frame's STM.
+let private squareNamesIn (isWhiteFrame: bool) (bb: uint64) =
+  let names =
+    if isWhiteFrame then QBBOperations.squareNumberToNameDictWhite
+    else QBBOperations.squareNumberToNameDictBlack
+  let ret = ResizeArray<string>()
+  let mutable b = bb
+  while b <> 0UL do
+    ret.Add(names.[int (QBBOperations.LSB b)])
+    b <- QBBOperations.ClearLSB b
+  ret.ToArray()
+
+/// Pieces of each color attacking `square`. Includes defenders of an occupied square
+/// (the piece standing on it is never its own attacker).
+let attackersOf (fen: string) (square: string) : SquareAttackers =
+  let absSq = absSquareIndex square
+  let mutable pos = BoardHelper.getPosFromFen (Some fen)
+  let isWhiteFrame = pos.STM = PositionOps.WHITE
+  let frameSq = QBBOperations.AbsSq(absSq, int pos.STM)
+  let occ = PositionOps.occupation &pos
+  let atts = attackersTo frameSq occ &pos
+  let stmSide = squareNamesIn isWhiteFrame (atts &&& pos.PM)
+  let oppSide = squareNamesIn isWhiteFrame (atts &&& ~~~pos.PM)
+  if isWhiteFrame then { White = stmSide; Black = oppSide }
+  else { White = oppSide; Black = stmSide }
+
+/// The pseudo attack set of the piece on `square` (empty array for an empty square).
+/// Attack semantics, not move semantics: own-occupied targets are included, pawn
+/// pushes are not (only the two capture directions) — python-chess `attacks()` parity.
+let attacksFrom (fen: string) (square: string) : string[] =
+  let absSq = absSquareIndex square
+  let mutable pos = BoardHelper.getPosFromFen (Some fen)
+  let isWhiteFrame = pos.STM = PositionOps.WHITE
+  let frameSq = QBBOperations.AbsSq(absSq, int pos.STM)
+  let bit = 1UL <<< frameSq
+  let occ = PositionOps.occupation &pos
+  if occ &&& bit = 0UL then [||]
+  else
+    let isStmPiece = (pos.PM &&& bit) <> 0UL
+    let attacks =
+      match int (TPieceType.Piece(frameSq, &pos)) with
+      | 1 ->  // pawn: STM pawns attack up-board in the frame, enemy pawns down-board
+        if isStmPiece then
+          ((bit <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((bit <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)
+        else
+          ((bit >>> 9) &&& 0x7F7F7F7F7F7F7F7FUL) ||| ((bit >>> 7) &&& 0xFEFEFEFEFEFEFEFEUL)
+      | 2 -> QBBOperations.KnightDest.[frameSq]
+      | 3 -> GenBishop(frameSq, occ)
+      | 4 -> GenRook(frameSq, occ)
+      | 5 -> GenRook(frameSq, occ) ||| GenBishop(frameSq, occ)
+      | 6 -> QBBOperations.KingDest.[frameSq]
+      | _ -> 0UL
+    squareNamesIn isWhiteFrame attacks
+
+/// Some ray (full king-pinner line, both endpoints included) when the piece on
+/// `square` is absolutely pinned to its own king; None otherwise or for empty squares.
+let private tryPinRay (fen: string) (square: string) : string[] option =
+  let absSq = absSquareIndex square
+  let mutable pos = BoardHelper.getPosFromFen (Some fen)
+  let frameSq0 = QBBOperations.AbsSq(absSq, int pos.STM)
+  let bit0 = 1UL <<< frameSq0
+  if (PositionOps.occupation &pos &&& bit0) = 0UL then None
+  else
+    // Evaluate in the frame where the piece's own side is to move (pins are relative
+    // to the piece's own king) — same side-swap as getPositionInsights.
+    let isStmPiece = (pos.PM &&& bit0) <> 0UL
+    let mutable work = PositionOps.copy &pos
+    if not isStmPiece then PositionOps.changeSide &work
+    let frameSq = if isStmPiece then frameSq0 else frameSq0 ^^^ 56
+    let ctx = createLegalityContext &work
+    if ctx.KingSq > 63 || (ctx.Pinned &&& (1UL <<< frameSq)) = 0UL then None
+    else
+      let occ = PositionOps.occupation &work
+      let opposing = PositionOps.opposing &work
+      let enemyRQ = PositionOps.queenOrRooks &work &&& opposing
+      let enemyBQ = PositionOps.queenOrBishops &work &&& opposing
+      let mutable snipers = (rookRays.[ctx.KingSq] &&& enemyRQ) ||| (bishopRays.[ctx.KingSq] &&& enemyBQ)
+      let mutable rayBB = 0UL
+      while snipers <> 0UL && rayBB = 0UL do
+        let sniperSq = int (QBBOperations.LSB snipers)
+        if betweenBB.[ctx.KingSq * 64 + sniperSq] &&& occ = (1UL <<< frameSq) then
+          rayBB <- lineBB.[ctx.KingSq * 64 + sniperSq]
+        snipers <- QBBOperations.ClearLSB snipers
+      if rayBB = 0UL then None
+      else Some (squareNamesIn (work.STM = PositionOps.WHITE) rayBB)
+
+/// True when the piece on `square` is absolutely pinned to its own king.
+let isPinned (fen: string) (square: string) : bool =
+  tryPinRay fen square |> Option.isSome
+
+/// The full king-pinner line (both endpoints included) restricting an absolutely
+/// pinned piece; empty array when the piece is not pinned (python-chess pin() parity).
+let pinRay (fen: string) (square: string) : string[] =
+  tryPinRay fen square |> Option.defaultValue [||]
+
+/// A legal move in both notations (SAN castling uses EB's "0-0"/"0-0-0" spelling).
+type MoveNotation = { Uci: string; San: string }
+
+/// Position status: "checkmate" | "stalemate" | "check" | "ok", plus a dead-position
+/// test. InsufficientMaterial uses the standard approximation — kings only, kings plus
+/// one minor piece, or kings plus bishops all on one square color — NOT python-chess's
+/// per-side helpmate rules (notably K+N vs K+N is NOT insufficient here).
+type PositionStatus = { Status: string; InsufficientMaterial: bool }
+
+/// All legal moves of the position as UCI + SAN pairs.
+let legalMovesOf (fen: string) : MoveNotation[] =
+  let board = Board()
+  board.LoadFen fen
+  board.GetLegalMoves()
+  |> Seq.map (fun (uci, san) -> { Uci = uci; San = san })
+  |> Seq.toArray
+
+/// Checkmate/stalemate/check detection and the dead-position approximation.
+let getPositionStatus (fen: string) : PositionStatus =
+  let board = Board()
+  board.LoadFen fen
+  let mutable pos = board.Position
+  let inCheck = InCheck &pos <> 0UL
+  let anyMoves = board.GenerateMoves().Length > 0
+  let status =
+    if not anyMoves && inCheck then "checkmate"
+    elif not anyMoves then "stalemate"
+    elif inCheck then "check"
+    else "ok"
+  let insufficient =
+    let heavy = PositionOps.pawns &pos ||| PositionOps.rooks &pos ||| PositionOps.queens &pos
+    if heavy <> 0UL then false
+    else
+      let knights = PositionOps.knights &pos
+      let bishops = PositionOps.bishops &pos
+      let minors =
+        System.Numerics.BitOperations.PopCount knights + System.Numerics.BitOperations.PopCount bishops
+      if minors <= 1 then true
+      elif knights <> 0UL then false
+      else
+        // bishops only: dead when they all live on one square color (color parity is
+        // preserved under the frame's vertical flip for the all-same comparison)
+        let dark = 0xAA55AA55AA55AA55UL
+        bishops &&& dark = 0UL || bishops &&& ~~~dark = 0UL
+  { Status = status; InsufficientMaterial = insufficient }
+
+/// Squares strictly between two aligned squares; empty when not aligned. Pure geometry.
+let between (a: string) (b: string) : string[] =
+  squareNamesIn true (betweenBB.[absSquareIndex a * 64 + absSquareIndex b])
+
+/// The full rank/file/diagonal through two aligned squares, endpoints included;
+/// empty when not aligned. Pure geometry.
+let ray (a: string) (b: string) : string[] =
+  squareNamesIn true (lineBB.[absSquareIndex a * 64 + absSquareIndex b])
+
 let makeRandomMove (rnd: Random) (board: Board inref) =
   // GenerateMoves is legal-only — no post-filter needed
   let moveList = board.GenerateMoves()
