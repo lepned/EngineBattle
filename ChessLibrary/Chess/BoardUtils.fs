@@ -497,6 +497,85 @@ let isPinned (fen: string) (square: string) : bool =
 let pinRay (fen: string) (square: string) : string[] =
   tryPinRay fen square |> Option.defaultValue [||]
 
+/// Structured FEN validation result: all problems found, not just the first.
+type FenValidation = { IsValid: bool; Errors: string[] }
+
+/// Validates a FEN without ever throwing or building a position from garbage — the
+/// parser (`BoardHelper.getPosFromFen`) has no checks of its own and can silently
+/// produce corrupt positions, so callers taking user input should gate on this first.
+/// Structural checks are pure string work; only a structurally clean FEN is parsed for
+/// the one semantic rule (the side not to move may not be in check). 4-field EPD-style
+/// FENs (no counters) are accepted, as elsewhere in EB.
+let validateFen (fen: string) : FenValidation =
+  let errors = ResizeArray<string>()
+  if String.IsNullOrWhiteSpace fen then errors.Add "FEN is empty"
+  else
+    let fields = fen.Trim().Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
+    if fields.Length < 4 || fields.Length > 6 then
+      errors.Add (sprintf "expected 4-6 FEN fields, got %d" fields.Length)
+    if fields.Length >= 1 then
+      let ranks = fields.[0].Split('/')
+      if ranks.Length <> 8 then errors.Add (sprintf "expected 8 ranks, got %d" ranks.Length)
+      let mutable whiteKings = 0
+      let mutable blackKings = 0
+      for i in 0 .. min 7 (ranks.Length - 1) do
+        let rankNo = 8 - i
+        let mutable files = 0
+        let mutable prevDigit = false
+        for c in ranks.[i] do
+          if Char.IsDigit c then
+            let d = int c - int '0'
+            if d < 1 || d > 8 then errors.Add (sprintf "invalid digit '%c' in rank %d" c rankNo)
+            elif prevDigit then errors.Add (sprintf "consecutive digits in rank %d" rankNo)
+            files <- files + d
+            prevDigit <- true
+          else
+            prevDigit <- false
+            match Char.ToLowerInvariant c with
+            | 'p' | 'n' | 'b' | 'r' | 'q' | 'k' ->
+              if c = 'K' then whiteKings <- whiteKings + 1
+              elif c = 'k' then blackKings <- blackKings + 1
+              if Char.ToLowerInvariant c = 'p' && (rankNo = 1 || rankNo = 8) then
+                errors.Add (sprintf "pawn on rank %d" rankNo)
+              files <- files + 1
+            | _ -> errors.Add (sprintf "invalid piece character '%c' in rank %d" c rankNo)
+        if files <> 8 then errors.Add (sprintf "rank %d has %d files" rankNo files)
+      if ranks.Length = 8 then
+        if whiteKings <> 1 then errors.Add (sprintf "white has %d kings" whiteKings)
+        if blackKings <> 1 then errors.Add (sprintf "black has %d kings" blackKings)
+    if fields.Length >= 2 then
+      match fields.[1] with
+      | "w" | "b" -> ()
+      | s -> errors.Add (sprintf "side to move must be 'w' or 'b', got '%s'" s)
+    if fields.Length >= 3 && fields.[2] <> "-" then
+      // FRC rights letters (file letters) are legal alongside KQkq
+      let castleOk =
+        fields.[2]
+        |> Seq.forall (fun ch ->
+            "KQkq".Contains ch || (ch >= 'A' && ch <= 'H') || (ch >= 'a' && ch <= 'h'))
+      if not castleOk then errors.Add (sprintf "invalid castling field '%s'" fields.[2])
+    if fields.Length >= 4 && fields.[3] <> "-" then
+      let ep = fields.[3]
+      let epOk = ep.Length = 2 && ep.[0] >= 'a' && ep.[0] <= 'h' && (ep.[1] = '3' || ep.[1] = '6')
+      if not epOk then errors.Add (sprintf "invalid en-passant field '%s'" ep)
+    if fields.Length >= 5 then
+      match Int32.TryParse fields.[4] with
+      | true, v when v >= 0 -> ()
+      | _ -> errors.Add (sprintf "halfmove counter '%s' is not a non-negative number" fields.[4])
+    if fields.Length >= 6 then
+      match Int32.TryParse fields.[5] with
+      | true, v when v >= 0 -> ()
+      | _ -> errors.Add (sprintf "fullmove counter '%s' is not a non-negative number" fields.[5])
+    if errors.Count = 0 then
+      try
+        let mutable pos = BoardHelper.getPosFromFen (Some (String.Join(" ", fields)))
+        let mutable flipped = PositionOps.copy &pos
+        PositionOps.changeSide &flipped
+        if InCheck &flipped <> 0UL then
+          errors.Add "side not to move is in check"
+      with ex -> errors.Add (sprintf "FEN failed to parse: %s" ex.Message)
+  { IsValid = errors.Count = 0; Errors = errors.ToArray() }
+
 /// A legal move in both notations (SAN castling uses EB's "0-0"/"0-0-0" spelling).
 type MoveNotation = { Uci: string; San: string }
 

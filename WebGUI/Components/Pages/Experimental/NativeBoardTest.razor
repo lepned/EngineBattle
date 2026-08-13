@@ -19,6 +19,11 @@
             <button @onclick="() => flipped = !flipped">Flip board</button>
         </div>
         <input style="width:420px;" @bind="fen" @bind:event="oninput" placeholder="FEN" />
+        @{ var fenCheck = BoardUtils.validateFen(fen); }
+        @if (!fenCheck.IsValid)
+        {
+            <div style="color:#e66; font-size:12px; margin-top:2px;">@string.Join("; ", fenCheck.Errors)</div>
+        }
     </fieldset>
 
     <fieldset style="border:1px solid #666; border-radius:6px; padding:10px 14px;">

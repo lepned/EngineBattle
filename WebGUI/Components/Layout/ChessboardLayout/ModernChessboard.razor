@@ -92,6 +92,11 @@
             </div>
         }
 
+        @if (!string.IsNullOrEmpty(PositionStatusText))
+        {
+            <div class="mcb-position-status">@PositionStatusText</div>
+        }
+
         @if (ShowChessNavButtons)
         {
             <div class="mcb-nav-buttons">
@@ -119,7 +124,8 @@
         {
             <MudTextField HelperText="FEN - optional with moves" Placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4 e7e5"
                           FullWidth="true" T=string Value=fen ValueChanged="OnValueChanged" Style="font-size:12px"
-                          Immediate="true" Variant="Variant.Filled" />
+                          Immediate="true" Variant="Variant.Filled"
+                          Error="@(fenError != null)" ErrorText="@fenError" />
         }
 
         @if (EnablePGNreader)
@@ -311,6 +317,10 @@
     /// material, red = the piece can be won there). Off by default — hosts opt in; assistance
     /// pages like PlayVsComputer must not enable it.</summary>
     [Parameter] public bool ShowSafeSquarePreview { get; set; }
+    /// <summary>Centered line under the board for terminal positions ("Checkmate — White
+    /// wins", "Stalemate — draw", "Draw — insufficient material"). On by default; hosts with
+    /// their own game-end display (PlayVsComputer) pass false to avoid double reporting.</summary>
+    [Parameter] public bool ShowPositionStatus { get; set; } = true;
 
     // Board width in px, driving --mcb-board-size. Read once on init; the slider writes it back.
     private int boardSizePx = 700;
@@ -364,6 +374,47 @@
             if (preview.Count > 0) merged = merged.Concat(preview);
             return merged.ToArray();
         }
+    }
+
+    // FEN-field validation error (null = valid); shown via the MudTextField's ErrorText.
+    private string fenError;
+
+    // Terminal-position status line, cached by fen (recomputed only when the position
+    // actually changes; validateFen guards against transient junk states).
+    private string statusFen;
+    private string cachedStatusText;
+
+    private string PositionStatusText
+    {
+        get
+        {
+            if (!ShowPositionStatus) return null;
+            if (fen != statusFen)
+            {
+                statusFen = fen;
+                cachedStatusText = ComputeStatusText(fen);
+            }
+            return cachedStatusText;
+        }
+    }
+
+    private static string ComputeStatusText(string f)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(f)) return null;
+            if (!BoardUtils.validateFen(f).IsValid) return null;
+            var st = BoardUtils.getPositionStatus(f);
+            if (st.Status == "checkmate")
+            {
+                var blackToMove = f.Split(' ').ElementAtOrDefault(1) == "b";
+                return blackToMove ? "Checkmate — White wins" : "Checkmate — Black wins";
+            }
+            if (st.Status == "stalemate") return "Stalemate — draw";
+            if (st.InsufficientMaterial) return "Draw — insufficient material";
+            return null;
+        }
+        catch { return null; }
     }
 
     // Safe-square preview: derived from the current selection/drag origin, cached per
@@ -627,8 +678,10 @@
     // ── FEN handling ──
     private async Task OnValueChanged(string value)
     {
+        // fen is NOT set from the raw text here: it only advances after validation and a
+        // successful parse (UpdateFenWithMovesInput), so the board never renders a junk
+        // frame and never blanks while the user is still typing.
         fenWithMoves = value;
-        fen = value;
         await UpdateFenWithMovesInput();
         UpdateVariationsDisplay();
         StateHasChanged();
@@ -809,9 +862,23 @@
             stopAutoPlay = true;
             if (!string.IsNullOrEmpty(fenWithMoves))
             {
+                fenWithMoves = fenWithMoves.Trim();
+                // Validate BEFORE touching the board: the parser has no checks of its own
+                // and a half-typed FEN used to blank the board and fire engine searches on
+                // junk positions. Invalid input shows in the field; the board keeps the
+                // last good position.
+                var movesIdx = fenWithMoves.IndexOf(" moves", StringComparison.OrdinalIgnoreCase);
+                var fenPart = movesIdx >= 0 ? fenWithMoves.Substring(0, movesIdx) : fenWithMoves;
+                var validation = BoardUtils.validateFen(fenPart);
+                if (!validation.IsValid)
+                {
+                    fenError = string.Join("; ", validation.Errors.Take(2));
+                    StateHasChanged();
+                    return;
+                }
                 ChessBoard.ResetBoardState();
-                fenWithMoves = fenWithMoves.TrimStart().TrimEnd();
                 ChessBoard.PlayFenWithMoves(fenWithMoves);
+                fenError = null;
                 fen = ChessBoard.FEN();
                 await ClearOverlayOnPositionChange();
                 await SetPosition(fen, false);
@@ -819,11 +886,17 @@
                 UpdateVariationsDisplay();
                 await ScrollToCurrentMove();
             }
+            else
+            {
+                fenError = null;
+            }
             StateHasChanged();
         }
         catch (Exception)
         {
+            fenError = "could not apply FEN/moves (illegal move in the move list?)";
             logger.LogError("Error parsing FEN with moves: " + fenWithMoves);
+            StateHasChanged();
         }
     }
 

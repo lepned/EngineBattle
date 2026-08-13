@@ -2157,13 +2157,16 @@
             cpChartDirty = false;
             if (analyzer != null)
             {
+                // Terminal position: bail BEFORE flagging a search — returning after
+                // searchInProgress/StartSearchTimer left the panel looking like a
+                // search that never ends on mated/stalemated positions.
+                if (!ChessBoard.AnyLegalMove()) return;
                 searchInProgress = true;
                 StartSearchTimer();
                 var a = analyzer;
                 // Snapshot the shared board here on the dispatcher — the search task
                 // must never touch it (racing the board's owner page corrupts the
                 // move list mid-render: "Collection was modified").
-                if (!ChessBoard.AnyLegalMove()) return;
                 latestAutoSearch = (ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand(), ChessBoard.FEN());
                 if (Interlocked.CompareExchange(ref autoSearchQueued, 1, 0) == 0)
                 {

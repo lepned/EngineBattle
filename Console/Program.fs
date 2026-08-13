@@ -642,18 +642,27 @@ module Program =
         match epdPath with
         | Some path ->
             // Batch mode: NDJSON per EPD position — insights + status + full legal move
-            // list (the movegen/SAN differential-testing payload).
+            // list (the movegen/SAN differential-testing payload). Invalid FENs are
+            // skipped with a stderr warning so one bad line can't kill the stream.
             let opts = jsonOpts false
             for e in ChessLibrary.EPDExtractor.readEPDs path do
-                let status = ChessLibrary.BoardUtils.getPositionStatus e.FEN
-                let record =
-                    {| Fen = e.FEN
-                       Status = status.Status
-                       InsufficientMaterial = status.InsufficientMaterial
-                       LegalMoves = ChessLibrary.BoardUtils.legalMovesOf e.FEN
-                       Insights = ChessLibrary.BoardUtils.getPositionInsights e.FEN |}
-                printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, opts))
+                let validation = ChessLibrary.BoardUtils.validateFen e.FEN
+                if not validation.IsValid then
+                    eprintfn "skipping invalid FEN '%s': %s" e.FEN (String.concat "; " validation.Errors)
+                else
+                    let status = ChessLibrary.BoardUtils.getPositionStatus e.FEN
+                    let record =
+                        {| Fen = e.FEN
+                           Status = status.Status
+                           InsufficientMaterial = status.InsufficientMaterial
+                           LegalMoves = ChessLibrary.BoardUtils.legalMovesOf e.FEN
+                           Insights = ChessLibrary.BoardUtils.getPositionInsights e.FEN |}
+                    printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, opts))
         | None ->
+            let validation = ChessLibrary.BoardUtils.validateFen fen
+            if not validation.IsValid then
+                eprintfn "invalid FEN '%s': %s" fen (String.concat "; " validation.Errors)
+                exit 1
             let insights = ChessLibrary.BoardUtils.getPositionInsights fen
             let status = ChessLibrary.BoardUtils.getPositionStatus fen
             let legalMoves = ChessLibrary.BoardUtils.legalMovesOf fen

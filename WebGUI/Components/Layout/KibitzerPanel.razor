@@ -312,8 +312,10 @@
     {
         var a = analyzer;
         if (a == null) return;
-        ClearData();
+        // Terminal position: bail before ClearData so the panel keeps its last content
+        // instead of blanking with no explanation.
         if (!ChessBoard.AnyLegalMove()) return;
+        ClearData();
         latestSearch = (ChessBoard.PositionWithMovesFromGraph(), ChessBoard.FEN());
         // Coalesce: if a start is already queued behind the running one it will pick
         // up the latest snapshot anyway — no need for another task.

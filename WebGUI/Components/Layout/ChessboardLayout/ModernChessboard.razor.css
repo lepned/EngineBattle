@@ -116,7 +116,15 @@
 }
 
 /* ── Detected opening ── */
-.modern-chessboard .mcb-detected-opening {
+.modern-chessboard .mcb-position-status {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0b050;
+    padding: 2px 0;
+}
+
+.mcb-detected-opening {
     text-align: center;
     font-size: 14px;
     color: #8fa8c8;

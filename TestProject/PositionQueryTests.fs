@@ -87,6 +87,47 @@ let ``between and ray follow python-chess geometry`` () =
     Assert.Empty(ray "e4" "d7")
     Assert.Throws<ArgumentException>(fun () -> between "z9" "a1" |> ignore) |> ignore
 
+// --- validateFen ----------------------------------------------------------
+
+let private errorsOf fen = (validateFen fen).Errors
+
+[<Fact>]
+let ``validateFen accepts standard, EPD-style and FRC castling FENs`` () =
+    Assert.True((validateFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").IsValid)
+    Assert.True((validateFen "4k3/4r3/8/8/4Q3/8/8/4K3 w - -").IsValid)                 // 4-field EPD
+    Assert.True((validateFen "bqnbrkrn/pppppppp/8/8/8/8/PPPPPPPP/BQNBRKRN w GEge - 0 1").IsValid)  // FRC letters
+    Assert.True((validateFen "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1").IsValid) // ep square
+
+[<Fact>]
+let ``validateFen reports each structural error class`` () =
+    Assert.Contains(errorsOf "", (fun (e: string) -> e.Contains "empty"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP w KQkq - 0 1", (fun (e: string) -> e.Contains "8 ranks"))
+    Assert.Contains(errorsOf "rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", (fun (e: string) -> e.Contains "rank 7 has 9 files"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNK w KQkq - 0 1", (fun (e: string) -> e.Contains "white has 2 kings"))
+    Assert.Contains(errorsOf "rnbq1bnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", (fun (e: string) -> e.Contains "black has 0 kings"))
+    Assert.Contains(errorsOf "rnbqkbnP/pppppppp/8/8/8/8/PPPPPPP1/RNBQKBNR w KQkq - 0 1", (fun (e: string) -> e.Contains "pawn on rank 8"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1", (fun (e: string) -> e.Contains "side to move"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkz - 0 1", (fun (e: string) -> e.Contains "castling"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e5 0 1", (fun (e: string) -> e.Contains "en-passant"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - x 1", (fun (e: string) -> e.Contains "halfmove"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w", (fun (e: string) -> e.Contains "4-6 FEN fields"))
+
+[<Fact>]
+let ``validateFen rejects side not to move in check`` () =
+    // White to move while the BLACK king sits in check from Ra8 — illegal position.
+    let v = validateFen "R3k3/8/8/8/8/8/8/4K3 w - - 0 1"
+    Assert.False(v.IsValid)
+    Assert.Contains(v.Errors, fun (e: string) -> e.Contains "side not to move")
+    // ...but perfectly legal with black to move
+    Assert.True((validateFen "R3k3/8/8/8/8/8/8/4K3 b - - 0 1").IsValid)
+
+[<Fact>]
+let ``validateFen accumulates multiple errors`` () =
+    // 9 files in rank 7 AND a bad side-to-move field
+    let v = validateFen "rnbqkbnr/ppppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1"
+    Assert.False(v.IsValid)
+    Assert.True(v.Errors.Length >= 2)
+
 // --- legalMovesOf / getPositionStatus -------------------------------------
 
 [<Fact>]
