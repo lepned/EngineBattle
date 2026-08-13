@@ -271,6 +271,27 @@
     cursor: pointer;
 }
 
+.single-analysis .sa-insights {
+    gap: 14px;
+}
+
+.single-analysis .sa-insight-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sa-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.single-analysis .sa-insight-check input[type="checkbox"] {
+    accent-color: var(--sa-accent);
+    cursor: pointer;
+}
+
 .single-analysis .sa-slider-value {
     font-size: 0.8rem;
     color: var(--sa-accent);

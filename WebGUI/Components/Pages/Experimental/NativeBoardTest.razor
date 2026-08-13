@@ -145,10 +145,6 @@
     private const string RookCheckFen = "R3k3/8/8/8/8/8/8/4K3 b - - 0 1";
     private const string DoubleCheckFen = "4k3/8/8/1B6/8/8/8/4R1K1 b - - 0 1";
 
-    private const string PinColor = "#E67E22";
-    private const string CheckColor = "#D63031";
-    private const string EscapeColor = "#27AE60";
-
     private bool showInsights;
     private bool showDangerZone;
     private string insightsFen;
@@ -176,35 +172,12 @@
         }
     }
 
-    private IEnumerable<BoardUtils.SideInsights> BothSides
-    {
-        get
-        {
-            var ins = Insights;
-            if (ins == null) yield break;
-            yield return ins.White;
-            yield return ins.Black;
-        }
-    }
-
     private IReadOnlyList<EbArrow> AllArrows
     {
         get
         {
             var list = new List<EbArrow>(DemoArrows);
-            if (showInsights)
-            {
-                foreach (var side in BothSides)
-                {
-                    foreach (var pin in side.Pins)
-                    {
-                        list.Add(new EbArrow(pin.Attacker, pin.Pinned, PinColor, 0.75));
-                        list.Add(new EbArrow(pin.Pinned, pin.King, PinColor, 0.3, 0.8, "line"));
-                    }
-                    foreach (var checker in side.Checkers)
-                        list.Add(new EbArrow(checker, side.King, CheckColor, 0.6));
-                }
-            }
+            list.AddRange(InsightShapes.Arrows(Insights, showInsights));
             return list;
         }
     }
@@ -214,27 +187,7 @@
         get
         {
             var list = new List<EbCircle>(DemoCircles);
-            foreach (var side in BothSides)
-            {
-                if (showInsights)
-                {
-                    foreach (var pin in side.Pins)
-                        list.Add(new EbCircle(pin.Pinned, PinColor, 0.35, 0.95));
-                    foreach (var checker in side.Checkers)
-                        list.Add(new EbCircle(checker, CheckColor, 0.45, 0.9));
-                    foreach (var block in side.CheckBlockSquares)
-                        list.Add(new EbCircle(block, CheckColor, 0.18, 0.45));
-                    if (side.InCheck)
-                        list.Add(new EbCircle(side.King, CheckColor, 0.35, 0.95));
-                }
-                if (showDangerZone)
-                {
-                    foreach (var danger in side.KingDangerSquares)
-                        list.Add(new EbCircle(danger, CheckColor, 0.25, 0.95));
-                    foreach (var escape in side.KingEscapeSquares)
-                        list.Add(new EbCircle(escape, EscapeColor, 0.5, 0.4));
-                }
-            }
+            list.AddRange(InsightShapes.Circles(Insights, showInsights, showDangerZone));
             return list;
         }
     }

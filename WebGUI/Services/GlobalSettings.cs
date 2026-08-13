@@ -42,6 +42,11 @@ public class GlobalSettings
     // when the user flips the in-panel toggle; applied only for engines with LogLiveStats.
     public Dictionary<string, bool> ShowLiveMoveStatsPanel { get; set; } = new();
 
+    // Position-insights board overlay (pins/checks/king danger), keyed per host page.
+    // Values: "pins", "danger", "pins+danger"; absent = off. No settings UI — written
+    // when the user flips the checkboxes next to the board.
+    public Dictionary<string, string> PositionInsightsOverlay { get; set; } = new();
+
     // Height in px of the iteration-log table (the scrolling part only), set with the slider
     // on the card itself. No settings UI — how many depths you want in view is a per-user
     // habit, not a configuration decision.

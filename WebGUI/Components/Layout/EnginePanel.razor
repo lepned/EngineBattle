@@ -351,6 +351,10 @@
     /// <summary>Persistence key for the live-stats/PV-table toggle ("single-analysis",
     /// "dual-analysis"). Empty = don't remember, always start on the PV table.</summary>
     [Parameter] public string StatsPanelKey { get; set; } = "";
+    /// <summary>Host veto for the automatic Policy-overlay enable on LogLiveStats engines —
+    /// returns true while the host is showing its own board overlay (e.g. SingleAnalysis
+    /// position insights, which are mutually exclusive with the policy overlay).</summary>
+    [Parameter] public Func<bool> SuppressAutoOverlay { get; set; }
 
     [Parameter] public int Nodes { get; set; } = 0;
     private string zobristHash;
@@ -2283,7 +2287,7 @@
             showCpChart = !runLogLiveStats;
             if (runLogLiveStats && overlaySettings == OverlaySettings.None)
             {
-                if (!OverlaySetting.IsOverlaySettingsEnabled)
+                if (!OverlaySetting.IsOverlaySettingsEnabled && SuppressAutoOverlay?.Invoke() != true)
                 {
                     OverlaySetting.SetOverlaySetting(Id, OverlaySettings.Policy);
                     selectedOverlaySetting = OverlaySettings.Policy;

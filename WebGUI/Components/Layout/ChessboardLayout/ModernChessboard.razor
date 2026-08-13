@@ -48,7 +48,7 @@
                               Animate="true"
                               LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
                               SelectedSquare="@selectedSquare"
-                              Arrows="@overlayArrows" Circles="@overlayCircles" Labels="@overlayLabels"
+                              Arrows="@MergedArrows" Circles="@MergedCircles" Labels="@overlayLabels"
                               OnSquareClicked="OnBoardSquareClicked" />
                 @if (showPromotionDialog)
                 {
@@ -301,6 +301,11 @@
     /// <summary>Raised when the slider changes the board size — for hosts with sibling
     /// elements that have to line up with the board column (Game Review's below-board grid).</summary>
     [Parameter] public EventCallback<int> OnBoardSizeChanged { get; set; }
+    /// <summary>Host-supplied board shapes (e.g. the position-insights overlay), merged on top
+    /// of the internal policy/eval overlay at the EbChessboard binding. They live in the host,
+    /// so ClearOverlayOnPositionChange never wipes them — the host re-derives them per position.</summary>
+    [Parameter] public IReadOnlyList<EbArrow> ExtraArrows { get; set; }
+    [Parameter] public IReadOnlyList<EbCircle> ExtraCircles { get; set; }
 
     // Board width in px, driving --mcb-board-size. Read once on init; the slider writes it back.
     private int boardSizePx = 700;
@@ -337,6 +342,15 @@
     private IReadOnlyList<EbArrow> overlayArrows = Array.Empty<EbArrow>();
     private IReadOnlyList<EbCircle> overlayCircles = Array.Empty<EbCircle>();
     private IReadOnlyList<EbSquareLabel> overlayLabels = Array.Empty<EbSquareLabel>();
+
+    private IReadOnlyList<EbArrow> MergedArrows =>
+        ExtraArrows == null || ExtraArrows.Count == 0 ? overlayArrows
+        : overlayArrows.Count == 0 ? ExtraArrows
+        : overlayArrows.Concat(ExtraArrows).ToArray();
+    private IReadOnlyList<EbCircle> MergedCircles =>
+        ExtraCircles == null || ExtraCircles.Count == 0 ? overlayCircles
+        : overlayCircles.Count == 0 ? ExtraCircles
+        : overlayCircles.Concat(ExtraCircles).ToArray();
     private int moveListFontSize = 8;
     private int moveListHeight = 80;
     private string openingStyle = $"font-size:15px";

@@ -87,27 +87,41 @@
                          OnEvalUpdated="OnEvalUpdated" OnLiveStats="OnLiveStatsUpdated"
                          OnIterations="OnIterationsUpdated"
                          CompactChartLegend="true" StatsPanelKey="single-analysis"
+                         SuppressAutoOverlay="() => showInsightPins || showInsightDanger"
                          IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
         </div>
 
         <!-- Center Panel: Chessboard + Save -->
         <div class="sa-center">
-            <div class="sa-overlay-controls" hidden="@(!showOverlayControls)">
-                <div class="sa-overlay-field">
-                    <label>Overlay</label>
-                    <select class="sa-select" @bind="selectedOverlay" @bind:after="OnOverlayChanged">
-                        @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
-                        {
-                            <option value="@setting">@setting</option>
-                        }
-                    </select>
-                </div>
-                <div class="sa-overlay-field">
-                    <label>Min Policy</label>
-                    <input type="range" min="0" max="0.10" step="0.005"
-                           value="@overlaySettings.MinPolicyThreshold"
-                           @onchange="@(e => OnMinPolicyChanged(double.Parse(e.Value?.ToString() ?? "0.03", CultureInfo.InvariantCulture)))" />
-                    <span class="sa-slider-value">@overlaySettings.MinPolicyThreshold.ToString("P1")</span>
+            <div class="sa-overlay-controls">
+                @if (showOverlayControls)
+                {
+                    <div class="sa-overlay-field">
+                        <label>Overlay</label>
+                        <select class="sa-select" @bind="selectedOverlay" @bind:after="OnOverlayChanged">
+                            @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
+                            {
+                                <option value="@setting">@setting</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="sa-overlay-field">
+                        <label>Min Policy</label>
+                        <input type="range" min="0" max="0.10" step="0.005"
+                               value="@overlaySettings.MinPolicyThreshold"
+                               @onchange="@(e => OnMinPolicyChanged(double.Parse(e.Value?.ToString() ?? "0.03", CultureInfo.InvariantCulture)))" />
+                        <span class="sa-slider-value">@overlaySettings.MinPolicyThreshold.ToString("P1")</span>
+                    </div>
+                }
+                @* Position insights need no engine — always available. Mutually exclusive with
+                   the policy overlay above (either direction switches the other off). *@
+                <div class="sa-overlay-field sa-insights">
+                    <label class="sa-insight-check" title="Pin rays, checker arrows and check-block squares (both colors)">
+                        <input type="checkbox" @bind="showInsightPins" @bind:after="OnInsightsToggled" /> Pins + checks
+                    </label>
+                    <label class="sa-insight-check" title="Squares around each king it cannot step to (red) and its escape squares (green)">
+                        <input type="checkbox" @bind="showInsightDanger" @bind:after="OnInsightsToggled" /> King danger
+                    </label>
                 </div>
             </div>
             <div class="sa-board-wrapper">
@@ -118,6 +132,7 @@
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" OnBoardReset="OnBoardReset" ChessBoard="@board"
                             OnBoardFlipped="f => boardFlipped = f"
                             BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
+                            ExtraArrows="@InsightArrows" ExtraCircles="@InsightCircles"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
@@ -284,6 +299,32 @@
     private bool showOverlayControls = false;
     private OverlaySettings selectedOverlay = OverlaySettings.None;
     private ModernChessboard chessBoardRazor;
+
+    // Position-insights overlay (pins/checks/king danger) — engine-free, computed from the
+    // current FEN and cached by it, so every position path (moves, nav, PGN/EPD/FRC loads)
+    // is covered without per-handler wiring. Mutually exclusive with the policy overlay.
+    private bool showInsightPins;
+    private bool showInsightDanger;
+    private string insightsFen;
+    private BoardUtils.PositionInsights cachedInsights;
+
+    private BoardUtils.PositionInsights Insights
+    {
+        get
+        {
+            if (!showInsightPins && !showInsightDanger) return null;
+            if (fen != insightsFen)
+            {
+                insightsFen = fen;
+                try { cachedInsights = BoardUtils.getPositionInsights(fen); }
+                catch { cachedInsights = null; }
+            }
+            return cachedInsights;
+        }
+    }
+
+    private IReadOnlyList<EbArrow> InsightArrows => InsightShapes.Arrows(Insights, showInsightPins);
+    private IReadOnlyList<EbCircle> InsightCircles => InsightShapes.Circles(Insights, showInsightPins, showInsightDanger);
 
     private ElementReference pgnChart;
     private IJSObjectReference chessModule;
@@ -901,7 +942,7 @@
             Engine = engineConf.EngineConfig;
             engineConfigPath = engineConf.SourceFilePath ?? "";
             showOverlayControls = Engine?.Options?.Keys.Contains("LogLiveStats") ?? false;
-            if (showOverlayControls)
+            if (showOverlayControls && !(showInsightPins || showInsightDanger))
             {
                 selectedOverlay = OverlaySettings.Policy;
                 overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
@@ -919,39 +960,64 @@
     private void SetAsDefaultEngine()
     {
         if (string.IsNullOrEmpty(engineConfigPath)) return;
+        // Mutate the live settings object rather than hand-copying into a fresh GlobalSettings:
+        // the old copy silently reset every field it forgot to list (ShowEvalBar,
+        // ShowLiveMoveStatsPanel, BoardSizePxByPage were all being wiped by "Set Default").
         var s = SettingsService.Settings;
-        var multiPV = analysisWithEngine?.CurrentChartLines ?? s.DefaultMultiPV;
-        var updated = new GlobalSettings
-        {
-            EngineDefsFolder = s.EngineDefsFolder, OpeningsFolder = s.OpeningsFolder,
-            PgnOutputFolder = s.PgnOutputFolder, TournamentConfigFolder = s.TournamentConfigFolder,
-            TablebaseFolder = s.TablebaseFolder, NeuralNetFolder = s.NeuralNetFolder,
-            PuzzleConfigFolder = s.PuzzleConfigFolder,
-            AnalysisGamesPath = s.AnalysisGamesPath, OrdoExePath = s.OrdoExePath,
-            LastBrowsedPath = s.LastBrowsedPath, RecentBrowsePaths = s.RecentBrowsePaths, StartupPage = s.StartupPage,
-            DefaultEnginePath = engineConfigPath,
-            SecondaryEnginePath = s.SecondaryEnginePath,
-            DefaultSearchMode = analysisWithEngine?.IsTimeMode == true ? "Time" : "Nodes",
-            DefaultSearchTimeMs = analysisWithEngine?.CurrentTimeMs ?? s.DefaultSearchTimeMs,
-            DefaultSearchNodes = (int)(analysisWithEngine?.CurrentNodes ?? s.DefaultSearchNodes),
-            DefaultMultiPV = multiPV,
-            PolicyDistributionMinMaxFilter = s.PolicyDistributionMinMaxFilter,
-            CombineWhiteAndBlackMoves = s.CombineWhiteAndBlackMoves,
-            MinPolicyThreshold = s.MinPolicyThreshold,
-            ReviewSearchMode = s.ReviewSearchMode, ReviewTimePerMove = s.ReviewTimePerMove,
-            ReviewNodes = s.ReviewNodes, ReviewDepth = s.ReviewDepth,
-            BrilliantPVGap = s.BrilliantPVGap, GreatPVGap = s.GreatPVGap,
-            ExcellentMaxWPLoss = s.ExcellentMaxWPLoss, GoodMaxWPLoss = s.GoodMaxWPLoss,
-            InaccuracyMaxWPLoss = s.InaccuracyMaxWPLoss, MistakeMaxWPLoss = s.MistakeMaxWPLoss,
-            DelayBetweenGamesSec = s.DelayBetweenGamesSec, MoveOverheadMs = s.MoveOverheadMs,
-        };
-        SettingsService.Save(updated);
+        s.DefaultEnginePath = engineConfigPath;
+        s.DefaultSearchMode = analysisWithEngine?.IsTimeMode == true ? "Time" : "Nodes";
+        s.DefaultSearchTimeMs = analysisWithEngine?.CurrentTimeMs ?? s.DefaultSearchTimeMs;
+        s.DefaultSearchNodes = (int)(analysisWithEngine?.CurrentNodes ?? s.DefaultSearchNodes);
+        s.DefaultMultiPV = analysisWithEngine?.CurrentChartLines ?? s.DefaultMultiPV;
+        SettingsService.Save(s);
     }
 
     private async Task OnOverlayChanged()
     {
+        // Exclusivity: picking an engine overlay switches the insights overlay off.
+        if (selectedOverlay != OverlaySettings.None && (showInsightPins || showInsightDanger))
+        {
+            showInsightPins = showInsightDanger = false;
+            SaveInsightsSetting();
+        }
         overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
         await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+    }
+
+    private async Task OnInsightsToggled()
+    {
+        // Exclusivity: switching an insights layer on clears the engine overlay.
+        if ((showInsightPins || showInsightDanger) && selectedOverlay != OverlaySettings.None)
+        {
+            selectedOverlay = OverlaySettings.None;
+            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+        }
+        SaveInsightsSetting();
+    }
+
+    private void SaveInsightsSetting()
+    {
+        var s = SettingsService.Settings;
+        var mode = (showInsightPins, showInsightDanger) switch
+        {
+            (true, true) => "pins+danger",
+            (true, false) => "pins",
+            (false, true) => "danger",
+            _ => null
+        };
+        if (mode == null) s.PositionInsightsOverlay.Remove("single-analysis");
+        else s.PositionInsightsOverlay["single-analysis"] = mode;
+        SettingsService.Save(s);
+    }
+
+    private void RestoreInsightsSetting()
+    {
+        if (SettingsService.Settings.PositionInsightsOverlay.TryGetValue("single-analysis", out var mode))
+        {
+            showInsightPins = mode is "pins" or "pins+danger";
+            showInsightDanger = mode is "danger" or "pins+danger";
+        }
     }
 
     private async Task OnMinPolicyChanged(double value)
@@ -1020,11 +1086,16 @@
             UpdateFrcId(board.StartPosition);
             UpdateDetectedOpening();
 
+            RestoreInsightsSetting();
+
             if (Engine != null && Engine.Options.Keys.Contains("LogLiveStats"))
             {
                 showOverlayControls = true;
-                selectedOverlay = OverlaySettings.Policy;
-                overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                if (!(showInsightPins || showInsightDanger))
+                {
+                    selectedOverlay = OverlaySettings.Policy;
+                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                }
             }
 
             if (AnalysisNav.Game != null)
