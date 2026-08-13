@@ -120,6 +120,9 @@ export function attachBoardDrag(container, dotnetRef) {
     window.removeEventListener('pointerup', onPointerUp, true);
     window.removeEventListener('pointercancel', cleanup, true);
     drag = null;
+    // Every drag ending funnels through here (drop, cancel, refused source, dispose):
+    // tell .NET so transient UI like the safe-square preview can clear.
+    try { dotnetRef.invokeMethodAsync('OnBoardDragEnd').catch(() => { }); } catch { }
   }
 
   function onPointerUp(ev) {

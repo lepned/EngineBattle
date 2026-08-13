@@ -125,6 +125,9 @@
                     <label class="sa-insight-check" title="Pieces that are undefended or attacked by something cheaper (amber), with lines from their attackers">
                         <input type="checkbox" @bind="showInsightHanging" @bind:after="OnInsightsToggled" /> Hanging
                     </label>
+                    <label class="sa-insight-check" title="While a piece is selected or dragged: its legal squares colored by exchange outcome (green = safe or wins material, red = the piece can be won there)">
+                        <input type="checkbox" @bind="showSafeSquares" @bind:after="SaveInsightsSetting" /> Safe squares
+                    </label>
                 </div>
             </div>
             <div class="sa-board-wrapper">
@@ -136,6 +139,7 @@
                             OnBoardFlipped="f => boardFlipped = f"
                             BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
                             ExtraArrows="@InsightArrows" ExtraCircles="@InsightCircles"
+                            ShowSafeSquarePreview="@showSafeSquares"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 
@@ -309,6 +313,9 @@
     private bool showInsightPins;
     private bool showInsightDanger;
     private bool showInsightHanging;
+    // Transient per-selection preview — deliberately NOT part of AnyInsightsOn: it draws
+    // on top of any overlay and never participates in the policy-overlay exclusivity.
+    private bool showSafeSquares;
     private string insightsFen;
     private BoardUtils.PositionInsights cachedInsights;
 
@@ -1011,6 +1018,7 @@
         if (showInsightPins) tokens.Add("pins");
         if (showInsightDanger) tokens.Add("danger");
         if (showInsightHanging) tokens.Add("hanging");
+        if (showSafeSquares) tokens.Add("safe");
         if (tokens.Count == 0) s.PositionInsightsOverlay.Remove("single-analysis");
         else s.PositionInsightsOverlay["single-analysis"] = string.Join("+", tokens);
         SettingsService.Save(s);
@@ -1024,6 +1032,7 @@
             showInsightPins = tokens.Contains("pins");
             showInsightDanger = tokens.Contains("danger");
             showInsightHanging = tokens.Contains("hanging");
+            showSafeSquares = tokens.Contains("safe");
         }
     }
 

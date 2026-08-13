@@ -334,6 +334,58 @@ let getPositionInsights (fen: string) : PositionInsights =
   if pos.STM = PositionOps.WHITE then { White = stmSide; Black = otherSide }
   else { White = otherSide; Black = stmSide }
 
+/// Outcome of moving a piece to one of its legal destinations: Net = captured material
+/// minus the enemy's best static exchange on the destination after the move
+/// (> 0 wins material, 0 safe/even, < 0 the moved piece can be won there).
+type SafeDestination = { Dest: string; Net: int; IsCapture: bool }
+
+/// Safe-square preview for the piece on `fromSquare` (absolute name, e.g. "g1"): every
+/// legal destination with its static material outcome. Castling is always 0 and legal
+/// king moves never land on attacked squares, so both skip the exchange. Promotions are
+/// deduplicated to one entry per destination (the queen promotion, generated first) and
+/// use the promoted piece's value as the exchange victim. The pre-move pin context is
+/// reused for the post-move exchange (approximation). Empty array when the square has
+/// no legal moves; throws on a malformed FEN.
+let getSafeDestinations (fen: string) (fromSquare: string) : SafeDestination[] =
+  let board = Board()
+  board.LoadFen fen
+  let mutable pos = board.Position
+  let ctx = createLegalityContext &pos
+  let occ = PositionOps.occupation &pos
+  let moves = board.GenerateMoves()
+  let results = ResizeArray<SafeDestination>()
+  let seenDests = System.Collections.Generic.HashSet<string>()
+  for i in 0 .. moves.Length - 1 do
+    let mutable mv = moves.[i]
+    let uci = TMoveOps.moveToStr &mv pos.STM
+    if uci.StartsWith fromSquare then
+      let dest = uci.Substring(2, 2)
+      if seenDests.Add dest then
+        let fromSq = int mv.From
+        let toSq = int mv.To
+        let isCastle = (mv.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+        let isEp = (mv.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
+        let isCapture = isEp || (mv.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY
+        let moverCode = int (TPieceType.Piece(fromSq, &pos))
+        let capturedValue =
+          if isEp then 1
+          elif isCapture then pieceValueByCode.[int (TPieceType.Piece(toSq, &pos))]
+          else 0
+        let net =
+          if isCastle then 0
+          elif moverCode = int TPieceType.KING then capturedValue
+          else
+            let victimValue =
+              if (mv.MoveType &&& TPieceType.PROMO) <> TPieceType.EMPTY then pieceValueByCode.[int mv.Promotion]
+              else pieceValueByCode.[moverCode]
+            let occAfter =
+              let moved = (occ ^^^ (1UL <<< fromSq)) ||| (1UL <<< toSq)
+              if isEp then moved &&& ~~~(1UL <<< (toSq - 8)) else moved
+            // The enemy only enters the exchange when it profits — clamp at 0.
+            capturedValue - max (seeOnSquare &pos ctx.Pinned ctx.KingSq occAfter toSq victimValue) 0
+        results.Add { Dest = dest; Net = net; IsCapture = isCapture }
+  results.ToArray()
+
 let makeRandomMove (rnd: Random) (board: Board inref) =
   // GenerateMoves is legal-only — no post-filter needed
   let moveList = board.GenerateMoves()

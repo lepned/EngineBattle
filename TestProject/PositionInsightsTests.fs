@@ -14,6 +14,9 @@ let private pinTriple (p: PinInfo) = (p.Attacker, p.Pinned, p.King)
 
 let private hangingPair (h: HangingInfo) = (h.Square, sorted h.Attackers)
 
+let private destNet (ds: SafeDestination[]) =
+    ds |> Array.map (fun d -> (d.Dest, d.Net)) |> Array.sortBy fst
+
 [<Fact>]
 let ``Start position has no pins and no checks for either side`` () =
     let i = getPositionInsights "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -197,3 +200,65 @@ let ``King attacker does not trigger the cheaper-attacker rule`` () =
         let i = getPositionInsights (sprintf "4k3/8/2p5/3p4/3K4/8/8/8 %s - - 0 1" stm)
         Assert.Empty(i.Black.HangingPieces)
         Assert.Empty(i.White.HangingPieces)
+
+// --- Safe destinations (safe-square preview) ------------------------------
+
+[<Fact>]
+let ``Start position knight destinations are safe`` () =
+    // Both frames: white Nb1 and black Nb8 each have two quiet, safe squares.
+    let w = getSafeDestinations "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" "b1"
+    Assert.Equal<(string * int)[]>([| ("a3", 0); ("c3", 0) |], destNet w)
+    let b = getSafeDestinations "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1" "b8"
+    Assert.Equal<(string * int)[]>([| ("a6", 0); ("c6", 0) |], destNet b)
+
+[<Fact>]
+let ``Queen destination covered by a pawn is red, the one beyond it is safe`` () =
+    // Black e5 pawn covers d4: Qd1-d4 loses the queen to exd4; d5 is past the pawn's
+    // reach and safe. The mirrored position exercises the black frame.
+    let w = getSafeDestinations "4k3/8/8/4p3/8/8/8/3QK3 w - - 0 1" "d1" |> Seq.map (fun d -> d.Dest, d.Net) |> Map.ofSeq
+    Assert.Equal(-9, w.["d4"])
+    Assert.Equal(0, w.["d5"])
+    let b = getSafeDestinations "3qk3/8/8/8/4P3/8/8/4K3 b - - 0 1" "d8" |> Seq.map (fun d -> d.Dest, d.Net) |> Map.ofSeq
+    Assert.Equal(-9, b.["d5"])
+    Assert.Equal(0, b.["d4"])
+
+[<Fact>]
+let ``Winning capture of an undefended piece nets its value`` () =
+    // Rd2xd5 takes the undefended knight cleanly.
+    let ds = getSafeDestinations "4k3/8/8/3n4/8/8/3R4/4K3 w - - 0 1" "d2" |> Array.filter (fun d -> d.Dest = "d5")
+    Assert.Equal(3, ds.[0].Net)
+    Assert.True(ds.[0].IsCapture)
+
+[<Fact>]
+let ``Exchange clamp - defender declines a losing recapture`` () =
+    // Nc3xd5: Rd7 could recapture but Bg2 x-rays d5, so RxN BxR loses the exchange —
+    // the rook declines and White simply nets the knight. Without clamping the SEE
+    // result at zero this would wrongly report +5.
+    let ds = getSafeDestinations "4k3/3r4/8/3n4/8/2N5/1P4B1/4K3 w - - 0 1" "c3" |> Array.filter (fun d -> d.Dest = "d5")
+    Assert.Equal(3, ds.[0].Net)
+
+[<Fact>]
+let ``Castling and quiet king moves are safe`` () =
+    let ds = getSafeDestinations "4k3/8/8/8/8/8/8/4K2R w K - 0 1" "e1"
+    Assert.True(ds.Length >= 5)
+    for d in ds do Assert.Equal(0, d.Net)
+
+[<Fact>]
+let ``King captures an undefended pawn, covered squares are simply illegal`` () =
+    // Black pawn e2 covers d1 and f1 — those never appear as destinations; Kxe2 nets
+    // the pawn because a legal king move can never land on a defended square.
+    let ds = getSafeDestinations "4k3/8/8/8/8/8/4p3/4K3 w - - 0 1" "e1"
+    let map = ds |> Seq.map (fun d -> d.Dest, d.Net) |> Map.ofSeq
+    Assert.False(map.ContainsKey "d1")
+    Assert.False(map.ContainsKey "f1")
+    Assert.Equal(1, map.["e2"])
+
+[<Fact>]
+let ``Pinned queen offers only ray moves, and they lose material`` () =
+    // Cross-pin position: Qe4 is pinned by Re7, so only e-file moves are legal. Every
+    // one of them loses the queen to the rook (Qxe7 at least trades into KxQ for -4).
+    let ds = getSafeDestinations "4k3/4r3/8/8/4Q3/8/8/4K3 w - - 0 1" "e4"
+    for d in ds do Assert.Equal('e', d.Dest.[0])
+    let map = ds |> Seq.map (fun d -> d.Dest, d.Net) |> Map.ofSeq
+    Assert.Equal(-9, map.["e6"])
+    Assert.Equal(-4, map.["e7"])

@@ -306,6 +306,11 @@
     /// so ClearOverlayOnPositionChange never wipes them — the host re-derives them per position.</summary>
     [Parameter] public IReadOnlyList<EbArrow> ExtraArrows { get; set; }
     [Parameter] public IReadOnlyList<EbCircle> ExtraCircles { get; set; }
+    /// <summary>Safe-square preview: while a piece is selected (click) or being dragged, its
+    /// legal destinations get dots colored by static exchange outcome (green = safe or wins
+    /// material, red = the piece can be won there). Off by default — hosts opt in; assistance
+    /// pages like PlayVsComputer must not enable it.</summary>
+    [Parameter] public bool ShowSafeSquarePreview { get; set; }
 
     // Board width in px, driving --mcb-board-size. Read once on init; the slider writes it back.
     private int boardSizePx = 700;
@@ -347,10 +352,52 @@
         ExtraArrows == null || ExtraArrows.Count == 0 ? overlayArrows
         : overlayArrows.Count == 0 ? ExtraArrows
         : overlayArrows.Concat(ExtraArrows).ToArray();
-    private IReadOnlyList<EbCircle> MergedCircles =>
-        ExtraCircles == null || ExtraCircles.Count == 0 ? overlayCircles
-        : overlayCircles.Count == 0 ? ExtraCircles
-        : overlayCircles.Concat(ExtraCircles).ToArray();
+    private IReadOnlyList<EbCircle> MergedCircles
+    {
+        get
+        {
+            var preview = PreviewCircles;
+            var haveExtra = ExtraCircles is { Count: > 0 };
+            if (!haveExtra && preview.Count == 0) return overlayCircles;
+            IEnumerable<EbCircle> merged = overlayCircles;
+            if (haveExtra) merged = merged.Concat(ExtraCircles);
+            if (preview.Count > 0) merged = merged.Concat(preview);
+            return merged.ToArray();
+        }
+    }
+
+    // Safe-square preview: derived from the current selection/drag origin, cached per
+    // (fen, square). Dies with the selection — every navigation path clears selectedSquare
+    // and OnBoardDragEnd clears the drag origin, so no explicit invalidation is needed.
+    private string dragFromSquare;
+    private string previewCacheKey;
+    private IReadOnlyList<EbCircle> previewCache = Array.Empty<EbCircle>();
+
+    private IReadOnlyList<EbCircle> PreviewCircles
+    {
+        get
+        {
+            if (!ShowSafeSquarePreview) return Array.Empty<EbCircle>();
+            var square = selectedSquare ?? dragFromSquare;
+            if (string.IsNullOrEmpty(square)) return Array.Empty<EbCircle>();
+            var key = fen + "|" + square;
+            if (key != previewCacheKey)
+            {
+                previewCacheKey = key;
+                try
+                {
+                    previewCache = BoardUtils.getSafeDestinations(fen, square)
+                        .Select(d =>
+                            d.Net > 0 ? new EbCircle(d.Dest, InsightShapes.EscapeColor, 0.55, 0.55)
+                            : d.Net == 0 ? new EbCircle(d.Dest, InsightShapes.EscapeColor, 0.5, 0.38)
+                            : new EbCircle(d.Dest, InsightShapes.CheckColor, 0.5, 0.38))
+                        .ToArray();
+                }
+                catch { previewCache = Array.Empty<EbCircle>(); }
+            }
+            return previewCache;
+        }
+    }
     private int moveListFontSize = 8;
     private int moveListHeight = 80;
     private string openingStyle = $"font-size:15px";
@@ -618,8 +665,10 @@
 
     private bool isLegalPieceMove(string startSq)
     {
+        // From-square only: a bare Contains also matched destination squares, so clicking
+        // an empty square that is some move's target used to "select" it.
         var allMoves = ChessBoard.GetLegalMoves();
-        return allMoves.Any(e => e.Item1.Contains(startSq));
+        return allMoves.Any(e => e.Item1.StartsWith(startSq));
     }
 
     private string GetMoveStr(string move)
@@ -673,7 +722,27 @@
     }
 
     [JSInvokable]
-    public bool CanDragFrom(string square) => !showPromotionDialog && isLegalPieceMove(square);
+    public bool CanDragFrom(string square)
+    {
+        var ok = !showPromotionDialog && isLegalPieceMove(square);
+        if (ok && ShowSafeSquarePreview)
+        {
+            dragFromSquare = square;
+            _ = InvokeAsync(StateHasChanged);
+        }
+        return ok;
+    }
+
+    /// <summary>Raised from JS whenever a drag ends for any reason (drop, cancel, refused
+    /// source, dispose) — clears drag-scoped transient UI like the safe-square preview.</summary>
+    [JSInvokable]
+    public Task OnBoardDragEnd() =>
+        InvokeAsync(() =>
+        {
+            if (dragFromSquare == null) return;
+            dragFromSquare = null;
+            StateHasChanged();
+        });
 
     [JSInvokable]
     public Task OnBoardDragDrop(string fromSq, string toSq) =>
