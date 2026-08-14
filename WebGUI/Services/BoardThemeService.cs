@@ -137,25 +137,40 @@ public class BoardThemeService
         _ => "min(2cqi, 12px)",
     };
 
-    /// <summary>Frame gutter width (percent of the board's outer width) per setting key.</summary>
+    /// <summary>Frame gutter width (percent of the board's outer width) per setting key.
+    /// Bumped from 1.5/2.75/4.0 after user feedback — the first round read as too slim.</summary>
     public static double FramePctOf(string key) => key switch
     {
-        "thin" => 1.5,
-        "medium" => 2.75,
-        "thick" => 4.0,
+        "thin" => 1.75,
+        "medium" => 3.1,
+        "thick" => 4.5,
         _ => 0,
+    };
+
+    /// <summary>Minimum gutter width (pct of board width) the outside coordinates need at
+    /// a given coordinate-size setting: ~1.1x the size's cqi component, so the text keeps
+    /// a margin against both the board edge and the outer frame edge instead of clamping.</summary>
+    public static double MinGutterPctFor(string coordSizeKey) => coordSizeKey switch
+    {
+        "small" => 1.75,
+        "large" => 3.3,
+        "xlarge" => 4.4,
+        _ => 2.2,
     };
 
     /// <summary>Resolves the frame width/color, including the coordinate-placement coupling:
     /// outside coordinates need a gutter, so "off" + outside yields an invisible
-    /// (transparent) gutter wide enough for the labels. An empty color setting falls back
-    /// to the theme's default (per-preset frame color).</summary>
-    public static (double Pct, string Color) ResolveFrame(string widthKey, string colorSetting, string placement, string defaultColor)
+    /// (transparent) gutter, and large coordinate sizes widen any gutter to fit the text.
+    /// An empty color setting falls back to the theme's default (per-preset frame color).</summary>
+    public static (double Pct, string Color) ResolveFrame(string widthKey, string colorSetting, string placement, string defaultColor, string coordSizeKey = "medium")
     {
         var pct = FramePctOf(widthKey);
         var color = string.IsNullOrEmpty(colorSetting) ? defaultColor : colorSetting;
-        if (placement == "outside" && pct <= 0)
-            (pct, color) = (FramePctOf("medium"), "transparent");
+        if (placement == "outside")
+        {
+            if (pct <= 0) (pct, color) = (FramePctOf("medium"), "transparent");
+            pct = Math.Max(pct, MinGutterPctFor(coordSizeKey));
+        }
         return (pct, color);
     }
 
@@ -179,7 +194,7 @@ public class BoardThemeService
         var pieceScale = (s.BoardPieceScale is >= 50 and <= 100 ? s.BoardPieceScale : 100) / 100.0;
         var coordPlacement = s.BoardCoordinatePlacement == "outside" ? "outside" : "inside";
         var (framePct, frameColor) = ResolveFrame(s.BoardFrameWidth, s.BoardFrameColor, coordPlacement,
-            PresetFrameColor(s.BoardThemePreset));
+            PresetFrameColor(s.BoardThemePreset), s.BoardCoordinateSize);
 
         string light, dark, hlWhite, hlBlack;
         if (s.BoardThemePreset == "custom")

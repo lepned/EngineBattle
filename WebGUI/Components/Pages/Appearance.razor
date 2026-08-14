@@ -139,7 +139,7 @@
                         <option value="inside">Inside the squares</option>
                         <option value="outside">Outside, in the frame</option>
                     </select>
-                    <small>Outside coordinates sit in the board frame; with the frame off, an invisible gutter makes room for them</small>
+                    <small>Outside coordinates sit in the board frame; with the frame off, an invisible gutter makes room for them, and large coordinate sizes widen the frame to fit</small>
                 </div>
                 <div class="field-group">
                     <label>Size</label>
@@ -515,7 +515,7 @@
     // and the per-preset default frame color.
     private (double Pct, string Color) EffectiveFrame =>
         BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "",
-            coordinatePlacement, BoardThemeService.PresetFrameColor(themePreset));
+            coordinatePlacement, BoardThemeService.PresetFrameColor(themePreset), coordinateSize);
     private double EffectiveFramePct => EffectiveFrame.Pct;
     private string EffectiveFrameColor => EffectiveFrame.Color;
     private string EffectiveArrowColor => arrowMode == "custom" ? arrowColor : "#9D8989";
