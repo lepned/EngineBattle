@@ -902,8 +902,8 @@ let setPieceAt (fen: string) (square: string) (piece: char) : string =
   b.[absSquareIndex square] <- (if piece = ' ' then '\000' else piece)
   let hasAt idx p = b.[idx] = p
   // Ranks 1/8 are indices 0..7 and 56..63 (a1 = 0 convention of boardOfFen/buildFen).
-  let whiteKingOnRank1 = { 0 .. 7 } |> Seq.exists (fun f -> b.[f] = 'K')
-  let blackKingOnRank8 = { 0 .. 7 } |> Seq.exists (fun f -> b.[56 + f] = 'k')
+  let whiteKingOnRank1 = seq { 0 .. 7 } |> Seq.exists (fun f -> b.[f] = 'K')
+  let blackKingOnRank8 = seq { 0 .. 7 } |> Seq.exists (fun f -> b.[56 + f] = 'k')
   let keepRight (c: char) =
     match c with
     | 'K' -> hasAt 4 'K' && hasAt 7 'R'
