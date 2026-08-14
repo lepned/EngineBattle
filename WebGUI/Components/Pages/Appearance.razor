@@ -79,7 +79,7 @@
                     <label>Frame Color</label>
                     <div class="coord-color-row">
                         <select @bind="frameColorMode" @bind:after="Apply">
-                            <option value="auto">Default (dark)</option>
+                            <option value="auto">Theme default</option>
                             <option value="custom">Custom</option>
                         </select>
                         @if (frameColorMode == "custom")
@@ -511,11 +511,13 @@
     // works even before the change is persisted).
     private string EffectiveCoordColor => coordinateColorMode == "custom" ? coordinateColor : "";
     private string EffectiveSelRing => selRingMode == "custom" ? selRingColor : "";
-    // Frame preview mirrors the theme resolution, including the outside-coords coupling.
-    private double EffectiveFramePct =>
-        BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "", coordinatePlacement).Pct;
-    private string EffectiveFrameColor =>
-        BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "", coordinatePlacement).Color;
+    // Frame preview mirrors the theme resolution, including the outside-coords coupling
+    // and the per-preset default frame color.
+    private (double Pct, string Color) EffectiveFrame =>
+        BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "",
+            coordinatePlacement, BoardThemeService.PresetFrameColor(themePreset));
+    private double EffectiveFramePct => EffectiveFrame.Pct;
+    private string EffectiveFrameColor => EffectiveFrame.Color;
     private string EffectiveArrowColor => arrowMode == "custom" ? arrowColor : "#9D8989";
     private string EffectivePolicyLabelColor => policyLabelMode == "custom" ? policyLabelColor : "#FFEB3B";
     private string EffectivePolicyArrowColor => policyArrowMode == "custom" ? policyArrowColor : "black";

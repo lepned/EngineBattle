@@ -37,17 +37,22 @@ public record BoardTheme(
 public class BoardThemeService
 {
     // Preset colors. "eb-blue" is EngineBattle's classic look (pre-native-board defaults);
-    // "lichess" matches lichess.org's brown board and last-move highlight.
-    private static readonly Dictionary<string, (string Name, string Light, string Dark, string HlWhite, string HlBlack)> presets = new()
+    // "lichess" matches lichess.org's brown board and last-move highlight. Frame is the
+    // board-frame default for the preset: its dark square darkened and slightly desaturated.
+    private static readonly Dictionary<string, (string Name, string Light, string Dark, string HlWhite, string HlBlack, string Frame)> presets = new()
     {
-        ["eb-blue"] = ("EB Classic Blue", "#B1D8DB", "#619EB3", "rgba(250, 250, 210, 0.8)", "rgba(238, 232, 170, 0.8)"),
-        ["lichess"] = ("Lichess Brown", "#F0D9B5", "#B58863", "rgba(155, 199, 0, 0.41)", "rgba(155, 199, 0, 0.41)"),
-        ["green"] = ("Tournament Green", "#EBECD0", "#739552", "rgba(255, 255, 51, 0.5)", "rgba(255, 255, 51, 0.5)"),
-        ["grey"] = ("Slate Grey", "#DEE3E6", "#8CA2AD", "rgba(155, 199, 0, 0.41)", "rgba(155, 199, 0, 0.41)"),
-        ["wood"] = ("Wood Brown", "#E8C99B", "#A5764C", "rgba(255, 215, 105, 0.55)", "rgba(255, 215, 105, 0.55)"),
-        ["purple"] = ("Royal Purple", "#E8E4F0", "#8E7CB0", "rgba(255, 255, 51, 0.45)", "rgba(255, 255, 51, 0.45)"),
-        ["midnight"] = ("Midnight Blue", "#8CA2C0", "#4A5A78", "rgba(160, 200, 255, 0.45)", "rgba(160, 200, 255, 0.45)"),
+        ["eb-blue"] = ("EB Classic Blue", "#B1D8DB", "#619EB3", "rgba(250, 250, 210, 0.8)", "rgba(238, 232, 170, 0.8)", "#35505C"),
+        ["lichess"] = ("Lichess Brown", "#F0D9B5", "#B58863", "rgba(155, 199, 0, 0.41)", "rgba(155, 199, 0, 0.41)", "#4A3526"),
+        ["green"] = ("Tournament Green", "#EBECD0", "#739552", "rgba(255, 255, 51, 0.5)", "rgba(255, 255, 51, 0.5)", "#37502C"),
+        ["grey"] = ("Slate Grey", "#DEE3E6", "#8CA2AD", "rgba(155, 199, 0, 0.41)", "rgba(155, 199, 0, 0.41)", "#3F4A50"),
+        ["wood"] = ("Wood Brown", "#E8C99B", "#A5764C", "rgba(255, 215, 105, 0.55)", "rgba(255, 215, 105, 0.55)", "#54381F"),
+        ["purple"] = ("Royal Purple", "#E8E4F0", "#8E7CB0", "rgba(255, 255, 51, 0.45)", "rgba(255, 255, 51, 0.45)", "#443A5C"),
+        ["midnight"] = ("Midnight Blue", "#8CA2C0", "#4A5A78", "rgba(160, 200, 255, 0.45)", "rgba(160, 200, 255, 0.45)", "#252E40"),
     };
+
+    /// <summary>The preset's default board-frame color; neutral dark for custom/unknown.</summary>
+    public static string PresetFrameColor(string presetKey) =>
+        presets.TryGetValue(presetKey ?? "", out var p) ? p.Frame : "#3B3733";
 
     public static IReadOnlyList<(string Key, string Name)> Presets { get; } =
         presets.Select(kv => (kv.Key, kv.Value.Name)).Concat(new[] { ("custom", "Custom") }).ToList();
@@ -143,11 +148,12 @@ public class BoardThemeService
 
     /// <summary>Resolves the frame width/color, including the coordinate-placement coupling:
     /// outside coordinates need a gutter, so "off" + outside yields an invisible
-    /// (transparent) gutter wide enough for the labels.</summary>
-    public static (double Pct, string Color) ResolveFrame(string widthKey, string colorSetting, string placement)
+    /// (transparent) gutter wide enough for the labels. An empty color setting falls back
+    /// to the theme's default (per-preset frame color).</summary>
+    public static (double Pct, string Color) ResolveFrame(string widthKey, string colorSetting, string placement, string defaultColor)
     {
         var pct = FramePctOf(widthKey);
-        var color = string.IsNullOrEmpty(colorSetting) ? "#3B3733" : colorSetting;
+        var color = string.IsNullOrEmpty(colorSetting) ? defaultColor : colorSetting;
         if (placement == "outside" && pct <= 0)
             (pct, color) = (FramePctOf("medium"), "transparent");
         return (pct, color);
@@ -172,7 +178,8 @@ public class BoardThemeService
         var blackMoveArrow = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "#383231" : s.BoardBlackMoveArrowColor;
         var pieceScale = (s.BoardPieceScale is >= 50 and <= 100 ? s.BoardPieceScale : 100) / 100.0;
         var coordPlacement = s.BoardCoordinatePlacement == "outside" ? "outside" : "inside";
-        var (framePct, frameColor) = ResolveFrame(s.BoardFrameWidth, s.BoardFrameColor, coordPlacement);
+        var (framePct, frameColor) = ResolveFrame(s.BoardFrameWidth, s.BoardFrameColor, coordPlacement,
+            PresetFrameColor(s.BoardThemePreset));
 
         string light, dark, hlWhite, hlBlack;
         if (s.BoardThemePreset == "custom")
