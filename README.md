@@ -165,7 +165,8 @@ tooling use — e.g. differential testing against python-chess by piping positio
 EB as an oracle. For a FEN it emits `status` (`checkmate`/`stalemate`/`check`/`ok`),
 `insufficientMaterial` (dead-position approximation: kings only, kings plus one minor,
 or kings plus same-colored bishops), the full `legalMoves` list as UCI + SAN pairs
-(castling SAN is spelled `0-0`), and both colors' insights (king, checkers, check-block
+(castling SAN is spelled `0-0`) with per-move predicates (`isCapture`, `isCastling`,
+`isEnPassant`, `givesCheck` — python-chess `gives_check()` parity), and both colors' insights (king, checkers, check-block
 squares, pins as attacker/pinned/king triples, king danger/escape squares, and hanging
 pieces judged by static exchange evaluation). With a square argument it adds per-square
 data: `attackersWhite`/`attackersBlack`, the piece's attack set (`attacks`), `isPinned`

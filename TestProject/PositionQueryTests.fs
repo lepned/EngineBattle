@@ -141,6 +141,35 @@ let ``start position has twenty legal moves in both notations`` () =
         Assert.True(ms |> Array.exists (fun m -> m.San = san))
 
 [<Fact>]
+let ``start position moves carry no flags`` () =
+    let ms = legalMovesOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    Assert.True(ms |> Array.forall (fun m ->
+        not m.IsCapture && not m.IsCastling && not m.IsEnPassant && not m.GivesCheck))
+
+[<Fact>]
+let ``move flags: capture, en passant, castling and gives check`` () =
+    // plain capture
+    let cap = legalMovesOf "4k3/8/8/3n4/8/8/3R4/4K3 w - - 0 1" |> Array.find (fun m -> m.Uci = "d2d5")
+    Assert.True(cap.IsCapture)
+    Assert.False(cap.IsEnPassant)
+    // en passant: black just played d7d5, exd6 is both capture and ep
+    let ep = legalMovesOf "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1" |> Array.find (fun m -> m.Uci = "e5d6")
+    Assert.True(ep.IsEnPassant)
+    Assert.True(ep.IsCapture)
+    // castling: exactly one castle move with rights "Q"; castling here gives no check
+    let castles = legalMovesOf "4k3/8/8/8/8/8/8/R3K3 w Q - 0 1" |> Array.filter (fun m -> m.IsCastling)
+    Assert.Equal(1, castles.Length)
+    Assert.False(castles.[0].GivesCheck)
+    // gives check: Ra8+ along the freed 8th rank; the quiet Ra2 does not
+    let ms = legalMovesOf "4k3/8/8/8/8/8/8/R3K3 w Q - 0 1" |> Seq.map (fun m -> m.Uci, m) |> Map.ofSeq
+    Assert.True(ms.["a1a8"].GivesCheck)
+    Assert.False(ms.["a1a2"].GivesCheck)
+    // same probe through the black frame
+    let bs = legalMovesOf "r3k3/8/8/8/8/8/8/4K3 b q - 0 1" |> Seq.map (fun m -> m.Uci, m) |> Map.ofSeq
+    Assert.True(bs.["a8a1"].GivesCheck)
+    Assert.False(bs.["a8a7"].GivesCheck)
+
+[<Fact>]
 let ``status detects checkmate stalemate check and ok`` () =
     Assert.Equal("ok", (getPositionStatus "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").Status)
     // fool's mate: 1.f3 e5 2.g4 Qh4#

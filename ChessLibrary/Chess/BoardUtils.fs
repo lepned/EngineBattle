@@ -576,8 +576,17 @@ let validateFen (fen: string) : FenValidation =
       with ex -> errors.Add (sprintf "FEN failed to parse: %s" ex.Message)
   { IsValid = errors.Count = 0; Errors = errors.ToArray() }
 
-/// A legal move in both notations (SAN castling uses EB's "0-0"/"0-0-0" spelling).
-type MoveNotation = { Uci: string; San: string }
+/// A legal move in both notations plus per-move predicates (python-chess parity:
+/// gives_check/is_capture/is_castling/is_en_passant). SAN castling uses EB's
+/// "0-0"/"0-0-0" spelling. GivesCheck includes discovered checks — the move is made
+/// on a scratch copy and the resulting position probed.
+type MoveNotation =
+  { Uci: string
+    San: string
+    IsCapture: bool
+    IsCastling: bool
+    IsEnPassant: bool
+    GivesCheck: bool }
 
 /// Position status: "checkmate" | "stalemate" | "check" | "ok", plus a dead-position
 /// test. InsufficientMaterial uses the standard approximation — kings only, kings plus
@@ -585,13 +594,32 @@ type MoveNotation = { Uci: string; San: string }
 /// per-side helpmate rules (notably K+N vs K+N is NOT insufficient here).
 type PositionStatus = { Status: string; InsufficientMaterial: bool }
 
-/// All legal moves of the position as UCI + SAN pairs.
+/// All legal moves of the position as UCI + SAN pairs with per-move predicates.
 let legalMovesOf (fen: string) : MoveNotation[] =
   let board = Board()
   board.LoadFen fen
-  board.GetLegalMoves()
-  |> Seq.map (fun (uci, san) -> { Uci = uci; San = san })
-  |> Seq.toArray
+  let mutable pos = board.Position
+  let moves = board.GenerateMoves()
+  // GetLegalMoves re-runs the same deterministic generator on the unchanged board, so
+  // its SAN sequence is index-aligned with `moves`; the uci equality below guards the
+  // assumption against future reordering.
+  let notations = board.GetLegalMoves() |> Seq.toArray
+  Array.init moves.Length (fun i ->
+    let mutable mv = moves.[i]
+    let (uci, san) = notations.[i]
+    if uci <> TMoveOps.moveToStr &mv pos.STM then
+      invalidOp "legal move enumeration order mismatch between GenerateMoves and GetLegalMoves"
+    let isEp = (mv.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
+    let givesCheck =
+      let mutable after = PositionOps.copy &pos
+      makeMove &mv &after
+      InCheck &after <> 0UL
+    { Uci = uci
+      San = san
+      IsCapture = isEp || (mv.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY
+      IsCastling = (mv.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+      IsEnPassant = isEp
+      GivesCheck = givesCheck })
 
 /// Checkmate/stalemate/check detection and the dead-position approximation.
 let getPositionStatus (fen: string) : PositionStatus =
