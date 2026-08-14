@@ -3,6 +3,7 @@ module ChessLibrary.PGNStatistics
 open System
 open System.IO
 open System.Text
+open System.Collections.Generic
 open ChessLibrary.PGNTypes
 open ChessLibrary.EngineTypes
 open TypesDef.CoreTypes
@@ -289,6 +290,43 @@ let calcNumberOfGames player (moves: EngineStat array) =
   |> Array.filter (fun e -> e.White = player || e.Black = player)
   |> Array.length
 
+// getAllEngineMovesForPlayer and calcNumberOfGames each scan their whole array, so
+// calling them once per player — as the per-file summaries below do — costs
+// O(players x moves). With a handful of engines that is free; on an archive PGN with
+// thousands of distinct names it dominates everything else. These build the index once
+// and hand back a lookup with identical semantics.
+
+/// Lookup from player name to that player's engine moves, built in one pass.
+let indexMovesByPlayer (moves: EngineMoveStat array) =
+  let byPlayer = Dictionary<string, ResizeArray<EngineMoveStat>>()
+  for m in moves do
+    match byPlayer.TryGetValue m.Player with
+    | true, xs -> xs.Add m
+    | _ ->
+      let xs = ResizeArray<EngineMoveStat>()
+      xs.Add m
+      byPlayer[m.Player] <- xs
+  fun player ->
+    match byPlayer.TryGetValue player with
+    | true, xs -> xs.ToArray()
+    | _ -> Array.empty
+
+/// Lookup from player name to the number of games they appear in, built in one pass.
+/// A game with the same name on both sides counts once, as the filter version did.
+let indexGameCountByPlayer (games: EngineStat array) =
+  let counts = Dictionary<string, int>()
+  let bump (name: string) =
+    match counts.TryGetValue name with
+    | true, c -> counts[name] <- c + 1
+    | _ -> counts[name] <- 1
+  for g in games do
+    bump g.White
+    if g.Black <> g.White then bump g.Black
+  fun player ->
+    match counts.TryGetValue player with
+    | true, c -> c
+    | _ -> 0
+
 /// Gets the players from a sequence of PGN games.
 /// <param name="games">The sequence of PGN games.</param>
 /// <returns>An array of player names.</returns>
@@ -412,10 +450,11 @@ let calculatePieceCountDataPerPgnFile (games:PgnGame seq) =
   let players = getPlayersFromPGN games
   let allGames = PGNExtractor.extractAllEngineStatsInPGN games
   let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
+  let movesOf = indexMovesByPlayer allMoves
   let res =
       players
       |> Array.Parallel.map (fun p ->
-          let moves = getAllEngineMovesForPlayer p allMoves
+          let moves = movesOf p
           let hasMoves = moves |> Array.exists (fun e -> e.n > 0)
           if not hasMoves then
             [||]
@@ -503,9 +542,10 @@ let calculateNodeRatioPerPGNfile (games:PgnGame seq) =
   let players = getPlayersFromPGN games
   let allGames = PGNExtractor.extractAllEngineStatsInPGN games
   let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
+  let movesOf = indexMovesByPlayer allMoves
   players
   |> Array.Parallel.map (fun p ->
-      let moves = getAllEngineMovesForPlayer p allMoves
+      let moves = movesOf p
       let hasMoves = moves |> Array.exists (fun e -> e.n > 0)
       if not hasMoves then
         SearchData.Empty
@@ -628,9 +668,11 @@ let calculateMedianAndAvgSpeedSummaryInPgnFile (games:PgnGame seq, timeInSecs:in
   let allGames = PGNExtractor.extractAllEngineStatsInPGN games
   let minMoveTimeInMs = int64 (timeInSecs * 1000)
   let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN |> Array.filter (fun e -> e.mt >= minMoveTimeInMs)
+  let movesOf = indexMovesByPlayer allMoves
+  let gamesOf = indexGameCountByPlayer allGames
   players
   |> Array.Parallel.map (fun p ->
-      let moves = getAllEngineMovesForPlayer p allMoves
+      let moves = movesOf p
       let avg = averageNpsWithoutOutliers moves
       let epsAvg = calculateAvgEPS moves
       let epsMed = calculateMedianEPS moves
@@ -644,7 +686,7 @@ let calculateMedianAndAvgSpeedSummaryInPgnFile (games:PgnGame seq, timeInSecs:in
       let nodesAvg = avg nodeMap
       let depthAvg = avg depthMap
       let sdAvg = max depthAvg (avg sdMap)
-      let games = calcNumberOfGames p allGames
+      let games = gamesOf p
       [|
         {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
         {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}
@@ -657,9 +699,11 @@ let calculateMedianAndAvgBookExitSpeedSummaryInPgnFile (games:PgnGame seq) =
   let players = getPlayersFromPGN games
   let allGames = PGNExtractor.extractAllBookExitEngineStatsInPGN games
   let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
+  let movesOf = indexMovesByPlayer allMoves
+  let gamesOf = indexGameCountByPlayer allGames
   players
   |> Array.Parallel.map (fun p ->
-      let moves = getAllEngineMovesForPlayer p allMoves
+      let moves = movesOf p
       let avg = averageNpsWithoutOutliers moves
       let npsMed = calculateMedianNps moves
       let epsAvg = calculateAvgEPS moves
@@ -673,7 +717,7 @@ let calculateMedianAndAvgBookExitSpeedSummaryInPgnFile (games:PgnGame seq) =
       let nodesAvg = avg nodeMap
       let depthAvg = avg depthMap
       let sdAvg = max depthAvg (avg sdMap)
-      let games = calcNumberOfGames p allGames
+      let games = gamesOf p
       [|
         {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
         {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}
@@ -686,9 +730,11 @@ let calculateMedianSpeedForAllPlayersInPgnFile (games:PgnGame seq) =
   let players = getPlayersFromPGN games
   let allGames = PGNExtractor.extractAllEngineStatsInPGN games
   let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
+  let movesOf = indexMovesByPlayer allMoves
+  let gamesOf = indexGameCountByPlayer allGames
   players
   |> Array.Parallel.map (fun p ->
-      let moves = getAllEngineMovesForPlayer p allMoves
+      let moves = movesOf p
       let nps = calculateMedianNps moves
       let epsMed = calculateMedianEPS moves
       let nodes = calculateMedianNodes moves
@@ -696,7 +742,7 @@ let calculateMedianSpeedForAllPlayersInPgnFile (games:PgnGame seq) =
       let sd = calculateMedianSelfdepth moves
       let moveTime = calculateMedianMoveTime moves
       let sd = max sd depth
-      let games = calcNumberOfGames p allGames
+      let games = gamesOf p
       {Player=p; Median = true; AvgNPS=nps; Games=games; EPS=epsMed; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = moveTime |> int64})
 
 /// Calculates the average speed for all players in a PGN file.
@@ -706,14 +752,16 @@ let calculateAvgSpeedForAllPlayersInPgnFile (games:PgnGame seq) =
   let players = getPlayersFromPGN games
   let allGames = PGNExtractor.extractAllEngineStatsInPGN games
   let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
+  let movesOf = indexMovesByPlayer allMoves
+  let gamesOf = indexGameCountByPlayer allGames
   players
   |> Array.Parallel.map (fun p ->
-      let moves = getAllEngineMovesForPlayer p allMoves
+      let moves = movesOf p
       let avg = averageNpsWithoutOutliers moves
       let nps = avg npsMap
       let epsAvg = calculateAvgEPS moves
       let nodes = avg nodeMap
       let depth = avg depthMap
       let sd = max depth (avg sdMap)
-      let games = calcNumberOfGames p allGames
+      let games = gamesOf p
       {Player=p; Median = false; AvgNPS=nps; Games=games; EPS=epsAvg; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = 0L})

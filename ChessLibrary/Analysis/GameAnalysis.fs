@@ -448,9 +448,30 @@ module PGNCalculator =
           yield r.Player1
           yield r.Player2
       ] |> Seq.distinct |> List.ofSeq
+    // Bucket the results by player in one pass. calculateStatisticsForPlayer only ever
+    // looks at that player's own games, so handing it the pre-filtered list is
+    // equivalent — but it turns an O(players x games) scan (which also re-materialized
+    // the whole result set per player) into O(games). Engine tournaments never noticed;
+    // a PGN archive with tens of thousands of names ground for minutes.
+    let byPlayer = Dictionary<string, ResizeArray<Result>>()
+    let add player r =
+      match byPlayer.TryGetValue player with
+      | true, xs -> xs.Add r
+      | _ ->
+        let xs = ResizeArray<Result>()
+        xs.Add r
+        byPlayer[player] <- xs
+    for r in results do
+      add r.Player1 r
+      // a self-play result must count once, exactly as the old filter did
+      if r.Player2 <> r.Player1 then add r.Player2 r
     seq {
           for player in players do
-            let res = calculateStatisticsForPlayer player results
+            let games =
+              match byPlayer.TryGetValue player with
+              | true, xs -> xs :> Result seq
+              | _ -> Seq.empty
+            let res = calculateStatisticsForPlayer player games
             yield res }
 
   let opponentsList (results: Result list) p1 =
@@ -643,19 +664,30 @@ module PGNCalculator =
     let avgSpeed =
       PGNStatistics.calculateMedianAndAvgSpeedSummaryInPgnFile(pgnGames, 0)
       |> Array.filter _.Median
+    // Index by name instead of a linear tryFind per player: both collections grow with
+    // the number of distinct names, so the scan was quadratic on large archive PGNs.
+    let byName = Dictionary<string, _>()
+    for e in avgSpeed do byName[e.Player] <- e
     for player in players do
-      let speed = avgSpeed |> Array.tryFind (fun e -> e.Player = player.Player)
-      if speed.IsSome then
-          player.MedSpeed <- speed.Value.AvgNPS
-          player.AvgNPM <- speed.Value.AvgNodes
-          if speed.Value.EPS > 0.0 then
-            player.EPS <- speed.Value.EPS
+      match byName.TryGetValue player.Player with
+      | true, speed ->
+          player.MedSpeed <- speed.AvgNPS
+          player.AvgNPM <- speed.AvgNodes
+          if speed.EPS > 0.0 then
+            player.EPS <- speed.EPS
+      | _ -> ()
 
   /// Hard cap for crosstable computation: entries carry per-opponent stats for every
   /// player pair (quadratic in players). Tournaments are far below this; archive PGNs
   /// (a TCEC "everything" file has 1384 engine names) skip the crosstable entirely —
   /// standings and pentanomial stay available, only pair columns come up empty.
   let maxCrosstablePlayers = 30
+
+  /// Hard cap for the console standings table. Stats are computed for everyone (that is
+  /// linear now), but printing tens of thousands of rows is unreadable — beyond this the
+  /// console output is trimmed to the busiest players. Programmatic callers (WebGUI) get
+  /// the full list regardless.
+  let maxConsoleStandingsPlayers = 500
 
   let getEngineDataResults results =
     let allResults = getResultsFromPGNGames results
@@ -676,7 +708,13 @@ module PGNCalculator =
     populatePentanomialError playerRes results
     OrdoHelper.populatePairData playerRes cross
     let consoleContent =
-      let standings = OrdoHelper.getResultsAndPairsInConsoleFormat playerRes cross
+      let forConsole =
+        if playerRes.Length <= maxConsoleStandingsPlayers then playerRes
+        else
+          printfn "Standings trimmed to the %d most active of %d players"
+            maxConsoleStandingsPlayers playerRes.Length
+          playerRes |> List.sortByDescending (fun p -> p.Played) |> List.truncate maxConsoleStandingsPlayers
+      let standings = OrdoHelper.getResultsAndPairsInConsoleFormat forConsole cross
       if playerRes.Length = 2 then
         standings + Pentanomial.formatSingleMatchupCompact results
       else standings
