@@ -300,6 +300,65 @@ let ``readEPDs parses epdOf output back`` () =
     finally
         System.IO.File.Delete path
 
+// --- status/predicate parity (50/75-move, zeroing/irreversible, ep check) --
+
+[<Fact>]
+let ``validateFen rejects an inconsistent en-passant square`` () =
+    // Well-formed ep field but no pawn double-stepped to e5: classic paste error.
+    let v = validateFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e6 0 1"
+    Assert.False(v.IsValid)
+    Assert.Contains(v.Errors, fun (e: string) -> e.Contains "not consistent")
+    // The genuine double-step still validates (both colors).
+    Assert.True((validateFen "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1").IsValid)
+    Assert.True((validateFen "rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPPPPPP/RNBQKBNR w KQkq e6 0 2").IsValid)
+
+[<Fact>]
+let ``getPositionStatus reports halfmove-counter draws`` () =
+    let at n = sprintf "4k3/8/8/8/8/8/4B3/4K3 w - - %d 80" n
+    let s99 = getPositionStatus (at 99)
+    Assert.False(s99.FiftyMoveDraw)
+    let s100 = getPositionStatus (at 100)
+    Assert.True(s100.FiftyMoveDraw)
+    Assert.False(s100.SeventyFiveMoveDraw)
+    let s150 = getPositionStatus (at 150)
+    Assert.True(s150.FiftyMoveDraw)
+    Assert.True(s150.SeventyFiveMoveDraw)
+    // Checkmate trumps the counter: no claimable draw in a finished game.
+    let mate = getPositionStatus "R3k3/8/4K3/8/8/8/8/8 b - - 100 80"
+    Assert.Equal("checkmate", mate.Status)
+    Assert.False(mate.FiftyMoveDraw)
+
+[<Fact>]
+let ``legalMovesOf flags zeroing and irreversible moves`` () =
+    let moves = legalMovesOf startpos
+    let byUci u = moves |> Array.find (fun m -> m.Uci = u)
+    // Pawn move: zeroing (and thus irreversible); knight move: neither.
+    Assert.True((byUci "e2e4").IsZeroing)
+    Assert.True((byUci "e2e4").IsIrreversible)
+    Assert.False((byUci "g1f3").IsZeroing)
+    Assert.False((byUci "g1f3").IsIrreversible)
+    // King/rook moves off castling-right squares: irreversible but not zeroing.
+    let castle = legalMovesOf "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+    let kingMove = castle |> Array.find (fun m -> m.Uci = "e1d1")
+    Assert.False(kingMove.IsZeroing)
+    Assert.True(kingMove.IsIrreversible)
+    let rookMove = castle |> Array.find (fun m -> m.Uci = "h1g1")
+    Assert.True(rookMove.IsIrreversible)
+    // No rights left: the same king move is reversible.
+    let noRights = legalMovesOf "r3k2r/8/8/8/8/8/8/R3K2R w - - 0 1"
+    Assert.False((noRights |> Array.find (fun m -> m.Uci = "e1d1")).IsIrreversible)
+
+[<Fact>]
+let ``a legal en passant makes every move irreversible`` () =
+    // White d5 pawn can capture e5 en passant: the right is use-it-or-lose-it.
+    let fen = "4k3/8/8/3Pp3/8/8/8/4K3 w - e6 0 2"
+    let moves = legalMovesOf fen
+    Assert.True(moves |> Array.exists (fun m -> m.IsEnPassant))
+    Assert.True(moves |> Array.forall (fun m -> m.IsIrreversible))
+    // Same position without the ep right: king moves are reversible again.
+    let without = legalMovesOf "4k3/8/8/3Pp3/8/8/8/4K3 w - - 0 2"
+    Assert.False((without |> Array.find (fun m -> m.Uci = "e1d1")).IsIrreversible)
+
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
     // White to move while the BLACK king sits in check from Ra8 — illegal position.

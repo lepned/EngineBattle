@@ -412,6 +412,8 @@
             }
             if (st.Status == "stalemate") return "Stalemate — draw";
             if (st.InsufficientMaterial) return "Draw — insufficient material";
+            if (st.SeventyFiveMoveDraw) return "Draw — 75-move rule";
+            if (st.FiftyMoveDraw) return "Draw can be claimed — 50-move rule";
             return null;
         }
         catch { return null; }

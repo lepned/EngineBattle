@@ -724,6 +724,60 @@ let isPinned (fen: string) (square: string) : bool =
 let pinRay (fen: string) (square: string) : string[] =
   tryPinRay fen square |> Option.defaultValue [||]
 
+/// FEN placement field to a 64-cell board array: index = rank * 8 + file with a1 = 0,
+/// piece chars as in FEN, '\000' = empty. Best-effort on malformed input (extra files
+/// and ranks are dropped) — gate on validateFen where it matters.
+let boardOfFen (fen: string) : char[] =
+  let b = Array.zeroCreate<char> 64
+  if not (String.IsNullOrWhiteSpace fen) then
+    let ranks = fen.Trim().Split(' ').[0].Split('/')
+    for i in 0 .. min 7 (ranks.Length - 1) do
+      let rank = 7 - i
+      let mutable file = 0
+      for c in ranks.[i] do
+        if Char.IsDigit c then file <- file + (int c - int '0')
+        elif file < 8 then
+          b.[rank * 8 + file] <- c
+          file <- file + 1
+  b
+
+/// Builds a FEN from editor-style state (the inverse of boardOfFen; '\000' or ' ' =
+/// empty square). Empty castling/en-passant normalize to "-". No legality checks of
+/// its own — run validateFen on the result.
+let buildFen (board: char[]) (stm: char) (castling: string) (enPassant: string) (halfmove: int) (fullmove: int) : string =
+  let sb = System.Text.StringBuilder()
+  for rank in 7 .. -1 .. 0 do
+    let mutable empties = 0
+    for file in 0 .. 7 do
+      let c = board.[rank * 8 + file]
+      if c = '\000' || c = ' ' then
+        empties <- empties + 1
+      else
+        if empties > 0 then
+          sb.Append(empties) |> ignore
+          empties <- 0
+        sb.Append(c) |> ignore
+    if empties > 0 then sb.Append(empties) |> ignore
+    if rank > 0 then sb.Append('/') |> ignore
+  let castling = if String.IsNullOrWhiteSpace castling then "-" else castling
+  let ep = if String.IsNullOrWhiteSpace enPassant then "-" else enPassant
+  sprintf "%s %c %s %s %d %d" (sb.ToString()) stm castling ep halfmove fullmove
+
+/// En-passant target squares consistent with the position: the target and the pawn's
+/// origin empty, the double-stepped enemy pawn on its landing rank. The board editor's
+/// dropdown, validateFen and the query tooling share this definition.
+let epCandidates (fen: string) : string[] =
+  let fields = (normalizeFen fen).Split(' ')
+  let b = boardOfFen fen
+  let stm = if fields.Length > 1 then fields.[1] else "w"
+  [| for f in 0 .. 7 do
+       if stm = "w" then
+         if b.[5 * 8 + f] = '\000' && b.[6 * 8 + f] = '\000' && b.[4 * 8 + f] = 'p' then
+           yield sprintf "%c6" (char (int 'a' + f))
+       else
+         if b.[2 * 8 + f] = '\000' && b.[1 * 8 + f] = '\000' && b.[3 * 8 + f] = 'P' then
+           yield sprintf "%c3" (char (int 'a' + f)) |]
+
 /// Structured FEN validation result: all problems found, not just the first.
 type FenValidation = { IsValid: bool; Errors: string[] }
 
@@ -796,53 +850,22 @@ let validateFen (fen: string) : FenValidation =
       | true, v when v >= 0 -> ()
       | _ -> errors.Add (sprintf "fullmove counter '%s' is not a non-negative number" fields.[5])
     if errors.Count = 0 then
+      // Semantic: a set en-passant square must be supported by the pawns (target and
+      // origin empty, double-stepped pawn on its landing rank) — python-chess parity;
+      // a well-formed but impossible ep field is a classic paste error that engines
+      // handle inconsistently.
+      let joined = String.Join(" ", fields)
+      if fields.Length >= 4 && fields.[3] <> "-"
+         && not (epCandidates joined |> Array.contains fields.[3]) then
+        errors.Add (sprintf "en-passant square '%s' is not consistent with the position" fields.[3])
       try
-        let mutable pos = BoardHelper.getPosFromFen (Some (String.Join(" ", fields)))
+        let mutable pos = BoardHelper.getPosFromFen (Some joined)
         let mutable flipped = PositionOps.copy &pos
         PositionOps.changeSide &flipped
         if InCheck &flipped <> 0UL then
           errors.Add "side not to move is in check"
       with ex -> errors.Add (sprintf "FEN failed to parse: %s" ex.Message)
   { IsValid = errors.Count = 0; Errors = errors.ToArray() }
-
-/// FEN placement field to a 64-cell board array: index = rank * 8 + file with a1 = 0,
-/// piece chars as in FEN, '\000' = empty. Best-effort on malformed input (extra files
-/// and ranks are dropped) — gate on validateFen where it matters.
-let boardOfFen (fen: string) : char[] =
-  let b = Array.zeroCreate<char> 64
-  if not (String.IsNullOrWhiteSpace fen) then
-    let ranks = fen.Trim().Split(' ').[0].Split('/')
-    for i in 0 .. min 7 (ranks.Length - 1) do
-      let rank = 7 - i
-      let mutable file = 0
-      for c in ranks.[i] do
-        if Char.IsDigit c then file <- file + (int c - int '0')
-        elif file < 8 then
-          b.[rank * 8 + file] <- c
-          file <- file + 1
-  b
-
-/// Builds a FEN from editor-style state (the inverse of boardOfFen; '\000' or ' ' =
-/// empty square). Empty castling/en-passant normalize to "-". No legality checks of
-/// its own — run validateFen on the result.
-let buildFen (board: char[]) (stm: char) (castling: string) (enPassant: string) (halfmove: int) (fullmove: int) : string =
-  let sb = System.Text.StringBuilder()
-  for rank in 7 .. -1 .. 0 do
-    let mutable empties = 0
-    for file in 0 .. 7 do
-      let c = board.[rank * 8 + file]
-      if c = '\000' || c = ' ' then
-        empties <- empties + 1
-      else
-        if empties > 0 then
-          sb.Append(empties) |> ignore
-          empties <- 0
-        sb.Append(c) |> ignore
-    if empties > 0 then sb.Append(empties) |> ignore
-    if rank > 0 then sb.Append('/') |> ignore
-  let castling = if String.IsNullOrWhiteSpace castling then "-" else castling
-  let ep = if String.IsNullOrWhiteSpace enPassant then "-" else enPassant
-  sprintf "%s %c %s %s %d %d" (sb.ToString()) stm castling ep halfmove fullmove
 
 // ---------------------------------------------------------------------------
 // Board editing — stateless FEN-in/FEN-out piece manipulation for the editor
@@ -864,21 +887,6 @@ let availableCastlingRights (fen: string) : string =
   if has "e8" 'k' && has "h8" 'r' then sb.Append 'k' |> ignore
   if has "e8" 'k' && has "a8" 'r' then sb.Append 'q' |> ignore
   sb.ToString()
-
-/// En-passant target squares consistent with the position: the target and the pawn's
-/// origin empty, the double-stepped enemy pawn on its landing rank. The board editor's
-/// dropdown and the query tooling share this definition.
-let epCandidates (fen: string) : string[] =
-  let fields = (normalizeFen fen).Split(' ')
-  let b = boardOfFen fen
-  let stm = if fields.Length > 1 then fields.[1] else "w"
-  [| for f in 0 .. 7 do
-       if stm = "w" then
-         if b.[5 * 8 + f] = '\000' && b.[6 * 8 + f] = '\000' && b.[4 * 8 + f] = 'p' then
-           yield sprintf "%c6" (char (int 'a' + f))
-       else
-         if b.[2 * 8 + f] = '\000' && b.[1 * 8 + f] = '\000' && b.[3 * 8 + f] = 'P' then
-           yield sprintf "%c3" (char (int 'a' + f)) |]
 
 /// Returns the FEN with `piece` placed on `square` ('\000' or ' ' clears it), pruning
 /// castling rights whose king/rook no longer stand on the required squares (KQkq and
@@ -925,22 +933,35 @@ let removePieceAt (fen: string) (square: string) : string =
   setPieceAt fen square '\000'
 
 /// A legal move in both notations plus per-move predicates (python-chess parity:
-/// gives_check/is_capture/is_castling/is_en_passant). SAN castling uses EB's
-/// "0-0"/"0-0-0" spelling. GivesCheck includes discovered checks — the move is made
-/// on a scratch copy and the resulting position probed.
+/// gives_check/is_capture/is_castling/is_en_passant/is_zeroing/is_irreversible).
+/// SAN castling uses EB's "0-0"/"0-0-0" spelling. GivesCheck includes discovered
+/// checks — the move is made on a scratch copy and the resulting position probed.
+/// IsZeroing = pawn move or capture (resets the halfmove clock). IsIrreversible =
+/// zeroing, or touches a square tied to a current castling right, or a legal en
+/// passant exists in the position (playing anything cedes it) — same false-negative
+/// as python-chess for forced lines.
 type MoveNotation =
   { Uci: string
     San: string
     IsCapture: bool
     IsCastling: bool
     IsEnPassant: bool
-    GivesCheck: bool }
+    GivesCheck: bool
+    IsZeroing: bool
+    IsIrreversible: bool }
 
 /// Position status: "checkmate" | "stalemate" | "check" | "ok", plus a dead-position
 /// test. InsufficientMaterial uses the standard approximation — kings only, kings plus
 /// one minor piece, or kings plus bishops all on one square color — NOT python-chess's
 /// per-side helpmate rules (notably K+N vs K+N is NOT insufficient here).
-type PositionStatus = { Status: string; InsufficientMaterial: bool }
+/// FiftyMoveDraw = a draw CAN be claimed (halfmove clock >= 100 and the game is not
+/// already over); SeventyFiveMoveDraw = automatic draw (>= 150). Both are pure
+/// halfmove-counter checks — repetition needs history and lives in adjudication.
+type PositionStatus =
+  { Status: string
+    InsufficientMaterial: bool
+    FiftyMoveDraw: bool
+    SeventyFiveMoveDraw: bool }
 
 /// All legal moves of the position as UCI + SAN pairs with per-move predicates.
 let legalMovesOf (fen: string) : MoveNotation[] =
@@ -953,22 +974,57 @@ let legalMovesOf (fen: string) : MoveNotation[] =
   // its SAN sequence is index-aligned with `moves`; the uci equality below guards the
   // assumption against future reordering.
   let notations = board.GetLegalMoves() |> Seq.toArray
-  Array.init moves.Length (fun i ->
-    let mutable mv = moves.[i]
-    let (uci, san) = notations.[i]
-    if uci <> TMoveOps.moveToStr &mv pos.STM then
-      invalidOp "legal move enumeration order mismatch between GenerateMoves and GetLegalMoves"
-    let isEp = (mv.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
-    let givesCheck =
-      let mutable after = PositionOps.copy &pos
-      makeMove &mv &after
-      InCheck &after <> 0UL
-    { Uci = uci
-      San = san
-      IsCapture = isEp || (mv.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY
-      IsCastling = (mv.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
-      IsEnPassant = isEp
-      GivesCheck = givesCheck })
+  // Irreversibility inputs: the squares tied to a current castling right (moving from
+  // or capturing onto one destroys the right). KQkq map to the actual king square and
+  // the classic corner rooks; FRC file letters map to that file's back-rank rook.
+  let boardArr = boardOfFen fen
+  let castlingField = fen.Split(' ').[2]
+  let rightSquares =
+    if castlingField = "-" then Set.empty
+    else
+      let whiteKing = System.Array.IndexOf(boardArr, 'K')
+      let blackKing = System.Array.IndexOf(boardArr, 'k')
+      castlingField
+      |> Seq.collect (fun c ->
+          match c with
+          | 'K' -> [ whiteKing; 7 ]
+          | 'Q' -> [ whiteKing; 0 ]
+          | 'k' -> [ blackKing; 63 ]
+          | 'q' -> [ blackKing; 56 ]
+          | c when c >= 'A' && c <= 'H' -> [ whiteKing; int c - int 'A' ]
+          | c when c >= 'a' && c <= 'h' -> [ blackKing; 56 + int c - int 'a' ]
+          | _ -> [])
+      |> Seq.filter (fun i -> i >= 0)
+      |> Set.ofSeq
+  let sqIdx (uci: string) (o: int) = (int uci.[o + 1] - int '1') * 8 + (int uci.[o] - int 'a')
+  let result =
+    Array.init moves.Length (fun i ->
+      let mutable mv = moves.[i]
+      let (uci, san) = notations.[i]
+      if uci <> TMoveOps.moveToStr &mv pos.STM then
+        invalidOp "legal move enumeration order mismatch between GenerateMoves and GetLegalMoves"
+      let isEp = (mv.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
+      let isCapture = isEp || (mv.MoveType &&& TPieceType.CAPTURE) <> TPieceType.EMPTY
+      let fromIdx = sqIdx uci 0
+      let isZeroing = isCapture || boardArr.[fromIdx] = 'P' || boardArr.[fromIdx] = 'p'
+      let givesCheck =
+        let mutable after = PositionOps.copy &pos
+        makeMove &mv &after
+        InCheck &after <> 0UL
+      { Uci = uci
+        San = san
+        IsCapture = isCapture
+        IsCastling = (mv.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
+        IsEnPassant = isEp
+        GivesCheck = givesCheck
+        IsZeroing = isZeroing
+        IsIrreversible =
+          isZeroing || rightSquares.Contains fromIdx || rightSquares.Contains (sqIdx uci 2) })
+  // A legal en passant is use-it-or-lose-it: when one exists, EVERY move is
+  // irreversible (python-chess semantics).
+  if result |> Array.exists (fun m -> m.IsEnPassant) then
+    result |> Array.map (fun m -> { m with IsIrreversible = true })
+  else result
 
 /// Applies one legal move (UCI, e.g. "e2e4"/"e7e8q") to a FEN and returns the resulting
 /// FEN; None when the position is invalid or the move is not legal in it (python-chess
@@ -1147,7 +1203,16 @@ let getPositionStatus (fen: string) : PositionStatus =
         // preserved under the frame's vertical flip for the all-same comparison)
         let dark = 0xAA55AA55AA55AA55UL
         bishops &&& dark = 0UL || bishops &&& ~~~dark = 0UL
-  { Status = status; InsufficientMaterial = insufficient }
+  // Halfmove-counter draws: only meaningful while the game is still playable
+  // (checkmate on the 100th halfmove is a mate, not a claimable draw).
+  let halfmoves =
+    match Int32.TryParse (fen.Split(' ').[4]) with
+    | true, v -> v
+    | _ -> 0
+  { Status = status
+    InsufficientMaterial = insufficient
+    FiftyMoveDraw = anyMoves && halfmoves >= 100
+    SeventyFiveMoveDraw = anyMoves && halfmoves >= 150 }
 
 /// Squares strictly between two aligned squares; empty when not aligned. Pure geometry.
 let between (a: string) (b: string) : string[] =
