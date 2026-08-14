@@ -1272,33 +1272,14 @@ type Board() =
     member this.ClaimThreeFoldRep () =
       this.RepetitionNr() >= 3
     
+    /// FIDE dead position — see MaterialRules.isDeadPosition, the single material rule
+    /// shared with BoardUtils.getPositionStatus (and thus the query API and the GUI
+    /// status line). Endings where mate cannot be FORCED but remains possible with help
+    /// (K+N vs K+N, K+B vs K+N, opposite-color bishops, K+N+N vs K) are deliberately NOT
+    /// drawn here: tournament play ends them via the eval-based draw adjudication and the
+    /// 50-move rule instead.
     member this.InsufficientMaterial() =
-      let piecesLeft = PositionOps.numberOfPieces &position
-      if piecesLeft > 4 then
-        false
-      else
-        let occ = PositionOps.occupation &position
-        let kings = PositionOps.kings &position
-        let bishops = PositionOps.bishops &position
-        let knights = PositionOps.knights &position
-        if occ = (kings ||| bishops ||| knights) then          
-          let bUs = bishops &&& PositionOps.sideToMove &position
-          let bOpp = bishops &&& PositionOps.opposing &position
-          let bUsN = QBBOperations.Pop bUs |> int32
-          let bOppN = QBBOperations.Pop bOpp |> int32
-          let nUs = knights &&& PositionOps.sideToMove &position
-          let nOpp = knights &&& PositionOps.opposing &position
-          let nUsN = QBBOperations.Pop nUs |> int32
-          let nOppN = QBBOperations.Pop nOpp |> int32
-          let allTest = abs (nUsN + bUsN - nOppN - bOppN) <= 1
-          occ = kings 
-          || (piecesLeft = 3 && kings ||| bishops = occ)  
-          || (piecesLeft = 3 && kings ||| knights = occ)
-          || (piecesLeft = 4 && kings ||| knights = occ)
-          || (piecesLeft = 4 && allTest)
-          || (piecesLeft = 4 && (kings ||| knights) = occ)
-        else
-          false
+      MaterialRules.isDeadPosition &position
     
     /// Positional undo only: rewinds the position stack but does NOT pop hashKeys,
     /// MovesPlayed, or the SAN/UCI/FEN lists. Pair with MakeMoveNoHash (perft-style

@@ -951,9 +951,10 @@ type MoveNotation =
     IsIrreversible: bool }
 
 /// Position status: "checkmate" | "stalemate" | "check" | "ok", plus a dead-position
-/// test. InsufficientMaterial uses the standard approximation — kings only, kings plus
-/// one minor piece, or kings plus bishops all on one square color — NOT python-chess's
-/// per-side helpmate rules (notably K+N vs K+N is NOT insufficient here).
+/// test. InsufficientMaterial is the FIDE dead-position rule from MaterialRules — the
+/// same rule Board.InsufficientMaterial() and tournament adjudication use, verified
+/// equal to python-chess `is_insufficient_material()` (so K+N vs K+N is NOT a draw here,
+/// matching python-chess; kings plus one-color bishops IS).
 /// FiftyMoveDraw = a draw CAN be claimed (halfmove clock >= 100 and the game is not
 /// already over); SeventyFiveMoveDraw = automatic draw (>= 150). Both are pure
 /// halfmove-counter checks — repetition needs history and lives in adjudication.
@@ -1213,21 +1214,7 @@ let getPositionStatus (fen: string) : PositionStatus =
     elif not anyMoves then "stalemate"
     elif inCheck then "check"
     else "ok"
-  let insufficient =
-    let heavy = PositionOps.pawns &pos ||| PositionOps.rooks &pos ||| PositionOps.queens &pos
-    if heavy <> 0UL then false
-    else
-      let knights = PositionOps.knights &pos
-      let bishops = PositionOps.bishops &pos
-      let minors =
-        System.Numerics.BitOperations.PopCount knights + System.Numerics.BitOperations.PopCount bishops
-      if minors <= 1 then true
-      elif knights <> 0UL then false
-      else
-        // bishops only: dead when they all live on one square color (color parity is
-        // preserved under the frame's vertical flip for the all-same comparison)
-        let dark = 0xAA55AA55AA55AA55UL
-        bishops &&& dark = 0UL || bishops &&& ~~~dark = 0UL
+  let insufficient = MaterialRules.isDeadPosition &pos
   // Halfmove-counter draws: only meaningful while the game is still playable
   // (checkmate on the 100th halfmove is a mate, not a claimable draw).
   let halfmoves =

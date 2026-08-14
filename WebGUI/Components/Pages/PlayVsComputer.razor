@@ -822,7 +822,15 @@
             EndGame("Draw", "Threefold repetition", "Draw by threefold repetition.");
             return true;
         }
-        // Draw by 50-move rule (not implemented here, but can be added)
+        // Draw by 50-move rule. This is the backstop for endings where mate cannot be
+        // forced but is not a dead position (K+N vs K+N, opposite-color bishops, …):
+        // the material rule above is the strict FIDE one, so without this the game
+        // would never end on its own.
+        if (board.Position.Count50 >= 100)
+        {
+            EndGame("Draw", "Fifty-move rule", "Draw by the 50-move rule.");
+            return true;
+        }
         if (clockEnabled && whiteTime.TotalSeconds <= 0)
         {
             HandleFlagFall(whiteFlagged: true);

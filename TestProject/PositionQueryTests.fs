@@ -499,14 +499,37 @@ let ``status detects checkmate stalemate check and ok`` () =
     Assert.Equal("stalemate", (getPositionStatus "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").Status)
     Assert.Equal("check", (getPositionStatus "R3k3/8/8/8/8/8/8/4K3 b - - 0 1").Status)
 
-[<Fact>]
-let ``insufficient material follows the dead-position approximation`` () =
-    Assert.True((getPositionStatus "8/8/4k3/8/8/4K3/8/8 w - - 0 1").InsufficientMaterial)      // K vs K
-    Assert.True((getPositionStatus "8/8/4k3/8/2B5/4K3/8/8 w - - 0 1").InsufficientMaterial)    // KB vs K
-    Assert.True((getPositionStatus "8/8/4k3/8/2B1B3/4K3/8/8 w - - 0 1").InsufficientMaterial)  // bishops on one color
-    Assert.False((getPositionStatus "8/8/4k3/8/1B2B3/4K3/8/8 w - - 0 1").InsufficientMaterial) // opposite-color bishops
-    Assert.False((getPositionStatus "8/8/4k3/8/2B2N2/4K3/8/8 w - - 0 1").InsufficientMaterial) // two minors incl. knight
-    Assert.False((getPositionStatus "8/8/4k3/8/2B5/3PK3/8/8 w - - 0 1").InsufficientMaterial)  // pawn on the board
+/// The material rule, as one table. Expected values are python-chess
+/// `is_insufficient_material()` (FIDE dead position), verified 2026-08-14 against
+/// python-chess 1.11.2. Asserted through BOTH entry points — Board.InsufficientMaterial()
+/// (tournament adjudication, PlayVsComputer) and getPositionStatus (query API, GUI status
+/// line) — which is what keeps them from drifting apart again.
+[<Theory>]
+// dead: mate impossible by any legal sequence
+[<InlineData("4k3/8/8/8/8/8/8/4K3 w - - 0 1", true)>]                  // K vs K
+[<InlineData("4k3/8/8/8/8/8/8/2B1K3 w - - 0 1", true)>]                // KB vs K
+[<InlineData("4k3/8/8/8/8/8/8/2N1K3 w - - 0 1", true)>]                // KN vs K
+[<InlineData("3bk3/8/8/8/8/8/8/2B1K3 w - - 0 1", true)>]               // KB vs KB, bishops on one color
+[<InlineData("4k3/8/8/8/8/8/8/2B1K1B1 w - - 0 1", true)>]              // KBB vs K, both on one color
+[<InlineData("3bk3/8/8/8/8/8/8/2B1K1B1 w - - 0 1", true)>]             // three bishops, all one color
+// not dead: mate stays possible (with or without being forceable)
+[<InlineData("2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1", false)>]             // opposite-color bishops
+[<InlineData("2n1k3/8/8/8/8/8/8/2N1K3 w - - 0 1", false)>]             // KN vs KN
+[<InlineData("2n1k3/8/8/8/8/8/8/2B1K3 w - - 0 1", false)>]             // KB vs KN
+[<InlineData("4k3/8/8/8/8/8/8/1NN1K3 w - - 0 1", false)>]              // KNN vs K
+[<InlineData("4k3/8/8/8/8/8/8/2B1KB2 w - - 0 1", false)>]              // KBB vs K, opposite colors
+[<InlineData("4k3/8/8/8/8/8/8/2B1KN2 w - - 0 1", false)>]              // KBN vs K
+[<InlineData("4k3/8/8/8/8/8/8/2R1K3 w - - 0 1", false)>]               // KR vs K
+[<InlineData("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1", false)>]               // KP vs K
+let ``material rule agrees across both entry points`` (fen: string, expected: bool) =
+    Assert.Equal(expected, (getPositionStatus fen).InsufficientMaterial)
+    let board = ChessLibrary.Chess.Board()
+    board.LoadFen fen
+    Assert.Equal(expected, board.InsufficientMaterial())
+    // ...and from black's perspective too: the QBB frame flip inverts square colors,
+    // which must not change the all-bishops-on-one-color verdict.
+    let flipped = fen.Replace(" w ", " b ")
+    Assert.Equal(expected, (getPositionStatus flipped).InsufficientMaterial)
 
 // --- duality property: attacksFrom <-> attackersOf ------------------------
 
