@@ -127,6 +127,37 @@ let ``validateFen accepts short FENs via normalization`` () =
     Assert.Equal(1, i.White.DiscoveredAttacks.Length)
     Assert.Equal(20, (legalMovesOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w").Length)
 
+// --- boardOfFen / buildFen ------------------------------------------------
+
+[<Fact>]
+let ``buildFen round-trips boardOfFen for full FENs`` () =
+    // Placement + all trailing fields survive the array round-trip unchanged.
+    let fens =
+        [ "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+          "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"   // kiwipete
+          "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"            // ep square
+          "8/2k5/8/8/8/8/5K2/8 w - - 42 97" ]                                       // sparse + counters
+    for fen in fens do
+        let f = fen.Split(' ')
+        let rebuilt = buildFen (boardOfFen fen) f.[1].[0] f.[2] f.[3] (int f.[4]) (int f.[5])
+        Assert.Equal(fen, rebuilt)
+        Assert.True((validateFen rebuilt).IsValid)
+
+[<Fact>]
+let ``buildFen normalizes empty castling and en passant to dashes`` () =
+    let board = boardOfFen "4k3/8/8/8/8/8/8/4K3 w - - 0 1"
+    Assert.Equal("4k3/8/8/8/8/8/8/4K3 w - - 0 1", buildFen board 'w' "" "" 0 1)
+    Assert.Equal("4k3/8/8/8/8/8/8/4K3 b - - 3 7", buildFen board 'b' null null 3 7)
+
+[<Fact>]
+let ``boardOfFen indexes a1 as zero with FEN piece chars`` () =
+    let b = boardOfFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    Assert.Equal('R', b.[0])                  // a1
+    Assert.Equal('K', b.[4])                  // e1
+    Assert.Equal('P', b.[1 * 8 + 3])          // d2
+    Assert.Equal('k', b.[7 * 8 + 4])          // e8
+    Assert.Equal('\000', b.[3 * 8 + 3])       // d4 empty
+
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
     // White to move while the BLACK king sits in check from Ra8 — illegal position.

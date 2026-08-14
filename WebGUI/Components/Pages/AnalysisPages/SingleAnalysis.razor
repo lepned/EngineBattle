@@ -66,6 +66,13 @@
                 </div>
             }
         </div>
+        <button class="sa-toolbar-btn" @onclick="EditCurrentPosition" title="Open this position in the board editor">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Edit board
+        </button>
         <button class="sa-toolbar-btn" @onclick="SetAsDefaultEngine" disabled="@(string.IsNullOrEmpty(engineConfigPath))"
                 title="Set current engine as default">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -288,9 +295,17 @@
     private int gameIndex = 0;
     private string gamesPath = "";
 
+    // Position handed over from the board editor (or any deep link): /analysis/single?fen=...
+    [SupplyParameterFromQuery(Name = "fen")] public string FenFromQuery { get; set; }
+
+    private void EditCurrentPosition() =>
+        navManager.NavigateTo($"/editor?fen={Uri.EscapeDataString(fen)}");
+
     protected override void OnInitialized()
     {
         var s = SettingsService.Settings;
+        if (!string.IsNullOrEmpty(FenFromQuery) && BoardUtils.validateFen(FenFromQuery).IsValid)
+            fen = BoardUtils.normalizeFen(FenFromQuery);
         if (!string.IsNullOrEmpty(s.AnalysisGamesPath))
             gamesPath = s.AnalysisGamesPath;
         if (Engine == null && !string.IsNullOrEmpty(s.DefaultEnginePath))

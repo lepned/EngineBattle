@@ -1,0 +1,370 @@
+@page "/editor"
+@page "/tools/board-editor"
+@using WebGUI.Services
+@using WebGUI.Components.Layout.ChessboardLayout
+@using ChessLibrary
+@implements IAsyncDisposable
+@inject BoardThemeService ThemeService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
+@inject ILogger<BoardEditor> logger
+
+<PageTitle>Board editor</PageTitle>
+
+<div class="be-container">
+    <h2>Board editor</h2>
+    <div class="be-description">
+        Set up any position: pick a piece below or above the board and click squares to place it
+        (click again to remove), drag pieces to move them, or paste a FEN. The position is
+        validated live; Analyze opens it on the analysis page.
+    </div>
+
+    <div class="be-layout">
+        <div class="be-board-col">
+            <div class="be-palette">
+                @foreach (var p in "kqrbnp")
+                {
+                    var piece = p;
+                    <button class="be-piece-btn @(brush == piece.ToString() ? "selected" : "")"
+                            title="@($"Place {PieceName(piece)}")" @onclick="() => ToggleBrush(piece.ToString())">
+                        <img src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                    </button>
+                }
+            </div>
+            <div class="be-board" @ref="boardRef">
+                @* boardFen, not fenInput: while the FEN field holds invalid text the board
+                   keeps showing the last good position (same policy as the analysis pages). *@
+                <EbChessboard Fen="@boardFen" SizePx="null" Flipped="@flipped"
+                              ShowCoordinates="true" OnSquareClicked="OnSquareClicked" />
+            </div>
+            <div class="be-palette">
+                @foreach (var p in "KQRBNP")
+                {
+                    var piece = p;
+                    <button class="be-piece-btn @(brush == piece.ToString() ? "selected" : "")"
+                            title="@($"Place {PieceName(piece)}")" @onclick="() => ToggleBrush(piece.ToString())">
+                        <img src="@PieceSrc(piece)" alt="@piece" draggable="false" />
+                    </button>
+                }
+                <button class="be-piece-btn be-eraser @(brush == "erase" ? "selected" : "")"
+                        title="Eraser: click squares to clear them" @onclick='() => ToggleBrush("erase")'>✕</button>
+            </div>
+        </div>
+
+        <div class="be-controls">
+            <fieldset class="be-fieldset">
+                <legend>Position</legend>
+                <div class="be-btn-row">
+                    <button class="be-btn" @onclick="SetStartPosition">Start position</button>
+                    <button class="be-btn" @onclick="ClearBoard">Clear board</button>
+                    <button class="be-btn" @onclick="() => flipped = !flipped">Flip</button>
+                </div>
+            </fieldset>
+
+            <fieldset class="be-fieldset">
+                <legend>Side to move</legend>
+                <div class="be-btn-row">
+                    <label class="be-radio"><input type="radio" name="stm" checked="@(stm == 'w')"
+                           @onchange="() => SetStm('w')" /> White</label>
+                    <label class="be-radio"><input type="radio" name="stm" checked="@(stm == 'b')"
+                           @onchange="() => SetStm('b')" /> Black</label>
+                </div>
+            </fieldset>
+
+            <fieldset class="be-fieldset">
+                <legend>Castling</legend>
+                <div class="be-castle-grid">
+                    <label class="be-check" title="White O-O (needs Ke1 + Rh1)">
+                        <input type="checkbox" disabled="@(!CanCastleWK)" checked="@(castleWK && CanCastleWK)"
+                               @onchange="e => { castleWK = (bool)e.Value; AfterEdit(); }" /> White 0-0
+                    </label>
+                    <label class="be-check" title="White O-O-O (needs Ke1 + Ra1)">
+                        <input type="checkbox" disabled="@(!CanCastleWQ)" checked="@(castleWQ && CanCastleWQ)"
+                               @onchange="e => { castleWQ = (bool)e.Value; AfterEdit(); }" /> White 0-0-0
+                    </label>
+                    <label class="be-check" title="Black O-O (needs Ke8 + Rh8)">
+                        <input type="checkbox" disabled="@(!CanCastleBK)" checked="@(castleBK && CanCastleBK)"
+                               @onchange="e => { castleBK = (bool)e.Value; AfterEdit(); }" /> Black 0-0
+                    </label>
+                    <label class="be-check" title="Black O-O-O (needs Ke8 + Ra8)">
+                        <input type="checkbox" disabled="@(!CanCastleBQ)" checked="@(castleBQ && CanCastleBQ)"
+                               @onchange="e => { castleBQ = (bool)e.Value; AfterEdit(); }" /> Black 0-0-0
+                    </label>
+                </div>
+                <small>Standard chess only — Chess960 castling rights are not editable here yet</small>
+            </fieldset>
+
+            <fieldset class="be-fieldset">
+                <legend>En passant</legend>
+                <select class="be-select" value="@ep" @onchange="e => { ep = (string)e.Value; AfterEdit(); }">
+                    <option value="-">None</option>
+                    @foreach (var sq in EpCandidates())
+                    {
+                        <option value="@sq">@sq</option>
+                    }
+                </select>
+                <small>Only squares consistent with the pawns and side to move are offered</small>
+            </fieldset>
+
+            <fieldset class="be-fieldset">
+                <legend>Move counters</legend>
+                <div class="be-btn-row">
+                    <label class="be-counter">Halfmove
+                        <input type="number" min="0" value="@halfmove"
+                               @onchange="e => { halfmove = ParseCounter(e.Value, 0); AfterEdit(); }" /></label>
+                    <label class="be-counter">Move
+                        <input type="number" min="1" value="@fullmove"
+                               @onchange="e => { fullmove = ParseCounter(e.Value, 1); AfterEdit(); }" /></label>
+                </div>
+            </fieldset>
+
+            <fieldset class="be-fieldset">
+                <legend>FEN</legend>
+                <input class="be-fen-input" value="@fenInput" @onchange="e => OnFenEdited((string)e.Value)"
+                       spellcheck="false" />
+                @if (fenErrors.Length > 0)
+                {
+                    <div class="be-fen-errors">
+                        @foreach (var err in fenErrors)
+                        {
+                            <div>@err</div>
+                        }
+                    </div>
+                }
+                <div class="be-btn-row">
+                    <button class="be-btn" @onclick="CopyFen">@copyLabel</button>
+                    <button class="be-btn be-primary" disabled="@(fenErrors.Length > 0)" @onclick="Analyze"
+                            title="Open in single-engine analysis">Analyze</button>
+                    <button class="be-btn be-primary" disabled="@(fenErrors.Length > 0)" @onclick="AnalyzeDual"
+                            title="Open in dual-engine analysis">Dual</button>
+                </div>
+            </fieldset>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const string StartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    [SupplyParameterFromQuery(Name = "fen")] public string FenParam { get; set; }
+
+    private char[] board = new char[64];
+    private char stm = 'w';
+    // Checkbox states survive temporary unavailability: lift the rook and put it back,
+    // and the right comes back checked. Only available AND checked rights reach the FEN.
+    private bool castleWK, castleWQ, castleBK, castleBQ;
+    private string ep = "-";
+    private int halfmove = 0;
+    private int fullmove = 1;
+    private bool flipped;
+    private string brush;          // null = move/drag mode; "erase"; or a FEN piece char
+    private string fenInput = StartFen;
+    private string boardFen = StartFen;   // always the last VALID state; feeds the board
+    private string[] fenErrors = Array.Empty<string>();
+    private string copyLabel = "Copy FEN";
+
+    private ElementReference boardRef;
+    private DotNetObjectReference<BoardEditor> objRef;
+    private IJSObjectReference module;
+    private IJSObjectReference dragHandle;
+
+    private static int Sq(string sq) => (sq[1] - '1') * 8 + (sq[0] - 'a');
+
+    private bool CanCastleWK => board[Sq("e1")] == 'K' && board[Sq("h1")] == 'R';
+    private bool CanCastleWQ => board[Sq("e1")] == 'K' && board[Sq("a1")] == 'R';
+    private bool CanCastleBK => board[Sq("e8")] == 'k' && board[Sq("h8")] == 'r';
+    private bool CanCastleBQ => board[Sq("e8")] == 'k' && board[Sq("a8")] == 'r';
+
+    private string CastlingString()
+    {
+        var s = (castleWK && CanCastleWK ? "K" : "") + (castleWQ && CanCastleWQ ? "Q" : "")
+              + (castleBK && CanCastleBK ? "k" : "") + (castleBQ && CanCastleBQ ? "q" : "");
+        return s.Length == 0 ? "-" : s;
+    }
+
+    /// <summary>Ep target squares consistent with the position: the square and the pawn's
+    /// origin empty, the double-stepped pawn present on its landing rank.</summary>
+    private IEnumerable<string> EpCandidates()
+    {
+        for (int f = 0; f < 8; f++)
+        {
+            if (stm == 'w' && board[5 * 8 + f] == default && board[6 * 8 + f] == default && board[4 * 8 + f] == 'p')
+                yield return $"{(char)('a' + f)}6";
+            if (stm == 'b' && board[2 * 8 + f] == default && board[1 * 8 + f] == default && board[3 * 8 + f] == 'P')
+                yield return $"{(char)('a' + f)}3";
+        }
+    }
+
+    /// <summary>Re-derive the FEN and validation after any state mutation; prunes an
+    /// en-passant choice its pawns no longer support.</summary>
+    private void AfterEdit()
+    {
+        if (ep != "-" && !EpCandidates().Contains(ep)) ep = "-";
+        boardFen = BoardUtils.buildFen(board, stm, CastlingString(), ep == "-" ? "-" : ep, halfmove, fullmove);
+        fenInput = boardFen;
+        fenErrors = BoardUtils.validateFen(boardFen).Errors;
+    }
+
+    private void SetStm(char side)
+    {
+        stm = side;
+        AfterEdit();
+    }
+
+    private void ToggleBrush(string b) => brush = brush == b ? null : b;
+
+    private void OnSquareClicked(string sq)
+    {
+        int i = Sq(sq);
+        if (brush == "erase")
+        {
+            if (board[i] == default) return;
+            board[i] = default;
+        }
+        else if (!string.IsNullOrEmpty(brush))
+        {
+            board[i] = board[i] == brush[0] ? default : brush[0];
+        }
+        else return;
+        AfterEdit();
+    }
+
+    // ── Drag & drop (attachBoardDrag contract) ─────────────────────────────
+    [JSInvokable]
+    public bool CanDragFrom(string from) => board[Sq(from)] != default;
+
+    [JSInvokable]
+    public void OnBoardDragDrop(string from, string to)
+    {
+        int f = Sq(from), t = Sq(to);
+        board[t] = board[f];
+        board[f] = default;
+        AfterEdit();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnBoardDragEnd() { }
+
+    private void SetStartPosition() => LoadFen(StartFen);
+
+    private void ClearBoard()
+    {
+        board = new char[64];
+        castleWK = castleWQ = castleBK = castleBQ = false;
+        ep = "-";
+        halfmove = 0;
+        fullmove = 1;
+        AfterEdit();
+    }
+
+    private void OnFenEdited(string value)
+    {
+        var v = BoardUtils.validateFen(value);
+        if (v.IsValid)
+        {
+            LoadFen(value);
+        }
+        else
+        {
+            // Keep the last good board on screen (same policy as the analysis FEN field);
+            // the text and its errors stay visible for fixing.
+            fenInput = value;
+            fenErrors = v.Errors;
+        }
+    }
+
+    private void LoadFen(string fen)
+    {
+        var fields = BoardUtils.normalizeFen(fen).Split(' ');
+        board = BoardUtils.boardOfFen(fen);
+        stm = fields[1][0];
+        castleWK = fields[2].Contains('K');
+        castleWQ = fields[2].Contains('Q');
+        castleBK = fields[2].Contains('k');
+        castleBQ = fields[2].Contains('q');
+        ep = fields[3];
+        halfmove = int.TryParse(fields[4], out var h) ? h : 0;
+        fullmove = int.TryParse(fields[5], out var m) ? m : 1;
+        AfterEdit();
+    }
+
+    private static int ParseCounter(object value, int fallback) =>
+        int.TryParse(value?.ToString(), out var v) && v >= fallback ? v : fallback;
+
+    private async Task CopyFen()
+    {
+        try
+        {
+            if (module != null) await module.InvokeVoidAsync("writeToClipboard", fenInput);
+            copyLabel = "Copied!";
+            _ = ResetCopyLabel();
+        }
+        catch (Exception ex) { logger.LogWarning("Copy FEN failed: {Message}", ex.Message); }
+    }
+
+    private async Task ResetCopyLabel()
+    {
+        await Task.Delay(1200);
+        copyLabel = "Copy FEN";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Analyze() =>
+        Nav.NavigateTo($"/analysis/single?fen={Uri.EscapeDataString(fenInput)}");
+
+    private void AnalyzeDual() =>
+        Nav.NavigateTo($"/analysis/dual?fen={Uri.EscapeDataString(fenInput)}");
+
+    private string PieceSrc(char piece)
+    {
+        var name = (char.IsUpper(piece) ? "w" : "b") + char.ToUpperInvariant(piece);
+        return ThemeService.PieceImg(ThemeService.Current.PieceSet, name);
+    }
+
+    private static string PieceName(char piece)
+    {
+        var color = char.IsUpper(piece) ? "white" : "black";
+        var kind = char.ToUpperInvariant(piece) switch
+        {
+            'K' => "king", 'Q' => "queen", 'R' => "rook",
+            'B' => "bishop", 'N' => "knight", _ => "pawn",
+        };
+        return $"{color} {kind}";
+    }
+
+    protected override void OnInitialized()
+    {
+        var start = !string.IsNullOrWhiteSpace(FenParam) && BoardUtils.validateFen(FenParam).IsValid
+            ? FenParam : StartFen;
+        LoadFen(start);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            objRef = DotNetObjectReference.Create(this);
+            module = await JsInteropService.ImportModuleAsync(JS);
+            dragHandle = await module.InvokeAsync<IJSObjectReference>("attachBoardDrag", boardRef, objRef);
+        }
+        catch (Exception ex) { logger.LogWarning("Board drag init failed: {Message}", ex.Message); }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        try
+        {
+            if (dragHandle is not null)
+            {
+                try { await dragHandle.InvokeVoidAsync("dispose"); }
+                catch (Microsoft.JSInterop.JSDisconnectedException) { }
+                await dragHandle.DisposeAsync();
+            }
+            objRef?.Dispose();
+        }
+        catch (Exception) { logger.LogError("Error disposing BoardEditor."); }
+    }
+}

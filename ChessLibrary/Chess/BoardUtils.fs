@@ -805,6 +805,45 @@ let validateFen (fen: string) : FenValidation =
       with ex -> errors.Add (sprintf "FEN failed to parse: %s" ex.Message)
   { IsValid = errors.Count = 0; Errors = errors.ToArray() }
 
+/// FEN placement field to a 64-cell board array: index = rank * 8 + file with a1 = 0,
+/// piece chars as in FEN, '\000' = empty. Best-effort on malformed input (extra files
+/// and ranks are dropped) — gate on validateFen where it matters.
+let boardOfFen (fen: string) : char[] =
+  let b = Array.zeroCreate<char> 64
+  if not (String.IsNullOrWhiteSpace fen) then
+    let ranks = fen.Trim().Split(' ').[0].Split('/')
+    for i in 0 .. min 7 (ranks.Length - 1) do
+      let rank = 7 - i
+      let mutable file = 0
+      for c in ranks.[i] do
+        if Char.IsDigit c then file <- file + (int c - int '0')
+        elif file < 8 then
+          b.[rank * 8 + file] <- c
+          file <- file + 1
+  b
+
+/// Builds a FEN from editor-style state (the inverse of boardOfFen; '\000' or ' ' =
+/// empty square). Empty castling/en-passant normalize to "-". No legality checks of
+/// its own — run validateFen on the result.
+let buildFen (board: char[]) (stm: char) (castling: string) (enPassant: string) (halfmove: int) (fullmove: int) : string =
+  let sb = System.Text.StringBuilder()
+  for rank in 7 .. -1 .. 0 do
+    let mutable empties = 0
+    for file in 0 .. 7 do
+      let c = board.[rank * 8 + file]
+      if c = '\000' || c = ' ' then
+        empties <- empties + 1
+      else
+        if empties > 0 then
+          sb.Append(empties) |> ignore
+          empties <- 0
+        sb.Append(c) |> ignore
+    if empties > 0 then sb.Append(empties) |> ignore
+    if rank > 0 then sb.Append('/') |> ignore
+  let castling = if String.IsNullOrWhiteSpace castling then "-" else castling
+  let ep = if String.IsNullOrWhiteSpace enPassant then "-" else enPassant
+  sprintf "%s %c %s %s %d %d" (sb.ToString()) stm castling ep halfmove fullmove
+
 /// A legal move in both notations plus per-move predicates (python-chess parity:
 /// gives_check/is_capture/is_castling/is_en_passant). SAN castling uses EB's
 /// "0-0"/"0-0-0" spelling. GivesCheck includes discovered checks — the move is made
