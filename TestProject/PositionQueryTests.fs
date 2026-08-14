@@ -359,6 +359,67 @@ let ``a legal en passant makes every move irreversible`` () =
     let without = legalMovesOf "4k3/8/8/3Pp3/8/8/8/4K3 w - - 0 2"
     Assert.False((without |> Array.find (fun m -> m.Uci = "e1d1")).IsIrreversible)
 
+// --- BoardSvg -------------------------------------------------------------
+
+[<Fact>]
+let ``render produces valid XML with the expected board structure`` () =
+    let svg = BoardSvg.render startpos false [] [] (Some startpos)
+    // Well-formed XML is the load-bearing property — viewers reject anything less.
+    let doc = System.Xml.XmlDocument()
+    doc.LoadXml svg
+    // 64 squares + the frame rect
+    let rects = doc.GetElementsByTagName "rect"
+    Assert.Equal(65, rects.Count)
+    // 32 pieces as <use>, 12 distinct defs referenced
+    Assert.Equal(32, doc.GetElementsByTagName("use").Count)
+    Assert.Equal(12, doc.GetElementsByTagName("g") |> Seq.cast<System.Xml.XmlNode>
+                     |> Seq.filter (fun n -> n.Attributes.["id"] <> null) |> Seq.length)
+    // coordinates + caption
+    Assert.Equal(17, doc.GetElementsByTagName("text").Count)
+
+[<Fact>]
+let ``render draws overlay shapes flip-aware`` () =
+    let arrows : BoardSvg.SvgArrow list = [ { From = "g1"; To = "f3"; Color = "#123456"; Opacity = 0.6; Width = 1.0; Head = "arrow" } ]
+    let circles : BoardSvg.SvgCircle list = [ { Square = "e4"; Color = "#654321"; Opacity = 0.4; Size = 0.9 } ]
+    // The piece art itself contains circles/lines inside <defs> — overlay counts must
+    // exclude that subtree.
+    let overlay (doc: System.Xml.XmlDocument) (tag: string) =
+        doc.SelectNodes(sprintf "//*[local-name()='%s' and not(ancestor::*[local-name()='defs'])]" tag)
+    let svg = BoardSvg.render startpos false arrows circles None
+    let doc = System.Xml.XmlDocument()
+    doc.LoadXml svg
+    Assert.Equal(1, (overlay doc "polygon").Count)   // arrow head
+    let circle = (overlay doc "circle").[0]
+    // e4 center, white orientation: x = 20 + 4.5*45 = 222.5, y = 20 + 4.5*45 = 222.5
+    Assert.Equal("222.5", circle.Attributes.["cx"].Value)
+    Assert.Equal("222.5", circle.Attributes.["cy"].Value)
+    // flipped: e4 mirrors to (3.5, 3.5) squares -> 177.5
+    let flipped = BoardSvg.render startpos true arrows circles None
+    let doc2 = System.Xml.XmlDocument()
+    doc2.LoadXml flipped
+    Assert.Equal("177.5", (overlay doc2 "circle").[0].Attributes.["cx"].Value)
+
+[<Fact>]
+let ``renderWithInsights draws the scholars-mate threat overlay`` () =
+    // Qf7# threat position: hanging f7, checkers after ... — use the position insights
+    // themselves as the oracle: shape counts must match the detector output.
+    let fen = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPPQPPP/RNB1K2R b KQkq - 0 1"
+    let ins = getPositionInsights fen
+    let arrowCount = (BoardSvg.insightArrows ins true true true).Length
+    let circleCount = (BoardSvg.insightCircles ins true false true true).Length
+    let svg = BoardSvg.renderWithInsights fen
+    let doc = System.Xml.XmlDocument()
+    doc.LoadXml svg
+    let overlay (tag: string) =
+        doc.SelectNodes(sprintf "//*[local-name()='%s' and not(ancestor::*[local-name()='defs'])]" tag).Count
+    let lines = overlay "line"
+    let polys = overlay "polygon"
+    let circles = overlay "circle"
+    Assert.Equal(circleCount, circles)
+    // every arrow renders exactly one line; "arrow" heads add one polygon each
+    Assert.Equal(arrowCount, lines)
+    Assert.Equal(polys, arrowCount - (BoardSvg.insightArrows ins true true true |> List.filter (fun a -> a.Head = "line") |> List.length))
+
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
     // White to move while the BLACK king sits in check from Ra8 — illegal position.

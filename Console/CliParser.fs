@@ -75,8 +75,9 @@ type VerbResult =
     | Speed of path:string
     // edits are ordered (op, arg) pairs applied to the FEN before querying:
     // ("set","e4=Q") | ("remove","d2") | ("stm","b") | ("castling","KQ") | ("ep","e3")
-    // emitEpd prints an EPD line (with the epdOps "name=value" opcodes) instead of JSON
-    | Query of fen:string * square:string option * epd:string option * pv:string option * edits:(string * string) list * emitEpd:bool * epdOps:(string * string) list
+    // emitEpd prints an EPD line (with the epdOps "name=value" opcodes) instead of JSON;
+    // svgPath additionally writes an insights-overlay board SVG to the given file
+    | Query of fen:string * square:string option * epd:string option * pv:string option * edits:(string * string) list * emitEpd:bool * epdOps:(string * string) list * svgPath:string option
 
 
 type CLIArguments =
@@ -358,7 +359,7 @@ module CustomParser =
                 if index + 1 < args.Length then
                     if args.[index + 1] = "--epd" then
                         if index + 2 < args.Length then
-                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None, [], false, [])) :: acc)
+                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None, [], false, [], None)) :: acc)
                         else failwith "Missing EPD file after query --epd"
                     else
                         let fen =
@@ -374,6 +375,7 @@ module CustomParser =
                         let mutable i = afterSquare
                         let mutable pv = None
                         let mutable emitEpd = false
+                        let mutable svgPath = None
                         let edits = ResizeArray<string * string>()
                         let epdOps = ResizeArray<string * string>()
                         let mutable parsing = true
@@ -390,7 +392,7 @@ module CustomParser =
                             if flag = "--emit-epd" then
                                 emitEpd <- true
                                 i <- i + 1
-                            elif flag = "--pv" || flag = "--op" || editOp.IsSome then
+                            elif flag = "--pv" || flag = "--op" || flag = "--svg" || editOp.IsSome then
                                 if i + 1 >= args.Length then failwithf "Missing value after %s" flag
                                 match editOp with
                                 | Some op -> edits.Add(op, args.[i + 1])
@@ -399,12 +401,13 @@ module CustomParser =
                                     let eq = v.IndexOf '='
                                     if eq <= 0 then failwithf "bad --op '%s' (expected name=value)" v
                                     epdOps.Add(v.Substring(0, eq), v.Substring(eq + 1))
+                                | None when flag = "--svg" -> svgPath <- Some args.[i + 1]
                                 | None -> pv <- Some args.[i + 1]
                                 i <- i + 2
                             else parsing <- false
                         if epdOps.Count > 0 && not emitEpd then failwith "--op requires --emit-epd"
-                        parseArgs args i (Verb (Query (fen, square, None, pv, List.ofSeq edits, emitEpd, List.ofSeq epdOps)) :: acc)
-                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<uci moves>\"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] [--emit-epd [--op name=value]...] | --epd <file>"
+                        parseArgs args i (Verb (Query (fen, square, None, pv, List.ofSeq edits, emitEpd, List.ofSeq epdOps, svgPath)) :: acc)
+                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<san|uci>\"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] [--emit-epd [--op name=value]...] [--svg out.svg] | --epd <file>"
             | "analyze" | "a" -> // Handle the Analyze verb
                 if index + 1 < args.Length then
                     let engine = args.[index + 1]

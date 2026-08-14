@@ -78,6 +78,8 @@
 		<!-- Board (depends on types, MoveGeneration, LowLevelUtilities) -->
 		<Compile Include="Chess\Board.fs" />
 		<Compile Include="Chess\BoardUtils.fs" />
+		<Compile Include="Chess\SvgPieceDefs.fs" />
+		<Compile Include="Chess\BoardSvg.fs" />
 
 		<!-- Args parser (depends on types) -->
 

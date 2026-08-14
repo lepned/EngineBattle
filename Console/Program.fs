@@ -679,7 +679,7 @@ module Program =
                 | _ -> ChessLibrary.BoardUtils.EpdStr value
     (name, op)
 
-  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) (edits: (string * string) list) (emitEpd: bool) (epdOps: (string * string) list) =
+  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) (edits: (string * string) list) (emitEpd: bool) (epdOps: (string * string) list) (svgPath: string option) =
     // Short FENs validate and normalize; the raw parser needs the default-filled form.
     let fen = ChessLibrary.BoardUtils.normalizeFen fen
     let jsonOpts indented =
@@ -724,6 +724,13 @@ module Program =
             if not validation.IsValid then
                 eprintfn "invalid FEN '%s': %s" fen (String.concat "; " validation.Errors)
                 exit 1
+            // Diagnostics side-output: the position with the full insights overlay as a
+            // self-contained SVG (composes with the edit flags and either output mode).
+            match svgPath with
+            | Some path ->
+                File.WriteAllText(path, ChessLibrary.BoardSvg.renderWithInsights fen)
+                eprintfn "svg written to %s" path
+            | None -> ()
             if emitEpd then
                 // Suite-generator mode: print the EPD line instead of the JSON record
                 // (composes with the edit flags — edit, validate, then emit).
@@ -2447,8 +2454,8 @@ module Program =
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
-                | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps)) ->
-                    runQuery fen square epd pv edits emitEpd epdOps
+                | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps, svgPath)) ->
+                    runQuery fen square epd pv edits emitEpd epdOps svgPath
                 | Verb (PieceValues p) ->
                     runPieceValues p
                 | Verb (PieceValueFit p) ->
