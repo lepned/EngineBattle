@@ -993,6 +993,67 @@ let tryMakeMove (fen: string) (uciMove: string) : string option =
       i <- i + 1
     result
 
+// Short-SAN input: strip decorations and unify spellings so input matches the
+// generator's own SAN regardless of style ("Qxf7+", "O-O" vs "0-0", "e8=Q" vs "e8Q").
+let private normalizeSanToken (s: string) =
+  s.Trim().TrimEnd('+', '#', '!', '?').Replace("O", "0").Replace("o", "0").Replace("=", "")
+
+/// Resolves a short-SAN move ("Nf3", "exd5", "0-0", "e8=Q") to its UCI string by matching
+/// against the generator's own SAN for the position — disambiguation, castling spelling
+/// and promotion format therefore can't drift from EB's SAN emission. None when nothing
+/// matches, including ambiguous under-specified input ("Nd2" with two knights able —
+/// python-chess raises AmbiguousMoveError; here that is indistinguishable from illegal).
+let tryParseSan (fen: string) (san: string) : string option =
+  if String.IsNullOrWhiteSpace san then None
+  else
+    let target = normalizeSanToken san
+    let candidates = legalMovesOf fen |> Array.filter (fun m -> normalizeSanToken m.San = target)
+    match candidates with
+    | [| m |] -> Some m.Uci
+    | _ -> None
+
+/// Applies one short-SAN move to a FEN (tryParseSan >> tryMakeMove).
+let tryMakeSanMove (fen: string) (san: string) : string option =
+  tryParseSan fen san |> Option.bind (fun uci -> tryMakeMove fen uci)
+
+/// Normalizes a move line to a space-joined UCI sequence by walking the position move by
+/// move. Tokens may be UCI or short SAN, freely mixed; move numbers ("1.", "12...", also
+/// glued as "1.e4") and result markers are skipped. None when any move fails to resolve
+/// or apply; Some "" for an empty line.
+let pvToUci (fen: string) (line: string) : string option =
+  if String.IsNullOrWhiteSpace line then Some ""
+  else
+    let isUci (t: string) =
+      (t.Length = 4 || t.Length = 5)
+      && t.[0] >= 'a' && t.[0] <= 'h' && t.[1] >= '1' && t.[1] <= '8'
+      && t.[2] >= 'a' && t.[2] <= 'h' && t.[3] >= '1' && t.[3] <= '8'
+      && (t.Length = 4 || "qrbn".IndexOf t.[4] >= 0)
+    let isSkippable (t: string) =
+      t = "..." || t = "*" || t = "1-0" || t = "0-1" || t = "1/2-1/2"
+      || (t.EndsWith "." && t.TrimEnd('.') |> Seq.forall Char.IsDigit)
+    let mutable cur = normalizeFen fen
+    let acc = ResizeArray<string>()
+    let mutable ok = true
+    for raw in line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries) do
+      if ok then
+        // "1.e4" / "12...Nf6": strip a digits-and-dots move-number prefix glued to the move
+        let t =
+          let idx = raw.LastIndexOf '.'
+          if idx >= 0 && idx < raw.Length - 1 then
+            // digits-and-dots only (empty covers glued "...Nf6") — else leave untouched
+            let prefix = raw.Substring(0, idx + 1).TrimEnd('.')
+            if prefix |> Seq.forall Char.IsDigit then raw.Substring(idx + 1) else raw
+          else raw
+        if not (isSkippable t) then
+          let uciCandidate = t.ToLowerInvariant()
+          let uci = if isUci uciCandidate then Some uciCandidate else tryParseSan cur t
+          match uci |> Option.bind (fun u -> tryMakeMove cur u |> Option.map (fun next -> u, next)) with
+          | Some (u, next) ->
+            acc.Add u
+            cur <- next
+          | None -> ok <- false
+    if ok then Some (String.Join(" ", acc)) else None
+
 /// Checkmate/stalemate/check detection and the dead-position approximation.
 let getPositionStatus (fen: string) : PositionStatus =
   let fen = normalizeFen fen

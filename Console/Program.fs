@@ -707,6 +707,17 @@ module Program =
             let insights = ChessLibrary.BoardUtils.getPositionInsights fen
             let status = ChessLibrary.BoardUtils.getPositionStatus fen
             let legalMoves = ChessLibrary.BoardUtils.legalMovesOf fen
+            // --pv accepts short SAN, UCI or a mix ("1.e4 e5 2.Nf3"); normalize to pure
+            // UCI first — Pv echoes the normalized line, SanPv converts as before.
+            let pv =
+                match pv with
+                | Some line ->
+                    match ChessLibrary.BoardUtils.pvToUci fen line with
+                    | Some uci -> Some uci
+                    | None ->
+                        eprintfn "invalid --pv line '%s' for position '%s'" line fen
+                        exit 1
+                | None -> None
             let sanPv = pv |> Option.map (sanPvOf fen)
             let parts = fen.Split(' ')
             let stm = if parts.Length > 1 then parts.[1] else "w"

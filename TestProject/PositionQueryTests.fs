@@ -220,6 +220,51 @@ let ``tryMakeMove handles castling and promotion`` () =
     | Some fen -> Assert.Equal('Q', pieceAt fen "a8")
     | None -> failwith "promotion should be legal"
 
+// --- short-SAN input (tryParseSan/tryMakeSanMove/pvToUci) -------
+
+[<Fact>]
+let ``tryParseSan resolves moves and tolerates decorations`` () =
+    Assert.Equal(Some "g1f3", tryParseSan startpos "Nf3")
+    Assert.Equal(Some "g1f3", tryParseSan startpos "Nf3!?")
+    Assert.Equal(Some "e2e4", tryParseSan startpos "e4")
+    Assert.True((tryParseSan startpos "Nf6").IsNone)   // black's move, not legal for white
+    // Promotion: both "=Q" and bare "Q" spellings resolve.
+    Assert.Equal(Some "a7a8q", tryParseSan "4k3/P7/8/8/8/8/8/4K3 w - - 0 1" "a8=Q")
+    Assert.Equal(Some "a7a8q", tryParseSan "4k3/P7/8/8/8/8/8/4K3 w - - 0 1" "a8Q")
+
+[<Fact>]
+let ``tryParseSan requires disambiguation and accepts both castling spellings`` () =
+    // Knights on b1 and f3 both reach d2: bare "Nd2" is ambiguous -> None.
+    let twoKnights = "4k3/8/8/8/8/5N2/8/1N2K3 w - - 0 1"
+    Assert.True((tryParseSan twoKnights "Nd2").IsNone)
+    Assert.Equal(Some "b1d2", tryParseSan twoKnights "Nbd2")
+    Assert.Equal(Some "f3d2", tryParseSan twoKnights "Nfd2")
+    let castle = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+    Assert.True((tryParseSan castle "0-0").IsSome)
+    Assert.Equal(tryParseSan castle "0-0", tryParseSan castle "O-O")
+
+[<Fact>]
+let ``every generated SAN parses back to its own UCI`` () =
+    // Roundtrip over full move lists — a free consistency check of the SAN emitter.
+    for fen in [ startpos; "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1" ] do
+        for m in legalMovesOf fen do
+            Assert.Equal(Some m.Uci, tryParseSan fen m.San)
+
+[<Fact>]
+let ``tryMakeSanMove composes parse and apply`` () =
+    match tryMakeSanMove startpos "e4" with
+    | Some fen -> Assert.StartsWith("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b", fen)
+    | None -> failwith "e4 should apply"
+
+[<Fact>]
+let ``pvToUci walks mixed SAN and UCI lines with move numbers`` () =
+    Assert.Equal(Some "e2e4 e7e5 g1f3", pvToUci startpos "1.e4 e5 2.Nf3")
+    Assert.Equal(Some "e2e4 e7e5 g1f3", pvToUci startpos "e2e4 e5 Nf3")
+    Assert.Equal(Some "e2e4 g8f6", pvToUci startpos "1.e4 1...Nf6")
+    Assert.Equal(Some "", pvToUci startpos "")
+    Assert.True((pvToUci startpos "1.e4 e4").IsNone)          // illegal for black
+    Assert.True((pvToUci startpos "1.e4 e5 2.Qd4").IsNone)    // queen blocked by the d2 pawn
+
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
     // White to move while the BLACK king sits in check from Ra8 — illegal position.
