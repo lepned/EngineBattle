@@ -112,94 +112,93 @@ let parseFinalResult (input: string) =
     | "-1" -> BlackWins
     | _ -> Unknown
 
-/// Parses a single line of input according to our simple rules.
+/// Parses one EPD/FEN line. The FEN prefix is delimited by FIELD COUNTING — placement,
+/// side, castling, ep, plus the two counters when present and numeric — so opcode order
+/// no longer matters (the old parser assumed bm/am came first and corrupted the FEN for
+/// lines like "<fen> id \"x\"; dm 5;"). Opcodes are then scanned in a single quote-aware
+/// pass split on ';' (no regex, no Split allocations); bm/am/id/other are looked up by
+/// name with quotes stripped. Plain FEN-only lines (openings files) pass through with
+/// the whole line as FEN, and Id falls back to the FEN as before.
 let parseLine (line: string) : EPDEntry option =
     if System.String.IsNullOrWhiteSpace(line) then
         None
     else
-        // Look for the marker " am " or " bm "
-        let iAm = line.IndexOf(" am ")
-        let iBm = line.IndexOf(" bm ")
-        let markerIndex, marker =
-            if iAm >= 0 && (iBm < 0 || iAm < iBm) then (iAm, "am")
-            elif iBm >= 0 then (iBm, "bm")
+        let len = line.Length
+        let inline isWs (c: char) = c = ' ' || c = '\t'
+        // One whitespace-separated token from index i: struct (start, endExclusive),
+        // or (-1, -1) past the end of the line.
+        let nextToken (i: int) =
+            let mutable s = i
+            while s < len && isWs line.[s] do s <- s + 1
+            if s >= len then struct (-1, -1)
             else
-                // If neither marker is found, use the semicolon (if any)
-                let iSemi = line.IndexOf(';')
-                ((if iSemi >= 0 then iSemi else line.Length), "")
+                let mutable e = s
+                while e < len && not (isWs line.[e]) do e <- e + 1
+                struct (s, e)
+        let isDigits (s: int) (e: int) =
+            let mutable ok = e > s
+            for i in s .. e - 1 do
+                if not (System.Char.IsDigit line.[i]) then ok <- false
+            ok
 
-        // The FEN is everything before the marker (or semicolon).
-        let fen = line.Substring(0, markerIndex).Trim()
+        let struct (s1, e1) = nextToken 0
+        let struct (_, e2) = if e1 < 0 then struct (-1, -1) else nextToken e1
+        let struct (_, e3) = if e2 < 0 then struct (-1, -1) else nextToken e2
+        let struct (_, e4) = if e3 < 0 then struct (-1, -1) else nextToken e3
+        if e4 < 0 then
+            // Fewer than four fields: not EPD-shaped — old fallback of treating the
+            // whole line as a FEN (plain short lines; junk tolerated as before).
+            let fen = line.Trim()
+            Some { RawInput = line; FEN = fen; BestMove = None; AvoidMove = None
+                   Id = (if fen = "" then None else Some fen); Other = None }
+        else
+            let mutable fenEnd = e4
+            let struct (s5, e5) = nextToken fenEnd
+            if s5 >= 0 && isDigits s5 e5 then
+                fenEnd <- e5
+                let struct (s6, e6) = nextToken fenEnd
+                if s6 >= 0 && isDigits s6 e6 then fenEnd <- e6
+            let fen = line.Substring(s1, fenEnd - s1)
 
-        // Look for an " id " field anywhere in the line.
-        let idOpt =
-            let idKey = " id "
-            let idIdx = line.IndexOf(idKey)
-            if idIdx >= 0 then
-                // Everything after " id ".
-                let afterId = line.Substring(idIdx + idKey.Length).Trim()
-                // If the id is quoted, remove the quotes.
-                if afterId.StartsWith("\"") then
-                    let closingQuote = afterId.IndexOf('"', 1)
-                    if closingQuote > 0 then Some (afterId.Substring(1, closingQuote - 1))
-                    else Some afterId
-                else Some afterId
-            elif String.IsNullOrEmpty fen |> not then
-                Some fen
-            else None
+            // Opcode region: split on ';' outside quotes; each segment = name + value.
+            let ops = System.Collections.Generic.List<struct (string * string)>()
+            let addSegment (s: int) (e: int) =
+                let mutable a = s
+                let mutable b = e
+                while a < b && isWs line.[a] do a <- a + 1
+                while b > a && isWs line.[b - 1] do b <- b - 1
+                if b > a then
+                    let mutable n = a
+                    while n < b && not (isWs line.[n]) do n <- n + 1
+                    let name = line.Substring(a, n - a)
+                    let mutable va = n
+                    while va < b && isWs line.[va] do va <- va + 1
+                    let value =
+                        if va >= b then ""
+                        elif line.[va] = '"' && line.[b - 1] = '"' && b - va >= 2 then
+                            line.Substring(va + 1, b - va - 2)
+                        else line.Substring(va, b - va)
+                    ops.Add(struct (name, value))
+            let mutable segStart = fenEnd
+            let mutable i = fenEnd
+            let mutable inQuotes = false
+            while i < len do
+                let c = line.[i]
+                if c = '"' then inQuotes <- not inQuotes
+                elif c = ';' && not inQuotes then
+                    addSegment segStart i
+                    segStart <- i + 1
+                i <- i + 1
+            addSegment segStart len   // trailing segment without ';'
 
-        // Look for an " bm " field anywhere in the line.
-        let bmOpt =
-            let idKey = " bm "
-            let idIdx = line.IndexOf(idKey)
-            if idIdx >= 0 then
-                // Everything after " bm ".
-                let afterId = line.Substring(idIdx + idKey.Length).Trim()
-                // If the bm is quoted, remove the quotes.
-                if afterId.StartsWith("\"") then
-                    let closingQuote = afterId.IndexOf('"', 1)
-                    if closingQuote > 0 then Some (afterId.Substring(1, closingQuote - 1))
-                    else Some afterId
-                else
-                  let closingQuote = afterId.IndexOf(';', 1)
-                  if closingQuote > 0 then afterId.Substring(0, closingQuote) |> Some
-                  else Some afterId
-
-            else None
-
-        // Look for an " am " field anywhere in the line.
-        let amOpt =
-            let idKey = " am "
-            let idIdx = line.IndexOf(idKey)
-            if idIdx >= 0 then
-                // Everything after " am ".
-                let afterId = line.Substring(idIdx + idKey.Length).Trim()
-                // If the am is quoted, remove the quotes.
-                if afterId.StartsWith("\"") then
-                    let closingQuote = afterId.IndexOf('"', 1)
-                    if closingQuote > 0 then Some (afterId.Substring(1, closingQuote - 1))
-                    else Some afterId
-                else
-                  let closingQuote = afterId.IndexOf(';', 1)
-                  if closingQuote > 0 then afterId.Substring(0, closingQuote) |> Some
-                  else Some afterId
-            else None
-
-        let other =
-            let idKey = " other "
-            let idIdx = line.IndexOf(idKey)
-            if idIdx >= 0 then
-                // Everything after " other ".
-                let afterId = line.Substring(idIdx + idKey.Length).Trim()
-                // If the other is quoted, remove the quotes.
-                if afterId.StartsWith("\"") then
-                    let closingQuote = afterId.IndexOf('"', 1)
-                    if closingQuote > 0 then Some (afterId.Substring(1, closingQuote - 1))
-                    else Some afterId
-                else
-                  let closingQuote = afterId.IndexOf(';', 1)
-                  if closingQuote > 0 then afterId.Substring(0, closingQuote) |> Some
-                  else Some afterId
-            else None
-
-        Some {RawInput = line; FEN = fen; BestMove = bmOpt; AvoidMove = amOpt; Id = idOpt; Other = other }
+            let find (key: string) =
+                let mutable res = None
+                for struct (n, v) in ops do
+                    if res.IsNone && n = key then res <- Some v
+                res
+            let idOpt =
+                match find "id" with
+                | Some _ as id -> id
+                | None -> if fen = "" then None else Some fen
+            Some { RawInput = line; FEN = fen; BestMove = find "bm"; AvoidMove = find "am"
+                   Id = idOpt; Other = find "other" }

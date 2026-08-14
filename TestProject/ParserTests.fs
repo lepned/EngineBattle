@@ -34,6 +34,38 @@ let ``parseLine parses EPD fields`` () =
     Assert.Equal(epdLine, epd.RawInput)
 
 [<Fact>]
+let ``parseLine delimits the FEN by field counting regardless of opcode order`` () =
+    // id-only line: the old parser leaked ' id "x"' into the FEN.
+    let idOnly = MoveParser.parseLine "4k3/8/8/8/8/8/8/4K3 w - - id \"endgame-1\"; dm 5;"
+    Assert.Equal("4k3/8/8/8/8/8/8/4K3 w - -", idOnly.Value.FEN)
+    Assert.Equal(Some "endgame-1", idOnly.Value.Id)
+    Assert.Equal(None, idOnly.Value.BestMove)
+    // bm NOT first: the old parser leaked the pv opcode into the FEN.
+    let pvFirst = MoveParser.parseLine "4k3/8/8/8/8/8/8/4K3 w - - pv Kd1 Kd8; bm Kd1;"
+    Assert.Equal("4k3/8/8/8/8/8/8/4K3 w - -", pvFirst.Value.FEN)
+    Assert.Equal(Some "Kd1", pvFirst.Value.BestMove)
+
+[<Fact>]
+let ``parseLine cuts an unquoted id at the semicolon`` () =
+    let parsed = MoveParser.parseLine "4k3/8/8/8/8/8/8/4K3 w - - id pos7; c0 comment;"
+    Assert.Equal(Some "pos7", parsed.Value.Id)
+    Assert.Equal("4k3/8/8/8/8/8/8/4K3 w - -", parsed.Value.FEN)
+
+[<Fact>]
+let ``parseLine passes plain FEN lines through with Id fallback`` () =
+    // openings-file style: no opcodes at all, counters absorbed into the FEN
+    let full = MoveParser.parseLine "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 2 3"
+    Assert.Equal("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 2 3", full.Value.FEN)
+    Assert.Equal(Some full.Value.FEN, full.Value.Id)
+    Assert.Equal(None, full.Value.BestMove)
+
+[<Fact>]
+let ``parseLine keeps semicolons inside quoted operands intact`` () =
+    let parsed = MoveParser.parseLine "4k3/8/8/8/8/8/8/4K3 w - - id \"a;b\"; bm Kd1;"
+    Assert.Equal(Some "a;b", parsed.Value.Id)
+    Assert.Equal(Some "Kd1", parsed.Value.BestMove)
+
+[<Fact>]
 let ``parseEPDFile converts EPD to PGN`` () =
     let tempFile = Path.GetTempFileName()
     try
