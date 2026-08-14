@@ -661,7 +661,25 @@ module Program =
         | _ -> ()
     f
 
-  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) (edits: (string * string) list) =
+  /// Types a raw --op "name=value" by convention: bm/am are move lists, sm/pm single
+  /// moves, pv a line; integers and floats are detected; everything else is a quoted
+  /// string. Matches how python-chess types epd() operands, adapted to CLI input.
+  let private typedEpdOp (name: string, value: string) =
+    let op =
+        match name.ToLowerInvariant() with
+        | "bm" | "am" -> ChessLibrary.BoardUtils.EpdMoves (value.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries))
+        | "sm" | "pm" -> ChessLibrary.BoardUtils.EpdMove value
+        | "pv" -> ChessLibrary.BoardUtils.EpdPv value
+        | _ ->
+            match Int32.TryParse(value, Globalization.NumberStyles.Integer, Globalization.CultureInfo.InvariantCulture) with
+            | true, i -> ChessLibrary.BoardUtils.EpdInt i
+            | _ ->
+                match Double.TryParse(value, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+                | true, f -> ChessLibrary.BoardUtils.EpdFloat f
+                | _ -> ChessLibrary.BoardUtils.EpdStr value
+    (name, op)
+
+  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) (edits: (string * string) list) (emitEpd: bool) (epdOps: (string * string) list) =
     // Short FENs validate and normalize; the raw parser needs the default-filled form.
     let fen = ChessLibrary.BoardUtils.normalizeFen fen
     let jsonOpts indented =
@@ -704,6 +722,11 @@ module Program =
             if not validation.IsValid then
                 eprintfn "invalid FEN '%s': %s" fen (String.concat "; " validation.Errors)
                 exit 1
+            if emitEpd then
+                // Suite-generator mode: print the EPD line instead of the JSON record
+                // (composes with the edit flags — edit, validate, then emit).
+                printfn "%s" (ChessLibrary.BoardUtils.epdOf fen (epdOps |> List.map typedEpdOp))
+                exit 0
             let insights = ChessLibrary.BoardUtils.getPositionInsights fen
             let status = ChessLibrary.BoardUtils.getPositionStatus fen
             let legalMoves = ChessLibrary.BoardUtils.legalMovesOf fen
@@ -2418,8 +2441,8 @@ module Program =
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
-                | Verb (Query (fen, square, epd, pv, edits)) ->
-                    runQuery fen square epd pv edits
+                | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps)) ->
+                    runQuery fen square epd pv edits emitEpd epdOps
                 | Verb (PieceValues p) ->
                     runPieceValues p
                 | Verb (PieceValueFit p) ->

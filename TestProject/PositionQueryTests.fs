@@ -265,6 +265,41 @@ let ``pvToUci walks mixed SAN and UCI lines with move numbers`` () =
     Assert.True((pvToUci startpos "1.e4 e4").IsNone)          // illegal for black
     Assert.True((pvToUci startpos "1.e4 e5 2.Qd4").IsNone)    // queen blocked by the d2 pawn
 
+// --- epdOf ----------------------------------------------------------------
+
+[<Fact>]
+let ``epdOf writes spec-formatted opcodes with SAN canonicalization`` () =
+    let line = epdOf startpos [ ("bm", EpdMoves [| "g1f3"; "e4" |]); ("id", EpdStr "test-1"); ("dm", EpdInt 5); ("ce", EpdFloat 1.25) ]
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - bm Nf3 e4; id \"test-1\"; dm 5; ce 1.25;", line)
+
+[<Fact>]
+let ``epdOf walks pv operands and spells castling O-O for interop`` () =
+    Assert.EndsWith("pv e4 e5 Nf3;", epdOf startpos [ ("pv", EpdPv "1.e4 e5 2.Nf3") ])
+    let castle = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+    Assert.EndsWith("bm O-O;", epdOf castle [ ("bm", EpdMove "0-0") ])
+
+[<Fact>]
+let ``epdOf rejects illegal moves, bad opcode names and embedded quotes`` () =
+    Assert.Throws<ArgumentException>(fun () -> epdOf startpos [ ("bm", EpdMove "Nf6") ] |> ignore) |> ignore
+    Assert.Throws<ArgumentException>(fun () -> epdOf startpos [ ("bad name", EpdInt 1) ] |> ignore) |> ignore
+    Assert.Throws<ArgumentException>(fun () -> epdOf startpos [ ("id", EpdStr "a\"b") ] |> ignore) |> ignore
+    Assert.Throws<ArgumentException>(fun () -> epdOf "not a fen" [] |> ignore) |> ignore
+
+[<Fact>]
+let ``readEPDs parses epdOf output back`` () =
+    // The writer must produce what EB's own EPD reader understands.
+    let line = epdOf startpos [ ("bm", EpdMove "Nf3"); ("id", EpdStr "rt-1") ]
+    let path = System.IO.Path.GetTempFileName()
+    try
+        System.IO.File.WriteAllLines(path, [| line |])
+        let entries = ChessLibrary.EPDExtractor.readEPDs path |> Seq.toArray
+        Assert.Equal(1, entries.Length)
+        Assert.StartsWith("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -", entries.[0].FEN)
+        Assert.Equal(Some "Nf3", entries.[0].BestMove)
+        Assert.Equal(Some "rt-1", entries.[0].Id)
+    finally
+        System.IO.File.Delete path
+
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
     // White to move while the BLACK king sits in check from Ra8 — illegal position.

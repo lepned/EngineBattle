@@ -75,7 +75,8 @@ type VerbResult =
     | Speed of path:string
     // edits are ordered (op, arg) pairs applied to the FEN before querying:
     // ("set","e4=Q") | ("remove","d2") | ("stm","b") | ("castling","KQ") | ("ep","e3")
-    | Query of fen:string * square:string option * epd:string option * pv:string option * edits:(string * string) list
+    // emitEpd prints an EPD line (with the epdOps "name=value" opcodes) instead of JSON
+    | Query of fen:string * square:string option * epd:string option * pv:string option * edits:(string * string) list * emitEpd:bool * epdOps:(string * string) list
 
 
 type CLIArguments =
@@ -357,7 +358,7 @@ module CustomParser =
                 if index + 1 < args.Length then
                     if args.[index + 1] = "--epd" then
                         if index + 2 < args.Length then
-                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None, [])) :: acc)
+                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None, [], false, [])) :: acc)
                         else failwith "Missing EPD file after query --epd"
                     else
                         let fen =
@@ -368,10 +369,13 @@ module CustomParser =
                             if index + 2 < args.Length && args.[index + 2].Length = 2 && not (args.[index + 2].StartsWith("--")) then
                                 Some args.[index + 2], index + 3
                             else None, index + 2
-                        // Flag loop: --pv plus the board-editing flags, any order, edits repeatable.
+                        // Flag loop: --pv, the board-editing flags and the EPD-writer
+                        // flags, any order; edits and --op repeatable.
                         let mutable i = afterSquare
                         let mutable pv = None
+                        let mutable emitEpd = false
                         let edits = ResizeArray<string * string>()
+                        let epdOps = ResizeArray<string * string>()
                         let mutable parsing = true
                         while parsing && i < args.Length do
                             let flag = args.[i]
@@ -383,15 +387,24 @@ module CustomParser =
                                 | "--castling" -> Some "castling"
                                 | "--ep" -> Some "ep"
                                 | _ -> None
-                            if flag = "--pv" || editOp.IsSome then
+                            if flag = "--emit-epd" then
+                                emitEpd <- true
+                                i <- i + 1
+                            elif flag = "--pv" || flag = "--op" || editOp.IsSome then
                                 if i + 1 >= args.Length then failwithf "Missing value after %s" flag
                                 match editOp with
                                 | Some op -> edits.Add(op, args.[i + 1])
+                                | None when flag = "--op" ->
+                                    let v = args.[i + 1]
+                                    let eq = v.IndexOf '='
+                                    if eq <= 0 then failwithf "bad --op '%s' (expected name=value)" v
+                                    epdOps.Add(v.Substring(0, eq), v.Substring(eq + 1))
                                 | None -> pv <- Some args.[i + 1]
                                 i <- i + 2
                             else parsing <- false
-                        parseArgs args i (Verb (Query (fen, square, None, pv, List.ofSeq edits)) :: acc)
-                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<uci moves>\"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] | --epd <file>"
+                        if epdOps.Count > 0 && not emitEpd then failwith "--op requires --emit-epd"
+                        parseArgs args i (Verb (Query (fen, square, None, pv, List.ofSeq edits, emitEpd, List.ofSeq epdOps)) :: acc)
+                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<uci moves>\"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] [--emit-epd [--op name=value]...] | --epd <file>"
             | "analyze" | "a" -> // Handle the Analyze verb
                 if index + 1 < args.Length then
                     let engine = args.[index + 1]

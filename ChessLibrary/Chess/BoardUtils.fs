@@ -1054,6 +1054,71 @@ let pvToUci (fen: string) (line: string) : string option =
           | None -> ok <- false
     if ok then Some (String.Join(" ", acc)) else None
 
+/// Operand of an EPD opcode for epdOf. Move operands accept SAN or UCI and are
+/// canonicalized to the generator's SAN on output.
+type EpdOperand =
+  | EpdStr of string        // written quoted: id "pos-1";
+  | EpdInt of int
+  | EpdFloat of float       // invariant culture
+  | EpdMove of string       // single move: sm Nf3;
+  | EpdMoves of string[]    // move lists: bm Nf3 e4;
+  | EpdPv of string         // a line, walked position by position: pv e4 e5 Nf3;
+  | EpdBare                 // opcode without operand
+
+// Interop spelling on the way OUT only: EB's SAN says "0-0" but EPD consumers
+// (python-chess and friends) expect "O-O"; internal APIs keep the zeros.
+let private interopSan (san: string) =
+  if san.StartsWith "0-0" then san.Replace('0', 'O') else san
+
+/// Builds an EPD line: the 4-field FEN prefix plus opcodes per the EPD spec, each
+/// terminated by ';'. Move operands are validated as legal and written as canonical
+/// SAN (castling spelled O-O for interop); EpdPv walks the line via pvToUci. The
+/// counters are dropped per the spec — pass ("hmvc", EpdInt n)/("fmvn", EpdInt n)
+/// explicitly if needed. Throws ArgumentException on an invalid FEN, a bad opcode
+/// name, an embedded quote in a string operand, or an illegal move.
+let epdOf (fen: string) (ops: (string * EpdOperand) list) : string =
+  let v = validateFen fen
+  if not v.IsValid then invalidArg "fen" (String.concat "; " v.Errors)
+  let fen = normalizeFen fen
+  let fields = fen.Split(' ')
+  let sb = System.Text.StringBuilder(String.Join(" ", fields.[0..3]))
+  let sanOf (position: string) (move: string) =
+    let moves = legalMovesOf position
+    let byUci = moves |> Array.tryFind (fun m -> m.Uci = move.Trim().ToLowerInvariant())
+    let notation =
+      match byUci with
+      | Some _ -> byUci
+      | None -> tryParseSan position move |> Option.bind (fun uci -> moves |> Array.tryFind (fun m -> m.Uci = uci))
+    match notation with
+    | Some m -> interopSan m.San
+    | None -> invalidArg "ops" (sprintf "move '%s' is not legal in '%s'" move position)
+  for (name, operand) in ops do
+    if String.IsNullOrWhiteSpace name || name = "-"
+       || name |> Seq.exists (fun c -> Char.IsWhiteSpace c || c = ';' || c = '"') then
+      invalidArg "ops" (sprintf "invalid EPD opcode name '%s'" name)
+    sb.Append(' ').Append(name) |> ignore
+    match operand with
+    | EpdBare -> ()
+    | EpdStr s ->
+        if s.Contains "\"" then invalidArg "ops" (sprintf "string operand for '%s' contains a quote" name)
+        sb.Append(" \"").Append(s).Append('"') |> ignore
+    | EpdInt i -> sb.Append(' ').Append(i) |> ignore
+    | EpdFloat f -> sb.Append(' ').Append(f.ToString("0.####", Globalization.CultureInfo.InvariantCulture)) |> ignore
+    | EpdMove m -> sb.Append(' ').Append(sanOf fen m) |> ignore
+    | EpdMoves ms ->
+        if Array.isEmpty ms then invalidArg "ops" (sprintf "empty move list for '%s'" name)
+        for m in ms do sb.Append(' ').Append(sanOf fen m) |> ignore
+    | EpdPv line ->
+        match pvToUci fen line with
+        | None | Some "" -> invalidArg "ops" (sprintf "pv '%s' is not a legal line from '%s'" line fen)
+        | Some uciLine ->
+            let mutable cur = fen
+            for u in uciLine.Split(' ') do
+              sb.Append(' ').Append(sanOf cur u) |> ignore
+              cur <- (tryMakeMove cur u).Value
+    sb.Append(';') |> ignore
+  sb.ToString()
+
 /// Checkmate/stalemate/check detection and the dead-position approximation.
 let getPositionStatus (fen: string) : PositionStatus =
   let fen = normalizeFen fen
