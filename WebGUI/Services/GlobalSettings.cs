@@ -114,6 +114,9 @@ public class GlobalSettings
     public bool ShowTournamentBoardCoordinates { get; set; } = true;
     public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge
     public string BoardCoordinateColor { get; set; } = "";       // "" = auto (opposite square color)
+    public string BoardCoordinatePlacement { get; set; } = "inside"; // inside | outside (in the frame gutter)
+    public string BoardFrameWidth { get; set; } = "off";         // off | thin | medium | thick — frame around the board
+    public string BoardFrameColor { get; set; } = "";            // "" = default dark frame
     public string BoardHighlightStyle { get; set; } = "replace"; // replace | tint | frame
     public string BoardMoveHighlightColor { get; set; } = "";    // "" = theme's highlight; hex = override on any preset
     public string BoardSelectionRingColor { get; set; } = "";    // "" = default green ring

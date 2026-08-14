@@ -1,3 +1,76 @@
+/* Optional frame around the board. .eb-outer carries the width and is the query container
+   the frame's cqi padding resolves against (1cqi = 1% of the board's outer width), so the
+   frame scales with the board and the outer box stays square (inner W-2p + 2p padding).
+   The frame doubles as the gutter hosting outside coordinates. */
+.eb-outer {
+    container-type: inline-size;
+    line-height: 0;
+}
+
+.eb-frame {
+    position: relative;
+    padding: var(--eb-frame-w, 0px);
+    background: var(--eb-frame-color, transparent);
+    border-radius: 4px;
+    line-height: 0;
+}
+
+/* Outside coordinates in the frame gutter: the strips span exactly the inner board edge,
+   so 8 equal flex cells center each label on its rank/file. */
+.eb-gutter {
+    position: absolute;
+    display: flex;
+    pointer-events: none;
+    z-index: 1;
+    font-weight: 600;
+    line-height: 1;
+    font-size: min(var(--eb-coord-size, min(2cqi, 12px)), var(--eb-gutter-font-cap, 2cqi));
+    color: var(--eb-coord-color, var(--eb-gutter-auto-color, rgba(255, 255, 255, 0.75)));
+}
+
+.eb-gutter.rank {
+    flex-direction: column;
+    left: 0;
+    top: var(--eb-frame-w, 0px);
+    bottom: var(--eb-frame-w, 0px);
+    width: var(--eb-frame-w, 0px);
+}
+
+.eb-gutter.file {
+    flex-direction: row;
+    bottom: 0;
+    left: var(--eb-frame-w, 0px);
+    right: var(--eb-frame-w, 0px);
+    height: var(--eb-frame-w, 0px);
+}
+
+.eb-gutter span {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* File letters: ascenders (b, d, h) touch the board edge when the font approaches the
+   gutter width, while the descender space below sits unused — nudge everything down into
+   it for breathing room against the board. "g" (the only descender) gets the same optical
+   re-centering as the inside coordinates: net -0.1em relative to its neighbors. */
+.eb-gutter.file span {
+    transform: translateY(0.07em);
+}
+
+.eb-gutter.file span.descender {
+    transform: translateY(-0.03em);
+}
+
+/* Same rationale as the inside-coordinate auto-hide: no value on small live-feed tiles
+   (this query resolves against .eb-frame — the outer width). */
+@container (max-width: 205px) {
+    .eb-gutter {
+        display: none;
+    }
+}
+
 .eb-board {
     position: relative;
     container-type: inline-size;

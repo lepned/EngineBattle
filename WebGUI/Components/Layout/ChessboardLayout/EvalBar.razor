@@ -1,7 +1,16 @@
 @using System.Globalization
+@using WebGUI.Services
+@implements IDisposable
+@inject BoardThemeService ThemeService
 
-<div class="eb-evalbar @(Flipped ? "flipped" : "") @(HasEval ? "" : "idle")" title="@Tooltip">
-    <div class="eb-evalbar-white" style="height:@WhitePercent"></div>
+@* The slot is the transparent stretch target; the bar proper is inset by the board-frame
+   width so it spans the squares, not the frame/gutter. Vertical percent offsets resolve
+   against the slot HEIGHT (= the board's outer size), so the inset is exact in every
+   host regardless of the surrounding column's width. *@
+<div class="eb-evalbar-slot" style="@InsetStyle">
+    <div class="eb-evalbar @(Flipped ? "flipped" : "") @(HasEval ? "" : "idle")" title="@Tooltip">
+        <div class="eb-evalbar-white" style="height:@WhitePercent"></div>
+    </div>
 </div>
 
 @code {
@@ -13,6 +22,11 @@
     [Parameter] public bool Flipped { get; set; }
 
     private bool HasEval => Cp.HasValue || Mate.HasValue;
+
+    private string InsetStyle =>
+        ThemeService.Current.FramePct > 0
+            ? $"--eb-evalbar-inset:{ThemeService.Current.FramePct.ToString("0.###", CultureInfo.InvariantCulture)}%;"
+            : "";
 
     // Same logistic lichess uses to map centipawns to winning chances.
     private double WhiteShare =>
@@ -26,4 +40,17 @@
         Mate is int m ? (m > 0 ? $"M{m}" : $"-M{-m}")
         : Cp is double cp ? cp.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)
         : "no eval";
+
+    protected override void OnInitialized()
+    {
+        ThemeService.ThemeChanged += OnThemeChanged;
+    }
+
+    // Raised from the settings page's circuit; marshal to this component's dispatcher.
+    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        ThemeService.ThemeChanged -= OnThemeChanged;
+    }
 }

@@ -175,8 +175,11 @@ a.game-tile {
     justify-content: center;
 }
 
-.tile-board-row ::deep .eb-evalbar {
+.tile-board-row ::deep .eb-evalbar-slot {
     flex: 0 0 8px;
     width: 8px;
+}
+
+.tile-board-row ::deep .eb-evalbar {
     border-radius: 3px;
 }

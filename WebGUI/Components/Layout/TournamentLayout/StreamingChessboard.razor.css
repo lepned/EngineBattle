@@ -1,15 +1,23 @@
 /* Board-size control. Invisible until the board is hovered — this page is streamed, so
-   nothing may sit permanently on screen. It keeps its space while hidden, so revealing it
-   never shifts the board. */
+   nothing may sit permanently on screen. Overlaid on the board's top-right corner instead
+   of reserving a row above it: the board sits higher, and revealing the control still
+   shifts nothing (it only covers a sliver of rank 8 while actually in use). */
 .sb-size-row {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    z-index: 10;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
-    padding-bottom: 4px;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease;
+}
+
+.streaming-board {
+    position: relative;
 }
 
 .streaming-board:hover .sb-size-row {

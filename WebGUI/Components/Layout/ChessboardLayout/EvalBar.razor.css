@@ -1,8 +1,16 @@
-.eb-evalbar {
+.eb-evalbar-slot {
     position: relative;
     flex: 0 0 16px;
     width: 16px;
     align-self: stretch;
+}
+
+.eb-evalbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--eb-evalbar-inset, 0px);
+    bottom: var(--eb-evalbar-inset, 0px);
     background: #3d4148;
     border-radius: 4px;
     overflow: hidden;

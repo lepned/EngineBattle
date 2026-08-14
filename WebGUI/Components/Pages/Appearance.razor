@@ -65,6 +65,30 @@
                         </div>
                     </div>
                 }
+                <div class="field-group">
+                    <label>Board Frame</label>
+                    <select @bind="frameWidth" @bind:after="Apply">
+                        <option value="off">Off</option>
+                        <option value="thin">Thin</option>
+                        <option value="medium">Medium</option>
+                        <option value="thick">Thick</option>
+                    </select>
+                    <small>Frame around the board, python-chess style — also hosts outside coordinates</small>
+                </div>
+                <div class="field-group">
+                    <label>Frame Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="frameColorMode" @bind:after="Apply">
+                            <option value="auto">Default (dark)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (frameColorMode == "custom")
+                        {
+                            <input type="color" value="@frameColor"
+                                   @oninput="e => frameColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                </div>
             </div>
 
             <div class="appearance-section @SectionClass("pieces")">
@@ -108,6 +132,14 @@
                         Coordinates on Tournament Boards
                     </label>
                     <small>Show a1–h8 on live tournament and PV boards (small tiles always hide them)</small>
+                </div>
+                <div class="field-group">
+                    <label>Placement</label>
+                    <select @bind="coordinatePlacement" @bind:after="Apply">
+                        <option value="inside">Inside the squares</option>
+                        <option value="outside">Outside, in the frame</option>
+                    </select>
+                    <small>Outside coordinates sit in the board frame; with the frame off, an invisible gutter makes room for them</small>
                 </div>
                 <div class="field-group">
                     <label>Size</label>
@@ -399,6 +431,9 @@
                           CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
                           CoordinateColorCss="@EffectiveCoordColor"
                           SelectionRingColorCss="@EffectiveSelRing"
+                          FrameWidthPct="@EffectiveFramePct"
+                          FrameColorCss="@EffectiveFrameColor"
+                          CoordinatePlacement="@coordinatePlacement"
                           SelectedSquare="c6"
                           Arrows="@PreviewArrows" Labels="@PreviewLabels" />
             </div>
@@ -415,7 +450,10 @@
                                   PieceSet="@Preview.PieceSet"
                                   PieceScale="@(pieceScale / 100.0)"
                                   CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
-                                  CoordinateColorCss="@EffectiveCoordColor" />
+                                  CoordinateColorCss="@EffectiveCoordColor"
+                                  FrameWidthPct="@EffectiveFramePct"
+                                  FrameColorCss="@EffectiveFrameColor"
+                                  CoordinatePlacement="@coordinatePlacement" />
                     <small>Tournament tile (coordinates auto-hide below 200px)</small>
                 </div>
             </div>
@@ -435,6 +473,10 @@
     private string coordinateSize = "medium";
     private string coordinateColorMode = "auto";
     private string coordinateColor = "#888888";
+    private string coordinatePlacement = "inside";
+    private string frameWidth = "off";
+    private string frameColorMode = "auto";
+    private string frameColor = "#3B3733";
     private string highlightStyle = "replace";
     private string moveHighlightMode = "auto";
     private string moveHighlightColor = "#FAFAD2";
@@ -469,6 +511,11 @@
     // works even before the change is persisted).
     private string EffectiveCoordColor => coordinateColorMode == "custom" ? coordinateColor : "";
     private string EffectiveSelRing => selRingMode == "custom" ? selRingColor : "";
+    // Frame preview mirrors the theme resolution, including the outside-coords coupling.
+    private double EffectiveFramePct =>
+        BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "", coordinatePlacement).Pct;
+    private string EffectiveFrameColor =>
+        BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "", coordinatePlacement).Color;
     private string EffectiveArrowColor => arrowMode == "custom" ? arrowColor : "#9D8989";
     private string EffectivePolicyLabelColor => policyLabelMode == "custom" ? policyLabelColor : "#FFEB3B";
     private string EffectivePolicyArrowColor => policyArrowMode == "custom" ? policyArrowColor : "black";
@@ -532,6 +579,10 @@
         coordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
         coordinateColorMode = string.IsNullOrEmpty(s.BoardCoordinateColor) ? "auto" : "custom";
         if (coordinateColorMode == "custom") coordinateColor = s.BoardCoordinateColor;
+        coordinatePlacement = s.BoardCoordinatePlacement == "outside" ? "outside" : "inside";
+        frameWidth = s.BoardFrameWidth is "thin" or "medium" or "thick" ? s.BoardFrameWidth : "off";
+        frameColorMode = string.IsNullOrEmpty(s.BoardFrameColor) ? "auto" : "custom";
+        if (frameColorMode == "custom") frameColor = s.BoardFrameColor;
         highlightStyle = s.BoardHighlightStyle is "tint" or "frame" ? s.BoardHighlightStyle : "replace";
         moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
         if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
@@ -586,6 +637,9 @@
         merged.ShowTournamentBoardCoordinates = tournamentCoordinates;
         merged.BoardCoordinateSize = coordinateSize;
         merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
+        merged.BoardCoordinatePlacement = coordinatePlacement;
+        merged.BoardFrameWidth = frameWidth;
+        merged.BoardFrameColor = frameColorMode == "custom" ? frameColor : "";
         merged.BoardHighlightStyle = highlightStyle;
         merged.BoardMoveHighlightColor = moveHighlightMode == "custom" ? moveHighlightColor : "";
         merged.ShowEvalBar = showEvalBar;
@@ -618,6 +672,9 @@
         tournamentCoordinates = d.ShowTournamentBoardCoordinates;
         coordinateSize = d.BoardCoordinateSize;
         coordinateColorMode = "auto";
+        coordinatePlacement = d.BoardCoordinatePlacement;
+        frameWidth = d.BoardFrameWidth;
+        frameColorMode = "auto";
         highlightStyle = d.BoardHighlightStyle;
         moveHighlightMode = "auto";
         showEvalBar = d.ShowEvalBar;

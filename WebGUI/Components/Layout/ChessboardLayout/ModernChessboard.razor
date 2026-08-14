@@ -607,7 +607,9 @@
 
     // ── Promotion ──
     // The dialog is positioned near the promotion target square in board percent
-    // (12.5% per square), so no pixel measuring is needed.
+    // (12.5% per square), so no pixel measuring is needed. A board frame (theme option)
+    // shrinks the squares to (100 - 2f)% of the wrapper, so the origin shifts by the
+    // frame width and the per-square step scales down accordingly.
     private string PromotionDialogStyle
     {
         get
@@ -617,7 +619,11 @@
             double col = isBoardFlipped ? 7 - file : file;
             double row = isBoardFlipped ? rank : 7 - rank;
             col = Math.Min(col, 4);   // keep the four-button stack inside the board
-            return $"position:absolute; z-index:1000; left:{(col * 12.5).ToString(System.Globalization.CultureInfo.InvariantCulture)}%; top:{(row * 12.5).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
+            double f = ThemeService.Current.FramePct;
+            double scale = (100 - 2 * f) / 100.0;
+            double left = f + col * 12.5 * scale;
+            double top = f + row * 12.5 * scale;
+            return $"position:absolute; z-index:1000; left:{left.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}%; top:{top.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}%;";
         }
     }
 

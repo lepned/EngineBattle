@@ -24,7 +24,10 @@ public record BoardTheme(
     double PolicyLabelChipPct = 0.55,
     string WhiteMoveArrowColor = "#cfece0",
     string BlackMoveArrowColor = "#383231",
-    double PieceScale = 1.0);
+    double PieceScale = 1.0,
+    string CoordPlacement = "inside",
+    double FramePct = 0,
+    string FrameColor = "#3B3733");
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -129,6 +132,27 @@ public class BoardThemeService
         _ => "min(2cqi, 12px)",
     };
 
+    /// <summary>Frame gutter width (percent of the board's outer width) per setting key.</summary>
+    public static double FramePctOf(string key) => key switch
+    {
+        "thin" => 1.5,
+        "medium" => 2.75,
+        "thick" => 4.0,
+        _ => 0,
+    };
+
+    /// <summary>Resolves the frame width/color, including the coordinate-placement coupling:
+    /// outside coordinates need a gutter, so "off" + outside yields an invisible
+    /// (transparent) gutter wide enough for the labels.</summary>
+    public static (double Pct, string Color) ResolveFrame(string widthKey, string colorSetting, string placement)
+    {
+        var pct = FramePctOf(widthKey);
+        var color = string.IsNullOrEmpty(colorSetting) ? "#3B3733" : colorSetting;
+        if (placement == "outside" && pct <= 0)
+            (pct, color) = (FramePctOf("medium"), "transparent");
+        return (pct, color);
+    }
+
     public static BoardTheme Resolve(GlobalSettings s)
     {
         var pieceSet = string.IsNullOrWhiteSpace(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
@@ -147,6 +171,8 @@ public class BoardThemeService
         var whiteMoveArrow = string.IsNullOrEmpty(s.BoardWhiteMoveArrowColor) ? "#cfece0" : s.BoardWhiteMoveArrowColor;
         var blackMoveArrow = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "#383231" : s.BoardBlackMoveArrowColor;
         var pieceScale = (s.BoardPieceScale is >= 50 and <= 100 ? s.BoardPieceScale : 100) / 100.0;
+        var coordPlacement = s.BoardCoordinatePlacement == "outside" ? "outside" : "inside";
+        var (framePct, frameColor) = ResolveFrame(s.BoardFrameWidth, s.BoardFrameColor, coordPlacement);
 
         string light, dark, hlWhite, hlBlack;
         if (s.BoardThemePreset == "custom")
@@ -174,7 +200,8 @@ public class BoardThemeService
         return new BoardTheme(light, dark, hlWhite, hlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
             CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
             highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
-            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow, pieceScale);
+            policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow, pieceScale,
+            coordPlacement, framePct, frameColor);
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>
