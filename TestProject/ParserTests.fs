@@ -1431,3 +1431,27 @@ let ``re-enumerating a parsed sequence yields the same games`` () =
     Assert.Equal(first.Length, second.Length)
     Assert.Equal(1, second.Head.GameNumber)
     Assert.Equal<string list>(mainlineSans first.Head, mainlineSans second.Head)
+
+// ============================================================================
+// End-to-end SAN replay: the repo's two real PGN files (a Lichess piece-odds
+// FRC game and a 188-ply engine game) are replayed move by move through the
+// board. The expected final FENs were verified against python-chess 1.11.2,
+// so this guards the whole SAN path — disambiguation, castling, promotions,
+// annotations — against any future parser change.
+// ============================================================================
+
+[<Theory>]
+[<InlineData("lichess_pgn_LeelaPieceOddsFRC.pgn", 51, "3rkb1r/1pQ2P2/pp1p3q/3Pn1p1/4RpPp/2R4P/PPP5/1K6 b - - 0 26")>]
+[<InlineData("SF_vs_Ceres_and_Lc0.pgn", 188, "8/4R2p/1k3Pb1/3p1rP1/3P1BK1/8/8/8 w - - 31 95")>]
+let ``real PGN games replay to the FEN python-chess computes`` (file: string, plies: int, finalFen: string) =
+    let path = Path.Combine(AppContext.BaseDirectory, "TestData", file)
+    let game = FullPGNParser.parsePgnFile path |> Seq.head
+    let board = ChessLibrary.Chess.Board()
+    if game.GameMetaData.Fen <> "" then board.LoadFen game.GameMetaData.Fen
+    else board.LoadFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    let mutable played = 0
+    for m in game.Mainline do
+        board.PlaySanMove m.San
+        played <- played + 1
+    Assert.Equal(plies, played)
+    Assert.Equal(finalFen, board.FEN())
