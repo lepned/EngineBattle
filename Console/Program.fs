@@ -2658,6 +2658,7 @@ module Program =
                     printfn "  tune <config>                           Run Bayesian parameter tuner"
                     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
                     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
+                    printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
                     printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
                     printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
                     printfn "  validate, v <config>                    Validate a tournament config without running"

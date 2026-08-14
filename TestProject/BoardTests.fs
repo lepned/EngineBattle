@@ -631,3 +631,30 @@ let ``PV conversion handles coordinate notation, SAN and LAN alike`` () =
     Assert.Equal(expected, convert ["g1f3"; "b8c6"; "e2e4"])     // coordinate notation
     Assert.Equal(expected, convert ["Nf3"; "Nc6"; "e4"])          // SAN
     Assert.Equal(expected, convert ["Ng1f3"; "Nb8c6"; "e2e4"])    // LAN with piece letters
+
+[<Fact>]
+let ``opening books and PlaySanMove accept coordinate notation as well as SAN`` () =
+    // Regression: rejecting coordinate tokens in the SAN parser made PlayOpeningMove
+    // throw on long-algebraic opening books ("1. e2e4 e7e5"), aborting tournament games.
+    let play (mover: Board -> string -> unit) tokens =
+        let board = Board()
+        board.LoadFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        for t in tokens do mover board t
+        board.FEN()
+    let viaOpening = play (fun b t -> b.PlayOpeningMove t)
+    let viaSan = play (fun b t -> b.PlaySanMove t)
+    let expected = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+    Assert.Equal(expected, viaOpening ["e2e4"; "e7e5"; "g1f3"; "b8c6"])   // long algebraic
+    Assert.Equal(expected, viaOpening ["e4"; "e5"; "Nf3"; "Nc6"])          // SAN
+    Assert.Equal(expected, viaSan ["e2e4"; "e7e5"; "g1f3"; "b8c6"])
+    Assert.Equal(expected, viaSan ["e4"; "e5"; "Nf3"; "Nc6"])
+
+[<Fact>]
+let ``PV conversion stops at the first unresolvable token`` () =
+    // The loop used to keep going, matching later tokens against the un-advanced
+    // position — a plausible but wrong continuation instead of a truncated one.
+    let board = Board()
+    board.LoadFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    let buffer = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
+    let pv = BoardUtils.getLongSanPVFromShortSanPV buffer &board ["e4"; "zz9"; "e5"]
+    Assert.Equal("e2e4", pv)

@@ -356,6 +356,20 @@ module MoveTypes =
               i <- i + 1
             result
 
+      /// Resolves a move token that may be short SAN *or* coordinate/UCI notation.
+      /// getTMoveFromShortSan deliberately rejects coordinate shapes (it used to read
+      /// "g1f3" as a pawn move to f3), so every caller that can receive either spelling
+      /// — opening books in long algebraic, Winboard engines, pasted lines — must go
+      /// through this rather than the SAN parser alone.
+      let tryFindMoveBySanOrUci (moves: TMove array) (count: int) (stm: byte) checkIsLegal (token: string) =
+        if String.IsNullOrWhiteSpace token then None
+        else
+          let t = token.Trim()
+          if isCoordinateNotation t then
+            tryFindMoveByUciNotation moves count stm (t.ToLowerInvariant())
+          else
+            getTMoveFromShortSan t moves stm checkIsLegal
+
       /// Count-aware SAN conversion over the first `count` entries of `moves` —
       /// single pass, no intermediate array allocations. `moves` must be the legal
       /// move list of the position (disambiguation counts alternatives from it).

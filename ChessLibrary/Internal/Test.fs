@@ -1028,21 +1028,25 @@ module ParsingTests =
       let missedWins = results |> Seq.filter (fun r -> r.MissedWin)
       let totalMissedWins = missedWins |> Seq.length
       let totalGames = results |> Seq.length
-      let missedWinRatio = (float totalMissedWins / float totalGames) * 100.0
+      // Every ratio here divides by a count that can legitimately be zero (a PGN with no
+      // analyzable games, or none with a missed win) — without this the whole table
+      // prints NaN%.
+      let ratio part whole = if whole = 0 then 0.0 else (float part / float whole) * 100.0
+      let missedWinRatio = ratio totalMissedWins totalGames
       let endEloLower = missedWins |> Seq.filter (fun r -> abs r.EndOfGameEval < lowEvalThreshold) |> Seq.length
       let endEloHigher = missedWins |> Seq.filter (fun r -> abs r.EndOfGameEval > highEvalThreshold) |> Seq.length
-      let lowEloRatio = (float endEloLower / float totalMissedWins) * 100.0
-      let highEloRatio = (float endEloHigher / float totalMissedWins) * 100.0
+      let lowEloRatio = ratio endEloLower totalMissedWins
+      let highEloRatio = ratio endEloHigher totalMissedWins
       let allTwoFold = results |> Seq.filter (fun r -> r.TwoFold) |> Seq.length
-      let twoFoldRatio = (float allTwoFold / float totalGames) * 100.0
+      let twoFoldRatio = ratio allTwoFold totalGames
       let allThreeFold = results |> Seq.filter (fun r -> r.ThreeFold) |> Seq.length
-      let threeFoldRatio = (float allThreeFold / float totalGames) * 100.0
+      let threeFoldRatio = ratio allThreeFold totalGames
       let fiftyMoveRule = results |> Seq.filter (fun r -> r.FiftyMove) |> Seq.length
-      let fiftyMoveRuleRatio = (float fiftyMoveRule / float totalGames) * 100.0
+      let fiftyMoveRuleRatio = ratio fiftyMoveRule totalGames
       let staleMate = results |> Seq.filter (fun r -> r.StaleMate) |> Seq.length
-      let staleMateRatio = (float staleMate / float totalGames) * 100.0
+      let staleMateRatio = ratio staleMate totalGames
       let insufficientMaterial = results |> Seq.filter (fun r -> r.InSufficientMaterial) |> Seq.length
-      let insufficientMaterialRatio = (float insufficientMaterial / float totalGames) * 100.0
+      let insufficientMaterialRatio = ratio insufficientMaterial totalGames
       let uniquePlayers = results |> Seq.map (fun r -> r.Player) |> Seq.filter(fun p -> p <> "") |> Seq.distinct
       let totalMissedWinsPerPlayer = 
         [for p in uniquePlayers do
@@ -1062,7 +1066,7 @@ module ParsingTests =
           ["Games analyzed (with evals)"; sprintf "%d" totalGames; "-"]
           ["Number of Missed wins"; sprintf "%d" totalMissedWins; sprintf "%.2f%%" missedWinRatio]
           for (p,missed) in totalMissedWinsPerPlayer do
-            [sprintf "  Missed win for %s" p; sprintf "%d" missed; sprintf "%.2f%%" ((float missed / float totalMissedWins) * 100.0) ]
+            [sprintf "  Missed win for %s" p; sprintf "%d" missed; sprintf "%.2f%%" (ratio missed totalMissedWins) ]
           [sprintf "  Missed win ended with evals < %.1f" lowEvalThreshold; sprintf "%d" endEloLower; sprintf "%.2f%%" lowEloRatio]
           [sprintf "  Missed win ended with evals > %.1f" highEvalThreshold; sprintf "%d" endEloHigher; sprintf "%.2f%%" highEloRatio]
           ["Games ended with Two-fold repetition"; sprintf "%d" allTwoFold; sprintf "%.2f%%" twoFoldRatio]

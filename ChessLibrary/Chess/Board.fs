@@ -1451,7 +1451,9 @@ type Board() =
     member this.PlayOpeningMove (fromSan: string) =
       let islegal _ = true // GenerateMoves is legal-only
       let moveList = this.GenerateMoves ()
-      match TMoveOps.getTMoveFromShortSan fromSan moveList position.STM islegal with
+      // Opening books are written in SAN or in long algebraic ("1. e2e4 e7e5"), so
+      // accept both — this used to fail hard on coordinate tokens and abort the game.
+      match TMoveOps.tryFindMoveBySanOrUci moveList moveList.Length position.STM islegal fromSan with
       | Some move ->
         let moveStr = TMoveOps.getUciNotation move position.STM
         this.MakeMove(&move)
@@ -1498,7 +1500,9 @@ type Board() =
     member this.PlaySanMoveWithComments (san: string) (comments: string) =
       let islegal _ = true // GenerateMoves is legal-only
       let moveList = this.GenerateMoves ()
-      match TMoveOps.getTMoveFromShortSan san moveList position.STM islegal with
+      // SAN is the normal input here, but coordinate notation reaches this from pasted
+      // lines and hand-written PGNs; resolving both beats silently dropping the move.
+      match TMoveOps.tryFindMoveBySanOrUci moveList moveList.Length position.STM islegal san with
       | Some move ->
         let moveStr = TMoveOps.getUciNotation move position.STM
         this.MakeMove(&move)

@@ -48,7 +48,12 @@ let getLongSanPVFromShortSanPV moveList (board: Board inref) (sanMoves: string s
   let isFRC = board.IsFRC
   let mutable position = board.Position
   let ret = ResizeArray<string>(sanMoves |> Seq.length)
+  // Once a token fails to resolve the position stops advancing, so every later token
+  // would be matched against the wrong position — and any that happens to be legal
+  // there would be appended, producing a plausible but wrong continuation. Stop instead.
+  let mutable stopped = false
   for m in sanMoves do
+   if not stopped then
     let moves = generateAllMovesToBuffer moveList &position isFRC
     // the generated list is legal-only, so the legality callback can no longer reject anything
     let islegal _ = true
@@ -57,13 +62,7 @@ let getLongSanPVFromShortSanPV moveList (board: Board inref) (sanMoves: string s
     // caller strips the '-' from LAN so "g1-f3" arrives as "g1f3"). SAN must not get the
     // first attempt here: it used to read "g1f3" as a pawn move to f3 and silently return
     // the wrong move, so this fallback was unreachable for anything but pawn moves.
-    let moveResult =
-      if TMoveOps.isCoordinateNotation m then
-        TMoveOps.tryFindMoveByUciNotation moves moves.Length position.STM m
-      else
-        match TMoveOps.getTMoveFromShortSan m moves position.STM islegal with
-        | Some tmove -> Some tmove
-        | None -> TMoveOps.tryFindMoveByUciNotation moves moves.Length position.STM m
+    let moveResult = TMoveOps.tryFindMoveBySanOrUci moves moves.Length position.STM islegal m
 
     match moveResult with
     | Some tmove ->
@@ -71,8 +70,8 @@ let getLongSanPVFromShortSanPV moveList (board: Board inref) (sanMoves: string s
       ret.Add(moveStr)
       makeMove &tmove &position
     | None ->
-      // Stop processing PV on first error to avoid corrupted position
-      ()
+      // Stop processing PV on first error to avoid a corrupted position
+      stopped <- true
   // return the long san moves as a string
   String.concat " " (ret |> Seq.toArray)
 

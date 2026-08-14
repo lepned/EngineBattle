@@ -38,6 +38,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `tune` | | Run Bayesian parameter tuner |
 | `redash` | | Regenerate BO dashboard from saved state |
 | `pgnsummary` | `pgn`, `ps` | Analyze PGN game terminations |
+| `pgncheck` | `pc` | Parser health check on a PGN file (no analysis) |
 | `elo` | `e` | Show Elo ratings and results from PGN |
 | `speed` | `sp` | Show speed statistics from PGN |
 | `validate` | `v` | Validate a tournament config without running |
@@ -372,6 +373,26 @@ Analyzes PGN game terminations and displays a summary.
 **Syntax:**
 ```bash
 dotnet run -c Release -- pgnsummary <path-to-pgn-file>
+```
+
+---
+
+### pgncheck
+
+Streams a PGN file through the parser and reports what it found: game and ply counts,
+the longest game, games without moves, games without a result tag, games carrying a FEN
+tag, throughput and peak memory. Deliberately does **no** analysis — `pgnsummary`, `elo`
+and `speed` all replay boards or build statistics, so none of them tells you how the
+parser itself behaves on a large file. Exits with code 1 if any game fails to parse.
+
+Useful for validating a downloaded database before working with it, and as a regression
+check after changes to the PGN parser.
+
+**Aliases:** `pc`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- pgncheck <path-to-pgn-file>
 ```
 
 ---
