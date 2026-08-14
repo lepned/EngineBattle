@@ -586,3 +586,48 @@ let ``ClaimThreeFoldRep counts the start position occurrence`` () =
     for uci in ["g1f3"; "g8f6"; "f3g1"; "f6g8"] do
         board.PlayUciMove uci
     Assert.True(board.ClaimThreeFoldRep())    // third occurrence: claimable
+
+// ============================================================================
+// SAN parser vs coordinate notation (regression: the SAN parser used to
+// "succeed" on UCI input with the WRONG move — "g1f3" read as a pawn move to
+// f3 — which made the coordinate fallback in the Winboard PV path unreachable)
+// ============================================================================
+
+[<Fact>]
+let ``SAN parser rejects coordinate notation instead of guessing a pawn move`` () =
+    let board = Board()
+    let moves = board.GenerateMoves()
+    let stm = board.Position.STM
+    for uci in ["g1f3"; "b1c3"; "g1h3"; "b1a3"; "e2e4"; "a7a8q"] do
+        Assert.True(
+            (MoveTypes.TMoveOps.getTMoveFromShortSan uci moves stm (fun _ -> true)).IsNone,
+            sprintf "coordinate token '%s' must not parse as SAN" uci)
+    // ...while real SAN still parses
+    for san in ["e4"; "Nf3"; "d4"; "Nc3"] do
+        Assert.True(
+            (MoveTypes.TMoveOps.getTMoveFromShortSan san moves stm (fun _ -> true)).IsSome,
+            sprintf "SAN token '%s' must still parse" san)
+    // ...including disambiguated forms, on a position where two knights compete
+    let two = Board()
+    two.LoadFen "4k3/8/8/8/8/5N2/8/1N2K3 w - - 0 1"
+    let twoMoves = two.GenerateMoves()
+    let parse (san: string) =
+        MoveTypes.TMoveOps.getTMoveFromShortSan san twoMoves two.Position.STM (fun _ -> true)
+        |> Option.map (fun m -> let mutable mv = m in MoveTypes.TMoveOps.moveToStr &mv two.Position.STM)
+    Assert.Equal<string option>(Some "b1d2", parse "Nbd2")
+    Assert.Equal<string option>(Some "f3d2", parse "Nfd2")
+
+[<Fact>]
+let ``PV conversion handles coordinate notation, SAN and LAN alike`` () =
+    // The Winboard PV path strips '-' from LAN before calling this, so "g1-f3"
+    // arrives as "g1f3"; all three spellings must yield the same UCI line.
+    let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    let convert (tokens: string list) =
+        let board = Board()
+        board.LoadFen start
+        let buffer = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
+        BoardUtils.getLongSanPVFromShortSanPV buffer &board tokens
+    let expected = "g1f3 b8c6 e2e4"
+    Assert.Equal(expected, convert ["g1f3"; "b8c6"; "e2e4"])     // coordinate notation
+    Assert.Equal(expected, convert ["Nf3"; "Nc6"; "e4"])          // SAN
+    Assert.Equal(expected, convert ["Ng1f3"; "Nb8c6"; "e2e4"])    // LAN with piece letters

@@ -145,11 +145,25 @@ module MoveTypes =
       let dictNameToNumber (stm: inref<byte>) = if stm = 0uy then QBBOperations.squareNameToNumberDictWhite else QBBOperations.squareNameToNumberDictBlack
       let dictNumberToName (stm: inref<byte>) = if stm = 0uy then QBBOperations.squareNumberToNameDictWhite else QBBOperations.squareNumberToNameDictBlack
 
+      /// True for pure coordinate/UCI notation ("g1f3", "e7e8q"). No standard SAN has
+      /// this shape — captures carry 'x', promotions '=' or a trailing piece letter, and
+      /// piece moves start with an uppercase symbol — so rejecting it costs nothing and
+      /// stops the parser from "succeeding" on the wrong move: "g1f3" would otherwise be
+      /// read as a PAWN move to f3 (first char is not a piece symbol) and silently return
+      /// f2f3. Callers that may receive either notation must try tryFindMoveByUciNotation
+      /// first (as the Winboard bestmove path does).
+      let isCoordinateNotation (s: string) =
+        (s.Length = 4 || s.Length = 5)
+        && s.[0] >= 'a' && s.[0] <= 'h' && s.[1] >= '1' && s.[1] <= '8'
+        && s.[2] >= 'a' && s.[2] <= 'h' && s.[3] >= '1' && s.[3] <= '8'
+        && (s.Length = 4 || "qrbnQRBN".IndexOf s.[4] >= 0)
+
       //get TMove from SAN string
       let getTMoveFromShortSan (sanShort: string) (moves : TMove array) stm checkIsLegal =
         if String.IsNullOrWhiteSpace sanShort then None else
         let sanShort = sanShort.Trim()
         if sanShort.Length = 0 then None else
+        if isCoordinateNotation sanShort then None else
         let piece = pieceTypeFromSymbol sanShort.[0]
         let isCapture = sanShort.Contains("x")
         let isCastling = sanShort.Contains("0-0") || sanShort.Contains("O-O") || sanShort.Contains("0-0-0") || sanShort.Contains("O-O-O")

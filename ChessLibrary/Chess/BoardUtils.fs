@@ -53,14 +53,17 @@ let getLongSanPVFromShortSanPV moveList (board: Board inref) (sanMoves: string s
     // the generated list is legal-only, so the legality callback can no longer reject anything
     let islegal _ = true
 
-    // Try SAN format first
+    // Coordinate notation first (some Winboard engines emit their PV that way, and the
+    // caller strips the '-' from LAN so "g1-f3" arrives as "g1f3"). SAN must not get the
+    // first attempt here: it used to read "g1f3" as a pawn move to f3 and silently return
+    // the wrong move, so this fallback was unreachable for anything but pawn moves.
     let moveResult =
-      match TMoveOps.getTMoveFromShortSan m moves position.STM islegal with
-      | Some tmove -> Some tmove
-      | None ->
-          // Try coordinate notation (some Winboard engines use this) — numeric matching
-          // over the same legal list (previously round-tripped through a temp Board + FEN)
-          TMoveOps.tryFindMoveByUciNotation moves moves.Length position.STM m
+      if TMoveOps.isCoordinateNotation m then
+        TMoveOps.tryFindMoveByUciNotation moves moves.Length position.STM m
+      else
+        match TMoveOps.getTMoveFromShortSan m moves position.STM islegal with
+        | Some tmove -> Some tmove
+        | None -> TMoveOps.tryFindMoveByUciNotation moves moves.Length position.STM m
 
     match moveResult with
     | Some tmove ->
