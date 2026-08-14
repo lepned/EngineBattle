@@ -158,6 +158,68 @@ let ``boardOfFen indexes a1 as zero with FEN piece chars`` () =
     Assert.Equal('k', b.[7 * 8 + 4])          // e8
     Assert.Equal('\000', b.[3 * 8 + 3])       // d4 empty
 
+// --- board editing (pieceAt/setPieceAt/rights/ep/tryMakeMove) -------------
+
+let private startpos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+[<Fact>]
+let ``pieceAt reads squares by name`` () =
+    Assert.Equal('R', pieceAt startpos "a1")
+    Assert.Equal('k', pieceAt startpos "e8")
+    Assert.Equal('\000', pieceAt startpos "e4")
+
+[<Fact>]
+let ``setPieceAt prunes castling rights and never restores them`` () =
+    let noH1 = removePieceAt startpos "h1"
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBN1 w Qkq - 0 1", noH1)
+    // Stateless pruning: putting the rook back does NOT bring the right back.
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w Qkq - 0 1", setPieceAt noH1 "h1" 'R')
+
+[<Fact>]
+let ``setPieceAt prunes an unsupported en-passant square`` () =
+    let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+    Assert.Contains(" b KQkq - ", removePieceAt fen "e4")   // the double-stepped pawn left
+    Assert.Contains(" b KQkq e3 ", removePieceAt fen "a2")  // unrelated edit keeps it
+
+[<Fact>]
+let ``availableCastlingRights follows piece placement`` () =
+    Assert.Equal("KQkq", availableCastlingRights startpos)
+    Assert.Equal("Kkq", availableCastlingRights "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/1NBQKBNR w KQkq - 0 1")
+    Assert.Equal("", availableCastlingRights "4k3/8/8/8/8/8/8/4K3 w - - 0 1")
+
+[<Fact>]
+let ``epCandidates offers only consistent squares`` () =
+    // White to move, black pawn double-stepped to e5: target e6 and origin e7 empty.
+    Assert.Equal<string[]>([| "e6" |], epCandidates "rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 2")
+    // Origin still occupied (pawn on e7 too): no candidate.
+    Assert.Empty(epCandidates "rnbqkbnr/pppppppp/8/4p3/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 2")
+
+[<Fact>]
+let ``tryMakeMove applies legal moves and rejects the rest`` () =
+    match tryMakeMove startpos "e2e4" with
+    | Some fen ->
+        Assert.StartsWith("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq", fen)
+        Assert.True((validateFen fen).IsValid)
+    | None -> failwith "e2e4 should be legal"
+    Assert.True((tryMakeMove startpos "e2e5").IsNone)
+    Assert.True((tryMakeMove "not a fen" "e2e4").IsNone)
+
+[<Fact>]
+let ``tryMakeMove handles castling and promotion`` () =
+    // UCI castling spelling comes from the generator itself, so the test can't get
+    // the e1g1-vs-e1h1 convention wrong.
+    let f = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+    let shortCastle = (legalMovesOf f) |> Array.find (fun m -> m.IsCastling && m.San = "0-0")
+    match tryMakeMove f shortCastle.Uci with
+    | Some fen ->
+        Assert.Equal('K', pieceAt fen "g1")
+        Assert.Equal('R', pieceAt fen "f1")
+        Assert.Contains(" b kq ", fen)
+    | None -> failwith "castling should be legal"
+    match tryMakeMove "4k3/P7/8/8/8/8/8/4K3 w - - 0 1" "a7a8q" with
+    | Some fen -> Assert.Equal('Q', pieceAt fen "a8")
+    | None -> failwith "promotion should be legal"
+
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
     // White to move while the BLACK king sits in check from Ra8 — illegal position.

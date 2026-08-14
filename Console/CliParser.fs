@@ -73,7 +73,9 @@ type VerbResult =
     | Validate of configFile:string
     | Elo of path:string
     | Speed of path:string
-    | Query of fen:string * square:string option * epd:string option * pv:string option
+    // edits are ordered (op, arg) pairs applied to the FEN before querying:
+    // ("set","e4=Q") | ("remove","d2") | ("stm","b") | ("castling","KQ") | ("ep","e3")
+    | Query of fen:string * square:string option * epd:string option * pv:string option * edits:(string * string) list
 
 
 type CLIArguments =
@@ -355,7 +357,7 @@ module CustomParser =
                 if index + 1 < args.Length then
                     if args.[index + 1] = "--epd" then
                         if index + 2 < args.Length then
-                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None)) :: acc)
+                            parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None, [])) :: acc)
                         else failwith "Missing EPD file after query --epd"
                     else
                         let fen =
@@ -366,12 +368,30 @@ module CustomParser =
                             if index + 2 < args.Length && args.[index + 2].Length = 2 && not (args.[index + 2].StartsWith("--")) then
                                 Some args.[index + 2], index + 3
                             else None, index + 2
-                        let pv, nextIndex =
-                            if afterSquare + 1 < args.Length && args.[afterSquare] = "--pv" then
-                                Some args.[afterSquare + 1], afterSquare + 2
-                            else None, afterSquare
-                        parseArgs args nextIndex (Verb (Query (fen, square, None, pv)) :: acc)
-                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<uci moves>\"] | --epd <file>"
+                        // Flag loop: --pv plus the board-editing flags, any order, edits repeatable.
+                        let mutable i = afterSquare
+                        let mutable pv = None
+                        let edits = ResizeArray<string * string>()
+                        let mutable parsing = true
+                        while parsing && i < args.Length do
+                            let flag = args.[i]
+                            let editOp =
+                                match flag with
+                                | "--setpiece" -> Some "set"
+                                | "--remove" -> Some "remove"
+                                | "--stm" -> Some "stm"
+                                | "--castling" -> Some "castling"
+                                | "--ep" -> Some "ep"
+                                | _ -> None
+                            if flag = "--pv" || editOp.IsSome then
+                                if i + 1 >= args.Length then failwithf "Missing value after %s" flag
+                                match editOp with
+                                | Some op -> edits.Add(op, args.[i + 1])
+                                | None -> pv <- Some args.[i + 1]
+                                i <- i + 2
+                            else parsing <- false
+                        parseArgs args i (Verb (Query (fen, square, None, pv, List.ofSeq edits)) :: acc)
+                else failwith "Missing parameter for query: <fen|startpos> [square] [--pv \"<uci moves>\"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] | --epd <file>"
             | "analyze" | "a" -> // Handle the Analyze verb
                 if index + 1 < args.Length then
                     let engine = args.[index + 1]

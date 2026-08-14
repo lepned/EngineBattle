@@ -844,6 +844,86 @@ let buildFen (board: char[]) (stm: char) (castling: string) (enPassant: string) 
   let ep = if String.IsNullOrWhiteSpace enPassant then "-" else enPassant
   sprintf "%s %c %s %s %d %d" (sb.ToString()) stm castling ep halfmove fullmove
 
+// ---------------------------------------------------------------------------
+// Board editing — stateless FEN-in/FEN-out piece manipulation for the editor
+// and validator tooling (python-chess set_piece_at/remove_piece_at parity).
+// ---------------------------------------------------------------------------
+
+/// The piece on `square` as its FEN char; '\000' for an empty square.
+let pieceAt (fen: string) (square: string) : char =
+  (boardOfFen fen).[absSquareIndex square]
+
+/// The KQkq subset of castling rights the piece placement supports (king and rook on
+/// their standard home squares). Standard chess only — FRC file letters never appear.
+let availableCastlingRights (fen: string) : string =
+  let b = boardOfFen fen
+  let has sq p = b.[absSquareIndex sq] = p
+  let sb = System.Text.StringBuilder()
+  if has "e1" 'K' && has "h1" 'R' then sb.Append 'K' |> ignore
+  if has "e1" 'K' && has "a1" 'R' then sb.Append 'Q' |> ignore
+  if has "e8" 'k' && has "h8" 'r' then sb.Append 'k' |> ignore
+  if has "e8" 'k' && has "a8" 'r' then sb.Append 'q' |> ignore
+  sb.ToString()
+
+/// En-passant target squares consistent with the position: the target and the pawn's
+/// origin empty, the double-stepped enemy pawn on its landing rank. The board editor's
+/// dropdown and the query tooling share this definition.
+let epCandidates (fen: string) : string[] =
+  let fields = (normalizeFen fen).Split(' ')
+  let b = boardOfFen fen
+  let stm = if fields.Length > 1 then fields.[1] else "w"
+  [| for f in 0 .. 7 do
+       if stm = "w" then
+         if b.[5 * 8 + f] = '\000' && b.[6 * 8 + f] = '\000' && b.[4 * 8 + f] = 'p' then
+           yield sprintf "%c6" (char (int 'a' + f))
+       else
+         if b.[2 * 8 + f] = '\000' && b.[1 * 8 + f] = '\000' && b.[3 * 8 + f] = 'P' then
+           yield sprintf "%c3" (char (int 'a' + f)) |]
+
+/// Returns the FEN with `piece` placed on `square` ('\000' or ' ' clears it), pruning
+/// castling rights whose king/rook no longer stand on the required squares (KQkq and
+/// FRC file letters alike) and an en-passant square the pawns no longer support.
+/// Rights are only pruned, never added back — placing a rook on h1 again does not
+/// restore K; set rights explicitly in the FEN. No legality checks beyond the piece
+/// char — gate the result on validateFen where it matters.
+let setPieceAt (fen: string) (square: string) (piece: char) : string =
+  if not (piece = '\000' || piece = ' ' || "PNBRQKpnbrqk".IndexOf piece >= 0) then
+    invalidArg "piece" (sprintf "Invalid piece char '%c'" piece)
+  let fields = (normalizeFen fen).Split(' ')
+  let b = boardOfFen fen
+  b.[absSquareIndex square] <- (if piece = ' ' then '\000' else piece)
+  let hasAt idx p = b.[idx] = p
+  // Ranks 1/8 are indices 0..7 and 56..63 (a1 = 0 convention of boardOfFen/buildFen).
+  let whiteKingOnRank1 = { 0 .. 7 } |> Seq.exists (fun f -> b.[f] = 'K')
+  let blackKingOnRank8 = { 0 .. 7 } |> Seq.exists (fun f -> b.[56 + f] = 'k')
+  let keepRight (c: char) =
+    match c with
+    | 'K' -> hasAt 4 'K' && hasAt 7 'R'
+    | 'Q' -> hasAt 4 'K' && hasAt 0 'R'
+    | 'k' -> hasAt 60 'k' && hasAt 63 'r'
+    | 'q' -> hasAt 60 'k' && hasAt 56 'r'
+    | c when c >= 'A' && c <= 'H' -> whiteKingOnRank1 && hasAt (int c - int 'A') 'R'
+    | c when c >= 'a' && c <= 'h' -> blackKingOnRank8 && hasAt (56 + int c - int 'a') 'r'
+    | _ -> false
+  let castling =
+    if fields.[2] = "-" then "-"
+    else
+      let kept = fields.[2] |> Seq.filter keepRight |> Seq.toArray |> System.String
+      if kept.Length = 0 then "-" else kept
+  let parseOr fallback (s: string) =
+    match Int32.TryParse s with
+    | true, v -> v
+    | _ -> fallback
+  let half, full = parseOr 0 fields.[4], parseOr 1 fields.[5]
+  let fenNoEp = buildFen b fields.[1].[0] castling "-" half full
+  if fields.[3] <> "-" && epCandidates fenNoEp |> Array.contains fields.[3] then
+    buildFen b fields.[1].[0] castling fields.[3] half full
+  else fenNoEp
+
+/// Returns the FEN with `square` cleared (same pruning rules as setPieceAt).
+let removePieceAt (fen: string) (square: string) : string =
+  setPieceAt fen square '\000'
+
 /// A legal move in both notations plus per-move predicates (python-chess parity:
 /// gives_check/is_capture/is_castling/is_en_passant). SAN castling uses EB's
 /// "0-0"/"0-0-0" spelling. GivesCheck includes discovered checks — the move is made
@@ -889,6 +969,29 @@ let legalMovesOf (fen: string) : MoveNotation[] =
       IsCastling = (mv.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
       IsEnPassant = isEp
       GivesCheck = givesCheck })
+
+/// Applies one legal move (UCI, e.g. "e2e4"/"e7e8q") to a FEN and returns the resulting
+/// FEN; None when the position is invalid or the move is not legal in it (python-chess
+/// push() parity in FEN-in/FEN-out form). Counters, castling rights and the en-passant
+/// field all come from the real move machinery.
+let tryMakeMove (fen: string) (uciMove: string) : string option =
+  if not (validateFen fen).IsValid then None
+  else
+    let fen = normalizeFen fen
+    let uci = (if isNull uciMove then "" else uciMove.Trim()).ToLowerInvariant()
+    let board = Board()
+    board.LoadFen fen
+    let mutable pos = board.Position
+    let moves = board.GenerateMoves()
+    let mutable result = None
+    let mutable i = 0
+    while result.IsNone && i < moves.Length do
+      let mutable mv = moves.[i]
+      if TMoveOps.moveToStr &mv pos.STM = uci then
+        board.MakeMove &mv
+        result <- Some (board.FEN())
+      i <- i + 1
+    result
 
 /// Checkmate/stalemate/check detection and the dead-position approximation.
 let getPositionStatus (fen: string) : PositionStatus =

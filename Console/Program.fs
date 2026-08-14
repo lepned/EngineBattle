@@ -628,7 +628,40 @@ module Program =
 
   /// Position-query verb: machine-readable JSON for validator/tooling use (python-chess
   /// differential testing etc.). Data goes to stdout only; errors to stderr, exit 1.
-  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) =
+  /// Applies the ordered --setpiece/--remove/--stm/--castling/--ep edits to a FEN.
+  /// Piece edits get the library's castling/EP pruning; a side-to-move change prunes
+  /// an EP square the new side's pawns can't support; castling/ep overrides are taken
+  /// verbatim (validateFen judges the result afterwards).
+  let private applyQueryEdits (fen: string) (edits: (string * string) list) =
+    let mutable f = fen
+    for (op, arg) in edits do
+        match op with
+        | "set" ->
+            match arg.Split('=') with
+            | [| sq; p |] when p.Length = 1 -> f <- ChessLibrary.BoardUtils.setPieceAt f sq p.[0]
+            | _ -> failwithf "bad --setpiece '%s' (expected square=piece, e.g. e4=Q)" arg
+        | "remove" -> f <- ChessLibrary.BoardUtils.removePieceAt f arg
+        | "stm" ->
+            if arg <> "w" && arg <> "b" then failwithf "bad --stm '%s' (expected w or b)" arg
+            let parts = f.Split(' ')
+            parts.[1] <- arg
+            if parts.[3] <> "-" then
+                let candidate = String.Join(" ", parts)
+                if not (ChessLibrary.BoardUtils.epCandidates candidate |> Array.contains parts.[3]) then
+                    parts.[3] <- "-"
+            f <- String.Join(" ", parts)
+        | "castling" ->
+            let parts = f.Split(' ')
+            parts.[2] <- arg
+            f <- String.Join(" ", parts)
+        | "ep" ->
+            let parts = f.Split(' ')
+            parts.[3] <- arg
+            f <- String.Join(" ", parts)
+        | _ -> ()
+    f
+
+  let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) (edits: (string * string) list) =
     // Short FENs validate and normalize; the raw parser needs the default-filled form.
     let fen = ChessLibrary.BoardUtils.normalizeFen fen
     let jsonOpts indented =
@@ -643,6 +676,9 @@ module Program =
     try
         match epdPath with
         | Some path ->
+            if not (List.isEmpty edits) then
+                eprintfn "edit flags (--setpiece/--remove/--stm/--castling/--ep) are not supported with --epd"
+                exit 1
             // Batch mode: NDJSON per EPD position — insights + status + full legal move
             // list (the movegen/SAN differential-testing payload). Invalid FENs are
             // skipped with a stderr warning so one bad line can't kill the stream.
@@ -661,6 +697,9 @@ module Program =
                            Insights = ChessLibrary.BoardUtils.getPositionInsights e.FEN |}
                     printfn "%s" (System.Text.Json.JsonSerializer.Serialize(record, opts))
         | None ->
+            // Edits transform the position first; validation then judges the RESULT, so
+            // scripts get structured errors for a broken edited position, not the input.
+            let fen = applyQueryEdits fen edits
             let validation = ChessLibrary.BoardUtils.validateFen fen
             if not validation.IsValid then
                 eprintfn "invalid FEN '%s': %s" fen (String.concat "; " validation.Errors)
@@ -2368,8 +2407,8 @@ module Program =
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
-                | Verb (Query (fen, square, epd, pv)) ->
-                    runQuery fen square epd pv
+                | Verb (Query (fen, square, epd, pv, edits)) ->
+                    runQuery fen square epd pv edits
                 | Verb (PieceValues p) ->
                     runPieceValues p
                 | Verb (PieceValueFit p) ->

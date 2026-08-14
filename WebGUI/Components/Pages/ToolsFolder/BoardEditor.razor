@@ -171,10 +171,15 @@
 
     private static int Sq(string sq) => (sq[1] - '1') * 8 + (sq[0] - 'a');
 
-    private bool CanCastleWK => board[Sq("e1")] == 'K' && board[Sq("h1")] == 'R';
-    private bool CanCastleWQ => board[Sq("e1")] == 'K' && board[Sq("a1")] == 'R';
-    private bool CanCastleBK => board[Sq("e8")] == 'k' && board[Sq("h8")] == 'r';
-    private bool CanCastleBQ => board[Sq("e8")] == 'k' && board[Sq("a8")] == 'r';
+    // Availability and EP candidates come from the library (shared with the query
+    // tooling) — computed on a rights-free FEN of the current placement, since the
+    // real FEN is itself built FROM these answers.
+    private string PlacementFen => BoardUtils.buildFen(board, stm, "-", "-", 0, 1);
+    private string AvailableRights => BoardUtils.availableCastlingRights(PlacementFen);
+    private bool CanCastleWK => AvailableRights.Contains('K');
+    private bool CanCastleWQ => AvailableRights.Contains('Q');
+    private bool CanCastleBK => AvailableRights.Contains('k');
+    private bool CanCastleBQ => AvailableRights.Contains('q');
 
     private string CastlingString()
     {
@@ -183,18 +188,7 @@
         return s.Length == 0 ? "-" : s;
     }
 
-    /// <summary>Ep target squares consistent with the position: the square and the pawn's
-    /// origin empty, the double-stepped pawn present on its landing rank.</summary>
-    private IEnumerable<string> EpCandidates()
-    {
-        for (int f = 0; f < 8; f++)
-        {
-            if (stm == 'w' && board[5 * 8 + f] == default && board[6 * 8 + f] == default && board[4 * 8 + f] == 'p')
-                yield return $"{(char)('a' + f)}6";
-            if (stm == 'b' && board[2 * 8 + f] == default && board[1 * 8 + f] == default && board[3 * 8 + f] == 'P')
-                yield return $"{(char)('a' + f)}3";
-        }
-    }
+    private string[] EpCandidates() => BoardUtils.epCandidates(PlacementFen);
 
     /// <summary>Re-derive the FEN and validation after any state mutation; prunes an
     /// en-passant choice its pawns no longer support.</summary>
