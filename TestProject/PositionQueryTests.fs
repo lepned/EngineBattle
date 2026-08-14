@@ -233,6 +233,19 @@ let ``tryParseSan resolves moves and tolerates decorations`` () =
     Assert.Equal(Some "a7a8q", tryParseSan "4k3/P7/8/8/8/8/8/4K3 w - - 0 1" "a8Q")
 
 [<Fact>]
+let ``tryParseSan accepts over-disambiguated SAN when unique`` () =
+    // Review finding: python-chess and many PGN exporters over-disambiguate; the exact
+    // match against the generator's minimal SAN rejected them.
+    Assert.Equal(Some "g1f3", tryParseSan startpos "Ngf3")
+    Assert.Equal(Some "e2e4 e7e5 g1f3", pvToUci startpos "1.e4 e5 2.Ngf3")
+    // Rank-hint form on a unique rook, and a hint that matches nothing stays None.
+    let rook = "4k3/8/8/8/8/8/8/R3K3 w - - 0 1"
+    Assert.Equal(Some "a1a2", tryParseSan rook "R1a2")
+    Assert.True((tryParseSan rook "R5a2").IsNone)
+    // Under-specified ambiguity is still rejected, with or without the fallback.
+    Assert.True((tryParseSan "4k3/8/8/R7/8/8/8/R3K3 w - - 0 1" "Ra3").IsNone)
+
+[<Fact>]
 let ``tryParseSan requires disambiguation and accepts both castling spellings`` () =
     // Knights on b1 and f3 both reach d2: bare "Nd2" is ambiguous -> None.
     let twoKnights = "4k3/8/8/8/8/5N2/8/1N2K3 w - - 0 1"

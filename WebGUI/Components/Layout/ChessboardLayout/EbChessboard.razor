@@ -202,10 +202,13 @@
     // neutral grey when the gutter is transparent. --eb-coord-color still wins when set.
     private static string GutterAutoColor(string frameColor)
     {
-        if (frameColor is not { Length: 7 } || frameColor[0] != '#') return "#8A8A8A";
-        int r = Convert.ToInt32(frameColor.Substring(1, 2), 16);
-        int g = Convert.ToInt32(frameColor.Substring(3, 2), 16);
-        int b = Convert.ToInt32(frameColor.Substring(5, 2), 16);
+        // TryParse, not Convert: a hand-edited settings file with a malformed hex color
+        // must degrade to the neutral fallback, not throw during every board render.
+        if (frameColor is not { Length: 7 } || frameColor[0] != '#'
+            || !int.TryParse(frameColor.AsSpan(1), System.Globalization.NumberStyles.HexNumber,
+                             System.Globalization.CultureInfo.InvariantCulture, out var rgb))
+            return "#8A8A8A";
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
         double lum = 0.299 * r + 0.587 * g + 0.114 * b;
         return lum < 140 ? "rgba(255, 255, 255, 0.75)" : "rgba(0, 0, 0, 0.65)";
     }

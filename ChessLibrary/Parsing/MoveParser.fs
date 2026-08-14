@@ -125,15 +125,21 @@ let parseLine (line: string) : EPDEntry option =
     else
         let len = line.Length
         let inline isWs (c: char) = c = ' ' || c = '\t'
-        // One whitespace-separated token from index i: struct (start, endExclusive),
-        // or (-1, -1) past the end of the line.
+        // The FEN always precedes the opcodes, so the first ';' (even one glued to the
+        // last counter, "... 0 1; id ...") is a hard upper bound for FEN tokens — the
+        // old parser's cut-at-semicolon behavior, kept alongside the field counting.
+        let fenLimit =
+            let i = line.IndexOf ';'
+            if i < 0 then len else i
+        // One whitespace-separated token from index i within the FEN region:
+        // struct (start, endExclusive), or (-1, -1) past the limit.
         let nextToken (i: int) =
             let mutable s = i
-            while s < len && isWs line.[s] do s <- s + 1
-            if s >= len then struct (-1, -1)
+            while s < fenLimit && isWs line.[s] do s <- s + 1
+            if s >= fenLimit then struct (-1, -1)
             else
                 let mutable e = s
-                while e < len && not (isWs line.[e]) do e <- e + 1
+                while e < fenLimit && not (isWs line.[e]) do e <- e + 1
                 struct (s, e)
         let isDigits (s: int) (e: int) =
             let mutable ok = e > s
@@ -179,17 +185,24 @@ let parseLine (line: string) : EPDEntry option =
                             line.Substring(va + 1, b - va - 2)
                         else line.Substring(va, b - va)
                     ops.Add(struct (name, value))
-            let mutable segStart = fenEnd
-            let mutable i = fenEnd
-            let mutable inQuotes = false
-            while i < len do
-                let c = line.[i]
-                if c = '"' then inQuotes <- not inQuotes
-                elif c = ';' && not inQuotes then
-                    addSegment segStart i
-                    segStart <- i + 1
-                i <- i + 1
-            addSegment segStart len   // trailing segment without ';'
+            // Quote-aware split; an unbalanced quote would swallow every later ';', so
+            // that case degrades to a plain split (the old parser's tolerance level).
+            let scan (respectQuotes: bool) =
+                let mutable segStart = fenEnd
+                let mutable i = fenEnd
+                let mutable inQuotes = false
+                while i < len do
+                    let c = line.[i]
+                    if respectQuotes && c = '"' then inQuotes <- not inQuotes
+                    elif c = ';' && not inQuotes then
+                        addSegment segStart i
+                        segStart <- i + 1
+                    i <- i + 1
+                addSegment segStart len   // trailing segment without ';'
+                inQuotes
+            if scan true then
+                ops.Clear()
+                scan false |> ignore
 
             let find (key: string) =
                 let mutable res = None

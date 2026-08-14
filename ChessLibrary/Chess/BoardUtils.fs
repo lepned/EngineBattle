@@ -1063,9 +1063,34 @@ let tryParseSan (fen: string) (san: string) : string option =
   if String.IsNullOrWhiteSpace san then None
   else
     let target = normalizeSanToken san
-    let candidates = legalMovesOf fen |> Array.filter (fun m -> normalizeSanToken m.San = target)
+    let moves = legalMovesOf fen
+    let candidates = moves |> Array.filter (fun m -> normalizeSanToken m.San = target)
     match candidates with
     | [| m |] -> Some m.Uci
+    | [||] when target.Length >= 3 && "KQRBN".IndexOf target.[0] >= 0 ->
+        // Over-disambiguated piece moves ("Ngf3", "R1a2", "Qh4e1") don't match the
+        // generator's minimal SAN — python-chess and many PGN exporters emit them, so
+        // parse loosely: piece + destination + optional origin hints, filtered against
+        // the legal list. Still None unless exactly one move fits.
+        let core = target.Replace("x", "")
+        let dest = core.Substring(core.Length - 2)
+        if dest.[0] < 'a' || dest.[0] > 'h' || dest.[1] < '1' || dest.[1] > '8' then None
+        else
+          let hints = core.Substring(1, core.Length - 3)
+          let fileHint = hints |> Seq.tryFind (fun c -> c >= 'a' && c <= 'h')
+          let rankHint = hints |> Seq.tryFind (fun c -> c >= '1' && c <= '8')
+          let b = boardOfFen fen
+          let stmWhite = (normalizeFen fen).Split(' ').[1] = "w"
+          let pieceChar = if stmWhite then target.[0] else Char.ToLowerInvariant target.[0]
+          let fits =
+            moves |> Array.filter (fun m ->
+              m.Uci.Length = 4 && m.Uci.Substring(2, 2) = dest
+              && b.[(int m.Uci.[1] - int '1') * 8 + (int m.Uci.[0] - int 'a')] = pieceChar
+              && (fileHint |> Option.forall (fun f -> m.Uci.[0] = f))
+              && (rankHint |> Option.forall (fun r -> m.Uci.[1] = r)))
+          match fits with
+          | [| m |] -> Some m.Uci
+          | _ -> None
     | _ -> None
 
 /// Applies one short-SAN move to a FEN (tryParseSan >> tryMakeMove).

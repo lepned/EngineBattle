@@ -359,6 +359,15 @@ module CustomParser =
                 if index + 1 < args.Length then
                     if args.[index + 1] = "--epd" then
                         if index + 2 < args.Length then
+                            // The single-position flags are meaningless in batch mode; fail
+                            // loudly rather than letting them leak to the top-level parser
+                            // (whose "Unknown argument" print would contaminate the NDJSON
+                            // stream on stdout).
+                            if index + 3 < args.Length then
+                                let next = args.[index + 3]
+                                let queryFlags = [ "--pv"; "--svg"; "--emit-epd"; "--op"; "--setpiece"; "--remove"; "--stm"; "--castling"; "--ep" ]
+                                if List.contains next queryFlags then
+                                    failwithf "%s is not supported with query --epd" next
                             parseArgs args (index + 3) (Verb (Query ("", None, Some args.[index + 2], None, [], false, [], None)) :: acc)
                         else failwith "Missing EPD file after query --epd"
                     else

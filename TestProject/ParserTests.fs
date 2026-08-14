@@ -66,6 +66,21 @@ let ``parseLine keeps semicolons inside quoted operands intact`` () =
     Assert.Equal(Some "Kd1", parsed.Value.BestMove)
 
 [<Fact>]
+let ``parseLine handles a semicolon glued to the last counter`` () =
+    // Review finding: '1;' failed the digit check, dropping the fullmove from the FEN
+    // and recording a phantom '1' opcode.
+    let parsed = MoveParser.parseLine "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1; id \"start\";"
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", parsed.Value.FEN)
+    Assert.Equal(Some "start", parsed.Value.Id)
+
+[<Fact>]
+let ``parseLine degrades gracefully on an unbalanced quote`` () =
+    // Review finding: a lone '"' used to swallow every later ';' and lose the bm.
+    let parsed = MoveParser.parseLine "4k3/8/8/8/8/8/8/4K3 w - - c0 \"unterminated; bm Kd1;"
+    Assert.Equal("4k3/8/8/8/8/8/8/4K3 w - -", parsed.Value.FEN)
+    Assert.Equal(Some "Kd1", parsed.Value.BestMove)
+
+[<Fact>]
 let ``parseEPDFile converts EPD to PGN`` () =
     let tempFile = Path.GetTempFileName()
     try
