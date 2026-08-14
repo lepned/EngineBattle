@@ -896,7 +896,9 @@ module ParsingTests =
         let columns = headers |> List.mapi (fun i _ -> rows |> List.map (fun row -> row.[i]))
         headers
         |> List.mapi (fun i header ->
-            let maxRowLength = columns.[i] |> List.map String.length |> List.max
+            // fold, not List.max: a table with no rows is legitimate (a PGN with no games
+            // matching the engine-name filter) and must not throw "input list was empty"
+            let maxRowLength = columns.[i] |> List.fold (fun acc (s: string) -> max acc s.Length) 0
             max (header.Length) maxRowLength
         )
 
@@ -926,32 +928,7 @@ module ParsingTests =
         [createBorder; header; separator] @ formattedRows @ [createBorder]
         |> String.concat "\n"
     
-    let collectMissedWins = appendToFile "C:/Dev/Chess/PGNs/missed_wins.txt" true path
-    let collectMissedDraws = appendToFile "C:/Dev/Chess/PGNs/missed_draws.txt" true path
-    let collectMisEvaluated = appendToFile "C:/Dev/Chess/PGNs/mis_evaluated_positions.txt" true path
     let allPGNGames = FullPGNParser.parsePgnFile path |> Seq.truncate 1_000_000 |> Seq.toList
-    let possibleNames = ["lc0"; "lczero"; "base"; "opt"; "ceres"]
-    let nameExists (name:string) = 
-      possibleNames |> List.exists (fun e -> name.Contains e)
-    
-    let filteredGames = 
-      allPGNGames 
-      |> Seq.filter (fun game -> 
-          let metaData = game.GameMetaData
-          let (w, b) = (metaData.White.ToLower(), metaData.Black.ToLower())
-          nameExists w || nameExists b)
-    
-    let findPlayer = 
-      match filteredGames |> Seq.tryHead with
-      | Some game -> 
-          let metaData = game.GameMetaData
-          let white = metaData.White.ToLower()
-          if nameExists white then
-            metaData.White, "w"
-          else
-            metaData.Black, "b"
-      | None -> "",""
-
     let sb = new System.Text.StringBuilder()
     let appendLine (msg:string) = sb.AppendLine(msg) |> ignore
     let games = allPGNGames |> Seq.length
@@ -981,10 +958,13 @@ module ParsingTests =
       board.LoadFen pgn.GameMetaData.Fen
       for m in pgn.Mainline do      
           board.PlaySanMove m.San        
-      let evals = collectAllChessEvaluations pgn        
+      let evals = collectAllChessEvaluations pgn
       let mutable currentCollector = fun _ -> ()
       let w,b = pgn.GameMetaData.White, pgn.GameMetaData.Black
-      match isPotentialMissedWinForCeres evals (w,b) threshold  with      
+      // This summary is built on engine eval comments; human PGNs (Lichess/chess.com
+      // exports) carry none, and the branches below take List.last/maxBy of them.
+      if evals.IsEmpty then () else
+      match isPotentialMissedWinForCeres evals (w,b) threshold  with
       |true, evals, lastSixMoves, msg, player -> 
           let mEval = (evals |> List.maxBy (fun e -> abs e.EvalDetail.Eval)).EvalDetail.Eval
           let lastEval = abs (lastSixMoves |> Seq.last).EvalDetail.Eval
@@ -1077,7 +1057,9 @@ module ParsingTests =
       
       let rows = [
           ["Threshold for missed win in cp"; sprintf "%.1f" (threshold*100.0); "-"]
-          ["Total number of games"; sprintf "%d" totalGames; "-"]
+          // `results` only holds games that carried engine evals, so this is the
+          // denominator for every percentage below — not the file's game count.
+          ["Games analyzed (with evals)"; sprintf "%d" totalGames; "-"]
           ["Number of Missed wins"; sprintf "%d" totalMissedWins; sprintf "%.2f%%" missedWinRatio]
           for (p,missed) in totalMissedWinsPerPlayer do
             [sprintf "  Missed win for %s" p; sprintf "%d" missed; sprintf "%.2f%%" ((float missed / float totalMissedWins) * 100.0) ]
