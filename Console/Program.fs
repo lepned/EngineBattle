@@ -629,6 +629,8 @@ module Program =
   /// Position-query verb: machine-readable JSON for validator/tooling use (python-chess
   /// differential testing etc.). Data goes to stdout only; errors to stderr, exit 1.
   let runQuery (fen: string) (square: string option) (epdPath: string option) (pv: string option) =
+    // Short FENs validate and normalize; the raw parser needs the default-filled form.
+    let fen = ChessLibrary.BoardUtils.normalizeFen fen
     let jsonOpts indented =
         System.Text.Json.JsonSerializerOptions(
             PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,

@@ -151,6 +151,34 @@ type PinInfo = { Attacker: string; Pinned: string; King: string }
 /// not considered.
 type HangingInfo = { Square: string; Attackers: string[] }
 
+/// A fork delivered by one piece: it attacks two or more enemy pieces that are each
+/// the king or already losable (in the enemy hanging set). The forker itself must not
+/// be hanging — a capturable "forker" is no fork. Approximation: a target counts if it
+/// hangs to anyone, not strictly to the forker.
+type ForkInfo = { Forker: string; Targets: string[] }
+
+/// Two enemy pieces on one ray of an own slider. Kind "skewer": the front piece is the
+/// king or worth more than the back one (it must move, exposing the back); Kind
+/// "relativePin": the front piece is worth less (moving it loses the back one). Equal
+/// values are skipped (x-ray pressure, not a tactic) and back-is-king is the absolute
+/// pin, already reported in Pins.
+type SkewerInfo = { Attacker: string; Front: string; Back: string; Kind: string }
+
+/// An own piece that is the sole effective defender of two or more attacked own
+/// pieces, each of which would hang if the defender vanished.
+type OverloadInfo = { Defender: string; Defends: string[] }
+
+/// An own slider with exactly one own blocker on a ray toward an enemy target: moving
+/// the blocker unveils either check (IsCheck) or a winning attack (the target hangs
+/// once the blocker leaves, judged by SEE on a blocker-removed board). A pinned
+/// blocker or a hanging slider disqualifies the motif.
+type DiscoveredAttackInfo = { Slider: string; Blocker: string; Target: string; IsCheck: bool }
+
+/// An ENEMY piece (never the king) that is the sole effective defender of enemy
+/// material we attack, and that can itself be captured without material loss — take
+/// the defender, then win what it defended (the Lichess "capture the defender" motif).
+type RemovableDefenderInfo = { Defender: string; Defends: string[] }
+
 /// Pins/checks for one color. CheckBlockSquares are the squares where a block or
 /// capture resolves the check — populated only for single checks (a double check
 /// cannot be blocked). KingDangerSquares/KingEscapeSquares cover the king's
@@ -167,18 +195,40 @@ type SideInsights =
     Pins: PinInfo[]
     KingDangerSquares: string[]
     KingEscapeSquares: string[]
-    HangingPieces: HangingInfo[] }
+    HangingPieces: HangingInfo[]
+    Forks: ForkInfo[]
+    Skewers: SkewerInfo[]
+    OverloadedDefenders: OverloadInfo[]
+    DiscoveredAttacks: DiscoveredAttackInfo[]
+    RemovableDefenders: RemovableDefenderInfo[] }
 
 type PositionInsights = { White: SideInsights; Black: SideInsights }
 
 let private emptySideInsights isStm =
   { King = ""; IsSideToMove = isStm; InCheck = false
     Checkers = [||]; CheckBlockSquares = [||]; Pins = [||]
-    KingDangerSquares = [||]; KingEscapeSquares = [||]; HangingPieces = [||] }
+    KingDangerSquares = [||]; KingEscapeSquares = [||]; HangingPieces = [||]
+    Forks = [||]; Skewers = [||]; OverloadedDefenders = [||]
+    DiscoveredAttacks = [||]; RemovableDefenders = [||] }
 
 /// Piece value by QBB code (0 empty, 1 P, 2 N, 3 B, 4 R, 5 Q, 6 K). The king's 100
 /// keeps a king attacker from ever winning a value comparison.
 let private pieceValueByCode = [| 0; 1; 3; 3; 5; 9; 100 |]
+
+/// Fills in missing trailing FEN fields with defaults (side "w", castling "-",
+/// en-passant "-", counters "0 1"), so common short forms like "<placement> w" are
+/// parser-safe — the raw parser walks off the end of a FEN that stops after the side
+/// field. Full FENs pass through untouched; extra fields are preserved for the
+/// validator to flag.
+let normalizeFen (fen: string) : string =
+  if String.IsNullOrWhiteSpace fen then fen
+  else
+    let fields = fen.Trim().Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
+    if fields.Length >= 6 then String.Join(" ", fields)
+    else
+      let defaults = [| ""; "w"; "-"; "-"; "0"; "1" |]
+      Array.init 6 (fun i -> if i < fields.Length then fields.[i] else defaults.[i])
+      |> String.concat " "
 
 /// Square and value of the least valuable piece in `set` (-1 when empty).
 let private leastValuablePiece (position: Position inref) (set: uint64) =
@@ -254,6 +304,62 @@ let private seeOnSquare (position: Position inref) (ctxPinned: uint64) (ctxKingS
       i <- i - 1
     gains.[0]
 
+/// Pseudo attack set of the piece on `frameSq` (either color; pawns give their capture
+/// directions only, own-occupied targets are included). 0 for an empty square.
+let private pieceAttacksBB (position: Position inref) (frameSq: int) =
+  let bit = 1UL <<< frameSq
+  let occ = PositionOps.occupation &position
+  if occ &&& bit = 0UL then 0UL
+  else
+    let isStmPiece = (position.PM &&& bit) <> 0UL
+    match int (TPieceType.Piece(frameSq, &position)) with
+    | 1 ->
+      if isStmPiece then ((bit <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((bit <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)
+      else ((bit >>> 9) &&& 0x7F7F7F7F7F7F7F7FUL) ||| ((bit >>> 7) &&& 0xFEFEFEFEFEFEFEFEUL)
+    | 2 -> QBBOperations.KnightDest.[frameSq]
+    | 3 -> GenBishop(frameSq, occ)
+    | 4 -> GenRook(frameSq, occ)
+    | 5 -> GenRook(frameSq, occ) ||| GenBishop(frameSq, occ)
+    | 6 -> QBBOperations.KingDest.[frameSq]
+    | _ -> 0UL
+
+/// Bitboard of the side-to-move's hanging pieces (see HangingInfo for the rules).
+let private hangingBB (position: Position inref) (ctxPinned: uint64) (ctxKingSq: int) =
+  let occ = PositionOps.occupation &position
+  let opposing = PositionOps.opposing &position
+  let mutable result = 0UL
+  let mutable ownPieces = PositionOps.sideToMove &position &&& ~~~(1UL <<< ctxKingSq)
+  while ownPieces <> 0UL do
+    let sq = int (QBBOperations.LSB ownPieces)
+    if attackersTo sq occ &position &&& opposing <> 0UL then
+      let victimValue = pieceValueByCode.[int (TPieceType.Piece(sq, &position))]
+      if seeOnSquare &position ctxPinned ctxKingSq occ sq victimValue > 0 then
+        result <- result ||| (1UL <<< sq)
+    ownPieces <- QBBOperations.ClearLSB ownPieces
+  result
+
+/// (defender, defended) frame-square pairs where the defender is the SOLE effective
+/// defender of an attacked, not-currently-hanging own piece that hangs the moment the
+/// defender is lifted off the board. Shared by the overload pass (own side, filtered to
+/// two or more) and the removable-defender pass (enemy side via a flipped copy).
+let private soleDefenderPairs (position: Position inref) (ctxPinned: uint64) (ctxKingSq: int) (ownHangingSet: uint64) =
+  let occ = PositionOps.occupation &position
+  let own = PositionOps.sideToMove &position
+  let opposing = PositionOps.opposing &position
+  let pairs = ResizeArray<struct (int * int)>()
+  let mutable tp = own &&& ~~~(1UL <<< ctxKingSq) &&& ~~~ownHangingSet
+  while tp <> 0UL do
+    let t = int (QBBOperations.LSB tp)
+    if attackersTo t occ &position &&& opposing <> 0UL then
+      let defenders = effectiveAttackersOn &position ctxPinned ctxKingSq occ t &&& own
+      if System.Numerics.BitOperations.PopCount defenders = 1 then
+        let d = int (QBBOperations.LSB defenders)
+        let victimValue = pieceValueByCode.[int (TPieceType.Piece(t, &position))]
+        if seeOnSquare &position ctxPinned ctxKingSq (occ ^^^ (1UL <<< d)) t victimValue > 0 then
+          pairs.Add(struct (d, t))
+    tp <- QBBOperations.ClearLSB tp
+  pairs
+
 /// Insights for the side to move of the given position. The position's bitboards are
 /// in the QBB side-to-move-relative frame; the STM-aware name dictionary maps frame
 /// squares back to absolute names.
@@ -287,21 +393,150 @@ let private sideInsightsFromPosition (position: Position inref) isStm =
       if btw <> 0UL && QBBOperations.ClearLSB btw = 0UL && (btw &&& own) <> 0UL then
         pins.Add { Attacker = name sniperSq; Pinned = name (int (QBBOperations.LSB btw)); King = name ctx.KingSq }
       snipers <- QBBOperations.ClearLSB snipers
-    // Hanging pieces: own non-king pieces that are enemy-attacked and either have no
-    // effective defender or are attacked by something cheaper. A pinned defender only
-    // counts when the defended square lies on its pin ray (lineBB through king and
-    // defender) — which also rules out pinned knights, whose attack squares are never
-    // collinear with the knight.
+    // Hanging pieces (rules in the HangingInfo doc) — computed as a bitboard first so
+    // the tactics passes below can reuse the set.
+    let ownHanging = hangingBB &position ctx.Pinned ctx.KingSq
     let hanging = ResizeArray<HangingInfo>()
-    let mutable ownPieces = own &&& ~~~(1UL <<< ctx.KingSq)
-    while ownPieces <> 0UL do
-      let sq = int (QBBOperations.LSB ownPieces)
-      let attackers = attackersTo sq occ &position &&& opposing
-      if attackers <> 0UL then
-        let victimValue = pieceValueByCode.[int (TPieceType.Piece(sq, &position))]
-        if seeOnSquare &position ctx.Pinned ctx.KingSq occ sq victimValue > 0 then
-          hanging.Add { Square = name sq; Attackers = squaresOf attackers }
-      ownPieces <- QBBOperations.ClearLSB ownPieces
+    let mutable hb = ownHanging
+    while hb <> 0UL do
+      let sq = int (QBBOperations.LSB hb)
+      hanging.Add { Square = name sq; Attackers = squaresOf (attackersTo sq occ &position &&& opposing) }
+      hb <- QBBOperations.ClearLSB hb
+    // Side-swapped copy: the enemy's own analysis (hanging, sole defenders, exchange
+    // probes) runs in their frame; single-bit squares map back with ^^^ 56, whole
+    // bitboards with RevBB.
+    let mutable flipped = PositionOps.copy &position
+    PositionOps.changeSide &flipped
+    let ectx = createLegalityContext &flipped
+    let enemyKingOk = ectx.KingSq <= 63
+    let flippedOcc = PositionOps.occupation &flipped
+    // Enemy hanging set mapped back into THIS frame: a fork target must be losable,
+    // and "losable" IS the enemy-side hanging computation.
+    let enemyHangingFlipped = if enemyKingOk then hangingBB &flipped ectx.Pinned ectx.KingSq else 0UL
+    let enemyHanging = QBBOperations.RevBB enemyHangingFlipped
+    let enemyKing = PositionOps.kings &position &&& opposing
+    // Forks: a safe own piece attacking two or more targets that are the enemy king
+    // or losable.
+    let forks = ResizeArray<ForkInfo>()
+    let mutable fp = own &&& ~~~ownHanging
+    while fp <> 0UL do
+      let p = int (QBBOperations.LSB fp)
+      let targets = pieceAttacksBB &position p &&& (enemyHanging ||| enemyKing)
+      if System.Numerics.BitOperations.PopCount targets >= 2 then
+        forks.Add { Forker = name p; Targets = squaresOf targets }
+      fp <- QBBOperations.ClearLSB fp
+    // Skewers / relative pins: own slider, enemy front piece, enemy piece revealed
+    // behind it on the same ray (remove the front blocker and re-probe; only its ray
+    // continuation becomes visible).
+    let skewers = ResizeArray<SkewerInfo>()
+    let mutable sliders = (PositionOps.rooks &position ||| PositionOps.bishops &position ||| PositionOps.queens &position) &&& own
+    while sliders <> 0UL do
+      let x = int (QBBOperations.LSB sliders)
+      let sliderCode = int (TPieceType.Piece(x, &position))
+      for geometry in 0 .. 1 do
+        let applies =
+          (geometry = 0 && (sliderCode = 4 || sliderCode = 5)) ||
+          (geometry = 1 && (sliderCode = 3 || sliderCode = 5))
+        if applies then
+          let att = if geometry = 0 then GenRook(x, occ) else GenBishop(x, occ)
+          let mutable fs = att &&& opposing
+          while fs <> 0UL do
+            let f = int (QBBOperations.LSB fs)
+            let fBit = 1UL <<< f
+            let revealed = (if geometry = 0 then GenRook(x, occ ^^^ fBit) else GenBishop(x, occ ^^^ fBit)) &&& ~~~att
+            let bBit = revealed &&& (occ ^^^ fBit) &&& opposing
+            if bBit <> 0UL then
+              let b = int (QBBOperations.LSB bBit)
+              let fVal = pieceValueByCode.[int (TPieceType.Piece(f, &position))]
+              let bVal = pieceValueByCode.[int (TPieceType.Piece(b, &position))]
+              let fIsKing = (fBit &&& enemyKing) <> 0UL
+              let bIsKing = (bBit &&& enemyKing) <> 0UL
+              if fIsKing || fVal > bVal then
+                skewers.Add { Attacker = name x; Front = name f; Back = name b; Kind = "skewer" }
+              elif fVal < bVal && not bIsKing then
+                skewers.Add { Attacker = name x; Front = name f; Back = name b; Kind = "relativePin" }
+            fs <- QBBOperations.ClearLSB fs
+      sliders <- QBBOperations.ClearLSB sliders
+    // Overloaded defenders: sole effective defender of two or more attacked-but-safe
+    // own pieces, each of which hangs once the defender is lifted off the board.
+    let overloads = ResizeArray<OverloadInfo>()
+    let defenderMap = System.Collections.Generic.Dictionary<int, ResizeArray<int>>()
+    for struct (d, t) in soleDefenderPairs &position ctx.Pinned ctx.KingSq ownHanging do
+      match defenderMap.TryGetValue d with
+      | true, lst -> lst.Add t
+      | false, _ ->
+          let lst = ResizeArray<int>()
+          lst.Add t
+          defenderMap.[d] <- lst
+    for kvp in defenderMap do
+      if kvp.Value.Count >= 2 then
+        overloads.Add { Defender = name kvp.Key; Defends = kvp.Value |> Seq.map name |> Seq.toArray }
+    // Discovered attacks: own slider, exactly one OWN blocker on a ray, enemy piece
+    // revealed behind it — worth showing when the reveal is check or when the target
+    // hangs on a blocker-removed board (probed in the enemy frame). A pinned blocker
+    // cannot unveil and a hanging slider makes the motif fake.
+    let discovered = ResizeArray<DiscoveredAttackInfo>()
+    if enemyKingOk then
+      let mutable dsliders =
+        (PositionOps.rooks &position ||| PositionOps.bishops &position ||| PositionOps.queens &position)
+        &&& own &&& ~~~ownHanging
+      while dsliders <> 0UL do
+        let x = int (QBBOperations.LSB dsliders)
+        let sliderCode = int (TPieceType.Piece(x, &position))
+        for geometry in 0 .. 1 do
+          let applies =
+            (geometry = 0 && (sliderCode = 4 || sliderCode = 5)) ||
+            (geometry = 1 && (sliderCode = 3 || sliderCode = 5))
+          if applies then
+            let att = if geometry = 0 then GenRook(x, occ) else GenBishop(x, occ)
+            let mutable bs = att &&& own &&& ~~~ctx.Pinned
+            while bs <> 0UL do
+              let b = int (QBBOperations.LSB bs)
+              let bBit = 1UL <<< b
+              let revealed = (if geometry = 0 then GenRook(x, occ ^^^ bBit) else GenBishop(x, occ ^^^ bBit)) &&& ~~~att
+              let tBit = revealed &&& (occ ^^^ bBit) &&& opposing
+              if tBit <> 0UL then
+                let t = int (QBBOperations.LSB tBit)
+                let isCheck = (tBit &&& enemyKing) <> 0UL
+                let worthIt =
+                  isCheck ||
+                  (let victimValue = pieceValueByCode.[int (TPieceType.Piece(t, &position))]
+                   seeOnSquare &flipped ectx.Pinned ectx.KingSq (flippedOcc &&& ~~~(1UL <<< (b ^^^ 56))) (t ^^^ 56) victimValue > 0)
+                if worthIt then
+                  discovered.Add { Slider = name x; Blocker = name b; Target = name t; IsCheck = isCheck }
+              bs <- QBBOperations.ClearLSB bs
+        dsliders <- QBBOperations.ClearLSB dsliders
+    // Removable defenders (capture-the-defender): the enemy's sole-defender pairs,
+    // kept when the defender is not their king, we attack it, and taking it costs
+    // nothing by SEE (a free capture or an equal trade that wins the defended piece).
+    let removables = ResizeArray<RemovableDefenderInfo>()
+    if enemyKingOk then
+      let removableMap = System.Collections.Generic.Dictionary<int, ResizeArray<int>>()
+      for struct (dF, tF) in soleDefenderPairs &flipped ectx.Pinned ectx.KingSq enemyHangingFlipped do
+        if dF <> ectx.KingSq then
+          match removableMap.TryGetValue dF with
+          | true, lst -> lst.Add tF
+          | false, _ ->
+              let lst = ResizeArray<int>()
+              lst.Add tF
+              removableMap.[dF] <- lst
+      for kvp in removableMap do
+        let dF = kvp.Key
+        let d = dF ^^^ 56
+        let ourAttackers = attackersTo d occ &position &&& own
+        if ourAttackers <> 0UL then
+          let struct (_, cheapestVal) = leastValuablePiece &position ourAttackers
+          let theirDefenders =
+            effectiveAttackersOn &flipped ectx.Pinned ectx.KingSq flippedOcc dF
+            &&& PositionOps.sideToMove &flipped
+          // our king cannot start the capture if the defender is itself defended
+          let canCapture = not (cheapestVal >= 100 && theirDefenders <> 0UL)
+          if canCapture then
+            let dValue = pieceValueByCode.[int (TPieceType.Piece(d, &position))]
+            if seeOnSquare &flipped ectx.Pinned ectx.KingSq flippedOcc dF dValue >= 0 then
+              removables.Add
+                { Defender = name d
+                  Defends = kvp.Value |> Seq.map (fun tF -> name (tF ^^^ 56)) |> Seq.toArray }
     let inCheck = ctx.Checkers <> 0UL
     let blockSquares =
       if inCheck && QBBOperations.ClearLSB ctx.Checkers = 0UL then
@@ -319,13 +554,19 @@ let private sideInsightsFromPosition (position: Position inref) isStm =
       Pins = pins.ToArray()
       KingDangerSquares = squaresOf (kingAdj &&& ctx.KingDanger)
       KingEscapeSquares = squaresOf (kingAdj &&& ~~~ctx.KingDanger)
-      HangingPieces = hanging.ToArray() }
+      HangingPieces = hanging.ToArray()
+      Forks = forks.ToArray()
+      Skewers = skewers.ToArray()
+      OverloadedDefenders = overloads.ToArray()
+      DiscoveredAttacks = discovered.ToArray()
+      RemovableDefenders = removables.ToArray() }
 
 /// Computes pins and checks for BOTH colors of a FEN position, for GUI overlay
 /// display. The non-moving side is evaluated on a side-swapped copy (pins and check
 /// facts are properties of the position, not of whose turn it is). Throws on a
 /// malformed FEN — callers rendering live user input should catch.
 let getPositionInsights (fen: string) : PositionInsights =
+  let fen = normalizeFen fen
   let mutable pos = BoardHelper.getPosFromFen (Some fen)
   let stmSide = sideInsightsFromPosition &pos true
   let mutable flipped = PositionOps.copy &pos
@@ -347,6 +588,7 @@ type SafeDestination = { Dest: string; Net: int; IsCapture: bool }
 /// reused for the post-move exchange (approximation). Empty array when the square has
 /// no legal moves; throws on a malformed FEN.
 let getSafeDestinations (fen: string) (fromSquare: string) : SafeDestination[] =
+  let fen = normalizeFen fen
   let board = Board()
   board.LoadFen fen
   let mutable pos = board.Position
@@ -417,6 +659,7 @@ let private squareNamesIn (isWhiteFrame: bool) (bb: uint64) =
 /// Pieces of each color attacking `square`. Includes defenders of an occupied square
 /// (the piece standing on it is never its own attacker).
 let attackersOf (fen: string) (square: string) : SquareAttackers =
+  let fen = normalizeFen fen
   let absSq = absSquareIndex square
   let mutable pos = BoardHelper.getPosFromFen (Some fen)
   let isWhiteFrame = pos.STM = PositionOps.WHITE
@@ -432,33 +675,17 @@ let attackersOf (fen: string) (square: string) : SquareAttackers =
 /// Attack semantics, not move semantics: own-occupied targets are included, pawn
 /// pushes are not (only the two capture directions) — python-chess `attacks()` parity.
 let attacksFrom (fen: string) (square: string) : string[] =
+  let fen = normalizeFen fen
   let absSq = absSquareIndex square
   let mutable pos = BoardHelper.getPosFromFen (Some fen)
   let isWhiteFrame = pos.STM = PositionOps.WHITE
   let frameSq = QBBOperations.AbsSq(absSq, int pos.STM)
-  let bit = 1UL <<< frameSq
-  let occ = PositionOps.occupation &pos
-  if occ &&& bit = 0UL then [||]
-  else
-    let isStmPiece = (pos.PM &&& bit) <> 0UL
-    let attacks =
-      match int (TPieceType.Piece(frameSq, &pos)) with
-      | 1 ->  // pawn: STM pawns attack up-board in the frame, enemy pawns down-board
-        if isStmPiece then
-          ((bit <<< 9) &&& 0xFEFEFEFEFEFEFEFEUL) ||| ((bit <<< 7) &&& 0x7F7F7F7F7F7F7F7FUL)
-        else
-          ((bit >>> 9) &&& 0x7F7F7F7F7F7F7F7FUL) ||| ((bit >>> 7) &&& 0xFEFEFEFEFEFEFEFEUL)
-      | 2 -> QBBOperations.KnightDest.[frameSq]
-      | 3 -> GenBishop(frameSq, occ)
-      | 4 -> GenRook(frameSq, occ)
-      | 5 -> GenRook(frameSq, occ) ||| GenBishop(frameSq, occ)
-      | 6 -> QBBOperations.KingDest.[frameSq]
-      | _ -> 0UL
-    squareNamesIn isWhiteFrame attacks
+  squareNamesIn isWhiteFrame (pieceAttacksBB &pos frameSq)
 
 /// Some ray (full king-pinner line, both endpoints included) when the piece on
 /// `square` is absolutely pinned to its own king; None otherwise or for empty squares.
 let private tryPinRay (fen: string) (square: string) : string[] option =
+  let fen = normalizeFen fen
   let absSq = absSquareIndex square
   let mutable pos = BoardHelper.getPosFromFen (Some fen)
   let frameSq0 = QBBOperations.AbsSq(absSq, int pos.STM)
@@ -510,9 +737,11 @@ let validateFen (fen: string) : FenValidation =
   let errors = ResizeArray<string>()
   if String.IsNullOrWhiteSpace fen then errors.Add "FEN is empty"
   else
-    let fields = fen.Trim().Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
-    if fields.Length < 4 || fields.Length > 6 then
-      errors.Add (sprintf "expected 4-6 FEN fields, got %d" fields.Length)
+    // Short forms are normalized (missing trailing fields get defaults) before the
+    // checks, so "<placement> w" validates; only over-long field counts are errors.
+    let fields = (normalizeFen fen).Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
+    if fields.Length > 6 then
+      errors.Add (sprintf "expected at most 6 FEN fields, got %d" fields.Length)
     if fields.Length >= 1 then
       let ranks = fields.[0].Split('/')
       if ranks.Length <> 8 then errors.Add (sprintf "expected 8 ranks, got %d" ranks.Length)
@@ -596,6 +825,7 @@ type PositionStatus = { Status: string; InsufficientMaterial: bool }
 
 /// All legal moves of the position as UCI + SAN pairs with per-move predicates.
 let legalMovesOf (fen: string) : MoveNotation[] =
+  let fen = normalizeFen fen
   let board = Board()
   board.LoadFen fen
   let mutable pos = board.Position
@@ -623,6 +853,7 @@ let legalMovesOf (fen: string) : MoveNotation[] =
 
 /// Checkmate/stalemate/check detection and the dead-position approximation.
 let getPositionStatus (fen: string) : PositionStatus =
+  let fen = normalizeFen fen
   let board = Board()
   board.LoadFen fen
   let mutable pos = board.Position

@@ -113,21 +113,33 @@
                         <span class="sa-slider-value">@overlaySettings.MinPolicyThreshold.ToString("P1")</span>
                     </div>
                 }
-                @* Position insights need no engine — always available. Mutually exclusive with
-                   the policy overlay above (either direction switches the other off). *@
-                <div class="sa-overlay-field sa-insights">
-                    <label class="sa-insight-check" title="Pin rays, checker arrows and check-block squares (both colors)">
-                        <input type="checkbox" @bind="showInsightPins" @bind:after="OnInsightsToggled" /> Pins + checks
-                    </label>
-                    <label class="sa-insight-check" title="Squares around each king it cannot step to (red) and its escape squares (green)">
-                        <input type="checkbox" @bind="showInsightDanger" @bind:after="OnInsightsToggled" /> King danger
-                    </label>
-                    <label class="sa-insight-check" title="Pieces that are undefended or attacked by something cheaper (amber), with lines from their attackers">
-                        <input type="checkbox" @bind="showInsightHanging" @bind:after="OnInsightsToggled" /> Hanging
-                    </label>
-                    <label class="sa-insight-check" title="While a piece is selected or dragged: its legal squares colored by exchange outcome (green = safe or wins material, red = the piece can be won there)">
-                        <input type="checkbox" @bind="showSafeSquares" @bind:after="SaveInsightsSetting" /> Safe squares
-                    </label>
+                @* Position insights need no engine — always available. The overlay toggles
+                   live in a popover so the row stays one button wide; the button shows how
+                   many layers are active. Mutually exclusive with the policy overlay above
+                   (either direction switches the other off). *@
+                <div class="sa-overlay-field" style="position:relative;">
+                    <button class="sa-insights-btn @(ActiveInsightCount > 0 ? "active" : "")"
+                            @onclick="() => showInsightsPopover = !showInsightsPopover"
+                            title="Board insight overlays (pins, hanging pieces, tactics, safe squares)">
+                        Insights@(ActiveInsightCount > 0 ? $" ({ActiveInsightCount})" : "") ▾
+                    </button>
+                    @if (showInsightsPopover)
+                    {
+                        @* Invisible full-screen backdrop: any click outside the popover closes
+                           it (and is consumed — standard menu behavior). *@
+                        <div class="sa-popover-backdrop" @onclick="() => showInsightsPopover = false"></div>
+                        <div class="sa-insights-popover">
+                            <label class="sa-insight-check" title="The full threat family: pins and checks (orange/red), hanging pieces (amber, muted for the side to move), forks (purple), skewers (cyan), overloaded defenders (magenta), discovered attacks (teal), removable defenders (burnt orange)">
+                                <input type="checkbox" @bind="showInsightTactics" @bind:after="OnInsightsToggled" /> Tactics
+                            </label>
+                            <label class="sa-insight-check" title="Squares around each king it cannot step to (red) and its escape squares (green)">
+                                <input type="checkbox" @bind="showInsightDanger" @bind:after="OnInsightsToggled" /> King danger
+                            </label>
+                            <label class="sa-insight-check" title="While a piece is selected or dragged: its legal squares colored by exchange outcome (green = safe or wins material, red = the piece can be won there)">
+                                <input type="checkbox" @bind="showSafeSquares" @bind:after="SaveInsightsSetting" /> Safe squares
+                            </label>
+                        </div>
+                    }
                 </div>
             </div>
             <div class="sa-board-wrapper">
@@ -310,16 +322,20 @@
     // Position-insights overlay (pins/checks/king danger) — engine-free, computed from the
     // current FEN and cached by it, so every position path (moves, nav, PGN/EPD/FRC loads)
     // is covered without per-handler wiring. Mutually exclusive with the policy overlay.
-    private bool showInsightPins;
+    // Tactics bundles the whole threat family (pins/checks + hanging + the tactic
+    // motifs) behind one toggle — user preference, the granular split lives on /boardtest.
     private bool showInsightDanger;
-    private bool showInsightHanging;
+    private bool showInsightTactics;
     // Transient per-selection preview — deliberately NOT part of AnyInsightsOn: it draws
     // on top of any overlay and never participates in the policy-overlay exclusivity.
     private bool showSafeSquares;
     private string insightsFen;
     private BoardUtils.PositionInsights cachedInsights;
 
-    private bool AnyInsightsOn => showInsightPins || showInsightDanger || showInsightHanging;
+    private bool AnyInsightsOn => showInsightDanger || showInsightTactics;
+    private bool showInsightsPopover;
+    private int ActiveInsightCount =>
+        (showInsightTactics ? 1 : 0) + (showInsightDanger ? 1 : 0) + (showSafeSquares ? 1 : 0);
 
     private BoardUtils.PositionInsights Insights
     {
@@ -336,8 +352,8 @@
         }
     }
 
-    private IReadOnlyList<EbArrow> InsightArrows => InsightShapes.Arrows(Insights, showInsightPins, showInsightHanging);
-    private IReadOnlyList<EbCircle> InsightCircles => InsightShapes.Circles(Insights, showInsightPins, showInsightDanger, showInsightHanging);
+    private IReadOnlyList<EbArrow> InsightArrows => InsightShapes.Arrows(Insights, showInsightTactics, showInsightTactics, showInsightTactics);
+    private IReadOnlyList<EbCircle> InsightCircles => InsightShapes.Circles(Insights, showInsightTactics, showInsightDanger, showInsightTactics, showInsightTactics);
 
     private ElementReference pgnChart;
     private IJSObjectReference chessModule;
@@ -990,7 +1006,7 @@
         // Exclusivity: picking an engine overlay switches the insights overlay off.
         if (selectedOverlay != OverlaySettings.None && AnyInsightsOn)
         {
-            showInsightPins = showInsightDanger = showInsightHanging = false;
+            showInsightTactics = showInsightDanger = false;
             SaveInsightsSetting();
         }
         overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
@@ -1015,9 +1031,8 @@
     {
         var s = SettingsService.Settings;
         var tokens = new List<string>();
-        if (showInsightPins) tokens.Add("pins");
+        if (showInsightTactics) tokens.Add("tactics");
         if (showInsightDanger) tokens.Add("danger");
-        if (showInsightHanging) tokens.Add("hanging");
         if (showSafeSquares) tokens.Add("safe");
         if (tokens.Count == 0) s.PositionInsightsOverlay.Remove("single-analysis");
         else s.PositionInsightsOverlay["single-analysis"] = string.Join("+", tokens);
@@ -1029,9 +1044,9 @@
         if (SettingsService.Settings.PositionInsightsOverlay.TryGetValue("single-analysis", out var mode))
         {
             var tokens = mode.Split('+', StringSplitOptions.RemoveEmptyEntries);
-            showInsightPins = tokens.Contains("pins");
+            // "pins"/"hanging" are pre-merge tokens: they fold into the tactics bundle
+            showInsightTactics = tokens.Contains("tactics") || tokens.Contains("pins") || tokens.Contains("hanging");
             showInsightDanger = tokens.Contains("danger");
-            showInsightHanging = tokens.Contains("hanging");
             showSafeSquares = tokens.Contains("safe");
         }
     }

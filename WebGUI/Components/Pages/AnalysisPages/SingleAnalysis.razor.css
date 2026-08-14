@@ -254,7 +254,7 @@
 }
 
 .single-analysis .sa-overlay-field input[type="range"] {
-    width: 140px;
+    width: 90px;
     height: 6px;
     -webkit-appearance: none;
     background: rgba(100, 108, 130, 0.4);
@@ -271,20 +271,65 @@
     cursor: pointer;
 }
 
-.single-analysis .sa-insights {
-    gap: 14px;
+.single-analysis .sa-insights-btn {
+    background: var(--sa-input-bg);
+    border: 1px solid rgba(120, 129, 152, 0.25);
+    border-radius: 8px;
+    color: var(--sa-text);
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.single-analysis .sa-insights-btn:hover {
+    border-color: rgba(120, 129, 152, 0.5);
+}
+
+.single-analysis .sa-insights-btn.active {
+    color: var(--sa-accent);
+    border-color: var(--sa-accent);
+}
+
+.single-analysis .sa-popover-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: transparent;
+}
+
+.single-analysis .sa-insights-popover {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #2a2a3e;
+    border: 1px solid #3a3a52;
+    border-radius: 6px;
+    padding: 10px 14px;
+    z-index: 100;
+    min-width: 170px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .single-analysis .sa-insight-check {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.7rem;
-    letter-spacing: 0.06em;
+    gap: 8px;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--sa-muted);
     cursor: pointer;
     user-select: none;
+    white-space: nowrap;
+}
+
+.single-analysis .sa-insight-check:hover {
+    color: var(--sa-text);
 }
 
 .single-analysis .sa-insight-check input[type="checkbox"] {

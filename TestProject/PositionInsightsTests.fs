@@ -201,6 +201,118 @@ let ``King attacker does not trigger the cheaper-attacker rule`` () =
         Assert.Empty(i.Black.HangingPieces)
         Assert.Empty(i.White.HangingPieces)
 
+// --- Forks / skewers / overloaded defenders -------------------------------
+
+[<Fact>]
+let ``Royal knight fork on king and hanging rook`` () =
+    // Nc7+ forks Ke8 and the undefended Ra8; the knight itself is safe.
+    let i = getPositionInsights "r3k3/2N5/8/8/8/8/8/4K3 b - - 0 1"
+    let forks = i.White.Forks |> Array.map (fun f -> f.Forker, sorted f.Targets)
+    Assert.Equal<(string * string[])[]>([| ("c7", [| "a8"; "e8" |]) |], forks)
+    Assert.Empty(i.Black.Forks)
+
+[<Fact>]
+let ``A hanging forker is no fork`` () =
+    // Same shape, but Rc4 attacks the undefended knight: a capturable "forker" is fake.
+    let i = getPositionInsights "r3k3/2N5/8/8/2r5/8/8/4K3 b - - 0 1"
+    Assert.Empty(i.White.Forks)
+    Assert.Empty(i.Black.Forks)
+
+[<Fact>]
+let ``King-front skewer along the e-file`` () =
+    // Re1+ hits Ke5 with Qe8 behind: the king must move and the queen falls.
+    let i = getPositionInsights "4q3/8/8/4k3/8/8/8/4R1K1 b - - 0 1"
+    let sk = i.White.Skewers |> Array.map (fun s -> s.Attacker, s.Front, s.Back, s.Kind)
+    Assert.Equal<(string * string * string * string)[]>([| ("e1", "e5", "e8", "skewer") |], sk)
+    Assert.Empty(i.Black.Skewers)
+
+[<Fact>]
+let ``Relative pin: knight in front of the queen, not an absolute pin`` () =
+    // Bb5 vs Nc6 with Qd7 behind on the same diagonal. With d7 occupied the b5-e8
+    // diagonal has two blockers, so this is NOT in Pins — it is the relative pin.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/3q4/2n5/1B6/8/8/8/4K3 %s - - 0 1" stm)
+        let sk = i.White.Skewers |> Array.map (fun s -> s.Attacker, s.Front, s.Back, s.Kind)
+        Assert.Equal<(string * string * string * string)[]>([| ("b5", "c6", "d7", "relativePin") |], sk)
+        Assert.Empty(i.Black.Pins)
+        Assert.Empty(i.Black.Skewers)
+        // the lone defender of one piece is not overloaded
+        Assert.Empty(i.Black.OverloadedDefenders)
+
+[<Fact>]
+let ``Equal-value alignment is neither skewer nor pin`` () =
+    // Re1 vs Re4 with Re6 behind: rook behind rook is x-ray pressure, not a tactic.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/8/4r3/8/4r3/8/8/4R1K1 %s - - 0 1" stm)
+        Assert.Empty(i.White.Skewers)
+        Assert.Empty(i.Black.Skewers)
+
+[<Fact>]
+let ``Overloaded king defends two attacked pawns alone`` () =
+    // Bb5 attacks d7 and Qh5 attacks f7; both pawns are held only by Ke8 and each
+    // hangs the moment the king is lifted off the board.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/3p1p2/8/1B5Q/8/8/8/4K3 %s - - 0 1" stm)
+        let ov = i.Black.OverloadedDefenders |> Array.map (fun o -> o.Defender, sorted o.Defends)
+        Assert.Equal<(string * string[])[]>([| ("e8", [| "d7"; "f7" |]) |], ov)
+        Assert.Empty(i.White.OverloadedDefenders)
+
+[<Fact>]
+let ``A second defender relieves the overload`` () =
+    // Same position plus Bg8 covering f7: the king is no longer the sole defender.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k1b1/3p1p2/8/1B5Q/8/8/8/4K3 %s - - 0 1" stm)
+        Assert.Empty(i.Black.OverloadedDefenders)
+
+// --- Discovered attacks / removable defenders ------------------------------
+
+[<Fact>]
+let ``Discovered check: knight blocks the rook's file to the king`` () =
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "3k4/8/8/8/3N4/8/8/3RK3 %s - - 0 1" stm)
+        let da = i.White.DiscoveredAttacks |> Array.map (fun d -> d.Slider, d.Blocker, d.Target, d.IsCheck)
+        Assert.Equal<(string * string * string * bool)[]>([| ("d1", "d4", "d8", true) |], da)
+        Assert.Empty(i.Black.DiscoveredAttacks)
+
+[<Fact>]
+let ``Discovered attack on a queen that hangs once the blocker moves`` () =
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "3q3k/8/8/8/3N4/8/8/3RK3 %s - - 0 1" stm)
+        let da = i.White.DiscoveredAttacks |> Array.map (fun d -> d.Slider, d.Blocker, d.Target, d.IsCheck)
+        Assert.Equal<(string * string * string * bool)[]>([| ("d1", "d4", "d8", false) |], da)
+
+[<Fact>]
+let ``No discovered attack when the unveiled exchange wins nothing`` () =
+    // Rook (defended by Rc8) behind the knight: RxR RxR is an equal trade.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "2rr3k/8/8/8/3N4/8/8/3RK3 %s - - 0 1" stm)
+        Assert.Empty(i.White.DiscoveredAttacks)
+
+[<Fact>]
+let ``A pinned blocker cannot unveil`` () =
+    // Rf1-Nf3-Kf8 would be a discovered check, but Bh5 pins Nf3 to Kd1.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "5k2/8/8/7b/8/5N2/8/3K1R2 %s - - 0 1" stm)
+        Assert.Equal<(string * string * string)[]>([| ("h5", "f3", "d1") |], i.White.Pins |> Array.map pinTriple)
+        Assert.Empty(i.White.DiscoveredAttacks)
+
+[<Fact>]
+let ``Removable defender: trade the rook that alone holds the knight`` () =
+    // Rd7 is the sole defender of Nd5 (attacked by Nc3); Ra7xd7 Kxd7 is an equal
+    // trade (SEE 0) that leaves the knight to be won — the capturingDefender motif.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/R2r4/8/3n4/8/2N5/1P6/4K3 %s - - 0 1" stm)
+        let rd = i.White.RemovableDefenders |> Array.map (fun r -> r.Defender, sorted r.Defends)
+        Assert.Equal<(string * string[])[]>([| ("d7", [| "d5" |]) |], rd)
+        Assert.Empty(i.Black.RemovableDefenders)
+
+[<Fact>]
+let ``A king defender is never removable`` () =
+    // Ke8 alone holds both pawns (the overload position) but cannot be captured.
+    for stm in [ "w"; "b" ] do
+        let i = getPositionInsights (sprintf "4k3/3p1p2/8/1B5Q/8/8/8/4K3 %s - - 0 1" stm)
+        Assert.Empty(i.White.RemovableDefenders)
+
 // --- Safe destinations (safe-square preview) ------------------------------
 
 [<Fact>]

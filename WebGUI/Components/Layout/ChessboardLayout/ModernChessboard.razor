@@ -876,8 +876,12 @@
                     StateHasChanged();
                     return;
                 }
+                // Short FENs ("<placement> w") validate but would crash the raw parser —
+                // hand the board the default-filled form.
+                var normalizedInput = BoardUtils.normalizeFen(fenPart)
+                    + (movesIdx >= 0 ? fenWithMoves.Substring(movesIdx) : "");
                 ChessBoard.ResetBoardState();
-                ChessBoard.PlayFenWithMoves(fenWithMoves);
+                ChessBoard.PlayFenWithMoves(normalizedInput);
                 fenError = null;
                 fen = ChessBoard.FEN();
                 await ClearOverlayOnPositionChange();

@@ -248,7 +248,7 @@
 }
 
 .dual-analysis .da-overlay-field input[type="range"] {
-    width: 140px;
+    width: 90px;
     height: 6px;
     -webkit-appearance: none;
     background: rgba(100, 108, 130, 0.4);

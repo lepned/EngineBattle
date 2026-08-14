@@ -167,8 +167,14 @@ EB as an oracle. For a FEN it emits `status` (`checkmate`/`stalemate`/`check`/`o
 or kings plus same-colored bishops), the full `legalMoves` list as UCI + SAN pairs
 (castling SAN is spelled `0-0`) with per-move predicates (`isCapture`, `isCastling`,
 `isEnPassant`, `givesCheck` — python-chess `gives_check()` parity), and both colors' insights (king, checkers, check-block
-squares, pins as attacker/pinned/king triples, king danger/escape squares, and hanging
-pieces judged by static exchange evaluation). With a square argument it adds per-square
+squares, pins as attacker/pinned/king triples, king danger/escape squares, hanging
+pieces judged by static exchange evaluation, and the tactics family: `forks` (a safe
+piece attacking two or more losable targets or the king), `skewers` (kind `skewer` or
+`relativePin` for two enemy pieces on one slider ray), `overloadedDefenders`
+(sole defenders of two or more pieces that hang without them), `discoveredAttacks`
+(a slider unveils check or a winning attack when its own blocker moves), and
+`removableDefenders` (an enemy sole defender that can be captured without loss,
+winning what it defended)). With a square argument it adds per-square
 data: `attackersWhite`/`attackersBlack`, the piece's attack set (`attacks`), `isPinned`
 and the `pinRay` (full king–pinner line), and `safeDestinations` — every legal move of
 that piece with its net material outcome (`net` > 0 wins material, 0 safe, < 0 the piece

@@ -110,7 +110,22 @@ let ``validateFen reports each structural error class`` () =
     Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkz - 0 1", (fun (e: string) -> e.Contains "castling"))
     Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e5 0 1", (fun (e: string) -> e.Contains "en-passant"))
     Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - x 1", (fun (e: string) -> e.Contains "halfmove"))
-    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w", (fun (e: string) -> e.Contains "4-6 FEN fields"))
+    Assert.Contains(errorsOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 extra", (fun (e: string) -> e.Contains "at most 6"))
+
+[<Fact>]
+let ``validateFen accepts short FENs via normalization`` () =
+    // "<placement> w" is a common paste form: missing trailing fields get defaults.
+    Assert.True((validateFen "3k4/8/8/8/3N4/8/8/3RK3 w").IsValid)
+    Assert.True((validateFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w").IsValid)
+    Assert.Equal("3k4/8/8/8/3N4/8/8/3RK3 w - - 0 1", normalizeFen "3k4/8/8/8/3N4/8/8/3RK3 w")
+    Assert.Equal("4k3/4r3/8/8/4Q3/8/8/4K3 w - - 0 1", normalizeFen "4k3/4r3/8/8/4Q3/8/8/4K3 w - -")
+    // full FENs pass through untouched
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                 normalizeFen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    // and the FEN-based APIs are normalization-safe end to end
+    let i = getPositionInsights "3k4/8/8/8/3N4/8/8/3RK3 w"
+    Assert.Equal(1, i.White.DiscoveredAttacks.Length)
+    Assert.Equal(20, (legalMovesOf "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w").Length)
 
 [<Fact>]
 let ``validateFen rejects side not to move in check`` () =
