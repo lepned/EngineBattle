@@ -70,6 +70,7 @@ type VerbResult =
     | Redash of configFile:string
     | GUI of page: string * port: int option
     | PgnSummary of path:string
+    | PgnCheck of path:string
     | Validate of configFile:string
     | Elo of path:string
     | Speed of path:string
@@ -614,6 +615,11 @@ module CustomParser =
                     let path = args.[index + 1]
                     parseArgs args (index + 2) (Verb (PgnSummary path) :: acc)
                 else failwith "Missing parameter for pgnsummary"
+            | "pgncheck" | "pc" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (PgnCheck path) :: acc)
+                else failwith "Missing parameter for pgncheck"
             | "validate" | "v" ->
                 if index + 1 < args.Length then
                     let configFile = args.[index + 1]

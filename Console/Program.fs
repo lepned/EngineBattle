@@ -2533,6 +2533,58 @@ module Program =
                             ChessLibrary.Test.ParsingTests.pgnTerminationSummary normalizedPath 2 4.0 (3.0, 0.5) |> ignore
                         with ex ->
                             printfn "Error processing PGN file: %s" ex.Message
+                | Verb (PgnCheck path) ->
+                    // Pure parser health check: stream the file (never materialize it),
+                    // report structure and throughput. Deliberately does NO analysis —
+                    // pgnsummary/elo/speed all replay boards or build statistics, so they
+                    // measure much more than parsing when validating a large database.
+                    let normalizedPath = normalizePath path
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                    else
+                        let sizeMb = float (FileInfo(normalizedPath).Length) / 1048576.0
+                        let sw = Diagnostics.Stopwatch.StartNew()
+                        let mutable games = 0
+                        let mutable plies = 0L
+                        let mutable emptyGames = 0
+                        let mutable noResult = 0
+                        let mutable withFen = 0
+                        let mutable longest = 0
+                        let mutable failed = 0
+                        try
+                            for game in FullPGNParser.parsePgnFile normalizedPath do
+                                games <- games + 1
+                                try
+                                    let n = Seq.length game.Mainline
+                                    plies <- plies + int64 n
+                                    if n = 0 then emptyGames <- emptyGames + 1
+                                    if n > longest then longest <- n
+                                    if String.IsNullOrWhiteSpace game.GameMetaData.Result then noResult <- noResult + 1
+                                    if not (String.IsNullOrWhiteSpace game.GameMetaData.Fen) then withFen <- withFen + 1
+                                with _ -> failed <- failed + 1
+                                if games % 100_000 = 0 then
+                                    printfn "  %s games, %s plies, %.1f s..."
+                                        (games.ToString("N0")) (plies.ToString("N0")) sw.Elapsed.TotalSeconds
+                            sw.Stop()
+                            let secs = max sw.Elapsed.TotalSeconds 0.001
+                            let peakMb = float (Diagnostics.Process.GetCurrentProcess().PeakWorkingSet64) / 1048576.0
+                            printfn ""
+                            printfn "File           : %s (%.1f MB)" normalizedPath sizeMb
+                            printfn "Games          : %s" (games.ToString("N0"))
+                            printfn "Plies          : %s (avg %.1f per game)"
+                                (plies.ToString("N0")) (if games > 0 then float plies / float games else 0.0)
+                            printfn "Longest game   : %d plies" longest
+                            printfn "Games w/o moves: %s" (emptyGames.ToString("N0"))
+                            printfn "Games w/o result tag: %s" (noResult.ToString("N0"))
+                            printfn "Games with FEN tag  : %s" (withFen.ToString("N0"))
+                            printfn "Games that threw    : %s" (failed.ToString("N0"))
+                            printfn "Time           : %.1f s (%.1f MB/s, %s plies/s)"
+                                secs (sizeMb / secs) ((int64 (float plies / secs)).ToString("N0"))
+                            printfn "Peak memory    : %.0f MB" peakMb
+                            if failed > 0 then exit 1
+                        with ex ->
+                            printfn "PGN parsing failed after %s games: %s" (games.ToString("N0")) ex.Message
+                            exit 1
                 | Verb (Elo path) ->
                     let normalizedPath = normalizePath path
                     if not (File.Exists normalizedPath) then
