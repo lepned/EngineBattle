@@ -2,12 +2,16 @@
 
 
 <div class="pv-board-container @GetContainerSizeClass()">
+	@* No coordinates or frame on the PV pair: these sit beside the main board at a
+	   fraction of its size, where both are unreadable and only cost board pixels. *@
 	<div class="pv-board left-board @GetBoardSizeClass()">
 		<EbChessboard Fen="@whiteFen" SizePx="null"
+					  ShowCoordinates="false" FrameWidthPct="0"
 					  LastMoveFrom="@whiteFrom" LastMoveTo="@whiteTo" LastMoveColor="@whiteMoveColor" />
 	</div>
 	<div class="pv-board right-board @GetBoardSizeClass()">
 		<EbChessboard Fen="@blackFen" SizePx="null"
+					  ShowCoordinates="false" FrameWidthPct="0"
 					  LastMoveFrom="@blackFrom" LastMoveTo="@blackTo" LastMoveColor="@blackMoveColor" />
 	</div>
 </div>

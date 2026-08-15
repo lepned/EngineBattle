@@ -3,8 +3,12 @@
 
 @using WebGUI.Components.Layout.ChessboardLayout
 
+@* Coordinates and the board frame are off by design: at tile size neither is legible,
+   and both spend pixels the position itself needs. *@
 <EbChessboard Fen="@(string.IsNullOrEmpty(Fen) ? StartPos : Fen)"
               SizePx="@Size"
+              ShowCoordinates="false"
+              FrameWidthPct="0"
               LastMoveFrom="@FromSq"
               LastMoveTo="@ToSq"
               LastMoveColor="@Color" />
