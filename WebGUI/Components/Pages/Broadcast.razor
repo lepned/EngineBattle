@@ -125,9 +125,9 @@
                                   ShowPlayerInfo=true MoveEvals="@moveEvals"
                                   OnMoveMadeOnBoard="OnUserMoveMade" OnNewFENOnBoard="OnBoardFenChanged"
                                   OnBoardFlipped="f => boardFlipped = f">
-                    <BoardLeft>
+                    <EvalBarContent>
                         <EvalBar Cp="@kibCp" Mate="@kibMate" Flipped="@boardFlipped" />
-                    </BoardLeft>
+                    </EvalBarContent>
                     <AboveMoveList>
                         <KibitzerPanel ChessBoard="@focusBoard" Id="nnInput1"
                                        InitialEngine="Engine" InitialEnginePath="@engineConfigPath"

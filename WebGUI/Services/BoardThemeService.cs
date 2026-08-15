@@ -27,7 +27,10 @@ public record BoardTheme(
     double PieceScale = 1.0,
     string CoordPlacement = "inside",
     double FramePct = 0,
-    string FrameColor = "#3B3733");
+    string FrameColor = "#3B3733",
+    string EvalBarPlacement = "left",
+    string EvalBarDark = "#3d4148",
+    string EvalBarLight = "#e8e8e4");
 
 /// <summary>
 /// Singleton providing the current board theme, resolved from GlobalSettings
@@ -50,9 +53,33 @@ public class BoardThemeService
         ["midnight"] = ("Midnight Blue", "#8CA2C0", "#4A5A78", "rgba(160, 200, 255, 0.45)", "rgba(160, 200, 255, 0.45)", "#252E40"),
     };
 
-    /// <summary>The preset's default board-frame color; neutral dark for custom/unknown.</summary>
-    public static string PresetFrameColor(string presetKey) =>
-        presets.TryGetValue(presetKey ?? "", out var p) ? p.Frame : "#3B3733";
+    /// <summary>The preset's default board-frame color; neutral dark for unknown keys.
+    /// A custom theme has no hand-picked frame, so one is derived from its dark square the
+    /// same way the presets' were — otherwise the frame and the themed eval bar would sit
+    /// on a custom board in a colour taken from nowhere.</summary>
+    public static string PresetFrameColor(string presetKey, string customDarkSquare = null) =>
+        presets.TryGetValue(presetKey ?? "", out var p) ? p.Frame
+        : Darken(customDarkSquare, 0.45) ?? "#3B3733";
+
+    /// <summary>Mixes a #rrggbb toward black by at least `amount`, and further if needed to
+    /// come down to `maxLuminance`. The ceiling mirrors Lighten's floor: a user can pick a
+    /// pale custom frame colour, and the eval bar's dark half must stay dark against its
+    /// light half. Null for non-hex input.</summary>
+    private static string Darken(string hex, double amount, double maxLuminance = 255)
+    {
+        if (hex is not { Length: 7 } || hex[0] != '#'
+            || !int.TryParse(hex.AsSpan(1), System.Globalization.NumberStyles.HexNumber,
+                             System.Globalization.CultureInfo.InvariantCulture, out var rgb))
+            return null;
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        // Mixing toward black scales luminance by (1 - a), so the amount that reaches the
+        // ceiling is solvable directly.
+        double lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        double needed = lum <= maxLuminance || lum <= 0 ? 0 : 1 - (maxLuminance / lum);
+        double a = Math.Clamp(Math.Max(amount, needed), 0, 1);
+        int Mix(int c) => (int)Math.Round(c * (1 - a));
+        return $"#{Mix(r):X2}{Mix(g):X2}{Mix(b):X2}";
+    }
 
     public static IReadOnlyList<(string Key, string Name)> Presets { get; } =
         presets.Select(kv => (kv.Key, kv.Value.Name)).Concat(new[] { ("custom", "Custom") }).ToList();
@@ -158,10 +185,47 @@ public class BoardThemeService
         _ => 2.2,
     };
 
-    /// <summary>Resolves the frame width/color, including the coordinate-placement coupling:
-    /// outside coordinates need a gutter, so "off" + outside yields an invisible
-    /// (transparent) gutter, and large coordinate sizes widen any gutter to fit the text.
-    /// An empty color setting falls back to the theme's default (per-preset frame color).</summary>
+    /// <summary>Minimum gutter width (pct of board width) an in-frame eval bar needs to
+    /// stay usable — about 15px on a 700px board.</summary>
+    public const double MinGutterPctForEvalBar = 2.2;
+
+    /// <summary>Mixes a #rrggbb toward white by at least `amount`, and further if needed to
+    /// reach `minLuminance`. Without the floor a custom theme with dark "light" squares
+    /// would produce an eval bar whose two halves are hard to tell apart. Non-hex values
+    /// pass through untouched.</summary>
+    private static string Lighten(string hex, double amount, double minLuminance = 200)
+    {
+        if (hex is not { Length: 7 } || hex[0] != '#'
+            || !int.TryParse(hex.AsSpan(1), System.Globalization.NumberStyles.HexNumber,
+                             System.Globalization.CultureInfo.InvariantCulture, out var rgb))
+            return hex;
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        // Mixing toward white maps luminance L to L + (255 - L) * a, so the amount that
+        // reaches the floor is solvable directly.
+        double lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        double needed = lum >= minLuminance ? 0 : (minLuminance - lum) / (255 - lum);
+        double a = Math.Clamp(Math.Max(amount, needed), 0, 1);
+        int Mix(int c) => (int)Math.Round(c + (255 - c) * a);
+        return $"#{Mix(r):X2}{Mix(g):X2}{Mix(b):X2}";
+    }
+
+    /// <summary>Eval-bar colors for a theme. Deliberately NOT the raw square colors: on
+    /// several presets those are two mid-tones (EB Classic Blue is #B1D8DB over #619EB3)
+    /// and a bar needs contrast to be readable at a glance. The dark side reuses the
+    /// frame color — already a darkened, desaturated dark square — and the light side is
+    /// the light square pulled toward white with a luminance floor, so the hues stay
+    /// recognisably the theme's while the contrast stays high on every preset.</summary>
+    public static (string Dark, string Light) EvalBarColors(string frameColor, string lightSquare) =>
+        (Darken(frameColor, 0, maxLuminance: 110) ?? "#3d4148", Lighten(lightSquare, 0.55));
+
+    /// <summary>Resolves the frame width/color. Outside coordinates force a gutter into
+    /// existence — with the frame off they yield an invisible (transparent) one — and large
+    /// coordinate sizes widen any gutter to fit the text. An empty color setting falls back
+    /// to the theme's default (per-preset frame color).
+    /// The eval bar's own gutter floor is deliberately NOT applied here: it is per board
+    /// (only boards that draw a bar need it), so ModernChessboard and StreamingChessboard
+    /// apply MinGutterPctForEvalBar themselves. Anything positioned against the frame must
+    /// therefore use the board's own resolved width, not this one.</summary>
     public static (double Pct, string Color) ResolveFrame(string widthKey, string colorSetting, string placement, string defaultColor, string coordSizeKey = "medium")
     {
         var pct = FramePctOf(widthKey);
@@ -193,8 +257,9 @@ public class BoardThemeService
         var blackMoveArrow = string.IsNullOrEmpty(s.BoardBlackMoveArrowColor) ? "#383231" : s.BoardBlackMoveArrowColor;
         var pieceScale = (s.BoardPieceScale is >= 50 and <= 100 ? s.BoardPieceScale : 100) / 100.0;
         var coordPlacement = s.BoardCoordinatePlacement == "outside" ? "outside" : "inside";
+        var evalBarPlacement = s.EvalBarPlacement == "right" ? "right" : "left";
         var (framePct, frameColor) = ResolveFrame(s.BoardFrameWidth, s.BoardFrameColor, coordPlacement,
-            PresetFrameColor(s.BoardThemePreset), s.BoardCoordinateSize);
+            PresetFrameColor(s.BoardThemePreset, s.BoardCustomDarkColor), s.BoardCoordinateSize);
 
         string light, dark, hlWhite, hlBlack;
         if (s.BoardThemePreset == "custom")
@@ -219,11 +284,19 @@ public class BoardThemeService
             hlWhite = hlBlack = c.Length == 7 && c[0] == '#' ? c + "CC" : c;
         }
 
+        // The themed bar follows the frame color, which is itself derived from the dark
+        // square (or overridden by the user), so a custom frame color carries through.
+        // The resolved color can be "transparent" when a gutter was forced into existence
+        // with the frame off — fall back to the preset's color so the bar stays visible.
+        var evalFrameColor = frameColor is { Length: 7 } && frameColor[0] == '#'
+            ? frameColor : PresetFrameColor(s.BoardThemePreset, s.BoardCustomDarkColor);
+        var (evalDark, evalLight) = EvalBarColors(evalFrameColor, light);
+
         return new BoardTheme(light, dark, hlWhite, hlBlack, pieceSet, s.ShowTournamentBoardCoordinates,
             CoordSizeCss(s.BoardCoordinateSize), s.BoardCoordinateColor ?? "",
             highlightStyle, selRing, arrow, policyLabel, arrowWidth, policyStyle, policyIndicator, policyArrow,
             policyArrowOp, policyBg, policyFont, policyChip, whiteMoveArrow, blackMoveArrow, pieceScale,
-            coordPlacement, framePct, frameColor);
+            coordPlacement, framePct, frameColor, evalBarPlacement, evalDark, evalLight);
     }
 
     /// <summary>Resolve a theme from arbitrary values (used by the settings-page live preview).</summary>

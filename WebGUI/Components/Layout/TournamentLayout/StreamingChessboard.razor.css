@@ -67,3 +67,9 @@
     font-weight: 600;
     color: var(--mud-palette-text-primary);
 }
+
+/* Opening name / start FEN under the board. The board is a flush square, so without a
+   little breathing room the text reads as part of it. */
+.sb-opening {
+    margin-top: 10px;
+}

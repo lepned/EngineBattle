@@ -19,7 +19,7 @@
 {
     @* Outside coordinates live in the frame gutter: 8 flex-distributed labels line up
        with the ranks/files because the gutter spans exactly the inner board edge. *@
-    <div class="eb-gutter rank">
+    <div class="eb-gutter rank @(RanksOnRight ? "right" : "")">
         @for (int row = 0; row < 8; row++)
         {
             <span>@((Flipped ? row : 7 - row) + 1)</span>
@@ -32,6 +32,19 @@
             <span class="@(f == 6 ? "descender" : "")">@((char)('a' + f))</span>
         }
     </div>
+}
+@if (EffFramePct > 0)
+{
+    @* Content living in the frame itself (eval bars). Same geometry as the rank gutter,
+       so it lines up with the squares without any inset math of its own. *@
+    @if (GutterLeft != null)
+    {
+        <div class="eb-gutter-slot left">@GutterLeft</div>
+    }
+    @if (GutterRight != null)
+    {
+        <div class="eb-gutter-slot right">@GutterRight</div>
+    }
 }
 <div class="eb-board eb-style-@ThemeService.Current.HighlightStyle">
     @{ var board = boardCells; }
@@ -158,6 +171,11 @@
     /// <summary>Coordinate placement override "inside"/"outside" (appearance-page live
     /// preview); null follows the theme.</summary>
     [Parameter] public string CoordinatePlacement { get; set; }
+    /// <summary>Content drawn inside the left frame gutter (an eval bar). Ignored when
+    /// there is no frame — callers that need one must ensure a frame exists.</summary>
+    [Parameter] public RenderFragment GutterLeft { get; set; }
+    /// <summary>Content drawn inside the right frame gutter (a second eval bar).</summary>
+    [Parameter] public RenderFragment GutterRight { get; set; }
     // Colors and piece set default to the app-wide board theme (BoardThemeService,
     // user-configurable on the Settings page). Explicit parameters override the theme.
     // The highlight replaces the square color (as the pre-migration CSS did), and the
@@ -193,10 +211,22 @@
     // gutter); the params only override for the appearance-page preview.
     private double EffFramePct => FrameWidthPct ?? ThemeService.Current.FramePct;
     private string EffFrameColor => FrameColorCss ?? ThemeService.Current.FrameColor;
+    /// Both gutters host an eval bar (dual analysis), leaving nowhere for the rank labels.
+    private bool BothGuttersTaken => GutterLeft != null && GutterRight != null && EffFramePct > 0;
+
+    /// Outside coordinates need a free gutter. With both taken the labels fall back inside
+    /// the squares — files could technically stay in the bottom gutter, but half in and
+    /// half out looks accidental.
     private bool OutsideCoords =>
-        (CoordinatePlacement ?? ThemeService.Current.CoordPlacement) == "outside" && EffFramePct > 0;
+        (CoordinatePlacement ?? ThemeService.Current.CoordPlacement) == "outside"
+        && EffFramePct > 0 && !BothGuttersTaken;
     private bool InsideCoordsVisible => CoordinatesVisible && !OutsideCoords;
     private bool GutterCoordsVisible => CoordinatesVisible && OutsideCoords;
+
+    /// <summary>Rank labels normally sit in the left gutter, but they move aside when an
+    /// eval bar is placed there: the labels read equally well on either side, whereas the
+    /// bar's side was chosen deliberately.</summary>
+    private bool RanksOnRight => GutterLeft != null && EffFramePct > 0;
 
     // Auto contrast for gutter coordinates: light text on a dark frame, dark on light,
     // neutral grey when the gutter is transparent. --eb-coord-color still wins when set.

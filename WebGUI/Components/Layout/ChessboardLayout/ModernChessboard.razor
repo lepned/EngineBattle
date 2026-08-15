@@ -38,7 +38,9 @@
             <div class="mcb-player-info">@(isBoardFlipped ? WhitePlayerInfo : BlackPlayerInfo)</div>
         }
 
-        <div class="mcb-board-wrapper @(BoardLeft != null || BoardRight != null ? "mcb-with-left" : "")">
+        @* EvalBarContent is placed by the board rather than the host page: every page that
+           shows a single bar would otherwise repeat the same left/right decision. *@
+        <div class="mcb-board-wrapper @(HasSideContent ? "mcb-with-left" : "")">
             @if (BoardLeft != null)
             {
                 <div class="mcb-board-left">@BoardLeft</div>
@@ -46,26 +48,33 @@
             <div class="chessboard-root" style="position:relative;" @ref="board">
                 <EbChessboard @ref="ebBoard" Fen="@fen" SizePx="null" Flipped="@isBoardFlipped" ShowCoordinates="true"
                               Animate="true"
+                              GutterLeft="@GutterLeftContent"
+                              GutterRight="@GutterRightContent"
+                              FrameWidthPct="@BoardFramePct"
+                              FrameColorCss="@BoardFrameColor"
                               LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
                               SelectedSquare="@selectedSquare"
                               Arrows="@MergedArrows" Circles="@MergedCircles" Labels="@overlayLabels"
                               OnSquareClicked="OnBoardSquareClicked" />
                 @if (showPromotionDialog)
                 {
+                    @* Styled from the board theme rather than the app surface: the dialog
+                       sits on the board, and its pieces must be the set the board uses —
+                       it used to hard-code the wikipedia set regardless of the choice. *@
                     <div class="promotion-dialog" style="@PromotionDialogStyle">
-                        <MudPaper Elevation="3" Class="pa-1">
-                            <MudStack Row="true" Spacing="0">
-                                @foreach (var p in new[] { "q", "r", "b", "n" })
-                                {
-                                    var piece = p;
-                                    <MudIconButton OnClick="@(() => SelectPromotion(piece))" Size="Size.Small" Class="pa-0"
-                                                   Style="@($"min-width: {promotionButtonSize}px; min-height: {promotionButtonSize}px; width: {promotionButtonSize}px; height: {promotionButtonSize}px;")">
-                                        <img src="@($"pieces/wikipedia/{(promotionIsWhite ? "w" : "b")}{piece.ToUpperInvariant()}.svg")" alt="@piece"
-                                             style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
-                                    </MudIconButton>
-                                }
-                            </MudStack>
-                        </MudPaper>
+                        <div class="mcb-promo-panel" style="@PromotionPanelStyle">
+                            @foreach (var p in new[] { "q", "r", "b", "n" })
+                            {
+                                var piece = p;
+                                <button type="button" class="mcb-promo-btn" @onclick="@(() => SelectPromotion(piece))"
+                                        title="@($"Promote to {PromotionPieceName(piece)}")"
+                                        style="@($"width:{promotionButtonSize}px; height:{promotionButtonSize}px;")">
+                                    <img src="@ThemeService.PieceImg(ThemeService.Current.PieceSet, $"{(promotionIsWhite ? "w" : "b")}{piece.ToUpperInvariant()}")"
+                                         alt="@piece" draggable="false"
+                                         style="@($"max-width: {promotionButtonSizePx}px; max-height: {promotionButtonSizePx}px;")" />
+                                </button>
+                            }
+                        </div>
                     </div>
                 }
             </div>
@@ -295,6 +304,42 @@
     [Parameter] public RenderFragment BoardLeft { get; set; }
     /// <summary>Optional content rendered to the right of the board squares (e.g. a second engine's eval bar).</summary>
     [Parameter] public RenderFragment BoardRight { get; set; }
+    /// <summary>A single eval bar, placed on the side the user chose (Board appearance →
+    /// Eval Bar) and either beside the board or in its frame. Pages with one bar should
+    /// use this instead of BoardLeft/BoardRight.</summary>
+    [Parameter] public RenderFragment EvalBarContent { get; set; }
+    /// <summary>A second eval bar (Dual Analysis, one per engine). When set, the two bars
+    /// take one side each and always sit in the frame — with two bars the side preference
+    /// is moot, and in-frame is what keeps the layout narrow.</summary>
+    [Parameter] public RenderFragment EvalBarSecondContent { get; set; }
+
+    // Eval bars always live in the board's frame; the setting only picks which gutter a
+    // single bar takes. Two bars (dual analysis) take one side each.
+    private bool DualBars => EvalBarContent != null && EvalBarSecondContent != null;
+    private bool BarOnRight => ThemeService.Current.EvalBarPlacement == "right";
+    private bool HasSideContent => BoardLeft != null || BoardRight != null;
+
+    // A host that sets only the second fragment still gets a bar: treat whichever one is
+    // present as "the" bar rather than silently dropping it.
+    private RenderFragment SingleBar => EvalBarContent ?? EvalBarSecondContent;
+
+    private RenderFragment GutterLeftContent =>
+        DualBars ? EvalBarContent : BarOnRight ? null : SingleBar;
+
+    private RenderFragment GutterRightContent =>
+        DualBars ? EvalBarSecondContent : BarOnRight ? SingleBar : null;
+
+    // A bar in the gutter needs a gutter to exist, so boards that draw one widen their own
+    // frame to the minimum — locally, so boards without a bar keep the frame the user set.
+    // Invisible when no frame was asked for, which reads as a bar flush to the board edge.
+    private bool NeedsGutter => SingleBar != null;
+
+    private double? BoardFramePct =>
+        NeedsGutter ? Math.Max(ThemeService.Current.FramePct, BoardThemeService.MinGutterPctForEvalBar)
+        : null;
+
+    private string BoardFrameColor =>
+        NeedsGutter && ThemeService.Current.FramePct <= 0 ? "transparent" : null;
     /// <summary>Optional content stacked above the move list in Right layout (e.g. an engine widget).</summary>
     [Parameter] public RenderFragment AboveMoveList { get; set; }
     /// <summary>Shows the board-size slider above the board. The size itself is global, so a
@@ -621,13 +666,39 @@
             double col = isBoardFlipped ? 7 - file : file;
             double row = isBoardFlipped ? rank : 7 - rank;
             col = Math.Min(col, 4);   // keep the four-button stack inside the board
-            double f = ThemeService.Current.FramePct;
+            // The board may be wider-framed than the theme says (an eval bar in the gutter
+            // forces a minimum), so read the width this board actually renders at — the
+            // theme value would place the dialog outside the squares.
+            double f = BoardFramePct ?? ThemeService.Current.FramePct;
             double scale = (100 - 2 * f) / 100.0;
             double left = f + col * 12.5 * scale;
             double top = f + row * 12.5 * scale;
             return $"position:absolute; z-index:1000; left:{left.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}%; top:{top.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}%;";
         }
     }
+
+    /// <summary>Panel colors from the board theme: the light square as the ground and the
+    /// frame color as the edge, so the dialog reads as part of the board it covers. The
+    /// frame color is "transparent" when a gutter was forced into existence with the frame
+    /// off, which would leave the panel edgeless — fall back to the eval bar's dark tone,
+    /// which is derived from the same theme and guaranteed visible.</summary>
+    private string PromotionPanelStyle
+    {
+        get
+        {
+            var frame = ThemeService.Current.FrameColor;
+            var edge = frame is { Length: 7 } && frame[0] == '#' ? frame : ThemeService.Current.EvalBarDark;
+            return $"background:{ThemeService.Current.LightSquare};border-color:{edge};";
+        }
+    }
+
+    private static string PromotionPieceName(string piece) => piece switch
+    {
+        "q" => "queen",
+        "r" => "rook",
+        "b" => "bishop",
+        _ => "knight",
+    };
 
     private async Task SelectPromotion(string promotionPiece)
     {

@@ -115,7 +115,8 @@ public class GlobalSettings
     public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge
     public string BoardCoordinateColor { get; set; } = "";       // "" = auto (opposite square color)
     public string BoardCoordinatePlacement { get; set; } = "inside"; // inside | outside (in the frame gutter)
-    public string BoardFrameWidth { get; set; } = "off";         // off | thin | medium | thick — frame around the board
+    public string EvalBarPlacement { get; set; } = "left";       // left | right — side of the board (dual analysis always uses both)
+    public string BoardFrameWidth { get; set; } = "medium";      // off | thin | medium | thick — frame around the board
     public string BoardFrameColor { get; set; } = "";            // "" = default dark frame
     public string BoardHighlightStyle { get; set; } = "replace"; // replace | tint | frame
     public string BoardMoveHighlightColor { get; set; } = "";    // "" = theme's highlight; hex = override on any preset

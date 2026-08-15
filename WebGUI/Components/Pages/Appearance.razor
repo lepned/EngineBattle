@@ -131,7 +131,7 @@
                         <input type="checkbox" @bind="tournamentCoordinates" @bind:after="Apply" />
                         Coordinates on Tournament Boards
                     </label>
-                    <small>Show a1–h8 on live tournament and PV boards (small tiles always hide them)</small>
+                    <small>Show a1–h8 on the live tournament board (PV boards and grid tiles never show them — too small to read)</small>
                 </div>
                 <div class="field-group">
                     <label>Placement</label>
@@ -205,9 +205,17 @@
                 <div class="field-group">
                     <label class="checkbox-label">
                         <input type="checkbox" @bind="showEvalBar" @bind:after="Apply" />
-                        Show eval bar beside the board
+                        Show eval bar
                     </label>
-                    <small>Vertical win-probability bar beside boards with a live eval — analysis pages, Game Review, tournament board and live games grid (the broadcast page always shows it; never shown in Play vs Computer)</small>
+                    <small>Vertical win-probability bar on boards with a live eval — analysis pages, Game Review, tournament board and live games grid (the broadcast page always shows it; never shown in Play vs Computer)</small>
+                </div>
+                <div class="field-group">
+                    <label>Placement</label>
+                    <select @bind="evalBarPlacement" @bind:after="Apply">
+                        <option value="left">Left side of the frame</option>
+                        <option value="right">Right side of the frame</option>
+                    </select>
+                    <small>The bar is drawn in the board frame; a frame is added if none is set. Dual Analysis ignores the side — it shows one bar per engine, one on each. PV boards and grid tiles keep their bar beside the board, being too small for a frame.</small>
                 </div>
             </div>
 
@@ -414,10 +422,6 @@
 
         <div class="appearance-preview">
             <div class="preview-board-row">
-            @if (showEvalBar)
-            {
-                <EvalBar Cp="@((double?)0.9)" />
-            }
             <div class="preview-board-main">
             <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
                           SizePx="null" ShowCoordinates="true"
@@ -432,16 +436,25 @@
                           CoordinateColorCss="@EffectiveCoordColor"
                           SelectionRingColorCss="@EffectiveSelRing"
                           FrameWidthPct="@EffectiveFramePct"
-                          FrameColorCss="@EffectiveFrameColor"
+                          FrameColorCss="@EffectivePreviewFrameColor"
                           CoordinatePlacement="@coordinatePlacement"
+                          GutterLeft="@(evalBarPlacement == "right" ? null : PreviewGutterBar)"
+                          GutterRight="@(evalBarPlacement == "right" ? PreviewGutterBar : null)"
                           SelectedSquare="c6"
                           Arrows="@PreviewArrows" Labels="@PreviewLabels" />
             </div>
             </div>
             <div class="preview-tiles">
                 <div class="preview-tile">
+                    @* Matches the real tiles: slim bar beside the board, no coordinates,
+                       no frame — the grid's own layout, not the setting above. *@
+                    <div class="preview-tile-row @(evalBarPlacement == "right" ? "eval-right" : "")">
+                    @if (showEvalBar)
+                    {
+                        <EvalBar Cp="@((double?)0.9)" />
+                    }
                     <EbChessboard Fen="r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
-                                  SizePx="170" ShowCoordinates="@tournamentCoordinates"
+                                  SizePx="170" ShowCoordinates="false"
                                   LastMoveFrom="f1" LastMoveTo="c4" LastMoveColor="w"
                                   LightSquareColor="@Preview.LightSquare"
                                   DarkSquareColor="@Preview.DarkSquare"
@@ -451,10 +464,9 @@
                                   PieceScale="@(pieceScale / 100.0)"
                                   CoordinateSizeCss="@BoardThemeService.CoordSizeCss(coordinateSize)"
                                   CoordinateColorCss="@EffectiveCoordColor"
-                                  FrameWidthPct="@EffectiveFramePct"
-                                  FrameColorCss="@EffectiveFrameColor"
-                                  CoordinatePlacement="@coordinatePlacement" />
-                    <small>Tournament tile (coordinates auto-hide below 200px)</small>
+                                  FrameWidthPct="0" />
+                    </div>
+                    <small>Live-games grid tile — slim bar beside the board, no coordinates or frame at this size</small>
                 </div>
             </div>
         </div>
@@ -481,6 +493,7 @@
     private string moveHighlightMode = "auto";
     private string moveHighlightColor = "#FAFAD2";
     private bool showEvalBar = true;
+    private string evalBarPlacement = "left";
     private string selRingMode = "auto";
     private string selRingColor = "#14551E";
     private string arrowMode = "auto";
@@ -511,13 +524,25 @@
     // works even before the change is persisted).
     private string EffectiveCoordColor => coordinateColorMode == "custom" ? coordinateColor : "";
     private string EffectiveSelRing => selRingMode == "custom" ? selRingColor : "";
+    private RenderFragment PreviewGutterBar =>
+        showEvalBar ? @<EvalBar Cp="@((double?)0.9)" /> : null;
+
     // Frame preview mirrors the theme resolution, including the outside-coords coupling
     // and the per-preset default frame color.
     private (double Pct, string Color) EffectiveFrame =>
         BoardThemeService.ResolveFrame(frameWidth, frameColorMode == "custom" ? frameColor : "",
-            coordinatePlacement, BoardThemeService.PresetFrameColor(themePreset), coordinateSize);
-    private double EffectiveFramePct => EffectiveFrame.Pct;
-    private string EffectiveFrameColor => EffectiveFrame.Color;
+            coordinatePlacement, BoardThemeService.PresetFrameColor(themePreset, customDark), coordinateSize);
+    // The real boards widen their own frame to fit an eval bar (ModernChessboard /
+    // StreamingChessboard). The preview draws its bar the same way, so it has to apply the
+    // same floor — otherwise Frame = Off would show a preview with no bar at all while
+    // every actual board shows one.
+    private double EffectiveFramePct =>
+        showEvalBar
+            ? Math.Max(EffectiveFrame.Pct, BoardThemeService.MinGutterPctForEvalBar)
+            : EffectiveFrame.Pct;
+
+    private string EffectivePreviewFrameColor =>
+        showEvalBar && EffectiveFrame.Pct <= 0 ? "transparent" : EffectiveFrame.Color;
     private string EffectiveArrowColor => arrowMode == "custom" ? arrowColor : "#9D8989";
     private string EffectivePolicyLabelColor => policyLabelMode == "custom" ? policyLabelColor : "#FFEB3B";
     private string EffectivePolicyArrowColor => policyArrowMode == "custom" ? policyArrowColor : "black";
@@ -589,6 +614,7 @@
         moveHighlightMode = string.IsNullOrEmpty(s.BoardMoveHighlightColor) ? "auto" : "custom";
         if (moveHighlightMode == "custom") moveHighlightColor = s.BoardMoveHighlightColor;
         showEvalBar = s.ShowEvalBar;
+        evalBarPlacement = s.EvalBarPlacement == "right" ? "right" : "left";
         useNewTournamentBanner = s.UseNewTournamentBanner;
         selRingMode = string.IsNullOrEmpty(s.BoardSelectionRingColor) ? "auto" : "custom";
         if (selRingMode == "custom") selRingColor = s.BoardSelectionRingColor;
@@ -645,6 +671,7 @@
         merged.BoardHighlightStyle = highlightStyle;
         merged.BoardMoveHighlightColor = moveHighlightMode == "custom" ? moveHighlightColor : "";
         merged.ShowEvalBar = showEvalBar;
+        merged.EvalBarPlacement = evalBarPlacement;
         merged.UseNewTournamentBanner = useNewTournamentBanner;
         merged.BoardSelectionRingColor = selRingMode == "custom" ? selRingColor : "";
         merged.BoardArrowColor = arrowMode == "custom" ? arrowColor : "";
@@ -680,6 +707,7 @@
         highlightStyle = d.BoardHighlightStyle;
         moveHighlightMode = "auto";
         showEvalBar = d.ShowEvalBar;
+        evalBarPlacement = d.EvalBarPlacement;
         selRingMode = "auto";
         arrowMode = "auto";
         arrowWidth = d.BoardArrowWidth;

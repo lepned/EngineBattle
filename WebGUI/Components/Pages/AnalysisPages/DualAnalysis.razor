@@ -151,8 +151,8 @@
                             MoveEvals="@moveEvals"
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
                             OnBoardFlipped="f => boardFlipped = f"
-                            BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBar1Left : null)"
-                            BoardRight="@(SettingsService.Settings.ShowEvalBar ? EvalBar2Right : null)"
+                            EvalBarContent="@(SettingsService.Settings.ShowEvalBar ? EvalBar1Left : null)"
+                            EvalBarSecondContent="@(SettingsService.Settings.ShowEvalBar ? EvalBar2Right : null)"
                             DetectedOpeningName="@detectedOpeningName" DetectedOpeningECO="@detectedOpeningECO" />
             </div>
 

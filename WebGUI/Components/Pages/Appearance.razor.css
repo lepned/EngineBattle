@@ -342,6 +342,7 @@ select:focus {
     align-items: stretch;
 }
 
+
 .preview-board-main {
     flex: 1;
     min-width: 0;
@@ -360,4 +361,27 @@ select:focus {
     color: var(--mud-palette-text-disabled);
     margin-top: 0.25rem;
     max-width: 170px;
+}
+
+/* Preview of a live-grid tile: slim bar beside the board, mirroring the real grid. */
+.preview-tile-row {
+    display: flex;
+    gap: 4px;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.preview-tile-row.eval-right {
+    flex-direction: row-reverse;
+}
+
+.preview-tile-row ::deep .eb-evalbar-slot {
+    flex: 0 0 8px;
+    width: 8px;
+}
+
+.preview-tile-row ::deep .eb-evalbar {
+    top: 0;
+    bottom: 0;
+    border-radius: 3px;
 }

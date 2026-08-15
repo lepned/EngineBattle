@@ -324,3 +324,33 @@
         max-height: 250px;
     }
 }
+
+/* Promotion picker. Colors come from the board theme (set inline); the shape and the
+   hover feedback live here. */
+.modern-chessboard .mcb-promo-panel {
+    display: flex;
+    padding: 3px;
+    border: 2px solid;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.modern-chessboard .mcb-promo-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.modern-chessboard .mcb-promo-btn:hover {
+    background: rgba(0, 0, 0, 0.14);
+}
+
+.modern-chessboard .mcb-promo-btn img {
+    pointer-events: none;
+}

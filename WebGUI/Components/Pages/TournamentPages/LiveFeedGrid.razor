@@ -11,6 +11,7 @@
 @inject LiveFeedReplayer Replayer
 @inject WebGUI.Services.Ceres.CeresFeedBridge CeresBridge
 @inject NavigationManager Nav
+@inject BoardThemeService ThemeSvc
 @inject Microsoft.JSInterop.IJSRuntime JS
 @inject GlobalSettingsService SettingsService
 
@@ -173,7 +174,7 @@
             </div>
             <div class="pv">@ShortPv(g.BlackPV)</div>
             <div class="stats">@g.BlackStats</div>
-            <div class="tile-board-row">
+            <div class="tile-board-row @(ThemeSvc.Current.EvalBarPlacement == "right" ? "eval-right" : "")">
                 @if (showEvalBar)
                 {
                     <EvalBar Cp="@g.EvalCp" Mate="@g.EvalMate" />

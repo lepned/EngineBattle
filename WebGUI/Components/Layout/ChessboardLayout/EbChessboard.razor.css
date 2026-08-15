@@ -36,12 +36,58 @@
     width: var(--eb-frame-w, 0px);
 }
 
+/* Ranks move to the right gutter when the eval bar claims the left one. */
+.eb-gutter.rank.right {
+    left: auto;
+    right: 0;
+}
+
 .eb-gutter.file {
     flex-direction: row;
     bottom: 0;
     left: var(--eb-frame-w, 0px);
     right: var(--eb-frame-w, 0px);
     height: var(--eb-frame-w, 0px);
+}
+
+/* Content hosted in the frame itself (eval bar). Same vertical span as the rank
+   gutter, so it aligns with the squares; the child fills it completely. */
+.eb-gutter-slot {
+    position: absolute;
+    top: var(--eb-frame-w, 0px);
+    bottom: var(--eb-frame-w, 0px);
+    width: var(--eb-frame-w, 0px);
+    z-index: 1;
+}
+
+.eb-gutter-slot.left {
+    left: 0;
+}
+
+.eb-gutter-slot.right {
+    right: 0;
+}
+
+/* Content fills the gutter. Done here rather than via a flag on the child so a future
+   host cannot forget to set it: the slot already spans exactly the playing squares, so
+   the standalone eval bar's own frame inset must not be applied a second time. */
+.eb-gutter-slot ::deep .eb-evalbar-slot {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    flex: none;
+}
+
+/* The bar itself is a rounded pill inset from the frame edges rather than a slab filling
+   the whole gutter — it reads as an inlay in the border instead of a second border. */
+.eb-gutter-slot ::deep .eb-evalbar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 20%;
+    right: 20%;
+    width: auto;
+    border-radius: 999px;
 }
 
 .eb-gutter span {

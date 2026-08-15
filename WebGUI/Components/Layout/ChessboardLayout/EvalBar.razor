@@ -24,9 +24,11 @@
     private bool HasEval => Cp.HasValue || Mate.HasValue;
 
     private string InsetStyle =>
-        ThemeService.Current.FramePct > 0
+        (ThemeService.Current.FramePct > 0
             ? $"--eb-evalbar-inset:{ThemeService.Current.FramePct.ToString("0.###", CultureInfo.InvariantCulture)}%;"
-            : "";
+            : "")
+        + $"--eb-evalbar-dark:{ThemeService.Current.EvalBarDark};"
+        + $"--eb-evalbar-light:{ThemeService.Current.EvalBarLight};";
 
     // Same logistic lichess uses to map centipawns to winning chances.
     private double WhiteShare =>

@@ -5,13 +5,14 @@
     align-self: stretch;
 }
 
+
 .eb-evalbar {
     position: absolute;
     left: 0;
     right: 0;
     top: var(--eb-evalbar-inset, 0px);
     bottom: var(--eb-evalbar-inset, 0px);
-    background: #3d4148;
+    background: var(--eb-evalbar-dark, #3d4148);
     border-radius: 4px;
     overflow: hidden;
 }
@@ -21,7 +22,7 @@
     bottom: 0;
     left: 0;
     width: 100%;
-    background: #e8e8e4;
+    background: var(--eb-evalbar-light, #e8e8e4);
     transition: height 0.5s ease;
 }
 

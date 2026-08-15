@@ -175,11 +175,21 @@ a.game-tile {
     justify-content: center;
 }
 
+/* Eval bar on the right: mirror the row instead of duplicating the markup. */
+.tile-board-row.eval-right {
+    flex-direction: row-reverse;
+}
+
 .tile-board-row ::deep .eb-evalbar-slot {
     flex: 0 0 8px;
     width: 8px;
 }
 
+/* Tiles have no frame (PVtileBoard pins it off), so the bar must not inset itself by the
+   theme's frame width — it would stop short of the board's edges at both ends. The inset
+   arrives as an inline custom property, so override the resulting edges, not the variable. */
 .tile-board-row ::deep .eb-evalbar {
+    top: 0;
+    bottom: 0;
     border-radius: 3px;
 }

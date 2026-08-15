@@ -134,7 +134,7 @@
                         OnMoveMadeOnBoard="OnBoardNavigated"
                         OnNewFENOnBoard="OnBoardNavigated"
                         OnBoardFlipped="f => boardFlipped = f"
-                        BoardLeft="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
+                        EvalBarContent="@(SettingsService.Settings.ShowEvalBar ? EvalBarLeft : null)"
                         DetectedOpeningName="@openingName"
                         DetectedOpeningECO="@openingECO" />
 
