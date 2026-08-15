@@ -1453,17 +1453,25 @@ type Board() =
       let moveList = this.GenerateMoves ()
       // Opening books are written in SAN or in long algebraic ("1. e2e4 e7e5"), so
       // accept both — this used to fail hard on coordinate tokens and abort the game.
-      match TMoveOps.tryFindMoveBySanOrUci moveList moveList.Length position.STM islegal fromSan with
+      match TMoveOps.tryFindMoveBySanOrUci moveList position.STM islegal fromSan with
       | Some move ->
         let moveStr = TMoveOps.getUciNotation move position.STM
+        // A book in long algebraic hands us "e2e4"; record the real SAN instead, or the
+        // opening line and the game's SAN header would be written in coordinates — wrong
+        // for exactly the books this path exists to support. SAN input is kept verbatim so
+        // a book's own spelling survives.
+        let shortSan =
+          if TMoveOps.isCoordinateNotation (fromSan.Trim())
+          then TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length move position
+          else fromSan
         this.MakeMove(&move)
-        openingMoves.Add fromSan
+        openingMoves.Add shortSan
         this.UciMovesPlayed.Add(moveStr.Trim())
         let fenPos = BoardHelper.posToFen position
         let color = colorOfPlayerWhoJustMoved position.STM
         let isCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
         let fenAndMoves = MoveDetail.Create(moveStr, moveStr[0..1], moveStr[2..3], color, isCastling)
-        moveAndFens.Add({Move=fenAndMoves; ShortSan=fromSan; FenAfterMove=fenPos})
+        moveAndFens.Add({Move=fenAndMoves; ShortSan=shortSan; FenAfterMove=fenPos})
 
       | None -> failwith $"failed to parse opening move {fromSan}"
 
@@ -1502,9 +1510,19 @@ type Board() =
       let moveList = this.GenerateMoves ()
       // SAN is the normal input here, but coordinate notation reaches this from pasted
       // lines and hand-written PGNs; resolving both beats silently dropping the move.
-      match TMoveOps.tryFindMoveBySanOrUci moveList moveList.Length position.STM islegal san with
+      match TMoveOps.tryFindMoveBySanOrUci moveList position.STM islegal san with
       | Some move ->
         let moveStr = TMoveOps.getUciNotation move position.STM
+        // Coordinate input must be converted, or "e2e4" would end up in the move list, the
+        // move graph and the SAN history. Real SAN is kept verbatim so a PGN round-trips
+        // with its own spelling ("O-O" stays "O-O") — which does mean PlayUciMove's dedup
+        // (it compares generated SAN, always "0-0" and suffix-free) can still miss such a
+        // move and branch instead of following the mainline. Pre-existing, and the price of
+        // the round-trip guarantee. Computed before the move is made.
+        let shortSan =
+          if TMoveOps.isCoordinateNotation (san.Trim())
+          then TMoveOps.getShortSanMoveFromTmoveN moveList moveList.Length move position
+          else san
         this.MakeMove(&move)
         uciMoves.Add (moveStr.Trim())
         let fenPos = BoardHelper.posToFen position
@@ -1512,7 +1530,7 @@ type Board() =
         let colorAfterMove = colorOfPlayerWhoJustMoved position.STM
         let isCastling = (move.MoveType &&& TPieceType.CASTLE) <> TPieceType.EMPTY
         let fenAndMoves = MoveDetail.Create(moveStr, moveStr[0..1], moveStr[2..3], colorAfterMove, isCastling, comments)
-        let maf = { Move = fenAndMoves; ShortSan = san; FenAfterMove = fenPos }
+        let maf = { Move = fenAndMoves; ShortSan = shortSan; FenAfterMove = fenPos }
         moveAndFens.Add maf
         let isMainlineOpt = if createNodeIsVariation then Some false else None
         let edgeId =
@@ -1520,7 +1538,7 @@ type Board() =
             currentGraphNodeId
             hashPos
             fenPos
-            san
+            shortSan
             moveStr
             colorAfterMove
             isCastling

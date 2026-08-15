@@ -361,12 +361,15 @@ module MoveTypes =
       /// "g1f3" as a pawn move to f3), so every caller that can receive either spelling
       /// — opening books in long algebraic, Winboard engines, pasted lines — must go
       /// through this rather than the SAN parser alone.
-      let tryFindMoveBySanOrUci (moves: TMove array) (count: int) (stm: byte) checkIsLegal (token: string) =
+      /// `moves` must be exactly the position's legal list — the SAN branch scans the whole
+      /// array (disambiguation counts alternatives from it), so there is deliberately no
+      /// count parameter to suggest a pooled buffer would work here.
+      let tryFindMoveBySanOrUci (moves: TMove array) (stm: byte) checkIsLegal (token: string) =
         if String.IsNullOrWhiteSpace token then None
         else
           let t = token.Trim()
           if isCoordinateNotation t then
-            tryFindMoveByUciNotation moves count stm (t.ToLowerInvariant())
+            tryFindMoveByUciNotation moves moves.Length stm (t.ToLowerInvariant())
           else
             getTMoveFromShortSan t moves stm checkIsLegal
 
