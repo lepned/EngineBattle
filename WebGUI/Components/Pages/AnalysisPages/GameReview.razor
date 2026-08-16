@@ -907,7 +907,7 @@
         if (result == null)
         {
             await DialogService.ShowMessageBox("No annotations",
-                "This game has no engine evaluation annotations (wv= fields). Use full engine analysis instead.");
+                "This game carries no per-move evaluations — neither engine annotations nor lichess [%eval] commands. Use full engine analysis instead.");
             return;
         }
 

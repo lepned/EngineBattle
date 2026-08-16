@@ -85,9 +85,11 @@
     padding: 6px 10px !important;
 }
 
+/* The card sizes to its content and does NOT scroll: the list inside it is the scroller.
+   Capping both gave two nested scrollbars once the list outgrew the cap, since the card was
+   too short to hold its own heading plus a full-height list. */
 .gr-critical-card {
-    max-height: 200px;
-    overflow-y: auto;
+    align-self: start;
 }
 
 /* Classification colors */

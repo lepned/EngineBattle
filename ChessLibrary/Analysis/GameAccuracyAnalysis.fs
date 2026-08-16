@@ -734,8 +734,24 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
         let player = if isBlack then game.GameMetaData.Black else game.GameMetaData.White
         let stat = Annotation.getEngineStatData player isBlack move.Comment
         let eval =
-            if stat.n = 0L && stat.d = 0 && stat.wv = 0.0 then EvalType.NA
-            else CP stat.wv
+            if stat.n <> 0L || stat.d <> 0 || stat.wv <> 0.0 then CP stat.wv
+            else
+                // No harness annotation — fall back to a lichess `[%eval …]`, which is
+                // White-relative like `wv` and needs no flip. Without this a game annotated
+                // by lichess looked to Quick Analysis exactly like a game with no evals at
+                // all, even though the move list was showing them.
+                match PGNComment.parse move.Comment |> PGNComment.tryFind "eval" with
+                | Some v when v.StartsWith "#" ->
+                    match Int32.TryParse(v.Substring 1, Globalization.NumberStyles.Integer,
+                                         Globalization.CultureInfo.InvariantCulture) with
+                    | true, n -> Mate n
+                    | _ -> EvalType.NA
+                | Some v ->
+                    match Double.TryParse(v, Globalization.NumberStyles.Float,
+                                          Globalization.CultureInfo.InvariantCulture) with
+                    | true, d -> CP d
+                    | _ -> EvalType.NA
+                | None -> EvalType.NA
         whiteEvals.Add(eval)
         try replayBoard.PlaySanMove move.San with _ -> ()
 

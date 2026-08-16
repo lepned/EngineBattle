@@ -398,3 +398,21 @@ let ``analyzeGameFromAnnotations processes game with eval annotations`` () =
     for m in r.Moves do
         Assert.True(m.WinProbLoss >= 0.0, sprintf "Move %s WP loss should be >= 0 but got %f" m.San m.WinProbLoss)
         Assert.True(m.MoveAccuracy >= 0.0 && m.MoveAccuracy <= 100.0)
+
+[<Fact>]
+let ``analyzeGameFromAnnotations reads lichess eval commands`` () =
+    // A lichess-annotated game used to look identical to a game with no evals at all, so
+    // Quick Analysis refused it while the move list was already showing its evals.
+    let pgn =
+        "[Event \"t\"]\n[White \"W\"]\n[Black \"B\"]\n[Result \"*\"]\n\n\
+         1. e4 { [%eval 0.28] } 1... e5 { [%eval -1.5] } \
+         2. Nf3 { [%eval 0.9] } 2... Nc6 { [%eval #3] } *\n"
+    let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.Guid.NewGuid().ToString() + ".pgn")
+    try
+        System.IO.File.WriteAllText(path, pgn)
+        let game = ChessLibrary.FullPGNParser.parsePgnFile path |> Seq.head
+        match analyzeGameFromAnnotations ClassificationThresholds.Default 0.065 game with
+        | None -> failwith "expected the lichess evals to be found"
+        | Some result -> Assert.Equal(4, result.Moves.Length)
+    finally
+        System.IO.File.Delete path
