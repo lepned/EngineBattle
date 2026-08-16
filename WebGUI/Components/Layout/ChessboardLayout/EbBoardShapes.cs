@@ -5,8 +5,12 @@ namespace WebGUI.Components.Layout.ChessboardLayout;
 /// (a plain line, no marker).</summary>
 public record EbArrow(string From, string To, string Color, double Opacity = 0.7, double Width = 1.0, string Head = "arrow");
 
-/// <summary>Filled circle on a square. Size is the diameter as a fraction of the square (0..1).</summary>
-public record EbCircle(string Square, string Color, double Opacity = 0.5, double Size = 0.8);
+/// <summary>Circle on a square. Size is the diameter as a fraction of the square (0..1).
+/// StrokeWidth above zero draws a ring of that width instead of a filled disc, in the same
+/// square units — a ring keeps the piece underneath readable, which is what a PGN
+/// <c>[%csl]</c> highlight wants; insights stay filled so the two sources are told apart at
+/// a glance.</summary>
+public record EbCircle(string Square, string Color, double Opacity = 0.5, double Size = 0.8, double StrokeWidth = 0);
 
 /// <summary>Round text chip on a square (policy percentages, eval badges).
 /// SizePct is the chip diameter as a fraction of the square. FontPx pins the font to a

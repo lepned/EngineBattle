@@ -1,0 +1,12 @@
+[Event "Comment layout test - csl/cal shapes"]
+[Site "-"]
+[Date "2026.08.16"]
+[Round "-"]
+[White "Shapes"]
+[Black "Rings and arrows"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "C70"]
+[Opening "Ruy Lopez: Morphy Defense"]
+
+1. e4 { The pawn takes the centre. } { [%cal Ge2e4] } 1... e5 { [%csl Gd4,Ge5,Gd5,Ge4] } 2. Nf3 { Attacks e5. } { [%csl Re5][%cal Rf3e5] } 2... Nc6 { Defends. } { [%csl Ge5][%cal Gc6e5] } 3. Bb5 { All four colours. } { [%csl Gd4,Rf6,Yc6,Bb5][%cal Gb5c6,Rd1h5,Ye4e5,Bf1a6] } 3... a6 { Malformed tokens are skipped, the rest still draws. } { [%csl Gd4,Rf6,Yb2] } 4. Ba4 { No shapes on this move. } 4... Nf6 *

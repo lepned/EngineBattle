@@ -229,3 +229,124 @@ let ``the evaluation chart reads lichess evals too`` () =
         Assert.Equal(-200.0, black.[1].wv, 3)
     finally
         System.IO.File.Delete path
+
+[<Fact>]
+let ``coloured squares and arrows are read from csl and cal`` () =
+    let shapes = PGNComment.shapes "[%csl Gd4,Rf6] [%cal Ge2e4,Rd1h5]"
+    Assert.Equal(4, shapes.Length)
+    // Squares first, then arrows, each in written order.
+    let asTuple (s: PGNComment.CommentShape) = s.Color, s.From, s.To
+    Assert.Equal<char * string * string>(('G', "d4", ""), asTuple shapes.[0])
+    Assert.Equal<char * string * string>(('R', "f6", ""), asTuple shapes.[1])
+    Assert.Equal<char * string * string>(('G', "e2", "e4"), asTuple shapes.[2])
+    Assert.Equal<char * string * string>(('R', "d1", "h5"), asTuple shapes.[3])
+    Assert.False(shapes.[0].IsArrow)
+    Assert.True(shapes.[3].IsArrow)
+
+[<Fact>]
+let ``a malformed shape token does not discard the rest of the list`` () =
+    // Hand-authored data: half an annotation beats none.
+    let shapes = PGNComment.shapes "[%csl Gd4,Zz9,Rf6,Gx9,Yb2]"
+    Assert.Equal<string list>(["d4"; "f6"; "b2"], shapes |> List.map (fun s -> s.From))
+    // Wrong token length for the command, unknown colour, and off-board squares are skipped.
+    Assert.Empty(PGNComment.shapes "[%cal Ge2e]")
+    Assert.Empty(PGNComment.shapes "[%csl Pd4]")
+    Assert.Empty(PGNComment.shapes "[%csl Gi9]")
+    Assert.Empty(PGNComment.shapes "no commands here")
+
+[<Fact>]
+let ``shape tokens are case and whitespace tolerant`` () =
+    let shapes = PGNComment.shapes "[%csl gD4, rF6]"
+    Assert.Equal<string list>(["d4"; "f6"], shapes |> List.map (fun s -> s.From))
+    Assert.Equal<char list>(['G'; 'R'], shapes |> List.map (fun s -> s.Color))
+    // Prose alongside the commands still survives, as for every other command.
+    Assert.Equal("The key squares.", PGNComment.proseText "The key squares. [%csl Gd4,Rf6]")
+
+[<Fact>]
+let ``shapes survive a round trip through a lichess study`` () =
+    // TestData/lichess_shapes_study.pgn is EB's own shapes fixture after being imported into
+    // a lichess study and exported again — a real reference for the format rather than our
+    // reading of the convention. Three things differ from how we wrote it, and all three
+    // have to parse: prose and commands land in *separate* comments, commands are written
+    // adjacent with no space between them, and `%csl` precedes `%cal`.
+    let game =
+        FullPGNParser.parsePgnFile "TestData/lichess_shapes_study.pgn" |> Seq.head
+    let shapesOn ply =
+        game.Mainline.[ply] |> fun m -> PGNComment.shapes m.Comment
+        |> List.map (fun s -> sprintf "%c%s%s" s.Color s.From s.To)
+
+    Assert.Equal<string list>(["Ge2e4"], shapesOn 0)
+    Assert.Equal<string list>(["Gd4"; "Ge5"; "Gd5"; "Ge4"], shapesOn 1)
+    Assert.Equal<string list>(["Re5"; "Rf3e5"], shapesOn 2)
+    Assert.Equal<string list>(["Gd4"; "Rf6"; "Yc6"; "Bb5"; "Gb5c6"; "Rd1h5"; "Ye4e5"; "Bf1a6"], shapesOn 4)
+    Assert.Empty(shapesOn 6)
+    // lichess dropped exactly the tokens we drop from "Gd4,Zz9,Rf6,Gx9,Yb2" — independent
+    // confirmation that skipping a bad token rather than the whole list is the right call.
+    Assert.Equal<string list>(["Gd4"; "Rf6"; "Yb2"], shapesOn 5)
+    // The split comment must not cost the prose, which is what overwriting used to do.
+    Assert.Equal("The pawn takes the centre.", PGNComment.proseText game.Mainline.[0].Comment)
+    Assert.Equal("All four colours.", PGNComment.proseText game.Mainline.[4].Comment)
+
+[<Fact>]
+let ``re-emitting lichess's own shapes reproduces them character for character`` () =
+    // The strongest check available: take the commands out of lichess's export, write them
+    // back with our writer, and compare against the exact substring lichess wrote. If our
+    // emission style drifted from theirs — a space between the commands, arrows before
+    // squares, a lowercase colour — this fails.
+    let game = FullPGNParser.parsePgnFile "TestData/lichess_shapes_study.pgn" |> Seq.head
+    let reemit ply = PGNComment.shapes game.Mainline.[ply].Comment |> PGNComment.formatShapes
+    Assert.Equal("[%cal Ge2e4]", reemit 0)
+    Assert.Equal("[%csl Gd4,Ge5,Gd5,Ge4]", reemit 1)
+    Assert.Equal("[%csl Re5][%cal Rf3e5]", reemit 2)
+    Assert.Equal("[%csl Ge5][%cal Gc6e5]", reemit 3)
+    Assert.Equal("[%csl Gd4,Rf6,Yc6,Bb5][%cal Gb5c6,Rd1h5,Ye4e5,Bf1a6]", reemit 4)
+    Assert.Equal("[%csl Gd4,Rf6,Yb2]", reemit 5)
+    Assert.Equal("", reemit 6)
+
+[<Fact>]
+let ``the writer refuses to emit a shape it would not read back`` () =
+    let shape c f t : PGNComment.CommentShape = { Color = c; From = f; To = t }
+    // Off-board squares and unknown colours are dropped, not written.
+    Assert.Equal("[%csl Gd4]", PGNComment.formatShapes [ shape 'G' "d4" ""; shape 'G' "i9" ""; shape 'P' "e4" "" ])
+    Assert.Equal("", PGNComment.formatShapes [ shape 'G' "e2" "e9" ])
+    Assert.Equal("", PGNComment.formatShapes [])
+    // Case is normalised on the way out, so what we write is what we read.
+    Assert.Equal("[%cal Ge2e4]", PGNComment.formatShapes [ shape 'g' "E2" "E4" ])
+    // And it round-trips through our own reader.
+    let written = PGNComment.formatShapes [ shape 'R' "f6" ""; shape 'B' "d1" "h5" ]
+    Assert.Equal<string list>(["Rf6"; "Bd1h5"],
+                              PGNComment.shapes written |> List.map (fun s -> sprintf "%c%s%s" s.Color s.From s.To))
+
+[<Fact>]
+let ``a comment section keeps prose and shapes in separate blocks`` () =
+    let shape c f t : PGNComment.CommentShape = { Color = c; From = f; To = t }
+    let shapes = [ shape 'G' "d4" ""; shape 'R' "d1" "h5" ]
+    Assert.Equal("{ The key square. } { [%csl Gd4][%cal Rd1h5] }", PGNComment.formatComment "The key square." shapes)
+    Assert.Equal("{ [%csl Gd4][%cal Rd1h5] }", PGNComment.formatComment "" shapes)
+    Assert.Equal("{ Just prose. }", PGNComment.formatComment "Just prose." [])
+    Assert.Equal("", PGNComment.formatComment "  " [])
+
+[<Fact>]
+let ``every shape command in a comment is read, not only the first`` () =
+    // Consecutive comments on one move are appended into a single string, so a move
+    // annotated twice arrives with two `[%csl]` commands. Reading only the first dropped
+    // Re5 silently — a loss, unlike the skip-and-continue of a malformed token.
+    let show s = PGNComment.shapes s |> List.map (fun x -> sprintf "%c%s%s" x.Color x.From x.To)
+    Assert.Equal<string list>(["Gd4"; "Rf6"], show "[%csl Gd4][%csl Rf6]")
+    Assert.Equal<string list>(["Gd4"; "Re5"; "Ge2e4"], show "[%csl Gd4] [%csl Re5][%cal Ge2e4]")
+    Assert.Equal<string list>(["Ge2e4"; "Rd1h5"], show "[%cal Ge2e4][%cal Rd1h5]")
+    Assert.Equal<string list>(["0:05:00"; "0:04:00"],
+                              PGNComment.tryFindAll "clk" (PGNComment.parse "[%clk 0:05:00] [%clk 0:04:00]"))
+
+[<Fact>]
+let ``the writer survives shapes it did not build itself`` () =
+    let shape c f t : PGNComment.CommentShape = { Color = c; From = f; To = t }
+    // A null destination means "no destination" — a highlighted square, not a broken arrow.
+    Assert.Equal("[%csl Gd4]", PGNComment.formatShapes [ shape 'G' "d4" null ])
+    // A null origin has nothing to draw and is dropped, not thrown on.
+    Assert.Equal("[%csl Gd4]", PGNComment.formatShapes [ shape 'G' "d4" ""; shape 'G' null "" ])
+    Assert.Equal("", PGNComment.formatShapes null)
+    // Prose cannot close its own comment block and spill into the movetext.
+    Assert.Equal("{ a ) b ( c } { [%csl Gd4] }",
+                 PGNComment.formatComment "a } b { c" [ shape 'G' "d4" "" ])
+    Assert.Equal("{ [%csl Gd4] }", PGNComment.formatComment null [ shape 'G' "d4" "" ])

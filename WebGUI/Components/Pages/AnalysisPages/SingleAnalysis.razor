@@ -207,6 +207,14 @@
                             </svg>
                             Save analysis
                         </button>
+                        <button class="sa-btn secondary" @onclick="CopyPositionWithShapes"
+                                title="Copy this position and the insight overlay as a PGN chapter — paste it into a lichess study and the arrows come with it">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                            @(copyShapesLabel ?? "Copy with shapes")
+                        </button>
                     </div>
                 </div>
                 <div class="sa-save-group">
@@ -523,6 +531,67 @@
         StateHasChanged();
     }
 
+
+    // Transient button feedback ("Copied!"), which has to clear itself — a label left
+    // standing makes the next copy look like it did nothing.
+    private string copyShapesLabel;
+    private int copyShapesGeneration;
+
+    /// <summary>The position plus whatever the insight overlay is drawing, as a PGN chapter
+    /// a lichess study will accept. The shapes ride in a comment before the first move,
+    /// which is where a study keeps the annotations of its starting position.</summary>
+    private string BuildPositionWithShapesPgn()
+    {
+        var shapes = CommentShapes.FromBoard(InsightArrows, InsightCircles);
+        // Safe squares are deliberately absent: they are a per-selection preview computed
+        // inside the board, not part of the position's insights, so naming them here would
+        // promise shapes the export cannot carry.
+        var caption = string.Join(", ",
+            new[]
+            {
+                showInsightDanger ? "danger" : null,
+                showInsightTactics ? "tactics" : null,
+            }.Where(s => s != null));
+        var prose = caption.Length == 0 ? "" : $"EngineBattle insights: {caption}";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("[Event \"EngineBattle analysis\"]");
+        sb.AppendLine("[Site \"EngineBattle\"]");
+        sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)}\"]");
+        sb.AppendLine("[Result \"*\"]");
+        sb.AppendLine("[SetUp \"1\"]");
+        sb.AppendLine($"[FEN \"{fen}\"]");
+        sb.AppendLine();
+        var comment = PGNComment.formatComment(prose, shapes);
+        sb.AppendLine(comment.Length == 0 ? "*" : comment + " *");
+        return sb.ToString();
+    }
+
+    private async Task CopyPositionWithShapes()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", BuildPositionWithShapesPgn());
+            copyShapesLabel = "Copied!";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to copy position with shapes to the clipboard");
+            copyShapesLabel = "Copy failed";
+        }
+        // An async handler renders when it starts and when it finishes, not at each await —
+        // without this the label would be set and cleared inside one handler and never
+        // actually appear.
+        var mine = ++copyShapesGeneration;
+        StateHasChanged();
+        await Task.Delay(2000);
+        // Leave a newer click's message alone.
+        if (mine == copyShapesGeneration)
+        {
+            copyShapesLabel = null;
+            StateHasChanged();
+        }
+    }
 
     private async Task SaveGameToPGN(MouseEventArgs args)
     {

@@ -406,20 +406,44 @@
     private IReadOnlyList<EbCircle> overlayCircles = Array.Empty<EbCircle>();
     private IReadOnlyList<EbSquareLabel> overlayLabels = Array.Empty<EbSquareLabel>();
 
-    private IReadOnlyList<EbArrow> MergedArrows =>
-        ExtraArrows == null || ExtraArrows.Count == 0 ? overlayArrows
-        : overlayArrows.Count == 0 ? ExtraArrows
-        : overlayArrows.Concat(ExtraArrows).ToArray();
+    /// <summary>The comment on the move currently shown, if the board is sitting on one.
+    /// Found by FEN, the same way the move list marks its current row, so it works in both
+    /// move-list layouts and follows navigation without any extra bookkeeping.</summary>
+    private string CurrentComment =>
+        string.IsNullOrEmpty(fen) ? null
+        : InlineTokens.FirstOrDefault(t => !t.IsBracket && string.Equals(t.Fen, fen, StringComparison.Ordinal))?.Comment;
+
+    // Squares and arrows the annotator drew into the comment ([%csl] / [%cal]). Authored
+    // content rather than a computed view, so it needs no toggle — it appears exactly on the
+    // moves whose comments ask for it, and nowhere else.
+    private IReadOnlyList<EbArrow> CommentArrows => CommentShapes.Arrows(CurrentComment);
+    private IReadOnlyList<EbCircle> CommentCircles => CommentShapes.Circles(CurrentComment);
+
+    private IReadOnlyList<EbArrow> MergedArrows
+    {
+        get
+        {
+            var comment = CommentArrows;
+            var haveExtra = ExtraArrows is { Count: > 0 };
+            if (!haveExtra && comment.Count == 0) return overlayArrows;
+            IEnumerable<EbArrow> merged = overlayArrows;
+            if (haveExtra) merged = merged.Concat(ExtraArrows);
+            if (comment.Count > 0) merged = merged.Concat(comment);
+            return merged.ToArray();
+        }
+    }
     private IReadOnlyList<EbCircle> MergedCircles
     {
         get
         {
             var preview = PreviewCircles;
+            var comment = CommentCircles;
             var haveExtra = ExtraCircles is { Count: > 0 };
-            if (!haveExtra && preview.Count == 0) return overlayCircles;
+            if (!haveExtra && preview.Count == 0 && comment.Count == 0) return overlayCircles;
             IEnumerable<EbCircle> merged = overlayCircles;
             if (haveExtra) merged = merged.Concat(ExtraCircles);
             if (preview.Count > 0) merged = merged.Concat(preview);
+            if (comment.Count > 0) merged = merged.Concat(comment);
             return merged.ToArray();
         }
     }

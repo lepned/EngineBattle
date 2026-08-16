@@ -95,7 +95,17 @@
             @foreach (var c in Circles ?? Array.Empty<EbCircle>())
             {
                 var (cx, cy) = Center(c.Square);
-                <circle cx="@F(cx)" cy="@F(cy)" r="@F(c.Size / 2)" fill="@c.Color" opacity="@F(c.Opacity)" />
+                @if (c.StrokeWidth > 0)
+                {
+                    @* A ring leaves the piece readable — what a `[%csl]` highlight needs. The
+                       radius is pulled in by half the stroke so the ring stays inside its square. *@
+                    <circle cx="@F(cx)" cy="@F(cy)" r="@F(Math.Max(0.01, c.Size / 2 - c.StrokeWidth / 2))"
+                            fill="none" stroke="@c.Color" stroke-width="@F(c.StrokeWidth)" opacity="@F(c.Opacity)" />
+                }
+                else
+                {
+                    <circle cx="@F(cx)" cy="@F(cy)" r="@F(c.Size / 2)" fill="@c.Color" opacity="@F(c.Opacity)" />
+                }
             }
             @foreach (var a in Arrows ?? Array.Empty<EbArrow>())
             {

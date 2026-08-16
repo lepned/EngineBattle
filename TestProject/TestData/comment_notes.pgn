@@ -23,3 +23,17 @@
 2. Nf3 { 2.5/9 was enough to win the event. } 2... Nc6 { The point: 34.e8=Q wins, since 34...f1=Q 35.Qxf1 g1=Q loses. }
 3. Bb5 { Book line ends here, now the real fight begins. } 3... a6 { 1/2-1/2 was agreed after 40 moves. }
 4. Ba4 { wv=1.06, mt=12875, s=9282899, n=119508052, d=35 } 4... Nf6 { +0.54/32 35.500s, tl=148.500s } *
+
+[Event "Comment layout test - csl/cal shapes"]
+[Site "-"]
+[Date "2026.08.16"]
+[Round "-"]
+[White "Shapes"]
+[Black "Rings and arrows"]
+[Result "*"]
+
+1. e4 { The pawn takes the centre. [%cal Ge2e4] } 1... e5 { [%csl Gd4,Ge5,Gd5,Ge4] }
+2. Nf3 { Attacks e5. [%cal Rf3e5] [%csl Re5] } 2... Nc6 { Defends. [%cal Gc6e5] [%csl Ge5] }
+3. Bb5 { All four colours. [%csl Gd4,Rf6,Yc6,Bb5] [%cal Gb5c6,Rd1h5,Ye4e5,Bf1a6] }
+3... a6 { Malformed tokens are skipped, the rest still draws. [%csl Gd4,Zz9,Rf6,Gx9,Yb2] }
+4. Ba4 { No shapes on this move. } 4... Nf6 *

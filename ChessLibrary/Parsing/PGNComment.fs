@@ -144,6 +144,16 @@ let formatEval (raw: string) : string option =
       | true, d -> Some(formatPawns d)
       | _ -> None
 
+/// Every value written for a command key, in order (case-insensitive).
+///
+/// A key can legitimately appear more than once: consecutive comments on one move are
+/// appended into a single string, so a move annotated twice arrives as
+/// "[%csl Gd4] [%csl Re5][%cal Ge2e4]". Reading only the first would drop Re5 silently.
+let tryFindAll (key: string) (parsed: ParsedComment) : string list =
+  parsed.Commands
+  |> List.filter (fun (k, _) -> String.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+  |> List.map snd
+
 /// The first value for a command key (case-insensitive), if present.
 let tryFind (key: string) (parsed: ParsedComment) : string option =
   parsed.Commands
@@ -181,3 +191,89 @@ let tryMateDistance (comment: string) : int option =
   else
     let m = mateTokenRegex.Match comment
     if m.Success then Some(int m.Groups.[1].Value) else None
+
+/// A shape a comment asks the board to draw. `To` is empty for a highlighted square.
+///
+/// `Color` is the single letter the convention uses — G, R, Y or B — left as written rather
+/// than resolved to a value here, because what those letters should look like depends on the
+/// board theme, which is a rendering concern.
+type CommentShape =
+  { Color: char
+    From: string
+    To: string }
+  // Null counts as "no destination": a shape built outside this module may leave it unset,
+  // and calling that an arrow would emit a `[%cal]` with only one square in it.
+  member x.IsArrow = not (String.IsNullOrEmpty x.To)
+
+let private isSquare (s: string) =
+  s.Length = 2 && s.[0] >= 'a' && s.[0] <= 'h' && s.[1] >= '1' && s.[1] <= '8'
+
+/// The shapes drawn by a comment's `[%csl …]` (highlighted squares) and `[%cal …]` (arrows)
+/// commands, in the order written — squares first, as lichess emits them.
+///
+/// Both take a comma-separated list of a colour letter followed by one square ("Gd4") or two
+/// ("Ge2e4"). A token that is malformed is skipped on its own; the rest of the list still
+/// draws, since half an annotation is better than none and these are hand-authored.
+let shapes (comment: string) : CommentShape list =
+  let parsed = parse comment
+  let read (key: string) (expected: int) =
+    tryFindAll key parsed
+    |> List.collect (fun value ->
+      value.Split(',')
+      |> Array.toList
+      |> List.choose (fun token ->
+           let t = token.Trim()
+           if t.Length <> expected + 1 then None
+           else
+             let color = Char.ToUpperInvariant t.[0]
+             if color <> 'G' && color <> 'R' && color <> 'Y' && color <> 'B' then None
+             else
+               let squares = t.Substring(1).ToLowerInvariant()
+               let a = squares.Substring(0, 2)
+               let b = if expected = 4 then squares.Substring(2, 2) else ""
+               if isSquare a && (b = "" || isSquare b) then Some { Color = color; From = a; To = b }
+               else None))
+  read "csl" 2 @ read "cal" 4
+
+/// Writes shapes back as `[%csl …][%cal …]`, in lichess's own emission style: squares
+/// before arrows, the two commands adjacent with no space between them, and neither
+/// command emitted when it would be empty. Returns "" when there is nothing to draw.
+///
+/// Squares are validated on the way out as well as in — a shape carrying a square name that
+/// is not on the board is dropped rather than written, since a file we emit is a file some
+/// other tool has to read.
+let formatShapes (shapes: CommentShape seq) : string =
+  let square (s: string) = if isNull s then "" else s.Trim().ToLowerInvariant()
+  let valid =
+    if isNull (box shapes) then []
+    else
+      shapes
+      |> Seq.filter (fun s ->
+           let color = Char.ToUpperInvariant s.Color
+           (color = 'G' || color = 'R' || color = 'Y' || color = 'B')
+           && isSquare (square s.From)
+           && (square s.To = "" || isSquare (square s.To)))
+      |> Seq.toList
+  let write (token: CommentShape) =
+    sprintf "%c%s%s" (Char.ToUpperInvariant token.Color) (square token.From) (square token.To)
+  let command name items =
+    match items with
+    | [] -> ""
+    | _ -> sprintf "[%%%s %s]" name (items |> List.map write |> String.concat ",")
+  command "csl" (valid |> List.filter (fun s -> not s.IsArrow))
+  + command "cal" (valid |> List.filter (fun s -> s.IsArrow))
+
+/// A complete comment section for a move: the prose and the shapes, each in its own `{ }`
+/// block, which is how lichess writes them and therefore what round-trips cleanly. Either
+/// half is omitted when empty; both empty gives "".
+let formatComment (prose: string) (shapes: CommentShape seq) : string =
+  let commands = formatShapes shapes
+  // Braces would end the comment early and spill the rest into the movetext, where a reader
+  // would try to parse it as moves.
+  let prose = if isNull prose then "" else prose.Replace("{", "(").Replace("}", ")")
+  let hasProse = not (String.IsNullOrWhiteSpace prose)
+  match hasProse, commands with
+  | false, "" -> ""
+  | true, "" -> sprintf "{ %s }" (prose.Trim())
+  | false, c -> sprintf "{ %s }" c
+  | true, c -> sprintf "{ %s } { %s }" (prose.Trim()) c
