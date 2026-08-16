@@ -710,7 +710,10 @@
 
     private static string FormatEval(EvalType eval)
     {
-        if (eval.IsCP) return $"{((EvalType.CP)eval).Info:+0.0;-0.0}";
+        // Three sections, not two: .NET applies the negative section to a value like -0.04
+        // and then adds the sign of negative zero, printing "-+0.0". Near-zero evals are
+        // everywhere in lichess games, which Quick Analysis now reads.
+        if (eval.IsCP) return $"{((EvalType.CP)eval).Info:+0.0;-0.0;0.0}";
         if (eval.IsMate) return $"M{((EvalType.Mate)eval).Info}";
         return "";
     }

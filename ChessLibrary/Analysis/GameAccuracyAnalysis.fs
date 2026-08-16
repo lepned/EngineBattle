@@ -83,6 +83,11 @@ type MoveAnalysisResult =
       WinProbLoss: float       // >= 0
       CentipawnLoss: float     // >= 0
       MoveAccuracy: float      // 0-100
+      /// True when the position had no evaluation on one side of the move, so the loss and
+      /// classification below are placeholders rather than measurements. Such a move is scored
+      /// as perfect to keep it from distorting the series, which means it must be kept OUT of
+      /// the accuracy and ACPL aggregates — otherwise a sparsely annotated game reports 100%.
+      HasEvalGap: bool
       Depth: int
       Nodes: int64
       PV: string }
@@ -253,7 +258,13 @@ let private phaseAccuracy (moves: MoveAnalysisResult array) (minMove: int) (maxM
 /// allWinProbs = white-perspective WP for every move in the game (both colors).
 let computePlayerStats (allWinProbs: float array) (playerName: string) (moves: MoveAnalysisResult array) (color: string) : PlayerAccuracyStats =
     let playerMoves = moves |> Array.filter (fun m -> m.Color = color)
-    let classifiable = playerMoves |> Array.filter (fun m -> m.Classification <> Book && m.Classification <> Forced)
+    // A move with no evaluation on either side of it is scored as a perfect move upstream
+    // (wpLoss 0, classification Best) so that it does not distort the series. It must not then
+    // be counted as evidence: a game carrying a handful of `[%eval]` commands would otherwise
+    // report 100.0% accuracy and 0.0 ACPL over the moves nobody analysed.
+    let classifiable =
+        playerMoves
+        |> Array.filter (fun m -> m.Classification <> Book && m.Classification <> Forced && not m.HasEvalGap)
 
     let accuracy = gameAccuracy allWinProbs classifiable
 
@@ -327,6 +338,11 @@ let analyzePosition
         | EngineUpdate.BestMove bm ->
             bestMoveStr <- bm.Move
             done'.Set()
+        // A terminal position has no move to report: Stockfish answers "bestmove (none)",
+        // which raises Done but never BestMove. Without this the wait ran to its full 30s
+        // safety net — and the analysis deliberately visits the final position of the game,
+        // so every mated game paid that once, right after the last move was reviewed.
+        | EngineUpdate.Done _ -> done'.Set()
         | _ -> ())
 
     match config.SearchMode with
@@ -575,6 +591,7 @@ let analyzeGameWithEngine
               WinProbLoss = wpLoss
               CentipawnLoss = cpLoss
               MoveAccuracy = moveAccuracy
+              HasEvalGap = false   // engine analysis measures every ply
               Depth = depth
               Nodes = nodes
               PV = pv })
@@ -684,6 +701,8 @@ let private analyzeFromRichAnnotations (game: PgnGame) : GameAnalysisResult opti
             { Ply = ply; MoveNumber = move.MoveNumber; Color = if isWhite then "w" else "b"
               San = move.San; UciMove = uciMove
               Classification = cls; EvalBefore = evalBefore
+              // Rebuilt from stored per-move data, which only exists for measured moves.
+              HasEvalGap = false
               BestMove = bestMove; BestMoveSan = bestMoveSan; BestEval = evalBefore
               SecondBestEval = None
               WinProbBefore = wpBefore; WinProbAfter = wpAfter; WinProbLoss = wpl
@@ -816,6 +835,7 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
             { Ply = ply; MoveNumber = move.MoveNumber; Color = if isWhite then "w" else "b"
               San = move.San; UciMove = uciMove
               Classification = classification; EvalBefore = evalBefore
+              HasEvalGap = hasEvalGap
               BestMove = ""; BestMoveSan = ""; BestEval = evalBefore
               SecondBestEval = None
               WinProbBefore = wpBefore; WinProbAfter = wpAfter; WinProbLoss = wpLoss
@@ -825,6 +845,14 @@ let private analyzeFromBasicAnnotations (thresholds: ClassificationThresholds) (
         try board2.PlaySanMove move.San with _ -> ()
 
     let movesArray = results.ToArray()
+    // "At least one eval somewhere in the file" is too weak a gate. A move needs an eval on
+    // BOTH sides of it to be measurable, and a game where none are — a study or broadcast PGN
+    // carrying `[%eval]` on a handful of key moves — has nothing to report. Saying so is the
+    // honest answer; a report built from no measured moves reads as 0% or 100% accuracy
+    // depending on how the gaps are counted, and both are wrong.
+    if movesArray |> Array.forall (fun m -> m.HasEvalGap) then None
+    else
+
     let allWinProbs = movesArray |> Array.map (fun m ->
         if m.Color = "w" then m.WinProbBefore else 1.0 - m.WinProbBefore)
     Some

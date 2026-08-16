@@ -234,6 +234,7 @@ let private mkMove ply moveNum color san cls wpLoss cpLoss =
       WinProbBefore = 0.5; WinProbAfter = 0.5 - wpLoss
       WinProbLoss = wpLoss; CentipawnLoss = cpLoss
       MoveAccuracy = calculateMoveAccuracy 0.065 wpLoss
+      HasEvalGap = false
       Depth = 20; Nodes = 100000L; PV = "" }
 
 /// Neutral WP array (50% for all moves) for tests where volatility is irrelevant
