@@ -233,8 +233,16 @@ let parallelTournamentRun
           [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
       let replayLock = obj()
 
-      let searchReplayList (pairing : Pairing) =
-          searchAndPrepareReplay pairing replayDicts replayList referencGamesPlayed gamesAlreadyPlayed tourny
+      // The sequential runners reseed the deviation counter from PGN history before every
+      // pairing (via searchAndPrepareReplay); the parallel path called the bare
+      // prepareGameReplay and never did, so a resumed run restarted the count at zero and
+      // wrote Deviations tags lower than games already in the same file. The seed value
+      // comes from gamesAlreadyPlayed, which is fixed for the whole run, so it belongs here
+      // once rather than inside the workers where it would race.
+      let seededDeviations =
+          gamesAlreadyPlayed |> Seq.tryLast |> Option.map (fun g -> g.GameMetaData.Deviations) |> Option.defaultValue 0
+      if seededDeviations > tourny.DeviationCounter then
+          tourny.DeviationCounter <- seededDeviations
 
       let gpus = tourny.TestOptions.GPUs
       let concurrency =
@@ -539,7 +547,15 @@ let parallelTournamentRun
           // EndOfTournament fires later in Tournament.fs — after these sinks are disposed — so we
           // tee it here while the recorder/HTTP sinks are still alive. No-op when no feed is set.
           emitAll "" (Update.EndOfTournament tourny)
-          let games = pgnAgent.PostAndReply(fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply))
+          // Bounded like every other agent round-trip in the project: if the PGN agent has
+          // died, an unbounded PostAndReply hangs the tournament permanently at the point
+          // where all games are already played and only the ordered copy is left to write.
+          let games =
+            match pgnAgent.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply)), 30000) with
+            | Some games -> games
+            | None ->
+                logger.LogError "PGN agent did not answer within 30s; skipping the ordered PGN copy"
+                ResizeArray<PgnGame>()
           if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then
               let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
               let path = Path.GetFileNameWithoutExtension(tourny.PgnOutPath) + "_ordered" + ".pgn"

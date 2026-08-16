@@ -97,122 +97,134 @@ let adjudicateByEval
         |[x] -> [x]
         |x::y::_ -> [x;y]
 
-    if piecesLeft <= withTBadjudicationMen then
-        let firstTwoEvals = firstTwoEvals ()
-        let tryProbe =
-            try
-                let dir = tourny.Adjudication.TBAdj.TablebaseDirectory
-                if String.IsNullOrEmpty(dir) |> not && Directory.Exists dir then
-                    let fen = board.FEN()
-                    match runFathomSafe dir fen 3000 with
-                    | Some tableRes ->
-                        let tb = parse tableRes
-                        match tb.Wdl with
-                        | Some "Win" ->
-                            let res = if board.Position.STM = 0uy then "1-0" else "0-1"
-                            Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                        | Some "Draw" ->
-                            Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                        | Some "Loss" ->
-                            let res = if board.Position.STM = 0uy then "0-1" else "1-0"
-                            Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                        | _ -> None
-                    | None -> None
-                else None
-            with ex ->
-                logger.LogWarning(ex, "TB adjudication probe failed; continuing without TB")
-                None
+    // The tablebase branch answers only for positions it can probe. When the probe
+    // yields nothing it must not swallow the position: repetition, insufficient
+    // material, the 50-move rule, checkmate and stalemate all live in the chain below,
+    // and an endgame small enough for a tablebase is exactly where they matter most.
+    let tbAdjudication () =
+      if piecesLeft <= withTBadjudicationMen then
+          let firstTwoEvals = firstTwoEvals ()
+          let tryProbe =
+              try
+                  let dir = tourny.Adjudication.TBAdj.TablebaseDirectory
+                  if String.IsNullOrEmpty(dir) |> not && Directory.Exists dir then
+                      let fen = board.FEN()
+                      match runFathomSafe dir fen 3000 with
+                      | Some tableRes ->
+                          let tb = parse tableRes
+                          match tb.Wdl with
+                          | Some "Win" ->
+                              let res = if board.Position.STM = 0uy then "1-0" else "0-1"
+                              Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                          | Some "Draw" ->
+                              Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                          | Some "Loss" ->
+                              let res = if board.Position.STM = 0uy then "0-1" else "1-0"
+                              Formatting.createResultWithEval player1 player2 gameMoveList res ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                          | _ -> None
+                      | None -> None
+                  else None
+              with ex ->
+                  logger.LogWarning(ex, "TB adjudication probe failed; continuing without TB")
+                  None
 
-        if tryProbe.IsSome then
-            tryProbe
+          if tryProbe.IsSome then
+              tryProbe
 
-        elif tryProbe.IsNone && shouldAdjudicateTB evals piecesLeft withTBadjudicationMen then
-            try
-                match evals.[0] with
-                | EvalType.CP ev when ev > 5.0 ->
-                    Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                | EvalType.CP ev when ev < -5.0 ->
-                    Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                | EvalType.CP _ ->
-                    Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                | EvalType.Mate m when m > 0 ->
-                    Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                | EvalType.Mate m when m < 0 ->
-                    Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                | EvalType.Mate m -> // mate 0 or mate -0
-                    if m = -0 then
-                        Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                    else
-                        Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
-                | EvalType.NA ->
-                    logger.LogCritical("TB adjudication fallback skipped: NA eval")
-                    None
-            with ex ->
-                logger.LogCritical(ex, "Error during TB adjudication fallback")
-                None
-        else None
+          elif tryProbe.IsNone && shouldAdjudicateTB evals piecesLeft withTBadjudicationMen then
+              try
+                  match evals.[0] with
+                  | EvalType.CP ev when ev > 5.0 ->
+                      Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                  | EvalType.CP ev when ev < -5.0 ->
+                      Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                  | EvalType.CP _ ->
+                      Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                  | EvalType.Mate m when m > 0 ->
+                      Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                  | EvalType.Mate m when m < 0 ->
+                      Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                  | EvalType.Mate m -> // mate 0 or mate -0
+                      if m = -0 then
+                          Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                      else
+                          Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.AdjudicateTB dur firstTwoEvals |> Some
+                  | EvalType.NA ->
+                      logger.LogCritical("TB adjudication fallback skipped: NA eval")
+                      None
+              with ex ->
+                  logger.LogCritical(ex, "Error during TB adjudication fallback")
+                  None
+          else None
+      // Too many pieces for a tablebase — nothing for this branch to say.
+      else None
 
-    elif moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
-        let result =
-            match evals.[0] with
-            |EvalType.CP ev when ev >= tourny.Adjudication.WinOption.MinWinScore -> "1-0" |> Some
-            |EvalType.CP ev when ev <= -tourny.Adjudication.WinOption.MinWinScore -> "0-1" |> Some
-            |EvalType.Mate m when m > 0 -> "1-0" |> Some
-            |EvalType.Mate m when m < 0 -> "0-1" |> Some
-            |EvalType.Mate m -> //mate 0 or mate -0
-                if m = -0 then "0-1" |> Some else "1-0" |> Some
-            |EvalType.CP cp ->
-                logger.LogCritical("High evals but not reaching MinWinScore: {Eval}", cp)
-                None
-            |NA ->
-                logger.LogCritical("High evals but NA eval found")
-                None
-        match result with
-        |None -> None
-        |Some result ->
-            // Check if engines agree on winner before adjudicating
-            let pos = board.Position
-            let ismate = board.AnyLegalMove() |> not && (ChessLibrary.MoveGeneration.InCheck &pos <> 0UL)
-            if ismate then
-                let gameRes = if pos.STM = 0uy then "0-1" else "1-0"
-                let res = Formatting.createResultWithEval player1 player2 gameMoveList gameRes ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
-                Some res
+    let otherAdjudication () =
+      if moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
+          let result =
+              match evals.[0] with
+              |EvalType.CP ev when ev >= tourny.Adjudication.WinOption.MinWinScore -> "1-0" |> Some
+              |EvalType.CP ev when ev <= -tourny.Adjudication.WinOption.MinWinScore -> "0-1" |> Some
+              |EvalType.Mate m when m > 0 -> "1-0" |> Some
+              |EvalType.Mate m when m < 0 -> "0-1" |> Some
+              |EvalType.Mate m -> //mate 0 or mate -0
+                  if m = -0 then "0-1" |> Some else "1-0" |> Some
+              |EvalType.CP cp ->
+                  logger.LogCritical("High evals but not reaching MinWinScore: {Eval}", cp)
+                  None
+              |NA ->
+                  logger.LogCritical("High evals but NA eval found")
+                  None
+          match result with
+          |None -> None
+          |Some result ->
+              // Check if engines agree on winner before adjudicating
+              let pos = board.Position
+              let ismate = board.AnyLegalMove() |> not && (ChessLibrary.MoveGeneration.InCheck &pos <> 0UL)
+              if ismate then
+                  let gameRes = if pos.STM = 0uy then "0-1" else "1-0"
+                  let res = Formatting.createResultWithEval player1 player2 gameMoveList gameRes ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+                  Some res
 
-            elif evals.Length >= 2 && not (evalsAgreeOnWinner evals.[0] evals.[1]) then
-                logger.LogDebug("High evals but engines disagree on winner (signs differ) - not adjudicating")
-                None
-            else
-                let res = Formatting.createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
-                Some res
+              elif evals.Length >= 2 && not (evalsAgreeOnWinner evals.[0] evals.[1]) then
+                  logger.LogDebug("High evals but engines disagree on winner (signs differ) - not adjudicating")
+                  None
+              else
+                  let res = Formatting.createResultWithEval player1 player2 gameMoveList result ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+                  Some res
 
-    elif moves >= (tourny.Adjudication.DrawOption.MinDrawMove * 2 + drawPlyLength) && tooLowEvals() then
-        let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
-        Some res
+      elif moves >= (tourny.Adjudication.DrawOption.MinDrawMove * 2 + drawPlyLength) && tooLowEvals() then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
+          Some res
 
-    elif board.InsufficientMaterial() then
-        let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
-        Some res
+      elif board.InsufficientMaterial() then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
+          Some res
 
-    elif board.ClaimThreeFoldRep () then
-        let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Repetition dur (firstTwoEvals())
-        Some res
+      elif board.ClaimThreeFoldRep () then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Repetition dur (firstTwoEvals())
+          Some res
 
-    elif board.AnyLegalMove() |> not then
-        let mutable mypos = board.Position
-        let check = ChessLibrary.MoveGeneration.InCheck &mypos <> 0UL
-        if check then
-            if playedLastMove = player1 then
-                let res = Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.Checkmate dur  (firstTwoEvals())
-                Some res
-            else
-                let res = Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.Checkmate dur (firstTwoEvals())
-                Some res
-        else
-            let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Stalemate dur (firstTwoEvals())
-            Some res
+      elif board.AnyLegalMove() |> not then
+          let mutable mypos = board.Position
+          let check = ChessLibrary.MoveGeneration.InCheck &mypos <> 0UL
+          if check then
+              if playedLastMove = player1 then
+                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.Checkmate dur  (firstTwoEvals())
+                  Some res
+              else
+                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.Checkmate dur (firstTwoEvals())
+                  Some res
+          else
+              let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Stalemate dur (firstTwoEvals())
+              Some res
 
-    elif board.Position.Count50 >= 100uy then
-        let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
-        Some res
-    else
-        None
+      elif board.Position.Count50 >= 100uy then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
+          Some res
+      else
+          None
+
+    match tbAdjudication () with
+    | Some res -> Some res
+    | None -> otherAdjudication ()
