@@ -183,6 +183,15 @@ let ``prose is not mistaken for telemetry by its punctuation`` () =
     // result for an eval/depth pattern.
     Assert.Equal("The point: 34.e8=Q wins, since 34...f1=Q 35.Qxf1 g1=Q loses",
                  PGNComment.proseText "The point: 34.e8=Q wins, since 34...f1=Q 35.Qxf1 g1=Q loses")
+    // Capture promotions start with the pawn's file, so a rule that only guards the
+    // destination square ("e8=") lets "exd8=" through as if it were a telemetry key.
+    Assert.Equal("42.exd8=Q Rxd8 43.cxb8=Q Rxb8 44.axb8=Q and White wins the race",
+                 PGNComment.proseText "42.exd8=Q Rxd8 43.cxb8=Q Rxb8 44.axb8=Q and White wins the race")
+    // The Informant equality symbol appended to a move has the same shape.
+    Assert.Equal("Also possible is 20.Rc8= but 21.Nf3= and 22.Bd2= keep the balance",
+                 PGNComment.proseText "Also possible is 20.Rc8= but 21.Nf3= and 22.Bd2= keep the balance")
+    // A score out of a number of games looks exactly like an eval/depth pair.
+    Assert.Equal("2.5/9 was enough to win the event", PGNComment.proseText "2.5/9 was enough to win the event")
     Assert.Equal("Book line ends here, now the real fight begins",
                  PGNComment.proseText "Book line ends here, now the real fight begins")
     Assert.Equal("1/2-1/2 was agreed", PGNComment.proseText "1/2-1/2 was agreed")

@@ -16,16 +16,25 @@ open System
 
 /// A key followed by "=", as every engine telemetry dialect writes its fields — short and
 /// lowercase in a move annotation ("wv=", "mt=", "tl="), long and mixed-case in EB's
-/// tournament header ("Rounds=", "UCI_Chess960="). The one thing that must never match is a
-/// SAN promotion, so a square name followed by "=" is excluded outright: "e8=Q" is prose.
+/// tournament header ("Rounds=", "Threads=").
+///
+/// What must never match is chess notation ending in "=": a promotion, quiet or capturing
+/// ("e8=Q", "exd8=Q"), or the Informant equality symbol on any move ("Rc8="). All of those
+/// end in a rank digit, and no telemetry key does, so requiring the character before "=" to
+/// be a letter separates them. A key that happens to end in a digit is the acceptable loss
+/// ("UCI_Chess960="): the threshold is three keys, and a header carrying it carries dozens.
 let private telemetryKeyRegex =
-  Text.RegularExpressions.Regex(@"(?<![A-Za-z0-9])(?![a-h][1-8]=)[A-Za-z][A-Za-z0-9_]*=",
+  Text.RegularExpressions.Regex(@"(?<![A-Za-z0-9])[A-Za-z](?:[A-Za-z0-9_]*[A-Za-z_])?=",
                                 Text.RegularExpressions.RegexOptions.Compiled)
 
-/// A leading "eval/depth" pair, as Fritz and Arena write it ("+0.34/12 0:02"). The decimal
-/// point is required so that a game result written as prose ("1/2-1/2") is not caught.
+/// A leading "eval/depth" pair, as Fritz and Arena write it ("+0.34/12 0:02").
+///
+/// Either an explicit sign or two decimals is required, because a score out of a number of
+/// games has the same shape: "2.5/9 was enough to win the event" is prose, "+0.34/12" and
+/// "0.00/29" are not. A written result ("1/2-1/2") has no decimal point at all.
 let private evalDepthPrefixRegex =
-  Text.RegularExpressions.Regex(@"^\s*[+-]?(?:\d+\.\d+|M\d+)/\d+", Text.RegularExpressions.RegexOptions.Compiled)
+  Text.RegularExpressions.Regex(@"^\s*(?:[+-]?M\d+|[+-]\d+\.\d+|\d+\.\d{2,})/\d+",
+                                Text.RegularExpressions.RegexOptions.Compiled)
 
 /// A mate token as engines write it in comments: "M5", "-M5", "+M3". Anchored so it cannot
 /// match the M of an ordinary word.

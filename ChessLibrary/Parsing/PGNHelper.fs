@@ -150,7 +150,10 @@ let evalsByPly (game: PgnGame) : System.Collections.Generic.Dictionary<int, stri
           evals.[i] <-
             match PGNComment.tryMateDistance move.Comment with
             | Some n -> sprintf "#%s%d" sign n
-            | None -> "#" + sign
+            // No mate token behind the sentinel means this is not a mate at all but an
+            // engine reporting a score of 200 pawns or more. Saying so is more honest than
+            // a distanceless "#".
+            | None -> PGNComment.formatPawns stat.wv
         else
           evals.[i] <- PGNComment.formatPawns stat.wv
       else

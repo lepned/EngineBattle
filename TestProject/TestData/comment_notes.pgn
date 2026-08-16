@@ -10,3 +10,16 @@
 2. Nf3 { Develops with tempo. } 2... Nc6 { The main line. }
 3. Bb5 3... a6 { Only black has a note here. }
 4. Ba4 { Only white has a note here. } 4... Nf6 *
+
+[Event "Comment layout test - prose that looks like telemetry"]
+[Site "-"]
+[Date "2026.08.16"]
+[Round "-"]
+[White "Tricky prose"]
+[Black "Should all be visible"]
+[Result "*"]
+
+1. e4 { 42.exd8=Q Rxd8 43.cxb8=Q Rxb8 44.axb8=Q and White wins the race. } 1... e5 { Also possible is 20.Rc8= but 21.Nf3= and 22.Bd2= keep the balance. }
+2. Nf3 { 2.5/9 was enough to win the event. } 2... Nc6 { The point: 34.e8=Q wins, since 34...f1=Q 35.Qxf1 g1=Q loses. }
+3. Bb5 { Book line ends here, now the real fight begins. } 3... a6 { 1/2-1/2 was agreed after 40 moves. }
+4. Ba4 { wv=1.06, mt=12875, s=9282899, n=119508052, d=35 } 4... Nf6 { +0.54/32 35.500s, tl=148.500s } *
