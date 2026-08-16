@@ -588,6 +588,11 @@
                       style="@(isCurrent ? currentMoveColor : (isWhiteToMove ? whiteMoveColor : blackMoveColor))">
                     @($" {tok.DisplayText}")@if (MoveEvals != null && !tok.IsFromVariation && MoveEvals.TryGetValue(tok.Ply, out var inlineEval)){<span class="mcb-inline-eval"> @inlineEval</span>}@(" ")
                 </span>
+                @* Notes run inline here rather than in a row of their own: this list is
+                   flowing text, so a note wraps with the moves instead of widening a
+                   fixed-width cell — the reason the table layout needed its own row. Same
+                   treatment the variation moves above already get. *@
+                @WrapInlineComment(tok.Comment)
             }
         }
     };
