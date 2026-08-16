@@ -793,6 +793,11 @@ type PgnGameMessage =
     | WriteGame of filePath:string * header:GameMetadata * moveSection:string * result:Result
     | GetResults of reply:AsyncReplyChannel<ResizeArray<Result>>
     | GetPGNGames of reply:AsyncReplyChannel<ResizeArray<PgnGame>>
+    /// Same games, but carrying their original text. Only the ordered-PGN writer needs this:
+    /// it rewrites `Raw`, and the plain GetPGNGames parses without it, so asking for games
+    /// there produced a file of blank separators. Kept separate because retaining the raw
+    /// text of every game is expensive, and the tuner polls GetPGNGames on a cumulative PGN.
+    | GetPGNGamesWithRaw of reply:AsyncReplyChannel<ResizeArray<PgnGame>>
     | Dispose
     | DisposeReply of reply:AsyncReplyChannel<unit>
 
@@ -839,6 +844,15 @@ let startPgnGameReaderWriter (filePath: string) =
                       reply.Reply (ResizeArray<PgnGame>(games))
                   with ex ->
                       System.Diagnostics.Debug.WriteLine($"PGN GetPGNGames error: {ex.Message}")
+                      reply.Reply(ResizeArray<PgnGame>())
+              | GetPGNGamesWithRaw reply ->
+                  try
+                      reader.BaseStream.Seek(0L, SeekOrigin.Begin) |> ignore
+                      reader.DiscardBufferedData()
+                      let games = parsePgnStreamWithRaw reader
+                      reply.Reply (ResizeArray<PgnGame>(games))
+                  with ex ->
+                      System.Diagnostics.Debug.WriteLine($"PGN GetPGNGamesWithRaw error: {ex.Message}")
                       reply.Reply(ResizeArray<PgnGame>())
               | GetResults reply ->
                   try

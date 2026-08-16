@@ -554,7 +554,7 @@ let parallelTournamentRun
           // died, an unbounded PostAndReply hangs the tournament permanently at the point
           // where all games are already played and only the ordered copy is left to write.
           let games =
-            match pgnAgent.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply)), 30000) with
+            match pgnAgent.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetPGNGamesWithRaw(reply)), 30000) with
             | Some games -> games
             | None ->
                 logger.LogError "PGN agent did not answer within 30s; leaving the ordered PGN copy untouched"
