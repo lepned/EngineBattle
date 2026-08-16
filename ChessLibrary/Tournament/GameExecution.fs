@@ -587,6 +587,13 @@ let playWithPondering
                   continueGame <- false
 
       finally
+          // An engine can still be searching when this game ends — a ponderer left in
+          // `go ponder`, or the loser of an adjudication that never got to answer. Nothing
+          // else here stops it, so it would keep a core busy into the next game and skew its
+          // NPS and timing. (This is playWithPondering, the sequential engine-reuse path;
+          // the pooled parallel path runs through playGeneric and is unaffected.)
+          try player1.Stop() with _ -> ()
+          try player2.Stop() with _ -> ()
           // Cleanup on exit: cancel and dispose per-game writer CTSs and complete channels
           match player1WriterCts with
           | Some pcts -> try pcts.Cancel(); pcts.Dispose() with _ -> ()
@@ -691,9 +698,15 @@ let playGeneric
   let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" board.IsFRC }
   player1.AddSetOption chess960Option
   player2.AddSetOption chess960Option
+  // Pooled engines (the parallel/console path) deliberately skip this. It is not an
+  // oversight that they never get `ucinewgame` between games: the command is cheap, but the
+  // `readyok` that has to follow it is not — Ceres and Lc0 spend around ten seconds
+  // rebuilding before they answer. A 500-round match at nodes=1 would spend far more time
+  // re-initialising than searching. The cost is that a pooled engine keeps its hash across
+  // games of a run; that is accepted, not overlooked.
   if not skipEngineInit then
     try
-        
+
         if tourny.MoveOverhead.Ticks > 0 then
             let ms = tourny.MoveOverhead.TotalMilliseconds |> int
             player1.SetMoveOverhead("overhead", ms)

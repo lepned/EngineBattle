@@ -5,6 +5,7 @@ open System.Text
 open System.Threading
 open Microsoft.Extensions.Logging
 open ChessLibrary.TypesDef.CoreTypes
+open ChessLibrary.MiscTypes
 open ChessLibrary.TypesDef.Tournament
 open ChessLibrary.PGNTypes
 open ChessLibrary.Chess
@@ -115,9 +116,17 @@ let executeGameWithSetup
     logOpeningInfo logger pair openingMoves
     logPosition logger board
 
-    // Create engines
+    // Create engines. createEngine is fail-fast — a bad option or a handshake that never
+    // completes raises — and White is already a running process by the time Black is built,
+    // so Black's failure has to tear White down. The outer `finally` cannot: it only covers
+    // the block below, which this never reaches.
     let engine1 = EngineHelper.createEngine (pair.White, Some logger)
-    let engine2 = EngineHelper.createEngine (pair.Black, Some logger)
+    let engine2 =
+        try
+            EngineHelper.createEngine (pair.Black, Some logger)
+        with _ ->
+            try cleanupEngines engine1 engine1 with _ -> ()
+            reraise ()
 
     try
         // Notify round
@@ -132,7 +141,12 @@ let executeGameWithSetup
 
         // Process completed game
         let gameData = buildGameMetadata tourny pair result roundTxt
-        addToReplayList replayList tourny result gameData board.UciMovesPlayed
+        // A cancelled game's move list is a truncated prefix. writeGameToPgn already refuses
+        // it; seeding the replay state with it would let a game that was never written drive
+        // move-deviation lookups for later pairings on the same opening. roundRobin and
+        // ParallelExecution guard both calls — only this shared helper was missed.
+        if result.Reason <> ResultReason.Cancel then
+            addToReplayList replayList tourny result gameData board.UciMovesPlayed
         let moveSection = sb.ToString()
         writeGameToPgn pgnAgent tourny gameData moveSection result cts
 

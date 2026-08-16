@@ -24,6 +24,12 @@ open ChessLibrary.GameReplay
 open ChessLibrary.GamePersistence
 open ChessLibrary.GameSetup
 
+/// How many consecutive unplayable games (Cancel / NotStarted) a single pairing may produce
+/// before it is abandoned. A crashed game is not scored and does not consume its slot, which
+/// is right — but an engine that fails reproducibly would otherwise retry the same pairing
+/// for as long as the tournament is allowed to run.
+let private maxPairingRetries = 3
+
 /// Utility functions for tournament time estimation
 module TournamentUtils =
   let estimateGameDuration (white: TimeConfig) (black:TimeConfig) (movesEst : int) =
@@ -166,7 +172,12 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
 
         // Execute game with full setup using helper
         let result = executeGameWithSetup logger tourny board pair epdBook sb cts replayDicts replayList pgnGameWriterAgent tryGetUserAdjudication callback roundTxt
-        results <- result :: results
+        // A Cancel result is a crashed or aborted game, not a played one: it carries
+        // "1/2-1/2" purely as a placeholder, and writeGameToPgn already refuses to
+        // persist it. Scoring it would award both engines half a point that exists
+        // nowhere in the PGN. roundRobin and ParallelExecution already filter it.
+        if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
+          results <- result :: results
 
         do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
         board.ResetBoardState()
@@ -802,7 +813,11 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
               propagateWinnerIfDecided ()
               writeCupBracket cupBracketAgent bracket
 
-        while matchInfo.IsDecided |> not && not cts.IsCancellationRequested do
+        // Same bound as Swiss: an unplayable pairing decides nothing, so without a cap a
+        // reproducibly crashing engine keeps this match alive indefinitely.
+        let mutable consecutiveFailures = 0
+        while matchInfo.IsDecided |> not && not cts.IsCancellationRequested
+              && consecutiveFailures < maxPairingRetries do
           let tieBreakRound = gamesRemaining = 0
           if gamesRemaining = 0 then
             gamesRemaining <- 2
@@ -861,6 +876,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
               // NotStarted is Result.Empty from a cancellation race — a game that never
               // ran must not be scored or persisted any more than a cancelled one.
               if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
+                consecutiveFailures <- 0
                 let game : CupGame =
                   { GameNr = gameNr
                     White = white.Name
@@ -907,6 +923,17 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
                   callback (Update.TotalNumberOfPairs tourny.TotalGames)
                 propagateWinnerIfDecided ()
                 writeCupBracket cupBracketAgent bracket
+              else
+                consecutiveFailures <- consecutiveFailures + 1
+                if consecutiveFailures >= maxPairingRetries then
+                  // An abandoned cup match has no winner, and the next round pairs by
+                  // chunking the survivors — so continuing would drop a player out of the
+                  // bracket without a game and leave a half-filled slot on disk. There is no
+                  // honest way to carry on from here.
+                  logger.LogCritical(
+                    "Abandoning cup match {White} vs {Black} after {Count} consecutive unplayable games — stopping the tournament",
+                    white.Name, black.Name, consecutiveFailures)
+                  cts.Cancel()
       match matchInfo.Winner with
       | Some name when name = playerA.Name ->
           winners.Add playerA
@@ -1179,7 +1206,12 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
 
       // Execute game with full setup using helper
       let result = executeGameWithSetup logger tourny board pair epdBook sb cts replayDicts replayList pgnGameWriterAgent tryGetUserAdjudication callback roundTxt
-      results <- result :: results
+      // A Cancel result is a crashed or aborted game, not a played one: it carries
+      // "1/2-1/2" purely as a placeholder, and writeGameToPgn already refuses to
+      // persist it. Scoring it would award both engines half a point that exists
+      // nowhere in the PGN. roundRobin and ParallelExecution already filter it.
+      if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
+        results <- result :: results
 
       board.ResetBoardState()
       gameNr <- gameNr + 1
@@ -1325,7 +1357,11 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
             opening
         let mutable gamesRemaining = Math.Max(0, gamesPerMatch - pairing.Games.Count)
         let localOpeningIndex = ref (pairing.Games.Count / 2)
-        while gamesRemaining > 0 && not cts.IsCancellationRequested do
+        // A Cancel result does not decrement gamesRemaining — the game was never played, so
+        // retrying it is right. But an engine that crashes reproducibly would retry the same
+        // pairing forever, since nothing else ends the loop. Give up after a few in a row.
+        let mutable consecutiveFailures = 0
+        while gamesRemaining > 0 && not cts.IsCancellationRequested && consecutiveFailures < maxPairingRetries do
           let hasOddGame = pairing.Games.Count % 2 = 1
           let opening =
             if hasOddGame then
@@ -1344,7 +1380,10 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
             else
               [ (firstWhite, firstBlack); (firstBlack, firstWhite) ]
           for (white, black) in playOrder do
-            if gamesRemaining = 0 || cts.IsCancellationRequested then
+            // The retry bound has to be re-tested here too: playOrder holds both colours,
+            // so without it the pairing gets one more game than the bound allows and logs
+            // its abandonment twice. Cup and Ladder cancel instead, which this check covers.
+            if gamesRemaining = 0 || cts.IsCancellationRequested || consecutiveFailures >= maxPairingRetries then
               ()
             else
               let roundGameNumber = (pairIndex * gamesPerMatch) + pairing.Games.Count + 1
@@ -1358,6 +1397,7 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
               let! result = playPairing pairingGame
               // NotStarted is Result.Empty from a cancellation race — never played, never scored
               if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
+                consecutiveFailures <- 0
                 let game : SwissTypes.SwissGame =
                   { GameNr = gameNr
                     White = white.Name
@@ -1392,6 +1432,12 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
                     (p.Black.Name = pairing.PlayerA || p.Black.Name = pairing.PlayerB)) |> ignore
                   callback (Update.PairingList plannedPairings)
                 writeSwissState swissAgent state
+              else
+                consecutiveFailures <- consecutiveFailures + 1
+                if consecutiveFailures >= maxPairingRetries then
+                  logger.LogCritical(
+                    "Abandoning pairing {White} vs {Black} after {Count} consecutive unplayable games",
+                    white.Name, black.Name, consecutiveFailures)
           if hasOddGame && tourny.SwissOptions.UniquePerMatchOnly then
             localOpeningIndex := !localOpeningIndex + 1
           if gamesRemaining > 0 && not cts.IsCancellationRequested then
@@ -1637,7 +1683,12 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
       let openingsAlreadyPlayed = countOpeningsAlreadyPlayed gamesAlreadyPlayed pair.OpeningHash
       let roundTxt = computeRoundTextFromPairing pair openingsAlreadyPlayed 0
       let result = executeGameWithSetup logger tourny board pair epdBook sb cts replayDicts replayList pgnGameWriterAgent tryGetUserAdjudication callback roundTxt
-      results <- result :: results
+      // A Cancel result is a crashed or aborted game, not a played one: it carries
+      // "1/2-1/2" purely as a placeholder, and writeGameToPgn already refuses to
+      // persist it. Scoring it would award both engines half a point that exists
+      // nowhere in the PGN. roundRobin and ParallelExecution already filter it.
+      if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
+        results <- result :: results
       board.ResetBoardState()
       gameNr <- gameNr + 1
       if gameNr % 2 = 0 then
@@ -1663,7 +1714,11 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
 
   let playMiniMatch (matchInfo: LadderMatch) (challengerConfig: EngineConfig) (defenderConfig: EngineConfig) (startingGamesRemaining: int) = async {
     let mutable gamesRemaining = startingGamesRemaining
-    while not matchInfo.IsDecided && not cts.IsCancellationRequested do
+    // Same bound as Swiss and Cup: nothing else ends this loop when every game comes back
+    // unplayable, because an abandoned game neither scores nor decides the match.
+    let mutable consecutiveFailures = 0
+    while not matchInfo.IsDecided && not cts.IsCancellationRequested
+          && consecutiveFailures < maxPairingRetries do
       if gamesRemaining = 0 then
         gamesRemaining <- 2
         tourny.TotalGames <- tourny.TotalGames + 2
@@ -1734,6 +1789,7 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
           let! result = playPairing pairing
           // NotStarted is Result.Empty from a cancellation race — never played, never scored
           if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
+            consecutiveFailures <- 0
             let game : LadderGame =
               { GameNr = gameNr
                 White = white.Name
@@ -1775,9 +1831,19 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
               tourny.TotalGames <- tourny.TotalGames - gamesRemaining
               callback (Update.TotalNumberOfPairs tourny.TotalGames)
             writeLadderState ladderAgent state
-            // Delay between individual games within a match
-            if gamesRemaining > 0 && not matchInfo.IsDecided && not cts.IsCancellationRequested then
-              do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
+          else
+            consecutiveFailures <- consecutiveFailures + 1
+            if consecutiveFailures >= maxPairingRetries then
+              // processMatchResult ignores an undecided match, so nothing would eliminate an
+              // engine: the outer loop would rebuild this same pairing forever, adding a
+              // LadderMatch and rewriting the state file on every pass.
+              logger.LogCritical(
+                "Abandoning ladder match {Challenger} vs {Defender} after {Count} consecutive unplayable games — stopping the tournament",
+                matchInfo.Challenger, matchInfo.Defender, consecutiveFailures)
+              cts.Cancel()
+          // Delay between individual games within a match
+          if gamesRemaining > 0 && not matchInfo.IsDecided && not cts.IsCancellationRequested then
+            do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
   }
 
   let processMatchResult (matchInfo: LadderMatch) =
