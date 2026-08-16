@@ -160,7 +160,37 @@ let adjudicateByEval
       else None
 
     let otherAdjudication () =
-      if moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
+      // Terminal conditions come first. They are facts about the position — the game is
+      // already over — while the branches below are heuristics about a game still in
+      // progress. With the eval branches first, a stalemate or a 50-move draw in a
+      // won-looking endgame was scored as a full point for the stronger side, and a real
+      // checkmate was relabelled AdjudicatedEvaluation, losing its # in the PGN.
+      if board.InsufficientMaterial() then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
+          Some res
+
+      elif board.ClaimThreeFoldRep () then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Repetition dur (firstTwoEvals())
+          Some res
+
+      elif board.AnyLegalMove() |> not then
+          let mutable mypos = board.Position
+          let check = ChessLibrary.MoveGeneration.InCheck &mypos <> 0UL
+          if check then
+              if playedLastMove = player1 then
+                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.Checkmate dur  (firstTwoEvals())
+                  Some res
+              else
+                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.Checkmate dur (firstTwoEvals())
+                  Some res
+          else
+              let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Stalemate dur (firstTwoEvals())
+              Some res
+
+      elif board.Position.Count50 >= 100uy then
+          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
+          Some res
+      elif moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
           let result =
               match evals.[0] with
               |EvalType.CP ev when ev >= tourny.Adjudication.WinOption.MinWinScore -> "1-0" |> Some
@@ -197,31 +227,6 @@ let adjudicateByEval
           let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicatedEvaluation dur (firstTwoEvals())
           Some res
 
-      elif board.InsufficientMaterial() then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
-          Some res
-
-      elif board.ClaimThreeFoldRep () then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Repetition dur (firstTwoEvals())
-          Some res
-
-      elif board.AnyLegalMove() |> not then
-          let mutable mypos = board.Position
-          let check = ChessLibrary.MoveGeneration.InCheck &mypos <> 0UL
-          if check then
-              if playedLastMove = player1 then
-                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "1-0" ResultReason.Checkmate dur  (firstTwoEvals())
-                  Some res
-              else
-                  let res = Formatting.createResultWithEval player1 player2 gameMoveList "0-1" ResultReason.Checkmate dur (firstTwoEvals())
-                  Some res
-          else
-              let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.Stalemate dur (firstTwoEvals())
-              Some res
-
-      elif board.Position.Count50 >= 100uy then
-          let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
-          Some res
       else
           None
 

@@ -587,10 +587,11 @@ let playWithPondering
                   continueGame <- false
 
       finally
-          // An engine can still be searching when the game ends — a ponderer left in
+          // An engine can still be searching when this game ends — a ponderer left in
           // `go ponder`, or the loser of an adjudication that never got to answer. Nothing
-          // below stops it, and the pooled/ConsoleOnly path only restarts engines that have
-          // exited, so it would keep a core busy through the next game's measurements.
+          // else here stops it, so it would keep a core busy into the next game and skew its
+          // NPS and timing. (This is playWithPondering, the sequential engine-reuse path;
+          // the pooled parallel path runs through playGeneric and is unaffected.)
           try player1.Stop() with _ -> ()
           try player2.Stop() with _ -> ()
           // Cleanup on exit: cancel and dispose per-game writer CTSs and complete channels

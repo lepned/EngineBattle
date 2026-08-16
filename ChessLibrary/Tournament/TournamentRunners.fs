@@ -176,7 +176,7 @@ let gauntlet (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTok
         // "1/2-1/2" purely as a placeholder, and writeGameToPgn already refuses to
         // persist it. Scoring it would award both engines half a point that exists
         // nowhere in the PGN. roundRobin and ParallelExecution already filter it.
-        if result.Reason <> ResultReason.Cancel then
+        if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
           results <- result :: results
 
         do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)
@@ -926,9 +926,14 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
               else
                 consecutiveFailures <- consecutiveFailures + 1
                 if consecutiveFailures >= maxPairingRetries then
+                  // An abandoned cup match has no winner, and the next round pairs by
+                  // chunking the survivors — so continuing would drop a player out of the
+                  // bracket without a game and leave a half-filled slot on disk. There is no
+                  // honest way to carry on from here.
                   logger.LogCritical(
-                    "Abandoning cup match {White} vs {Black} after {Count} consecutive unplayable games",
+                    "Abandoning cup match {White} vs {Black} after {Count} consecutive unplayable games — stopping the tournament",
                     white.Name, black.Name, consecutiveFailures)
+                  cts.Cancel()
       match matchInfo.Winner with
       | Some name when name = playerA.Name ->
           winners.Add playerA
@@ -1205,7 +1210,7 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
       // "1/2-1/2" purely as a placeholder, and writeGameToPgn already refuses to
       // persist it. Scoring it would award both engines half a point that exists
       // nowhere in the PGN. roundRobin and ParallelExecution already filter it.
-      if result.Reason <> ResultReason.Cancel then
+      if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
         results <- result :: results
 
       board.ResetBoardState()
@@ -1375,7 +1380,10 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
             else
               [ (firstWhite, firstBlack); (firstBlack, firstWhite) ]
           for (white, black) in playOrder do
-            if gamesRemaining = 0 || cts.IsCancellationRequested then
+            // The retry bound has to be re-tested here too: playOrder holds both colours,
+            // so without it the pairing gets one more game than the bound allows and logs
+            // its abandonment twice. Cup and Ladder cancel instead, which this check covers.
+            if gamesRemaining = 0 || cts.IsCancellationRequested || consecutiveFailures >= maxPairingRetries then
               ()
             else
               let roundGameNumber = (pairIndex * gamesPerMatch) + pairing.Games.Count + 1
@@ -1679,7 +1687,7 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
       // "1/2-1/2" purely as a placeholder, and writeGameToPgn already refuses to
       // persist it. Scoring it would award both engines half a point that exists
       // nowhere in the PGN. roundRobin and ParallelExecution already filter it.
-      if result.Reason <> ResultReason.Cancel then
+      if result.Reason <> ResultReason.Cancel && result.Reason <> ResultReason.NotStarted then
         results <- result :: results
       board.ResetBoardState()
       gameNr <- gameNr + 1
@@ -1826,9 +1834,13 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
           else
             consecutiveFailures <- consecutiveFailures + 1
             if consecutiveFailures >= maxPairingRetries then
+              // processMatchResult ignores an undecided match, so nothing would eliminate an
+              // engine: the outer loop would rebuild this same pairing forever, adding a
+              // LadderMatch and rewriting the state file on every pass.
               logger.LogCritical(
-                "Abandoning ladder match {Challenger} vs {Defender} after {Count} consecutive unplayable games",
+                "Abandoning ladder match {Challenger} vs {Defender} after {Count} consecutive unplayable games — stopping the tournament",
                 matchInfo.Challenger, matchInfo.Defender, consecutiveFailures)
+              cts.Cancel()
           // Delay between individual games within a match
           if gamesRemaining > 0 && not matchInfo.IsDecided && not cts.IsCancellationRequested then
             do! Async.Sleep(tourny.DelayBetweenGames.TotalMilliseconds |> int)

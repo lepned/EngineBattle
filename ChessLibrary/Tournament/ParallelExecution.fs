@@ -554,9 +554,12 @@ let parallelTournamentRun
             match pgnAgent.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetPGNGames(reply)), 30000) with
             | Some games -> games
             | None ->
-                logger.LogError "PGN agent did not answer within 30s; skipping the ordered PGN copy"
+                logger.LogError "PGN agent did not answer within 30s; leaving the ordered PGN copy untouched"
                 ResizeArray<PgnGame>()
-          if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not then
+          // writeRawPgnGamesAdjustedToFile deletes the target before writing, so handing it an
+          // empty sequence would erase a good "_ordered" file from an earlier run — turning a
+          // hang into data loss. Only rewrite it when we actually have the games.
+          if String.IsNullOrWhiteSpace (tourny.PgnOutPath) |> not && games.Count > 0 then
               let directory = DirectoryInfo(tourny.PgnOutPath).Parent.ToString()
               let path = Path.GetFileNameWithoutExtension(tourny.PgnOutPath) + "_ordered" + ".pgn"
               let combined = Path.Combine(directory,path)
