@@ -468,7 +468,10 @@ let parallelTournamentRun
                           // Cancel results (crashed/aborted games) must not seed replay state or
                           // reach the PGN — a written game counts in standings/SPRT and makes
                           // Scheduler.Diff treat the pair as played on resume.
-                          let isCancelled = result.Reason = MiscTypes.ResultReason.Cancel
+                          // NotStarted is Result.Empty from a cancellation race — not a played game either.
+                          let isCancelled =
+                              result.Reason = MiscTypes.ResultReason.Cancel
+                              || result.Reason = MiscTypes.ResultReason.NotStarted
                           if tourny.PreventMoveDeviation && not isCancelled then
                               lock replayLock (fun () ->
                                   for kvp in localWhiteDict do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value

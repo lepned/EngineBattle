@@ -294,7 +294,8 @@ let roundRobin (logger:ILogger) (tourny:Tournament) callback (cts: CancellationT
           let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
           let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
 
-          let isCancelled = result.Reason = ResultReason.Cancel
+          // NotStarted is Result.Empty from a cancellation race — not a played game either.
+          let isCancelled = result.Reason = ResultReason.Cancel || result.Reason = ResultReason.NotStarted
           let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
           if not isCancelled then
             results <- result :: results
@@ -650,7 +651,8 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
       let replayDictBlack = if tourny.PreventMoveDeviation then Some (getReplayDictForPlayer pair.Black.Name) else None
       let result = executeGame tourny replayDictWhite replayDictBlack sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
 
-      let isCancelled = result.Reason = ResultReason.Cancel
+      // NotStarted is Result.Empty from a cancellation race — not a played game either.
+      let isCancelled = result.Reason = ResultReason.Cancel || result.Reason = ResultReason.NotStarted
       let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
       if not isCancelled then
         results <- result :: results

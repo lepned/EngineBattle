@@ -159,12 +159,11 @@ let adjudicateByEval
       // Too many pieces for a tablebase — nothing for this branch to say.
       else None
 
-    let otherAdjudication () =
-      // Terminal conditions come first. They are facts about the position — the game is
-      // already over — while the branches below are heuristics about a game still in
-      // progress. With the eval branches first, a stalemate or a 50-move draw in a
-      // won-looking endgame was scored as a full point for the stronger side, and a real
-      // checkmate was relabelled AdjudicatedEvaluation, losing its # in the PGN.
+    // Terminal conditions are facts about the position: the game is already over. They run
+    // ahead of everything else, including the tablebase branch — a stalemate is a draw even
+    // when the tablebase (or the eval fallback standing in for it) calls the position won,
+    // and a checkmate has to be reported as Checkmate so the PGN gets its #.
+    let terminalAdjudication () =
       if board.InsufficientMaterial() then
           let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.AdjudicateMaterial dur (firstTwoEvals())
           Some res
@@ -190,7 +189,12 @@ let adjudicateByEval
       elif board.Position.Count50 >= 100uy then
           let res = Formatting.createResultWithEval player1 player2 gameMoveList "1/2-1/2" ResultReason.ExcessiveMoves dur (firstTwoEvals())
           Some res
-      elif moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
+      // Nothing terminal about this position — the branches below decide, or nobody does.
+      else
+          None
+
+    let evalAdjudication () =
+      if moves >= (tourny.Adjudication.WinOption.MinWinMove * 2 + winPlyLength) && tooHighEvals() then
           let result =
               match evals.[0] with
               |EvalType.CP ev when ev >= tourny.Adjudication.WinOption.MinWinScore -> "1-0" |> Some
@@ -230,6 +234,9 @@ let adjudicateByEval
       else
           None
 
-    match tbAdjudication () with
+    match terminalAdjudication () with
     | Some res -> Some res
-    | None -> otherAdjudication ()
+    | None ->
+      match tbAdjudication () with
+      | Some res -> Some res
+      | None -> evalAdjudication ()
