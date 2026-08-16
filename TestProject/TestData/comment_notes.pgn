@@ -1,0 +1,12 @@
+[Event "Comment layout test"]
+[Site "-"]
+[Date "2026.08.16"]
+[Round "-"]
+[White "Notes on white"]
+[Black "Notes on black"]
+[Result "*"]
+
+1. e4 { Best by test. } { [%eval 0.28] [%clk 0:05:00] } 1... e5 { Symmetrical reply, and this one is deliberately long enough to wrap across more than a single line so the row height can be judged. } { [%eval 0.24] }
+2. Nf3 { Develops with tempo. } 2... Nc6 { The main line. }
+3. Bb5 3... a6 { Only black has a note here. }
+4. Ba4 { Only white has a note here. } 4... Nf6 *

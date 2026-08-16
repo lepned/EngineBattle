@@ -354,3 +354,25 @@
 .modern-chessboard .mcb-promo-btn img {
     pointer-events: none;
 }
+
+
+
+/* A note sits in its own full-width row under the move it belongs to — the classic
+   notation layout. The move cells cannot hold it: fixed width and nowrap there would
+   widen the table instead of wrapping the text. */
+.modern-chessboard .mcb-note-row td {
+    padding: 2px 8px 4px 8px;
+    color: #cfe8dc;
+    font-size: 0.8em;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: break-word;
+    border-left: 2px solid rgba(127, 207, 167, 0.55);
+    background: rgba(127, 207, 167, 0.06);
+}
+
+.modern-chessboard .mcb-note-move {
+    color: #7FCFA7;
+    font-weight: 600;
+    margin-right: 4px;
+}

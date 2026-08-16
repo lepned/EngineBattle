@@ -516,28 +516,13 @@
         UpdateFrcId(board.StartPosition);
         UpdateDetectedOpening();
         moveHistory = board.GetMoveHistoryWithVariations();
-        moveEvals = ExtractEvalsFromComments(game);
+        moveEvals = PGNHelper.evalsByPly(game);
         var moveAndFen = board.MovesAndFenPlayed.LastOrDefault();
         if (chessBoardRazor != null)
             await chessBoardRazor.OnNotifyMoveAndFen(moveAndFen);
         StateHasChanged();
     }
 
-    private static Dictionary<int, string> ExtractEvalsFromComments(PGNTypes.PgnGame game)
-    {
-        var evals = new Dictionary<int, string>();
-        for (int i = 0; i < game.Mainline.Count; i++)
-        {
-            var move = game.Mainline[i];
-            if (string.IsNullOrEmpty(move.Comment)) continue;
-            var isBlack = move.Color == "b";
-            var player = isBlack ? game.GameMetaData.Black : game.GameMetaData.White;
-            var stat = Annotation.getEngineStatData(player, isBlack, move.Comment);
-            if (stat.d == 0 && stat.n == 0L && stat.wv == 0.0) continue;
-            evals[i] = $"{stat.wv:+0.0;-0.0}";
-        }
-        return evals;
-    }
 
     private async Task SaveGameToPGN(MouseEventArgs args)
     {

@@ -172,15 +172,22 @@ let private appendPlyMove (st: ParserState) (san: string) (color: string) =
       st.WhiteSan <- ""
       st.BlackSan <- ""
 
+/// Consecutive comments both belong to the same move — lichess routinely writes
+/// `{ prose } { [%eval …] [%clk …] }` — so a second one is appended, not substituted.
+/// Overwriting dropped the prose and kept only the machine data. The pending-comment
+/// path below already concatenated; this one did not.
+let private appendComment (existing: string) (cmt: string) =
+  if String.IsNullOrWhiteSpace existing then cmt else existing + " " + cmt
+
 let private tryUpdateLastNodeComment (st: ParserState) (cmt: string) =
   if not (String.IsNullOrWhiteSpace cmt) then
     match st.CurrentLine |> Seq.tryLast with
-    | Some node -> node.Comment <- cmt; true
+    | Some node -> node.Comment <- appendComment node.Comment cmt; true
     | None ->
         match st.RootVariations |> Seq.tryLast with
         | Some line when line.Count > 0 ->
             let lastNode = line[line.Count - 1]
-            lastNode.Comment <- cmt
+            lastNode.Comment <- appendComment lastNode.Comment cmt
             true
         | _ -> false
   else

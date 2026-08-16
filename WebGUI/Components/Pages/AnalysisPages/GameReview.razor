@@ -513,7 +513,7 @@
             analysisResult = null;
             moveAnnotations = new();
             // Try to extract evals from PGN comments (computer match games)
-            moveEvals = ExtractEvalsFromComments(game);
+            moveEvals = PGNHelper.evalsByPly(game);
         }
 
         var startFen = string.IsNullOrWhiteSpace(game.Fen) ? Chess.startPos : game.Fen;
@@ -719,21 +719,6 @@
         moves.Where(m => !m.EvalBefore.IsNA)
              .ToDictionary(m => m.Ply, m => FormatEval(m.EvalBefore));
 
-    private static Dictionary<int, string> ExtractEvalsFromComments(PgnGame game)
-    {
-        var evals = new Dictionary<int, string>();
-        for (int i = 0; i < game.Mainline.Count; i++)
-        {
-            var move = game.Mainline[i];
-            if (string.IsNullOrEmpty(move.Comment)) continue;
-            var isBlack = move.Color == "b";
-            var player = isBlack ? game.GameMetaData.Black : game.GameMetaData.White;
-            var stat = Annotation.getEngineStatData(player, isBlack, move.Comment);
-            if (stat.d == 0 && stat.n == 0L && stat.wv == 0.0) continue;
-            evals[i] = $"{stat.wv:+0.0;-0.0}";
-        }
-        return evals;
-    }
 
     private static bool IsNotableClassification(MoveClassification cls) =>
         cls.IsBrilliant || cls.IsGreat || cls.IsInaccuracy || cls.IsMistake || cls.IsBlunder;

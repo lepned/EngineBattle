@@ -15,6 +15,7 @@
 		<Compile Include="CoreTypesTests.fs" />
 		<Compile Include="TimeControlFormatTests.fs" />
 		<Compile Include="PentanomialTests.fs" />
+		<Compile Include="PGNCommentTests.fs" />
 		<Compile Include="ParserTests.fs" />
 		<Compile Include="PairingTests.fs" />
 		<Compile Include="SchedulerTests.fs" />

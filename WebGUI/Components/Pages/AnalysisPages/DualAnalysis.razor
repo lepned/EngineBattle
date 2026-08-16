@@ -593,7 +593,7 @@
         board.ResetBoardStateFromFen(startFen);
         board.LoadPGNGameWithVariations(game);
         fen = board.FEN();
-        moveEvals = ExtractEvalsFromComments(game);
+        moveEvals = PGNHelper.evalsByPly(game);
         analyzedPositions.Clear();
         UpdateFrcId(board.StartPosition);
         UpdateDetectedOpening();
@@ -970,21 +970,6 @@
         }
     }
 
-    private static Dictionary<int, string> ExtractEvalsFromComments(PGNTypes.PgnGame game)
-    {
-        var evals = new Dictionary<int, string>();
-        for (int i = 0; i < game.Mainline.Count; i++)
-        {
-            var move = game.Mainline[i];
-            if (string.IsNullOrEmpty(move.Comment)) continue;
-            var isBlack = move.Color == "b";
-            var player = isBlack ? game.GameMetaData.Black : game.GameMetaData.White;
-            var stat = Annotation.getEngineStatData(player, isBlack, move.Comment);
-            if (stat.d == 0 && stat.n == 0L && stat.wv == 0.0) continue;
-            evals[i] = $"{stat.wv:+0.0;-0.0}";
-        }
-        return evals;
-    }
 
     public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
     {

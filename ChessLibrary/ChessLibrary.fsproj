@@ -39,6 +39,7 @@
 		<Compile Include="Utilities\RuntimeUtilities.fs" />
 
 		<!-- Parsing modules (depend on types) -->
+		<Compile Include="Parsing\PGNComment.fs" />
 		<Compile Include="Parsing\PGNHelper.fs" />
 		<Compile Include="Parsing\PGNExtractor.fs" />
 		<Compile Include="Parsing\PGNStatistics.fs" />

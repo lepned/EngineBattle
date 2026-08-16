@@ -176,11 +176,7 @@
                                 @oncontextmenu:preventDefault>
                                 @if (pair.WhiteToken != null)
                                 {
-                                    <span id="@($"move-{pair.WhiteToken.Hash}")" title="@(pair.WhiteToken.Comment ?? "")">@pair.WhiteToken.Text@(wAnno?.Symbol ?? "")</span>
-                                    @if (MoveEvals == null && MoveAnnotations == null && !String.IsNullOrEmpty(pair.WhiteToken.Comment))
-                                    {
-                                        @WrapInlineComment(pair.WhiteToken.Comment)
-                                    }
+                                    <span id="@($"move-{pair.WhiteToken.Hash}")" title="@CommentTooltip(pair.WhiteToken.Comment)">@pair.WhiteToken.Text@(wAnno?.Symbol ?? "")</span>
                                 }
                             </td>
                             @if (MoveEvals != null)
@@ -193,11 +189,7 @@
                                 @oncontextmenu:preventDefault>
                                 @if (pair.BlackToken != null)
                                 {
-                                    <span id="@($"move-{pair.BlackToken.Hash}")" title="@(pair.BlackToken.Comment ?? "")">@pair.BlackToken.Text@(bAnno?.Symbol ?? "")</span>
-                                    @if (MoveEvals == null && MoveAnnotations == null && !String.IsNullOrEmpty(pair.BlackToken.Comment))
-                                    {
-                                        @WrapInlineComment(pair.BlackToken.Comment)
-                                    }
+                                    <span id="@($"move-{pair.BlackToken.Hash}")" title="@CommentTooltip(pair.BlackToken.Comment)">@pair.BlackToken.Text@(bAnno?.Symbol ?? "")</span>
                                 }
                             </td>
                             @if (MoveEvals != null)
@@ -205,6 +197,17 @@
                                 <td class="mcb-eval-cell">@(pair.BlackToken != null && MoveEvals.TryGetValue(pair.BlackToken.Ply, out var bEval) ? bEval : "")</td>
                             }
                         </tr>
+                        @* Notes go in a row of their own, spanning the table. They cannot
+                           live in the move cell: those are fixed-width and nowrap, so text
+                           there widens the whole table instead of wrapping. *@
+                        @foreach (var note in NotesFor(pair))
+                        {
+                            <tr class="mcb-note-row">
+                                <td colspan="@(MoveEvals != null ? 5 : 3)">
+                                    <span class="mcb-note-move">@note.Move</span> @note.Text
+                                </td>
+                            </tr>
+                        }
                         @if (wAnno != null && !string.IsNullOrEmpty(wAnno.BestMoveLine))
                         {
                             <tr class="mcb-annotation-row @(wAnno.CssClass)">
@@ -554,7 +557,7 @@
                 var isCurrent = string.Equals(tok.Fen, fen, StringComparison.Ordinal);
                 var isWhiteToMove = tok.Ply % 2 == 0;
                 <span id="@($"move-{tok.Hash}")"
-                      title="@(tok.Comment ?? "")"
+                      title="@CommentTooltip(tok.Comment)"
                       @onclick="@(() => OnInlineMoveClick(tok))"
                       @oncontextmenu="@((MouseEventArgs e) => ShowMoveActionMenu(tok, e))"
                       @oncontextmenu:preventDefault
@@ -575,10 +578,31 @@
     private string blackMoveColor => "font-weight:400; color:#A7B1C2; opacity:0.92;";
     private static string commentStyle => "color:#7FCFA7; font-size:0.82em; opacity:0.90;";
 
+    /// <summary>What hovering a move should reveal: the comment's prose plus its clocks.
+    /// The `[%eval …]` / `[%cal …]` commands are dropped — every lichess game carries them
+    /// and they used to be rendered verbatim — while `[%clk …]` is kept, having nowhere
+    /// else to appear. The stored comment is untouched, so writing the game back is
+    /// unaffected.</summary>
+    private static string CommentTooltip(string comment) =>
+        string.IsNullOrWhiteSpace(comment) ? "" : PGNComment.tooltipText(comment);
+
+    /// <summary>The reader-facing notes on a move pair, each labelled with the move it
+    /// belongs to so a pair with two notes stays unambiguous.</summary>
+    private IEnumerable<(string Move, string Text)> NotesFor(MovePair pair)
+    {
+        foreach (var token in new[] { pair.WhiteToken, pair.BlackToken })
+        {
+            if (token == null) continue;
+            var text = PGNComment.proseText(token.Comment ?? "");
+            if (!string.IsNullOrWhiteSpace(text)) yield return (token.Text, text);
+        }
+    }
+
     private static MarkupString WrapInlineComment(string comment)
     {
         if (string.IsNullOrWhiteSpace(comment)) return default;
-        var trimmed = comment.Trim().Trim('{', '}').Trim();
+        var trimmed = PGNComment.proseText(comment);
+        if (string.IsNullOrWhiteSpace(trimmed)) return default;
         var encoded = System.Net.WebUtility.HtmlEncode(trimmed);
         var html = $"{{<span class=\"inline-move-comment\" style=\"{commentStyle}\">{encoded}</span>}}";
         return new MarkupString(html);

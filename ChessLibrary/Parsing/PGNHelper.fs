@@ -124,3 +124,37 @@ let getOpeningOnly (meta: GameMetadata) =
     | Some op -> op.Value
     | None when String.IsNullOrEmpty meta.Fen -> sprintf "Round %s: No opening name" meta.Round
     | None -> sprintf "Round %s: Fen %s:" meta.Round meta.Fen
+
+/// Per-ply evaluations for a game's mainline, formatted for a move list ("+0.3", "#4").
+///
+/// Two sources, in priority order. EB's own engine annotations come first (`wv=…, d=…, n=…`,
+/// plus the Banksia, Ceres and `+0.28/12` variants `getEngineStatData` understands); when a
+/// comment carries none of those, a lichess-style `[%eval …]` command is used instead. Both
+/// conventions are White-relative, so a game annotated by either — or by both, as a lichess
+/// export of an EB game would be — yields one consistent series.
+let evalsByPly (game: PgnGame) : System.Collections.Generic.Dictionary<int, string> =
+  let evals = System.Collections.Generic.Dictionary<int, string>()
+  for i in 0 .. game.Mainline.Count - 1 do
+    let move = game.Mainline.[i]
+    if not (String.IsNullOrEmpty move.Comment) then
+      let isBlack = move.Color = "b"
+      let player = if isBlack then game.GameMetaData.Black else game.GameMetaData.White
+      let stat = EngineTypes.Annotation.getEngineStatData player isBlack move.Comment
+      if stat.d <> 0 || stat.n <> 0L || stat.wv <> 0.0 then
+        // A mate is a ±200.0 sentinel by the time the annotation parser is done with it, and
+        // the distance is gone with it — so "M5" would reach the move list as "+200.0". The
+        // sentinel keeps the side (it is flipped White-relative like any other score); the
+        // number comes back out of the comment.
+        if abs stat.wv >= 200.0 then
+          let sign = if stat.wv < 0.0 then "-" else ""
+          evals.[i] <-
+            match PGNComment.tryMateDistance move.Comment with
+            | Some n -> sprintf "#%s%d" sign n
+            | None -> "#" + sign
+        else
+          evals.[i] <- PGNComment.formatPawns stat.wv
+      else
+        match PGNComment.parse move.Comment |> PGNComment.tryFind "eval" |> Option.bind PGNComment.formatEval with
+        | Some e -> evals.[i] <- e
+        | None -> ()
+  evals
