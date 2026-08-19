@@ -361,7 +361,7 @@ module Program =
 
   type PositionResult = {
       Depth: int; SDepth: int; Eval: ChessLibrary.MiscTypes.EvalType
-      Nodes: int64; Nps: int64; Time: TimeSpan
+      Nodes: int64; Nps: int64; Eps: float; Time: TimeSpan
       TBHits: int64; WDL: ChessLibrary.EngineTypes.WDL option
       Bestmove: string; PV: string; SanPV: string
   }
@@ -415,6 +415,7 @@ module Program =
       let mutable lastEval = ChessLibrary.MiscTypes.EvalType.NA
       let mutable lastNodes = 0L
       let mutable lastNps = 0L
+      let mutable lastEps = 0.0
       let mutable lastPV = ""
       let mutable lastTBHits = 0L
       let mutable lastWDL: ChessLibrary.EngineTypes.WDL option = None
@@ -435,11 +436,12 @@ module Program =
                       elif trimmed.Contains("depth") && not (trimmed.Contains("currmove")) then
                           printfn "%s" trimmed
                   match ChessLibrary.EngineProtocol.Regex.getEssentialDataWithEPS trimmed isWhite with
-                  | Some (depth, eval, nodes, nps, _eps, pv, tbhits, wdl, sDepth, _mpv) ->
+                  | Some (depth, eval, nodes, nps, eps, pv, tbhits, wdl, sDepth, _mpv) ->
                       lastDepth <- depth
                       lastEval <- eval
                       lastNodes <- nodes
                       lastNps <- nps
+                      if eps > 0L then lastEps <- float eps
                       lastPV <- pv
                       lastTBHits <- tbhits
                       lastWDL <- wdl
@@ -458,7 +460,7 @@ module Program =
               ChessLibrary.BoardUtils.getShortSanPVFromLongSanPVFast moveList &board lastPV
           else ""
       { Depth = lastDepth; SDepth = lastSDepth; Eval = lastEval
-        Nodes = lastNodes; Nps = lastNps; Time = sw.Elapsed
+        Nodes = lastNodes; Nps = lastNps; Eps = lastEps; Time = sw.Elapsed
         TBHits = lastTBHits; WDL = lastWDL; Bestmove = bestmove
         PV = lastPV; SanPV = sanPV }
 
@@ -577,7 +579,7 @@ module Program =
                             lastEval <- eval
                             lastNodes <- nodes
                             lastNps <- nps
-                            lastEps <- eps
+                            if eps > 0L then lastEps <- eps
                             lastPV <- pv
                             lastTBHits <- tbhits
                             lastWDL <- wdl
@@ -848,6 +850,8 @@ module Program =
         let mutable maxEvalDiffIdx = 0
         let mutable npsSum1 = 0.0
         let mutable npsSum2 = 0.0
+        let mutable epsSum1 = 0.0
+        let mutable epsSum2 = 0.0
 
         // Engine legend
         printfn "E1 = %s" config1.Name
@@ -896,6 +900,8 @@ module Program =
 
                 if r1.Nps > 0L then npsSum1 <- npsSum1 + float r1.Nps
                 if r2.Nps > 0L then npsSum2 <- npsSum2 + float r2.Nps
+                if r1.Eps > 0.0 then epsSum1 <- epsSum1 + r1.Eps
+                if r2.Eps > 0.0 then epsSum2 <- epsSum2 + r2.Eps
 
                 let shouldPrint =
                     match p.Threshold, diff with
@@ -942,6 +948,16 @@ module Program =
                     (GameAnalysis.Formatting.formatNPS avgNps1)
                     (GameAnalysis.Formatting.formatNPS avgNps2)
                     ratio
+            // EPS = NN evaluations/sec (excludes tree/cache reuse) — the preferred
+            // metric for NN speed comparisons. Emitted by engines that report eps
+            // in their info lines (e.g. Ceres with LogLiveStats); omitted otherwise.
+            if epsSum1 > 0.0 && epsSum2 > 0.0 then
+                let avgEps1 = epsSum1 / float totalPositions
+                let avgEps2 = epsSum2 / float totalPositions
+                printfn "Avg EPS:        %s vs %s (ratio: %.2fx)"
+                    (GameAnalysis.Formatting.formatEPS avgEps1)
+                    (GameAnalysis.Formatting.formatEPS avgEps2)
+                    (avgEps1 / avgEps2)
 
         finally
             engine1.StopProcess()
