@@ -129,3 +129,20 @@ let ``diff sorts worst-for-B first`` () =
     let diffs, _ = PuzzleThemes.diff 25 a b
     Assert.Equal<string>("worse", diffs.Head.Theme)
     Assert.Equal<string>("better", (List.last diffs).Theme)
+
+[<Fact>]
+let ``equal deltas are ordered by theme name, not by hash order`` () =
+    // bishopEndgame and zugzwang really did tie at +8.7 with n=69 in a live run, and
+    // swapped places between two runs of the same data until the tie-break was added
+    let a = [ stat "zugzwang" 69 59; stat "bishopEndgame" 69 61 ]
+    let b = [ stat "zugzwang" 69 65; stat "bishopEndgame" 69 67 ]
+    let diffs, _ = PuzzleThemes.diff 25 a b
+    let deltas = diffs |> List.map (fun d -> d.DeltaPp)
+    Assert.Equal(deltas.[0], deltas.[1], 6)
+    Assert.Equal<string>("bishopEndgame", diffs.Head.Theme)
+
+[<Fact>]
+let ``breakdown orders equal-sized themes deterministically`` () =
+    let score = mkScore [ "zulu alpha"; "zulu alpha" ] [ "zulu alpha" ]
+    let stats = PuzzleThemes.breakdown score
+    Assert.Equal<string>("alpha", stats.Head.Theme)

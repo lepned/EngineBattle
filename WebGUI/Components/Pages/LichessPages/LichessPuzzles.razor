@@ -1045,10 +1045,29 @@
                         .Concat(SolveScores);
                     ChessLibrary.PuzzleCrossEngine.writeCrossEngineFiles(normalized, datePart, allScoresForCross);
 
-                    var tableFileName = Path.Combine(normalized, $"LichessSummary{datePart}.txt");
+                    // Same analysis and the same files as a console run - the two paths
+                    // share one implementation so they cannot drift apart.
+                    var themeSummary = "";
+                    try
+                    {
+                        themeSummary = ChessLibrary.PuzzleThemes.writeThemeFiles(
+                            normalized, datePart,
+                            engineConfigs.Select(c => c.Item1.Name),
+                            allScoresForCross);
+                        if (themeSummary != "") logger.LogInformation(themeSummary);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning($"Per-theme comparison failed: {ex.Message}");
+                    }
+
+                    // underscore matches the console naming; without it these files sort
+                    // apart from console runs and no glob finds both
+                    var tableFileName = Path.Combine(normalized, $"LichessSummary_{datePart}.txt");
                     using (StreamWriter sw = new StreamWriter(tableFileName))
                     {
                         sw.WriteLine(table);
+                        if (themeSummary != "") sw.WriteLine(themeSummary);
                     }
                 }
 

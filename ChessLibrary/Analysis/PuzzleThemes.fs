@@ -1,6 +1,7 @@
 namespace ChessLibrary
 
 open System
+open System.IO
 open System.Text
 open ChessLibrary.PuzzleTypes
 
@@ -57,7 +58,9 @@ module PuzzleThemes =
         |> Seq.map (fun kv ->
             let total, correct = kv.Value
             { Theme = kv.Key; Total = total; Correct = correct })
-        |> Seq.sortByDescending (fun s -> s.Total)
+        // theme name breaks ties: Dictionary enumeration order is not guaranteed, so
+        // without it two identical runs can emit equal-Total themes in a different order
+        |> Seq.sortBy (fun s -> -s.Total, s.Theme)
         |> Seq.toList
 
     /// Pairs two breakdowns by theme. Themes with fewer than `minPuzzles` occurrences are
@@ -81,7 +84,8 @@ module PuzzleThemes =
                            DeltaPp = (accuracyOf sb - accuracyOf sa) * 100.0 }
                 | _ -> None)
         let kept, dropped = paired |> List.partition (fun d -> d.Total >= minPuzzles)
-        (kept |> List.sortBy (fun d -> d.DeltaPp)), dropped.Length
+        // theme name breaks delta ties for the same reason
+        (kept |> List.sortBy (fun d -> d.DeltaPp, d.Theme)), dropped.Length
 
     /// Renders one net's weakest and strongest themes. Used when a run has a single net,
     /// where there is no reference to take a delta against but "where is it weak" is still
@@ -91,7 +95,7 @@ module PuzzleThemes =
         if List.isEmpty usable then "No themes with enough puzzles."
         else
             let sb = StringBuilder()
-            let ranked = usable |> List.sortBy accuracyOf
+            let ranked = usable |> List.sortBy (fun s -> accuracyOf s, s.Theme)
             let themeWidth = ranked |> List.map (fun s -> s.Theme.Length) |> List.fold max 5 |> min 28
             let shortLabel (s: string) = if s.Length <= 30 then s else "…" + s.Substring(s.Length - 29)
             sb.AppendLine() |> ignore
@@ -169,3 +173,117 @@ module PuzzleThemes =
             |> List.filter (fun d -> not (alreadyShown.Contains d.Theme))
             |> List.iter render
             sb.ToString()
+
+    // ---------------------------------------------------------------------------
+    // Per-run output
+    // ---------------------------------------------------------------------------
+
+    /// One threshold for the whole report: the diff, the single-net filter and the rendered
+    /// "omitted" count must agree or the output contradicts itself.
+    [<Literal>]
+    let MinThemePuzzles = 25
+
+    /// Themes shown at each end of the sorted list.
+    [<Literal>]
+    let TopThemes = 6
+
+    /// Net names come from user-authored engine defs and may contain a comma.
+    let private csvField (v: string) =
+        let value = if isNull v then "" else v
+        if value.IndexOfAny([| ','; '"'; '\n'; '\r' |]) >= 0
+        then "\"" + value.Replace("\"", "\"\"") + "\""
+        else value
+
+    /// Rating groups are reported as the average rating of the sampled puzzles.
+    let private ratingGroupOf (ratingAvg: float) = int (Math.Round(ratingAvg / 100.0)) * 100
+
+    /// Writes `puzzleThemes_<stamp>.csv` and returns the human-readable summary to append to
+    /// the run's text summary ("" when there was nothing to report).
+    ///
+    /// Shared by the console and the GUI: both run the same analysis and produce the same
+    /// files. Scores do not arrive in config order, so the engine names are passed in that
+    /// order and the FIRST one becomes the baseline every other net is measured against.
+    let writeThemeFiles
+        (outputFolder: string)
+        (stamp: string)
+        (engineNamesInConfigOrder: string seq)
+        (scores: Score seq)
+        : string =
+        let summary = StringBuilder()
+        let rows = ResizeArray<string>()
+        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp")
+
+        let order =
+            engineNamesInConfigOrder
+            |> Seq.mapi (fun i name -> (if isNull name then "" else name), i)
+            |> Seq.distinctBy fst
+            |> dict
+        let orderOf (s: Score) =
+            match order.TryGetValue(if isNull s.Engine then "" else s.Engine) with
+            | true, i -> i
+            | _ -> Int32.MaxValue
+
+        let mutable header = false
+        let addHeader (title: string) =
+            if not header then
+                summary.AppendLine() |> ignore
+                summary.AppendLine(title) |> ignore
+                header <- true
+
+        let groups =
+            scores
+            |> Seq.groupBy (fun s -> s.Type, ratingGroupOf s.RatingAvg)
+            |> Seq.sortBy fst
+
+        for (testType, ratingGroup), group in groups do
+            match group |> Seq.sortBy orderOf |> Seq.toList with
+            | baseline :: others when not others.IsEmpty ->
+                let baseBreak = breakdown baseline
+                if not baseBreak.IsEmpty then
+                    for other in others do
+                        let diffs, dropped = diff MinThemePuzzles baseBreak (breakdown other)
+                        if not diffs.IsEmpty then
+                            addHeader "--- Per-Theme Comparison (vs first engine) ---"
+                            let groupHeader =
+                                sprintf "  %s @ rating %d%s" testType ratingGroup
+                                    (if dropped > 0 then sprintf "   (%d themes under %d puzzles omitted)" dropped MinThemePuzzles else "")
+                            summary.AppendLine() |> ignore
+                            summary.AppendLine(groupHeader) |> ignore
+                            summary.Append(renderDiff baseline.NeuralNet other.NeuralNet TopThemes diffs) |> ignore
+                            for d in diffs do
+                                rows.Add(
+                                    String.Format(
+                                        Globalization.CultureInfo.InvariantCulture,
+                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2}",
+                                        testType, ratingGroup, csvField baseline.NeuralNet, csvField other.NeuralNet,
+                                        csvField d.Theme, d.Total, d.AccuracyA * 100.0, d.AccuracyB * 100.0, d.DeltaPp))
+            | [ only ] ->
+                // single-net run: no reference to compare against, but the per-theme rates
+                // are still the answer to "where is this net weak"
+                let stats = breakdown only
+                let usable = stats |> List.filter (fun s -> s.Total >= MinThemePuzzles)
+                if not usable.IsEmpty then
+                    addHeader "--- Per-Theme Breakdown ---"
+                    let groupHeader =
+                        sprintf "  %s @ rating %d   (%d themes under %d puzzles omitted)"
+                            testType ratingGroup (stats.Length - usable.Length) MinThemePuzzles
+                    summary.AppendLine() |> ignore
+                    summary.AppendLine(groupHeader) |> ignore
+                    summary.Append(renderSingle only.NeuralNet MinThemePuzzles TopThemes stats) |> ignore
+                    for s in usable do
+                        // no reference net, so net_a and the A/delta columns stay empty
+                        rows.Add(
+                            String.Format(
+                                Globalization.CultureInfo.InvariantCulture,
+                                "{0},{1},,{2},{3},{4},,{5:F2},",
+                                testType, ratingGroup, csvField only.NeuralNet,
+                                csvField s.Theme, s.Total, accuracyOf s * 100.0))
+            | _ -> ()
+
+        if rows.Count > 1 then
+            let csvPath = Path.Combine(outputFolder, sprintf "puzzleThemes_%s.csv" stamp)
+            File.WriteAllLines(csvPath, rows)
+            summary.AppendLine() |> ignore
+            summary.AppendLine(sprintf "  All themes: %s" csvPath) |> ignore
+            summary.ToString()
+        else ""
