@@ -33,6 +33,7 @@
 		<Compile Include="SolvePuzzleTests.fs" />
 		<Compile Include="PuzzleJsonOutputTests.fs" />
 		<Compile Include="PuzzleLossMetricTests.fs" />
+		<Compile Include="PuzzleThemeTests.fs" />
 		<Compile Include="GameAccuracyAnalysisTests.fs" />
 		<Compile Include="LiveFeedWireTests.fs" />
 		<Compile Include="LiveFeedRecorderTests.fs" />
