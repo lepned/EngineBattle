@@ -21,7 +21,89 @@
 
 <div class="tool-page">
   <h1>Lichess Puzzles</h1>
-  <div class="tool-subtitle">Run policy, value, search and solve tests from your puzzle config — <a href="/tools/puzzle-creator">Create config</a></div>
+  <div class="tool-subtitle">Run policy, value, search and solve tests from your puzzle config — <a href="/tools/puzzle-creator">build one here</a></div>
+
+  <div class="run-card">
+    <div class="run-config">
+      <label class="run-label" for="cfgPath">Puzzle config</label>
+      <div class="run-path" id="cfgPath">
+        @if (string.IsNullOrEmpty(fullPath))
+        {
+          <span class="run-path-empty">No config selected</span>
+        }
+        else
+        {
+          <span class="run-path-dir">@ConfigFolder(fullPath)</span><span class="run-path-sep">/</span><span class="run-path-file">@ConfigFileName(fullPath)</span>
+        }
+      </div>
+    </div>
+    <button class="tool-action-btn run-choose" @onclick="PickConfig" disabled="@disableRun">Choose…</button>
+    <button class="run-go" @onclick="RunSelectedConfig" disabled="@(disableRun || string.IsNullOrEmpty(fullPath))">
+      @(HasAnyScores ? "Run again" : "Run")
+    </button>
+    @if (disableRun)
+    {
+      <button class="tool-cancel-btn" @onclick="CancelRun">Stop</button>
+      @if (progressTotal == 0)
+      {
+        <div class="tool-spinner"></div>
+      }
+    }
+  </div>
+
+  @if (configSummary is not null)
+  {
+    <div class="config-tiles">
+      <div class="config-tile">
+        <div class="k">Nets</div>
+        <div class="v">@configSummary.Nets</div>
+      </div>
+      <div class="config-tile">
+        <div class="k">Puzzles</div>
+        <div class="v">@configSummary.SampleSize.ToString("N0")</div>
+      </div>
+      <div class="config-tile">
+        <div class="k">Tests</div>
+        <div class="v small">@configSummary.Types</div>
+      </div>
+      <div class="config-tile">
+        <div class="k">Nodes</div>
+        <div class="v">@configSummary.Nodes</div>
+      </div>
+      <div class="config-tile">
+        <div class="k">Rating groups</div>
+        <div class="v small">@configSummary.RatingGroups</div>
+      </div>
+      <div class="config-tile wide">
+        <div class="k">Themes</div>
+        <div class="v small" title="@configSummary.Themes">@configSummary.Themes</div>
+      </div>
+      <div class="config-tile wide">
+        <div class="k">Puzzle file</div>
+        <div class="v small" title="@configSummary.PuzzleFile">@configSummary.PuzzleFile</div>
+      </div>
+    </div>
+  }
+
+  <div class="run-options">
+    <div class="tool-input-group" style="margin-bottom:0; min-width:230px;">
+      <label>Theme filter (csv)</label>
+      <input type="text" class="tool-input" style="width:100%" @bind="Filter" placeholder="e.g. endgame, fork" />
+    </div>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Failed shown</label>
+      <input type="number" class="tool-input" style="width:104px" @bind="failedNumber" min="0" step="1" />
+    </div>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Solved shown</label>
+      <input type="number" class="tool-input" style="width:104px" @bind="solvedNumber" min="0" step="1" />
+    </div>
+    <div class="tool-input-group" style="margin-bottom:0">
+      <label>Concurrency</label>
+      <input type="number" class="tool-input" style="width:82px" @bind="concurrencyOverride" min="1" max="16" step="1" />
+    </div>
+    <button class="tool-action-btn tool-action-btn-sm" style="margin-left:auto" @onclick="Draw" disabled="@disableDraw">Draw themes</button>
+  </div>
 
   <details class="puzzle-themes-details">
     <summary>Available puzzle themes</summary>
@@ -33,34 +115,17 @@
     </div>
   </details>
 
-  <div class="tool-controls">
-    <button class="tool-action-btn" @onclick="Draw" disabled="@disableDraw">Draw themes</button>
-    <div class="tool-input-group" style="margin-bottom:0; min-width:220px;">
-      <label>Puzzle theme filter (csv)</label>
-      <input type="text" class="tool-input" style="width:100%" @bind="Filter" />
+  @if (!HasAnyScores && !disableRun)
+  {
+    <div class="run-preview">
+      <div class="run-preview-title">A run produces</div>
+      <ol class="run-preview-list">
+        <li><b>Accuracy per net</b> — policy, top-3 and value, split by rating group.</li>
+        <li><b>A per-theme breakdown</b> — where two nets differ, so "8 points worse" becomes "worse at endgames, level at tactics". Needs at least two nets in the config.</li>
+        <li><b>The positions themselves</b> — boards for the puzzles missed and the ones solved, with the move the net played. How many of each is set by <b>Failed shown</b> and <b>Solved shown</b> above.</li>
+      </ol>
     </div>
-    <div class="tool-input-group" style="margin-bottom:0">
-      <label>Failed puzzles to show</label>
-      <input type="number" class="tool-input" style="width:120px" @bind="failedNumber" min="0" step="1" />
-    </div>
-    <div class="tool-input-group" style="margin-bottom:0">
-      <label>Solved puzzles to show</label>
-      <input type="number" class="tool-input" style="width:120px" @bind="solvedNumber" min="0" step="1" />
-    </div>
-    <div class="tool-input-group" style="margin-bottom:0">
-      <label>Concurrency</label>
-      <input type="number" class="tool-input" style="width:80px" @bind="concurrencyOverride" min="1" max="16" step="1" />
-    </div>
-    <button class="tool-upload-btn" style="@(disableRun ? "pointer-events:none;opacity:0.5" : "")" @onclick="BrowseAndRunConfig" disabled="@disableRun">Pick and run puzzle config file</button>
-    @if (disableRun)
-    {
-      <button class="tool-cancel-btn" @onclick="CancelRun">Stop</button>
-      @if (progressTotal == 0)
-      {
-        <div class="tool-spinner"></div>
-      }
-    }
-  </div>
+  }
 
   @if (!string.IsNullOrEmpty(errorMessage))
   {
@@ -98,6 +163,16 @@
       {
         <button class="tool-tab @(activeScoreTab == tab ? "active" : "")" @onclick="() => SetScoreTab(tab)">@tab</button>
       }
+      @if (AvailableEngines.Count() > 1)
+      {
+        <select class="tool-input tool-tab-filter" @bind="selectedEngine" @bind:after="OnEngineFilterChanged" title="Filter the table by engine">
+          <option value="All">All engines</option>
+          @foreach (var engine in AvailableEngines)
+          {
+            <option value="@engine">@engine</option>
+          }
+        </select>
+      }
       <button class="tool-action-btn tool-action-btn-sm" style="margin-left:auto" @onclick="CopyResultsToClipboard" title="Copy results table to clipboard">@copyLabel</button>
     </div>
 
@@ -118,11 +193,13 @@
             <th @onclick='() => ScoreSortBy("Theme")'>Theme @ScoreSortIndicator("Theme")</th>
             <th @onclick='() => ScoreSortBy("Nodes")'>Nodes @ScoreSortIndicator("Nodes")</th>
             <th @onclick='() => ScoreSortBy("AvgKLD")'>AvgKLD @ScoreSortIndicator("AvgKLD")</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           @foreach (var item in GetPagedScoreItems())
           {
+            var itemId = item.GetHashCode();
             <tr>
               @if (ShowEngineColumn)
               {
@@ -137,12 +214,33 @@
               <td>@item.Filter</td>
               <td>@item.Nodes</td>
               <td>@(item.AvgKLD > 0 ? item.AvgKLD.ToString("F4") : "—")</td>
+              <td>
+                <button class="tool-action-btn tool-action-btn-sm" @onclick="() => ToggleScoreDetails(item)">
+                  @(expandedScoreIds.Contains(itemId) ? "Hide boards" : "Show boards")
+                </button>
+              </td>
             </tr>
+            @if (expandedScoreIds.Contains(itemId))
+            {
+              <tr>
+                <td colspan="@(ShowEngineColumn ? 11 : 10)" style="padding:0; border-bottom:1px solid #2c2c3e;">
+                  <div style="padding:8px" @key="itemId">
+                    <DeferredContent>
+                      <ChildContent>
+                        <PuzzleBanner Score="@item"
+                                      NumberOfFailedPuzzles="@failedNumber"
+                                      NumberOfSolvedPuzzles="@solvedNumber" />
+                      </ChildContent>
+                    </DeferredContent>
+                  </div>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
       <div class="tool-pager">
-        <span>@ActiveScoreSource.Count items</span>
+        <span>@TableScores.Count items</span>
         <select @bind="scorePageSize" @bind:after="ResetScorePage">
           <option value="10">10</option>
           <option value="25">25</option>
@@ -345,94 +443,6 @@
     </div>
   }
 
-  @if (HasAnyScores)
-  {
-    <div class="tool-section">
-      <h2>Puzzle Visualizations</h2>
-
-      <div class="tool-controls">
-        <div class="tool-input-group" style="margin-bottom:0">
-          <label>Filter by Type</label>
-          <select class="tool-input" @bind="selectedType" @bind:after="OnFilterChanged">
-            <option value="All">All Types</option>
-            <option value="Policy">Policy</option>
-            <option value="Value">Value</option>
-            <option value="Search">Search</option>
-            <option value="Solve">Solve</option>
-          </select>
-        </div>
-        <div class="tool-input-group" style="margin-bottom:0">
-          <label>Filter by Engine</label>
-          <select class="tool-input" @bind="selectedEngine" @bind:after="OnFilterChanged">
-            <option value="All">All Engines</option>
-            @foreach (var engine in AvailableEngines)
-            {
-              <option value="@engine">@engine</option>
-            }
-          </select>
-        </div>
-      </div>
-
-      <div class="tool-table-container" style="margin-top:12px">
-        <table class="tool-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              @if (ShowEngineColumn)
-              {
-                <th>Engine</th>
-              }
-              <th>Neural Net</th>
-              <th>Theme</th>
-              <th>Nodes</th>
-              <th>Rating</th>
-              <th>Accuracy</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            @foreach (var item in FilteredScores)
-            {
-              var itemId = item.GetHashCode();
-              <tr>
-                <td>@item.Type</td>
-                @if (ShowEngineColumn)
-                {
-                  <td>@item.Engine</td>
-                }
-                <td>@item.NeuralNet</td>
-                <td>@(string.IsNullOrEmpty(item.Filter) ? "None" : item.Filter)</td>
-                <td>@item.Nodes</td>
-                <td>@item.PlayerRecord.Rating.ToString("F0")</td>
-                <td>@(item.TotalNumber > 0 ? ((decimal)item.Correct / item.TotalNumber).ToString("P1") : "N/A")</td>
-                <td>
-                  <button class="tool-action-btn tool-action-btn-sm" @onclick="() => ToggleScoreDetails(item)">
-                    @(expandedScoreIds.Contains(itemId) ? "Hide Boards" : "Show Boards")
-                  </button>
-                </td>
-              </tr>
-              @if (expandedScoreIds.Contains(itemId))
-              {
-                <tr>
-                  <td colspan="8" style="padding:0; border-bottom: 1px solid #2c2c3e;">
-                    <div style="padding: 8px;" @key="itemId">
-                      <DeferredContent>
-                        <ChildContent>
-                          <PuzzleBanner Score="@item"
-                                        NumberOfFailedPuzzles="@failedNumber"
-                                        NumberOfSolvedPuzzles="@solvedNumber" />
-                        </ChildContent>
-                      </DeferredContent>
-                    </div>
-                  </td>
-                </tr>
-              }
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  }
 </div>
 
 
@@ -631,7 +641,6 @@
     private string fullPath = string.Empty;
     private bool disableRun = false;
     private bool disableDraw = false;
-    private string selectedType = "All";
     private string selectedEngine = "All";
     private HashSet<int> expandedScoreIds = new HashSet<int>();
 
@@ -664,12 +673,14 @@
         _ => PolicyScores
     };
 
-    private int scoreTotalPages => Math.Max(1, (int)Math.Ceiling((double)ActiveScoreSource.Count / scorePageSize));
+    private int scoreTotalPages => Math.Max(1, (int)Math.Ceiling((double)TableScores.Count / scorePageSize));
 
     private void SetScoreTab(string tab)
     {
         activeScoreTab = tab;
         scoreCurrentPage = 0;
+        // the open positions belong to the metric they were opened from
+        themeBoardsFor = "";
     }
 
     private void ScoreSortBy(string column)
@@ -694,7 +705,7 @@
 
     private IEnumerable<Score> GetSortedScoreItems()
     {
-        var items = ActiveScoreSource.AsEnumerable();
+        var items = TableScores.AsEnumerable();
         items = scoreSortColumn switch
         {
             "Engine" => scoreSortAscending ? items.OrderBy(x => x.Engine) : items.OrderByDescending(x => x.Engine),
@@ -721,6 +732,12 @@
     private void ScoreNextPage() { if (scoreCurrentPage < scoreTotalPages - 1) scoreCurrentPage++; }
     private void ResetScorePage() { scoreCurrentPage = 0; }
 
+    private void OnEngineFilterChanged()
+    {
+        scoreCurrentPage = 0;
+        expandedScoreIds.Clear();
+    }
+
     // Visualization filters
     private IEnumerable<string> AvailableEngines =>
       PolicyScores.Concat(ValueScores).Concat(SearchScores).Concat(SolveScores)
@@ -728,20 +745,6 @@
         .Distinct()
         .OrderBy(e => e);
 
-    private IEnumerable<Score> FilteredScores =>
-      PolicyScores.Concat(ValueScores).Concat(SearchScores).Concat(SolveScores)
-        .Where(s => selectedType == "All" || s.Type.Contains(selectedType))
-        .Where(s => selectedEngine == "All" || s.Engine == selectedEngine)
-        .OrderBy(s => s.Type)
-        .ThenBy(s => s.Filter)
-        .ThenBy(s => s.Nodes)
-        .ThenByDescending(s => s.PlayerRecord.Rating)
-        .ThenBy(s => s.Engine);
-
-    private void OnFilterChanged()
-    {
-        expandedScoreIds.Clear();
-    }
 
     private async void ToggleScoreDetails(Score score)
     {
@@ -877,13 +880,52 @@
         StateHasChanged();
     }
 
+    /// What the picked config will run, read once when it is chosen. Lets you see
+    /// the shape of a run - how many nets, how many puzzles - before spending the
+    /// time on it.
+    private sealed record ConfigSummary(
+        int Nets, int SampleSize, string Types, string Nodes, string RatingGroups,
+        string Themes, string PuzzleFile);
+
+    private ConfigSummary configSummary;
+
+    private void SummariseConfig(PuzzleConfig data)
+    {
+        // one Engines entry can expand to several nets, so count the expansion,
+        // not the entries
+        var nets = 0;
+        try
+        {
+            nets = data.Engines.SelectMany(e => mapToEngPuzzleConfig(data.EngineFolder, e)).Count();
+        }
+        catch
+        {
+            nets = data.Engines.Count;
+        }
+
+        configSummary = new ConfigSummary(
+            nets,
+            data.SampleSize,
+            string.IsNullOrWhiteSpace(data.Type) ? "—" : data.Type,
+            string.IsNullOrWhiteSpace(data.Nodes) ? "—" : data.Nodes,
+            string.IsNullOrWhiteSpace(data.RatingGroups) ? "all" : data.RatingGroups,
+            // the config's own theme filter - the box above may hold this merged with
+            // whatever was typed before, so the two can differ
+            string.IsNullOrWhiteSpace(data.PuzzleFilter) ? "all themes" : data.PuzzleFilter,
+            System.IO.Path.GetFileName(data.PuzzleFile ?? ""));
+    }
+
     private void PreloadConfigFilter()
     {
         try
         {
+            // clear first: a summary that survives a failed load would describe the
+            // previous config while the path shows the new one
+            configSummary = null;
             if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath)) return;
 
             var data = loadPuzzleConfig(normalizePath(fullPath));
+            SummariseConfig(data);
 
             if (!string.IsNullOrWhiteSpace(data.PuzzleFilter))
             {
@@ -913,7 +955,7 @@
         }
     }
 
-    private async Task BrowseAndRunConfig()
+    private async Task PickConfig()
     {
         var initialDir = SettingsService.Settings.PuzzleConfigFolder;
         var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
@@ -931,12 +973,31 @@
         logger.LogInformation("Selected file {File}", fullPath);
 
         PreloadConfigFilter();
+        StateHasChanged();
+    }
+
+    /// Runs whatever config is currently selected. Split from picking so the same
+    /// config can be re-run without walking the file dialog again.
+    private async Task RunSelectedConfig()
+    {
+        if (string.IsNullOrEmpty(fullPath) || disableRun) return;
+
         StartOfRun();
         await Run(null);
 
         disableRun = false;
         StateHasChanged();
         await Task.Delay(500);
+    }
+
+    private static string ConfigFileName(string path) =>
+        string.IsNullOrEmpty(path) ? "" : System.IO.Path.GetFileName(path);
+
+    private static string ConfigFolder(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return "";
+        var dir = System.IO.Path.GetDirectoryName(path);
+        return string.IsNullOrEmpty(dir) ? "" : dir.Replace('\\', '/');
     }
 
     private async Task CopyResultsToClipboard()

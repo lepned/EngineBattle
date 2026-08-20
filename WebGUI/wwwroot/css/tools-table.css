@@ -926,6 +926,162 @@
     font-weight: 600;
 }
 
+/* ---- run card: the pre-run state ----------------------------------------
+   The config is state you can see, not something buried in a dialog that
+   fires a run on the way out. Picking and running are separate acts. */
+.run-card {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    background: #232334;
+    border: 1px solid #3a3a52;
+    border-radius: 8px;
+    margin: 16px 0 12px;
+}
+
+.run-config {
+    /* a path needs a readable width, not the whole row */
+    flex: 0 1 520px;
+    min-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.run-label {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6e6e88;
+    font-weight: 600;
+}
+
+.run-path {
+    background: #1c1c2c;
+    border: 1px solid #3a3a52;
+    border-radius: 5px;
+    padding: 7px 11px;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.85rem;
+}
+
+/* No direction:rtl here. It truncates from the left, but the bidi algorithm
+   reorders a trailing "/" to the front, so the path rendered as "/C:/Dev/...".
+   The separator is its own element instead, always between folder and file. */
+.run-path-dir {
+    color: #6e6e88;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 62%;
+}
+
+.run-path-sep {
+    color: #6e6e88;
+    flex: none;
+    padding: 0 1px;
+}
+
+.run-path-file {
+    color: #e0e0e6;
+    font-weight: 600;
+    flex: none;
+}
+
+.run-path-empty {
+    color: #6e6e88;
+    font-style: italic;
+}
+
+.run-choose {
+    min-height: 34px;
+}
+
+/* the one action the page exists for */
+.run-go {
+    background: #8b9ce8;
+    color: #14141f;
+    border: 0;
+    border-radius: 5px;
+    padding: 0 22px;
+    min-height: 34px;
+    font-weight: 650;
+    font-size: 0.88rem;
+    cursor: pointer;
+}
+
+.run-go:hover:not(:disabled) {
+    background: #a0aeee;
+}
+
+.run-go:disabled {
+    background: #3a3a52;
+    color: #6e6e88;
+    cursor: not-allowed;
+}
+
+.run-go:focus-visible,
+.run-choose:focus-visible {
+    outline: 2px solid #c0c8e8;
+    outline-offset: 2px;
+}
+
+.run-options {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+/* ---- what a run produces ----
+   Shown only before the first run. The theme panel is invisible until results
+   exist, so without this nobody discovers it. */
+.run-preview {
+    margin: 18px 0 8px;
+    padding: 16px 20px;
+    background: #1f1f2e;
+    border: 1px solid #32324a;
+    border-left: 3px solid #8b9ce8;
+    border-radius: 0 8px 8px 0;
+}
+
+.run-preview-title {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #6e6e88;
+    font-weight: 600;
+    margin-bottom: 9px;
+}
+
+.run-preview-list {
+    margin: 0;
+    padding-left: 20px;
+    color: #9898ac;
+    font-size: 0.87rem;
+    line-height: 1.6;
+}
+
+.run-preview-list li {
+    margin-bottom: 5px;
+    padding-left: 3px;
+}
+
+.run-preview-list li:last-child {
+    margin-bottom: 0;
+}
+
+.run-preview-list b {
+    color: #e0e0e6;
+    font-weight: 600;
+}
+
 /* ---- single-net breakdown ------------------------------------------------
    With one net the data is magnitude, not polarity: bars run from the left
    against a 0-100 scale, one hue, and there is no centre rule. Same content
@@ -968,6 +1124,15 @@
     .theme-row-single {
         grid-template-columns: 104px 1fr 76px;
     }
+}
+
+/* engine filter sits in the tab bar: it narrows the table only, never the
+   theme panel, which needs every net to compare them */
+.tool-tab-filter {
+    margin-left: 14px;
+    max-width: 220px;
+    align-self: center;
+    font-size: 0.82rem;
 }
 
 /* ---- theme row opens its positions ---------------------------------------
@@ -1021,3 +1186,54 @@
     font-weight: 600;
 }
 
+/* ---- what the picked config will run --------------------------------------
+   Read when the file is chosen, so the shape of a run is visible before
+   spending the minutes on it. */
+.config-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+    gap: 9px;
+    margin: 0 0 14px;
+}
+
+.config-tile {
+    background: #232334;
+    border: 1px solid #3a3a52;
+    border-radius: 7px;
+    padding: 9px 12px;
+    min-width: 0;
+}
+
+.config-tile.wide {
+    grid-column: span 2;
+}
+
+.config-tile .k {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6e6e88;
+    font-weight: 600;
+}
+
+.config-tile .v {
+    font-variant-numeric: tabular-nums;
+    font-size: 1.14rem;
+    color: #e0e0e6;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.config-tile .v.small {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    padding-top: 4px;
+}
+
+@media (max-width: 620px) {
+    .config-tile.wide {
+        grid-column: span 1;
+    }
+}
