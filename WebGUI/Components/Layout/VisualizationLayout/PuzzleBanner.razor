@@ -40,7 +40,18 @@
 	[Parameter]
 	public int NumberOfSolvedPuzzles { get; set; }
 
+	/// Optional Lichess theme. When set, only puzzles carrying it are shown -
+	/// this is what "click a theme in the breakdown" opens.
+	[Parameter]
+	public string ThemeFilter { get; set; }
+
+	private bool HasTheme(CsvPuzzleData p) =>
+		string.IsNullOrEmpty(ThemeFilter)
+		|| ChessLibrary.PuzzleThemes.parseThemes(p.Themes)
+			.Any(t => string.Equals(t, ThemeFilter, StringComparison.OrdinalIgnoreCase));
+
 	private List<(CsvPuzzleData, string)> FailedPuzzles => Score.FailedPuzzles
+		.Where(tuple => HasTheme(tuple.Item1))
 		.Select(tuple => (tuple.Item1, tuple.Item2))
 		.OrderBy(tuple =>
 		{
@@ -57,5 +68,5 @@
 		.ToList();
 	
 
-	private List<CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.OrderByDescending(e => e.Rating).Take(NumberOfSolvedPuzzles).ToList();
+	private List<CsvPuzzleData> SolvedPuzzles => Score.CorrectPuzzles.Where(HasTheme).OrderByDescending(e => e.Rating).Take(NumberOfSolvedPuzzles).ToList();
 }

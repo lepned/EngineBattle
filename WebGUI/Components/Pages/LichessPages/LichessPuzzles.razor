@@ -159,6 +159,194 @@
 
   @if (HasAnyScores)
   {
+    <div class="tool-section theme-panel">
+      <div class="theme-head">
+        <div>
+          <h2 style="margin:0">Where the difference is</h2>
+          <div class="theme-sub">@activeScoreTab accuracy by Lichess theme</div>
+        </div>
+        <div class="tool-controls" style="margin:0; @(ThemeNets.Count < 2 ? "display:none" : "")">
+          <div class="tool-input-group" style="margin-bottom:0">
+            <label>Rating group</label>
+            <select class="tool-input" @bind="themeRatingGroup" @bind:after="CloseThemeBoards">
+              @foreach (var rg in ThemeRatingGroups)
+              {
+                <option value="@rg">@rg</option>
+              }
+            </select>
+          </div>
+          <div class="tool-input-group" style="margin-bottom:0">
+            <label>Baseline</label>
+            <select class="tool-input" style="max-width:230px" @bind="themeBaselineNet" @bind:after="CloseThemeBoards">
+              @foreach (var n in ThemeNets)
+              {
+                <option value="@n">@ShortNet(n)</option>
+              }
+            </select>
+          </div>
+          <div class="tool-input-group" style="margin-bottom:0">
+            <label>Compare</label>
+            <select class="tool-input" style="max-width:230px" @bind="themeCompareNet" @bind:after="CloseThemeBoards">
+              @foreach (var n in ThemeNets.Where(n => n != themeBaselineNet))
+              {
+                <option value="@n">@ShortNet(n)</option>
+              }
+            </select>
+          </div>
+          <div class="tool-input-group" style="margin-bottom:0">
+            <label>Min n</label>
+            <input type="number" class="tool-input" style="width:82px" @bind="themeMinN" @bind:after="CloseThemeBoards" min="1" step="1" />
+          </div>
+        </div>
+      </div>
+
+      @{
+        var singleNet = !disableRun && ThemeNets.Count == 1;
+        var ts = singleNet ? ThemeSingleRows() : null;
+        var td = singleNet ? null : ThemeRows();
+      }
+      @if (singleNet && ts!.Rows.Count > 0)
+      {
+        <div class="theme-legend">
+          <span><i style="background:var(--theme-single)"></i> solved</span>
+          <span class="theme-legend-note">
+            @ShortNet(ThemeNets[0]) · weakest first@(ts.Dropped > 0 ? $" · {ts.Dropped} themes under {themeMinN} omitted" : "")
+          </span>
+        </div>
+
+        <div class="theme-chart">
+          <div class="theme-row theme-row-single theme-row-head">
+            <div class="tname">Theme</div>
+            <div></div>
+            <div class="tnum">n</div>
+            <div class="tdelta">accuracy</div>
+          </div>
+          @foreach (var t in ts.Rows)
+          {
+            <div class="theme-row theme-row-single theme-row-click @(themeBoardsFor == t.Theme ? "open" : "")"
+                 role="button" tabindex="0"
+                 title="Show the positions tagged @t.Theme"
+                 @onclick="() => ToggleThemeBoards(t.Theme)">
+              <div class="tname">@t.Theme</div>
+              <div class="ttrack ttrack-single">
+                <div class="tbar single" style="width:@(SingleBarWidth(t))%"></div>
+              </div>
+              <div class="tnum">@t.Total</div>
+              <div class="tdelta">@((ChessLibrary.PuzzleThemes.accuracyOf(t) * 100).ToString("F1")) %</div>
+            </div>
+          }
+          @if (ts.Hidden > 0)
+          {
+            <div class="theme-elide"><span>… @ts.Hidden more themes</span><i></i></div>
+          }
+        </div>
+      }
+      else if (td is null || td.Rows.Count == 0)
+      {
+        <div class="theme-empty">
+          <div class="theme-empty-ghost" aria-hidden="true">
+            <span style="--w:38%; --side:l"></span>
+            <span style="--w:26%; --side:l"></span>
+            <span style="--w:11%; --side:l"></span>
+            <span style="--w:19%; --side:r"></span>
+            <span style="--w:31%; --side:r"></span>
+          </div>
+          <div class="theme-empty-text">
+            @if (disableRun)
+            {
+              @* nets finish one at a time, so a partial run is not a one-net config *@
+              <h4>Waiting for the rest of the run</h4>
+              <p>
+                Nets report as they finish. The comparison appears once a second one
+                is in — or stays as a breakdown of the single net if the config has
+                only one.
+              </p>
+            }
+            else
+            {
+              <h4>No theme reached @themeMinN puzzles</h4>
+              <p>
+                A theme seen a handful of times swings twenty points on a single puzzle,
+                so thin themes are held back. Lower <b>Min n</b> above, or raise the
+                sample size — 2000 puzzles typically leaves 34 themes standing.
+              </p>
+            }
+          </div>
+        </div>
+      }
+      else
+      {
+        <div class="theme-legend">
+          <span><i style="background:var(--theme-worse)"></i> worse than baseline</span>
+          <span><i style="background:var(--theme-better)"></i> better than baseline</span>
+          <span class="theme-legend-note">n = puzzles carrying the theme@(td!.Dropped > 0 ? $" · {td.Dropped} themes under {themeMinN} omitted" : "")</span>
+        </div>
+
+        <div class="theme-chart">
+          <div class="theme-row theme-row-head">
+            <div class="tname">Theme</div>
+            <div></div>
+            <div class="tnum">n</div>
+            <div class="tnum">base</div>
+            <div class="tnum">cmp</div>
+            <div class="tdelta">Δ pp</div>
+          </div>
+          @foreach (var d in td!.Rows)
+          {
+            <div class="theme-row theme-row-click @(themeBoardsFor == d.Theme ? "open" : "")"
+                 role="button" tabindex="0"
+                 title="Show the positions tagged @d.Theme"
+                 @onclick="() => ToggleThemeBoards(d.Theme)">
+              <div class="tname">@d.Theme</div>
+              <div class="ttrack">
+                @if (d.DeltaPp < 0)
+                {
+                  <div class="tbar neg" style="width:@(BarWidth(d.DeltaPp, td.Scale))%"></div>
+                }
+                else
+                {
+                  <div class="tbar pos" style="width:@(BarWidth(d.DeltaPp, td.Scale))%"></div>
+                }
+              </div>
+              <div class="tnum">@d.Total</div>
+              <div class="tnum">@((d.AccuracyA * 100).ToString("F1"))</div>
+              <div class="tnum">@((d.AccuracyB * 100).ToString("F1"))</div>
+              <div class="tdelta @(d.DeltaPp < 0 ? "lag" : "lead")">@(d.DeltaPp >= 0 ? "+" : "")@d.DeltaPp.ToString("F1")</div>
+            </div>
+          }
+          @if (td.Hidden > 0)
+          {
+            <div class="theme-elide"><span>… @td.Hidden more themes</span><i></i></div>
+          }
+        </div>
+      }
+
+      @if (!string.IsNullOrEmpty(themeBoardsFor))
+      {
+        var boardScore = ThemeBoardScore();
+        @if (boardScore is not null)
+        {
+          <div class="theme-boards">
+            <div class="theme-boards-head">
+              <span>Positions tagged <b>@themeBoardsFor</b> · @ShortNet(boardScore.NeuralNet)</span>
+              <button class="tool-action-btn tool-action-btn-sm" @onclick="@(() => themeBoardsFor = string.Empty)">Close</button>
+            </div>
+            <DeferredContent>
+              <ChildContent>
+                <PuzzleBanner Score="@boardScore"
+                              ThemeFilter="@themeBoardsFor"
+                              NumberOfFailedPuzzles="@failedNumber"
+                              NumberOfSolvedPuzzles="@solvedNumber" />
+              </ChildContent>
+            </DeferredContent>
+          </div>
+        }
+      }
+    </div>
+  }
+
+  @if (HasAnyScores)
+  {
     <div class="tool-section">
       <h2>Puzzle Visualizations</h2>
 
@@ -251,6 +439,168 @@
 @code {
     private string puzzleFileName = string.Empty;
     private CsvPuzzleData[] puzzles = Array.Empty<CsvPuzzleData>();
+    // ---- theme breakdown ----------------------------------------------------
+    // Reuses ChessLibrary.PuzzleThemes so the panel, the console and the written
+    // files all report the same numbers.
+    private int themeRatingGroup;
+    private string themeBaselineNet = "";
+    private string themeCompareNet = "";
+    private int themeMinN = ChessLibrary.PuzzleThemes.MinThemePuzzles;
+    /// Theme whose positions are open below the chart; empty = none.
+    private string themeBoardsFor = "";
+
+    private void CloseThemeBoards()
+    {
+        themeBoardsFor = "";
+        StateHasChanged();
+    }
+
+    private void ToggleThemeBoards(string theme) =>
+        themeBoardsFor = themeBoardsFor == theme ? "" : theme;
+
+    /// The net whose positions a theme row opens: the compared net when there are
+    /// two, otherwise the only one.
+    private Score ThemeBoardScore()
+    {
+        var rg = EffectiveThemeRatingGroup;
+        var nets = ThemeNets;
+        if (nets.Count == 0) return null;
+        string net;
+        if (nets.Count == 1)
+        {
+            net = nets[0];
+        }
+        else
+        {
+            var baseNet = nets.Contains(themeBaselineNet) ? themeBaselineNet : nets[0];
+            net = nets.Contains(themeCompareNet) && themeCompareNet != baseNet
+                ? themeCompareNet
+                : nets.First(n => n != baseNet);
+        }
+        return ThemeSource.FirstOrDefault(x => x.NeuralNet == net && RatingGroupOf(x.RatingAvg) == rg);
+    }
+    private const int ThemeTopN = 6;
+
+    /// Scores behind the active metric tab, one per net per rating group.
+    /// The theme panel compares nets, so it reads the UNFILTERED tab source - an
+    /// engine filter on the table must not blind the comparison.
+    private List<Score> ThemeSource => ActiveScoreSource;
+
+    /// Tab source narrowed by the engine filter. Table only.
+    private List<Score> TableScores =>
+        selectedEngine == "All"
+            ? ActiveScoreSource
+            : ActiveScoreSource.Where(s => s.Engine == selectedEngine).ToList();
+
+    private static int RatingGroupOf(double avg) => (int)Math.Round(avg / 100.0) * 100;
+
+    private List<int> ThemeRatingGroups =>
+        ThemeSource.Select(s => RatingGroupOf(s.RatingAvg)).Distinct().OrderBy(r => r).ToList();
+
+    /// Nets in config order - the runner emits them that way, and the first is the
+    /// baseline by the same convention the console uses.
+    private List<string> ThemeNets =>
+        ThemeSource.Where(s => RatingGroupOf(s.RatingAvg) == EffectiveThemeRatingGroup)
+                   .Select(s => s.NeuralNet)
+                   .Where(n => !string.IsNullOrEmpty(n))
+                   .Distinct()
+                   .ToList();
+
+    private int EffectiveThemeRatingGroup
+    {
+        get
+        {
+            var groups = ThemeRatingGroups;
+            if (groups.Count == 0) return 0;
+            return groups.Contains(themeRatingGroup) ? themeRatingGroup : groups[0];
+        }
+    }
+
+    private static string ShortNet(string n) =>
+        string.IsNullOrEmpty(n) ? "" : (n.Length <= 34 ? n : "…" + n.Substring(n.Length - 33));
+
+    private sealed record ThemeView(
+        List<ChessLibrary.PuzzleThemes.ThemeDiff> Rows, int Dropped, int Hidden, double Scale);
+
+    private static readonly ThemeView EmptyThemeView = new(new(), 0, 0, 1.0);
+
+    /// The 6 worst and 6 best themes for the compared net, with the middle elided.
+    private ThemeView ThemeRows()
+    {
+        var rg = EffectiveThemeRatingGroup;
+        var nets = ThemeNets;
+        if (nets.Count < 2) return EmptyThemeView;
+
+        var baseNet = nets.Contains(themeBaselineNet) ? themeBaselineNet : nets[0];
+        var cmpNet = nets.Contains(themeCompareNet) && themeCompareNet != baseNet
+            ? themeCompareNet
+            : nets.First(n => n != baseNet);
+
+        Score Find(string net) => ThemeSource.FirstOrDefault(
+            s => s.NeuralNet == net && RatingGroupOf(s.RatingAvg) == rg);
+
+        var a = Find(baseNet);
+        var b = Find(cmpNet);
+        if (a is null || b is null) return EmptyThemeView;
+
+        var result = ChessLibrary.PuzzleThemes.diff(
+            Math.Max(1, themeMinN),
+            ChessLibrary.PuzzleThemes.breakdown(a),
+            ChessLibrary.PuzzleThemes.breakdown(b));
+
+        var all = result.Item1.ToList();
+        if (all.Count == 0) return new ThemeView(new(), result.Item2, 0, 1.0);
+
+        // sorted ascending by delta, so the ends are the extremes
+        var shown = all.Count <= ThemeTopN * 2
+            ? all
+            : all.Take(ThemeTopN).Concat(all.Skip(all.Count - ThemeTopN)).ToList();
+        var hidden = all.Count - shown.Count;
+        var scale = Math.Max(1.0, all.Max(d => Math.Abs(d.DeltaPp)));
+        return new ThemeView(shown, result.Item2, hidden, scale);
+    }
+
+    private sealed record ThemeSingleView(
+        List<ChessLibrary.PuzzleThemes.ThemeStat> Rows, int Dropped, int Hidden);
+
+    private static readonly ThemeSingleView EmptyThemeSingleView = new(new(), 0, 0);
+
+    /// One net has no reference to take a delta against, but "where is it weak" is
+    /// still the question. Magnitude, not polarity - so plain bars, weakest first.
+    /// Mirrors PuzzleThemes.renderSingle in the console output.
+    private ThemeSingleView ThemeSingleRows()
+    {
+        var rg = EffectiveThemeRatingGroup;
+        var net = ThemeNets.FirstOrDefault();
+        if (net is null) return EmptyThemeSingleView;
+
+        var score = ThemeSource.FirstOrDefault(
+            s => s.NeuralNet == net && RatingGroupOf(s.RatingAvg) == rg);
+        if (score is null) return EmptyThemeSingleView;
+
+        var all = ChessLibrary.PuzzleThemes.breakdown(score).ToList();
+        var min = Math.Max(1, themeMinN);
+        var usable = all.Where(t => t.Total >= min)
+                        .OrderBy(t => ChessLibrary.PuzzleThemes.accuracyOf(t))
+                        .ThenBy(t => t.Theme)
+                        .ToList();
+        var dropped = all.Count - usable.Count;
+        if (usable.Count == 0) return new ThemeSingleView(new(), dropped, 0);
+
+        var shown = usable.Count <= ThemeTopN * 2
+            ? usable
+            : usable.Take(ThemeTopN).Concat(usable.Skip(usable.Count - ThemeTopN)).ToList();
+        return new ThemeSingleView(shown, dropped, usable.Count - shown.Count);
+    }
+
+    private static string SingleBarWidth(ChessLibrary.PuzzleThemes.ThemeStat t) =>
+        (ChessLibrary.PuzzleThemes.accuracyOf(t) * 100.0)
+            .ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// Half-track width, so bars read against the centre rule.
+    private static string BarWidth(double delta, double scale) =>
+        (Math.Abs(delta) / scale * 50.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
     private List<Score> PolicyScores = new();
     private List<Score> ValueScores = new();
     private List<Score> SearchScores = new();

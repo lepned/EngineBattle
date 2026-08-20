@@ -659,3 +659,365 @@
 .frc-popover-btn:hover {
     background: #3a3a58;
 }
+
+/* ---- per-theme breakdown -------------------------------------------------
+   Diverging bars from a centre rule: the data is signed, so the form is
+   polarity, not magnitude. The pair below was checked with the dataviz
+   validator against #232334 in dark mode - CVD dE 18.1 (protan), normal 26.5,
+   contrast >= 3:1, both inside the dark lightness band. Do not swap by eye.
+   Delta also appears as a signed number, so identity never rests on colour. */
+:root {
+    --theme-worse: #dd6a52;
+    --theme-better: #3a92cf;
+}
+
+.theme-panel .theme-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.theme-panel .theme-sub {
+    font-size: 0.8rem;
+    color: #9898ac;
+    margin-top: 2px;
+}
+
+.theme-empty {
+    padding: 18px;
+    color: #9898ac;
+    font-size: 0.88rem;
+    background: #232334;
+    border: 1px solid #3a3a52;
+    border-radius: 6px;
+}
+
+.theme-legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 0.76rem;
+    color: #9898ac;
+    padding: 0 2px 8px;
+}
+
+.theme-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.theme-legend i {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    display: inline-block;
+}
+
+.theme-legend .theme-legend-note {
+    margin-left: auto;
+    color: #6e6e88;
+}
+
+.theme-chart {
+    background: #232334;
+    border: 1px solid #3a3a52;
+    border-radius: 6px;
+    padding: 10px 14px 14px;
+}
+
+.theme-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 48px 54px 54px 64px;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+    border-radius: 4px;
+}
+
+.theme-row:not(.theme-row-head):hover {
+    background: rgba(139, 156, 232, 0.07);
+}
+
+.theme-row-head {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #6e6e88;
+    font-weight: 600;
+    padding-bottom: 6px;
+}
+
+.theme-row .tname {
+    font-size: 0.82rem;
+    color: #e0e0e6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theme-row-head .tname {
+    color: #6e6e88;
+}
+
+.theme-row .tnum,
+.theme-row .tdelta {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.theme-row .tnum {
+    font-size: 0.77rem;
+    color: #9898ac;
+}
+
+.theme-row .tdelta {
+    font-size: 0.81rem;
+    font-weight: 600;
+}
+
+.theme-row .tdelta.lag {
+    color: var(--theme-worse);
+}
+
+.theme-row .tdelta.lead {
+    color: var(--theme-better);
+}
+
+.ttrack {
+    position: relative;
+    height: 17px;
+}
+
+.ttrack::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -3px;
+    bottom: -3px;
+    width: 1px;
+    background: #4a4a68;
+}
+
+.tbar {
+    position: absolute;
+    top: 2px;
+    height: 13px;
+}
+
+/* 1px offset keeps a surface gap either side of the zero rule */
+.tbar.neg {
+    right: 50%;
+    margin-right: 1px;
+    background: var(--theme-worse);
+    border-radius: 3px 0 0 3px;
+}
+
+.tbar.pos {
+    left: 50%;
+    margin-left: 1px;
+    background: var(--theme-better);
+    border-radius: 0 3px 3px 0;
+}
+
+.theme-elide {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 0;
+    font-size: 0.74rem;
+    color: #6e6e88;
+}
+
+.theme-elide i {
+    height: 1px;
+    background: repeating-linear-gradient(90deg, #3a3a52 0 4px, transparent 4px 9px);
+}
+
+@media (max-width: 780px) {
+    .theme-row {
+        grid-template-columns: 104px 1fr 60px;
+    }
+    .theme-row .tnum {
+        display: none;
+    }
+}
+
+/* An empty panel that vanishes teaches nothing: keep it, and say both what it
+   would show and what is missing. The ghost bars are decoration for the shape,
+   so they are aria-hidden. */
+.theme-empty {
+    display: flex;
+    gap: 22px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 20px 22px;
+    background: #232334;
+    border: 1px solid #3a3a52;
+    border-radius: 6px;
+}
+
+.theme-empty-ghost {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 172px;
+    flex: none;
+    position: relative;
+    opacity: 0.32;
+}
+
+.theme-empty-ghost::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -4px;
+    bottom: -4px;
+    width: 1px;
+    background: #4a4a68;
+}
+
+.theme-empty-ghost span {
+    height: 9px;
+    width: var(--w);
+    border-radius: 3px;
+}
+
+.theme-empty-ghost span[style*="--side:l"] {
+    align-self: flex-start;
+    margin-left: auto;
+    margin-right: calc(50% + 1px);
+    background: var(--theme-worse);
+    border-radius: 3px 0 0 3px;
+}
+
+.theme-empty-ghost span[style*="--side:r"] {
+    margin-left: calc(50% + 1px);
+    background: var(--theme-better);
+    border-radius: 0 3px 3px 0;
+}
+
+.theme-empty-text {
+    flex: 1 1 300px;
+}
+
+.theme-empty-text h4 {
+    margin: 0 0 5px;
+    font-size: 0.92rem;
+    font-weight: 650;
+    color: #e0e0e6;
+}
+
+.theme-empty-text p {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: #9898ac;
+    max-width: 62ch;
+}
+
+.theme-empty-text b {
+    color: #e0e0e6;
+    font-weight: 600;
+}
+
+/* ---- single-net breakdown ------------------------------------------------
+   With one net the data is magnitude, not polarity: bars run from the left
+   against a 0-100 scale, one hue, and there is no centre rule. Same content
+   as PuzzleThemes.renderSingle in the console. */
+:root {
+    --theme-single: #6f86d6;
+}
+
+.theme-row-single {
+    grid-template-columns: 140px 1fr 48px 76px;
+}
+
+.ttrack-single::before {
+    display: none;
+}
+
+.tbar.single {
+    left: 0;
+    background: var(--theme-single);
+    border-radius: 0 3px 3px 0;
+}
+
+/* the full-scale reference, so a short bar reads as "out of 100", not "short" */
+.ttrack-single {
+    background: linear-gradient(to right, rgba(111, 134, 214, 0.09), rgba(111, 134, 214, 0.09));
+    border-radius: 3px;
+}
+
+.theme-row-single .tdelta {
+    color: #e0e0e6;
+    font-weight: 600;
+}
+
+.theme-row-head.theme-row-single .tdelta {
+    color: #6e6e88;
+    font-weight: 600;
+}
+
+@media (max-width: 780px) {
+    .theme-row-single {
+        grid-template-columns: 104px 1fr 76px;
+    }
+}
+
+/* ---- theme row opens its positions ---------------------------------------
+   The breakdown says endgame is 20 points worse; the next question is always
+   "which endgames". Clicking the row answers it without leaving the panel. */
+.theme-row-click {
+    cursor: pointer;
+}
+
+.theme-row-click:focus-visible {
+    outline: 2px solid #8b9ce8;
+    outline-offset: -2px;
+}
+
+.theme-row-click.open {
+    background: rgba(139, 156, 232, 0.13);
+}
+
+.theme-row-click.open .tname {
+    font-weight: 600;
+}
+
+/* a caret that only appears on the open row, so the link between the row and
+   the boards below is visible rather than implied */
+.theme-row-click.open .tname::before {
+    content: "▾ ";
+    color: #8b9ce8;
+}
+
+.theme-boards {
+    margin-top: 14px;
+    border: 1px solid #3a3a52;
+    border-radius: 6px;
+    background: #1f1f2e;
+    overflow: hidden;
+}
+
+.theme-boards-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #3a3a52;
+    font-size: 0.84rem;
+    color: #9898ac;
+}
+
+.theme-boards-head b {
+    color: #e0e0e6;
+    font-weight: 600;
+}
+
