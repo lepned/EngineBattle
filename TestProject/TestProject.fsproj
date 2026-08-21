@@ -35,6 +35,7 @@
 		<Compile Include="PuzzleLossMetricTests.fs" />
 		<Compile Include="PuzzleTrendTests.fs" />
 		<Compile Include="PuzzleThemeTests.fs" />
+		<Compile Include="EngineDefGenTests.fs" />
 		<Compile Include="GameAccuracyAnalysisTests.fs" />
 		<Compile Include="LiveFeedWireTests.fs" />
 		<Compile Include="LiveFeedRecorderTests.fs" />

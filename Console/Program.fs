@@ -2632,6 +2632,28 @@ module Program =
                                     File.WriteAllText(outPath, ChessLibrary.PuzzleTrend.toCsv filtered)
                                     printfn "CSV written: %s" outPath
                                 | None -> ()
+                | Verb (GenDefs (template, netFolder, outFolder, dryRun, force)) ->
+                    // A training run drops a checkpoint every few hours and each needs a def
+                    // that differs from the last only in the step number. Typing that by hand
+                    // is how step numbers get mistyped.
+                    let templatePath = normalizePath template
+                    match ChessLibrary.EngineDefGen.plan
+                            templatePath
+                            (netFolder |> Option.map normalizePath)
+                            (outFolder |> Option.map normalizePath) with
+                    // Result.Ok/Error qualified: an engine-message DU in scope shadows both cases
+                    | Result.Error msg -> printfn "%s" msg
+                    | Result.Ok p ->
+                        printfn "%s" (ChessLibrary.EngineDefGen.render p)
+                        if not p.ToWrite.IsEmpty then
+                            if dryRun then
+                                printfn "  --dry-run: nothing written."
+                            else
+                                let written = ChessLibrary.EngineDefGen.write force p
+                                printfn "  Wrote %d def(s)." written.Length
+                                let blocked = p.ToWrite.Length - written.Length
+                                if blocked > 0 then
+                                    printfn "  %d skipped: a file of that name already exists (--force to overwrite)." blocked
                 | Verb (PgnCheck path) ->
                     // Pure parser health check: stream the file (never materialize it),
                     // report structure and throughput. Deliberately does NO analysis —

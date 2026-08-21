@@ -73,6 +73,7 @@ type VerbResult =
     | PgnCheck of path:string
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
     | PuzzleTrend of folder:string * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
+    | GenDefs of template:string * netFolder:string option * outFolder:string option * dryRun:bool * force:bool
     | Validate of configFile:string
     | Elo of path:string
     | Speed of path:string
@@ -643,6 +644,25 @@ module CustomParser =
                         | _ -> stop <- true
                     parseArgs args i (Verb (PuzzleTrend (folder, arm, testType, ratingGroup, csvOut, minSteps)) :: acc)
                 else failwith "Missing folder for puzzletrend"
+            | "gendefs" | "gd" ->
+                if index + 1 < args.Length then
+                    let template = args.[index + 1]
+                    let mutable i = index + 2
+                    let mutable netFolder = None
+                    let mutable outFolder = None
+                    let mutable dryRun = false
+                    let mutable force = false
+                    let mutable stop = false
+                    while not stop && i < args.Length do
+                        match args.[i].ToLower() with
+                        // one .onnx or a folder of them - the same flag takes either
+                        | "--nets" | "--net" -> netFolder <- Some (valueOf args i); i <- i + 2
+                        | "--out" -> outFolder <- Some (valueOf args i); i <- i + 2
+                        | "--dry-run" | "-n" -> dryRun <- true; i <- i + 1
+                        | "--force" -> force <- true; i <- i + 1
+                        | _ -> stop <- true
+                    parseArgs args i (Verb (GenDefs (template, netFolder, outFolder, dryRun, force)) :: acc)
+                else failwith "Missing template def for gendefs"
             | "validate" | "v" ->
                 if index + 1 < args.Length then
                     let configFile = args.[index + 1]
