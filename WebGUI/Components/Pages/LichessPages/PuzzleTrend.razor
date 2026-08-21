@@ -1,0 +1,340 @@
+@page "/puzzles/trend"
+@inject GlobalSettingsService SettingsService
+@inject JavaScriptInteropService JsInteropService
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+@using WebGUI.Services
+@using System.Globalization
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+
+<PageTitle>Puzzle Trend</PageTitle>
+
+<div class="trend-container">
+    <h2>Puzzle Trend</h2>
+    <div class="trend-description">
+        Step curves per training run, built from the result JSON every puzzle run writes.
+        A checkpoint measured more than once shows its largest sample.
+    </div>
+
+    <div class="trend-controls">
+        <div class="control-row">
+            <div class="control-group path">
+                <label>Results folder</label>
+                <input type="text" @bind="folder" title="@folder" />
+            </div>
+            <button class="browse-btn" title="Browse" @onclick="BrowseFolder">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+            </button>
+            <button class="load-btn" @onclick="LoadAsync" disabled="@isLoading">
+                @(isLoading ? "Loading…" : "Load")
+            </button>
+        </div>
+
+        @if (allPoints.Count > 0)
+        {
+            <div class="control-row">
+                <div class="control-group">
+                    <label>Metric</label>
+                    <select @bind="selectedType" @bind:after="RedrawAsync">
+                        @foreach (var t in availableTypes)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Rating group</label>
+                    <select @bind="selectedRatingGroup" @bind:after="RedrawAsync">
+                        @foreach (var rg in availableRatingGroups)
+                        {
+                            <option value="@rg">@rg</option>
+                        }
+                    </select>
+                </div>
+                <div class="control-group grow">
+                    <label>Filter arms</label>
+                    <input type="text" @bind="armFilter" @bind:after="RedrawAsync" placeholder="substring, e.g. 512_16" />
+                </div>
+                <div class="control-group">
+                    <label>Min steps</label>
+                    <input type="number" min="1" max="20" step="1" @bind="minSteps" @bind:after="RedrawAsync" style="width:5rem" />
+                </div>
+            </div>
+
+            <div class="arm-toggles">
+                @foreach (var series in AllSeriesKeys())
+                {
+                    var key = series;
+                    <label class="arm-toggle">
+                        <input type="checkbox"
+                               checked="@(!hiddenSeries.Contains(key))"
+                               @onchange="@(e => ToggleSeries(key, (bool)e.Value!))" />
+                        <span>@ShortLabel(key)</span>
+                    </label>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(status))
+    {
+        <div class="trend-status">@status</div>
+    }
+
+    @* Plotly must not be drawn into a hidden container, so the chart div is only
+       rendered once there is data for it. *@
+    @if (hasChartData)
+    {
+        <div id="trendChart" class="trend-chart"></div>
+    }
+</div>
+
+<style>
+    .trend-container { padding: 1rem 1.25rem; max-width: 1400px; }
+    .trend-description { color: var(--mud-palette-text-secondary); margin-bottom: 1rem; font-size: .9rem; }
+    .trend-controls { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1rem; }
+    .control-row { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; }
+    .control-group { display: flex; flex-direction: column; gap: .25rem; }
+    .control-group.grow { flex: 1 1 320px; }
+    /* a path needs a readable width, not the full container width */
+    .control-group.path { flex: 0 1 560px; min-width: 260px; }
+    .control-group label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--mud-palette-text-secondary); }
+    .control-group input, .control-group select { padding: .4rem .5rem; }
+    .browse-btn, .load-btn { padding: .45rem .8rem; cursor: pointer; }
+    .arm-toggles { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+    .arm-toggle { display: flex; align-items: center; gap: .35rem; font-size: .85rem; cursor: pointer; }
+    .trend-status { margin: .5rem 0; font-size: .9rem; color: var(--mud-palette-text-secondary); }
+    .trend-chart { width: 100%; height: 520px; }
+</style>
+
+@code {
+    private string folder = "";
+    private string armFilter = "";
+    private string status = "";
+    private bool isLoading;
+    private bool hasChartData;
+    private bool pendingDraw;
+
+    private List<ChessLibrary.PuzzleTrend.Point> allPoints = new();
+    private List<ChessLibrary.PuzzleTrend.Point> visiblePoints = new();
+    // a single measured checkpoint is a data point, not a curve; the archive has ~180 arms
+    // but only a handful are real training runs
+    private int minSteps = 3;
+    private int droppedSeries;
+    // sentinel for the metric dropdown: plot every metric at once
+    private const string AllMetrics = "All";
+    private List<string> availableTypes = new();
+    private List<int> availableRatingGroups = new();
+    private string selectedType = "";
+    private int selectedRatingGroup;
+    private readonly HashSet<string> hiddenSeries = new();
+
+    protected override void OnInitialized()
+    {
+        folder = SettingsService.Settings.PuzzleResultsFolder ?? "";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // draw only after the chart div exists in the DOM
+        if (pendingDraw && hasChartData)
+        {
+            pendingDraw = false;
+            await DrawChartAsync();
+        }
+    }
+
+    private async Task BrowseFolder()
+    {
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, folder },
+            { x => x.Mode, FileBrowserMode.Folder }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Folder", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            folder = (string)result.Data!;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            status = "Set a results folder first (Settings → Folders → Puzzle Results).";
+            return;
+        }
+
+        isLoading = true;
+        status = "Reading result files…";
+        hasChartData = false;
+        StateHasChanged();
+
+        try
+        {
+            // parsing hundreds of files is disk-bound; keep the UI thread free
+            var loaded = await Task.Run(() =>
+            {
+                var points = ChessLibrary.PuzzleTrend.loadFolder(folder);
+                return ChessLibrary.PuzzleTrend.dedupe(points).ToList();
+            });
+
+            allPoints = loaded;
+            if (allPoints.Count == 0)
+            {
+                status = $"No checkpoint results found in {folder}.";
+                isLoading = false;
+                return;
+            }
+
+            availableTypes = allPoints.Select(p => p.Type).Distinct().OrderBy(t => t).ToList();
+            availableTypes.Insert(0, AllMetrics);
+            availableRatingGroups = allPoints.Select(p => p.RatingGroup).Distinct().OrderBy(r => r).ToList();
+            if (!availableTypes.Contains(selectedType))
+                selectedType = availableTypes.FirstOrDefault(t => t.Equals("Value", StringComparison.OrdinalIgnoreCase))
+                               ?? availableTypes.First();
+            if (!availableRatingGroups.Contains(selectedRatingGroup))
+                selectedRatingGroup = availableRatingGroups.Contains(2300) ? 2300 : availableRatingGroups.First();
+
+            var arms = allPoints.Select(p => p.Arm).Distinct().Count();
+            status = $"{allPoints.Count} checkpoint rows across {arms} arm(s).";
+            await RedrawAsync();
+        }
+        catch (Exception ex)
+        {
+            status = $"Failed to read {folder}: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// Applies the selectors, then drops series too short to be a curve. Reuses the F#
+    /// filter so the page and the `puzzletrend` verb hide exactly the same series.
+    private void ApplyFilters()
+    {
+        var selected = allPoints.Where(p =>
+            (selectedType == AllMetrics || p.Type == selectedType) &&
+            p.RatingGroup == selectedRatingGroup &&
+            (string.IsNullOrWhiteSpace(armFilter) ||
+             p.Arm.Contains(armFilter, StringComparison.OrdinalIgnoreCase)));
+
+        var result = ChessLibrary.PuzzleTrend.filterMinSteps(
+            minSteps, Microsoft.FSharp.Collections.ListModule.OfSeq(selected));
+        visiblePoints = result.Item1.ToList();
+        droppedSeries = result.Item2;
+    }
+
+    private IEnumerable<ChessLibrary.PuzzleTrend.Point> CurrentPoints() => visiblePoints;
+
+    private string SeriesKey(ChessLibrary.PuzzleTrend.Point p)
+    {
+        var basis = p.IsEma ? p.Arm + " [ema]" : p.Arm + " [raw]";
+        return selectedType == AllMetrics ? basis + " · " + p.Type : basis;
+    }
+
+    private List<string> AllSeriesKeys() =>
+        CurrentPoints().Select(SeriesKey).Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
+
+    private static string ShortLabel(string key) =>
+        key.Length <= 34 ? key : "…" + key.Substring(key.Length - 33);
+
+    private void ToggleSeries(string key, bool visible)
+    {
+        if (visible) hiddenSeries.Remove(key); else hiddenSeries.Add(key);
+        pendingDraw = true;
+        StateHasChanged();
+    }
+
+    private async Task RedrawAsync()
+    {
+        if (minSteps < 1) minSteps = 1;
+        ApplyFilters();
+        var any = visiblePoints.Count > 0;
+        hasChartData = any;
+        var hidden = droppedSeries > 0
+            ? $" {droppedSeries} series with fewer than {minSteps} steps hidden."
+            : "";
+        if (!any)
+        {
+            status = $"No rows match the current filters.{hidden}";
+            StateHasChanged();
+            return;
+        }
+        var shown = visiblePoints.Select(SeriesKey).Distinct().Count();
+        status = $"{shown} series shown.{hidden}";
+        // let the chart div render first, then draw into it
+        pendingDraw = true;
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task DrawChartAsync()
+    {
+        var module = await JsInteropService.ImportModuleAsync(JS);
+        if (module == null) return;
+
+        var visible = CurrentPoints().Where(p => !hiddenSeries.Contains(SeriesKey(p))).ToList();
+        if (visible.Count == 0)
+        {
+            await module.InvokeVoidAsync("setMultiTraceChart", "trendChart", Array.Empty<object>(), BuildLayout());
+            return;
+        }
+
+        var traces = visible
+            .GroupBy(SeriesKey)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(p => p.StepM).ToList();
+                return (object)new
+                {
+                    x = ordered.Select(p => p.StepM).ToArray(),
+                    y = ordered.Select(p => Math.Round(p.Accuracy * 100.0, 2)).ToArray(),
+                    // EMA is the same run as its raw twin; dashing it keeps the pair readable
+                    line = new { dash = g.Key.EndsWith("[ema]") ? "dot" : "solid", width = 2 },
+                    mode = "lines+markers",
+                    name = ShortLabel(g.Key),
+                    type = "scatter",
+                    hovertemplate = "%{y:.1f}% @ %{x}M<extra>" + ShortLabel(g.Key) + "</extra>"
+                };
+            })
+            .ToArray();
+
+        await module.InvokeVoidAsync("setMultiTraceChart", "trendChart", traces, BuildLayout());
+    }
+
+    private object BuildLayout() => new
+    {
+        margin = new { t = 30, r = 20, b = 50, l = 55 },
+        // grey at low alpha reads as a faint grid on both the light and dark themes,
+        // since the plot background is transparent - the data lines stay dominant
+        xaxis = new
+        {
+            title = new { text = "training positions (millions)" },
+            zeroline = false,
+            gridcolor = "rgba(128,128,128,0.13)",
+            gridwidth = 1,
+            linecolor = "rgba(128,128,128,0.30)"
+        },
+        yaxis = new
+        {
+            title = new { text = selectedType == AllMetrics ? "accuracy (%)" : $"{selectedType} accuracy (%)" },
+            zeroline = false,
+            gridcolor = "rgba(128,128,128,0.13)",
+            gridwidth = 1,
+            linecolor = "rgba(128,128,128,0.30)"
+        },
+        legend = new { orientation = "h", y = -0.2 },
+        paper_bgcolor = "rgba(0,0,0,0)",
+        plot_bgcolor = "rgba(0,0,0,0)",
+        font = new { color = "#888" },
+        hovermode = "x unified"
+    };
+}

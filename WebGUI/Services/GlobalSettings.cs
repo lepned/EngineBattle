@@ -10,6 +10,9 @@ public class GlobalSettings
     public string TablebaseFolder { get; set; } = "";
     public string NeuralNetFolder { get; set; } = "";
     public string PuzzleConfigFolder { get; set; } = "";
+    // Where puzzle runs write their results. The trend view reads the
+    // LichessSummary_<stamp>.json files from here.
+    public string PuzzleResultsFolder { get; set; } = "";
     public string AnalysisGamesPath { get; set; } = "";
 
     // Browser state

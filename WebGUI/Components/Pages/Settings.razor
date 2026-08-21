@@ -64,6 +64,7 @@
                     <option value="/puzzles/download">Download Puzzle Data</option>
                     <option value="/puzzles/lichess">Lichess Puzzles</option>
                     <option value="/puzzles/eret">ERET Test</option>
+                    <option value="/puzzles/trend">Puzzle Trend</option>
                 </optgroup>
                 <optgroup label="Tools">
                     <option value="/tools/epd-visualizer">EPD Visualizer</option>
@@ -338,6 +339,15 @@
                 </div>
                 <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => puzzleConfigFolder = v, puzzleConfigFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
             </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label>Puzzle Results</label>
+                    <input type="text" @bind="puzzleResultsFolder" />
+                    <small>Where puzzle runs write results; read by the trend view</small>
+                </div>
+                <button class="browse-btn" title="Browse" @onclick="() => BrowseFolder(v => puzzleResultsFolder = v, puzzleResultsFolder)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg></button>
+            </div>
         </div>
         <div class="field-group">
             <label class="checkbox-label">
@@ -371,6 +381,7 @@
     private string tablebaseFolder = "";
     private string neuralNetFolder = "";
     private string puzzleConfigFolder = "";
+    private string puzzleResultsFolder = "";
     private string analysisGamesPath = "";
     private string ordoExePath = "";
     private string defaultSearchMode = "Nodes";
@@ -424,6 +435,7 @@
         tablebaseFolder = s.TablebaseFolder;
         neuralNetFolder = s.NeuralNetFolder;
         puzzleConfigFolder = s.PuzzleConfigFolder;
+        puzzleResultsFolder = s.PuzzleResultsFolder;
         analysisGamesPath = s.AnalysisGamesPath;
         ordoExePath = s.OrdoExePath;
         defaultEnginePath = s.DefaultEnginePath;
@@ -474,6 +486,7 @@
             settings.TablebaseFolder = tablebaseFolder ?? "";
             settings.NeuralNetFolder = neuralNetFolder ?? "";
             settings.PuzzleConfigFolder = puzzleConfigFolder ?? "";
+            settings.PuzzleResultsFolder = puzzleResultsFolder ?? "";
             settings.AnalysisGamesPath = analysisGamesPath ?? "";
             settings.OrdoExePath = ordoExePath ?? "";
             settings.DefaultEnginePath = defaultEnginePath ?? "";
@@ -525,6 +538,7 @@
         tablebaseFolder = defaults.TablebaseFolder;
         neuralNetFolder = defaults.NeuralNetFolder;
         puzzleConfigFolder = defaults.PuzzleConfigFolder;
+        puzzleResultsFolder = defaults.PuzzleResultsFolder;
         analysisGamesPath = defaults.AnalysisGamesPath;
         ordoExePath = defaults.OrdoExePath;
         defaultEnginePath = defaults.DefaultEnginePath;

@@ -190,6 +190,16 @@ export function setLineChartData(chart, layout, config) {
   }
 }
 
+// Trend charts have one trace per training arm/variant, so the count is not known up front
+// (the fixed-arity helpers above take trace1..trace3). Pass a plain array instead.
+export function setMultiTraceChart(chart, traces, layout) {
+  try {
+    Plotly.newPlot(chart, traces, layout, { responsive: true, displayModeBar: false });
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 export function setSingleNodeChart(chart, layout, config) {
   try {
     var data = [config.trace1, config.trace2];
