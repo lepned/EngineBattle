@@ -105,6 +105,7 @@
 		<Compile Include="Analysis\PuzzleCrossEngine.fs" />
 		<Compile Include="Analysis\PuzzleRunners.fs" />
 		<Compile Include="Analysis\PuzzleJsonOutput.fs" />
+		<Compile Include="Analysis\PuzzleTrend.fs" />
 		<Compile Include="Analysis\PuzzleThemes.fs" />
 
 		<!-- Internal utilities (perft, test helpers) -->

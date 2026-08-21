@@ -2593,6 +2593,45 @@ module Program =
                             ChessLibrary.Test.ParsingTests.pgnTerminationSummary normalizedPath 2 4.0 (3.0, 0.5) |> ignore
                         with ex ->
                             printfn "Error processing PGN file: %s" ex.Message
+                | Verb (PuzzleTrend (folder, armFilter, typeFilter, rgFilter, csvOut, minSteps)) ->
+                    // Consolidates many puzzle runs into step curves per training arm, which is
+                    // otherwise assembled by hand from one summary table per run.
+                    let normalizedFolder = normalizePath folder
+                    if not (Directory.Exists normalizedFolder) then
+                        printfn "Folder not found: %s" normalizedFolder
+                    else
+                        let all = ChessLibrary.PuzzleTrend.loadFolder normalizedFolder
+                        if List.isEmpty all then
+                            printfn "No puzzle result JSON found in %s" normalizedFolder
+                            printfn "(runs write LichessSummary_<stamp>.json beside the text summary)"
+                        else
+                            let matches (needle: string option) (haystack: string) =
+                                match needle with
+                                | Some n -> haystack.Contains(n, StringComparison.OrdinalIgnoreCase)
+                                | None -> true
+                            let filtered =
+                                all
+                                |> List.filter (fun p ->
+                                    matches armFilter p.Arm
+                                    && matches typeFilter p.Type
+                                    && (match rgFilter with Some rg -> p.RatingGroup = rg | None -> true))
+                                |> ChessLibrary.PuzzleTrend.dedupe
+                            let filtered, droppedSeries = ChessLibrary.PuzzleTrend.filterMinSteps minSteps filtered
+                            if droppedSeries > 0 then
+                                printfn "Hiding %d series with fewer than %d steps (--min-steps 1 to show all)." droppedSeries minSteps
+                            if List.isEmpty filtered then
+                                printfn "No rows matched the given filters (%d checkpoint rows scanned)." all.Length
+                            else
+                                let arms = filtered |> List.map (fun p -> p.Arm) |> List.distinct
+                                printfn "%d checkpoint rows across %d arm(s) from %s"
+                                    filtered.Length arms.Length normalizedFolder
+                                printfn "%s" (ChessLibrary.PuzzleTrend.render filtered)
+                                match csvOut with
+                                | Some out ->
+                                    let outPath = normalizePath out
+                                    File.WriteAllText(outPath, ChessLibrary.PuzzleTrend.toCsv filtered)
+                                    printfn "CSV written: %s" outPath
+                                | None -> ()
                 | Verb (PgnCheck path) ->
                     // Pure parser health check: stream the file (never materialize it),
                     // report structure and throughput. Deliberately does NO analysis —

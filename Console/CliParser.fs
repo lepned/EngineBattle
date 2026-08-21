@@ -71,6 +71,8 @@ type VerbResult =
     | GUI of page: string * port: int option
     | PgnSummary of path:string
     | PgnCheck of path:string
+    // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
+    | PuzzleTrend of folder:string * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
     | Validate of configFile:string
     | Elo of path:string
     | Speed of path:string
@@ -620,6 +622,27 @@ module CustomParser =
                     let path = args.[index + 1]
                     parseArgs args (index + 2) (Verb (PgnCheck path) :: acc)
                 else failwith "Missing parameter for pgncheck"
+            | "puzzletrend" | "pt" ->
+                if index + 1 < args.Length then
+                    let folder = args.[index + 1]
+                    let mutable i = index + 2
+                    let mutable arm = None
+                    let mutable testType = None
+                    let mutable ratingGroup = None
+                    let mutable csvOut = None
+                    // a lone checkpoint is not a curve; the archive is full of one-off nets
+                    let mutable minSteps = 3
+                    let mutable stop = false
+                    while not stop && i < args.Length do
+                        match args.[i].ToLower() with
+                        | "--arm" -> arm <- Some (valueOf args i); i <- i + 2
+                        | "--type" -> testType <- Some (valueOf args i); i <- i + 2
+                        | "--rg" -> ratingGroup <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--csv" -> csvOut <- Some (valueOf args i); i <- i + 2
+                        | "--min-steps" -> minSteps <- parseInt (valueOf args i); i <- i + 2
+                        | _ -> stop <- true
+                    parseArgs args i (Verb (PuzzleTrend (folder, arm, testType, ratingGroup, csvOut, minSteps)) :: acc)
+                else failwith "Missing folder for puzzletrend"
             | "validate" | "v" ->
                 if index + 1 < args.Length then
                     let configFile = args.[index + 1]
