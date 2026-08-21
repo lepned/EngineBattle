@@ -2083,7 +2083,7 @@ module Program =
 
         // Per-theme breakdown, shared with the GUI so both runs produce the same files.
         // Returns the summary appended to LichessSummary_<stamp>.txt below.
-        let themeSummary =
+        let themeOutput =
             try
                 PuzzleThemes.writeThemeFiles
                     escaped
@@ -2092,8 +2092,16 @@ module Program =
                     allScoresForCross
             with ex ->
                 RuntimeUtilities.ConsoleUtils.redConsole $"Per-theme comparison failed: {ex.Message}"
-                ""
-        if themeSummary <> "" then printfn "%s" themeSummary
+                { Summary = ""; CsvPath = ""; Headline = "" }
+        // the tables go to the summary file - dumping a dozen of them on someone who
+        // ran a puzzle test buries the result they came for
+        if themeOutput.Summary <> "" then
+            printfn "
+--- Per-Theme Comparison ---"
+            printfn "%s" themeOutput.Headline
+            printfn "  Full tables: %s" (Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.txt"))
+            printfn "  All themes:  %s" themeOutput.CsvPath
+        let themeSummary = themeOutput.Summary
 
         let testTypeInfo = String.Join("-", types)
         let engineCount = engineConfigs.Count
@@ -2105,6 +2113,25 @@ module Program =
         if themeSummary <> "" then
             tableWriter.WriteLine(themeSummary)
 
+        // Always write the machine-readable twin beside the text summary, same basename.
+        // Trend tooling reads these; nothing should have to parse the human-formatted table,
+        // whose column layout has drifted across many releases. See Console/PuzzleJsonSchema.md.
+        let pairedJsonFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.json")
+        try
+            PuzzleJsonOutput.buildResult
+                normalizedPath
+                puzzles.Length
+                data.SampleSize
+                data.MinRating
+                data.MaxRating
+                data.PuzzleFilter
+                data.RatingGroups
+                startedUtc
+                runStopwatch.Elapsed.TotalSeconds
+                scores
+            |> PuzzleJsonOutput.writeToFile pairedJsonFileName
+        with ex ->
+            RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON summary to {pairedJsonFileName}: {ex.Message}"
 
     // Optional structured JSON output for external tooling (e.g. Python tuner).
     // See Console/PuzzleJsonSchema.md for the public schema contract.

@@ -146,3 +146,31 @@ let ``breakdown orders equal-sized themes deterministically`` () =
     let score = mkScore [ "zulu alpha"; "zulu alpha" ] [ "zulu alpha" ]
     let stats = PuzzleThemes.breakdown score
     Assert.Equal<string>("alpha", stats.Head.Theme)
+
+[<Fact>]
+let ``sigma scales with sample size, not with the delta alone`` () =
+    // the same 10 pp delta is weak on 40 puzzles and strong on 1000 - this is the
+    // number that was missing when a delta-sorted table was read as "samples too small"
+    let small = PuzzleThemes.sigmaOf 40 10.0
+    let large = PuzzleThemes.sigmaOf 1000 10.0
+    Assert.True(small < 1.5, $"expected a weak sigma on n=40, got {small}")
+    Assert.True(large > 4.0, $"expected a strong sigma on n=1000, got {large}")
+    Assert.Equal(0.0, PuzzleThemes.sigmaOf 0 10.0, 6)
+    Assert.Equal(PuzzleThemes.sigmaOf 500 -8.0, PuzzleThemes.sigmaOf 500 8.0, 6)
+
+[<Fact>]
+let ``the largest samples are shown even when the sort hides them`` () =
+    // a delta-sorted list puts the SMALLEST samples at both ends, so the rows worth
+    // trusting land in the elided middle
+    let ends =
+        [ for i in 1 .. 6 -> stat (sprintf "tiny_neg_%d" i) 30 (30 - i) ]
+        @ [ for i in 1 .. 6 -> stat (sprintf "tiny_pos_%d" i) 30 i ]
+    let a = stat "bigTheme" 1000 500 :: ends
+    let b =
+        stat "bigTheme" 1000 400
+        :: [ for i in 1 .. 6 -> stat (sprintf "tiny_neg_%d" i) 30 0 ]
+        @ [ for i in 1 .. 6 -> stat (sprintf "tiny_pos_%d" i) 30 30 ]
+    let diffs, _ = PuzzleThemes.diff 25 a b
+    let rendered = PuzzleThemes.renderDiff "A" "B" 6 diffs
+    Assert.Contains("largest samples:", rendered)
+    Assert.Contains("bigTheme", rendered)

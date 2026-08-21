@@ -20,6 +20,16 @@ module PuzzleThemes =
     let accuracyOf (s: ThemeStat) =
         if s.Total = 0 then 0.0 else float s.Correct / float s.Total
 
+    /// How many standard errors a delta is from zero, for one theme.
+    ///
+    /// Deliberately the *unpaired* approximation at p = 0.5, which is the widest SE the
+    /// data can produce. Both nets saw the same puzzles, so the true paired test (McNemar)
+    /// would be tighter - but it needs the discordant counts, which a per-theme correct/total
+    /// pair does not carry. Erring wide is the safe direction for a screening number.
+    let sigmaOf (total: int) (deltaPp: float) =
+        if total <= 0 then 0.0
+        else abs deltaPp / (sqrt (2.0 * 0.25 / float total) * 100.0)
+
     /// One theme's rate for two nets measured on the same sample.
     type ThemeDiff =
         { Theme: string
@@ -148,15 +158,16 @@ module PuzzleThemes =
             else
                 sb.AppendLine(sprintf "Sorted by B-A, all %d themes." diffs.Length) |> ignore
             sb.AppendLine() |> ignore
-            sb.AppendLine(sprintf "%-*s  %6s  %8s  %8s  %8s" themeWidth "theme" "n" "A %" "B %" "B-A pp") |> ignore
-            sb.AppendLine(String('-', themeWidth + 36)) |> ignore
+            sb.AppendLine(sprintf "%-*s  %6s  %8s  %8s  %8s  %6s" themeWidth "theme" "n" "A %" "B %" "B-A pp" "sigma") |> ignore
+            sb.AppendLine(String('-', themeWidth + 44)) |> ignore
 
             let render (d: ThemeDiff) =
                 sb.AppendLine(
-                    sprintf "%-*s  %6d  %8.1f  %8.1f  %+8.1f"
+                    sprintf "%-*s  %6d  %8.1f  %8.1f  %+8.1f  %6.1f"
                         themeWidth
                         (if d.Theme.Length <= themeWidth then d.Theme else d.Theme.Substring(0, themeWidth))
-                        d.Total (d.AccuracyA * 100.0) (d.AccuracyB * 100.0) d.DeltaPp) |> ignore
+                        d.Total (d.AccuracyA * 100.0) (d.AccuracyB * 100.0) d.DeltaPp
+                        (sigmaOf d.Total d.DeltaPp)) |> ignore
 
             let worst = diffs |> List.truncate topN
             let best = diffs |> List.rev |> List.truncate topN |> List.rev
@@ -172,6 +183,20 @@ module PuzzleThemes =
             best
             |> List.filter (fun d -> not (alreadyShown.Contains d.Theme))
             |> List.iter render
+
+            // Sorting by delta puts the smallest samples at both ends, so the most
+            // reliable rows are exactly the ones the elision hides. Always show them.
+            let shownNow =
+                Set.union alreadyShown (best |> List.map (fun d -> d.Theme) |> Set.ofList)
+            let biggest =
+                diffs
+                |> List.sortByDescending (fun d -> d.Total)
+                |> List.filter (fun d -> not (shownNow.Contains d.Theme))
+                |> List.truncate 3
+            if not biggest.IsEmpty then
+                sb.AppendLine() |> ignore
+                sb.AppendLine("largest samples:") |> ignore
+                biggest |> List.iter render
             sb.ToString()
 
     // ---------------------------------------------------------------------------
@@ -197,8 +222,19 @@ module PuzzleThemes =
     /// Rating groups are reported as the average rating of the sampled puzzles.
     let private ratingGroupOf (ratingAvg: float) = int (Math.Round(ratingAvg / 100.0)) * 100
 
-    /// Writes `puzzleThemes_<stamp>.csv` and returns the human-readable summary to append to
-    /// the run's text summary ("" when there was nothing to report).
+    /// What a run produced on the theme side.
+    type ThemeOutput =
+        { /// Full tables, appended to the run's text summary.
+          Summary: string
+          /// Where every theme landed; "" when nothing was written.
+          CsvPath: string
+          /// One line worth putting on the console: the strongest difference found, so a
+          /// reader knows whether the file is worth opening. "" when nothing cleared 2 sigma.
+          Headline: string }
+
+    let private emptyThemeOutput = { Summary = ""; CsvPath = ""; Headline = "" }
+
+    /// Writes `puzzleThemes_<stamp>.csv` and returns the tables plus a console headline.
     ///
     /// Shared by the console and the GUI: both run the same analysis and produce the same
     /// files. Scores do not arrive in config order, so the engine names are passed in that
@@ -208,10 +244,10 @@ module PuzzleThemes =
         (stamp: string)
         (engineNamesInConfigOrder: string seq)
         (scores: Score seq)
-        : string =
+        : ThemeOutput =
         let summary = StringBuilder()
         let rows = ResizeArray<string>()
-        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp")
+        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp,sigma")
 
         let order =
             engineNamesInConfigOrder
@@ -222,6 +258,15 @@ module PuzzleThemes =
             match order.TryGetValue(if isNull s.Engine then "" else s.Engine) with
             | true, i -> i
             | _ -> Int32.MaxValue
+
+        // strongest difference seen, for the console line
+        let mutable best : (string * int * string * float * float) option = None
+        let considerHeadline testType ratingGroup (d: ThemeDiff) =
+            let sigma = sigmaOf d.Total d.DeltaPp
+            if sigma >= 2.0 then
+                match best with
+                | Some (_, _, _, _, bestSigma) when bestSigma >= sigma -> ()
+                | _ -> best <- Some (d.Theme, ratingGroup, testType, d.DeltaPp, sigma)
 
         let mutable header = false
         let addHeader (title: string) =
@@ -251,12 +296,14 @@ module PuzzleThemes =
                             summary.AppendLine(groupHeader) |> ignore
                             summary.Append(renderDiff baseline.NeuralNet other.NeuralNet TopThemes diffs) |> ignore
                             for d in diffs do
+                                considerHeadline testType ratingGroup d
                                 rows.Add(
                                     String.Format(
                                         Globalization.CultureInfo.InvariantCulture,
-                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2}",
+                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2},{9:F2}",
                                         testType, ratingGroup, csvField baseline.NeuralNet, csvField other.NeuralNet,
-                                        csvField d.Theme, d.Total, d.AccuracyA * 100.0, d.AccuracyB * 100.0, d.DeltaPp))
+                                        csvField d.Theme, d.Total, d.AccuracyA * 100.0, d.AccuracyB * 100.0, d.DeltaPp,
+                                        sigmaOf d.Total d.DeltaPp))
             | [ only ] ->
                 // single-net run: no reference to compare against, but the per-theme rates
                 // are still the answer to "where is this net weak"
@@ -275,7 +322,7 @@ module PuzzleThemes =
                         rows.Add(
                             String.Format(
                                 Globalization.CultureInfo.InvariantCulture,
-                                "{0},{1},,{2},{3},{4},,{5:F2},",
+                                "{0},{1},,{2},{3},{4},,{5:F2},,",
                                 testType, ratingGroup, csvField only.NeuralNet,
                                 csvField s.Theme, s.Total, accuracyOf s * 100.0))
             | _ -> ()
@@ -285,5 +332,11 @@ module PuzzleThemes =
             File.WriteAllLines(csvPath, rows)
             summary.AppendLine() |> ignore
             summary.AppendLine(sprintf "  All themes: %s" csvPath) |> ignore
-            summary.ToString()
-        else ""
+            let headline =
+                match best with
+                | Some (theme, rg, testType, delta, sigma) ->
+                    sprintf "  Biggest theme gap: %s %+.1f pp on %s @ %d (%.1f sigma)"
+                        theme delta testType rg sigma
+                | None -> "  No theme difference cleared 2 sigma."
+            { Summary = summary.ToString(); CsvPath = csvPath; Headline = headline }
+        else emptyThemeOutput

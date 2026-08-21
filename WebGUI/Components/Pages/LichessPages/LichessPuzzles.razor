@@ -833,8 +833,11 @@
         StateHasChanged();
     }
 
+    private DateTime runStartedUtc = DateTime.UtcNow;
+
     private void StartOfRun()
     {
+        runStartedUtc = DateTime.UtcNow;
         disableRun = true;
         progressProcessed = 0;
         progressTotal = 0;
@@ -1461,11 +1464,19 @@
                     var themeSummary = "";
                     try
                     {
-                        themeSummary = ChessLibrary.PuzzleThemes.writeThemeFiles(
+                        var themeOutput = ChessLibrary.PuzzleThemes.writeThemeFiles(
                             normalized, datePart,
                             engineConfigs.Select(c => c.Item1.Name),
                             allScoresForCross);
-                        if (themeSummary != "") logger.LogInformation(themeSummary);
+                        themeSummary = themeOutput.Summary;
+                        // the tables live in the summary file; the log gets a pointer
+                        if (themeSummary != "")
+                        {
+                            logger.LogInformation("Per-theme comparison. {Headline} Full tables: {Txt} All themes: {Csv}",
+                                themeOutput.Headline,
+                                Path.Combine(normalized, $"LichessSummary_{datePart}.txt"),
+                                themeOutput.CsvPath);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1479,6 +1490,30 @@
                     {
                         sw.WriteLine(table);
                         if (themeSummary != "") sw.WriteLine(themeSummary);
+                    }
+
+                    // The machine-readable twin, same basename. A console run writes this;
+                    // without it here a GUI run is invisible to anything that reads results
+                    // rather than looking at them. See Console/PuzzleJsonSchema.md.
+                    var jsonFileName = Path.Combine(normalized, $"LichessSummary_{datePart}.json");
+                    try
+                    {
+                        var result = PuzzleJsonOutput.buildResult(
+                            data.PuzzleFile,
+                            puzzles.Length,
+                            data.SampleSize,
+                            data.MinRating,
+                            data.MaxRating,
+                            data.PuzzleFilter,
+                            data.RatingGroups,
+                            runStartedUtc,
+                            (DateTime.UtcNow - runStartedUtc).TotalSeconds,
+                            allScoresForCross);
+                        PuzzleJsonOutput.writeToFile(jsonFileName, result);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning($"Failed to write JSON summary to {jsonFileName}: {ex.Message}");
                     }
                 }
 
