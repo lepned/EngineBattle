@@ -225,7 +225,11 @@
                 await InvokeAsync(() =>
                 {
                     eretProcessed = 0;
-                    eretErrorMessage = "";
+                    // Deliberately NOT clearing eretErrorMessage: Start is the first thing
+                    // runEretTests sends, and the output-folder warning is set just before
+                    // the run begins. Clearing here wiped it a moment after it appeared,
+                    // leaving a run that writes nothing and says nothing. The message is
+                    // cleared where a run is started instead.
                     StateHasChanged();
                 });
                 break;
@@ -268,11 +272,11 @@
                         Scores.AddRange(eretResults);
                         StateHasChanged();
                     });
-                    var normalizedFolder = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
-                    var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
-                    var fileName = Path.Combine(normalizedFolder, $"failedEretPuzzles_{datePart}.epd");
-                    if (Directory.Exists(normalizedFolder))
+                    var normalizedFolder = outputFileFolder;
+                    if (normalizedFolder != "")
                     {
+                        var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
+                        var fileName = Path.Combine(normalizedFolder, $"failedEretPuzzles_{datePart}.epd");
                         using (StreamWriter sw = new(fileName, append: false, Encoding.UTF8))
                         {
                             var boardBm = new Chess.Board();
@@ -299,9 +303,9 @@
             case ERET.ResultsInConsole resConsole:
                 var table = resConsole.Item;
                 logger.LogInformation("\n{Table}", table);
-                var escaped = Configuration.JSONParser.escapeString(outputFileFolder);
+                var escaped = outputFileFolder;
 
-                if (Directory.Exists(escaped))
+                if (escaped != "")
                 {
                     var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
                     var outputPath = Path.Combine(escaped, $"EretSummary_{datePart}.txt");
@@ -322,6 +326,16 @@
         {
             logger.LogWarning("Update callback failed: {Message}", ex.Message);
         }
+    }
+
+    /// Prepares the run's output folder, surfacing a bad path on the page rather than
+    /// leaving a run that finishes and quietly writes nothing. Returns "" when the run
+    /// should write no files.
+    private string PrepareOutputFolder(string configured)
+    {
+        var (path, error) = PuzzleOutputFolder.Prepare(configured, "ERET", logger);
+        if (error != "") eretErrorMessage = error;
+        return path;
     }
 
     private async Task BrowseAndRunConfig()
@@ -348,7 +362,9 @@
         eretErrorMessage = "";
         cts?.Dispose();
         cts = new CancellationTokenSource();
-        outputFileFolder = data.FailedPuzzlesOutputFolder;
+        // Resolved before any engine loads, so an unusable path costs seconds instead of
+        // a whole run. Empty means this run writes no files. Both writers below read it.
+        outputFileFolder = PrepareOutputFolder(data.FailedPuzzlesOutputFolder);
         // Build engine configs
         var engineConfigs = data.Engines
           .SelectMany(e => Configuration.JSONParser.mapToEngPuzzleConfig(data.EngineFolder, e))

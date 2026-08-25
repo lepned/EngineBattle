@@ -46,6 +46,19 @@ The fields **always** emitted as integers (no float ambiguity) are: `schemaVersi
 | `startedUtc` | string | ISO-8601 UTC timestamp when the run started, e.g. `"2026-04-08T19:23:45.123Z"`. |
 | `elapsedSeconds` | float | Wall-clock duration of the puzzle run, in seconds. |
 | `scores` | array | One entry per `(engine, neuralNet, type, nodes)` result. See below. |
+| `paired` | array | One entry per net PAIR per slice, with the discordant counts and McNemar's z. Empty for single-net runs and absent in files written before this field existed. See below. |
+| `pairedFailed` | bool | `true` only when computing the paired stats threw. Read it before concluding anything from an empty `paired` — see below. |
+
+### What `scores[]` and `paired[]` each cover
+
+`scores[]` is the **complete record of the run**: every result row, including slices that produced no puzzles at all (`totalNumber: 0`). Nothing is filtered out of it, because this file is the machine-readable archive of the run and a consumer can always filter, while it cannot recover what was dropped.
+
+`paired[]` covers only rows that can be **compared**, which means it excludes the empty (`totalNumber: 0`) slices — there is nothing to pair. The human-readable `LichessSummary_<stamp>.txt` beside it applies the same rule and lists the same comparisons, though it caps its table at 40 rows (stating the count when it does); `paired[]` is never capped, so the JSON is the complete list.
+
+**An empty `paired[]` is normal.** Measuring one net at a time and comparing it against nets measured in earlier runs is a routine workflow, and such a run has nothing to pair. Do **not** treat empty as an error: check `pairedFailed` first. It is `true` only when the computation threw, which is the one case where `paired` is empty for a bad reason.
+
+Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, nodes, filter)` can find a score row with no paired counterpart. That is expected. The reverse never happens.
+
 
 ## `scores[]` entry fields
 
@@ -66,7 +79,49 @@ The fields **always** emitted as integers (no float ambiguity) are: `schemaVersi
 | `playerVolatility` | float | Glicko volatility. |
 | `avgKLD` | float | Cross-entropy of the engine's policy distribution against the puzzle's one-hot correct-move target, averaged over solved puzzles only. The per-puzzle metric is `-log(P_engine(correct_move))` (despite the historical "KLD" name, it's a cross-entropy on a one-hot target — the information content comes from the engine's distribution being shaped by softmax over all legal moves). **Lower is better.** Only meaningful for policy-type rows (`Policy`, `pTopN`); `0.0` otherwise. |
 | `avgRankWeightedKld` | float | Rank-weighted aggregate of per-puzzle cross-entropy using `1/rank` weights. Respects the `IncludeFailedPuzzles` config flag (solved-only by default, all puzzles when true). **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
+| `avgFrontierKld` | float | Frontier-weighted cross-entropy: peaks where the correct move sits at rank 2-3 and falls away at rank 1 and rank 6+, so it emphasises the moves a search is most likely to flip. **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
+| `avgMarginLoss` | float | Pairwise margin between the correct move's probability and the best competing move's. **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
+| `avgValueLoss` | float | Value-head loss, `|Q - expected_Q|` derived from the puzzle's themes, over solved puzzles only. **Lower is better.** `0.0` when not measured. |
+| `avgEstNodesLog10` | float | Mean of `log10(1 + N_est)`, where `N_est` estimates the parent visits a PUCT search needs before it first explores the correct move. Smooth aggregate, suited to tuning signals. **Lower is better.** `0.0` for non-policy rows — consumers use that as the "metric present" gate. |
+| `estNodesP95` | float | 95th percentile of the per-puzzle `N_est` distribution, in raw node units: in the worst 5% of positions the search needs about this many nodes before it even tries the correct move. **Lower is better.** `0.0` for non-policy rows. |
+| `estNodesP99` | float | As above at the 99th percentile. |
+| `estNodesMax` | float | Worst single puzzle in the set by `N_est`. `0.0` when unavailable. |
+| `estNodesCdf100` | float | Fraction (`0..1`) of puzzles whose `N_est` is at most 100 nodes. **Higher is better.** `0.0` for non-policy rows. |
 | `withHistory` | bool | Whether the engine was given prior moves as history (Lc0/Ceres only). |
+
+## `paired[]` entry fields
+
+Every net in a run is scored on the **same** puzzles, so puzzle difficulty is common to both members of a pair and cancels. Only the positions where the two nets *disagree* carry information about which is better, and McNemar's test uses exactly those.
+
+This matters in practice. On a real 4000-puzzle sweep, comparing two adjacent training checkpoints on the **same whole-slice delta**:
+
+| metric | delta | unpaired sigma | paired z |
+|---|---|---|---|
+| policy top-1 | +2.6 pp | 2.3 | **3.74** |
+| value | +2.1 pp | 1.9 | **2.82** |
+
+A comparison that reads as marginal unpaired is often clearly significant paired.
+
+**Do not compare a `paired[]` z against a per-theme sigma from `puzzleThemes_<stamp>.csv`.** They are different statistics on different data: `z` is computed on the whole slice, while the theme sigma is computed on that theme's own (always smaller) count, and on a different delta. The ratio between them is dominated by `sqrt(n_slice / n_theme)`, which says nothing about pairing. A significant `z` here does **not** confirm a theme-level difference.
+
+| Field | Type | Description |
+|---|---|---|
+| `type` | string | Test type of the slice: `"Policy"`, `"pTop3"`, `"Value"`, … |
+| `ratingGroup` | int | Rating group, bucketed to the nearest 100 from the slice's average puzzle rating. |
+| `nodes` | int | Node count the slice was run at. |
+| `filter` | string | Theme filter of the slice (may be empty). |
+| `engineA` / `engineB` | string | Engine (def) names. A is the net listed **first in the config**, matching the theme tables. |
+| `netA` / `netB` | string | Network names for A and B. |
+| `n` | int | Puzzles **both** nets scored. Normally the full sample; smaller if one net's slice was cut short. |
+| `onlyA` | int | Solved by A, failed by B. |
+| `onlyB` | int | Solved by B, failed by A. |
+| `discordant` | int | `onlyA + onlyB`. Below ~25 the normal approximation behind `z` is optimistic — prefer an exact binomial test on `onlyA`/`onlyB` there. |
+| `accuracyAPct` / `accuracyBPct` | float | Accuracy over `n`, in percent. |
+| `deltaPp` | float | `accuracyBPct - accuracyAPct`. Positive means B is better. |
+| `z` | float | `(onlyB - onlyA) / sqrt(discordant)`. Signed so positive favours B. `0.0` when the nets never disagree. |
+| `p` | float | Two-sided p for `z`, from a normal approximation. Convenience only; nothing in EngineBattle branches on it. |
+
+All pairs are emitted, not just baseline-vs-rest: a three-net step curve wants the adjacent-step pairs too. A run of `k` nets therefore produces `k*(k-1)/2` rows per slice.
 
 ## Recommended scalar signal for optimizers
 
@@ -109,7 +164,36 @@ Choosing between `avgKLD` and `avgRankWeightedKld`:
       "playerVolatility": 0.06,
       "avgKLD": 0.4127,
       "avgRankWeightedKld": 0.3415,
+      "avgFrontierKld": 0.5218,
+      "avgMarginLoss": 0.8298,
+      "avgValueLoss": 0.3687,
+      "avgEstNodesLog10": 0.6391,
+      "estNodesP95": 19.0,
+      "estNodesP99": 227.0,
+      "estNodesMax": 6200.0,
+      "estNodesCdf100": 0.983,
       "withHistory": false
+    }
+  ],
+  "paired": [
+    {
+      "type": "Policy",
+      "ratingGroup": 1900,
+      "nodes": 1,
+      "filter": "",
+      "engineA": "Ceres net A",
+      "engineB": "Ceres net B",
+      "netA": "netA.onnx",
+      "netB": "netB.onnx",
+      "n": 500,
+      "onlyA": 41,
+      "onlyB": 62,
+      "discordant": 103,
+      "accuracyAPct": 74.4,
+      "accuracyBPct": 78.6,
+      "deltaPp": 4.2,
+      "z": 2.0692,
+      "p": 0.0385
     }
   ]
 }
@@ -155,6 +239,8 @@ The following fields exist on the in-memory `Score` record but are **not** part 
 - `failedPuzzles` — full per-puzzle failure list, potentially huge
 - `correctPuzzles` — full per-puzzle success list, potentially huge
 
+The `paired[]` array is the exception that proves the rule: it is the one summary of those two lists that cannot be recomputed from anything else in the file, so it is carried even though the lists themselves are not.
+
 If a future need requires per-puzzle detail in the JSON, it will go behind a separate `--json-include-puzzles` flag rather than expanding the default schema.
 
 ## Compatibility notes
@@ -162,3 +248,4 @@ If a future need requires per-puzzle detail in the JSON, it will go behind a sep
 - The `puzzlejson` command without `--json` is unchanged from prior EngineBattle releases. The flag is purely additive.
 - The flag is recognized in any position after the config arg (e.g. `puzzlejson cfg.json --json out.json` works; future flags can also appear).
 - Aliases `puzzle` and `p` accept the flag identically.
+- `paired` was added without a `schemaVersion` bump, per the stability rules: it is a new optional field, and a consumer that does not know it ignores it. Files written before it exist simply have no `paired` key — read it defensively.

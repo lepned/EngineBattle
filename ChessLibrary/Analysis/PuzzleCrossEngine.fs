@@ -7,6 +7,15 @@ open ChessLibrary.Chess
 
 type CrossEngineGroup = {
     Type: string
+    /// The rating group this slice belongs to, bucketed exactly as PuzzleThemes
+    /// buckets it. Leaving it out of the key merged every rating group into one
+    /// group: an engine then appeared once per group in `Engines`, its solved and
+    /// failed sets were overwritten by whichever group came last, and every
+    /// section was written once per duplicate.
+    ///
+    /// The missing field was only ONE of the two ways an engine ends up in a group
+    /// twice - see the distinctBy below for the other, which this key does not fix.
+    RatingGroup: int
     Nodes: int
     Filter: string
 }
@@ -26,12 +35,23 @@ type CrossEngineResult = {
     SolvedByAll: CsvPuzzleData list
 }
 
-/// Analyze cross-engine puzzle results within each (Type, Nodes, Filter) group.
+/// Analyze cross-engine puzzle results within each (Type, RatingGroup, Nodes, Filter) group.
 let analyzeCrossEngine (scores: Score seq) : CrossEngineResult list =
     scores
-    |> Seq.groupBy (fun s -> { Type = s.Type; Nodes = s.Nodes; Filter = s.Filter })
+    |> Seq.groupBy (fun s ->
+        { Type = s.Type
+          RatingGroup = PuzzlePaired.ratingGroupOf s.RatingAvg
+          Nodes = s.Nodes
+          Filter = s.Filter })
     |> Seq.choose (fun (group, groupScores) ->
-        let engines = groupScores |> Seq.toList
+        // One Score per engine. Everything below is Map.ofList keyed on the engine
+        // name, so a second row for the same engine silently overwrote the first
+        // set - and `List.filter (fun e -> e <> eng)` then dropped BOTH copies,
+        // leaving othersAll empty and every uniquely-solved/failed file empty. One
+        // engine produces two rows in a slice whenever two tests share a Type label
+        // (see PuzzlePaired.netKeyOf); the rating-group key fixed only the other
+        // way this happened.
+        let engines = groupScores |> Seq.distinctBy (fun e -> e.Engine) |> Seq.toList
         if engines.Length < 2 then None
         else
             let engineNames = engines |> List.map (fun e -> e.Engine)
@@ -155,11 +175,8 @@ let private getFailedPuzzleEpd (puzzle: CsvPuzzleData) (policyStr: string) =
         if not (String.IsNullOrWhiteSpace(cmd.MovePlayed)) && cmd.MovePlayed.Length >= 4 then
             boardBm.PlayCommands(cmd.Command)
             let fen = boardBm.FEN()
-            boardBm.PlayUciMove(cmd.CorrectMove)
-            let bm = boardBm.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue ""
-            boardAm.PlayCommands(cmd.Command)
-            boardAm.PlayUciMove(cmd.MovePlayed)
-            let am = boardAm.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue ""
+            let bm = PuzzleDataUtils.sanOfMovePlayed boardBm cmd.Command cmd.CorrectMove
+            let am = PuzzleDataUtils.sanOfMovePlayed boardAm cmd.Command cmd.MovePlayed
             let policies = policyStr.Split(',')
             let bmP, amP =
                 if policies.Length > 1 then policies.[0].Trim(), policies.[1].Trim()
@@ -208,14 +225,15 @@ let writeCrossEngineFiles (outputFolder: string) (dateStr: string) (allScores: S
         lines.Length
 
     for r in results do
-        // Header identical to main file: ##Failed puzzles by {engine} (nn:{nn}) - overall performance: {rating} - Type: {type} - Theme: {filter} - Nodes: {nodes}
+        // Header follows the main file and adds the rating group: without it two slices
+        // of the same engine produce byte-identical headers and cannot be told apart.
         let failedHeader (eng: string) =
             let score = r.ScoresByEngine.[eng]
-            $"\n##Failed puzzles by {eng} (nn:{score.NeuralNet}) - overall performance: {score.PlayerRecord.Rating:F0} - Type: {r.Group.Type} - Theme: {r.Group.Filter} - Nodes: {r.Group.Nodes}\n"
+            $"\n##Failed puzzles by {eng} (nn:{score.NeuralNet}) - overall performance: {score.PlayerRecord.Rating:F0} - Type: {r.Group.Type} - Theme: {r.Group.Filter} - Nodes: {r.Group.Nodes} - Rating group: {r.Group.RatingGroup}\n"
 
         let solvedHeader (eng: string) =
             let score = r.ScoresByEngine.[eng]
-            $"\n##Solved puzzles by {eng} (nn:{score.NeuralNet}) - overall performance: {score.PlayerRecord.Rating:F0} - Type: {r.Group.Type} - Theme: {r.Group.Filter} - Nodes: {r.Group.Nodes}\n"
+            $"\n##Solved puzzles by {eng} (nn:{score.NeuralNet}) - overall performance: {score.PlayerRecord.Rating:F0} - Type: {r.Group.Type} - Theme: {r.Group.Filter} - Nodes: {r.Group.Nodes} - Rating group: {r.Group.RatingGroup}\n"
 
         // Uniquely solved
         for eng in r.Engines do
@@ -276,8 +294,8 @@ let writeCrossEngineFiles (outputFolder: string) (dateStr: string) (allScores: S
     // Console summary
     printfn "\n--- Cross-Engine Puzzle Analysis ---"
     for r in results do
-        printfn "  Group: Type=%s  Nodes=%d  Theme=%s  Engines=%d"
-            r.Group.Type r.Group.Nodes r.Group.Filter r.Engines.Length
+        printfn "  Group: Type=%s  Rating group=%d  Nodes=%d  Theme=%s  Engines=%d"
+            r.Group.Type r.Group.RatingGroup r.Group.Nodes r.Group.Filter r.Engines.Length
         for eng in r.Engines do
             let us = match Map.tryFind eng r.UniquelySolved with | Some l -> l.Length | None -> 0
             let uf = match Map.tryFind eng r.UniquelyFailed with | Some l -> l.Length | None -> 0

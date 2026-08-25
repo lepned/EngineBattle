@@ -102,12 +102,14 @@
 		<Compile Include="Analysis\PuzzleDataUtils.fs" />
 		<Compile Include="Analysis\PuzzleEngineAnalysis.fs" />
 		<Compile Include="Analysis\PuzzleEngineAgent.fs" />
+		<Compile Include="Analysis\PuzzlePaired.fs" />
 		<Compile Include="Analysis\PuzzleCrossEngine.fs" />
 		<Compile Include="Analysis\PuzzleRunners.fs" />
 		<Compile Include="Analysis\PuzzleJsonOutput.fs" />
 		<Compile Include="Analysis\PuzzleTrend.fs" />
 		<Compile Include="Analysis\EngineDefGen.fs" />
 		<Compile Include="Analysis\PuzzleThemes.fs" />
+		<Compile Include="Analysis\PuzzleReport.fs" />
 
 		<!-- Internal utilities (perft, test helpers) -->
 		<Compile Include="Internal\Chess960TestPositions.fs" />

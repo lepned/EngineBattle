@@ -100,6 +100,8 @@ module PuzzleThemes =
     /// Renders one net's weakest and strongest themes. Used when a run has a single net,
     /// where there is no reference to take a delta against but "where is it weak" is still
     /// the question worth answering.
+    /// `label` is a bare net name here, so shortening from the left is right: what
+    /// distinguishes two checkpoints is the step number at the end.
     let renderSingle (label: string) (minPuzzles: int) (topN: int) (stats: ThemeStat list) : string =
         let usable = stats |> List.filter (fun s -> s.Total >= minPuzzles)
         if List.isEmpty usable then "No themes with enough puzzles."
@@ -140,16 +142,23 @@ module PuzzleThemes =
             sb.ToString()
 
     /// Renders the themes where two nets differ most, worst first for B.
-    let renderDiff (labelA: string) (labelB: string) (topN: int) (diffs: ThemeDiff list) : string =
+    ///
+    /// Takes the net and engine separately rather than a composed label: the shortening
+    /// below keeps the END of what it is given, which silently ate the net name out of a
+    /// composed "net (engine)" string and left both sides looking identical.
+    let renderDiffFor (netA: string) (netB: string) (engineA: string) (engineB: string)
+                      (topN: int) (diffs: ThemeDiff list) : string =
         if List.isEmpty diffs then "No shared themes with enough puzzles."
         else
             let sb = StringBuilder()
             let themeWidth =
                 diffs |> List.map (fun d -> d.Theme.Length) |> List.fold max 5 |> min 28
-            let shortLabel (s: string) = if s.Length <= 30 then s else "…" + s.Substring(s.Length - 29)
+            // nets differ in their trailing step number, engines in their leading word,
+            // so each is shortened from the end that carries no information
+            let labelA, labelB = PuzzlePaired.fittedSideNames netA netB engineA engineB
             sb.AppendLine() |> ignore
-            sb.AppendLine(sprintf "A = %s" (shortLabel labelA)) |> ignore
-            sb.AppendLine(sprintf "B = %s" (shortLabel labelB)) |> ignore
+            sb.AppendLine(sprintf "A = %s" labelA) |> ignore
+            sb.AppendLine(sprintf "B = %s" labelB) |> ignore
             // without this a reader cannot tell whether the table is the whole list
             if diffs.Length > topN * 2 then
                 sb.AppendLine(
@@ -219,9 +228,6 @@ module PuzzleThemes =
         then "\"" + value.Replace("\"", "\"\"") + "\""
         else value
 
-    /// Rating groups are reported as the average rating of the sampled puzzles.
-    let private ratingGroupOf (ratingAvg: float) = int (Math.Round(ratingAvg / 100.0)) * 100
-
     /// What a run produced on the theme side.
     type ThemeOutput =
         { /// Full tables, appended to the run's text summary.
@@ -233,6 +239,15 @@ module PuzzleThemes =
           Headline: string }
 
     let private emptyThemeOutput = { Summary = ""; CsvPath = ""; Headline = "" }
+
+    /// Names the parts of a slice that are NOT already in the header. Both are usually
+    /// the defaults, and printing "nodes 1" on every table of every ordinary run is noise
+    /// - but when a run has more than one, two tables otherwise carry the same title.
+    let private sliceSuffix (nodes: int) (puzzleFilter: string) =
+        let filterPart =
+            if PuzzlePaired.noFilter puzzleFilter then "" else sprintf ", theme %s" puzzleFilter
+        let nodesPart = if nodes > 1 then sprintf ", %d nodes" nodes else ""
+        filterPart + nodesPart
 
     /// Writes `puzzleThemes_<stamp>.csv` and returns the tables plus a console headline.
     ///
@@ -247,7 +262,15 @@ module PuzzleThemes =
         : ThemeOutput =
         let summary = StringBuilder()
         let rows = ResizeArray<string>()
-        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp,sigma")
+        // engine_a/engine_b are what make a side identifiable: a cross-engine run puts ONE
+        // net under two engines, so net_a and net_b are equal and only the engine tells the
+        // two columns apart. Appended, so a reader written against the older layout is
+        // unaffected.
+        // `nodes` completes the slice key writeThemeFiles groups on. Without it a run with
+        // two node budgets (`"Type": "search", "Nodes": "10, 100"`) wrote two sets of rows
+        // with identical keys and different accuracies, which the reader could only treat
+        // as self-contradictory.
+        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp,sigma,puzzle_filter,engine_a,engine_b,nodes")
 
         let order =
             engineNamesInConfigOrder
@@ -275,13 +298,21 @@ module PuzzleThemes =
                 summary.AppendLine(title) |> ignore
                 header <- true
 
+        // The slice key must match PuzzlePaired and PuzzleCrossEngine, or the same run
+        // is cut three ways. Keying on (Type, ratingGroup) alone merged the per-filter
+        // Scores of a `PuzzleFilter: "fork,pin"` run, so `baseline :: others` made the
+        // first comparison netA-on-fork against netA-on-pin: one net against itself,
+        // measured on two different puzzle sets.
         let groups =
             scores
-            |> Seq.groupBy (fun s -> s.Type, ratingGroupOf s.RatingAvg)
+            |> Seq.groupBy PuzzlePaired.sliceKeyOf
             |> Seq.sortBy fst
 
-        for (testType, ratingGroup), group in groups do
-            match group |> Seq.sortBy orderOf |> Seq.toList with
+        for (testType, ratingGroup, nodes, puzzleFilter), group in groups do
+            // A slice is one measurement per net; two tests that share a Type label
+            // (policy vs policyvalue, or a search at nodes <= 1) otherwise make a net
+            // the baseline for itself.
+            match group |> Seq.sortBy orderOf |> Seq.distinctBy PuzzlePaired.netKeyOf |> Seq.toList with
             | baseline :: others when not others.IsEmpty ->
                 let baseBreak = breakdown baseline
                 if not baseBreak.IsEmpty then
@@ -290,20 +321,27 @@ module PuzzleThemes =
                         if not diffs.IsEmpty then
                             addHeader "--- Per-Theme Comparison (vs first engine) ---"
                             let groupHeader =
-                                sprintf "  %s @ rating %d%s" testType ratingGroup
+                                sprintf "  %s @ rating %d%s%s" testType ratingGroup
+                                    (sliceSuffix nodes puzzleFilter)
                                     (if dropped > 0 then sprintf "   (%d themes under %d puzzles omitted)" dropped MinThemePuzzles else "")
                             summary.AppendLine() |> ignore
                             summary.AppendLine(groupHeader) |> ignore
-                            summary.Append(renderDiff baseline.NeuralNet other.NeuralNet TopThemes diffs) |> ignore
+                            // the engine columns written below are exactly what tells two
+                            // sides apart when they share a net name; the table above them
+                            // was still printing "A = netX / B = netX"
+                            summary.Append(
+                                renderDiffFor baseline.NeuralNet other.NeuralNet
+                                    baseline.Engine other.Engine TopThemes diffs) |> ignore
                             for d in diffs do
                                 considerHeadline testType ratingGroup d
                                 rows.Add(
                                     String.Format(
                                         Globalization.CultureInfo.InvariantCulture,
-                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2},{9:F2}",
+                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2},{9:F2},{10},{11},{12},{13}",
                                         testType, ratingGroup, csvField baseline.NeuralNet, csvField other.NeuralNet,
                                         csvField d.Theme, d.Total, d.AccuracyA * 100.0, d.AccuracyB * 100.0, d.DeltaPp,
-                                        sigmaOf d.Total d.DeltaPp))
+                                        sigmaOf d.Total d.DeltaPp, csvField puzzleFilter,
+                                        csvField baseline.Engine, csvField other.Engine, nodes))
             | [ only ] ->
                 // single-net run: no reference to compare against, but the per-theme rates
                 // are still the answer to "where is this net weak"
@@ -312,8 +350,9 @@ module PuzzleThemes =
                 if not usable.IsEmpty then
                     addHeader "--- Per-Theme Breakdown ---"
                     let groupHeader =
-                        sprintf "  %s @ rating %d   (%d themes under %d puzzles omitted)"
-                            testType ratingGroup (stats.Length - usable.Length) MinThemePuzzles
+                        sprintf "  %s @ rating %d%s   (%d themes under %d puzzles omitted)"
+                            testType ratingGroup (sliceSuffix nodes puzzleFilter)
+                            (stats.Length - usable.Length) MinThemePuzzles
                     summary.AppendLine() |> ignore
                     summary.AppendLine(groupHeader) |> ignore
                     summary.Append(renderSingle only.NeuralNet MinThemePuzzles TopThemes stats) |> ignore
@@ -322,9 +361,10 @@ module PuzzleThemes =
                         rows.Add(
                             String.Format(
                                 Globalization.CultureInfo.InvariantCulture,
-                                "{0},{1},,{2},{3},{4},,{5:F2},,",
+                                "{0},{1},,{2},{3},{4},,{5:F2},,,{6},,{7},{8}",
                                 testType, ratingGroup, csvField only.NeuralNet,
-                                csvField s.Theme, s.Total, accuracyOf s * 100.0))
+                                csvField s.Theme, s.Total, accuracyOf s * 100.0, csvField puzzleFilter,
+                                csvField only.Engine, nodes))
             | _ -> ()
 
         if rows.Count > 1 then

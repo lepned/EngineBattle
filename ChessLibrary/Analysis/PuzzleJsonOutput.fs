@@ -19,6 +19,7 @@ open System
 open System.IO
 open System.Reflection
 open System.Text.Json
+open ChessLibrary
 open ChessLibrary.PuzzleTypes
 
 [<Literal>]
@@ -48,7 +49,47 @@ type PuzzleScoreEntry =
       AvgMarginLoss: float
       // Value head loss: |Q - expected_Q| from puzzle themes. Solved puzzles only.
       AvgValueLoss: float
+      // Estimated PUCT nodes before a search first visits the correct move. These
+      // mirror the P95/P99/Max/<=100 columns of the text summary, which was the only
+      // place they existed; report tooling had to scrape that table to get them.
+      // 0.0 for non-policy tests, matching AvgEstNodesLog10's "metric present" gate.
+      AvgEstNodesLog10: float
+      EstNodesP95: float
+      EstNodesP99: float
+      // Worst single puzzle in the set. HardestByEstNodes is sorted descending, so
+      // this is its head; 0.0 when the list is empty.
+      EstNodesMax: float
+      // Fraction (0..1) of puzzles needing <= 100 nodes.
+      EstNodesCdf100: float
       WithHistory: bool }
+
+/// One row in the `paired` array — two nets compared on the puzzles they both
+/// scored. Mirrors PuzzlePaired.PairedComparison; kept as its own type so the
+/// wire shape does not move when the internal record does.
+type PuzzlePairedEntry =
+    { Type: string
+      RatingGroup: int
+      Nodes: int
+      Filter: string
+      EngineA: string
+      EngineB: string
+      NetA: string
+      NetB: string
+      N: int
+      /// Solved by A, failed by B.
+      OnlyA: int
+      /// Solved by B, failed by A.
+      OnlyB: int
+      /// OnlyA + OnlyB. Under ~25 the normal approximation behind `z` is optimistic.
+      Discordant: int
+      AccuracyAPct: float
+      AccuracyBPct: float
+      /// B minus A, percentage points.
+      DeltaPp: float
+      /// McNemar z, signed so positive favours B.
+      Z: float
+      /// Two-sided p for `z`.
+      P: float }
 
 /// Top-level JSON document.
 type PuzzleJsonResult =
@@ -63,7 +104,15 @@ type PuzzleJsonResult =
       RatingGroups: string
       StartedUtc: string
       ElapsedSeconds: float
-      Scores: PuzzleScoreEntry array }
+      Scores: PuzzleScoreEntry array
+      /// Every net pair on every slice, measured on the puzzles both scored.
+      /// Empty for single-net runs - a routine workflow, not a problem. Added after
+      /// schemaVersion 1: consumers that predate it ignore the field, so no version bump.
+      Paired: PuzzlePairedEntry array
+      /// True when computing the paired stats threw. `paired` is then empty for a
+      /// DIFFERENT reason than a single-net run, and a consumer must not read the
+      /// absence of comparisons as "there was only one net".
+      PairedFailed: bool }
 
 /// Clamp NaN/Infinity to 0.0 so System.Text.Json never throws on serialization.
 /// Matches the existing tuner convention (see Bayesian LLR clamping).
@@ -95,7 +144,32 @@ let toEntry (s: Score) : PuzzleScoreEntry =
       AvgFrontierKld = safeFinite s.AvgFrontierKld
       AvgMarginLoss = safeFinite s.AvgMarginLoss
       AvgValueLoss = safeFinite s.AvgValueLoss
+      AvgEstNodesLog10 = safeFinite s.AvgEstNodesLog10
+      EstNodesP95 = safeFinite s.EstNodesP95
+      EstNodesP99 = safeFinite s.EstNodesP99
+      EstNodesMax =
+          if s.HardestByEstNodes.Count > 0 then safeFinite (snd s.HardestByEstNodes.[0]) else 0.0
+      EstNodesCdf100 = safeFinite s.EstNodesCdf100
       WithHistory = s.WithHistory }
+
+let toPairedEntry (c: PuzzlePaired.PairedComparison) : PuzzlePairedEntry =
+    { Type = c.Type
+      RatingGroup = c.RatingGroup
+      Nodes = c.Nodes
+      Filter = c.Filter
+      EngineA = c.EngineA
+      EngineB = c.EngineB
+      NetA = c.NetA
+      NetB = c.NetB
+      N = c.N
+      OnlyA = c.OnlyA
+      OnlyB = c.OnlyB
+      Discordant = c.Discordant
+      AccuracyAPct = safeFinite c.AccuracyAPct
+      AccuracyBPct = safeFinite c.AccuracyBPct
+      DeltaPp = safeFinite c.DeltaPp
+      Z = safeFinite c.Z
+      P = safeFinite (PuzzlePaired.pValueOf c.Z) }
 
 let private getEbVersion () =
     try
@@ -103,9 +177,15 @@ let private getEbVersion () =
         if isNull v then "0.0.0" else v.ToString()
     with _ -> "0.0.0"
 
-/// Build a PuzzleJsonResult from raw scores and metadata. Pure function — no I/O.
-/// Caller is responsible for measuring `elapsedSeconds` and providing `startedUtc`.
-let buildResult
+/// Build a PuzzleJsonResult from raw scores, metadata, and an ALREADY-COMPUTED paired
+/// list. Pure function — no I/O.
+///
+/// The paired stats are a parameter rather than something this function derives, because
+/// a run writes them to the text summary as well and, with `--json`, to two files. Deriving
+/// them here meant the same O(k^2) set work ran two or three times per run and, worse, that
+/// nothing guaranteed the JSON and the text table were describing the same computation.
+let buildResultWithPaired
+    (paired: PuzzlePaired.PairedOutcome)
     (puzzleFile: string)
     (totalPuzzlesLoaded: int)
     (sampleSize: int)
@@ -119,6 +199,8 @@ let buildResult
     let utc =
         if startedUtc.Kind = DateTimeKind.Utc then startedUtc
         else startedUtc.ToUniversalTime()
+    // Walked twice (entries and paired stats); a lazy seq would run the source twice.
+    let materialized = scores |> Seq.toList
     { SchemaVersion = SchemaVersion
       EngineBattleVersion = getEbVersion ()
       PuzzleFile = (if isNull puzzleFile then "" else puzzleFile)
@@ -130,7 +212,29 @@ let buildResult
       RatingGroups = (if isNull ratingGroups then "" else ratingGroups)
       StartedUtc = utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
       ElapsedSeconds = safeFinite elapsedSeconds
-      Scores = scores |> Seq.map toEntry |> Seq.toArray }
+      Scores = materialized |> Seq.map toEntry |> Seq.toArray
+      Paired = paired.Comparisons |> List.map toPairedEntry |> List.toArray
+      PairedFailed = paired.Failed }
+
+/// Convenience wrapper: computes the paired stats itself, orienting pairs by the order
+/// the scores arrive in. Every production caller passes an outcome it already has, so this
+/// exists for callers that only want a document - which today means the tests.
+let buildResult
+    (puzzleFile: string)
+    (totalPuzzlesLoaded: int)
+    (sampleSize: int)
+    (minRating: int)
+    (maxRating: int)
+    (filter: string)
+    (ratingGroups: string)
+    (startedUtc: DateTime)
+    (elapsedSeconds: float)
+    (scores: seq<Score>) : PuzzleJsonResult =
+    let materialized = scores |> Seq.toList
+    buildResultWithPaired
+        (PuzzlePaired.outcomeOf (PuzzlePaired.compute materialized))
+        puzzleFile totalPuzzlesLoaded sampleSize minRating maxRating
+        filter ratingGroups startedUtc elapsedSeconds materialized
 
 let private serializerOptions () =
     let opts = JsonSerializerOptions()

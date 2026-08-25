@@ -199,7 +199,7 @@ let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (pu
     // EPD writer and visualizer can still identify the failing command instead
     // of silently dropping the puzzle.
     let stampedMovePlayed =
-        if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+        if not correct && System.String.IsNullOrEmpty movePlayed then PuzzleDataUtils.NullBestmove
         else movePlayed
     let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
     let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }
@@ -490,7 +490,7 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
             // Sentinel "0000" when the engine returned an empty bestmove so the
             // failing command is still identifiable downstream.
             let stamped =
-                if System.String.IsNullOrEmpty firstFailedEngineMove then "0000"
+                if System.String.IsNullOrEmpty firstFailedEngineMove then PuzzleDataUtils.NullBestmove
                 else firstFailedEngineMove
             let cmds =
                 puzzle.Commands
@@ -579,7 +579,7 @@ let runPuzzleViaAgentValueTopN (agent:MailboxProcessor<EngineMsg>) (topN:int) (p
     // EPD writer and visualizer can still identify the failing command instead
     // of silently dropping the puzzle.
     let stampedMovePlayed =
-        if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+        if not correct && System.String.IsNullOrEmpty movePlayed then PuzzleDataUtils.NullBestmove
         else movePlayed
     let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
     let puzzleWithMove = {puzzle with Commands = cmds; Index = 0}
@@ -722,7 +722,7 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
         // EPD writer and visualizer can still identify the failing command instead
         // of silently dropping the puzzle.
         let stampedMovePlayed =
-            if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+            if not correct && System.String.IsNullOrEmpty movePlayed then PuzzleDataUtils.NullBestmove
             else movePlayed
         let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
         let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }
@@ -1433,7 +1433,7 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
     // EPD writer and visualizer can still identify the failing command instead
     // of silently dropping the puzzle.
     let stampedMovePlayed =
-        if not correct && System.String.IsNullOrEmpty movePlayed then "0000"
+        if not correct && System.String.IsNullOrEmpty movePlayed then PuzzleDataUtils.NullBestmove
         else movePlayed
     let cmds = puzzle.Commands |> Seq.map (fun el -> if el.CorrectMove = failedMove then {el with MovePlayed = stampedMovePlayed} else el) |> Seq.toList
     let puzzleWithMove = {puzzle with Commands = cmds; Index = 0 }

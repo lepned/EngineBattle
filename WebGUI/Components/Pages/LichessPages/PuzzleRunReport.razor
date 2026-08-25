@@ -1,0 +1,853 @@
+@page "/puzzles/report"
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@using WebGUI.Services
+@using System.Globalization
+@using ChessLibrary
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+
+<PageTitle>Puzzle Run Report</PageTitle>
+
+<div class="prr-container">
+    <h2>Puzzle Run Report</h2>
+    <div class="prr-description">
+        Opens a finished puzzle run from its <code>LichessSummary_&lt;stamp&gt;.json</code> and renders
+        the leaderboard, per-theme comparison and per-net profiles. Every number is a raw
+        one-node head read from that run — nothing is re-measured.
+    </div>
+
+    <div class="prr-controls">
+        <div class="prr-row">
+            <div class="prr-group prr-path">
+                <label>Result file</label>
+                <input type="text" @bind="summaryPath" title="@summaryPath" placeholder="LichessSummary_....json" />
+            </div>
+            <button class="prr-btn" title="Browse" @onclick="BrowseFile">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+            </button>
+            <button class="prr-btn prr-load" @onclick="LoadAsync" disabled="@isLoading">
+                @(isLoading ? "Loading…" : "Load")
+            </button>
+            @if (ratingGroups.Count > 1)
+            {
+                <div class="prr-group">
+                    <label>Rating group</label>
+                    <select @bind="selectedRg" @bind:after="Recompute">
+                        @foreach (var rg in ratingGroups)
+                        {
+                            <option value="@rg">@rg</option>
+                        }
+                    </select>
+                </div>
+            }
+            @* A run with PuzzleFilter "fork,pin" measured two different puzzle sets. They
+               are separate results, not one - so the page shows one at a time rather than
+               folding them together. *@
+            @if (nodeBudgets.Count > 1)
+            {
+                <div class="prr-group">
+                    <label>Nodes</label>
+                    <select @bind="SelectedNodesText" @bind:after="Recompute">
+                        @foreach (var n in nodeBudgets)
+                        {
+                            <option value="@n">@n</option>
+                        }
+                    </select>
+                </div>
+            }
+            @if (puzzleFilters.Count > 1)
+            {
+                <div class="prr-group">
+                    <label>Puzzle filter</label>
+                    <select @bind="selectedFilter" @bind:after="Recompute">
+                        @foreach (var f in puzzleFilters)
+                        {
+                            <option value="@f">@(NoFilter(f) ? "(none)" : f)</option>
+                        }
+                    </select>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(status))
+    {
+        <div class="prr-status">@status</div>
+    }
+
+    @if (leaderboard.Count > 0)
+    {
+        <h3>Leaderboard</h3>
+        <div class="prr-note">
+            Accuracy per head at one node. Puzzle Elo is the rating the top-1 accuracy implies against
+            the rated puzzle field. P95/P99/Max estimate the nodes a search needs before it first tries
+            the correct move; ≤100 is the share of puzzles inside a hundred nodes. KLD is the distance
+            of the whole policy distribution from the solution — lower is sharper.
+        </div>
+        <div class="prr-scroll">
+            <table class="prr-table">
+                <thead>
+                    <tr>
+                        <th class="prr-net">network</th>
+                        <th>top-1</th>
+                        <th>top-3</th>
+                        <th>value</th>
+                        <th class="prr-num">puzzle Elo</th>
+                        <th class="prr-num">P95</th>
+                        <th class="prr-num">P99</th>
+                        <th class="prr-num">max</th>
+                        <th class="prr-num">≤100</th>
+                        <th class="prr-num">KLD</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in leaderboard)
+                    {
+                        <tr>
+                            <td class="prr-net" title="@row.Net">@row.Net</td>
+                            @foreach (var (acc, max) in new[] { (row.Top1, maxTop1), (row.Top3, maxTop3), (row.Value, maxValue) })
+                            {
+                                <td class="prr-bar">
+                                    @if (acc.HasValue)
+                                    {
+                                        <span class="prr-track"><span class="prr-fill" style="width:@BarPct(acc.Value, max)%"></span></span>
+                                        <span class="prr-val">@acc.Value.ToString("F1", CultureInfo.InvariantCulture)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="prr-dim">—</span>
+                                    }
+                                </td>
+                            }
+                            <td class="prr-num">@(row.Perf.HasValue ? row.Perf.Value.ToString("F0", CultureInfo.InvariantCulture) : "—")</td>
+                            <td class="prr-num">@(row.P95 is { } p95 ? FmtNodes(p95) : "—")</td>
+                            <td class="prr-num">@(row.P99 is { } p99 ? FmtNodes(p99) : "—")</td>
+                            <td class="prr-num">@(row.Max is { } mx ? FmtNodes(mx) : "—")</td>
+                            <td class="prr-num">@(row.Cdf100 is { } cdf ? (cdf * 100).ToString("F1", CultureInfo.InvariantCulture) + "%" : "—")</td>
+                            <td class="prr-num">@(row.Kld.HasValue ? row.Kld.Value.ToString("F2", CultureInfo.InvariantCulture) : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (summary?.PairedFailed == true)
+    {
+        <h3>Head-to-head (paired)</h3>
+        <div class="prr-status">
+            This run could not compute its paired comparisons, so there are none to show.
+            That is different from a single-net run, which simply has nothing to compare.
+        </div>
+    }
+    @if (pairedRows.Count > 0)
+    {
+        <h3>Head-to-head (paired)</h3>
+        <div class="prr-note">
+            Both nets in a pair were scored on the same puzzles, so difficulty cancels and only the
+            positions where they <em>disagree</em> carry information. z is McNemar's test on those
+            positions — the tight test, and on a whole-slice delta it runs well above the unpaired
+            σ for the same numbers. |z| ≥ 2 is the usual bar. Sorted by strength of evidence.
+            <strong>These rows test the whole slice, not any single theme</strong>: the σ on the theme
+            cards below is computed on that theme's own smaller count, so the two are not directly
+            comparable and a significant z here does not confirm a theme-level difference.
+        </div>
+        <div class="prr-scroll">
+            <table class="prr-table prr-paired">
+                <thead>
+                    <tr>
+                        <th>metric</th>
+                        @if (showPairedSlice)
+                        {
+                            <th class="prr-num">nodes</th>
+                        }
+                        <th class="prr-net">A</th>
+                        <th class="prr-net">B</th>
+                        <th class="prr-num">n</th>
+                        <th class="prr-num">B−A pp</th>
+                        <th class="prr-num">only A</th>
+                        <th class="prr-num">only B</th>
+                        <th class="prr-num">disagree</th>
+                        <th class="prr-num">z</th>
+                        <th class="prr-num">p</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in pairedRows)
+                    {
+                        <tr>
+                            <td>@MetricLabel(row.Type)</td>
+                            @if (showPairedSlice)
+                            {
+                                <td class="prr-num">@row.Nodes</td>
+                            }
+                            <td class="prr-net" title="@PairedSideA(row)">@PairedSideA(row)</td>
+                            <td class="prr-net" title="@PairedSideB(row)">@PairedSideB(row)</td>
+                            <td class="prr-num">@row.N.ToString("N0", CultureInfo.InvariantCulture)</td>
+                            <td class="prr-num">@row.DeltaPp.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture)</td>
+                            <td class="prr-num">@row.OnlyA.ToString("N0", CultureInfo.InvariantCulture)</td>
+                            <td class="prr-num">@row.OnlyB.ToString("N0", CultureInfo.InvariantCulture)</td>
+                            <td class="prr-num">
+                                @row.Discordant.ToString("N0", CultureInfo.InvariantCulture)
+                                @if (row.Discordant < ThinDiscordance)
+                                {
+                                    <span class="prr-thin" title="Under @ThinDiscordance disagreements the normal approximation behind z is optimistic.">thin</span>
+                                }
+                            </td>
+                            <td class="prr-num @(Math.Abs(row.Z) >= 2 ? "prr-sig" : "prr-dim")">
+                                @row.Z.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)
+                            </td>
+                            <td class="prr-num prr-dim">@FmtP(row.P)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (leaderboard.Count > 0 && themeRows.Length > 0)
+    {
+        <h3>Theme profile</h3>
+        @* Outside the heatView check on purpose: a metric with no rows must not remove
+           the control that switches back to one that has them. *@
+        <div class="prr-row prr-tabs">
+            @foreach (var m in metricTabs)
+            {
+                var metric = m;
+                <button class="prr-tab @(selectedMetric == metric ? "on" : "")"
+                        @onclick="@(() => SelectMetric(metric))">@MetricLabel(metric)</button>
+            }
+            @if (heatView != null && !isSingleNet)
+            {
+                <span class="prr-sep"></span>
+                <button class="prr-tab @(specMode ? "" : "on")" @onclick="@(() => SetMode(false))">vs peer mean</button>
+                <button class="prr-tab @(specMode ? "on" : "")" @onclick="@(() => SetMode(true))">strength removed</button>
+            }
+        </div>
+    }
+
+    @if (heatView == null && leaderboard.Count > 0 && themeRows.Length > 0)
+    {
+        <div class="prr-status">
+            @if (unattributableThemes > 0)
+            {
+                <text>@unattributableThemes @MetricLabel(selectedMetric) theme(s) could not be shown:
+                their rows report two different accuracies for the same engine and network, so they
+                cannot be attributed to one column. Result files written before the themes CSV carried
+                engine names look like this whenever one network was run under two engines — re-running
+                produces a file that separates them. The leaderboard above is unaffected.</text>
+            }
+            else
+            {
+                <text>No @MetricLabel(selectedMetric) themes in this rating group reach @MinThemeN puzzles
+                — try another metric, or another rating group.</text>
+            }
+        </div>
+    }
+
+    @if (heatView != null)
+    {
+        <div class="prr-note">
+            @if (isSingleNet)
+            {
+                <text>Each cell is in percentage points of puzzles solved: this theme minus this
+                net's own average across themes, so blue is a relative strength and red a soft spot. Themes with fewer than @MinThemeN
+                puzzles are dropped; at small counts these numbers move on noise alone.</text>
+            }
+            else if (specMode)
+            {
+                <text>Each cell is in percentage points of puzzles solved, measured against what this
+                network's <em>own</em> overall standing predicts for it — its average gap to the field
+                has been subtracted. So <b>+5</b> means it solves five more puzzles per hundred on that
+                motif than a network of its level normally would, and a weak network can read red in the
+                first view and blue here. That is the view that separates a specialist from a
+                simply-stronger network. Hover any cell for the underlying percentages.</text>
+            }
+            else
+            {
+                <text>Each cell is in percentage points of puzzles solved: this network minus the
+                average of all @heatView.Nets.Length on the same motif. So <b>&minus;16</b> means it
+                solves sixteen fewer per hundred there than the field does, and a stronger network is
+                blue almost everywhere. Switch to the second view to see
+                what each net is unusually good at for its level. An indented column is a subtype of
+                the one before it (pawn endings within endgames), shown only where it pulls away from
+                its parent; a subtype never counts toward a network's overall level, so no puzzle is
+                weighed twice.</text>
+            }
+        </div>
+        <div class="prr-scroll">
+            <table class="prr-heat">
+                <thead>
+                    <tr>
+                        <th class="prr-corner"></th>
+                        @foreach (var col in heatView.Cols)
+                        {
+                            <th class="prr-colh @(col.Parent == null ? "" : "prr-child")"
+                                title="@(col.Parent == null ? col.Theme : $"{col.Theme} — a subtype of {col.Parent.Value}, shown because it pulls away from it")">
+                                <span>@col.Theme</span>
+                                <small>@col.N.ToString("N0", CultureInfo.InvariantCulture)</small>
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < heatView.Nets.Length; i++)
+                    {
+                        var ni = i;
+                        <tr>
+                            <th class="prr-rowh" title="@heatView.Nets[ni]">@heatView.Nets[ni]</th>
+                            @for (var j = 0; j < heatView.Cols.Length; j++)
+                            {
+                                var d = CellValue(ni, j);
+                                <td class="prr-cell" style="@CellStyle(d)"
+                                    title="@CellTip(ni, j)">@CellText(d)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="prr-legend">
+            <span>worse</span>
+            @foreach (var v in new[] { -9.0, -4.5, -1.5, 0.0, 1.5, 4.5, 9.0 })
+            {
+                <i style="@CellStyle(v)"></i>
+            }
+            <span>better (pp)</span>
+        </div>
+
+        <h3>Reading each network</h3>
+        <div class="prr-note">
+            The theme each network is furthest above and below its expected level on, from themes with
+            at least @CalloutN puzzles. Each card names the single most extreme theme of
+            @CalloutThemeCount, so picking the largest of many differences finds something even when
+            nothing is there — and the filter below is a per-comparison bar, not a correction for
+            having searched @CalloutThemeCount of them.
+            @if (SigBar > 0)
+            {
+                <text>At @SigBar.ToString("F1", CultureInfo.InvariantCulture)σ, pure noise still clears
+                it about @FalsePositiveRate% of the time per network per direction, so read what
+                survives as a hint worth re-checking at a larger sample, not as a finding.</text>
+            }
+            else
+            {
+                <text>With no filter every network shows its extreme theme whether or not anything is
+                there, which is what an unfiltered view of extremes always does.</text>
+            }
+        </div>
+        <label class="prr-guard">
+            <span>Hide entries below</span>
+            <select @bind="SigBarChoice" @bind:after="StateHasChanged">
+                @foreach (var bar in SigBarChoices)
+                {
+                    <option value="@bar">@(bar == "0" ? "show everything" : bar + "σ")</option>
+                }
+            </select>
+        </label>
+        <div class="prr-cards">
+            @foreach (var prof in profiles)
+            {
+                <div class="prr-card">
+                    <h4 title="@prof.Net">@prof.Net</h4>
+                    @{ var entries = ProfileEntries(prof); }
+                    @if (entries.Count == 0)
+                    {
+                        <div class="prr-flat">nothing stands out</div>
+                    }
+                    else
+                    {
+                        @foreach (var (e, good) in entries)
+                        {
+                            <div class="@(good ? "prr-up" : "prr-down")">
+                                @e.Theme @((e.DeltaPp >= 0 ? "+" : "−") + Math.Abs(e.DeltaPp).ToString("F1", CultureInfo.InvariantCulture))
+                                <em>@e.Sigma.ToString("F1", CultureInfo.InvariantCulture)σ · n=@e.N.ToString("N0", CultureInfo.InvariantCulture)</em>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (leaderboard.Count > 0 && themeRows.Length == 0)
+    {
+        <div class="prr-status">No <code>puzzleThemes_&lt;stamp&gt;.csv</code> found beside this summary — theme sections skipped.</div>
+    }
+</div>
+
+<style>
+    .prr-container { padding: 1rem 1.25rem; max-width: 1500px; }
+    .prr-description { color: var(--mud-palette-text-secondary); margin-bottom: 1rem; font-size: .9rem; max-width: 75ch; }
+    .prr-controls { margin-bottom: 1rem; }
+    .prr-row { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; }
+    .prr-group { display: flex; flex-direction: column; gap: .25rem; }
+    .prr-path { flex: 0 1 620px; min-width: 280px; }
+    .prr-group label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--mud-palette-text-secondary); }
+    .prr-group input, .prr-group select { padding: .4rem .5rem; }
+    .prr-btn { padding: .45rem .8rem; cursor: pointer; }
+    .prr-status { margin: .5rem 0; font-size: .9rem; color: var(--mud-palette-text-secondary); }
+    .prr-note { color: var(--mud-palette-text-secondary); font-size: .85rem; max-width: 85ch; margin: 0 0 .75rem; }
+    .prr-container h3 { margin: 1.6rem 0 .4rem; }
+    .prr-scroll { overflow-x: auto; }
+
+    .prr-table { border-collapse: collapse; font-size: .85rem; min-width: 900px; }
+    .prr-table th, .prr-table td { padding: .35rem .6rem; text-align: left; border-bottom: 1px solid var(--mud-palette-table-lines); }
+    .prr-table thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--mud-palette-text-secondary); }
+    .prr-net { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mud-typography-default-family, monospace); }
+    .prr-num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .prr-bar { min-width: 130px; }
+    .prr-track { display: block; height: 7px; background: rgba(128,128,128,.18); border-radius: 2px; overflow: hidden; margin-bottom: 2px; }
+    .prr-fill { display: block; height: 100%; background: var(--mud-palette-primary); border-radius: 2px; }
+    .prr-val { font-variant-numeric: tabular-nums; font-weight: 600; font-size: .8rem; }
+    .prr-dim { color: var(--mud-palette-text-disabled); }
+    .prr-paired .prr-net { max-width: 210px; }
+    .prr-sig { font-weight: 700; color: var(--mud-palette-primary); }
+    .prr-thin { margin-left: .35rem; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+                color: var(--mud-palette-warning); }
+
+    .prr-tabs { margin: 0 0 .75rem; align-items: center; }
+    .prr-tab { padding: .35rem .7rem; font-size: .8rem; cursor: pointer; border: 1px solid var(--mud-palette-lines-inputs); background: transparent; color: var(--mud-palette-text-secondary); border-radius: 3px; }
+    .prr-tab.on { background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); border-color: transparent; }
+    .prr-sep { width: 1rem; }
+
+    .prr-heat { border-collapse: separate; border-spacing: 2px; font-size: .72rem; }
+    .prr-colh { vertical-align: bottom; padding: 0 0 4px; font-weight: 400; }
+    .prr-colh span { display: block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 120px; overflow: hidden; color: var(--mud-palette-text-secondary); }
+    /* The header text is rotated, so a border on it lands on the visually wrong
+       side and reads as belonging to the next column. Tint the whole cell instead. */
+    .prr-colh.prr-child { background: color-mix(in srgb, var(--mud-palette-primary) 14%, transparent); border-radius: 4px 4px 0 0; }
+    .prr-colh.prr-child span { color: var(--mud-palette-primary); }
+    .prr-colh small { display: block; text-align: center; color: var(--mud-palette-text-disabled); font-size: .62rem; }
+    .prr-rowh { text-align: left; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; font-weight: 400; color: var(--mud-palette-text-secondary); font-variant-numeric: tabular-nums; }
+    .prr-cell { width: 32px; min-width: 32px; height: 26px; text-align: center; border-radius: 3px; font-variant-numeric: tabular-nums; cursor: default; }
+    .prr-legend { display: flex; align-items: center; gap: 4px; margin-top: .5rem; font-size: .75rem; color: var(--mud-palette-text-secondary); }
+    .prr-legend i { display: inline-block; width: 26px; height: 12px; border-radius: 2px; }
+    .prr-legend span { margin: 0 .4rem; }
+
+    .prr-guard { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; margin-bottom: .75rem; cursor: pointer; }
+    .prr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: .75rem; }
+    .prr-card { border: 1px solid var(--mud-palette-lines-default); border-radius: 6px; padding: .6rem .8rem; }
+    .prr-card h4 { margin: 0 0 .4rem; font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .prr-up { color: var(--mud-palette-success); font-size: .82rem; margin-bottom: .15rem; }
+    .prr-down { color: var(--mud-palette-error); font-size: .82rem; margin-bottom: .15rem; }
+    .prr-up em, .prr-down em { font-style: normal; color: var(--mud-palette-text-disabled); font-size: .85em; margin-left: .35rem; }
+    .prr-flat { color: var(--mud-palette-text-disabled); font-size: .82rem; }
+</style>
+
+@code {
+    // `SummaryDoc?` and `HeatView?` are nullable REFERENCE annotations (both are F# record
+    // types), and the Razor-generated file has no nullable context, so they warn as CS8669.
+    // `annotations` grants the context the compiler asks for without switching on nullable
+    // warnings for the rest of the file, which is a separate decision.
+#nullable enable annotations
+
+    // Same thresholds as the report script this page replaces: heatmap columns need
+    // MinThemeN puzzles, profile callouts need CalloutN, and the guard bar is SigBar
+    // binomial standard errors (conservative — every net saw the same puzzles).
+    private const int MinThemeN = 250;
+    private const int CalloutN = 400;
+    // Opens unfiltered (user, 2026-08-24). A default that hides rows makes the page lie by
+    // omission - a reader cannot tell "nothing survived the bar" from "nothing was there",
+    // and 1.0 sigma is itself an arbitrary line. Showing everything and saying what an
+    // unfiltered view of extremes means is the honest default; the bar is one click away.
+    private static readonly string[] SigBarChoices = { "0", "1", "1.5", "2", "2.5" };
+    // Bound as a string on purpose: <select @bind> on a double formats 1.0 as "1", which
+    // matches no "1.0" option, leaving the control blank while still filtering.
+    private string SigBarChoice = "0";
+    private double SigBar =>
+        double.TryParse(SigBarChoice, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0.0;
+
+    private string summaryPath = "";
+    private string status = "";
+    private bool isLoading;
+
+    private PuzzleReport.SummaryDoc? summary;
+    private PuzzleReport.ThemeRow[] themeRows = Array.Empty<PuzzleReport.ThemeRow>();
+    private List<string> ratingGroups = new();
+    private string selectedRg = "";
+    private List<string> puzzleFilters = new();
+    private string selectedFilter = "";
+    /// Budgets present in the THEME rows of the metric being viewed.
+    ///
+    /// Not from `scores[]`: Score.Nodes is a placeholder for head tests - 0 for vTopN,
+    /// 1 for policy/value - and only a real budget for Search/Solve, so a dropdown built
+    /// from it offers meaningless options and splits metrics that belong together.
+    /// Theme rows are the only place two budgets genuinely collide.
+    private List<int> nodeBudgets = new();
+    private int? selectedNodes;
+
+    /// <select> binds to a string; the option values are the budgets as text.
+    private string SelectedNodesText
+    {
+        get => selectedNodes?.ToString(CultureInfo.InvariantCulture) ?? "";
+        set => selectedNodes =
+            int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
+                ? v : (int?)null;
+    }
+
+    /// Whether the paired table needs its slice columns: true when the rows on screen
+    /// actually differ in them. They can, because the paired table shows every metric at
+    /// once and a run may hold two node budgets.
+    private bool showPairedSlice;
+
+    // Built from the run: the top-N label is generated as pTop{n}, so a run configured
+    // with a different topN has no "pTop3" rows at all.
+    private List<string> metricTabs = new() { "Policy", "pTop3", "Value" };
+    private string selectedMetric = "Policy";
+    private bool specMode;
+    private bool isSingleNet;
+
+    private PuzzleReport.HeatView? heatView;
+    /// Themes the current slice had to drop because their rows named one net on both
+    /// sides. Distinguishes "no data" from "data we would not guess at".
+    private int unattributableThemes;
+    private PuzzleReport.NetProfile[] profiles = Array.Empty<PuzzleReport.NetProfile>();
+
+    // Net is the display label (may carry the engine when one net appears twice);
+    // RawNet is the name as it appears in the themes CSV, which is what the heat view
+    // matches on. Passing the decorated label as netOrder matched nothing and silently
+    // dropped the row ordering in exactly the runs the label exists for.
+    private record LeaderRow(string Net, string RawNet, double? Top1, double? Top3, double? Value,
+                             double? Perf, double? Kld, double? P95, double? P99, double? Max, double? Cdf100);
+    private List<LeaderRow> leaderboard = new();
+    private List<PuzzleReport.PairedRow> pairedRows = new();
+
+    /// Two sides are told apart by net name where that is enough, and by engine where it
+    /// is not: one ONNX under Ceres and Lc0 is a real comparison whose sides carry the
+    /// same net name.
+    private static string PairedSideA(PuzzleReport.PairedRow r) =>
+        r.NetA == r.NetB && r.EngineA != r.EngineB ? $"{r.NetA}  ({r.EngineA})" : r.NetA;
+
+    private static string PairedSideB(PuzzleReport.PairedRow r) =>
+        r.NetA == r.NetB && r.EngineA != r.EngineB ? $"{r.NetB}  ({r.EngineB})" : r.NetB;
+
+    /// Below this many disagreements the normal approximation behind z is optimistic and
+    /// the row is flagged rather than hidden.
+    ///
+    /// `static readonly`, not `const`: a cross-assembly `const` is inlined by the compiler,
+    /// so changing the F# literal and rebuilding only ChessLibrary would leave this page
+    /// flagging at the old value - the drift the shared symbol was meant to rule out.
+    private static readonly int ThinDiscordance = ChessLibrary.PuzzlePaired.ThinDiscordance;
+    private double maxTop1 = 1, maxTop3 = 1, maxValue = 1;
+
+    protected override void OnInitialized()
+    {
+        var folder = SettingsService.Settings.PuzzleResultsFolder;
+        if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+        {
+            // seed with the newest run, which then loads itself on first render
+            var newest = Directory.GetFiles(folder, "LichessSummary_*.json").OrderDescending().FirstOrDefault();
+            if (newest != null) summaryPath = newest;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // opening the page shows the newest run without a click; picking another
+        // file still goes through Browse + Load
+        if (firstRender && !string.IsNullOrWhiteSpace(summaryPath) && File.Exists(summaryPath))
+            await LoadAsync();
+    }
+
+    private async Task BrowseFile()
+    {
+        var initial = !string.IsNullOrWhiteSpace(summaryPath)
+            ? Path.GetDirectoryName(summaryPath)
+            : SettingsService.Settings.PuzzleResultsFolder;
+        var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+        {
+            { x => x.InitialPath, initial },
+            { x => x.FileFilter, "*.json" },
+            { x => x.Mode, FileBrowserMode.File }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Select Result JSON", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            summaryPath = (string)result.Data!;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(summaryPath) || !File.Exists(summaryPath))
+        {
+            // Clear first: leaving the previous run rendered under a "pick a file" status
+            // shows numbers for one run beside another run's filename.
+            ClearRun();
+            status = "Pick a LichessSummary_<stamp>.json file first.";
+            StateHasChanged();
+            return;
+        }
+        isLoading = true;
+        status = "Reading run files…";
+        StateHasChanged();
+        try
+        {
+            var path = summaryPath;
+            var (doc, rows) = await Task.Run(() =>
+            {
+                var d = PuzzleReport.loadSummary(path);
+                var t = PuzzleReport.dropNonTactical(PuzzleReport.loadThemes(PuzzleReport.themesPathFor(path)));
+                return (d, t);
+            });
+            summary = doc;
+            themeRows = rows;
+            // From the summary, not the themes CSV: the CSV only carries slices that had
+            // themes above its own minimum, so a thin rating group would vanish from the
+            // selector and take its leaderboard rows with it.
+            // Ordered as numbers, then stringified. Sorting the strings put "900" after
+            // "2300", so a run with a sub-1000 group opened on the wrong one; and a run
+            // carrying a readiness-failure row (ratingAvg 0) opened on an empty group "0"
+            // that sorts before every real one. Groups with no usable rows are dropped for
+            // the same reason - the page cannot render anything for them.
+            ratingGroups = doc.Scores
+                .Where(s => s.TotalNumber > 0)
+                .Select(s => ChessLibrary.PuzzleTrend.ratingGroupOf(s.RatingAvg))
+                .Distinct().OrderBy(rg => rg)
+                .Select(rg => rg.ToString(CultureInfo.InvariantCulture)).ToList();
+            puzzleFilters = doc.Scores
+                .Where(s => s.TotalNumber > 0)
+                .Select(s => s.Filter ?? "")
+                .Distinct().OrderBy(f => f, StringComparer.Ordinal).ToList();
+            if (!puzzleFilters.Contains(selectedFilter))
+                selectedFilter = puzzleFilters.FirstOrDefault() ?? "";
+            metricTabs = doc.Scores.Select(s => s.Type).Distinct()
+                .OrderBy(t => t == "Policy" ? 0 : t.StartsWith("pTop") ? 1 : 2).ThenBy(t => t).ToList();
+            if (!metricTabs.Contains(selectedMetric))
+                selectedMetric = metricTabs.FirstOrDefault() ?? "Policy";
+            if (!ratingGroups.Contains(selectedRg))
+                selectedRg = ratingGroups.FirstOrDefault() ?? "";
+            status = $"{doc.Scores.Length} score rows, {doc.SampleSize:N0} puzzles per group, started {doc.StartedUtc}.";
+            Recompute();
+        }
+        catch (Exception ex)
+        {
+            ClearRun();
+            status = $"Failed to read {summaryPath}: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// Drops everything describing the previously loaded run, so no view can outlive
+    /// the file it came from.
+    private void ClearRun()
+    {
+        summary = null;
+        themeRows = Array.Empty<PuzzleReport.ThemeRow>();
+        ratingGroups.Clear();
+        selectedRg = "";
+        puzzleFilters.Clear();
+        selectedFilter = "";
+        nodeBudgets.Clear();
+        selectedNodes = null;
+        leaderboard.Clear();
+        // Cleared here as well as in Recompute: the two load failures return without
+        // ever reaching Recompute, and this table is gated on its own count alone, so
+        // it would otherwise survive under the next file's error message.
+        pairedRows.Clear();
+        showPairedSlice = false;
+        heatView = null;
+        profiles = Array.Empty<PuzzleReport.NetProfile>();
+    }
+
+    /// Rebuilds every view for the selected rating group. Cheap (in-memory), so
+    /// selector changes just call it again.
+    private void Recompute()
+    {
+        leaderboard.Clear();
+        pairedRows.Clear();
+        heatView = null;
+        profiles = Array.Empty<PuzzleReport.NetProfile>();
+        if (summary == null) return;
+
+        var rgInt = int.TryParse(selectedRg, out var v) ? v : 0;
+
+        // Paired rows come straight from the run's JSON — the discordant counts cannot be
+        // recovered from the theme CSV, so a run written before the field existed simply
+        // has none and the section stays hidden.
+        pairedRows = summary.Paired
+            .Where(p => p.RatingGroup == rgInt && (p.Filter ?? "") == selectedFilter
+                        && p.Discordant > 0)
+            .OrderByDescending(p => Math.Abs(p.Z))
+            .ToList();
+        showPairedSlice = pairedRows.Select(p => p.Nodes).Distinct().Count() > 1;
+        // The filter is part of the slice: rows from "fork" and "pin" describe different
+        // puzzle sets and must not share a leaderboard row, a heat column or a paired row.
+        var inGroup = summary.Scores
+            .Where(s => ChessLibrary.PuzzleTrend.ratingGroupOf(s.RatingAvg) == rgInt
+                        && (s.Filter ?? "") == selectedFilter)
+            .ToList();
+
+        // A score row's identity is (engine, net, type, nodes, filter). The rows are already
+        // narrowed to one rating group and one filter above, so grouping on (engine, net)
+        // here is that identity — before the filter narrowing it was not, and a multi-filter
+        // run silently reported whichever theme the JSON happened to list first.
+        var byNet = inGroup.GroupBy(s => (s.Engine, s.NeuralNet)).ToList();
+        leaderboard = byNet
+            .Select(g =>
+            {
+                var top1 = g.FirstOrDefault(s => s.Type == "Policy");
+                var top3 = g.FirstOrDefault(s => s.Type == "pTop3");
+                var val = g.FirstOrDefault(s => s.Type == "Value");
+                var hasEstNodes = top1 != null && top1.AvgEstNodesLog10 > 0;
+                // one net under two engines needs the engine shown to tell them apart
+                var label = byNet.Count(o => o.Key.NeuralNet == g.Key.NeuralNet) > 1
+                    ? $"{g.Key.NeuralNet}  ({g.Key.Engine})"
+                    : g.Key.NeuralNet;
+                return new LeaderRow(
+                    label,
+                    g.Key.NeuralNet,
+                    Top1: top1 != null ? top1.Accuracy * 100 : null,
+                    Top3: top3 != null ? top3.Accuracy * 100 : null,
+                    Value: val != null ? val.Accuracy * 100 : null,
+                    Perf: top1?.PlayerRating,
+                    Kld: top1 != null && top1.AvgKLD > 0 ? top1.AvgKLD : null,
+                    // avgEstNodesLog10 is the documented presence gate (PuzzleJsonSchema.md)
+                    // and what the console tables use. P95 is NOT a gate: 0.0 is a valid
+                    // percentile when the correct move is rank 1 often enough.
+                    P95: hasEstNodes ? top1!.EstNodesP95 : null,
+                    P99: hasEstNodes ? top1!.EstNodesP99 : null,
+                    Max: hasEstNodes ? top1!.EstNodesMax : null,
+                    Cdf100: hasEstNodes ? top1!.EstNodesCdf100 : null);
+            })
+            .OrderByDescending(r => r.Top1 ?? -1)
+            .ToList();
+        // DefaultIfEmpty: a rating group with no rows must render as empty, not throw —
+        // Recompute also runs as the rating-group select's handler, where a throw is
+        // unhandled and tears down the Blazor circuit.
+        maxTop1 = Math.Max(leaderboard.Select(r => r.Top1 ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
+        maxTop3 = Math.Max(leaderboard.Select(r => r.Top3 ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
+        maxValue = Math.Max(leaderboard.Select(r => r.Value ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
+
+        RebuildHeat();
+    }
+
+    private void RebuildHeat()
+    {
+        heatView = null;
+        profiles = Array.Empty<PuzzleReport.NetProfile>();
+        if (themeRows.Length == 0) return;
+        // Budgets present for THIS metric/group/filter. Recomputed here because the
+        // metric tab changes which theme rows are in play.
+        nodeBudgets = themeRows
+            .Where(r => r.Type == selectedMetric && r.RatingGroup == selectedRg
+                        && (string.IsNullOrEmpty(r.Filter) || r.Filter == selectedFilter)
+                        && r.Nodes != null)
+            .Select(r => r.Nodes.Value).Distinct().OrderBy(n => n).ToList();
+        if (selectedNodes == null || !nodeBudgets.Contains(selectedNodes.Value))
+            selectedNodes = nodeBudgets.Count > 1 ? nodeBudgets.Last() : (int?)null;
+
+        var order = leaderboard.Select(r => r.RawNet).Distinct().ToArray();
+        unattributableThemes = PuzzleReport.unattributableThemes(themeRows, selectedMetric, selectedRg, selectedFilter, selectedNodes);
+        var view = PuzzleReport.buildHeatView(themeRows, selectedMetric, selectedRg, selectedFilter, selectedNodes, MinThemeN, order);
+        if (view == null) return;
+        heatView = view.Value;
+        isSingleNet = heatView.Nets.Length == 1;
+        profiles = PuzzleReport.buildProfiles(heatView, CalloutN);
+    }
+
+    private void SelectMetric(string metric)
+    {
+        selectedMetric = metric;
+        RebuildHeat();
+    }
+
+    private void SetMode(bool spec) => specMode = spec;
+
+    /// Themes a callout can be picked from — the size of the selection the sigma bar
+    /// does not correct for.
+    /// Themes a callout could have come from. Must match buildProfiles' own filter
+    /// (`c.N >= calloutN && c.Parent.IsNone`) — counting subtype columns it never
+    /// considered inflated both this number and the false-positive rate derived from it,
+    /// so the page quoted a figure the code had not computed.
+    private int CalloutThemeCount => heatView?.Cols.Count(c => c.N >= CalloutN && c.Parent == null) ?? 0;
+
+    /// An unfiltered run carries the literal "none" (PuzzleEngineAgent stamps it), not "".
+    private static bool NoFilter(string f) => string.IsNullOrWhiteSpace(f) || f == "none";
+
+    /// One-sided upper tail of the standard normal, P(Z > z).
+    ///
+    /// MathNet, not a hand-rolled series: PuzzlePaired.pValueOf uses SpecialFunctions for
+    /// the same distribution, and two approximations of one function is how the page's
+    /// false-positive rate and the summary's p come to disagree in the last digits.
+    private static double NormalTail(double z) =>
+        0.5 * MathNet.Numerics.SpecialFunctions.Erfc(z / Math.Sqrt(2.0));
+
+    /// Chance the largest of CalloutThemeCount independent draws clears the chosen bar
+    /// under the null, one-sided. Follows the selector — a fixed 2σ figure would have
+    /// been a lie at any other setting. Independence is optimistic (themes overlap), so
+    /// the true rate is somewhat lower, but far above what one comparison suggests.
+    private string FalsePositiveRate =>
+        (100 * (1 - Math.Pow(1 - NormalTail(SigBar), Math.Max(CalloutThemeCount, 1))))
+            .ToString("F0", CultureInfo.InvariantCulture);
+
+    private static string MetricLabel(string m) => m switch
+    {
+        "Policy" => "Policy top-1",
+        "pTop3" => "Policy top-3",
+        "Value" => "Value head",
+        _ => m
+    };
+
+    /// p is only ever read as an order of magnitude here, and "0.000" reads as
+    /// "impossible" rather than "smaller than the table can show".
+    private static string FmtP(double p) =>
+        p < 0.0001 ? "<0.0001" : p.ToString("F4", CultureInfo.InvariantCulture);
+
+    private static string BarPct(double value, double max) =>
+        Math.Clamp(100.0 * value / max, 0, 100).ToString("F1", CultureInfo.InvariantCulture);
+
+    /// Compact node counts, matching CliParser.formatNodeCount — including its M
+    /// branch, without which a 6.2M worst case printed as "6200.0k" here and "6.20M"
+    /// in the text summary for the same number.
+    private static string FmtNodes(double v) =>
+        v >= 1_000_000 ? (v / 1_000_000).ToString("F2", CultureInfo.InvariantCulture) + "M"
+        : v >= 1000 ? (v / 1000).ToString("F1", CultureInfo.InvariantCulture) + "k"
+        : v >= 10 ? v.ToString("F0", CultureInfo.InvariantCulture)
+        : v.ToString("F2", CultureInfo.InvariantCulture);
+
+    private double CellValue(int i, int j) =>
+        specMode || isSingleNet ? heatView!.Spec[i][j] : heatView!.Raw[i][j];
+
+    private static string CellText(double d) =>
+        Math.Abs(d) < 0.5 ? "0" : (d > 0 ? "+" : "−") + Math.Abs(d).ToString("F0", CultureInfo.InvariantCulture);
+
+    /// Diverging fill: blue above the baseline, red below, alpha by magnitude.
+    /// rgba over the page background stays readable on both themes.
+    private string CellStyle(double d)
+    {
+        // the strength-removed residuals are small by construction, so that view
+        // saturates sooner or every cell would look near-neutral
+        var scale = specMode || isSingleNet ? 7.0 : 12.0;
+        var mag = Math.Min(Math.Abs(d) / scale, 1.0);
+        var alpha = 0.10 + mag * 0.72;
+        var color = d >= 0 ? $"rgba(57,135,229,{alpha.ToString("F3", CultureInfo.InvariantCulture)})"
+                           : $"rgba(208,59,59,{alpha.ToString("F3", CultureInfo.InvariantCulture)})";
+        var ink = mag >= 0.5 ? "color:#fff;" : "";
+        return $"background:{color};{ink}";
+    }
+
+    private string CellTip(int i, int j)
+    {
+        var col = heatView!.Cols[j];
+        var baseline = isSingleNet ? "own average" : "peer mean";
+        var nested = col.Parent != null ? $" (within {col.Parent.Value})" : "";
+        return $"{heatView.Nets[i]}\n{col.Theme}{nested} · n={col.N:N0}\nthis net {heatView.Acc[i][j].ToString("F1", CultureInfo.InvariantCulture)}% vs {baseline} {col.Mean.ToString("F1", CultureInfo.InvariantCulture)}%";
+    }
+
+    private List<(PuzzleReport.ProfileEntry Entry, bool Good)> ProfileEntries(PuzzleReport.NetProfile prof)
+    {
+        var list = new List<(PuzzleReport.ProfileEntry, bool)>();
+        if (prof.Best != null && prof.Best.Value.Sigma >= SigBar)
+            list.Add((prof.Best.Value, true));
+        if (prof.Worst != null && prof.Worst.Value.Sigma >= SigBar)
+            list.Add((prof.Worst.Value, false));
+        return list;
+    }
+}

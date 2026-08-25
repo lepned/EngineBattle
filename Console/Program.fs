@@ -249,8 +249,33 @@ module TestPath =
     let tournyCloned = JSON.createTournamentFile (tournamentPath()) folder
     JSON.writeTournamentJson tournyCloned folder
 
+module RunOutput =
+
+  /// Prepares a run's output folder and says what happened, returning the folder the
+  /// run should write into ("" when it must write nothing).
+  ///
+  /// Runs before any engine is created. A run whose folder could not be prepared still
+  /// completes — it just produces no files, and now says so instead of looking like a
+  /// normal run that happened to write nothing.
+  let report (label: string) (configured: string) : string =
+      match PuzzleDataUtils.ensureOutputFolder configured with
+      | PuzzleDataUtils.Ready(path, created) ->
+          let suffix = if created then " (created)" else ""
+          ConsoleUtils.greenConsole $"{label} -> {path}{suffix}"
+          path
+      | PuzzleDataUtils.NotConfigured ->
+          ConsoleUtils.yellowConsole
+              "No FailedPuzzlesOutputFolder set - no result files will be written."
+          ""
+      | PuzzleDataUtils.Failed(path, message) ->
+          // exception messages already end in a period, so do not add another
+          let reason = message.TrimEnd('.')
+          ConsoleUtils.redConsole
+              $"Cannot use output folder {path}: {reason}. The run continues, but no result files will be written."
+          ""
+
 module Eret =
-  
+
   let eretPath = "C:/Dev/Chess/Puzzles/ERET_VESELY203.epd"
   let eretPath2 = "C:/Dev/Chess/Puzzles/chad_tactics-100M.epd"  
   let timeConfig = UnionType.FixedTime (TimeSpan(0,0,5)) //10 seconds
@@ -278,9 +303,9 @@ module Eret =
             for (puzzle,_) in res.FailedPuzzles do                
                 printfn "%s" puzzle.RawInput
         printfn "\n--------------------------------------------------------------------"
-        let escaped = JSONParser.escapeString data.FailedPuzzlesOutputFolder
+        let escaped = data.FailedPuzzlesOutputFolder
 
-        if Directory.Exists(escaped) then
+        if escaped <> "" then
             let datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture)
             let fileName = Path.Combine(escaped, $"failedEretPuzzles_{datePart}.epd")
             let boardBm = Chess.Board()
@@ -294,8 +319,8 @@ module Eret =
                 Console.WriteLine($"Failed to write results to file: {ex.Message}")
        
     | ResultsInConsole table ->
-        let escaped = JSONParser.escapeString data.FailedPuzzlesOutputFolder
-        if Directory.Exists(escaped) then
+        let escaped = data.FailedPuzzlesOutputFolder
+        if escaped <> "" then
           let datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm")
           let outputPath = Path.Combine(escaped, $"EretSummary_{datePart}.txt")
           try
@@ -343,8 +368,13 @@ module Program =
   
   let runEretTest (path:string) =
     let normalizedPath = normalizePath path
-    let data = loadEretConfig normalizedPath
-    printfn "Processing ERET puzzle file: %s" path 
+    let loaded = loadEretConfig normalizedPath
+    printfn "Processing ERET puzzle file: %s" path
+    // Resolved once, before any engine loads, and carried on the config the writers
+    // read. Empty means the run writes no files - the handler skips on that.
+    let data =
+      { loaded with
+          FailedPuzzlesOutputFolder = RunOutput.report "ERET results" loaded.FailedPuzzlesOutputFolder }
     let time = UnionType.FixedTime (TimeSpan(0,0,data.TimeInSeconds))
     let nodes = UnionType.Nodes data.Nodes
     let engineConfigs = 
@@ -1849,6 +1879,9 @@ module Program =
     let data = loadPuzzleConfig (normalizePath path)
     let normalizedPath = normalizePath data.PuzzleFile
     printfn "Processing Lichess puzzle file: %s" path
+    // Resolved before any engine loads, so an unusable path costs seconds instead of a
+    // whole run. Empty means "write nothing", and every writer below reads this binding.
+    let outputFolder = RunOutput.report "Puzzle results" data.FailedPuzzlesOutputFolder
     let engineConfigs = 
         data.Engines 
         |> Seq.collect (mapToEngPuzzleConfig data.EngineFolder)
@@ -1963,9 +1996,13 @@ module Program =
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
         |> Seq.toList
 
+    // No `Nodes > 1` clause: a search at one node is typed "Policy" by PuzzleEngineAgent
+    // and lands in policyScores, so the clause never excluded a search - it only dropped
+    // legitimate one-node Solve results, which the GUI kept. One rule for both paths:
+    // a row belongs here if it produced results.
     let search =
         scores
-        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Search") && e.Nodes > 1)
+        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Search"))
         |> fun seq -> seq.OrderBy(fun e -> e.Filter)
                          .ThenByDescending(fun e -> e.RatingAvg)
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
@@ -1973,7 +2010,7 @@ module Program =
 
     let solve =
         scores
-        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Solve") && e.Nodes > 1)
+        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Solve"))
         |> fun seq -> seq.OrderBy(fun e -> e.Filter)
                          .ThenByDescending(fun e -> e.RatingAvg)
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)
@@ -2000,11 +2037,11 @@ module Program =
                     if not (String.IsNullOrWhiteSpace(cmd.MovePlayed)) && cmd.MovePlayed.Length >= 4 then
                         boardBm.PlayCommands(cmd.Command)
                         let fen = boardBm.FEN()
-                        boardBm.PlayUciMove(cmd.CorrectMove)
-                        let bm = boardBm.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue null
-                        boardAm.PlayCommands(cmd.Command)
-                        boardAm.PlayUciMove(cmd.MovePlayed)
-                        let aM = boardAm.SanMovesPlayed |> Seq.tryLast |> Option.defaultValue null
+                        // the bm half needs the same guard as the am half: PlayUciMove
+                        // no-ops on an unmatched move and the last SAN is then the
+                        // opponent's setup move, written out as a legal-looking wrong bm
+                        let bm = PuzzleDataUtils.sanOfMovePlayed boardBm cmd.Command cmd.CorrectMove
+                        let aM = PuzzleDataUtils.sanOfMovePlayed boardAm cmd.Command cmd.MovePlayed
                         let policies = policyStr.Split(',')
                         let bmP, amP =
                             if policies.Length > 1 then
@@ -2055,31 +2092,93 @@ module Program =
             for (p, estN) in hardest |> Seq.truncate 10 do
                 printfn "    %-12O  rating %4d  est %-7s  %s" p.PuzzleId (int p.Rating) (formatEstNodes estN) p.GameUrl
 
-    let escaped = escapeString data.FailedPuzzlesOutputFolder
+    // One order for the theme tables, the paired table and both JSON writes: A must
+    // mean the same net in all of them or the same comparison reads with its sign
+    // flipped in one table and not the other.
+    let engineNamesInConfigOrder =
+        engineConfigs
+        |> Seq.map (fun (cfg: ChessLibrary.TypesDef.CoreTypes.EngineConfig, _) -> cfg.Name)
+        |> Seq.toList
+
+    // Paired (McNemar) stats. Same slices as the theme tables, but at slice level the
+    // solved/failed sets survive, so the discordant counts - and with them the tight test -
+    // are available. Empty for single-net runs.
+    //
+    // Computed ONCE, here: the text summary renders it and both JSON writes embed it. It
+    // sits outside the output-folder guard on purpose - a run configured to write no files
+    // still has a result worth printing, and only the "full table" pointer needs a folder.
+    let allScoresForCross = Seq.concat [ policyScores; valueScores; search; solve ]
+    // An empty result is normal (a single-net run has nothing to compare); a failure is
+    // not. The outcome carries both so neither the JSON nor the console can confuse them.
+    let pairedOutcome =
+        try PuzzlePaired.outcomeOf (PuzzlePaired.computeOrdered engineNamesInConfigOrder allScoresForCross)
+        with ex ->
+            RuntimeUtilities.ConsoleUtils.redConsole $"Paired comparison failed: {ex.Message}"
+            PuzzlePaired.failedOutcome
+    let pairedComparisons = pairedOutcome.Comparisons
+
+    // One console line, same rule as the theme headline: point at the file, do not reprint
+    // it. Thin rows are excluded from the headline, not from the table: z = 2.0 off four
+    // disagreements is exactly the kind of number that must not lead a run report.
+    match
+        pairedComparisons
+        |> List.filter (fun c -> c.Discordant >= PuzzlePaired.ThinDiscordance)
+        |> List.sortByDescending (fun c -> abs c.Z) with
+    | strongest :: _ when abs strongest.Z >= 2.0 ->
+        printfn ""
+        printfn "--- Paired comparison (McNemar) ---"
+        // same naming rule as the table: a cross-engine pair shares a net name, and
+        // "netX vs netX" in the headline reads as a bug in the tool
+        let nameA, nameB =
+            PuzzlePaired.sideNames strongest.NetA strongest.NetB strongest.EngineA strongest.EngineB
+        printfn "  Strongest: %s vs %s, %s @ rating %d: %+.1f pp, z=%+.2f (%d discordant of %d)"
+            nameA nameB strongest.Type strongest.RatingGroup
+            strongest.DeltaPp strongest.Z strongest.Discordant strongest.N
+    | _ -> ()
+
+    // One reading for both JSON writes: taking Elapsed twice reported two different
+    // durations for one run in the two files.
+    let elapsedSeconds = runStopwatch.Elapsed.TotalSeconds
+
+    // Prepared at run start; empty when nothing should be written.
+    let escaped = outputFolder
     let table = createCombinedScoresTable normalizedPath policyScores valueScores search solve
     printfn "%s" table
 
-    if Directory.Exists(escaped) then
+    if escaped <> "" then
         let filenameFriendlyDate = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture)        
+        // The folder is prepared at run start, but it can still disappear during a run
+        // that takes hours - a dropped share, a cleanup job. Every writer is wrapped so
+        // one failure costs its own file and nothing else: not the remaining files, not
+        // the --json output an external tool asked for, and not the process.
+        let mutable writeFailures = 0
+        let tryWrite (what: string) (action: unit -> unit) =
+            try action ()
+            with ex ->
+                writeFailures <- writeFailures + 1
+                RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write {what}: {ex.Message}"
+
         //let datePart = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture)
         let fileName = Path.Combine(escaped, $"failedLichessPuzzles_{filenameFriendlyDate}.epd")
-        let boardBm = Chess.Board()
-        let boardAm = Chess.Board()
-
-        use sw = File.AppendText(fileName)
-        writeToFile policyScores sw boardBm boardAm
-        writeToFile valueScores sw boardBm boardAm
-        writeToFile search sw boardBm boardAm
-        writeToFile solve sw boardBm boardAm
+        tryWrite fileName (fun () ->
+            let boardBm = Chess.Board()
+            let boardAm = Chess.Board()
+            use sw = File.AppendText(fileName)
+            writeToFile policyScores sw boardBm boardAm
+            writeToFile valueScores sw boardBm boardAm
+            writeToFile search sw boardBm boardAm
+            writeToFile solve sw boardBm boardAm)
 
         let csvFileName = Path.Combine(escaped, $"failedLichessPuzzles_{filenameFriendlyDate}.csv")
-        writeFailedPuzzlesToCsv [policyScores; valueScores; search; solve] csvFileName
+        tryWrite csvFileName (fun () ->
+            writeFailedPuzzlesToCsv [policyScores; valueScores; search; solve] csvFileName)
 
         let estCsvFileName = Path.Combine(escaped, $"estNodesHardest_{filenameFriendlyDate}.csv")
-        writeHardestByEstNodesCsv [policyScores] estCsvFileName
+        tryWrite estCsvFileName (fun () ->
+            writeHardestByEstNodesCsv [policyScores] estCsvFileName)
 
-        let allScoresForCross = Seq.concat [ policyScores; valueScores; search; solve ]
-        PuzzleCrossEngine.writeCrossEngineFiles escaped filenameFriendlyDate allScoresForCross
+        tryWrite "cross-engine files" (fun () ->
+            PuzzleCrossEngine.writeCrossEngineFiles escaped filenameFriendlyDate allScoresForCross)
 
         // Per-theme breakdown, shared with the GUI so both runs produce the same files.
         // Returns the summary appended to LichessSummary_<stamp>.txt below.
@@ -2088,9 +2187,10 @@ module Program =
                 PuzzleThemes.writeThemeFiles
                     escaped
                     filenameFriendlyDate
-                    (engineConfigs |> Seq.map (fun (cfg: ChessLibrary.TypesDef.CoreTypes.EngineConfig, _) -> cfg.Name))
+                    engineNamesInConfigOrder
                     allScoresForCross
             with ex ->
+                writeFailures <- writeFailures + 1
                 RuntimeUtilities.ConsoleUtils.redConsole $"Per-theme comparison failed: {ex.Message}"
                 { Summary = ""; CsvPath = ""; Headline = "" }
         // the tables go to the summary file - dumping a dozen of them on someone who
@@ -2103,22 +2203,42 @@ module Program =
             printfn "  All themes:  %s" themeOutput.CsvPath
         let themeSummary = themeOutput.Summary
 
+        let pairedSummary =
+            // counted like every other writer: the summary file loses a section, and the
+            // green "Result files written" line below must not claim otherwise. A silent
+            // `with _ -> ""` here hid the loss entirely.
+            if pairedOutcome.Failed then
+                writeFailures <- writeFailures + 1
+                ""
+            else
+                try PuzzlePaired.render pairedComparisons
+                with ex ->
+                    writeFailures <- writeFailures + 1
+                    RuntimeUtilities.ConsoleUtils.redConsole $"Paired table rendering failed: {ex.Message}"
+                    ""
+        if pairedSummary <> "" then
+            printfn "  Full paired table: %s" (Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.txt"))
+
         let testTypeInfo = String.Join("-", types)
         let engineCount = engineConfigs.Count
         //write table to file with date and time
         let tableFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.txt")
         //let tableFileName = Path.Combine(escaped, $"LichessPuzzleScore_{datePart}.txt")
-        use tableWriter = new StreamWriter(tableFileName)
-        tableWriter.WriteLine(table)
-        if themeSummary <> "" then
-            tableWriter.WriteLine(themeSummary)
+        tryWrite tableFileName (fun () ->
+            use tableWriter = new StreamWriter(tableFileName)
+            tableWriter.WriteLine(table)
+            if pairedSummary <> "" then
+                tableWriter.WriteLine(pairedSummary)
+            if themeSummary <> "" then
+                tableWriter.WriteLine(themeSummary))
 
         // Always write the machine-readable twin beside the text summary, same basename.
         // Trend tooling reads these; nothing should have to parse the human-formatted table,
         // whose column layout has drifted across many releases. See Console/PuzzleJsonSchema.md.
         let pairedJsonFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.json")
         try
-            PuzzleJsonOutput.buildResult
+            PuzzleJsonOutput.buildResultWithPaired
+                pairedOutcome
                 normalizedPath
                 puzzles.Length
                 data.SampleSize
@@ -2127,11 +2247,21 @@ module Program =
                 data.PuzzleFilter
                 data.RatingGroups
                 startedUtc
-                runStopwatch.Elapsed.TotalSeconds
+                elapsedSeconds
                 scores
             |> PuzzleJsonOutput.writeToFile pairedJsonFileName
         with ex ->
+            writeFailures <- writeFailures + 1
             RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON summary to {pairedJsonFileName}: {ex.Message}"
+
+        // Naming the folder at the end makes a mistyped path obvious instead of leaving a
+        // run that looks finished. It must never claim success over a red line above it -
+        // the whole point is that a run which wrote nothing does not read as a normal one.
+        if writeFailures = 0 then
+            RuntimeUtilities.ConsoleUtils.greenConsole $"Result files written to {escaped}"
+        else
+            RuntimeUtilities.ConsoleUtils.yellowConsole
+                $"{writeFailures} output file(s) failed to write (see above). Folder: {escaped}"
 
     // Optional structured JSON output for external tooling (e.g. Python tuner).
     // See Console/PuzzleJsonSchema.md for the public schema contract.
@@ -2139,7 +2269,8 @@ module Program =
     | Some out ->
         try
             let result =
-                PuzzleJsonOutput.buildResult
+                PuzzleJsonOutput.buildResultWithPaired
+                    pairedOutcome
                     normalizedPath
                     puzzles.Length
                     data.SampleSize
@@ -2148,10 +2279,15 @@ module Program =
                     data.PuzzleFilter
                     data.RatingGroups
                     startedUtc
-                    runStopwatch.Elapsed.TotalSeconds
+                    elapsedSeconds
                     scores
             PuzzleJsonOutput.writeToFile out result
             printfn "  JSON results written: %s" out
+            // the file is still written and still useful, but a consumer reading `paired`
+            // must be told it is empty for the wrong reason
+            if pairedOutcome.Failed then
+                RuntimeUtilities.ConsoleUtils.yellowConsole
+                    "  (paired comparison failed - that section of the JSON is empty)"
         with ex ->
             RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON results to {out}: {ex.Message}"
     | None -> ()

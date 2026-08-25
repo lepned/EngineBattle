@@ -65,7 +65,13 @@ module PuzzleTrend =
 
     /// Rating groups are reported as the average rating of the sampled puzzles
     /// (2499, 2693, ...), so snap back to the configured group.
-    let ratingGroupOf (ratingAvg: float) = int (Math.Round(ratingAvg / 100.0)) * 100
+    /// One definition, shared with PuzzleThemes, PuzzleCrossEngine and the paired stats.
+    /// This was a third independent copy, and it is the one the report page uses to match
+    /// a run's scores against PairedRow.RatingGroup - so a drift here would have made the
+    /// paired table quietly stop matching its own rating group.
+    // written out rather than `let ratingGroupOf = PuzzlePaired.ratingGroupOf`: that form
+    // compiles to a property, which the Blazor pages calling this cannot invoke
+    let ratingGroupOf (ratingAvg: float) = PuzzlePaired.ratingGroupOf ratingAvg
 
     let private tryProp (el: JsonElement) (name: string) =
         match el.TryGetProperty name with

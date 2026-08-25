@@ -52,6 +52,50 @@ let private mkScoreWithRankWtKld
 let private fixedStartedUtc = DateTime(2026, 4, 8, 19, 23, 45, DateTimeKind.Utc)
 
 // ---------------------------------------------------------------------------
+// EstNodes percentiles — these used to exist ONLY in the text summary, so any
+// consumer wanting them had to scrape a table whose layout has drifted before.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``toEntry carries the EstNodes percentiles`` () =
+    let hardest = ResizeArray<CsvPuzzleData * float>()
+    hardest.Add(Unchecked.defaultof<CsvPuzzleData>, 6200.0)
+    hardest.Add(Unchecked.defaultof<CsvPuzzleData>, 4100.0)
+    let score =
+        { mkScore "e" "net" "Policy" 1 50 100 0.5 2500.0 with
+            AvgEstNodesLog10 = 1.2
+            EstNodesP95 = 19.0
+            EstNodesP99 = 227.0
+            EstNodesCdf100 = 0.983
+            HardestByEstNodes = hardest }
+    let entry = toEntry score
+    Assert.Equal(1.2, entry.AvgEstNodesLog10, 6)
+    Assert.Equal(19.0, entry.EstNodesP95, 6)
+    Assert.Equal(227.0, entry.EstNodesP99, 6)
+    Assert.Equal(0.983, entry.EstNodesCdf100, 6)
+    // HardestByEstNodes is sorted descending, so max is its head
+    Assert.Equal(6200.0, entry.EstNodesMax, 6)
+
+[<Fact>]
+let ``toEntry reports zero EstNodesMax when no hardest puzzles were recorded`` () =
+    let entry = toEntry (mkScore "e" "net" "Value" 1 50 100 0.0 2500.0)
+    Assert.Equal(0.0, entry.EstNodesMax, 6)
+    Assert.Equal(0.0, entry.EstNodesP95, 6)
+
+[<Fact>]
+let ``EstNodes fields survive serialization under their documented names`` () =
+    let score =
+        { mkScore "e" "net" "Policy" 1 50 100 0.5 2500.0 with
+            EstNodesP95 = 19.0
+            EstNodesCdf100 = 0.983 }
+    let result = buildResult "p.csv" 100 100 0 3500 "" "" fixedStartedUtc 1.0 [ score ]
+    use doc = JsonDocument.Parse(serialize result)
+    let row = doc.RootElement.GetProperty("scores").[0]
+    Assert.Equal(19.0, row.GetProperty("estNodesP95").GetDouble(), 6)
+    Assert.Equal(0.983, row.GetProperty("estNodesCdf100").GetDouble(), 6)
+    Assert.True(row.TryGetProperty("estNodesMax") |> fst)
+
+// ---------------------------------------------------------------------------
 // buildResult — pure transformation
 // ---------------------------------------------------------------------------
 

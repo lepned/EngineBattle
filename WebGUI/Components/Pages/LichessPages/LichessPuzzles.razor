@@ -4,6 +4,7 @@
 @using System.Threading
 @using WebGUI.Components.Layout
 @using System.Collections.Concurrent;
+@using Microsoft.FSharp.Collections
 @using WebGUI.Services;
 @using WebGUI.Components.Layout.VisualizationLayout
 @using static ChessLibrary.PuzzleTypes
@@ -54,7 +55,7 @@
   @if (configSummary is not null)
   {
     <div class="config-tiles">
-      <div class="config-tile">
+      <div class="config-tile" title="@configSummary.NetNames">
         <div class="k">Nets</div>
         <div class="v">@configSummary.Nets</div>
       </div>
@@ -275,7 +276,7 @@
           </div>
           <div class="tool-input-group" style="margin-bottom:0">
             <label>Baseline</label>
-            <select class="tool-input" style="max-width:230px" @bind="themeBaselineNet" @bind:after="CloseThemeBoards">
+            <select class="tool-input" style="max-width:230px" @bind="ThemeBaseline" @bind:after="CloseThemeBoards">
               @foreach (var n in ThemeNets)
               {
                 <option value="@n">@ShortNet(n)</option>
@@ -284,8 +285,8 @@
           </div>
           <div class="tool-input-group" style="margin-bottom:0">
             <label>Compare</label>
-            <select class="tool-input" style="max-width:230px" @bind="themeCompareNet" @bind:after="CloseThemeBoards">
-              @foreach (var n in ThemeNets.Where(n => n != themeBaselineNet))
+            <select class="tool-input" style="max-width:230px" @bind="ThemeCompare" @bind:after="CloseThemeBoards">
+              @foreach (var n in ThemeNets.Where(n => n != ThemeBaseline))
               {
                 <option value="@n">@ShortNet(n)</option>
               }
@@ -475,18 +476,7 @@
         var rg = EffectiveThemeRatingGroup;
         var nets = ThemeNets;
         if (nets.Count == 0) return null;
-        string net;
-        if (nets.Count == 1)
-        {
-            net = nets[0];
-        }
-        else
-        {
-            var baseNet = nets.Contains(themeBaselineNet) ? themeBaselineNet : nets[0];
-            net = nets.Contains(themeCompareNet) && themeCompareNet != baseNet
-                ? themeCompareNet
-                : nets.First(n => n != baseNet);
-        }
+        var net = nets.Count == 1 ? nets[0] : ThemeCompare;
         return ThemeSource.FirstOrDefault(x => x.NeuralNet == net && RatingGroupOf(x.RatingAvg) == rg);
     }
     private const int ThemeTopN = 6;
@@ -502,7 +492,9 @@
             ? ActiveScoreSource
             : ActiveScoreSource.Where(s => s.Engine == selectedEngine).ToList();
 
-    private static int RatingGroupOf(double avg) => (int)Math.Round(avg / 100.0) * 100;
+    // the shared rule, not a sixth copy of it — this one drives the theme panel's rating
+    // groups, which must agree with what the run's own files were sliced by
+    private static int RatingGroupOf(double avg) => ChessLibrary.PuzzlePaired.ratingGroupOf(avg);
 
     private List<int> ThemeRatingGroups =>
         ThemeSource.Select(s => RatingGroupOf(s.RatingAvg)).Distinct().OrderBy(r => r).ToList();
@@ -515,6 +507,42 @@
                    .Where(n => !string.IsNullOrEmpty(n))
                    .Distinct()
                    .ToList();
+
+    /// The nets the chart actually compares, and the values the two selects show.
+    ///
+    /// The backing fields are the raw user choice and can be "" (nothing picked yet) or a
+    /// net that vanished when the rating group or metric tab changed. Resolving that in the
+    /// chart alone left the selects displaying their own first option instead - so a fresh
+    /// page showed the SAME net in Baseline and Compare while charting net 1 against net 2.
+    /// One resolution, read by both, or the page shows one pair and computes another.
+    private string ThemeBaseline
+    {
+        get
+        {
+            var nets = ThemeNets;
+            return nets.Contains(themeBaselineNet) ? themeBaselineNet : (nets.FirstOrDefault() ?? "");
+        }
+        set
+        {
+            themeBaselineNet = value;
+            // picking the net that was in Compare would leave Compare with a value its own
+            // option list no longer offers; clearing lets the getter pick the next net
+            if (themeCompareNet == value) themeCompareNet = "";
+        }
+    }
+
+    private string ThemeCompare
+    {
+        get
+        {
+            var nets = ThemeNets;
+            var baseNet = ThemeBaseline;
+            return nets.Contains(themeCompareNet) && themeCompareNet != baseNet
+                ? themeCompareNet
+                : (nets.FirstOrDefault(n => n != baseNet) ?? "");
+        }
+        set => themeCompareNet = value;
+    }
 
     private int EffectiveThemeRatingGroup
     {
@@ -541,10 +569,9 @@
         var nets = ThemeNets;
         if (nets.Count < 2) return EmptyThemeView;
 
-        var baseNet = nets.Contains(themeBaselineNet) ? themeBaselineNet : nets[0];
-        var cmpNet = nets.Contains(themeCompareNet) && themeCompareNet != baseNet
-            ? themeCompareNet
-            : nets.First(n => n != baseNet);
+        var baseNet = ThemeBaseline;
+        var cmpNet = ThemeCompare;
+        if (string.IsNullOrEmpty(baseNet) || string.IsNullOrEmpty(cmpNet)) return EmptyThemeView;
 
         Score Find(string net) => ThemeSource.FirstOrDefault(
             s => s.NeuralNet == net && RatingGroupOf(s.RatingAvg) == rg);
@@ -887,27 +914,44 @@
     /// the shape of a run - how many nets, how many puzzles - before spending the
     /// time on it.
     private sealed record ConfigSummary(
-        int Nets, int SampleSize, string Types, string Nodes, string RatingGroups,
-        string Themes, string PuzzleFile);
+        int Nets, string NetNames, int SampleSize, string Types, string Nodes,
+        string RatingGroups, string Themes, string PuzzleFile);
+
+    /// A tooltip listing more than this is unreadable; ablation configs run dozens.
+    private const int MaxListedNets = 30;
 
     private ConfigSummary configSummary;
 
     private void SummariseConfig(PuzzleConfig data)
     {
         // one Engines entry can expand to several nets, so count the expansion,
-        // not the entries
+        // not the entries — and keep the names, because "6" does not tell you whether
+        // the config is the one you meant to run
         var nets = 0;
+        var netNames = "";
         try
         {
-            nets = data.Engines.SelectMany(e => mapToEngPuzzleConfig(data.EngineFolder, e)).Count();
+            var expanded = data.Engines
+                .SelectMany(e => mapToEngPuzzleConfig(data.EngineFolder, e))
+                .Select(t => t.Item1.Name)
+                .ToList();
+            nets = expanded.Count;
+            var listed = expanded.Count <= MaxListedNets
+                ? expanded
+                : expanded.Take(MaxListedNets)
+                    .Append($"… and {expanded.Count - MaxListedNets} more").ToList();
+            netNames = string.Join(Environment.NewLine, listed);
         }
         catch
         {
+            // the expansion reads every engine def; if that fails we still know how many
+            // entries the config has, but not what they resolve to
             nets = data.Engines.Count;
         }
 
         configSummary = new ConfigSummary(
             nets,
+            netNames,
             data.SampleSize,
             string.IsNullOrWhiteSpace(data.Type) ? "—" : data.Type,
             string.IsNullOrWhiteSpace(data.Nodes) ? "—" : data.Nodes,
@@ -956,6 +1000,16 @@
         {
             logger.LogWarning("Failed to pre-load config filter: {Message}", ex.Message);
         }
+    }
+
+    /// Prepares the run's output folder, surfacing a bad path on the page rather than
+    /// leaving a run that finishes and quietly writes nothing. Returns "" when the run
+    /// should write no files.
+    private string PrepareOutputFolder(string configured)
+    {
+        var (path, error) = PuzzleOutputFolder.Prepare(configured, "Puzzle", logger);
+        if (error != "") errorMessage = error;
+        return path;
     }
 
     private async Task PickConfig()
@@ -1182,6 +1236,10 @@
                 var data = loadPuzzleConfig(normalizePath(fullPathName));
                 puzzleFileName = Path.GetFileName(data.PuzzleFile);
 
+                // Resolved before any engine loads, so an unusable path costs seconds
+                // instead of a whole run. Empty means this run writes no result files.
+                var outputFolder = PrepareOutputFolder(data.FailedPuzzlesOutputFolder);
+
                 // Filter already contains merged config + UI value from PreloadConfigFilter
                 data.PuzzleFilter = Filter;
                 await InvokeAsync(StateHasChanged);
@@ -1339,10 +1397,22 @@
                     activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
                 });
 
-                var normalized = Configuration.JSONParser.normalizePath(data.FailedPuzzlesOutputFolder);
+                var normalized = outputFolder;
+                // The folder is prepared at run start but can still vanish mid-run, and the
+                // closing line must not claim success over a failure logged above it.
+                var writeFailures = 0;
+                void TryWrite(string what, Action action)
+                {
+                    try { action(); }
+                    catch (Exception ex)
+                    {
+                        writeFailures++;
+                        logger.LogError("Failed to write {What}: {Message}", what, ex.Message);
+                    }
+                }
                 var table = CreateCombinedScoresTable(data.PuzzleFile);
                 logger.LogInformation(table);
-                if (Directory.Exists(normalized))
+                if (normalized != "")
                 {
                     var allScores = new List<Score>();
                     allScores.AddRange(PolicyScores);
@@ -1351,113 +1421,155 @@
                     allScores.AddRange(SolveScores);
                     var datePart = DateTime.Now.ToString("yyyy-MM-dd_HH-mm", System.Globalization.CultureInfo.InvariantCulture);
                     var fileName = Path.Combine(normalized, $"failedLichessPuzzles_{datePart}.epd");
-                    using (StreamWriter sw = File.AppendText(fileName))
+                    TryWrite(fileName, () =>
                     {
-                        var boardBm = new Chess.Board();
-                        var boardAm = new Chess.Board();
-                        foreach (var item in allScores)
+                        using (StreamWriter sw = File.AppendText(fileName))
                         {
-                            var nnSuffix = !string.IsNullOrEmpty(item.NeuralNet) ? $" (nn:{item.NeuralNet})" : "";
-                            sw.WriteLine($"\n##Failed puzzles by {item.Engine}{nnSuffix} - overall performance: {item.PlayerRecord.Rating.ToString("F0")} - Type: {item.Type} - Theme: {item.Filter} - Nodes: {item.Nodes}\n");
-                            var sorted = item.FailedPuzzles
-                      .Select(tuple =>
-                      {
-                    var parts = tuple.Item2.Split(",");
-                    if (parts.Length > 1 && double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
-                        return (tuple.Item1, value, tuple.Item2);
-                    return (tuple.Item1, tuple.Item1.Rating, tuple.Item2);
-                })
-                      .OrderBy(tuple => tuple.Item2);
-
-                            foreach (var puzzle in sorted)
+                            var boardBm = new Chess.Board();
+                            var boardAm = new Chess.Board();
+                            foreach (var item in allScores)
                             {
-                                foreach (var cmd in puzzle.Item1.Commands)
+                                var nnSuffix = !string.IsNullOrEmpty(item.NeuralNet) ? $" (nn:{item.NeuralNet})" : "";
+                                sw.WriteLine($"\n##Failed puzzles by {item.Engine}{nnSuffix} - overall performance: {item.PlayerRecord.Rating.ToString("F0")} - Type: {item.Type} - Theme: {item.Filter} - Nodes: {item.Nodes}\n");
+                                var sorted = item.FailedPuzzles
+                          .Select(tuple =>
+                          {
+                        var parts = tuple.Item2.Split(",");
+                        if (parts.Length > 1 && double.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double value))
+                            return (tuple.Item1, value, tuple.Item2);
+                        return (tuple.Item1, tuple.Item1.Rating, tuple.Item2);
+                    })
+                          .OrderBy(tuple => tuple.Item2);
+
+                                foreach (var puzzle in sorted)
                                 {
-                                    if (!String.IsNullOrWhiteSpace(cmd.MovePlayed) && cmd.MovePlayed.Length >= 4)
+                                    foreach (var cmd in puzzle.Item1.Commands)
                                     {
-                                        boardBm.PlayCommands(cmd.Command);
-                                        var fen = boardBm.FEN();
-                                        boardBm.PlayUciMove(cmd.CorrectMove);
-                                        var bm = boardBm.SanMovesPlayed.LastOrDefault();
-                                        string aM;
-                                        if (cmd.MovePlayed == "0000")
+                                        if (!String.IsNullOrWhiteSpace(cmd.MovePlayed) && cmd.MovePlayed.Length >= 4)
                                         {
-                                            aM = "?";
+                                            boardBm.PlayCommands(cmd.Command);
+                                            var fen = boardBm.FEN();
+                                            var bm = ChessLibrary.PuzzleDataUtils.sanOfMovePlayed(
+                                                boardBm, cmd.Command, cmd.CorrectMove);
+                                            var aM = ChessLibrary.PuzzleDataUtils.sanOfMovePlayed(
+                                                boardAm, cmd.Command, cmd.MovePlayed);
+                                            var policies = puzzle.Item3.Split(",");
+                                            var (bmP, amP) = policies.Length > 1 ? (policies[0].Trim(), policies[1].Trim()) : ("", "");
+                                            var msg = $"{fen} bm {bm}; am {aM}; id \"Lichess id {puzzle.Item1.PuzzleId}, policy value for bestmove {bm}={bmP} and move played {aM}={amP}\"; other \"{cmd.CorrectMove},{cmd.MovePlayed}\"";
+                                            sw.WriteLine(msg);
                                         }
-                                        else
-                                        {
-                                            boardAm.PlayCommands(cmd.Command);
-                                            boardAm.PlayUciMove(cmd.MovePlayed);
-                                            aM = boardAm.SanMovesPlayed.LastOrDefault();
-                                        }
-                                        var policies = puzzle.Item3.Split(",");
-                                        var (bmP, amP) = policies.Length > 1 ? (policies[0].Trim(), policies[1].Trim()) : ("", "");
-                                        var msg = $"{fen} bm {bm}; am {aM}; id \"Lichess id {puzzle.Item1.PuzzleId}, policy value for bestmove {bm}={bmP} and move played {aM}={amP}\"; other \"{cmd.CorrectMove},{cmd.MovePlayed}\"";
-                                        sw.WriteLine(msg);
                                     }
                                 }
                             }
                         }
-                    }
+                    });
 
                     var csvFileName = Path.Combine(normalized, $"failedLichessPuzzles_{datePart}.csv");
-                    var allFailed = allScores
-                        .SelectMany(s => s.FailedPuzzles.Select(t => t.Item1))
-                        .GroupBy(p => p.PuzzleId)
-                        .Select(g => g.First())
-                        .ToArray();
-                    if (allFailed.Length > 0)
+                    TryWrite(csvFileName, () =>
                     {
-                        using var csvWriter = new StreamWriter(csvFileName);
-                        csvWriter.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags");
-                        foreach (var p in allFailed)
+                        var allFailed = allScores
+                            .SelectMany(s => s.FailedPuzzles.Select(t => t.Item1))
+                            .GroupBy(p => p.PuzzleId)
+                            .Select(g => g.First())
+                            .ToArray();
+                        if (allFailed.Length > 0)
                         {
-                            csvWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
+                            using var csvWriter = new StreamWriter(csvFileName);
+                            csvWriter.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags");
+                            foreach (var p in allFailed)
+                            {
+                                csvWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
+                            }
+                            logger.LogInformation($"  Failed puzzles CSV ({allFailed.Length} unique): {csvFileName}");
                         }
-                        logger.LogInformation($"  Failed puzzles CSV ({allFailed.Length} unique): {csvFileName}");
-                    }
+                    });
 
                     var estCsvFileName = Path.Combine(normalized, $"estNodesHardest_{datePart}.csv");
-                    var hardest = PolicyScores
-                        .SelectMany(s => s.HardestByEstNodes)
-                        .OrderByDescending(t => t.Item2)
-                        .GroupBy(t => t.Item1.PuzzleId)
-                        .Select(g => g.First())
-                        .Take(50)
-                        .ToArray();
-                    if (hardest.Length > 0)
+                    TryWrite(estCsvFileName, () =>
                     {
-                        static string FormatEstNodes(double n) =>
-                            n < 10.0 ? n.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
-                            : n < 1000.0 ? n.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)
-                            : n < 1_000_000.0 ? (n / 1000.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "k"
-                            : (n / 1_000_000.0).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "M";
-
-                        using (var estWriter = new StreamWriter(estCsvFileName))
+                        var hardest = PolicyScores
+                            .SelectMany(s => s.HardestByEstNodes)
+                            .OrderByDescending(t => t.Item2)
+                            .GroupBy(t => t.Item1.PuzzleId)
+                            .Select(g => g.First())
+                            .Take(50)
+                            .ToArray();
+                        if (hardest.Length > 0)
                         {
-                            estWriter.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags");
-                            foreach (var t in hardest)
+                            static string FormatEstNodes(double n) =>
+                                n < 10.0 ? n.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                                : n < 1000.0 ? n.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)
+                                : n < 1_000_000.0 ? (n / 1000.0).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "k"
+                                : (n / 1_000_000.0).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "M";
+
+                            using (var estWriter = new StreamWriter(estCsvFileName))
+                            {
+                                estWriter.WriteLine("PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags");
+                                foreach (var t in hardest)
+                                {
+                                    var p = t.Item1;
+                                    estWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
+                                }
+                            }
+                            var hardestLog = new StringBuilder();
+                            hardestLog.AppendLine($"  Hardest-by-EstNodes CSV (top {hardest.Length}, worst first): {estCsvFileName}");
+                            hardestLog.AppendLine("  Top 10 worst-case candidates by estimated nodes to find the correct move:");
+                            foreach (var t in hardest.Take(10))
                             {
                                 var p = t.Item1;
-                                estWriter.WriteLine($"{p.PuzzleId},{p.Fen},{p.Moves},{(int)p.Rating},{(int)p.RatingDeviation},{p.Popularity},{p.NbPlays},{p.Themes},{p.GameUrl},{p.OpeningTags}");
+                                hardestLog.AppendLine($"    {p.PuzzleId,-12}  rating {(int)p.Rating,4}  est {FormatEstNodes(t.Item2),-7}  {p.GameUrl}");
                             }
+                            logger.LogInformation(hardestLog.ToString());
                         }
-                        var hardestLog = new StringBuilder();
-                        hardestLog.AppendLine($"  Hardest-by-EstNodes CSV (top {hardest.Length}, worst first): {estCsvFileName}");
-                        hardestLog.AppendLine("  Top 10 worst-case candidates by estimated nodes to find the correct move:");
-                        foreach (var t in hardest.Take(10))
-                        {
-                            var p = t.Item1;
-                            hardestLog.AppendLine($"    {p.PuzzleId,-12}  rating {(int)p.Rating,4}  est {FormatEstNodes(t.Item2),-7}  {p.GameUrl}");
-                        }
-                        logger.LogInformation(hardestLog.ToString());
-                    }
+                    });
 
                     var allScoresForCross = PolicyScores.AsEnumerable()
                         .Concat(ValueScores)
                         .Concat(SearchScores)
                         .Concat(SolveScores);
-                    ChessLibrary.PuzzleCrossEngine.writeCrossEngineFiles(normalized, datePart, allScoresForCross);
+                    TryWrite("cross-engine files", () =>
+                        ChessLibrary.PuzzleCrossEngine.writeCrossEngineFiles(normalized, datePart, allScoresForCross));
+
+                    // One order for the theme tables, the paired table and the JSON: A must
+                    // mean the same net in all three or the same comparison reads with its
+                    // sign flipped in one of them.
+                    var engineNamesInConfigOrder = engineConfigs.Select(c => c.Item1.Name).ToList();
+
+                    // Paired (McNemar) stats. Slice level keeps the solved/failed sets, so
+                    // the discordant counts - and the tight test - are available here.
+                    // Computed ONCE: the summary file renders it and the JSON embeds it.
+                    // An empty result is normal - a single-net run has nothing to compare -
+                    // so the outcome carries the failure flag separately.
+                    var pairedOutcome = ChessLibrary.PuzzlePaired.outcomeOf(
+                        FSharpList<ChessLibrary.PuzzlePaired.PairedComparison>.Empty);
+                    var pairedSummary = "";
+                    try
+                    {
+                        pairedOutcome = ChessLibrary.PuzzlePaired.outcomeOf(
+                            ChessLibrary.PuzzlePaired.computeOrdered(
+                                engineNamesInConfigOrder, allScoresForCross));
+                    }
+                    catch (Exception ex)
+                    {
+                        // counted like the theme block below: the summary file loses a
+                        // section, so the run must not report itself as fully written
+                        pairedOutcome = ChessLibrary.PuzzlePaired.failedOutcome;
+                        writeFailures++;
+                        logger.LogWarning($"Paired comparison failed: {ex.Message}");
+                    }
+
+                    // Rendering is a SEPARATE failure: losing the text table must not throw
+                    // away comparisons that computed fine, nor mark them as a compute failure.
+                    // The console splits these the same way.
+                    try
+                    {
+                        pairedSummary = ChessLibrary.PuzzlePaired.render(pairedOutcome.Comparisons);
+                    }
+                    catch (Exception ex)
+                    {
+                        writeFailures++;
+                        logger.LogWarning($"Paired table rendering failed: {ex.Message}");
+                    }
 
                     // Same analysis and the same files as a console run - the two paths
                     // share one implementation so they cannot drift apart.
@@ -1466,7 +1578,7 @@
                     {
                         var themeOutput = ChessLibrary.PuzzleThemes.writeThemeFiles(
                             normalized, datePart,
-                            engineConfigs.Select(c => c.Item1.Name),
+                            engineNamesInConfigOrder,
                             allScoresForCross);
                         themeSummary = themeOutput.Summary;
                         // the tables live in the summary file; the log gets a pointer
@@ -1480,17 +1592,20 @@
                     }
                     catch (Exception ex)
                     {
+                        writeFailures++;
                         logger.LogWarning($"Per-theme comparison failed: {ex.Message}");
                     }
 
                     // underscore matches the console naming; without it these files sort
                     // apart from console runs and no glob finds both
                     var tableFileName = Path.Combine(normalized, $"LichessSummary_{datePart}.txt");
-                    using (StreamWriter sw = new StreamWriter(tableFileName))
+                    TryWrite(tableFileName, () =>
                     {
+                        using StreamWriter sw = new StreamWriter(tableFileName);
                         sw.WriteLine(table);
+                        if (pairedSummary != "") sw.WriteLine(pairedSummary);
                         if (themeSummary != "") sw.WriteLine(themeSummary);
-                    }
+                    });
 
                     // The machine-readable twin, same basename. A console run writes this;
                     // without it here a GUI run is invisible to anything that reads results
@@ -1498,7 +1613,8 @@
                     var jsonFileName = Path.Combine(normalized, $"LichessSummary_{datePart}.json");
                     try
                     {
-                        var result = PuzzleJsonOutput.buildResult(
+                        var result = PuzzleJsonOutput.buildResultWithPaired(
+                            pairedOutcome,
                             data.PuzzleFile,
                             puzzles.Length,
                             data.SampleSize,
@@ -1513,7 +1629,18 @@
                     }
                     catch (Exception ex)
                     {
+                        writeFailures++;
                         logger.LogWarning($"Failed to write JSON summary to {jsonFileName}: {ex.Message}");
+                    }
+
+                    if (writeFailures == 0)
+                    {
+                        logger.LogInformation("Result files written to {Folder}", normalized);
+                    }
+                    else
+                    {
+                        errorMessage = $"{writeFailures} output file(s) failed to write. Folder: {normalized}";
+                        logger.LogError("{Count} output file(s) failed to write. Folder: {Folder}", writeFailures, normalized);
                     }
                 }
 

@@ -171,6 +171,72 @@ let ``the largest samples are shown even when the sort hides them`` () =
         :: [ for i in 1 .. 6 -> stat (sprintf "tiny_neg_%d" i) 30 0 ]
         @ [ for i in 1 .. 6 -> stat (sprintf "tiny_pos_%d" i) 30 30 ]
     let diffs, _ = PuzzleThemes.diff 25 a b
-    let rendered = PuzzleThemes.renderDiff "A" "B" 6 diffs
+    let rendered = PuzzleThemes.renderDiffFor "A" "B" "engA" "engB" 6 diffs
     Assert.Contains("largest samples:", rendered)
     Assert.Contains("bigTheme", rendered)
+
+// ---------------------------------------------------------------------------
+// Slice key. writeThemeFiles used to group on (Type, ratingGroup) alone, while
+// PuzzlePaired and PuzzleCrossEngine also key on Nodes and Filter.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a multi-filter run does not compare a net against itself`` () =
+    // `PuzzleFilter: "fork,pin"` gives one Score per filter theme per net. Merged into
+    // one group, `baseline :: others` made the first comparison netA-on-fork against
+    // netA-on-pin - one net against itself, on two different puzzle sets.
+    let withFilter f net (score: Score) = { score with Filter = f; NeuralNet = net; Engine = net }
+    let many n theme = List.replicate n theme
+    let scores =
+        [ mkScore (many 30 "fork") (many 10 "fork") |> withFilter "fork" "netA"
+          mkScore (many 20 "fork") (many 20 "fork") |> withFilter "fork" "netB"
+          mkScore (many 30 "pin") (many 10 "pin") |> withFilter "pin" "netA"
+          mkScore (many 20 "pin") (many 20 "pin") |> withFilter "pin" "netB" ]
+    let out = PuzzleThemes.writeThemeFiles "" "" [ "netA"; "netB" ] scores
+    // netA is the baseline in both slices and netB the comparison, so netA must never
+    // appear in the B slot - that is what a net compared against itself looked like
+    Assert.DoesNotContain("B = netA", out.Summary)
+    Assert.Contains("A = netA", out.Summary)
+    Assert.Contains("B = netB", out.Summary)
+    // and both slices are labelled, so two tables no longer share one title
+    Assert.Contains("theme fork", out.Summary)
+    Assert.Contains("theme pin", out.Summary)
+
+// ---------------------------------------------------------------------------
+// Null-bestmove sentinel. Board.PlayUciMove no-ops on a move it cannot parse, so
+// "0000" used to leave the previous SAN in place and the EPD recorded the
+// OPPONENT's setup move as the avoid-move.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``sanOfMovePlayed renders the sentinel as unknown, not as a move`` () =
+    let board = Chess.Board()
+    let san = PuzzleDataUtils.sanOfMovePlayed board "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4" PuzzleDataUtils.NullBestmove
+    Assert.Equal("?", san)
+
+[<Fact>]
+let ``sanOfMovePlayed renders a real move as SAN`` () =
+    let board = Chess.Board()
+    let san = PuzzleDataUtils.sanOfMovePlayed board "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4" "e7e5"
+    Assert.Equal("e5", san)
+
+[<Fact>]
+let ``an unplayable move yields unknown, not the previous move`` () =
+    // PlayUciMove no-ops on ANYTHING it cannot match, so the sentinel was only one member
+    // of the class: an illegal move, a stale echo, or a non-UCI token long enough to pass
+    // the callers' `Length >= 4` guard all left the opponent's setup move as the answer.
+    let board = Chess.Board()
+    let command = "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4"
+    for unplayable in [ "h8h1"; "(none)"; "zzzz" ] do
+        Assert.Equal("?", PuzzleDataUtils.sanOfMovePlayed board command unplayable)
+
+[<Fact>]
+let ``the sentinel never yields the move already on the board`` () =
+    // the exact failure: PlayCommands pushes e4, PlayUciMove "0000" does nothing, and
+    // the last SAN is still the opponent's setup move
+    let board = Chess.Board()
+    let command = "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4"
+    let real = PuzzleDataUtils.sanOfMovePlayed board command "e7e5"
+    let sentinel = PuzzleDataUtils.sanOfMovePlayed board command PuzzleDataUtils.NullBestmove
+    Assert.NotEqual<string>("e4", sentinel)
+    Assert.NotEqual<string>(real, sentinel)

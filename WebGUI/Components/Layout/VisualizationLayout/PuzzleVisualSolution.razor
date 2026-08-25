@@ -109,7 +109,7 @@
       moveSeq = Board.GetSanMoveHistory();
       Board.PlayCommands(position.Command);
       var fenBeforeMovePlayed = Board.FEN();
-      var movePlayedIsSentinel = position.MovePlayed == "0000";
+      var movePlayedIsSentinel = position.MovePlayed == ChessLibrary.PuzzleDataUtils.NullBestmove;
       if (!string.IsNullOrEmpty(position.MovePlayed) && position.MovePlayed.Length >= 4 && !movePlayedIsSentinel)
       {
           Board.PlayUciMove(position.MovePlayed);
