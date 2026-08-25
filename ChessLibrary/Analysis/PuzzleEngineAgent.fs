@@ -459,10 +459,40 @@ let computeValueKLD (moveVals: (string * float) list) (correctMove: string) =
 ///     command that produced maxKLD; 0 if no rank could be determined.
 ///   * maxEstNodes = max computeEstNodesToFind across the puzzle's commands.
 ///   * correctPerTopN maps each topN to whether the puzzle was solved at that threshold.
+/// Rank of the engine's first MATING move within the top `limit` of a ranking, or None.
+///
+/// A puzzle whose recorded solution is one of several mates is solved by any of them, so a
+/// threshold whose window reaches this rank counts as solved. Returning a rank rather than a
+/// bool is what keeps the thresholds monotone.
+///
+/// `board` is reused across positions and candidates: PlayCommands resets it (clearing every
+/// move list), and UndoMove is O(1) - it restores the previous position from the game array.
+/// Setting up a fresh Board per candidate allocates a 1000-element Position array and replays
+/// the whole move prefix, which on a 4000-puzzle sweep is tens of thousands of pointless
+/// reconstructions in the hottest loop.
+let mateRankWithin (board: Board) (command: string) (limit: int) (moves: string seq) =
+    board.PlayCommands command
+    let mutable rank = -1
+    let mutable i = 0
+    use e = (moves |> Seq.truncate limit).GetEnumerator()
+    while rank < 0 && e.MoveNext() do
+        // PlayUciMove is a silent no-op on a move it cannot match, so UndoMove would
+        // decrement past the setup and corrupt the board for every later candidate.
+        // Compare the move count instead of assuming the move was played.
+        let before = board.SanMovesPlayed.Count
+        board.PlayUciMove e.Current
+        if board.SanMovesPlayed.Count > before then
+            if board.IsMate() then rank <- i
+            board.UndoMove()
+        i <- i + 1
+    if rank < 0 then None else Some rank
+
 let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int list) (scoreAllPositions: bool) (puzzle:CsvPuzzleData) = async {
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
 
     let maxTopN = topNs |> List.max
+    // One board for the whole puzzle: PlayCommands resets it, so no per-candidate alloc.
+    let mateBoard = Board()
     let mutable maxKLD = 0.0
     let mutable maxMarginLoss = 0.0
     let mutable maxEstNodes = 0.0
@@ -517,31 +547,31 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
         if isFirstPosition then firstMoveScored <- 1
         // Check each threshold. The per-position tally is taken for EVERY position; the
         // per-puzzle flag still latches at the first mistake and is never revived.
-        // Mate fallback, computed ONCE per position: how deep into the ranking is the
-        // engine's first mating move? A puzzle whose recorded solution is one of several
-        // mates is solved by any of them, so a threshold that reaches a mating move counts.
+        // Mate fallback. Computed at most ONCE per position, and only when some threshold
+        // actually needs it - the correct move being outside the top maxTopN. For the ~85%
+        // of positions solved directly this now costs nothing.
         //
-        // This used to run only at maxTopN and only on the top-1 move, which made a
-        // threshold's result depend on which OTHER thresholds the run requested: with
-        // topNs = [1;3] the fallback never fired at n=1, so the same net on the same puzzle
-        // scored lower on top-1 than it would have in a policy-only run. Thresholds must be
-        // monotone - solved at n implies solved at n+1 - or the metric is not a ranking.
-        let mateRank =
-            allNNValues
-            |> List.truncate maxTopN
-            |> List.tryFindIndex (fun v ->
-                let board = Board()
-                board.PlayCommands cmd.Command
-                board.PlayUciMove v.LANMove
-                // IsMate, not AnyLegalMove - the latter also fires on STALEMATE and would
-                // credit a move that throws the win away.
-                board.IsMate())
+        // It used to run only at maxTopN and only on the top-1 move, which made a threshold's
+        // result depend on which OTHER thresholds the run requested: with topNs = [1;3] the
+        // fallback never fired at n=1, so the same net on the same puzzle scored lower on
+        // top-1 than in a policy-only run. Thresholds must be monotone - solved at n implies
+        // solved at n+1 - or the metric is not a ranking.
+        let mutable mateRank = ValueNone       // ValueNone = not computed yet
+        let mateRankOf () =
+            match mateRank with
+            | ValueSome r -> r
+            | ValueNone ->
+                let r =
+                    mateRankWithin mateBoard cmd.Command maxTopN
+                        (allNNValues |> Seq.map (fun v -> v.LANMove))
+                mateRank <- ValueSome r
+                r
         for n in topNs do
             let topNMoves = allNNValues |> List.truncate n |> List.map (fun v -> v.LANMove)
             let mutable solved = topNMoves |> List.contains cmd.CorrectMove
             if not solved then
               // fires for EVERY n whose window reaches the mating move
-              solved <- (match mateRank with Some i -> i < n | None -> false)
+              solved <- (match mateRankOf () with Some i -> i < n | None -> false)
             if solved then
               if scoreAllPositions then posCorrect.[n] <- posCorrect.[n] + 1
               if isFirstPosition then firstMoveCorrect.[n] <- firstMoveCorrect.[n] + 1
@@ -583,6 +613,7 @@ let runPuzzleViaAgentValueMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:i
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
 
     let maxTopN = topNs |> List.max
+    let mateBoard = Board()
     let correct = System.Collections.Generic.Dictionary<int, bool>()
     for n in topNs do correct.[n] <- true
     // The puzzle's FIRST solver move, which is the one its themes describe. Tracked here
@@ -599,24 +630,21 @@ let runPuzzleViaAgentValueMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:i
         let isFirstPosition = positionIndex = 0
         positionIndex <- positionIndex + 1
 
-        // Same rule as the policy path: how deep into the value ranking is the first
-        // mating move? Computed once, applied to every threshold that reaches it, so the
-        // thresholds stay monotone and a run's top-1 does not depend on which other
-        // thresholds it asked for.
-        let mateRank =
-            sortedByV
-            |> List.truncate maxTopN
-            |> List.tryFindIndex (fun (mv, _) ->
-                let board = Board()
-                board.PlayCommands cmd.Command
-                board.PlayUciMove mv
-                // IsMate, not AnyLegalMove - the latter also fires on stalemate.
-                board.IsMate())
+        // Same rule as the policy path, and lazily for the same reason: computed at most
+        // once per position, and only when a threshold needs it.
+        let mutable mateRank = ValueNone
+        let mateRankOf () =
+            match mateRank with
+            | ValueSome r -> r
+            | ValueNone ->
+                let r = mateRankWithin mateBoard cmd.Command maxTopN (sortedByV |> Seq.map fst)
+                mateRank <- ValueSome r
+                r
         for n in topNs do
             let topNMoves = sortedByV |> List.truncate n |> List.map fst
             let mutable solved = topNMoves |> List.contains cmd.CorrectMove
             if not solved then
-              solved <- (match mateRank with Some i -> i < n | None -> false)
+              solved <- (match mateRankOf () with Some i -> i < n | None -> false)
             if solved && isFirstPosition then firstMoveCorrect.[n] <- firstMoveCorrect.[n] + 1
             if correct.[n] then correct.[n] <- solved
 

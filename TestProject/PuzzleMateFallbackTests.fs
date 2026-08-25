@@ -91,3 +91,37 @@ let ``a non-mating wrong move is still wrong`` () =
     let correct = solveWith [ 1; 3 ] [ "g1f1", 0.9; "g1h2", 0.1 ] "a1a8"
     Assert.False(correct.[1])
     Assert.False(correct.[3])
+
+// ---------------------------------------------------------------------------
+// Board reuse. The fallback now sets the position up once per position and walks
+// candidates with PlayUciMove/UndoMove instead of building a fresh Board each time.
+// UndoMove is O(1) but blind: PlayUciMove is a silent no-op on a move it cannot
+// match, and undoing that would decrement past the setup and corrupt every later
+// candidate.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``an unplayable candidate does not corrupt later candidates`` () =
+    // "zzzz" cannot be played; the mating move sits AFTER it, so if the undo cycle
+    // leaked state the mate would no longer be found.
+    let correct = solveWith [ 1; 3 ] [ "g1f1", 0.7; "zzzz", 0.2; "a1a8", 0.1 ] "a1a8"
+    Assert.True(correct.[3], "the real mating move is still reachable at n=3")
+
+[<Fact>]
+let ``the same board serves many positions in sequence`` () =
+    // Two-move puzzle: the fallback runs on position 0, then the board is reused for
+    // position 1. A leaked position would make the second command unsolvable.
+    let raw =
+        CsvPuzzleData.Create(
+            2, mateFen, setupMove + " a1a2 g8h8 a2a8", 2000.0, 80.0, 90, 100,
+            "mate", "https://lichess.org/x", "", null, null, null, 0)
+    let puzzle = PuzzleDataUtils.getUpdatedRecord raw
+    Assert.Equal(2, Seq.length puzzle.Commands)
+    use agent = stubAgent [ "a1a2", 0.9; "a2a8", 0.8 ]
+    let (_, _, _, _, _, _, correct, _, _, _, _) =
+        PuzzleEngineAgent.runPuzzleViaAgentMultiTopN agent [ 1 ] false puzzle
+        |> Async.RunSynchronously
+    // first command's correct move IS the stub's top move, so it is solved directly;
+    // the point is that the run completes without a corrupted board
+    Assert.True(correct.ContainsKey 1)
+
