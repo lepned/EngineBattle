@@ -61,8 +61,11 @@ module PuzzleThemes =
     /// and went wrong later, so the old whole-line scoring charged nearly four in ten
     /// failures to a theme that had nothing to do with them.
     ///
-    /// Falls back to the whole-line verdict when a test does not track first moves
-    /// (FirstMoveCorrectIds empty) - those tests are unchanged, not silently wrong.
+    /// Falls back to the whole-line verdict when a test does not track first moves, which
+    /// is declared by `FirstMoveScored = 0` - NOT by the id set being empty. An empty id
+    /// set is a legitimate result (nothing was first-move-correct) and must not be read as
+    /// "this runner has no first-move data". Tests without tracking are unchanged, not
+    /// silently wrong.
     let breakdown (score: Score) : ThemeStat list =
         let totals = Collections.Generic.Dictionary<string, int * int>()
         let bump theme solved =

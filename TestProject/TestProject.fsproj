@@ -36,6 +36,7 @@
 		<Compile Include="PuzzleTrendTests.fs" />
 		<Compile Include="PuzzleCrossEngineTests.fs" />
 		<Compile Include="PuzzlePairedTests.fs" />
+		<Compile Include="PuzzleMateFallbackTests.fs" />
 		<Compile Include="PuzzleThemeTests.fs" />
 		<Compile Include="PuzzleReportTests.fs" />
 		<Compile Include="OutputFolderTests.fs" />

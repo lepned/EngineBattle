@@ -51,7 +51,9 @@ The fields **always** emitted as integers (no float ambiguity) are: `schemaVersi
 
 ### Three units, and which to use
 
-A Lichess puzzle is a SEQUENCE of moves, and `accuracy` scores the whole sequence: one wrong move anywhere and the puzzle counts as failed. That is the historical metric and it is unchanged.
+A Lichess puzzle is a SEQUENCE of moves, and `accuracy` scores the whole sequence: one wrong move anywhere and the puzzle counts as failed. That remains the definition.
+
+> **Discontinuity, 2026-08-25.** Puzzles are credited when the engine's move differs from the recorded solution but still delivers checkmate. That check used to accept ANY position with no legal replies, which also matches **stalemate** — so a move that threw a won game away was scored as a solve. It now requires the opponent to be in check. `accuracy` therefore drops slightly from this build onward, and a step curve joining runs across the boundary (`puzzletrend` reads `accuracy`) will show it. The direction is a correction, not a regression: the old numbers were too high.
 
 The problem it creates is attribution. A puzzle's THEMES describe the move it exists for — its first solver move — while later moves are usually forced follow-up carrying the same tags without being about them. Measured on a 1500-puzzle sample, **38–43% of failed puzzles had the thematic move right** and went wrong later, so `accuracy` charges nearly four in ten failures to a theme that had nothing to do with them.
 
