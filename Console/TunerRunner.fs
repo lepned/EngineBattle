@@ -1079,7 +1079,8 @@ module TunerRunner =
         let puzzleInput =
           PuzzleInput.Create(
             puzzles, pc.MaxRating, pc.MinRating, pc.RatingGroups, pc.PuzzleFilter,
-            engines, 1, pc.SampleSize, pc.Nodes, 0, 0, max 1 pc.Concurrency, pc.IncludeFailedPuzzles)
+            engines, 1, pc.SampleSize, pc.Nodes, 0, 0, max 1 pc.Concurrency, pc.IncludeFailedPuzzles,
+            pc.ScoreAllPositions)
         let scores = runPuzzlesByType pc.Type puzzleInput
         let totalCorrect = scores |> Seq.sumBy (fun s -> s.Correct)
         let totalNumber = scores |> Seq.sumBy (fun s -> s.TotalNumber)

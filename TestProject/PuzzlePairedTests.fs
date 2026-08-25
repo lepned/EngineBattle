@@ -39,7 +39,12 @@ let private mkScore (engine: string) (net: string) (typ: string) (ratingAvg: flo
       EstNodesP95 = 0.0
       EstNodesP99 = 0.0
       EstNodesCdf100 = 0.0
-      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
+      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+      PositionsCorrect = 0
+      PositionsScored = 0
+      FirstMoveCorrect = 0
+      FirstMoveScored = 0
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
 
 // ---------------------------------------------------------------------------
 // Discordant counts — the whole point of the paired test

@@ -42,7 +42,12 @@ let private mkScore (engine: string) (ratingAvg: float) (solved: int list) (fail
       EstNodesP95 = 0.0
       EstNodesP99 = 0.0
       EstNodesCdf100 = 0.0
-      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
+      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+      PositionsCorrect = 0
+      PositionsScored = 0
+      FirstMoveCorrect = 0
+      FirstMoveScored = 0
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
 
 [<Fact>]
 let ``two rating groups produce two groups, not one merged group`` () =

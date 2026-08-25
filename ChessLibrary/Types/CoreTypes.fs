@@ -1025,9 +1025,11 @@ module TypesDef =
         failed: int
         solved: int
         NumberOfPuzzlesInParallel: int
-        IncludeFailedPuzzles: bool }
+        IncludeFailedPuzzles: bool
+        /// See PuzzleConfig.ScoreAllPositions.
+        ScoreAllPositions: bool }
       with
-        static member Create (puzzleData, maxRating, minRating, ratingGroup, puzzleFilter, engineConfigs, iterations, sampleSize, nodes, failed, solved, concurrency, ?includeFailedPuzzles) =
+        static member Create (puzzleData, maxRating, minRating, ratingGroup, puzzleFilter, engineConfigs, iterations, sampleSize, nodes, failed, solved, concurrency, ?includeFailedPuzzles, ?scoreAllPositions) =
           { puzzleData = puzzleData
             maxRating = maxRating
             minRating = minRating
@@ -1040,4 +1042,5 @@ module TypesDef =
             failed = failed
             solved = solved
             NumberOfPuzzlesInParallel = concurrency
-            IncludeFailedPuzzles = defaultArg includeFailedPuzzles false }
+            IncludeFailedPuzzles = defaultArg includeFailedPuzzles false
+            ScoreAllPositions = defaultArg scoreAllPositions false }

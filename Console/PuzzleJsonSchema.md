@@ -49,6 +49,20 @@ The fields **always** emitted as integers (no float ambiguity) are: `schemaVersi
 | `paired` | array | One entry per net PAIR per slice, with the discordant counts and McNemar's z. Empty for single-net runs and absent in files written before this field existed. See below. |
 | `pairedFailed` | bool | `true` only when computing the paired stats threw. Read it before concluding anything from an empty `paired` — see below. |
 
+### Three units, and which to use
+
+A Lichess puzzle is a SEQUENCE of moves, and `accuracy` scores the whole sequence: one wrong move anywhere and the puzzle counts as failed. That is the historical metric and it is unchanged.
+
+The problem it creates is attribution. A puzzle's THEMES describe the move it exists for — its first solver move — while later moves are usually forced follow-up carrying the same tags without being about them. Measured on a 1500-puzzle sample, **38–43% of failed puzzles had the thematic move right** and went wrong later, so `accuracy` charges nearly four in ten failures to a theme that had nothing to do with them.
+
+| field | unit | use it for |
+|---|---|---|
+| `accuracy` | whole puzzle | overall strength; comparable with every historical run |
+| `firstMoveAccuracy` | the thematic move | **anything per-theme** |
+| `positionAccuracy` | every position | how much of a line a net gets right; opt-in |
+
+`positionAccuracy` does NOT fix the attribution problem — every position of the puzzle still inherits the puzzle's tags.
+
 ### What `scores[]` and `paired[]` each cover
 
 `scores[]` is the **complete record of the run**: every result row, including slices that produced no puzzles at all (`totalNumber: 0`). Nothing is filtered out of it, because this file is the machine-readable archive of the run and a consumer can always filter, while it cannot recover what was dropped.
@@ -87,6 +101,12 @@ Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, 
 | `estNodesP99` | float | As above at the 99th percentile. |
 | `estNodesMax` | float | Worst single puzzle in the set by `N_est`. `0.0` when unavailable. |
 | `estNodesCdf100` | float | Fraction (`0..1`) of puzzles whose `N_est` is at most 100 nodes. **Higher is better.** `0.0` for non-policy rows. |
+| `firstMoveCorrect` | int | Puzzles whose FIRST solver move was right. |
+| `firstMoveScored` | int | Puzzles that had a first solver move to score. `0` means the test does not track it — not that nothing was correct. |
+| `firstMoveAccuracy` | float | `firstMoveCorrect / firstMoveScored`, or `0.0` when `firstMoveScored` is 0. **Use this, not `accuracy`, when attributing a result to a theme** — see below. |
+| `positionsCorrect` | int | Positions scored correctly across all puzzles. `0` unless the run set `ScoreAllPositions`. |
+| `positionsScored` | int | Positions scored. `0` unless the run set `ScoreAllPositions`. |
+| `positionAccuracy` | float | `positionsCorrect / positionsScored`, or `0.0` when nothing was scored. |
 | `withHistory` | bool | Whether the engine was given prior moves as history (Lc0/Ceres only). |
 
 ## `paired[]` entry fields

@@ -37,7 +37,12 @@ let private mkScore (engine: string) (net: string) (typ: string) (correct: int) 
       EstNodesP95 = 0.0
       EstNodesP99 = 0.0
       EstNodesCdf100 = 0.0
-      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
+      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+      PositionsCorrect = 0
+      PositionsScored = 0
+      FirstMoveCorrect = 0
+      FirstMoveScored = 0
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
 
 let private startedUtc = DateTime(2026, 8, 23, 18, 0, 0, DateTimeKind.Utc)
 
@@ -206,7 +211,7 @@ let ``loadThemes skips malformed lines instead of failing`` () =
 // ---------------------------------------------------------------------------
 
 let private themeRow typ rg theme n : PuzzleReport.ThemeRow =
-    { Type = typ; RatingGroup = rg; Filter = ""; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
+    { Type = typ; RatingGroup = rg; Scoring = "firstMove"; Filter = ""; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
       NetA = "a"; NetB = "b"; Theme = theme; N = n; AccA = 50.0; AccB = 50.0 }
 
 [<Fact>]
@@ -223,7 +228,7 @@ let ``dropNonTactical removes descriptive tags`` () =
 // ---------------------------------------------------------------------------
 
 let private cmpRow theme n accA accB : PuzzleReport.ThemeRow =
-    { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
+    { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
       NetA = "netA"; NetB = "netB"; Theme = theme; N = n; AccA = accA; AccB = accB }
 
 [<Fact>]
@@ -257,7 +262,7 @@ let ``buildHeatView drops themes below the sample threshold`` () =
 [<Fact>]
 let ``buildHeatView single-net baseline is the net's own mean across themes`` () =
     let single theme n acc : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = ""; EngineB = "engB"; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = ""; EngineB = "engB"; Nodes = Some 1
           NetA = ""; NetB = "netB"; Theme = theme; N = n; AccA = Double.NaN; AccB = acc }
     let rows = [| single "fork" 500 40.0; single "pin" 500 60.0 |]
     let view = (PuzzleReport.buildHeatView rows "Policy" "2600" "" (Some 1) 250 [| "netB" |]).Value
@@ -365,7 +370,7 @@ let ``loadThemes returns empty for a truncated or header-only file`` () =
 // ---------------------------------------------------------------------------
 
 let private famRow theme n accA accB : PuzzleReport.ThemeRow =
-    { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
+    { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
       NetA = "netA"; NetB = "netB"; Theme = theme; N = n; AccA = accA; AccB = accB }
 
 [<Fact>]
@@ -435,7 +440,7 @@ let ``theme rows that name the same net on both sides are dropped, not merged`` 
     // run's two sides are indistinguishable, so the row cannot be attributed and
     // reporting either side would present two engines as one.
     let ambiguous : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = ""; EngineB = ""; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = ""; EngineB = ""; Nodes = Some 1
           NetA = "sameNet"; NetB = "sameNet"; Theme = "fork"; N = 500; AccA = 40.0; AccB = 60.0 }
     let rows = [| ambiguous; famRow "pin" 500 40.0 50.0 |]
     match PuzzleReport.buildHeatView rows "Policy" "2600" "" (Some 1) 250 [| "netA"; "netB" |] with
@@ -456,7 +461,7 @@ let ``a hidden subtype does not shift a single-net baseline`` () =
     // The single-net baseline used to average every kept theme, including columns the
     // viewer never sees and an endgame subtype counted twice beside its parent.
     let single theme n acc : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = ""; EngineB = "engB"; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = ""; EngineB = "engB"; Nodes = Some 1
           NetA = ""; NetB = "solo"; Theme = theme; N = n; AccA = Double.NaN; AccB = acc }
     let rows = [| single "endgame" 3000 40.0; single "pawnEndgame" 600 41.0; single "fork" 500 45.0 |]
     let view = (PuzzleReport.buildHeatView rows "Policy" "2600" "" (Some 1) 250 [| "solo" |]).Value
@@ -496,7 +501,7 @@ let ``a subtype column is not offered as a callout candidate`` () =
 [<Fact>]
 let ``unattributable themes are counted, not silently absent`` () =
     let ambiguous : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = ""; EngineB = ""; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = ""; EngineB = ""; Nodes = Some 1
           NetA = "sameNet"; NetB = "sameNet"; Theme = "fork"; N = 500; AccA = 40.0; AccB = 60.0 }
     Assert.Equal(1, PuzzleReport.unattributableThemes [| ambiguous |] "Policy" "2600" "" (Some 1))
     Assert.Equal(0, PuzzleReport.unattributableThemes [| famRow "fork" 500 40.0 50.0 |] "Policy" "2600" "" (Some 1))
@@ -506,7 +511,7 @@ let ``one net under two engines is two columns, not an unattributable row`` () =
     // The same input as above, but from a file that HAS the engine columns: this is a
     // normal cross-engine comparison and must render, not be dropped.
     let crossEngine : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = "Ceres"; EngineB = "Lc0"; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = "Ceres"; EngineB = "Lc0"; Nodes = Some 1
           NetA = "sameNet"; NetB = "sameNet"; Theme = "fork"; N = 500; AccA = 40.0; AccB = 60.0 }
     let other = { crossEngine with Theme = "pin"; AccA = 45.0; AccB = 55.0 }
     Assert.Equal(0, PuzzleReport.unattributableThemes [| crossEngine; other |] "Policy" "2600" "" (Some 1))
@@ -522,7 +527,7 @@ let ``a themes file without the filter column still renders`` () =
     // run's summary says "none" - so comparing the absent column against it dropped every
     // row and the heat view and profiles vanished for almost every existing run.
     let legacy theme accA accB : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = ""; EngineB = ""; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = ""; EngineB = ""; Nodes = Some 1
           NetA = "netA"; NetB = "netB"; Theme = theme; N = 500; AccA = accA; AccB = accB }
     let rows = [| legacy "fork" 40.0 50.0; legacy "pin" 42.0 52.0 |]
     let view = PuzzleReport.buildHeatView rows "Policy" "2600" "none" (Some 1) 250 [| "netA"; "netB" |]
@@ -536,7 +541,7 @@ let ``two node budgets are separate slices, not a contradiction`` () =
     // rating group. Without the nodes column they had identical keys and different
     // accuracies, so EVERY theme was flagged unattributable and the view disappeared.
     let row nodes theme accA accB : PuzzleReport.ThemeRow =
-        { Type = "Search"; RatingGroup = "2600"; Filter = "none"; EngineA = "engA"
+        { Type = "Search"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = "none"; EngineA = "engA"
           EngineB = "engB"; Nodes = Some nodes; NetA = "netA"; NetB = "netB"
           Theme = theme; N = 500; AccA = accA; AccB = accB }
     let rows =
@@ -554,7 +559,7 @@ let ``a themes file without the nodes column still renders`` () =
     // Nodes = 0 means the column was absent. Comparing it against a real budget would
     // repeat exactly the mistake the filter column made.
     let legacy theme accA accB : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = ""; EngineA = ""; EngineB = ""
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = ""; EngineA = ""; EngineB = ""
           Nodes = None; NetA = "netA"; NetB = "netB"; Theme = theme; N = 500
           AccA = accA; AccB = accB }
     let rows = [| legacy "fork" 40.0 50.0; legacy "pin" 42.0 52.0 |]
@@ -567,7 +572,7 @@ let ``puzzle filters are separate slices in the heat view`` () =
     // "fork" and "pin" runs both carry the shared Lichess themes; folding them together
     // made every shared theme look self-contradictory and took the whole view down.
     let row filter theme accA accB : PuzzleReport.ThemeRow =
-        { Type = "Policy"; RatingGroup = "2600"; Filter = filter; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
+        { Type = "Policy"; RatingGroup = "2600"; Scoring = "firstMove"; Filter = filter; EngineA = "engA"; EngineB = "engB"; Nodes = Some 1
           NetA = "netA"; NetB = "netB"; Theme = theme; N = 500; AccA = accA; AccB = accB }
     let rows =
         [| row "fork" "middlegame" 40.0 50.0; row "fork" "crushing" 42.0 52.0

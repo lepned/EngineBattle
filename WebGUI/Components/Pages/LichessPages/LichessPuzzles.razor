@@ -307,7 +307,7 @@
       @if (singleNet && ts!.Rows.Count > 0)
       {
         <div class="theme-legend">
-          <span><i style="background:var(--theme-single)"></i> solved</span>
+          <span><i style="background:var(--theme-single)"></i> key move found</span>
           <span class="theme-legend-note">
             @ShortNet(ThemeNets[0]) · weakest first@(ts.Dropped > 0 ? $" · {ts.Dropped} themes under {themeMinN} omitted" : "")
           </span>
@@ -318,13 +318,13 @@
             <div class="tname">Theme</div>
             <div></div>
             <div class="tnum">n</div>
-            <div class="tdelta">accuracy</div>
+            <div class="tdelta" title="Share of puzzles whose FIRST solver move was right — the move the theme describes. Not the same as the whole-puzzle accuracy in the score table above.">key move %</div>
           </div>
           @foreach (var t in ts.Rows)
           {
             <div class="theme-row theme-row-single theme-row-click @(themeBoardsFor == t.Theme ? "open" : "")"
                  role="button" tabindex="0"
-                 title="Show the positions tagged @t.Theme"
+                 title="Show the positions tagged @t.Theme. The grid lists puzzles that failed ANYWHERE in the line, so it can include puzzles the bar counts as correct on their key move."
                  @onclick="() => ToggleThemeBoards(t.Theme)">
               <div class="tname">@t.Theme</div>
               <div class="ttrack ttrack-single">
@@ -378,7 +378,7 @@
         <div class="theme-legend">
           <span><i style="background:var(--theme-worse)"></i> worse than baseline</span>
           <span><i style="background:var(--theme-better)"></i> better than baseline</span>
-          <span class="theme-legend-note">n = puzzles carrying the theme@(td!.Dropped > 0 ? $" · {td.Dropped} themes under {themeMinN} omitted" : "")</span>
+          <span class="theme-legend-note">key move found · n = puzzles carrying the theme@(td!.Dropped > 0 ? $" · {td.Dropped} themes under {themeMinN} omitted" : "")</span>
         </div>
 
         <div class="theme-chart">
@@ -394,7 +394,7 @@
           {
             <div class="theme-row theme-row-click @(themeBoardsFor == d.Theme ? "open" : "")"
                  role="button" tabindex="0"
-                 title="Show the positions tagged @d.Theme"
+                 title="Show the positions tagged @d.Theme. The grid lists puzzles that failed ANYWHERE in the line, so it can include puzzles the bar counts as correct on their key move."
                  @onclick="() => ToggleThemeBoards(d.Theme)">
               <div class="tname">@d.Theme</div>
               <div class="ttrack">
@@ -1268,7 +1268,7 @@
 
                 var concurrency = concurrencyOverride > 0 ? concurrencyOverride : data.Concurrency;
                 var puzzleInput = TypesDef.PuzzleInput.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
-                                  engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, concurrency, data.IncludeFailedPuzzles);
+                                  engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, concurrency, data.IncludeFailedPuzzles, data.ScoreAllPositions);
 
                 var types = string.IsNullOrWhiteSpace(data.Type)
             ? new List<string>()

@@ -36,7 +36,12 @@ module PuzzleTypes =
             Failed: int
             Solved: int
             mutable Concurrency: int
-            IncludeFailedPuzzles: bool  }
+            IncludeFailedPuzzles: bool
+            /// Score EVERY position of a multi-move puzzle, not just up to the first
+            /// mistake. Off by default: it adds a metric, it does not change the existing
+            /// one, and for the value tests it also costs engine time (positions after a
+            /// miss are queried too, where today they are skipped).
+            ScoreAllPositions: bool  }
 
     type EretConfig = {
         EngineFolder: string
@@ -244,6 +249,15 @@ module PuzzleTypes =
         FailedMove : string
         ValueHead: bool
         Policy: string
+        /// Positions of this puzzle the engine got right, and how many were scored.
+        /// Both 0 unless the run set ScoreAllPositions.
+        PositionsCorrect: int
+        PositionsScored: int
+        /// 1 when the puzzle's FIRST solver move was right, 0 otherwise; Scored is 1 once
+        /// the puzzle has any position at all. Always measured - unlike the position
+        /// counters this costs nothing, since the first position is always queried.
+        FirstMoveCorrect: int
+        FirstMoveScored: int
         KLD: float
         // Engine's rank (1-indexed) of the correct move at the puzzle command that
         // produced KLD. 0 = no rank data (e.g. classical engine, no policy probed,
@@ -302,7 +316,26 @@ module PuzzleTypes =
         // Top puzzles by per-puzzle N_est, descending (worst first, capped at 50).
         // Lets the cheap 1-node policy run nominate worst-case candidates for
         // targeted real-search verification. Empty for non-policy tests.
-        HardestByEstNodes: ResizeArray<CsvPuzzleData * float> }
+        HardestByEstNodes: ResizeArray<CsvPuzzleData * float>
+        // Positions of multi-move puzzles the engine got right, and how many were
+        // scored. ADDITIVE: Correct/TotalNumber above stay all-or-nothing per puzzle,
+        // so every historical number keeps its meaning. Both 0 unless the run set
+        // ScoreAllPositions, which is the only way to tell "not measured" from
+        // "measured as zero".
+        PositionsCorrect: int
+        PositionsScored: int
+        // The FIRST solver move only - PuzzleDataUtils builds Commands from the odd-index
+        // moves, so Commands[0] is the move the puzzle exists for and the one its themes
+        // describe. Later moves are usually forced follow-up and carry the puzzle's tags
+        // without being about them, which is why the theme breakdown should use THIS and
+        // not the all-or-nothing puzzle verdict.
+        FirstMoveCorrect: int
+        FirstMoveScored: int
+        // PuzzleIds whose FIRST solver move was right. A puzzle that was solved outright
+        // is always in here; a failed one is in here when it went wrong later. The theme
+        // breakdown needs this because a puzzle's tags describe its first move, not the
+        // position it happened to fail at. Empty for tests that do not track it.
+        FirstMoveCorrectIds: Collections.Generic.HashSet<int> }
         with
           static member empty =
             { Engine = ""
@@ -327,7 +360,12 @@ module PuzzleTypes =
               EstNodesP95 = 0.0
               EstNodesP99 = 0.0
               EstNodesCdf100 = 0.0
-              HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
+              HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+              PositionsCorrect = 0
+              PositionsScored = 0
+              FirstMoveCorrect = 0
+              FirstMoveScored = 0
+              FirstMoveCorrectIds = Collections.Generic.HashSet<int>() }
 
     type Lichess =
       | PuzzleResult of Score

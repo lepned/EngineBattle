@@ -61,6 +61,22 @@ type PuzzleScoreEntry =
       EstNodesMax: float
       // Fraction (0..1) of puzzles needing <= 100 nodes.
       EstNodesCdf100: float
+      // Positions of multi-move puzzles scored correctly, and how many were scored.
+      // Both 0 unless the run set ScoreAllPositions - that is how a consumer tells
+      // "not measured" from "measured as zero". `accuracy` above is unchanged and
+      // remains per-PUZZLE all-or-nothing.
+      PositionsCorrect: int
+      PositionsScored: int
+      // PositionsCorrect / PositionsScored, or 0.0 when nothing was scored.
+      PositionAccuracy: float
+      // The puzzle's FIRST solver move only - the move its themes actually describe.
+      // Always measured, so unlike the position fields these are meaningful in every run.
+      // Use THIS, not `accuracy`, when attributing a result to a theme: a puzzle failed
+      // three moves deep is counted against its themes by `accuracy` even though the
+      // failing position may have nothing to do with them.
+      FirstMoveCorrect: int
+      FirstMoveScored: int
+      FirstMoveAccuracy: float
       WithHistory: bool }
 
 /// One row in the `paired` array — two nets compared on the puzzles they both
@@ -150,6 +166,18 @@ let toEntry (s: Score) : PuzzleScoreEntry =
       EstNodesMax =
           if s.HardestByEstNodes.Count > 0 then safeFinite (snd s.HardestByEstNodes.[0]) else 0.0
       EstNodesCdf100 = safeFinite s.EstNodesCdf100
+      PositionsCorrect = s.PositionsCorrect
+      PositionsScored = s.PositionsScored
+      PositionAccuracy =
+          if s.PositionsScored > 0 then
+              safeFinite (float s.PositionsCorrect / float s.PositionsScored)
+          else 0.0
+      FirstMoveCorrect = s.FirstMoveCorrect
+      FirstMoveScored = s.FirstMoveScored
+      FirstMoveAccuracy =
+          if s.FirstMoveScored > 0 then
+              safeFinite (float s.FirstMoveCorrect / float s.FirstMoveScored)
+          else 0.0
       WithHistory = s.WithHistory }
 
 let toPairedEntry (c: PuzzlePaired.PairedComparison) : PuzzlePairedEntry =

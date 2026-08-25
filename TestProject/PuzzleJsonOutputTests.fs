@@ -39,7 +39,12 @@ let private mkScore
       EstNodesP95 = 0.0
       EstNodesP99 = 0.0
       EstNodesCdf100 = 0.0
-      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
+      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+      PositionsCorrect = 0
+      PositionsScored = 0
+      FirstMoveCorrect = 0
+      FirstMoveScored = 0
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
 
 /// Helper that lets a test set both AvgKLD and AvgRankWeightedKld.
 let private mkScoreWithRankWtKld

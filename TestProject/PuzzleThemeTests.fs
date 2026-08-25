@@ -41,7 +41,12 @@ let private mkScore (solved: string list) (failed: string list) : Score =
       EstNodesP95 = 0.0
       EstNodesP99 = 0.0
       EstNodesCdf100 = 0.0
-      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>() }
+      HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+      PositionsCorrect = 0
+      PositionsScored = 0
+      FirstMoveCorrect = 0
+      FirstMoveScored = 0
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
 
 let private statFor theme (stats: PuzzleThemes.ThemeStat list) =
     stats |> List.find (fun s -> s.Theme = theme)
@@ -174,6 +179,60 @@ let ``the largest samples are shown even when the sort hides them`` () =
     let rendered = PuzzleThemes.renderDiffFor "A" "B" "engA" "engB" 6 diffs
     Assert.Contains("largest samples:", rendered)
     Assert.Contains("bigTheme", rendered)
+
+// ---------------------------------------------------------------------------
+// First-move theme scoring. A puzzle's tags describe the move it exists for, so a
+// puzzle failed three moves deep must not be charged against those tags.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a puzzle failed after a correct first move counts as solved for its themes`` () =
+    // one solved puzzle, one failed LATE (first move right), one failed on the first move
+    let solvedP = mkPuzzle "fork"
+    let lateFail = { mkPuzzle "fork" with PuzzleId = 2 }
+    let earlyFail = { mkPuzzle "fork" with PuzzleId = 3 }
+    let score =
+        { mkScore [] [] with
+            CorrectPuzzles = ResizeArray<CsvPuzzleData>([ solvedP ])
+            FailedPuzzles = ResizeArray<CsvPuzzleData * string>([ lateFail, "x"; earlyFail, "x" ])
+            // FirstMoveScored is what declares the capability; the id set alone is data
+            FirstMoveScored = 3
+            FirstMoveCorrect = 2
+            FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>([ 1; 2 ]) }
+    let stat = PuzzleThemes.breakdown score |> List.find (fun s -> s.Theme = "fork")
+    Assert.Equal(3, stat.Total)
+    // solved + late failure both count: only the early failure missed the thematic move
+    Assert.Equal(2, stat.Correct)
+
+[<Fact>]
+let ``an id set without the capability flag does not silently change the rule`` () =
+    // The capability is FirstMoveScored, not the id set: a Score whose ids survived but
+    // whose counters did not must fall back rather than half-apply the new rule.
+    let solvedP = mkPuzzle "fork"
+    let lateFail = { mkPuzzle "fork" with PuzzleId = 2 }
+    let score =
+        { mkScore [] [] with
+            CorrectPuzzles = ResizeArray<CsvPuzzleData>([ solvedP ])
+            FailedPuzzles = ResizeArray<CsvPuzzleData * string>([ lateFail, "x" ])
+            FirstMoveScored = 0
+            FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>([ 1; 2 ]) }
+    let stat = PuzzleThemes.breakdown score |> List.find (fun s -> s.Theme = "fork")
+    Assert.Equal(2, stat.Total)
+    Assert.Equal(1, stat.Correct)   // whole-line, despite the ids being present
+
+[<Fact>]
+let ``a test that does not track first moves keeps the whole-line verdict`` () =
+    let solvedP = mkPuzzle "fork"
+    let failedP = { mkPuzzle "fork" with PuzzleId = 2 }
+    let score =
+        { mkScore [] [] with
+            CorrectPuzzles = ResizeArray<CsvPuzzleData>([ solvedP ])
+            FailedPuzzles = ResizeArray<CsvPuzzleData * string>([ failedP, "x" ])
+            // no first-move tracking at all: FirstMoveScored = 0 is the capability signal
+            FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+    let stat = PuzzleThemes.breakdown score |> List.find (fun s -> s.Theme = "fork")
+    Assert.Equal(2, stat.Total)
+    Assert.Equal(1, stat.Correct)
 
 // ---------------------------------------------------------------------------
 // Slice key. writeThemeFiles used to group on (Type, ratingGroup) alone, while

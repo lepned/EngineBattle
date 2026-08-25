@@ -53,17 +53,35 @@ module PuzzleThemes =
 
     /// Per-theme totals for one result. A puzzle tagged with three themes counts once
     /// under each, so the theme totals deliberately sum to more than the sample size.
+    ///
+    /// Scored on the puzzle's FIRST solver move, not on whether the whole line was played.
+    /// A Lichess puzzle's tags describe the move it exists for; the moves after it are
+    /// usually forced follow-up and carry the same tags without being about them. Measured
+    /// on a real 1500-puzzle sample: 38-43% of FAILED puzzles had the thematic move right
+    /// and went wrong later, so the old whole-line scoring charged nearly four in ten
+    /// failures to a theme that had nothing to do with them.
+    ///
+    /// Falls back to the whole-line verdict when a test does not track first moves
+    /// (FirstMoveCorrectIds empty) - those tests are unchanged, not silently wrong.
     let breakdown (score: Score) : ThemeStat list =
         let totals = Collections.Generic.Dictionary<string, int * int>()
         let bump theme solved =
             let t, c = match totals.TryGetValue theme with | true, v -> v | _ -> (0, 0)
             totals.[theme] <- (t + 1, (if solved then c + 1 else c))
+        let ids = score.FirstMoveCorrectIds
+        // CAPABILITY, not a data value: `ids.Count > 0` would conflate "this test does not
+        // track first moves" with "nothing was first-move-correct", and would silently
+        // revert to whole-line scoring for a Score whose id set was dropped in transit.
+        // FirstMoveScored states the intended condition directly.
+        let tracksFirstMove = score.FirstMoveScored > 0 && not (isNull (box ids))
         if not (isNull (box score.CorrectPuzzles)) then
             for p in score.CorrectPuzzles do
+                // a solved puzzle necessarily had its first move right
                 for theme in parseThemes p.Themes do bump theme true
         if not (isNull (box score.FailedPuzzles)) then
             for (p, _) in score.FailedPuzzles do
-                for theme in parseThemes p.Themes do bump theme false
+                let firstOk = tracksFirstMove && ids.Contains p.PuzzleId
+                for theme in parseThemes p.Themes do bump theme firstOk
         totals
         |> Seq.map (fun kv ->
             let total, correct = kv.Value
@@ -240,6 +258,12 @@ module PuzzleThemes =
 
     let private emptyThemeOutput = { Summary = ""; CsvPath = ""; Headline = "" }
 
+    /// Which rule the accuracy columns were computed with. Written into the CSV so a
+    /// consumer can tell the two apart - they are otherwise indistinguishable and differ
+    /// by 10-25 pp on multi-move themes.
+    let private scoringRule (score: Score) =
+        if score.FirstMoveScored > 0 then "firstMove" else "wholeLine"
+
     /// Names the parts of a slice that are NOT already in the header. Both are usually
     /// the defaults, and printing "nodes 1" on every table of every ordinary run is noise
     /// - but when a run has more than one, two tables otherwise carry the same title.
@@ -270,7 +294,10 @@ module PuzzleThemes =
         // two node budgets (`"Type": "search", "Nodes": "10, 100"`) wrote two sets of rows
         // with identical keys and different accuracies, which the reader could only treat
         // as self-contradictory.
-        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp,sigma,puzzle_filter,engine_a,engine_b,nodes")
+        // `scoring` names the rule the accuracy columns were computed with, so a reader can
+        // tell a first-move file from a whole-line one. Without it the two are byte-shaped
+        // the same and differ silently by 10-25 pp on multi-move themes.
+        rows.Add("type,rating_group,net_a,net_b,theme,n,accuracy_a_pct,accuracy_b_pct,delta_pp,sigma,puzzle_filter,engine_a,engine_b,nodes,scoring")
 
         let order =
             engineNamesInConfigOrder
@@ -337,11 +364,12 @@ module PuzzleThemes =
                                 rows.Add(
                                     String.Format(
                                         Globalization.CultureInfo.InvariantCulture,
-                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2},{9:F2},{10},{11},{12},{13}",
+                                        "{0},{1},{2},{3},{4},{5},{6:F2},{7:F2},{8:F2},{9:F2},{10},{11},{12},{13},{14}",
                                         testType, ratingGroup, csvField baseline.NeuralNet, csvField other.NeuralNet,
                                         csvField d.Theme, d.Total, d.AccuracyA * 100.0, d.AccuracyB * 100.0, d.DeltaPp,
                                         sigmaOf d.Total d.DeltaPp, csvField puzzleFilter,
-                                        csvField baseline.Engine, csvField other.Engine, nodes))
+                                        csvField baseline.Engine, csvField other.Engine, nodes,
+                                        scoringRule baseline))
             | [ only ] ->
                 // single-net run: no reference to compare against, but the per-theme rates
                 // are still the answer to "where is this net weak"
@@ -361,10 +389,10 @@ module PuzzleThemes =
                         rows.Add(
                             String.Format(
                                 Globalization.CultureInfo.InvariantCulture,
-                                "{0},{1},,{2},{3},{4},,{5:F2},,,{6},,{7},{8}",
+                                "{0},{1},,{2},{3},{4},,{5:F2},,,{6},,{7},{8},{9}",
                                 testType, ratingGroup, csvField only.NeuralNet,
                                 csvField s.Theme, s.Total, accuracyOf s * 100.0, csvField puzzleFilter,
-                                csvField only.Engine, nodes))
+                                csvField only.Engine, nodes, scoringRule only))
             | _ -> ()
 
         if rows.Count > 1 then

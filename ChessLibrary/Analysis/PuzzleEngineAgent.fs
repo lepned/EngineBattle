@@ -167,7 +167,10 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
 
 
 //Per-puzzle async workflow
-let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (puzzle:CsvPuzzleData)  = async {
+/// `scoreAllPositions` keeps querying after the first mistake so every position of a
+/// multi-move puzzle is scored. Unlike the policy paths this costs real engine time -
+/// positions after a miss are skipped today - which is why it is opt-in.
+let runPuzzleViaAgentEx (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (scoreAllPositions: bool) (puzzle:CsvPuzzleData)  = async {
     // Reset engine state between puzzles
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
 
@@ -177,22 +180,45 @@ let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (pu
     let mutable movePlayed = ""
     let mutable failedMove = ""
     let mutable policy = String.Empty
+    let mutable posCorrect = 0
+    let mutable posScored = 0
+    let mutable firstMoveCorrect = 0
+    let mutable firstMoveScored = 0
 
     for cmd in puzzle.Commands do
-      if correct then
+      // Without the flag this stops at the first mistake, as it always has.
+      if correct || scoreAllPositions then
         // Ask engine for its candidate move
         let! (mv,p) = agent.PostAndAsyncReply(fun ch -> BestMoveWithPolicy(cmd, cmd.CorrectMove, ch))
-        movePlayed <- mv
+        // Only the FIRST failure is reported downstream (EPD writer, visualizer), so
+        // later moves must not overwrite what the failing position played.
+        if correct then movePlayed <- mv
 
         // Compare to correct move, with mate-in-one fallback
         let mutable solved = cmd.CorrectMove = mv
         if not solved then
-          failedMove <- cmd.CorrectMove
-          policy <- p
+          // IsMate, not AnyLegalMove: the latter is also true for STALEMATE, which would
+          // credit a move that throws the win away as if it solved the puzzle.
           board.PlayCommands cmd.Command
           board.PlayUciMove mv
-          solved <- not (board.AnyLegalMove())
-        correct <- solved
+          solved <- board.IsMate()
+        // Position counters ONLY when the flag is on. Without it the loop stops at the
+        // first mistake, so counting anyway would report a censored denominator while the
+        // field docs promise 0 means "not measured" - and the ratio would move the wrong
+        // way, since a net that fails LATER adds correct prefix positions.
+        if scoreAllPositions then
+            if solved then posCorrect <- posCorrect + 1
+            posScored <- posScored + 1
+        // Commands[0] is the move the puzzle exists for; its themes describe THIS move.
+        // Tracked either way: that position is always queried.
+        if firstMoveScored = 0 then
+            firstMoveScored <- 1
+            if solved then firstMoveCorrect <- 1
+        if correct then
+          if not solved then
+            failedMove <- cmd.CorrectMove
+            policy <- p
+          correct <- solved
 
     // Sentinel: when the engine returned an empty bestmove for a failed puzzle
     // (e.g. the agent's exception handler fell back to ""), stamp "0000" so the
@@ -212,6 +238,10 @@ let runPuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (pu
         FailedMove = failedMove
         ValueHead = valueHead
         Policy = policy
+        PositionsCorrect = posCorrect
+        PositionsScored = posScored
+        FirstMoveCorrect = firstMoveCorrect
+        FirstMoveScored = firstMoveScored
         KLD = 0.0
         EngineRank = 0
         MarginLoss = 0.0
@@ -429,7 +459,7 @@ let computeValueKLD (moveVals: (string * float) list) (correctMove: string) =
 ///     command that produced maxKLD; 0 if no rank could be determined.
 ///   * maxEstNodes = max computeEstNodesToFind across the puzzle's commands.
 ///   * correctPerTopN maps each topN to whether the puzzle was solved at that threshold.
-let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int list) (puzzle:CsvPuzzleData) = async {
+let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int list) (scoreAllPositions: bool) (puzzle:CsvPuzzleData) = async {
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
 
     let maxTopN = topNs |> List.max
@@ -441,6 +471,21 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
     // Track correctness per topN threshold
     let correct = System.Collections.Generic.Dictionary<int, bool>()
     for n in topNs do correct.[n] <- true
+    // Per-POSITION tally, alongside the all-or-nothing per-puzzle flag above. The engine
+    // is already asked about every position here, so this costs nothing extra - what was
+    // missing is that positions after the first mistake were never scored, making a
+    // 3-of-4 puzzle indistinguishable from a 0-of-4 one.
+    let posCorrect = System.Collections.Generic.Dictionary<int, int>()
+    for n in topNs do posCorrect.[n] <- 0
+    let mutable posScored = 0
+    // Commands[0] only: the thematic move. Costs nothing - that position is always queried.
+    let firstMoveCorrect = System.Collections.Generic.Dictionary<int, int>()
+    for n in topNs do firstMoveCorrect.[n] <- 0
+    let mutable firstMoveScored = 0
+    // Position index is tracked separately from posScored, which is now flag-gated and
+    // would otherwise stop identifying the first position when the flag is off.
+    let mutable positionIndex = 0
+    let mutable isFirstPosition = false
     // Capture the first top-1 failure so EPD writer and UI visualizer can show
     // the engine's wrong move (MovePlayed) on the correct board.
     let mutable firstFailedCorrectMove = ""
@@ -463,25 +508,37 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
         let vl = computeValueLoss allNNValues cmd.CorrectMove puzzle.Themes wasSolvedThisCmd
         if vl >= 0.0 then valueLosses.Add(vl)
 
-        // Check each threshold
+        // Same rule as the value path: position counters are gated on the flag, the
+        // first-move counter is not. This path queries every position either way, so the
+        // flag changes only what is REPORTED, never what is measured.
+        if scoreAllPositions then posScored <- posScored + 1
+        isFirstPosition <- positionIndex = 0
+        positionIndex <- positionIndex + 1
+        if isFirstPosition then firstMoveScored <- 1
+        // Check each threshold. The per-position tally is taken for EVERY position; the
+        // per-puzzle flag still latches at the first mistake and is never revived.
         for n in topNs do
-          if correct.[n] then
             let topNMoves = allNNValues |> List.truncate n |> List.map (fun v -> v.LANMove)
             let mutable solved = topNMoves |> List.contains cmd.CorrectMove
             if not solved then
-              // Mate fallback (only need to check once for the max topN)
+              // Mate fallback. IsMate, not AnyLegalMove - the latter also fires on
+              // STALEMATE and would credit a move that throws the win away.
               if n = maxTopN then
                 let board = Board()
                 board.PlayCommands cmd.Command
                 board.PlayUciMove mv
-                solved <- not (board.AnyLegalMove())
+                solved <- board.IsMate()
               // If mate fallback passed for maxTopN, it passes for all
-            correct.[n] <- solved
-            // Guard on CorrectMove (always non-empty) so we capture the genuine FIRST top-1
-            // failure even when the engine returned an empty bestmove (mv = "").
-            if n = 1 && not solved && firstFailedCorrectMove = "" then
-                firstFailedCorrectMove <- cmd.CorrectMove
-                firstFailedEngineMove <- mv
+            if solved then
+              if scoreAllPositions then posCorrect.[n] <- posCorrect.[n] + 1
+              if isFirstPosition then firstMoveCorrect.[n] <- firstMoveCorrect.[n] + 1
+            if correct.[n] then
+              correct.[n] <- solved
+              // Guard on CorrectMove (always non-empty) so we capture the genuine FIRST top-1
+              // failure even when the engine returned an empty bestmove (mv = "").
+              if n = 1 && not solved && firstFailedCorrectMove = "" then
+                  firstFailedCorrectMove <- cmd.CorrectMove
+                  firstFailedEngineMove <- mv
 
     let avgValueLoss = if valueLosses.Count > 0 then valueLosses |> Seq.average else -1.0
     let updatedPuzzle =
@@ -499,7 +556,12 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
                     else el)
                 |> Seq.toList
             { puzzle with Commands = cmds }
-    return (updatedPuzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, maxEstNodes, correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
+    return (updatedPuzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, maxEstNodes,
+            correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+            posCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+            posScored,
+            firstMoveCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+            firstMoveScored)
   }
 
 /// Per-puzzle multi-topN value workflow: one per-child evaluation, check all thresholds.
@@ -510,26 +572,37 @@ let runPuzzleViaAgentValueMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:i
     let maxTopN = topNs |> List.max
     let correct = System.Collections.Generic.Dictionary<int, bool>()
     for n in topNs do correct.[n] <- true
+    // The puzzle's FIRST solver move, which is the one its themes describe. Tracked here
+    // so this builder produces the same theme-scoring rule as the others - which builder
+    // happens to win a slice must not decide how themes are scored.
+    let firstMoveCorrect = System.Collections.Generic.Dictionary<int, int>()
+    for n in topNs do firstMoveCorrect.[n] <- 0
+    let mutable positionIndex = 0
 
     for cmd in puzzle.Commands do
         let! moveVals = agent.PostAndAsyncReply(fun ch -> EvalAllMovesValue(cmd, ch))
         // Sort by V ascending (lower V from opponent = better for us)
         let sortedByV = moveVals |> List.sortBy snd
+        let isFirstPosition = positionIndex = 0
+        positionIndex <- positionIndex + 1
 
         for n in topNs do
-          if correct.[n] then
             let topNMoves = sortedByV |> List.truncate n |> List.map fst
             let mutable solved = topNMoves |> List.contains cmd.CorrectMove
             if not solved && n = maxTopN then
-              // Mate fallback
+              // Mate fallback. IsMate, not AnyLegalMove - the latter also fires on stalemate.
               let bestMove = if sortedByV.IsEmpty then "" else sortedByV.Head |> fst
               let board = Board()
               board.PlayCommands cmd.Command
               board.PlayUciMove bestMove
-              solved <- not (board.AnyLegalMove())
-            correct.[n] <- solved
+              solved <- board.IsMate()
+            if solved && isFirstPosition then firstMoveCorrect.[n] <- firstMoveCorrect.[n] + 1
+            if correct.[n] then correct.[n] <- solved
 
-    return (puzzle, correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq)
+    return (puzzle,
+            correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+            firstMoveCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+            (if positionIndex > 0 then 1 else 0))
   }
 
 /// Per-puzzle Value TopN workflow: evaluate all legal moves with go nodes 1 per child,
@@ -591,6 +664,10 @@ let runPuzzleViaAgentValueTopN (agent:MailboxProcessor<EngineMsg>) (topN:int) (p
         FailedMove = failedMove
         ValueHead = false
         Policy = policy
+        PositionsCorrect = 0
+        PositionsScored = 0
+        FirstMoveCorrect = 0
+        FirstMoveScored = 0
         KLD = 0.0
         EngineRank = 0
         MarginLoss = 0.0
@@ -612,6 +689,10 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             FailedMove = ""
             ValueHead = false
             Policy = ""
+            PositionsCorrect = 0
+            PositionsScored = 0
+            FirstMoveCorrect = 0
+            FirstMoveScored = 0
             KLD = 0.0
             EngineRank = 0
             MarginLoss = 0.0
@@ -764,6 +845,10 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             FailedMove = failedMove
             ValueHead = false
             Policy = policyString
+            PositionsCorrect = 0
+            PositionsScored = 0
+            FirstMoveCorrect = 0
+            FirstMoveScored = 0
             KLD = 0.0
             EngineRank = 0
             MarginLoss = 0.0
@@ -785,6 +870,7 @@ let performValueNetworkTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency: int)
+  (scoreAllPositions: bool)
   (onProgress: int -> unit)
   (ct: CancellationToken) =
 
@@ -814,7 +900,7 @@ let performValueNetworkTest
                 while keepGoing && not ct.IsCancellationRequested do
                     let ok, puzzle = puzzleCh.Reader.TryRead()
                     if ok then
-                        let! result = runPuzzleViaAgent agent true puzzle
+                        let! result = runPuzzleViaAgentEx agent true scoreAllPositions puzzle
                         resultsBag.Add(result)
                         let count = Interlocked.Increment(&processedCount)
                         if count % 10 = 0 || count = total then onProgress count
@@ -849,6 +935,16 @@ let performValueNetworkTest
             let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
             printfn "\nValue network rating performance: %.0f (avg %.0f + Δ%.0f) Theme: %s" perf avg diffElo theme
             let pRating = {Rating = perf; Deviation = error; Volatility = 0.0}
+            // Per-position totals are 0 unless ScoreAllPositions was set; the first-move
+            // totals are always real, since that position is queried either way.
+            let posCorrectTotal = results |> Array.sumBy (fun r -> r.PositionsCorrect)
+            let posScoredTotal = results |> Array.sumBy (fun r -> r.PositionsScored)
+            let firstMoveCorrectTotal = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
+            let firstMoveScoredTotal = results |> Array.sumBy (fun r -> r.FirstMoveScored)
+            let firstMoveIds =
+                Collections.Generic.HashSet<int>(
+                    results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
+                            |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
 
             //Build and return the final score record
             {
@@ -875,6 +971,11 @@ let performValueNetworkTest
               EstNodesP99 = 0.0
               EstNodesCdf100 = 0.0
               HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+              PositionsCorrect = posCorrectTotal
+              PositionsScored = posScoredTotal
+              FirstMoveCorrect = firstMoveCorrectTotal
+              FirstMoveScored = firstMoveScoredTotal
+              FirstMoveCorrectIds = firstMoveIds
             }
     finally
         shutdownAgents agents
@@ -909,7 +1010,7 @@ let performPolicyOrSearchTest
             while keepGoing && not ct.IsCancellationRequested do
                 let ok, puzzle = puzzleCh.Reader.TryRead()
                 if ok then
-                    let! result = runPuzzleViaAgent agent false puzzle
+                    let! result = runPuzzleViaAgentEx agent false false puzzle
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
@@ -973,6 +1074,14 @@ let performPolicyOrSearchTest
           EstNodesP99 = 0.0
           EstNodesCdf100 = 0.0
           HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+          PositionsCorrect = results |> Array.sumBy (fun r -> r.PositionsCorrect)
+          PositionsScored = results |> Array.sumBy (fun r -> r.PositionsScored)
+          FirstMoveCorrect = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
+          FirstMoveScored = results |> Array.sumBy (fun r -> r.FirstMoveScored)
+          FirstMoveCorrectIds =
+              Collections.Generic.HashSet<int>(
+                  results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
+                          |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
         }
     finally
         shutdownAgents agents
@@ -1069,6 +1178,14 @@ let performSolveTest
           EstNodesP99 = 0.0
           EstNodesCdf100 = 0.0
           HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+          PositionsCorrect = results |> Array.sumBy (fun r -> r.PositionsCorrect)
+          PositionsScored = results |> Array.sumBy (fun r -> r.PositionsScored)
+          FirstMoveCorrect = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
+          FirstMoveScored = results |> Array.sumBy (fun r -> r.FirstMoveScored)
+          FirstMoveCorrectIds =
+              Collections.Generic.HashSet<int>(
+                  results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
+                          |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
         }
     finally
         shutdownAgents agents
@@ -1081,6 +1198,7 @@ let performPolicyMultiTopNTest
   (theme:string)
   (concurrency : int)
   (includeFailedPuzzles : bool)
+  (scoreAllPositions : bool)
   (onProgress: int -> unit)
   (ct: CancellationToken) : Score list =
 
@@ -1099,13 +1217,13 @@ let performPolicyMultiTopNTest
 
         let mutable processedCount = 0
         let total = puzzles.Length
-        let resultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool>>()
+        let resultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool> * Map<int, int> * int * Map<int, int> * int>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
             while keepGoing && not ct.IsCancellationRequested do
                 let ok, puzzle = puzzleCh.Reader.TryRead()
                 if ok then
-                    let! result = runPuzzleViaAgentMultiTopN agent topNs puzzle
+                    let! result = runPuzzleViaAgentMultiTopN agent topNs scoreAllPositions puzzle
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
@@ -1128,45 +1246,63 @@ let performPolicyMultiTopNTest
 
         let avgRating =
           if allResults.Length = 0 then 0.0
-          else allResults |> Array.averageBy (fun (p, _, _, _, _, _, _) -> p.Rating)
+          else allResults |> Array.averageBy (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.Rating)
         let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
 
         // Tail of the per-puzzle estimated nodes-to-find distribution (all puzzles,
         // raw node units). Independent of the topN threshold.
-        let estNodesAll = allResults |> Array.map (fun (_, _, _, _, _, estN, _) -> estN)
+        let estNodesAll = allResults |> Array.map (fun (_, _, _, _, _, estN, _, _, _, _, _) -> estN)
         let estNodesP95 = percentile 95.0 estNodesAll
         let estNodesP99 = percentile 99.0 estNodesAll
         let estNodesCdf100 = fractionAtOrBelow 100.0 estNodesAll
         // Worst-case candidates by estimate, for targeted real-search verification.
         let hardestByEstNodes =
             allResults
-            |> Array.map (fun (p, _, _, _, _, estN, _) -> p, estN)
+            |> Array.map (fun (p, _, _, _, _, estN, _, _, _, _, _) -> p, estN)
             |> Array.sortByDescending snd
             |> Array.truncate 50
 
         // Produce one Score per topN threshold
         topNs |> List.map (fun topN ->
-            let correct = allResults |> Array.filter (fun (_, _, _, _, _, _, m) -> m.[topN])
-            let failed  = allResults |> Array.filter (fun (_, _, _, _, _, _, m) -> not m.[topN])
+            let correct = allResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> m.[topN])
+            let failed  = allResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> not m.[topN])
             let kldSource = if includeFailedPuzzles then allResults else correct
             let avgKLD =
               if kldSource.Length = 0 then 0.0
-              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _) -> kld)
+              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _, _, _, _, _) -> kld)
             let avgRankWeightedKld =
-              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
+              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
             // Frontier-weighted uses ALL puzzles (solved + failed) regardless of
             // includeFailedPuzzles — the frontier is defined by rank, not solved status.
             let avgFrontierKld =
-              computeFrontierWeightedKld (allResults |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
+              computeFrontierWeightedKld (allResults |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
             // Margin loss uses all puzzles (solved + failed), weighted 2x on
             // unsolved. Solved status is per-puzzle top-1 correctness.
             let avgMarginLoss =
               computeWeightedMarginLoss
-                (allResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN) ->
+                (allResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN, _, _, _, _) ->
                     ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
                 2.0
+            // Positions this topN got right, over every position of every puzzle. Reported
+            // alongside the per-puzzle Correct/TotalNumber, never instead of it.
+            let posCorrectTotal =
+                allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, pc, _, _, _) ->
+                    pc |> Map.tryFind topN |> Option.defaultValue 0)
+            let posScoredTotal = allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, ps, _, _) -> ps)
+            // Themes describe the puzzle's FIRST solver move, so the theme breakdown wants
+            // this rather than the whole-line verdict.
+            let firstMoveCorrectTotal =
+                allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
+                    fc |> Map.tryFind topN |> Option.defaultValue 0)
+            let firstMoveScoredTotal = allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, _, fs) -> fs)
+            let firstMoveIds =
+                Collections.Generic.HashSet<int>(
+                    allResults
+                    |> Seq.filter (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
+                        (fc |> Map.tryFind topN |> Option.defaultValue 0) > 0)
+                    |> Seq.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.PuzzleId))
             // Value loss: |Q - expected_Q| from puzzle themes, solved puzzles only (vl >= 0).
-            let validValueLosses = allResults |> Array.choose (fun (_, _, _, _, vl, _, _) -> if vl >= 0.0 then Some vl else None)
+            let validValueLosses = allResults |> Array.choose (fun (_, _, _, _, vl, _, _, _, _, _, _) -> if vl >= 0.0 then Some vl else None)
             let avgValueLoss =
               if validValueLosses.Length = 0 then 0.0
               else validValueLosses |> Array.average
@@ -1176,7 +1312,7 @@ let performPolicyMultiTopNTest
             // signal lives almost entirely in the failed ones.
             let avgEstNodesLog10 =
               if allResults.Length = 0 then 0.0
-              else allResults |> Array.averageBy (fun (_, _, _, _, _, estN, _) -> log10 (1.0 + estN))
+              else allResults |> Array.averageBy (fun (_, _, _, _, _, estN, _, _, _, _, _) -> log10 (1.0 + estN))
             let w, d, l = correct.Length, 0, failed.Length
 
             let diffElo = EloCalculator.eloDiffWDL w d l
@@ -1195,8 +1331,8 @@ let performPolicyMultiTopNTest
               RatingAvg = avgRating
               Filter = if theme.Trim() = "" then "none" else theme.Trim()
               PlayerRecord = pRating
-              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _) -> p, ""))
-              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _) -> p))
+              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p, ""))
+              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p))
               Nodes = 1
               WithHistory = false
               Type = typeLabel
@@ -1210,6 +1346,11 @@ let performPolicyMultiTopNTest
               EstNodesP99 = estNodesP99
               EstNodesCdf100 = estNodesCdf100
               HardestByEstNodes = ResizeArray hardestByEstNodes
+              PositionsCorrect = posCorrectTotal
+              PositionsScored = posScoredTotal
+              FirstMoveCorrect = firstMoveCorrectTotal
+              FirstMoveScored = firstMoveScoredTotal
+              FirstMoveCorrectIds = firstMoveIds
             }
         )
     finally
@@ -1240,7 +1381,7 @@ let performValueMultiTopNTest
 
         let mutable processedCount = 0
         let total = puzzles.Length
-        let resultsBag = ConcurrentBag<CsvPuzzleData * Map<int, bool>>()
+        let resultsBag = ConcurrentBag<CsvPuzzleData * Map<int, bool> * Map<int, int> * int>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
             while keepGoing && not ct.IsCancellationRequested do
@@ -1269,12 +1410,12 @@ let performValueMultiTopNTest
 
         let avgRating =
           if allResults.Length = 0 then 0.0
-          else allResults |> Array.averageBy (fun (p, _) -> p.Rating)
+          else allResults |> Array.averageBy (fun (p, _, _, _) -> p.Rating)
         let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
 
         topNs |> List.map (fun topN ->
-            let correct = allResults |> Array.filter (fun (_, m) -> m.[topN])
-            let failed  = allResults |> Array.filter (fun (_, m) -> not m.[topN])
+            let correct = allResults |> Array.filter (fun (_, m, _, _) -> m.[topN])
+            let failed  = allResults |> Array.filter (fun (_, m, _, _) -> not m.[topN])
             let w, d, l = correct.Length, 0, failed.Length
 
             let diffElo = EloCalculator.eloDiffWDL w d l
@@ -1293,8 +1434,8 @@ let performValueMultiTopNTest
               RatingAvg = avgRating
               Filter = if theme.Trim() = "" then "none" else theme.Trim()
               PlayerRecord = pRating
-              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _) -> p, ""))
-              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _) -> p))
+              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _) -> p, ""))
+              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _) -> p))
               Nodes = 0
               WithHistory = false
               Type = typeLabel
@@ -1308,6 +1449,17 @@ let performValueMultiTopNTest
               EstNodesP99 = 0.0
               EstNodesCdf100 = 0.0
               HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+              // this path evaluates every position by construction, so the position
+              // counters would be meaningless here; only the first move is tracked
+              PositionsCorrect = 0
+              PositionsScored = 0
+              FirstMoveCorrect = allResults |> Array.sumBy (fun (_, _, fc, _) -> fc |> Map.tryFind topN |> Option.defaultValue 0)
+              FirstMoveScored = allResults |> Array.sumBy (fun (_, _, _, fs) -> fs)
+              FirstMoveCorrectIds =
+                  Collections.Generic.HashSet<int>(
+                      allResults
+                      |> Seq.filter (fun (_, _, fc, _) -> (fc |> Map.tryFind topN |> Option.defaultValue 0) > 0)
+                      |> Seq.map (fun (p, _, _, _) -> p.PuzzleId))
             }
         )
     finally
@@ -1403,6 +1555,14 @@ let performValueTopNTest
           EstNodesP99 = 0.0
           EstNodesCdf100 = 0.0
           HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+          PositionsCorrect = results |> Array.sumBy (fun r -> r.PositionsCorrect)
+          PositionsScored = results |> Array.sumBy (fun r -> r.PositionsScored)
+          FirstMoveCorrect = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
+          FirstMoveScored = results |> Array.sumBy (fun r -> r.FirstMoveScored)
+          FirstMoveCorrectIds =
+              Collections.Generic.HashSet<int>(
+                  results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
+                          |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
         }
     finally
         shutdownAgents agents
@@ -1422,10 +1582,13 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
         movePlayed <- mv
         let mutable solved = cmd.CorrectMove = mv
         if not solved then
-          failedMove <- cmd.CorrectMove
+          // IsMate, not AnyLegalMove: the latter also fires on stalemate.
           board.PlayCommands cmd.Command
           board.PlayUciMove mv
-          solved <- not (board.AnyLegalMove())
+          solved <- board.IsMate()
+        // After the fallback, so a position the fallback RESCUED is not recorded as the
+        // failure. Matches runPuzzleViaAgentEx; these two loops used to disagree.
+        if not solved then failedMove <- cmd.CorrectMove
         correct <- solved
 
     // Sentinel: when the engine returned an empty bestmove for a failed puzzle
@@ -1444,6 +1607,10 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
         FailedMove = failedMove
         ValueHead = true
         Policy = ""
+        PositionsCorrect = 0
+        PositionsScored = 0
+        FirstMoveCorrect = 0
+        FirstMoveScored = 0
         KLD = 0.0
         EngineRank = 0
         MarginLoss = 0.0
@@ -1462,6 +1629,7 @@ let performPolicyValueTest
   (theme:string)
   (concurrency : int)
   (includeFailedPuzzles : bool)
+  (scoreAllPositions : bool)
   (onProgress: int -> unit)
   (ct: CancellationToken) : Score list =
 
@@ -1492,13 +1660,13 @@ let performPolicyValueTest
             puzzleCh.Writer.Complete()
 
             let mutable processedCount = 0
-            let policyResultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool>>()
+            let policyResultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool> * Map<int, int> * int * Map<int, int> * int>()
             let policyWorker (agent: MailboxProcessor<EngineMsg>) = async {
                 let mutable keepGoing = true
                 while keepGoing && not ct.IsCancellationRequested do
                     let ok, puzzle = puzzleCh.Reader.TryRead()
                     if ok then
-                        let! result = runPuzzleViaAgentMultiTopN agent [1] puzzle
+                        let! result = runPuzzleViaAgentMultiTopN agent [1] scoreAllPositions puzzle
                         policyResultsBag.Add(result)
                         let count = Interlocked.Increment(&processedCount)
                         if count % 10 = 0 || count = total then onProgress count
@@ -1516,38 +1684,53 @@ let performPolicyValueTest
             // Build Policy Score
             let avgRating =
               if policyResults.Length = 0 then 0.0
-              else policyResults |> Array.averageBy (fun (p, _, _, _, _, _, _) -> p.Rating)
+              else policyResults |> Array.averageBy (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.Rating)
 
-            let correct = policyResults |> Array.filter (fun (_, _, _, _, _, _, m) -> m.[1])
-            let failed  = policyResults |> Array.filter (fun (_, _, _, _, _, _, m) -> not m.[1])
+            let correct = policyResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> m.[1])
+            let failed  = policyResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> not m.[1])
             let kldSource = if includeFailedPuzzles then policyResults else correct
             let avgKLD =
               if kldSource.Length = 0 then 0.0
-              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _) -> kld)
+              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _, _, _, _, _) -> kld)
             let avgRankWeightedKld =
-              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
+              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
             let avgFrontierKld =
-              computeFrontierWeightedKld (policyResults |> Seq.map (fun (_, kld, _, rank, _, _, _) -> kld, rank))
+              computeFrontierWeightedKld (policyResults |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
             let avgMarginLoss =
               computeWeightedMarginLoss
-                (policyResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN) ->
+                (policyResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN, _, _, _, _) ->
                     ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
                 2.0
-            let validValueLosses = policyResults |> Array.choose (fun (_, _, _, _, vl, _, _) -> if vl >= 0.0 then Some vl else None)
+            // Per-position tally; this path is top-1 only, so topN is 1.
+            let posCorrectTotal =
+                policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, pc, _, _, _) ->
+                    pc |> Map.tryFind 1 |> Option.defaultValue 0)
+            let posScoredTotal = policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, ps, _, _) -> ps)
+            let firstMoveCorrectTotal =
+                policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
+                    fc |> Map.tryFind 1 |> Option.defaultValue 0)
+            let firstMoveScoredTotal = policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, _, fs) -> fs)
+            let firstMoveIds =
+                Collections.Generic.HashSet<int>(
+                    policyResults
+                    |> Seq.filter (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
+                        (fc |> Map.tryFind 1 |> Option.defaultValue 0) > 0)
+                    |> Seq.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.PuzzleId))
+            let validValueLosses = policyResults |> Array.choose (fun (_, _, _, _, vl, _, _, _, _, _, _) -> if vl >= 0.0 then Some vl else None)
             let avgValueLoss =
               if validValueLosses.Length = 0 then 0.0
               else validValueLosses |> Array.average
             // All puzzles, like FrontierKLD/MarginLoss — see performPolicyMultiTopNTest.
             let avgEstNodesLog10 =
               if policyResults.Length = 0 then 0.0
-              else policyResults |> Array.averageBy (fun (_, _, _, _, _, estN, _) -> log10 (1.0 + estN))
-            let estNodesAll = policyResults |> Array.map (fun (_, _, _, _, _, estN, _) -> estN)
+              else policyResults |> Array.averageBy (fun (_, _, _, _, _, estN, _, _, _, _, _) -> log10 (1.0 + estN))
+            let estNodesAll = policyResults |> Array.map (fun (_, _, _, _, _, estN, _, _, _, _, _) -> estN)
             let estNodesP95 = percentile 95.0 estNodesAll
             let estNodesP99 = percentile 99.0 estNodesAll
             let estNodesCdf100 = fractionAtOrBelow 100.0 estNodesAll
             let hardestByEstNodes =
                 policyResults
-                |> Array.map (fun (p, _, _, _, _, estN, _) -> p, estN)
+                |> Array.map (fun (p, _, _, _, _, estN, _, _, _, _, _) -> p, estN)
                 |> Array.sortByDescending snd
                 |> Array.truncate 50
             let pw, pd, pl = correct.Length, 0, failed.Length
@@ -1565,8 +1748,8 @@ let performPolicyValueTest
                   RatingAvg = avgRating
                   Filter = if theme.Trim() = "" then "none" else theme.Trim()
                   PlayerRecord = {Rating = perf; Deviation = error; Volatility = 0.0}
-                  FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _) -> p, ""))
-                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _) -> p))
+                  FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p, ""))
+                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p))
                   Nodes = 1
                   WithHistory = false
                   Type = "Policy"
@@ -1580,6 +1763,11 @@ let performPolicyValueTest
                   EstNodesP99 = estNodesP99
                   EstNodesCdf100 = estNodesCdf100
                   HardestByEstNodes = ResizeArray hardestByEstNodes
+                  PositionsCorrect = posCorrectTotal
+                  PositionsScored = posScoredTotal
+                  FirstMoveCorrect = firstMoveCorrectTotal
+                  FirstMoveScored = firstMoveScoredTotal
+                  FirstMoveCorrectIds = firstMoveIds
                 }
 
             // ---- Pass 2: Value evaluation (same agents, same engine) ----
@@ -1650,6 +1838,11 @@ let performPolicyValueTest
                       EstNodesP99 = 0.0
                       EstNodesCdf100 = 0.0
                       HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
+                      PositionsCorrect = 0
+                      PositionsScored = 0
+                      FirstMoveCorrect = 0
+                      FirstMoveScored = 0
+                      FirstMoveCorrectIds = Collections.Generic.HashSet<int>()
                     }
 
                 [policyScore; valueScore]
@@ -1734,7 +1927,7 @@ let runTest
               // Run merged policy topN tests (single pass over puzzles)
               if policyTopNs.Length > 0 && hasLiveStats && not ct.IsCancellationRequested then
                 let topNLabel = policyTopNs |> List.map string |> String.concat "," |> sprintf "Policy [%s]"
-                let scores = performPolicyMultiTopNTest policyTopNs engine puzzles theme input.NumberOfPuzzlesInParallel input.IncludeFailedPuzzles (mkProgress topNLabel) ct
+                let scores = performPolicyMultiTopNTest policyTopNs engine puzzles theme input.NumberOfPuzzlesInParallel input.IncludeFailedPuzzles input.ScoreAllPositions (mkProgress topNLabel) ct
                 for score in scores do
                   sendU (PuzzleResult score)
                   results.Add score
@@ -1750,7 +1943,7 @@ let runTest
               // Run combo policy+value test (single engine init)
               let hasPolicyValue = toRun |> List.exists (function PolicyValue -> true | _ -> false)
               if hasPolicyValue && hasLiveStats && not ct.IsCancellationRequested then
-                let scores = performPolicyValueTest engine puzzles theme input.NumberOfPuzzlesInParallel input.IncludeFailedPuzzles (mkProgress "PolicyValue") ct
+                let scores = performPolicyValueTest engine puzzles theme input.NumberOfPuzzlesInParallel input.IncludeFailedPuzzles input.ScoreAllPositions (mkProgress "PolicyValue") ct
                 for score in scores do
                   sendU (PuzzleResult score)
                   results.Add score
@@ -1761,7 +1954,7 @@ let runTest
                 if ct.IsCancellationRequested then () else
                 match test with
                 | Value when hasLiveStats ->
-                    let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress "Value") ct
+                    let score = performValueNetworkTest 1 engine puzzles theme input.NumberOfPuzzlesInParallel input.ScoreAllPositions (mkProgress "Value") ct
                     sendU (PuzzleResult score)
                     results.Add score
 

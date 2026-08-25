@@ -1905,7 +1905,8 @@ module Program =
             data.Failed,
             data.Solved,
             data.Concurrency,
-            data.IncludeFailedPuzzles )
+            data.IncludeFailedPuzzles,
+            data.ScoreAllPositions )
 
     let update (res: Lichess) =
         match res with

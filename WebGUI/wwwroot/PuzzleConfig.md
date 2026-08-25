@@ -37,6 +37,18 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
 - **SampleSize**: The number of puzzles to sample from the puzzle file.
 - **Nodes**: Global comma-separated node limit per puzzle (eg., "10, 100" will run 10 and 100 nodes search). This applies to all engines in addition to individual engine `Nodes` settings. Default empty.
 - **Concurrency**: The number of concurrent engine instances to use for testing.
+- **ScoreAllPositions**: `true` also scores every position of a multi-move puzzle, not only
+  up to the first mistake. Default `false`. Additive: the per-puzzle numbers are unchanged in
+  both modes — this only adds `positionsCorrect`/`positionsScored`/`positionAccuracy` to the
+  result JSON, which are `0` when the flag is off so a consumer can tell "not measured" from
+  "measured as zero". For the `value` test it also costs engine time, since positions after a
+  mistake are queried where they would otherwise be skipped; the policy tests already query
+  every position, so there the flag only changes what is reported.
+
+  Note this does NOT fix theme attribution — every position of a puzzle carries the puzzle's
+  tags. For per-theme numbers use `firstMoveAccuracy`, which scores the puzzle's first solver
+  move (the one its themes describe) and is measured in every run regardless of this flag.
+
 - **Failed**: Number of failed puzzles to display in results, ordered by rating. Default 0.
 - **Solved**: Number of solved puzzles to display in results, ordered by rating. Default 0.
 - **FailedPuzzlesOutputFolder**: The folder where failed puzzles and summary will be saved.
@@ -79,6 +91,7 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   "SampleSize": 1000,
   "Nodes": "",
   "Concurrency" : 1,
+  "ScoreAllPositions" : false,
   "Failed": 5,
   "Solved": 5,
   "FailedPuzzlesOutputFolder": "C:/Dev/Chess/Puzzles"

@@ -193,6 +193,10 @@ module PuzzleReport =
           /// exactly the case where a shared net name cannot be attributed.
           EngineA: string
           EngineB: string
+          /// Which rule the accuracy columns used: "firstMove" (the puzzle's thematic
+          /// move) or "wholeLine" (the whole solution). "" in files written before the
+          /// column existed, which are wholeLine by definition.
+          Scoring: string
           /// Node budget of the slice. `None` means the column was absent - a file
           /// written before it existed - which is NOT the same as a run at zero nodes.
           /// 0 is a real, common value: the head runners stamp Score.Nodes with 0 for
@@ -267,6 +271,7 @@ module PuzzleReport =
                                Filter = at 10
                                EngineA = at 11
                                EngineB = at 12
+                               Scoring = at 14
                                Nodes =
                                    match Int32.TryParse(at 13, Globalization.NumberStyles.Integer,
                                                         Globalization.CultureInfo.InvariantCulture) with
