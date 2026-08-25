@@ -208,6 +208,24 @@
     @if (leaderboard.Count > 0 && themeRows.Length > 0)
     {
         <h3>Theme profile</h3>
+        @* The leaderboard above counts whole puzzles; these count key moves. Saying so is
+           the difference between "this net improved" and "the scoring rule changed". *@
+        <div class="prr-note">
+            @if (ThemesAreFirstMove)
+            {
+                <text><b>Scored on each puzzle's key move</b> — the first solver move, which is the
+                one its themes describe. That is a different count from the leaderboard above,
+                which needs the whole line right, so these percentages are higher and are
+                <b>not comparable with theme numbers from runs made before 2026-08-25</b>.</text>
+            }
+            else
+            {
+                <text><b>Scored on the whole solution line</b> — this run predates key-move theme
+                scoring, so a puzzle failed anywhere counts against every theme it carries, even
+                ones the failing position has nothing to do with. Re-running produces key-move
+                numbers, which are typically 10–25 pp higher on multi-move themes.</text>
+            }
+        </div>
         @* Outside the heatView check on purpose: a metric with no rows must not remove
            the control that switches back to one that has them. *@
         <div class="prr-row prr-tabs">
@@ -250,13 +268,13 @@
         <div class="prr-note">
             @if (isSingleNet)
             {
-                <text>Each cell is in percentage points of puzzles solved: this theme minus this
+                <text>Each cell is in percentage points of @ThemeUnitPhrase: this theme minus this
                 net's own average across themes, so blue is a relative strength and red a soft spot. Themes with fewer than @MinThemeN
                 puzzles are dropped; at small counts these numbers move on noise alone.</text>
             }
             else if (specMode)
             {
-                <text>Each cell is in percentage points of puzzles solved, measured against what this
+                <text>Each cell is in percentage points of @ThemeUnitPhrase, measured against what this
                 network's <em>own</em> overall standing predicts for it — its average gap to the field
                 has been subtracted. So <b>+5</b> means it solves five more puzzles per hundred on that
                 motif than a network of its level normally would, and a weak network can read red in the
@@ -265,7 +283,7 @@
             }
             else
             {
-                <text>Each cell is in percentage points of puzzles solved: this network minus the
+                <text>Each cell is in percentage points of @ThemeUnitPhrase: this network minus the
                 average of all @heatView.Nets.Length on the same motif. So <b>&minus;16</b> means it
                 solves sixteen fewer per hundred there than the field does, and a stronger network is
                 blue almost everywhere. Switch to the second view to see
@@ -500,6 +518,16 @@
     /// Themes the current slice had to drop because their rows named one net on both
     /// sides. Distinguishes "no data" from "data we would not guess at".
     private int unattributableThemes;
+
+    /// What the theme percentages actually count, read from the CSV's `scoring` column.
+    /// A first-move file and a whole-line file are otherwise indistinguishable and differ
+    /// by 10-25 pp on multi-move themes, so comparing an archived run against a fresh one
+    /// would read the rule change as a net change.
+    private bool ThemesAreFirstMove =>
+        themeRows.Length > 0 && themeRows[0].Scoring == "firstMove";
+
+    private string ThemeUnitPhrase =>
+        ThemesAreFirstMove ? "puzzles whose key move was found" : "puzzles solved";
     private PuzzleReport.NetProfile[] profiles = Array.Empty<PuzzleReport.NetProfile>();
 
     // Net is the display label (may carry the engine when one net appears twice);
