@@ -363,7 +363,10 @@ Each `ResultReason` has a corresponding explanation that provides more details a
 
 The analysis mode provides a user-friendly interface for analyzing chess positions and optionally comparing engine evaluations side by side.
 
-Analysis mode uses a `AnalyzeConfig.json` file - [Link to AnalyzeConfig.json](AnalyzeConfig.md) - to pick engines in order from top to bottom, so the first engine in the list will be picked for single analysis and the first two engines will be picked for dual analysis.
+Analysis mode picks its engine from the **default engine** set in Settings — open an engine
+definition on the analysis page and use *Set as default*, or set `DefaultEnginePath` on the
+Settings page. Single analysis uses that engine; dual analysis loads a second one from the
+engine panel.
 
 The dual analysis mode is designed to compare two engines at a time, displaying their evaluations, moves, and search statistics in a clear and concise manner.
 

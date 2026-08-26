@@ -375,7 +375,6 @@ FodyWeavers.xsd
 /WebGUI/wwwroot/tournament.json
 /Console/log.txt
 /copilot-instructions.md
-/WebGUI/wwwroot/AnalyzeConfig.json
 /WebGUI/wwwroot/cup_bracket.json
 /WebGUI/wwwroot/cup_bracket.json.bak
 /WebGUI/wwwroot/swiss_state.json
