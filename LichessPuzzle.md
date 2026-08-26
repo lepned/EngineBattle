@@ -33,6 +33,7 @@ Here’s a sample `PuzzleConfig.json` for Lichess puzzles:
   "MinRating": 0,
   "RatingGroups": "2500, 2700",
   "PuzzleFilter": "",
+  "ScoreAllPositions": false,
   "EngineFolder": "C:/Dev/Chess/Engines/EngineDefs",
   "Engines": [
     {
@@ -143,6 +144,25 @@ LC0 BT4-332.pb  BT4-332.pb      2895    75.5%           1000    2700            
 
 ```
 
+### Three units, and which one a number is in
+
+A Lichess puzzle is a *sequence* of moves. The `Accuracy` column above scores the whole
+sequence: one wrong move anywhere and the puzzle counts as failed. That is the headline
+metric and the one to use for overall strength.
+
+Per-theme numbers use a different unit. A puzzle's themes (`fork`, `sacrifice`, `mateIn3`…)
+describe the move the puzzle exists for — its **first solver move** — while the moves after
+it are usually forced follow-up that carry the same tags without being about them. Measured
+on a 1,500-puzzle sample, **38–43 % of failed puzzles had that thematic move right** and went
+wrong later, so scoring themes on the whole line charges nearly four in ten failures to a
+theme that had nothing to do with them. Theme tables are therefore scored on the first move,
+which makes those percentages substantially higher than the puzzle accuracy above — they are
+counting a different event, not measuring the same thing better.
+
+The result JSON carries all three: `accuracy` (whole puzzle), `firstMoveAccuracy` (the
+thematic move) and, when enabled, `positionAccuracy` (every position). The themes CSV has a
+`scoring` column naming the rule it used, so a file from an older run is recognisable.
+
 - **Progress and results** will be shown in the console and summarized as shown above.
 - **Failed puzzles** (where engines did not find the correct move) are saved in the folder specified by `FailedPuzzlesOutputFolder`.
 - You can analyze these failed positions to identify engine weaknesses or compare performance across engines.
@@ -158,6 +178,13 @@ LC0 BT4-332.pb  BT4-332.pb      2895    75.5%           1000    2700            
   You can find a list of available puzzle themes (motifs) to use in the `PuzzleFilter` field here: [Lichess Puzzle Themes](https://github.com/ornicar/lila/blob/master/translation/source/puzzleTheme.xml)
 - **Test multiple engines or networks** by adding more entries to the `Engines` list.
 - **Increase concurrency** for faster testing if your hardware allows.
+- **Score every position of a multi-move puzzle**, not only up to the first mistake, with
+  `"ScoreAllPositions": true` (default `false`). This adds `positionsCorrect`,
+  `positionsScored` and `positionAccuracy` to the result JSON without changing any existing
+  number — they read `0` when the option is off, so "not measured" stays distinguishable from
+  "measured as zero". For the `value` test it also costs engine time, since positions after a
+  mistake get queried where they would otherwise be skipped. See `PuzzleConfig.md` for the
+  full description.
 
 ---
 
