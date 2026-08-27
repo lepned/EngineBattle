@@ -44,7 +44,7 @@ let private mkScore
       PositionsScored = 0
       FirstMoveCorrect = 0
       FirstMoveScored = 0
-      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>() }
 
 /// Helper that lets a test set both AvgKLD and AvgRankWeightedKld.
 let private mkScoreWithRankWtKld

@@ -30,7 +30,7 @@ let private puzzleWithSolution (solution: string) : CsvPuzzleData =
     // index 1 is the solver's, so `solution` becomes Commands[0].CorrectMove.
     let raw =
         CsvPuzzleData.Create(
-            1, mateFen, setupMove + " " + solution, 2000.0, 80.0, 90, 100,
+            "1", mateFen, setupMove + " " + solution, 2000.0, 80.0, 90, 100,
             "mate mateIn1", "https://lichess.org/x", "", null, null, null, 0)
     PuzzleDataUtils.getUpdatedRecord raw
 
@@ -113,7 +113,7 @@ let ``the same board serves many positions in sequence`` () =
     // position 1. A leaked position would make the second command unsolvable.
     let raw =
         CsvPuzzleData.Create(
-            2, mateFen, setupMove + " a1a2 g8h8 a2a8", 2000.0, 80.0, 90, 100,
+            "2", mateFen, setupMove + " a1a2 g8h8 a2a8", 2000.0, 80.0, 90, 100,
             "mate", "https://lichess.org/x", "", null, null, null, 0)
     let puzzle = PuzzleDataUtils.getUpdatedRecord raw
     Assert.Equal(2, Seq.length puzzle.Commands)

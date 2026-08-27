@@ -12,7 +12,7 @@ open ChessLibrary.PuzzleTypes
 
 let private mkPuzzle (id: int) : CsvPuzzleData =
     CsvPuzzleData.Create(
-        id, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2300.0, 80.0, 90, 100,
+        string id, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2300.0, 80.0, 90, 100,
         "endgame", "https://lichess.org/x", "", null, null, null, 0)
 
 let private mkScore (engine: string) (net: string) (typ: string) (ratingAvg: float)
@@ -44,7 +44,7 @@ let private mkScore (engine: string) (net: string) (typ: string) (ratingAvg: flo
       PositionsScored = 0
       FirstMoveCorrect = 0
       FirstMoveScored = 0
-      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>() }
 
 // ---------------------------------------------------------------------------
 // Discordant counts — the whole point of the paired test

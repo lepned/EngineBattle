@@ -11,7 +11,7 @@ open ChessLibrary.PuzzleTypes
 
 let private mkPuzzle (themes: string) : CsvPuzzleData =
     CsvPuzzleData.Create(
-        1, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2300.0, 80.0, 90, 100,
+        "1", "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2300.0, 80.0, 90, 100,
         themes, "https://lichess.org/x", "", null, null, null, 0)
 
 /// ThemeStat is small enough that a positional helper keeps the tests readable
@@ -46,7 +46,7 @@ let private mkScore (solved: string list) (failed: string list) : Score =
       PositionsScored = 0
       FirstMoveCorrect = 0
       FirstMoveScored = 0
-      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>() }
 
 let private statFor theme (stats: PuzzleThemes.ThemeStat list) =
     stats |> List.find (fun s -> s.Theme = theme)
@@ -189,8 +189,8 @@ let ``the largest samples are shown even when the sort hides them`` () =
 let ``a puzzle failed after a correct first move counts as solved for its themes`` () =
     // one solved puzzle, one failed LATE (first move right), one failed on the first move
     let solvedP = mkPuzzle "fork"
-    let lateFail = { mkPuzzle "fork" with PuzzleId = 2 }
-    let earlyFail = { mkPuzzle "fork" with PuzzleId = 3 }
+    let lateFail = { mkPuzzle "fork" with PuzzleId = "2" }
+    let earlyFail = { mkPuzzle "fork" with PuzzleId = "3" }
     let score =
         { mkScore [] [] with
             CorrectPuzzles = ResizeArray<CsvPuzzleData>([ solvedP ])
@@ -198,7 +198,7 @@ let ``a puzzle failed after a correct first move counts as solved for its themes
             // FirstMoveScored is what declares the capability; the id set alone is data
             FirstMoveScored = 3
             FirstMoveCorrect = 2
-            FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>([ 1; 2 ]) }
+            FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>([ "1"; "2" ]) }
     let stat = PuzzleThemes.breakdown score |> List.find (fun s -> s.Theme = "fork")
     Assert.Equal(3, stat.Total)
     // solved + late failure both count: only the early failure missed the thematic move
@@ -209,13 +209,13 @@ let ``an id set without the capability flag does not silently change the rule`` 
     // The capability is FirstMoveScored, not the id set: a Score whose ids survived but
     // whose counters did not must fall back rather than half-apply the new rule.
     let solvedP = mkPuzzle "fork"
-    let lateFail = { mkPuzzle "fork" with PuzzleId = 2 }
+    let lateFail = { mkPuzzle "fork" with PuzzleId = "2" }
     let score =
         { mkScore [] [] with
             CorrectPuzzles = ResizeArray<CsvPuzzleData>([ solvedP ])
             FailedPuzzles = ResizeArray<CsvPuzzleData * string>([ lateFail, "x" ])
             FirstMoveScored = 0
-            FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>([ 1; 2 ]) }
+            FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>([ "1"; "2" ]) }
     let stat = PuzzleThemes.breakdown score |> List.find (fun s -> s.Theme = "fork")
     Assert.Equal(2, stat.Total)
     Assert.Equal(1, stat.Correct)   // whole-line, despite the ids being present
@@ -223,13 +223,13 @@ let ``an id set without the capability flag does not silently change the rule`` 
 [<Fact>]
 let ``a test that does not track first moves keeps the whole-line verdict`` () =
     let solvedP = mkPuzzle "fork"
-    let failedP = { mkPuzzle "fork" with PuzzleId = 2 }
+    let failedP = { mkPuzzle "fork" with PuzzleId = "2" }
     let score =
         { mkScore [] [] with
             CorrectPuzzles = ResizeArray<CsvPuzzleData>([ solvedP ])
             FailedPuzzles = ResizeArray<CsvPuzzleData * string>([ failedP, "x" ])
             // no first-move tracking at all: FirstMoveScored = 0 is the capability signal
-            FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+            FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>() }
     let stat = PuzzleThemes.breakdown score |> List.find (fun s -> s.Theme = "fork")
     Assert.Equal(2, stat.Total)
     Assert.Equal(1, stat.Correct)

@@ -37,7 +37,7 @@ let private mkPosition cmd correct =
 
 let private mkPuzzle (commands: Position list) (fen: string) (moves: string) =
     CsvPuzzleData.Create(
-        1, fen, moves, 1500.0, 100.0, 90, 1000, "", "", "", "",
+        "1", fen, moves, 1500.0, 100.0, 90, 1000, "", "", "", "",
         (commands :> Position seq),
         (Seq.empty<string>),
         0)

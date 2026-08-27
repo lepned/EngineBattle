@@ -678,7 +678,8 @@ module JSONParser =
     let parsePuzzle (filePath: string) (random: bool) : CsvPuzzleData[] =
         let parseLine (line: string) =
             let fields = line.Split(',')
-            let puzzleId        = fields.[0].GetHashCode()
+            // The Lichess id verbatim - see CsvPuzzleData.PuzzleId for why this is not a hash.
+            let puzzleId        = fields.[0].Trim()
             let fen             = fields.[1]
             let moves           = fields.[2]
             let rating          = int fields.[3]
@@ -713,7 +714,7 @@ module JSONParser =
             |> Array.Parallel.map (fun line ->
                 let fields = line.Split(',')
                 CsvPuzzleData.Create(
-                    fields.[0].GetHashCode(),
+                    fields.[0].Trim(),
                     fields.[1],
                     fields.[2],
                     int fields.[3],

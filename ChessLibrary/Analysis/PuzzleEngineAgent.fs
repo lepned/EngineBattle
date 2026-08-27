@@ -994,7 +994,7 @@ let performValueNetworkTest
             let firstMoveCorrectTotal = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
             let firstMoveScoredTotal = results |> Array.sumBy (fun r -> r.FirstMoveScored)
             let firstMoveIds =
-                Collections.Generic.HashSet<int>(
+                Collections.Generic.HashSet<string>(
                     results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
                             |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
 
@@ -1131,7 +1131,7 @@ let performPolicyOrSearchTest
           FirstMoveCorrect = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
           FirstMoveScored = results |> Array.sumBy (fun r -> r.FirstMoveScored)
           FirstMoveCorrectIds =
-              Collections.Generic.HashSet<int>(
+              Collections.Generic.HashSet<string>(
                   results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
                           |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
         }
@@ -1235,7 +1235,7 @@ let performSolveTest
           FirstMoveCorrect = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
           FirstMoveScored = results |> Array.sumBy (fun r -> r.FirstMoveScored)
           FirstMoveCorrectIds =
-              Collections.Generic.HashSet<int>(
+              Collections.Generic.HashSet<string>(
                   results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
                           |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
         }
@@ -1348,7 +1348,7 @@ let performPolicyMultiTopNTest
                     fc |> Map.tryFind topN |> Option.defaultValue 0)
             let firstMoveScoredTotal = allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, _, fs) -> fs)
             let firstMoveIds =
-                Collections.Generic.HashSet<int>(
+                Collections.Generic.HashSet<string>(
                     allResults
                     |> Seq.filter (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
                         (fc |> Map.tryFind topN |> Option.defaultValue 0) > 0)
@@ -1508,7 +1508,7 @@ let performValueMultiTopNTest
               FirstMoveCorrect = allResults |> Array.sumBy (fun (_, _, fc, _) -> fc |> Map.tryFind topN |> Option.defaultValue 0)
               FirstMoveScored = allResults |> Array.sumBy (fun (_, _, _, fs) -> fs)
               FirstMoveCorrectIds =
-                  Collections.Generic.HashSet<int>(
+                  Collections.Generic.HashSet<string>(
                       allResults
                       |> Seq.filter (fun (_, _, fc, _) -> (fc |> Map.tryFind topN |> Option.defaultValue 0) > 0)
                       |> Seq.map (fun (p, _, _, _) -> p.PuzzleId))
@@ -1612,7 +1612,7 @@ let performValueTopNTest
           FirstMoveCorrect = results |> Array.sumBy (fun r -> r.FirstMoveCorrect)
           FirstMoveScored = results |> Array.sumBy (fun r -> r.FirstMoveScored)
           FirstMoveCorrectIds =
-              Collections.Generic.HashSet<int>(
+              Collections.Generic.HashSet<string>(
                   results |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
                           |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
         }
@@ -1763,7 +1763,7 @@ let performPolicyValueTest
                     fc |> Map.tryFind 1 |> Option.defaultValue 0)
             let firstMoveScoredTotal = policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, _, fs) -> fs)
             let firstMoveIds =
-                Collections.Generic.HashSet<int>(
+                Collections.Generic.HashSet<string>(
                     policyResults
                     |> Seq.filter (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
                         (fc |> Map.tryFind 1 |> Option.defaultValue 0) > 0)
@@ -1894,7 +1894,7 @@ let performPolicyValueTest
                       PositionsScored = 0
                       FirstMoveCorrect = 0
                       FirstMoveScored = 0
-                      FirstMoveCorrectIds = Collections.Generic.HashSet<int>()
+                      FirstMoveCorrectIds = Collections.Generic.HashSet<string>()
                     }
 
                 [policyScore; valueScore]

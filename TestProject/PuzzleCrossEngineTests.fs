@@ -16,7 +16,7 @@ open ChessLibrary.PuzzleTypes
 
 let private mkPuzzle (id: int) : CsvPuzzleData =
     CsvPuzzleData.Create(
-        id, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2300.0, 80.0, 90, 100,
+        string id, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2300.0, 80.0, 90, 100,
         "endgame", "https://lichess.org/x", "", null, null, null, 0)
 
 let private mkScore (engine: string) (ratingAvg: float) (solved: int list) (failed: int list) : Score =
@@ -47,7 +47,7 @@ let private mkScore (engine: string) (ratingAvg: float) (solved: int list) (fail
       PositionsScored = 0
       FirstMoveCorrect = 0
       FirstMoveScored = 0
-      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>() }
 
 [<Fact>]
 let ``two rating groups produce two groups, not one merged group`` () =
@@ -88,7 +88,7 @@ let ``a rating group keeps its own solved and failed sets`` () =
         |> Map.toList
         |> List.collect (fun (_, ps) -> ps |> List.map (fun p -> p.PuzzleId))
         |> List.sort
-    Assert.Equal<int list>([ 1; 2 ], ids)
+    Assert.Equal<string list>([ "1"; "2" ], ids)
 
 [<Fact>]
 let ``a second row for one engine does not empty the unique-puzzle files`` () =
@@ -104,7 +104,7 @@ let ``a second row for one engine does not empty the unique-puzzle files`` () =
     Assert.Equal<string list>([ "A"; "B" ], r.Engines |> List.sort)
     let uniquelySolvedByA =
         r.UniquelySolved.["A"] |> List.map (fun p -> p.PuzzleId) |> List.sort
-    Assert.Equal<int list>([ 2 ], uniquelySolvedByA)
+    Assert.Equal<string list>([ "2" ], uniquelySolvedByA)
 
 [<Fact>]
 let ``a single engine measured twice is still not a cross-engine group`` () =

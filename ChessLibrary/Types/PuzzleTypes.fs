@@ -211,7 +211,13 @@ module PuzzleTypes =
         | Network   of AsyncReplyChannel<string>
 
     type CsvPuzzleData =
-      { PuzzleId: int
+      { /// The puzzle's own Lichess id, verbatim from the CSV (e.g. "00sHx"). It used to be
+        /// `fields.[0].GetHashCode()`, which is randomised per PROCESS in .NET, so the ids in
+        /// one run's failed-puzzle CSV meant nothing in the next one and could not be looked
+        /// up on lichess.org at all. It also collided: 32 bits over a 4M-row database is a few
+        /// thousand colliding pairs, and a collision silently merges two puzzles inside the
+        /// paired sets and the first-move theme lookup.
+        PuzzleId: string
         Fen: string
         Moves: string
         Rating: float
@@ -335,7 +341,7 @@ module PuzzleTypes =
         // is always in here; a failed one is in here when it went wrong later. The theme
         // breakdown needs this because a puzzle's tags describe its first move, not the
         // position it happened to fail at. Empty for tests that do not track it.
-        FirstMoveCorrectIds: Collections.Generic.HashSet<int> }
+        FirstMoveCorrectIds: Collections.Generic.HashSet<string> }
         with
           static member empty =
             { Engine = ""
@@ -365,7 +371,7 @@ module PuzzleTypes =
               PositionsScored = 0
               FirstMoveCorrect = 0
               FirstMoveScored = 0
-              FirstMoveCorrectIds = Collections.Generic.HashSet<int>() }
+              FirstMoveCorrectIds = Collections.Generic.HashSet<string>() }
 
     type Lichess =
       | PuzzleResult of Score

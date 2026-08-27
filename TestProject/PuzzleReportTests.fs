@@ -42,7 +42,7 @@ let private mkScore (engine: string) (net: string) (typ: string) (correct: int) 
       PositionsScored = 0
       FirstMoveCorrect = 0
       FirstMoveScored = 0
-      FirstMoveCorrectIds = System.Collections.Generic.HashSet<int>() }
+      FirstMoveCorrectIds = System.Collections.Generic.HashSet<string>() }
 
 let private startedUtc = DateTime(2026, 8, 23, 18, 0, 0, DateTimeKind.Utc)
 
@@ -60,7 +60,7 @@ let private writeTempSummary (scores: Score seq) =
 
 let private mkPuzzleForPair (id: int) : CsvPuzzleData =
     CsvPuzzleData.Create(
-        id, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2600.0, 80.0, 90, 100,
+        string id, "8/8/8/8/8/8/8/K6k w - - 0 1", "a1a2", 2600.0, 80.0, 90, 100,
         "endgame", "https://lichess.org/x", "", null, null, null, 0)
 
 let private withPuzzles (solved: int list) (failed: int list) (s: Score) =
