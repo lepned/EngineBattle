@@ -274,6 +274,38 @@ module PuzzleTypes =
         ValueLoss: float
       }
 
+    /// One puzzle's outcome from the multi-topN policy runner, which answers several
+    /// thresholds in one pass and so cannot use the single-verdict PuzzleResult.
+    ///
+    /// This was an 11-tuple, destructured positionally at 30 call sites. Four of its slots
+    /// come in two type-identical pairs - PositionsCorrectPerTopN/FirstMoveCorrectPerTopN are
+    /// both Map<int,int>, PositionsScored/FirstMoveScored are both int - so transposing a
+    /// pair compiled cleanly and silently reported the position tally as the first-move one.
+    /// The theme breakdown now rests on the first-move numbers, so that error would have
+    /// landed straight in a per-theme verdict. Named fields make it impossible rather than
+    /// merely unlikely.
+    type PolicyRunResult =
+      { Puzzle: CsvPuzzleData
+        Kld: float
+        MarginLoss: float
+        /// Engine's rank of the correct move at the position that produced Kld.
+        EngineRank: int
+        /// -1 when the puzzle contributed no value-loss sample.
+        ValueLoss: float
+        /// Estimated nodes to find the correct move, worst position of the puzzle.
+        EstNodes: float
+        /// Per threshold: did the WHOLE puzzle survive, latched at the first mistake.
+        CorrectPerTopN: Map<int, bool>
+        /// Per threshold: positions answered correctly. The map always carries a key per
+        /// threshold; every count is 0 unless the run set ScoreAllPositions.
+        PositionsCorrectPerTopN: Map<int, int>
+        /// Positions scored; 0 unless the run set ScoreAllPositions.
+        PositionsScored: int
+        /// Per threshold: 1 when the puzzle's FIRST solver move was right. Always measured.
+        FirstMoveCorrectPerTopN: Map<int, int>
+        /// 1 once the puzzle had any position at all. Always measured.
+        FirstMoveScored: int }
+
     type Score =
       { Engine: string
         NeuralNet: string

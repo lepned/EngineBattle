@@ -57,10 +57,10 @@ let private stubAgent (ranking: (string * float) list) =
 let private solveWith (topNs: int list) (ranking: (string * float) list) (solution: string) =
     use agent = stubAgent ranking
     let puzzle = puzzleWithSolution solution
-    let (_, _, _, _, _, _, correct, _, _, _, _) =
+    let r =
         PuzzleEngineAgent.runPuzzleViaAgentMultiTopN agent topNs false puzzle
         |> Async.RunSynchronously
-    correct
+    r.CorrectPerTopN
 
 // ---------------------------------------------------------------------------
 
@@ -118,10 +118,10 @@ let ``the same board serves many positions in sequence`` () =
     let puzzle = PuzzleDataUtils.getUpdatedRecord raw
     Assert.Equal(2, Seq.length puzzle.Commands)
     use agent = stubAgent [ "a1a2", 0.9; "a2a8", 0.8 ]
-    let (_, _, _, _, _, _, correct, _, _, _, _) =
+    let r =
         PuzzleEngineAgent.runPuzzleViaAgentMultiTopN agent [ 1 ] false puzzle
         |> Async.RunSynchronously
     // first command's correct move IS the stub's top move, so it is solved directly;
     // the point is that the run completes without a corrupted board
-    Assert.True(correct.ContainsKey 1)
+    Assert.True(r.CorrectPerTopN.ContainsKey 1)
 

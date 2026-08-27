@@ -599,12 +599,18 @@ let runPuzzleViaAgentMultiTopN (agent:MailboxProcessor<EngineMsg>) (topNs:int li
                     else el)
                 |> Seq.toList
             { puzzle with Commands = cmds }
-    return (updatedPuzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, maxEstNodes,
-            correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
-            posCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
-            posScored,
-            firstMoveCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
-            firstMoveScored)
+    return
+      { Puzzle = updatedPuzzle
+        Kld = maxKLD
+        MarginLoss = maxMarginLoss
+        EngineRank = engineRankAtMaxKld
+        ValueLoss = avgValueLoss
+        EstNodes = maxEstNodes
+        CorrectPerTopN = correct |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        PositionsCorrectPerTopN = posCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        PositionsScored = posScored
+        FirstMoveCorrectPerTopN = firstMoveCorrect |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+        FirstMoveScored = firstMoveScored }
   }
 
 /// Per-puzzle multi-topN value workflow: one per-child evaluation, check all thresholds.
@@ -1269,7 +1275,7 @@ let performPolicyMultiTopNTest
 
         let mutable processedCount = 0
         let total = puzzles.Length
-        let resultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool> * Map<int, int> * int * Map<int, int> * int>()
+        let resultsBag = ConcurrentBag<PolicyRunResult>()
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
             while keepGoing && not ct.IsCancellationRequested do
@@ -1298,63 +1304,63 @@ let performPolicyMultiTopNTest
 
         let avgRating =
           if allResults.Length = 0 then 0.0
-          else allResults |> Array.averageBy (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.Rating)
+          else allResults |> Array.averageBy (fun r -> r.Puzzle.Rating)
         let theme = if String.IsNullOrWhiteSpace theme then "none" else theme
 
         // Tail of the per-puzzle estimated nodes-to-find distribution (all puzzles,
         // raw node units). Independent of the topN threshold.
-        let estNodesAll = allResults |> Array.map (fun (_, _, _, _, _, estN, _, _, _, _, _) -> estN)
+        let estNodesAll = allResults |> Array.map (fun r -> r.EstNodes)
         let estNodesP95 = percentile 95.0 estNodesAll
         let estNodesP99 = percentile 99.0 estNodesAll
         let estNodesCdf100 = fractionAtOrBelow 100.0 estNodesAll
         // Worst-case candidates by estimate, for targeted real-search verification.
         let hardestByEstNodes =
             allResults
-            |> Array.map (fun (p, _, _, _, _, estN, _, _, _, _, _) -> p, estN)
+            |> Array.map (fun r -> r.Puzzle, r.EstNodes)
             |> Array.sortByDescending snd
             |> Array.truncate 50
 
         // Produce one Score per topN threshold
         topNs |> List.map (fun topN ->
-            let correct = allResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> m.[topN])
-            let failed  = allResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> not m.[topN])
+            let correct = allResults |> Array.filter (fun r -> r.CorrectPerTopN.[topN])
+            let failed  = allResults |> Array.filter (fun r -> not r.CorrectPerTopN.[topN])
             let kldSource = if includeFailedPuzzles then allResults else correct
             let avgKLD =
               if kldSource.Length = 0 then 0.0
-              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _, _, _, _, _) -> kld)
+              else kldSource |> Array.averageBy (fun r -> r.Kld)
             let avgRankWeightedKld =
-              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
+              computeRankWeightedKld (kldSource |> Seq.map (fun r -> r.Kld, r.EngineRank))
             // Frontier-weighted uses ALL puzzles (solved + failed) regardless of
             // includeFailedPuzzles — the frontier is defined by rank, not solved status.
             let avgFrontierKld =
-              computeFrontierWeightedKld (allResults |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
+              computeFrontierWeightedKld (allResults |> Seq.map (fun r -> r.Kld, r.EngineRank))
             // Margin loss uses all puzzles (solved + failed), weighted 2x on
             // unsolved. Solved status is per-puzzle top-1 correctness.
             let avgMarginLoss =
               computeWeightedMarginLoss
-                (allResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN, _, _, _, _) ->
-                    ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
+                (allResults |> Seq.map (fun r ->
+                    r.MarginLoss, (r.CorrectPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
                 2.0
             // Positions this topN got right, over every position of every puzzle. Reported
             // alongside the per-puzzle Correct/TotalNumber, never instead of it.
             let posCorrectTotal =
-                allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, pc, _, _, _) ->
-                    pc |> Map.tryFind topN |> Option.defaultValue 0)
-            let posScoredTotal = allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, ps, _, _) -> ps)
+                allResults |> Array.sumBy (fun r ->
+                    r.PositionsCorrectPerTopN |> Map.tryFind topN |> Option.defaultValue 0)
+            let posScoredTotal = allResults |> Array.sumBy (fun r -> r.PositionsScored)
             // Themes describe the puzzle's FIRST solver move, so the theme breakdown wants
             // this rather than the whole-line verdict.
             let firstMoveCorrectTotal =
-                allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
-                    fc |> Map.tryFind topN |> Option.defaultValue 0)
-            let firstMoveScoredTotal = allResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, _, fs) -> fs)
+                allResults |> Array.sumBy (fun r ->
+                    r.FirstMoveCorrectPerTopN |> Map.tryFind topN |> Option.defaultValue 0)
+            let firstMoveScoredTotal = allResults |> Array.sumBy (fun r -> r.FirstMoveScored)
             let firstMoveIds =
                 Collections.Generic.HashSet<string>(
                     allResults
-                    |> Seq.filter (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
-                        (fc |> Map.tryFind topN |> Option.defaultValue 0) > 0)
-                    |> Seq.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.PuzzleId))
+                    |> Seq.filter (fun r ->
+                        (r.FirstMoveCorrectPerTopN |> Map.tryFind topN |> Option.defaultValue 0) > 0)
+                    |> Seq.map (fun r -> r.Puzzle.PuzzleId))
             // Value loss: |Q - expected_Q| from puzzle themes, solved puzzles only (vl >= 0).
-            let validValueLosses = allResults |> Array.choose (fun (_, _, _, _, vl, _, _, _, _, _, _) -> if vl >= 0.0 then Some vl else None)
+            let validValueLosses = allResults |> Array.choose (fun r -> if r.ValueLoss >= 0.0 then Some r.ValueLoss else None)
             let avgValueLoss =
               if validValueLosses.Length = 0 then 0.0
               else validValueLosses |> Array.average
@@ -1364,7 +1370,7 @@ let performPolicyMultiTopNTest
             // signal lives almost entirely in the failed ones.
             let avgEstNodesLog10 =
               if allResults.Length = 0 then 0.0
-              else allResults |> Array.averageBy (fun (_, _, _, _, _, estN, _, _, _, _, _) -> log10 (1.0 + estN))
+              else allResults |> Array.averageBy (fun r -> log10 (1.0 + r.EstNodes))
             let w, d, l = correct.Length, 0, failed.Length
 
             let diffElo = EloCalculator.eloDiffWDL w d l
@@ -1383,8 +1389,8 @@ let performPolicyMultiTopNTest
               RatingAvg = avgRating
               Filter = if theme.Trim() = "" then "none" else theme.Trim()
               PlayerRecord = pRating
-              FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p, ""))
-              CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p))
+              FailedPuzzles = ResizeArray (failed |> Array.map (fun r -> r.Puzzle, ""))
+              CorrectPuzzles = ResizeArray (correct |> Array.map (fun r -> r.Puzzle))
               Nodes = 1
               WithHistory = false
               Type = typeLabel
@@ -1712,7 +1718,7 @@ let performPolicyValueTest
             puzzleCh.Writer.Complete()
 
             let mutable processedCount = 0
-            let policyResultsBag = ConcurrentBag<CsvPuzzleData * float * float * int * float * float * Map<int, bool> * Map<int, int> * int * Map<int, int> * int>()
+            let policyResultsBag = ConcurrentBag<PolicyRunResult>()
             let policyWorker (agent: MailboxProcessor<EngineMsg>) = async {
                 let mutable keepGoing = true
                 while keepGoing && not ct.IsCancellationRequested do
@@ -1736,53 +1742,53 @@ let performPolicyValueTest
             // Build Policy Score
             let avgRating =
               if policyResults.Length = 0 then 0.0
-              else policyResults |> Array.averageBy (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.Rating)
+              else policyResults |> Array.averageBy (fun r -> r.Puzzle.Rating)
 
-            let correct = policyResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> m.[1])
-            let failed  = policyResults |> Array.filter (fun (_, _, _, _, _, _, m, _, _, _, _) -> not m.[1])
+            let correct = policyResults |> Array.filter (fun r -> r.CorrectPerTopN.[1])
+            let failed  = policyResults |> Array.filter (fun r -> not r.CorrectPerTopN.[1])
             let kldSource = if includeFailedPuzzles then policyResults else correct
             let avgKLD =
               if kldSource.Length = 0 then 0.0
-              else kldSource |> Array.averageBy (fun (_, kld, _, _, _, _, _, _, _, _, _) -> kld)
+              else kldSource |> Array.averageBy (fun r -> r.Kld)
             let avgRankWeightedKld =
-              computeRankWeightedKld (kldSource |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
+              computeRankWeightedKld (kldSource |> Seq.map (fun r -> r.Kld, r.EngineRank))
             let avgFrontierKld =
-              computeFrontierWeightedKld (policyResults |> Seq.map (fun (_, kld, _, rank, _, _, _, _, _, _, _) -> kld, rank))
+              computeFrontierWeightedKld (policyResults |> Seq.map (fun r -> r.Kld, r.EngineRank))
             let avgMarginLoss =
               computeWeightedMarginLoss
-                (policyResults |> Seq.map (fun (_, _, ml, _, _, _, correctPerTopN, _, _, _, _) ->
-                    ml, (correctPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
+                (policyResults |> Seq.map (fun r ->
+                    r.MarginLoss, (r.CorrectPerTopN |> Map.tryFind 1 |> Option.defaultValue false)))
                 2.0
             // Per-position tally; this path is top-1 only, so topN is 1.
             let posCorrectTotal =
-                policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, pc, _, _, _) ->
-                    pc |> Map.tryFind 1 |> Option.defaultValue 0)
-            let posScoredTotal = policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, ps, _, _) -> ps)
+                policyResults |> Array.sumBy (fun r ->
+                    r.PositionsCorrectPerTopN |> Map.tryFind 1 |> Option.defaultValue 0)
+            let posScoredTotal = policyResults |> Array.sumBy (fun r -> r.PositionsScored)
             let firstMoveCorrectTotal =
-                policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
-                    fc |> Map.tryFind 1 |> Option.defaultValue 0)
-            let firstMoveScoredTotal = policyResults |> Array.sumBy (fun (_, _, _, _, _, _, _, _, _, _, fs) -> fs)
+                policyResults |> Array.sumBy (fun r ->
+                    r.FirstMoveCorrectPerTopN |> Map.tryFind 1 |> Option.defaultValue 0)
+            let firstMoveScoredTotal = policyResults |> Array.sumBy (fun r -> r.FirstMoveScored)
             let firstMoveIds =
                 Collections.Generic.HashSet<string>(
                     policyResults
-                    |> Seq.filter (fun (_, _, _, _, _, _, _, _, _, fc, _) ->
-                        (fc |> Map.tryFind 1 |> Option.defaultValue 0) > 0)
-                    |> Seq.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p.PuzzleId))
-            let validValueLosses = policyResults |> Array.choose (fun (_, _, _, _, vl, _, _, _, _, _, _) -> if vl >= 0.0 then Some vl else None)
+                    |> Seq.filter (fun r ->
+                        (r.FirstMoveCorrectPerTopN |> Map.tryFind 1 |> Option.defaultValue 0) > 0)
+                    |> Seq.map (fun r -> r.Puzzle.PuzzleId))
+            let validValueLosses = policyResults |> Array.choose (fun r -> if r.ValueLoss >= 0.0 then Some r.ValueLoss else None)
             let avgValueLoss =
               if validValueLosses.Length = 0 then 0.0
               else validValueLosses |> Array.average
             // All puzzles, like FrontierKLD/MarginLoss — see performPolicyMultiTopNTest.
             let avgEstNodesLog10 =
               if policyResults.Length = 0 then 0.0
-              else policyResults |> Array.averageBy (fun (_, _, _, _, _, estN, _, _, _, _, _) -> log10 (1.0 + estN))
-            let estNodesAll = policyResults |> Array.map (fun (_, _, _, _, _, estN, _, _, _, _, _) -> estN)
+              else policyResults |> Array.averageBy (fun r -> log10 (1.0 + r.EstNodes))
+            let estNodesAll = policyResults |> Array.map (fun r -> r.EstNodes)
             let estNodesP95 = percentile 95.0 estNodesAll
             let estNodesP99 = percentile 99.0 estNodesAll
             let estNodesCdf100 = fractionAtOrBelow 100.0 estNodesAll
             let hardestByEstNodes =
                 policyResults
-                |> Array.map (fun (p, _, _, _, _, estN, _, _, _, _, _) -> p, estN)
+                |> Array.map (fun r -> r.Puzzle, r.EstNodes)
                 |> Array.sortByDescending snd
                 |> Array.truncate 50
             let pw, pd, pl = correct.Length, 0, failed.Length
@@ -1800,8 +1806,8 @@ let performPolicyValueTest
                   RatingAvg = avgRating
                   Filter = if theme.Trim() = "" then "none" else theme.Trim()
                   PlayerRecord = {Rating = perf; Deviation = error; Volatility = 0.0}
-                  FailedPuzzles = ResizeArray (failed |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p, ""))
-                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun (p, _, _, _, _, _, _, _, _, _, _) -> p))
+                  FailedPuzzles = ResizeArray (failed |> Array.map (fun r -> r.Puzzle, ""))
+                  CorrectPuzzles = ResizeArray (correct |> Array.map (fun r -> r.Puzzle))
                   Nodes = 1
                   WithHistory = false
                   Type = "Policy"
