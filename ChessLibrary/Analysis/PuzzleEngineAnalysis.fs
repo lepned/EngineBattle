@@ -326,40 +326,6 @@ let bestPolicyMoveWithPolicy (bm:string) (nodes:int) (engine: ChessEngine) (pos:
       |None -> move, [nnValue]
   |None -> move, []
 
-/// Evaluate position with go nodes = legal move count, return all NNValues sorted by P.
-/// Uses minimal nodes to get V for as many children as possible.
-let bestMoveAllPoliciesWithLegalMoveNodes (engine: ChessEngine) (pos:string) =
-  let board = Board()
-  board.PlayCommands pos
-  let legalMoveCount = board.GetLegalMoves() |> Seq.length |> max 1
-  let mutable cont = true
-  let mutable infoString = ""
-  engine.Position pos
-  engine.GoNodes legalMoveCount
-  let list = ResizeArray<NNValues>()
-  while cont do
-    let line = readLineChecked engine
-    if line.StartsWith "bestmove" then
-      cont <- false
-      infoString <- line
-    elif line.StartsWith "info string" && line.Contains "N:" then
-      let nnMsg = EngineProtocol.Regex.getInfoStringData engine.Name line
-      if list.Count > 0 then
-          list.Clear()
-      list.Add(nnMsg)
-      let moreItems = if line.StartsWith "info string node" then false else true
-      let mutable contNN = moreItems
-      while contNN do
-          let newline = readLineChecked engine
-          if newline.StartsWith "info string node" then
-              contNN <- false
-          else
-              let msg = EngineProtocol.Regex.getInfoStringData engine.Name newline
-              list.Add msg
-  let move = infoString.Split().[1]
-  let sorted = list |> Seq.sortByDescending (fun v -> v.P) |> Seq.toList
-  (move, sorted)
-
 let bestPolicyMoveAllPolicies (nodes:int) (engine: ChessEngine) (pos:string) =
   let mutable cont = true
   let mutable infoString = ""
@@ -478,35 +444,6 @@ let bestQPuzzleValueOnly (engine:ChessEngine) (pos: Position) =
   //example output is: "bestmove e2e4 ponder e7e5"
   let move = infoString.Split().[1]
   move
-
-/// Evaluate a single position and return the root V from the "info string node" line.
-let evaluatePositionV (nodes:int) (engine: ChessEngine) (pos:string) : float =
-  let mutable cont = true
-  let mutable rootV = 0.0
-  engine.Position pos
-  engine.GoNodes nodes
-  while cont do
-    let line = readLineChecked engine
-    if line.StartsWith "bestmove" then
-      cont <- false
-    elif line.StartsWith "info string node" then
-      let nnMsg = EngineProtocol.Regex.getInfoStringData engine.Name line
-      rootV <- nnMsg.V
-  rootV
-
-/// Evaluate all legal moves from a position by evaluating each child position.
-/// Returns list of (uciMove, V) pairs where V is the value head's assessment.
-let evaluateAllMovesV (nodes:int) (engine: ChessEngine) (posCommand:string) =
-  let board = Board()
-  board.PlayCommands posCommand
-  let legalMoves = board.GetLegalMoves() |> Seq.toList
-  legalMoves |> List.map (fun (uciMove, _) ->
-    let childCommand =
-      if posCommand.Contains(" moves ") then posCommand + " " + uciMove
-      else posCommand + " moves " + uciMove
-    let v = evaluatePositionV nodes engine childCommand
-    (uciMove, v)
-  )
 
 let onlyUniqueOpenings (pgns:seq<PgnGame>) =
       let processedGames = ResizeArray<PgnGame>()

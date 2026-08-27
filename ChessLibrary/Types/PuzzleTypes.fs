@@ -202,8 +202,6 @@ module PuzzleTypes =
         | BestMove  of cmd:Position * AsyncReplyChannel<string*float>
         | BestMoveWithPolicy  of cmd:Position * correct:string * AsyncReplyChannel<string * string>
         | BestMoveWithAllPolicies of cmd:Position * AsyncReplyChannel<string * EngineTypes.NNValues list>
-        | EvalAllMovesValue of cmd:Position * AsyncReplyChannel<(string * float) list>
-        | ValueTopNEval of cmd:Position * AsyncReplyChannel<string * EngineTypes.NNValues list>
         | SolvePuzzle of command:string * AsyncReplyChannel<string * string * ResizeArray<EngineTypes.NNValues>>
         | BestMoveValueHead of cmd:Position * AsyncReplyChannel<string>
         | NewGame   of AsyncReplyChannel<unit>

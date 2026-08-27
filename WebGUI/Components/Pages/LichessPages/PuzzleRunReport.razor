@@ -486,8 +486,8 @@
     private string selectedFilter = "";
     /// Budgets present in the THEME rows of the metric being viewed.
     ///
-    /// Not from `scores[]`: Score.Nodes is a placeholder for head tests - 0 for vTopN,
-    /// 1 for policy/value - and only a real budget for Search/Solve, so a dropdown built
+    /// Not from `scores[]`: Score.Nodes is a placeholder for head tests - 1 for the policy
+    /// paths, 0 on older files - and only a real budget for Search/Solve, so a dropdown built
     /// from it offers meaningless options and splits metrics that belong together.
     /// Theme rows are the only place two budgets genuinely collide.
     private List<int> nodeBudgets = new();

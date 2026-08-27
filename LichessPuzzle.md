@@ -183,8 +183,10 @@ thematic move) and, when enabled, `positionAccuracy` (every position). The theme
   `positionsScored` and `positionAccuracy` to the result JSON without changing any existing
   number — they read `0` when the option is off, so "not measured" stays distinguishable from
   "measured as zero". For the `value` test it also costs engine time, since positions after a
-  mistake get queried where they would otherwise be skipped - most of all for `search`, where
-  each of those positions costs a full search. See `PuzzleConfig.md` for the full description.
+  mistake get queried where they would otherwise be skipped — most of all for `search`, where
+  each of those positions costs a full search. Does not apply to `solve`, which runs a single
+  search from the puzzle's start position and so has no per-position verdicts. See
+  `PuzzleConfig.md` for the full description.
 
 ---
 

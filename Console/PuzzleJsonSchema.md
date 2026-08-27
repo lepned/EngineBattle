@@ -82,7 +82,7 @@ Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, 
 |---|---|---|
 | `engine` | string | Engine name (from the engine config). |
 | `neuralNet` | string | Neural net name or path used for this result (empty for non-NN engines). |
-| `type` | string | Puzzle test type, e.g. `"Policy"`, `"Value"`, `"pTop3"`, `"vTop5"`, `"Search"`, `"Solve"`. |
+| `type` | string | Puzzle test type, e.g. `"Policy"`, `"Value"`, `"pTop3"`, `"Search"`, `"Solve"`. |
 | `nodes` | int | Node limit used for this result (relevant for `Search`/`Solve` types). |
 | `filter` | string | Theme filter for this result row. **The literal string `"none"` is the no-filter sentinel** (not the empty string) — this matches EngineBattle's internal `Score.Filter` default. Consumers wanting a "no theme" check should compare against `"none"`, not `""`. |
 | `totalNumber` | int | Total puzzles evaluated in this row. |
@@ -104,10 +104,10 @@ Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, 
 | `estNodesMax` | float | Worst single puzzle in the set by `N_est`. `0.0` when unavailable. |
 | `estNodesCdf100` | float | Fraction (`0..1`) of puzzles whose `N_est` is at most 100 nodes. **Higher is better.** `0.0` for non-policy rows. |
 | `firstMoveCorrect` | int | Puzzles whose FIRST solver move was right. |
-| `firstMoveScored` | int | Puzzles that had a first solver move to score. `0` means the test does not track it — not that nothing was correct. |
+| `firstMoveScored` | int | Puzzles that had a first solver move to score. `0` means the test does not track it — not that nothing was correct. `solve` is such a test. |
 | `firstMoveAccuracy` | float | `firstMoveCorrect / firstMoveScored`, or `0.0` when `firstMoveScored` is 0. **Use this, not `accuracy`, when attributing a result to a theme** — see below. |
 | `positionsCorrect` | int | Positions scored correctly across all puzzles. `0` unless the run set `ScoreAllPositions`. |
-| `positionsScored` | int | Positions scored. `0` unless the run set `ScoreAllPositions`. |
+| `positionsScored` | int | Positions scored. `0` unless the run set `ScoreAllPositions`. Always `0` for `solve`, which runs one search from the puzzle's start position and so has no per-position verdicts. |
 | `positionAccuracy` | float | `positionsCorrect / positionsScored`, or `0.0` when nothing was scored. |
 | `withHistory` | bool | Whether the engine was given prior moves as history (Lc0/Ceres only). |
 

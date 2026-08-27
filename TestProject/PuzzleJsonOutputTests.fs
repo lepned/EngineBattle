@@ -327,3 +327,76 @@ let ``writeToFile creates parent directory if missing`` () =
         Assert.True(File.Exists path)
     finally
         if Directory.Exists dir then Directory.Delete(dir, recursive = true)
+
+// ---------------------------------------------------------------------------
+// The three accuracy ratios. `accuracy` is per PUZZLE, `positionAccuracy` per
+// POSITION and `firstMoveAccuracy` per THEMATIC MOVE - they answer different
+// questions and a consumer that picks the wrong one gets a plausible number.
+// The position pair also has to survive a zero denominator, which is the normal
+// case: it is 0/0 in every run that left ScoreAllPositions off.
+// ---------------------------------------------------------------------------
+
+let private mkScoreWithUnits
+    (correct: int) (total: int)
+    (posCorrect: int) (posScored: int)
+    (firstCorrect: int) (firstScored: int) : Score =
+    { mkScore "e" "net" "Policy" 1 correct total 0.0 2500.0 with
+        PositionsCorrect = posCorrect
+        PositionsScored = posScored
+        FirstMoveCorrect = firstCorrect
+        FirstMoveScored = firstScored }
+
+[<Fact>]
+let ``positionAccuracy is positionsCorrect over positionsScored`` () =
+    let entry = toEntry (mkScoreWithUnits 10 100 137 200 60 100)
+    Assert.Equal(0.685, entry.PositionAccuracy, 6)
+    Assert.Equal(137, entry.PositionsCorrect)
+    Assert.Equal(200, entry.PositionsScored)
+
+[<Fact>]
+let ``an unmeasured position ratio reads zero rather than dividing by zero`` () =
+    // What EVERY run without ScoreAllPositions produces. The pair (0, 0) is how a
+    // consumer tells "not measured" from "measured as zero" - which is why the
+    // counters are published alongside the ratio and not replaced by it.
+    let entry = toEntry (mkScoreWithUnits 10 100 0 0 60 100)
+    Assert.Equal(0.0, entry.PositionAccuracy, 6)
+    Assert.Equal(0, entry.PositionsScored)
+    Assert.False(Double.IsNaN entry.PositionAccuracy)
+
+[<Fact>]
+let ``firstMoveAccuracy is measured even when positions are not`` () =
+    // The asymmetry that makes the theme tables work: first-move numbers are
+    // present in every run, position numbers only on request.
+    let entry = toEntry (mkScoreWithUnits 10 100 0 0 62 100)
+    Assert.Equal(0.62, entry.FirstMoveAccuracy, 6)
+    Assert.Equal(0.0, entry.PositionAccuracy, 6)
+
+[<Fact>]
+let ``the three accuracy units do not track each other`` () =
+    // 10 of 100 puzzles fully solved, but 137 of 200 positions and 60 of 100
+    // thematic moves right - reporting any one of these as "accuracy" would be
+    // off by a factor of six.
+    let entry = toEntry (mkScoreWithUnits 10 100 137 200 60 100)
+    Assert.Equal(0.10, entry.Accuracy, 6)
+    Assert.Equal(0.685, entry.PositionAccuracy, 6)
+    Assert.Equal(0.60, entry.FirstMoveAccuracy, 6)
+
+[<Fact>]
+let ``a first-move ratio with no denominator also reads zero`` () =
+    let entry = toEntry (mkScoreWithUnits 10 100 0 0 0 0)
+    Assert.Equal(0.0, entry.FirstMoveAccuracy, 6)
+    Assert.False(Double.IsNaN entry.FirstMoveAccuracy)
+
+[<Fact>]
+let ``the unit fields survive serialization under their documented names`` () =
+    let result =
+        buildResult "p.csv" 100 100 0 3500 "" "" fixedStartedUtc 1.0
+            [ mkScoreWithUnits 10 100 137 200 60 100 ]
+    use doc = JsonDocument.Parse(serialize result)
+    let row = doc.RootElement.GetProperty("scores").[0]
+    Assert.Equal(137, row.GetProperty("positionsCorrect").GetInt32())
+    Assert.Equal(200, row.GetProperty("positionsScored").GetInt32())
+    Assert.Equal(0.685, row.GetProperty("positionAccuracy").GetDouble(), 6)
+    Assert.Equal(60, row.GetProperty("firstMoveCorrect").GetInt32())
+    Assert.Equal(100, row.GetProperty("firstMoveScored").GetInt32())
+    Assert.Equal(0.60, row.GetProperty("firstMoveAccuracy").GetDouble(), 6)

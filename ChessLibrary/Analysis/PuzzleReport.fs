@@ -199,9 +199,9 @@ module PuzzleReport =
           Scoring: string
           /// Node budget of the slice. `None` means the column was absent - a file
           /// written before it existed - which is NOT the same as a run at zero nodes.
-          /// 0 is a real, common value: the head runners stamp Score.Nodes with 0 for
-          /// vTopN and 1 for policy/value, so it is a placeholder there rather than a
-          /// budget. Using 0 as an "absent" sentinel collided with 93% of result files.
+          /// 0 is a real, common value: head runners stamp Score.Nodes with a placeholder
+          /// rather than a budget, and older files carry 0 on nearly every row. Using 0 as
+          /// an "absent" sentinel collided with 93% of the result files on disk.
           Nodes: int option
           NetA: string
           NetB: string

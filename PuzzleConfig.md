@@ -11,7 +11,9 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   - `policy` — Top-1 policy accuracy + KLD. Tests if the engine's best policy move matches the puzzle solution.
   - `policy2`, `policy3`, `policy5` (or `policytop2`, etc.) — Top-N policy accuracy + KLD. Tests if the correct move is within the top N policy moves. Multiple policy types are merged into a single pass (e.g., `"policy, policy3, policy5"` evaluates each puzzle once).
   - `value` — Value head test (Lc0: ValueOnly + `go nodes 1`, Ceres: `go value`). Tests if the value head's best move matches the puzzle solution.
-  - `value2`, `value3`, `value5` (or `valuetop2`, etc.) — Top-N value head accuracy. Evaluates every legal move's child position with `go nodes 1` and checks if the correct move ranks in the top N by value. Multiple value types are merged into a single pass. Slower than policy tests (~30x) due to per-child evaluation. Lc0/Ceres only.
+  - There is no top-N *value* test. Only the policy head exposes a ranking of every move;
+    the value head answers with one best child move, in both Lc0 and Ceres. Use `policy3`
+    and friends for top-N.
   - `search` — Search accuracy at N nodes (uses the `Nodes` setting).
   - `solve` — Solve from first position, verify full PV (uses the `Nodes` setting).
 
@@ -46,10 +48,15 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   mistake are queried where they would otherwise be skipped; the policy tests already query
   every position, so there the flag only changes what is reported.
 
-  `search` - the policy test with `nodes > 1` on each position - runs through the same
+  `search` — the policy test with `nodes > 1` on each position — runs through the same
   per-position loop as `value` and honours the flag the same way. It is the costliest place to
   turn it on: every position after the first mistake gets a full search rather than a single
   evaluation.
+
+  `solve` is the one test the flag does not reach. It runs ONE search on the puzzle's starting
+  position and checks the whole line against that search's PV — that is what the name means —
+  so there are no per-position verdicts to report. It reports no first-move numbers either,
+  which means solve-only runs fall back to whole-line theme attribution.
 
   Note this does NOT fix theme attribution — every position of a puzzle carries the puzzle's
   tags. For per-theme numbers use `firstMoveAccuracy`, which scores the puzzle's first solver

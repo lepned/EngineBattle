@@ -46,7 +46,6 @@ let private stubAgent (ranking: (string * float) list) =
             | BestMoveWithAllPolicies (_, ch) ->
                 let vals = ranking |> List.map (fun (mv, p) -> nn mv p)
                 ch.Reply((fst ranking.Head), vals)
-            | EvalAllMovesValue (_, ch) -> ch.Reply(ranking)
             | Network ch -> ch.Reply "stub"
             | Quit ch -> ch.Reply()
             | _ -> ()

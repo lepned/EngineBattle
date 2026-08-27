@@ -803,7 +803,7 @@
                         var res = pRes.Item;
                         if (res.Type.Contains("Policy") || res.Type.StartsWith("pTop"))
                             PolicyScores.Add(pRes.Item);
-                        else if (res.Type.Contains("Value") || res.Type.StartsWith("vTop"))
+                        else if (res.Type.Contains("Value"))
                             ValueScores.Add(pRes.Item);
                         else if (res.Type == "Solve")
                             SolveScores.Add(pRes.Item);
@@ -1322,11 +1322,9 @@
                                             subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewPolicyTopN(topN));
                                         else if (t.StartsWith("policy") && t.Length > 6 && int.TryParse(t.Substring("policy".Length), out int pn) && pn >= 1)
                                             subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewPolicyTopN(pn));
-                                        // valuetop3 / value3 → ValueTopN
-                                        else if (t.StartsWith("valuetop") && int.TryParse(t.Substring("valuetop".Length), out int valueTopN) && valueTopN >= 1)
-                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewValueTopN(valueTopN));
-                                        else if (t.StartsWith("value") && t.Length > 5 && int.TryParse(t.Substring("value".Length), out int vn) && vn >= 1)
-                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewValueTopN(vn));
+                                        // No top-N value test exists: only the policy head ranks every
+                                        // move, the value head answers with one best child. `value3`
+                                        // falls through to the unknown-type warning.
                                         else
                                             logger.LogWarning($"Unknown puzzle type '{t}', skipping");
                                         break;
@@ -1356,7 +1354,7 @@
                     if (ValueScores.Any())
                     {
                         ValueScores =
-                      ValueScores.Where(e => e.TotalNumber > 0 && (e.Type.Contains("Value") || e.Type.StartsWith("vTop")))
+                      ValueScores.Where(e => e.TotalNumber > 0 && e.Type.Contains("Value"))
                       .OrderBy(e => e.Filter)
                       .ThenByDescending(e => e.RatingAvg)
                       .ThenByDescending(e => ((decimal)e.Correct / e.TotalNumber))

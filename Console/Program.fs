@@ -1960,18 +1960,9 @@ module Program =
                         | _ ->
                             printfn "Invalid policy value '%s', expected e.g. policy3" t
                             []
-                    | t when t.StartsWith("valuetop") ->
-                        match System.Int32.TryParse(t.Substring("valuetop".Length)) with
-                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.ValueTopN n ]
-                        | _ ->
-                            printfn "Invalid valuetop value '%s', expected e.g. valuetop3" t
-                            []
-                    | t when t.StartsWith("value") && t.Length > 5 ->
-                        match System.Int32.TryParse(t.Substring("value".Length)) with
-                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.ValueTopN n ]
-                        | _ ->
-                            printfn "Invalid value value '%s', expected e.g. value3" t
-                            []
+                    // No top-N value test exists: only the policy head ranks every move, the
+                    // value head answers with one best child. `value3` and `valuetop3` fall
+                    // through to the unknown-type warning below.
                     | other ->
                         printfn "Unknown puzzle type '%s', skipping" other
                         [])
@@ -1983,7 +1974,7 @@ module Program =
 
     let valueScores = 
         scores 
-        |> Seq.filter (fun e -> e.TotalNumber > 0 && (e.Type.Contains("Value") || e.Type.StartsWith("vTop")))
+        |> Seq.filter (fun e -> e.TotalNumber > 0 && e.Type.Contains("Value"))
         |> fun seq -> seq.OrderBy(fun e -> e.Filter)
                          .ThenByDescending(fun e -> e.RatingAvg)
                          .ThenByDescending(fun e -> decimal e.Correct / decimal e.TotalNumber)                         
