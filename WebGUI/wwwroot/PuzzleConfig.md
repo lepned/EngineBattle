@@ -46,6 +46,11 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   mistake are queried where they would otherwise be skipped; the policy tests already query
   every position, so there the flag only changes what is reported.
 
+  `search` - the policy test with `nodes > 1` on each position - runs through the same
+  per-position loop as `value` and honours the flag the same way. It is the costliest place to
+  turn it on: every position after the first mistake gets a full search rather than a single
+  evaluation.
+
   Note this does NOT fix theme attribution — every position of a puzzle carries the puzzle's
   tags. For per-theme numbers use `firstMoveAccuracy`, which scores the puzzle's first solver
   move (the one its themes describe) and is measured in every run regardless of this flag.

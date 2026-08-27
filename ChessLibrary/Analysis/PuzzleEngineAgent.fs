@@ -1044,6 +1044,7 @@ let performPolicyOrSearchTest
   (puzzles:CsvPuzzleData[])
   (theme:string)
   (concurrency : int)
+  (scoreAllPositions: bool)
   (onProgress: int -> unit)
   (ct: CancellationToken) =
 
@@ -1068,7 +1069,10 @@ let performPolicyOrSearchTest
             while keepGoing && not ct.IsCancellationRequested do
                 let ok, puzzle = puzzleCh.Reader.TryRead()
                 if ok then
-                    let! result = runPuzzleViaAgentEx agent false false puzzle
+                    // Same loop as the value test - it stops at the first mistake unless
+                    // the flag says otherwise. Search pays engine time per position, so with
+                    // the flag on this costs more than it does for a 1-node value run.
+                    let! result = runPuzzleViaAgentEx agent false scoreAllPositions puzzle
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
@@ -1975,7 +1979,7 @@ let runTest
 
             try
               if hasSearch && nodes > 0 then
-                let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress "Search") ct
+                let score = performPolicyOrSearchTest nodes engine puzzles theme input.NumberOfPuzzlesInParallel input.ScoreAllPositions (mkProgress "Search") ct
                 sendU (PuzzleResult score)
                 results.Add score
               if hasSolve && nodes > 0 then
@@ -2022,7 +2026,7 @@ let runTest
                 | PolicyValue -> ()  // already handled above
 
                 | Search node when node > 1 ->
-                    let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel (mkProgress $"Search {node}n") ct
+                    let score = performPolicyOrSearchTest node engine puzzles theme input.NumberOfPuzzlesInParallel input.ScoreAllPositions (mkProgress $"Search {node}n") ct
                     sendU (PuzzleResult score)
                     results.Add score
 
