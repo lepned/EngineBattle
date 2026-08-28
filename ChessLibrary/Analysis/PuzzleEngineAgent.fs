@@ -643,6 +643,10 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
         let mutable movePlayed = bestmove
         let mutable failedMove = ""
         let mutable failedAtIndex = -1
+        // Commands[0] is the move the puzzle exists for, and its themes describe THAT move.
+        // Read it off `solved` rather than comparing bestmove to CorrectMove directly, so the
+        // mate fallback counts: a different mating move solves the position just as well.
+        let mutable firstMoveCorrect = 0
         // Track how many PV moves we've replayed on the board (for advancing position)
         let mutable pvMovesPlayed = 0
         // When the opponent's PV response diverges from the puzzle path, subsequent
@@ -708,6 +712,7 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
                                 else
                                     board.UndoMove()
                             with _ -> ()
+                        if i = 0 && solved then firstMoveCorrect <- 1
                         if solved then
                             // Advance the board through PV moves we haven't replayed yet
                             // (our move at pvIndex, plus opponent response at pvIndex+1)
@@ -771,10 +776,14 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             FailedMove = failedMove
             ValueHead = false
             Policy = policyString
+            // Solve checks every command against ONE search's PV, so it does have a verdict
+            // per position - but only up to the first mistake, after which the PV no longer
+            // follows the puzzle line. There is no honest denominator past that point, so the
+            // position counters stay 0 and ScoreAllPositions does not reach this test.
             PositionsCorrect = 0
             PositionsScored = 0
-            FirstMoveCorrect = 0
-            FirstMoveScored = 0
+            FirstMoveCorrect = firstMoveCorrect
+            FirstMoveScored = 1
             KLD = 0.0
             EngineRank = 0
             MarginLoss = 0.0

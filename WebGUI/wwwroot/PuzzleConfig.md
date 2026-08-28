@@ -54,9 +54,11 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   evaluation.
 
   `solve` is the one test the flag does not reach. It runs ONE search on the puzzle's starting
-  position and checks the whole line against that search's PV — that is what the name means —
-  so there are no per-position verdicts to report. It reports no first-move numbers either,
-  which means solve-only runs fall back to whole-line theme attribution.
+  position and checks the whole line against that search's PV — that is what the name means. It
+  does have a verdict per position, but only up to the first mistake, after which the PV stops
+  following the puzzle line and there is no honest denominator left. It does report
+  `firstMoveCorrect`/`firstMoveScored`, so its per-theme numbers use key-move scoring like every
+  other test.
 
   Note this does NOT fix theme attribution — every position of a puzzle carries the puzzle's
   tags. For per-theme numbers use `firstMoveAccuracy`, which scores the puzzle's first solver
