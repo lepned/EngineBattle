@@ -95,28 +95,6 @@ let bestMoveByEvalForLimit (limit: TimeControlTypes.TimeControlCommands.SearchLi
     | TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms -> return! bestMoveByEvalWithTimeAsync ms engine fen
 }
 
-let bestMoveByEval (nodes:int) (engine: ChessEngine) (fen: string) =
-  let cmd = sprintf "position fen %s" fen
-  engine.UciNewGame()
-  engine.Position cmd
-  engine.GoNodes nodes
-  let mutable cont = true
-  let mutable infoDepth = ""
-  let mutable move = ""
-  while cont do
-    let line = readLineChecked engine
-    if line.StartsWith "bestmove" then
-      move <- line
-      cont <- false
-    elif line.StartsWith "info depth" then
-      infoDepth <- line
-  let res =
-    match Regex.parseEvalRegex infoDepth with
-    |CP cp -> cp
-    |Mate mate -> float mate * 1000.
-    |_-> failwith "error parsing eval"
-  res, move
-
 //for Ceres TB run
 let bestQ (nodes:int) (engine: ChessEngine) (pos: EPDEntry) (board:Board inref)  =
   let qList = ResizeArray<float*string>()
@@ -630,39 +608,3 @@ let performPositionEvalTestOnPgnGames (limits : ResizeArray<TimeControlTypes.Tim
   | ex ->
       printfn "Error in performPositionEvalTestOnPgnGames: %s" ex.Message
       { Results = ResizeArray(); UniqueEvaluated = 0; Removed = 0 }
-
-let performQValueTestOnTB nodes (engineConf:EngineConfig) (puzzles:ResizeArray<TablebaseEPDEntry>) = task {
-  let board = Board()
-  let engine = EngineHelper.createEngine (engineConf, None)
-  let ok = engine.WaitForReadyOk() // wait for readyok
-  if not ok then
-     failwith "Engine did not respond to isready command."
-  let failedPuzzles = ResizeArray<TablebaseEPDEntry>()
-  let correctPuzzles = ResizeArray<TablebaseEPDEntry>()
-  for puzzle in puzzles do
-    if engine.HasExited() then
-      printfn "engine exited"
-    else
-      let qValue, move = bestQ nodes engine puzzle.EPD &board
-      let res = if qValue < -0.333 then -1 elif qValue > 0.33 then 1 else 0
-      let correct = res = puzzle.TBAnswer
-      let puzzleWithQ = {puzzle with QAnswer = qValue; Move = move }
-      if correct then
-        correctPuzzles.Add puzzleWithQ
-      else
-        failedPuzzles.Add puzzleWithQ
-
-  let diffElo = EloCalculator.eloDiffWDL correctPuzzles.Count 0 failedPuzzles.Count
-  let samplefailed = failedPuzzles |> Seq.toArray |> Array.sortBy(fun e -> e.TBAnswer)
-  let sampleCorrect = correctPuzzles |> Seq.toArray |> Array.sortByDescending(fun e -> e.TBAnswer)
-  let test =
-    {
-      Name = engine.Name
-      FailedPuzzles = ResizeArray<TablebaseEPDEntry>(samplefailed)
-      CorrectPuzzles = ResizeArray<TablebaseEPDEntry>(sampleCorrect)
-      TotalNumber = failedPuzzles.Count + correctPuzzles.Count
-      Correct = correctPuzzles.Count
-      Wrong = failedPuzzles.Count
-      Rating = diffElo
-    }
-  return test     }
