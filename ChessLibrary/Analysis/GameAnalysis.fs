@@ -417,9 +417,13 @@ module PGNCalculator =
         let points = float winCount + (float drawCount / 2.0)
         let error = EloCalculator.calculateEloError winCount drawCount lossCount
         let cfs = (EloCalculator.calculateLikelihoodOfSuperiority winCount lossCount (float (winCount + lossCount))) * 100. |> int32 |> max 0  //remove negative numbers when score is perfect
-        let percent = (points / float maxScore) * 100.0 |> int32
+        // maxScore is the player's game count, which is 0 for a player listed in the results
+        // but never paired. Without the guard the division is NaN and the int32 conversion
+        // turns it into a number that looks real in the table.
+        let percent = if maxScore > 0 then (points / float maxScore) * 100.0 |> int32 else 0
         let played = maxScore
-        let dPercent = (float drawCount / float maxScore) * 100.0 |> int32
+        let dPercent =
+          if maxScore > 0 then (float drawCount / float maxScore) * 100.0 |> int32 else 0
         //todo
         let pairWins = 0
         let pairLosses = 0

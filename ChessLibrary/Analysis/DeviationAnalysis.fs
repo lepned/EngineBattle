@@ -499,7 +499,10 @@ let analyzeDeviations (pgnGames: PgnGame seq) =
   let devSummary = createDeviationSummary moveDevs pgnGames
   let numberOfGames = pgnGames.Length
   let numberOfDevs = moveDevs |> Seq.length
-  let fraction = float numberOfDevs / float numberOfGames
+  // 0/0 is NaN, and this fraction is returned to callers that print it. An empty PGN, or a
+  // filter that matched nothing, is a normal input - not a reason to hand back NaN.
+  let fraction =
+    if numberOfGames > 0 then float numberOfDevs / float numberOfGames else 0.0
   let sortedSummary = devSummary |> Seq.sortByDescending(fun e -> e.AdjustedScore)
   allResults, consoleResString, sortedSummary, engineStats, crossTable, fraction
 

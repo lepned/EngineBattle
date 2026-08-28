@@ -45,6 +45,7 @@
 		<Compile Include="LiveFeedWireTests.fs" />
 		<Compile Include="LiveFeedRecorderTests.fs" />
 		<Compile Include="CeresWireTests.fs" />
+		<Compile Include="EmptyInputGuardTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
