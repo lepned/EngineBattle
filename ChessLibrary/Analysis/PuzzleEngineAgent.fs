@@ -1303,6 +1303,10 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
     let mutable correct    = true
     let mutable movePlayed = ""
     let mutable failedMove = ""
+    // Commands[0] is the move the puzzle exists for, and its themes describe THAT move.
+    // Costs nothing: the first position is always queried. Same rule as runPuzzleViaAgentEx.
+    let mutable firstMoveCorrect = 0
+    let mutable firstMoveScored = 0
 
     for cmd in puzzle.Commands do
       if correct then
@@ -1316,6 +1320,9 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
           solved <- board.IsMate()
         // After the fallback, so a position the fallback RESCUED is not recorded as the
         // failure. Matches runPuzzleViaAgentEx; these two loops used to disagree.
+        if firstMoveScored = 0 then
+            firstMoveScored <- 1
+            if solved then firstMoveCorrect <- 1
         if not solved then failedMove <- cmd.CorrectMove
         correct <- solved
 
@@ -1337,8 +1344,8 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
         Policy = ""
         PositionsCorrect = 0
         PositionsScored = 0
-        FirstMoveCorrect = 0
-        FirstMoveScored = 0
+        FirstMoveCorrect = firstMoveCorrect
+        FirstMoveScored = firstMoveScored
         KLD = 0.0
         EngineRank = 0
         MarginLoss = 0.0
@@ -1568,9 +1575,12 @@ let performPolicyValueTest
                       HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
                       PositionsCorrect = 0
                       PositionsScored = 0
-                      FirstMoveCorrect = 0
-                      FirstMoveScored = 0
-                      FirstMoveCorrectIds = Collections.Generic.HashSet<string>()
+                      FirstMoveCorrect = valueResults |> Array.sumBy (fun r -> r.FirstMoveCorrect)
+                      FirstMoveScored = valueResults |> Array.sumBy (fun r -> r.FirstMoveScored)
+                      FirstMoveCorrectIds =
+                          Collections.Generic.HashSet<string>(
+                              valueResults |> Seq.filter (fun r -> r.FirstMoveCorrect > 0)
+                                           |> Seq.map (fun r -> r.PuzzleData.PuzzleId))
                     }
 
                 [policyScore; valueScore]

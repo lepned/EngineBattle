@@ -104,7 +104,7 @@ Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, 
 | `estNodesMax` | float | Worst single puzzle in the set by `N_est`. `0.0` when unavailable. |
 | `estNodesCdf100` | float | Fraction (`0..1`) of puzzles whose `N_est` is at most 100 nodes. **Higher is better.** `0.0` for non-policy rows. |
 | `firstMoveCorrect` | int | Puzzles whose FIRST solver move was right. |
-| `firstMoveScored` | int | Puzzles that had a first solver move to score. `0` means the test does not track it — not that nothing was correct. Every test tracks it. |
+| `firstMoveScored` | int | Puzzles that had a first solver move to score. Every test reports it, so it equals the puzzle count; `0` in an older file means that run's test did not track it, not that nothing was correct. |
 | `firstMoveAccuracy` | float | `firstMoveCorrect / firstMoveScored`, or `0.0` when `firstMoveScored` is 0. **Use this, not `accuracy`, when attributing a result to a theme** — see below. |
 | `positionsCorrect` | int | Positions scored correctly across all puzzles. `0` unless the run set `ScoreAllPositions`. |
 | `positionsScored` | int | Positions scored. `0` unless the run set `ScoreAllPositions`. Always `0` for `solve`: it verifies the line against one search's PV, so it has no verdict past the first mistake. |
