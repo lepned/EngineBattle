@@ -783,7 +783,9 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             PositionsCorrect = 0
             PositionsScored = 0
             FirstMoveCorrect = firstMoveCorrect
-            FirstMoveScored = 1
+            // Always 1 here: this branch is only reached when the puzzle has commands. Stated
+            // rather than hardcoded, so it stays true if the empty-puzzle guard above moves.
+            FirstMoveScored = if commands.Length > 0 then 1 else 0
             KLD = 0.0
             EngineRank = 0
             MarginLoss = 0.0
@@ -1318,11 +1320,11 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
           board.PlayCommands cmd.Command
           board.PlayUciMove mv
           solved <- board.IsMate()
-        // After the fallback, so a position the fallback RESCUED is not recorded as the
-        // failure. Matches runPuzzleViaAgentEx; these two loops used to disagree.
         if firstMoveScored = 0 then
             firstMoveScored <- 1
             if solved then firstMoveCorrect <- 1
+        // After the fallback, so a position the fallback RESCUED is not recorded as the
+        // failure. Matches runPuzzleViaAgentEx; these two loops used to disagree.
         if not solved then failedMove <- cmd.CorrectMove
         correct <- solved
 
