@@ -45,7 +45,12 @@ module PuzzleReport =
           EstNodesP95: float
           EstNodesP99: float
           EstNodesMax: float
-          EstNodesCdf100: float }
+          EstNodesCdf100: float
+          /// Share of puzzles whose FIRST solver move was right - the unit the theme
+          /// files count in, unlike `Accuracy` which needs the whole line. 0.0 in files
+          /// written before the field existed; consumers gate on `FirstMoveScored > 0`.
+          FirstMoveScored: int
+          FirstMoveAccuracy: float }
 
     /// One row of the summary's `paired` array: two nets on the puzzles both
     /// scored, with the discordant counts McNemar needs. Empty for single-net
@@ -125,7 +130,9 @@ module PuzzleReport =
                        EstNodesP95 = numProp el "estNodesP95"
                        EstNodesP99 = numProp el "estNodesP99"
                        EstNodesMax = numProp el "estNodesMax"
-                       EstNodesCdf100 = numProp el "estNodesCdf100" } |]
+                       EstNodesCdf100 = numProp el "estNodesCdf100"
+                       FirstMoveScored = int (numProp el "firstMoveScored")
+                       FirstMoveAccuracy = numProp el "firstMoveAccuracy" } |]
             | _ -> [||]
         let paired =
             match tryProp root "paired" with
@@ -407,11 +414,6 @@ module PuzzleReport =
     /// whatever is selected - exactly the behaviour before the column existed.
     let private matchesFilter (rowFilter: string) (selected: string) =
         String.IsNullOrEmpty rowFilter || rowFilter = selected
-
-    /// An unfiltered run carries the literal "none" - PuzzleEngineAgent stamps it - so
-    /// "" and "none" both mean "no theme filter". Shared with PuzzlePaired.noFilter and
-    /// the report page so the four renderings of this decision cannot disagree.
-    let noFilter (f: string) = String.IsNullOrWhiteSpace f || f = "none"
 
     /// Same rule for the node budget, but with absence made explicit: a row from a file
     /// without the column (None) predates the split and matches anything. A row that HAS

@@ -79,7 +79,8 @@
     {
         <h3>Leaderboard</h3>
         <div class="prr-note">
-            Accuracy per head at one node. Puzzle Elo is the rating the top-1 accuracy implies against
+            Accuracy per head at one node; top-1, top-3 and value need the whole solution line, key move
+            (when present) is top-1 on the first solver move alone. Puzzle Elo is the rating the top-1 accuracy implies against
             the rated puzzle field. P95/P99/Max estimate the nodes a search needs before it first tries
             the correct move; ≤100 is the share of puzzles inside a hundred nodes. KLD is the distance
             of the whole policy distribution from the solution — lower is sharper.
@@ -92,6 +93,10 @@
                         <th>top-1</th>
                         <th>top-3</th>
                         <th>value</th>
+                        @if (ShowKeyMove)
+                        {
+                            <th title="Top-1 on each puzzle's FIRST solver move only - the unit the theme profile below counts in. The top-1 column needs the whole line right.">key move</th>
+                        }
                         <th class="prr-num">puzzle Elo</th>
                         <th class="prr-num">P95</th>
                         <th class="prr-num">P99</th>
@@ -105,7 +110,9 @@
                     {
                         <tr>
                             <td class="prr-net" title="@row.Net">@row.Net</td>
-                            @foreach (var (acc, max) in new[] { (row.Top1, maxTop1), (row.Top3, maxTop3), (row.Value, maxValue) })
+                            @foreach (var (acc, max) in ShowKeyMove
+                                ? new[] { (row.Top1, maxTop1), (row.Top3, maxTop3), (row.Value, maxValue), (row.KeyMove, maxKeyMove) }
+                                : new[] { (row.Top1, maxTop1), (row.Top3, maxTop3), (row.Value, maxValue) })
                             {
                                 <td class="prr-bar">
                                     @if (acc.HasValue)
@@ -211,7 +218,14 @@
         @* The leaderboard above counts whole puzzles; these count key moves. Saying so is
            the difference between "this net improved" and "the scoring rule changed". *@
         <div class="prr-note">
-            @if (ThemesAreFirstMove)
+            @if (ThemesMixScoring)
+            {
+                <text><b>Mixed scoring rules in this themes file</b> — some rows were scored on each
+                puzzle's key move and others on the whole solution line, so their percentages are
+                not comparable with each other. The CSV's <code>scoring</code> column says which is
+                which; re-running produces one rule throughout.</text>
+            }
+            else if (ThemesAreFirstMove)
             {
                 <text><b>Scored on each puzzle's key move</b> — the first solver move, which is the
                 one its themes describe. That is a different count from the leaderboard above,
@@ -523,8 +537,13 @@
     /// A first-move file and a whole-line file are otherwise indistinguishable and differ
     /// by 10-25 pp on multi-move themes, so comparing an archived run against a fresh one
     /// would read the rule change as a net change.
-    private bool ThemesAreFirstMove =>
-        themeRows.Length > 0 && themeRows[0].Scoring == "firstMove";
+    private bool ThemesAreFirstMove => themeRows.Length > 0 && themeRows.All(r => r.Scoring == "firstMove");
+
+    /// Rows written under BOTH rules in one file - two merged runs, or rows from before
+    /// the column existed beside new ones. One caption cannot describe them, so the page
+    /// says so instead of picking the first row's rule for all of them.
+    private bool ThemesMixScoring =>
+        themeRows.Length > 0 && themeRows.Any(r => r.Scoring == "firstMove") && themeRows.Any(r => r.Scoring != "firstMove");
 
     private string ThemeUnitPhrase =>
         ThemesAreFirstMove ? "puzzles whose key move was found" : "puzzles solved";
@@ -535,7 +554,10 @@
     // matches on. Passing the decorated label as netOrder matched nothing and silently
     // dropped the row ordering in exactly the runs the label exists for.
     private record LeaderRow(string Net, string RawNet, double? Top1, double? Top3, double? Value,
+                             double? KeyMove,
                              double? Perf, double? Kld, double? P95, double? P99, double? Max, double? Cdf100);
+    /// Any row carrying a first-move number - files from before the field have none.
+    private bool ShowKeyMove => leaderboard.Any(r => r.KeyMove.HasValue);
     private List<LeaderRow> leaderboard = new();
     private List<PuzzleReport.PairedRow> pairedRows = new();
 
@@ -555,7 +577,7 @@
     /// so changing the F# literal and rebuilding only ChessLibrary would leave this page
     /// flagging at the old value - the drift the shared symbol was meant to rule out.
     private static readonly int ThinDiscordance = ChessLibrary.PuzzlePaired.ThinDiscordance;
-    private double maxTop1 = 1, maxTop3 = 1, maxValue = 1;
+    private double maxTop1 = 1, maxTop3 = 1, maxValue = 1, maxKeyMove = 1;
 
     protected override void OnInitialized()
     {
@@ -734,6 +756,10 @@
                     Top1: top1 != null ? top1.Accuracy * 100 : null,
                     Top3: top3 != null ? top3.Accuracy * 100 : null,
                     Value: val != null ? val.Accuracy * 100 : null,
+                    // The theme heat map counts key moves; without this number beside the
+                    // whole-line top-1 a reader has only the prose caption to reconcile a 55%
+                    // leaderboard cell against 65-80% theme cells for the same net.
+                    KeyMove: top1 != null && top1.FirstMoveScored > 0 ? top1.FirstMoveAccuracy * 100 : null,
                     Perf: top1?.PlayerRating,
                     Kld: top1 != null && top1.AvgKLD > 0 ? top1.AvgKLD : null,
                     // avgEstNodesLog10 is the documented presence gate (PuzzleJsonSchema.md)
@@ -752,6 +778,7 @@
         maxTop1 = Math.Max(leaderboard.Select(r => r.Top1 ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
         maxTop3 = Math.Max(leaderboard.Select(r => r.Top3 ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
         maxValue = Math.Max(leaderboard.Select(r => r.Value ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
+        maxKeyMove = Math.Max(leaderboard.Select(r => r.KeyMove ?? 0).DefaultIfEmpty(0).Max(), 1e-9);
 
         RebuildHeat();
     }
