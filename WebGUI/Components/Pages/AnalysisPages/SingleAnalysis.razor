@@ -818,10 +818,19 @@
         gamesColumnCollapsed = false;
         pgnFileLoaded = false;
         pgnName = Path.GetFileName(path);
-        var allEpds = EPDExtractor.readEPDs(path).ToList();
-        if (allEpds.Count > 5000)
-            logger.LogWarning("EPD file contains {Total} entries, truncated to 5000", allEpds.Count);
-        epdGames = allEpds.Take(5000).ToList();
+        // One past the cap: enough to know the file was longer, without materialising it.
+        // The reader streams, so .ToList() on the whole file would cost the entire file in
+        // memory just to throw most of it away.
+        var loadedEpds = EPDExtractor.readEPDs(path).Take(5001).ToList();
+        if (loadedEpds.Count > 5000)
+        {
+            logger.LogWarning("EPD file contains more than 5000 entries; only the first 5000 were loaded");
+            epdGames = loadedEpds.Take(5000).ToList();
+        }
+        else
+        {
+            epdGames = loadedEpds;
+        }
         gameIndex = 0;
     }
 
@@ -831,10 +840,17 @@
         gamesColumnCollapsed = false;
         pgnFileLoaded = true;
         pgnName = Path.GetFileName(path);
-        var allGames = FullPGNParser.parsePgnFile(path).ToList();
-        if (allGames.Count > 4000)
-            logger.LogWarning("PGN file contains {Total} games, truncated to 4000", allGames.Count);
-        games = allGames.Take(4000).ToList();
+        // One past the cap - see the EPD loader above for why this is not .ToList() first.
+        var loadedGames = FullPGNParser.parsePgnFile(path).Take(4001).ToList();
+        if (loadedGames.Count > 4000)
+        {
+            logger.LogWarning("PGN file contains more than 4000 games; only the first 4000 were loaded");
+            games = loadedGames.Take(4000).ToList();
+        }
+        else
+        {
+            games = loadedGames;
+        }
         gameIndex = 0;
     }
 

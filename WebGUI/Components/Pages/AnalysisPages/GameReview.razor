@@ -439,7 +439,18 @@
         if (path == null) return;
         try
         {
-            games = FullPGNParser.parsePgnFile(path).Take(4000).ToList();
+            // One past the cap, so a silently shortened list can be reported. Truncating
+            // without saying so reads as "the whole file is here".
+            var loadedGames = FullPGNParser.parsePgnFile(path).Take(4001).ToList();
+            if (loadedGames.Count > 4000)
+            {
+                logger.LogWarning("PGN file contains more than 4000 games; only the first 4000 were loaded");
+                games = loadedGames.Take(4000).ToList();
+            }
+            else
+            {
+                games = loadedGames;
+            }
             allResults.Clear();
             gameIndex = 0;
 
