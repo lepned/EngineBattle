@@ -262,7 +262,7 @@
       <div class="theme-head">
         <div>
           <h2 style="margin:0">Where the difference is</h2>
-          <div class="theme-sub">@activeScoreTab accuracy by Lichess theme</div>
+          <div class="theme-sub">@ThemeType accuracy by Lichess theme</div>
         </div>
         <div class="tool-controls" style="margin:0; @(ThemeNets.Count < 2 ? "display:none" : "")">
           <div class="tool-input-group" style="margin-bottom:0">
@@ -274,12 +274,24 @@
               }
             </select>
           </div>
+          @if (ThemeSlices.Count > 1)
+          {
+            <div class="tool-input-group" style="margin-bottom:0">
+              <label>Slice</label>
+              <select class="tool-input" @bind="ThemeSliceKey" @bind:after="CloseThemeBoards">
+                @foreach (var sl in ThemeSlices)
+                {
+                  <option value="@SliceKeyOf(sl)">@ThemeSliceLabel(sl)</option>
+                }
+              </select>
+            </div>
+          }
           <div class="tool-input-group" style="margin-bottom:0">
             <label>Baseline</label>
             <select class="tool-input" style="max-width:230px" @bind="ThemeBaseline" @bind:after="CloseThemeBoards">
               @foreach (var n in ThemeNets)
               {
-                <option value="@n">@ShortNet(n)</option>
+                <option value="@n">@ThemeNetLabel(n)</option>
               }
             </select>
           </div>
@@ -288,7 +300,7 @@
             <select class="tool-input" style="max-width:230px" @bind="ThemeCompare" @bind:after="CloseThemeBoards">
               @foreach (var n in ThemeNets.Where(n => n != ThemeBaseline))
               {
-                <option value="@n">@ShortNet(n)</option>
+                <option value="@n">@ThemeNetLabel(n)</option>
               }
             </select>
           </div>
@@ -301,15 +313,15 @@
 
       @{
         var singleNet = !disableRun && ThemeNets.Count == 1;
-        var ts = singleNet ? ThemeSingleRows() : null;
-        var td = singleNet ? null : ThemeRows();
+        var ts = singleNet ? ThemeSingleRowsCached() : null;
+        var td = singleNet ? null : ThemeRowsCached();
       }
       @if (singleNet && ts!.Rows.Count > 0)
       {
         <div class="theme-legend">
           <span><i style="background:var(--theme-single)"></i> key move found</span>
           <span class="theme-legend-note">
-            @ShortNet(ThemeNets[0]) · weakest first@(ts.Dropped > 0 ? $" · {ts.Dropped} themes under {themeMinN} omitted" : "")
+            @ThemeNetLabel(ThemeNets[0]) · weakest first@(ts.Dropped > 0 ? $" · {ts.Dropped} themes under {themeMinN} omitted" : "")
           </span>
         </div>
 
@@ -454,9 +466,20 @@
     // Reuses ChessLibrary.PuzzleThemes so the panel, the console and the written
     // files all report the same numbers.
     private int themeRatingGroup;
+    // (engine, net) keys - see ThemeKeyOf
     private string themeBaselineNet = "";
     private string themeCompareNet = "";
     private int themeMinN = ChessLibrary.PuzzleThemes.MinThemePuzzles;
+    /// The user's slice pick (filter + node budget); resolved by EffectiveThemeSlice.
+    private ThemeSlice themeSlice;
+    /// Engine names in config order, captured at run start. The first is the baseline -
+    /// the same rule the console and the written theme/paired files use. The score lists
+    /// themselves are re-sorted by accuracy at run end, so their order is NOT config order:
+    /// defaulting to the strongest net flipped the sign of every theme delta against the
+    /// files of the same run.
+    private List<string> themeEngineOrder = new();
+    /// Bumped whenever a score list changes, so the theme cache knows to recompute.
+    private int scoresVersion;
     /// Theme whose positions are open below the chart; empty = none.
     private string themeBoardsFor = "";
 
@@ -473,11 +496,113 @@
     /// two, otherwise the only one.
     private Score ThemeBoardScore()
     {
-        var rg = EffectiveThemeRatingGroup;
         var nets = ThemeNets;
         if (nets.Count == 0) return null;
-        var net = nets.Count == 1 ? nets[0] : ThemeCompare;
-        return ThemeSource.FirstOrDefault(x => x.NeuralNet == net && RatingGroupOf(x.RatingAvg) == rg);
+        return FindThemeScore(nets.Count == 1 ? nets[0] : ThemeCompare);
+    }
+
+    // ---- what "a net" and "a slice" mean to the theme panel ---------------------
+    // The library identifies a net by (Engine, NeuralNet) and a measurement by
+    // (Type, rating group, Nodes, Filter). The panel used to key on NeuralNet + rating
+    // group alone: with policy and policy3 in one run the pTop3 row sorted above the
+    // Policy row for the same net, so the Policy tab charted top-3 data labelled top-1;
+    // one ONNX under two engines collapsed to a single entry; and a multi-filter run only
+    // ever reached the first filter.
+
+    /// (engine, net) as one string, so a select option can carry it.
+    private static string ThemeKeyOf(Score s) => (s.Engine ?? "") + "\u001f" + (s.NeuralNet ?? "");
+    private static string ThemeKeyNet(string key) { var i = key.IndexOf('\u001f'); return i < 0 ? key : key.Substring(i + 1); }
+    private static string ThemeKeyEngine(string key) { var i = key.IndexOf('\u001f'); return i < 0 ? "" : key.Substring(0, i); }
+
+    private int ThemeOrderOf(string key)
+    {
+        var i = themeEngineOrder.IndexOf(ThemeKeyEngine(key));
+        return i < 0 ? int.MaxValue : i;
+    }
+
+    /// Net name for display, with the engine appended only when the same net appears
+    /// under two engines - the one case where the name alone does not identify it.
+    private string ThemeNetLabel(string key)
+    {
+        var net = ThemeKeyNet(key);
+        var shared = ThemeNets.Count(k => ThemeKeyNet(k) == net) > 1;
+        var engine = ThemeKeyEngine(key);
+        return shared && !string.IsNullOrEmpty(engine) ? $"{ShortNet(net)}  ({engine})" : ShortNet(net);
+    }
+
+    /// The exact score Type the panel reads on the active tab. The tab's bucket can hold
+    /// more than one Type (the Policy tab holds Policy and pTop3 rows); the canonical one
+    /// wins when present, otherwise whatever the bucket has, so a policy3-only run still
+    /// gets a panel - labelled with the Type it actually shows.
+    private string ThemeType
+    {
+        get
+        {
+            var src = ThemeSource;
+            if (src.Any(x => x.Type == activeScoreTab)) return activeScoreTab;
+            return src.Select(x => x.Type).FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? activeScoreTab;
+        }
+    }
+
+    private sealed record ThemeSlice(string Filter, int Nodes);
+
+    private static string SliceKeyOf(ThemeSlice sl) => sl.Filter + "|" + sl.Nodes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string ThemeSliceLabel(ThemeSlice sl)
+    {
+        var filter = ChessLibrary.PuzzlePaired.noFilter(sl.Filter) ? "all themes" : sl.Filter;
+        return sl.Nodes > 1 ? $"{filter} · {sl.Nodes} nodes" : filter;
+    }
+
+    /// Every (filter, nodes) the active Type was measured on in the rating group.
+    private List<ThemeSlice> ThemeSlices
+    {
+        get
+        {
+            var rg = EffectiveThemeRatingGroup;
+            var type = ThemeType;
+            return ThemeSource
+                .Where(x => x.Type == type && RatingGroupOf(x.RatingAvg) == rg)
+                .Select(x => new ThemeSlice(x.Filter ?? "", x.Nodes))
+                .Distinct()
+                .OrderBy(x => x.Filter).ThenBy(x => x.Nodes)
+                .ToList();
+        }
+    }
+
+    private ThemeSlice EffectiveThemeSlice
+    {
+        get
+        {
+            var slices = ThemeSlices;
+            if (slices.Count == 0) return null;
+            return themeSlice != null && slices.Contains(themeSlice) ? themeSlice : slices[0];
+        }
+    }
+
+    /// Select-bound form of the slice pick.
+    private string ThemeSliceKey
+    {
+        get => EffectiveThemeSlice is { } sl ? SliceKeyOf(sl) : "";
+        set
+        {
+            var i = value.LastIndexOf('|');
+            themeSlice = i > 0 && int.TryParse(value.Substring(i + 1), System.Globalization.NumberStyles.Integer,
+                             System.Globalization.CultureInfo.InvariantCulture, out var n)
+                ? new ThemeSlice(value.Substring(0, i), n)
+                : null;
+        }
+    }
+
+    private bool ThemeMatches(Score x, string type, int rg, ThemeSlice sl) =>
+        sl != null && x.Type == type && RatingGroupOf(x.RatingAvg) == rg
+        && (x.Filter ?? "") == sl.Filter && x.Nodes == sl.Nodes;
+
+    /// The one Score behind a net key on the panel's current Type, rating group and slice.
+    private Score FindThemeScore(string key)
+    {
+        var type = ThemeType; var rg = EffectiveThemeRatingGroup; var sl = EffectiveThemeSlice;
+        return ThemeSource.FirstOrDefault(x => ThemeKeyOf(x) == key && ThemeMatches(x, type, rg, sl));
     }
     private const int ThemeTopN = 6;
 
@@ -499,14 +624,22 @@
     private List<int> ThemeRatingGroups =>
         ThemeSource.Select(s => RatingGroupOf(s.RatingAvg)).Distinct().OrderBy(r => r).ToList();
 
-    /// Nets in config order - the runner emits them that way, and the first is the
-    /// baseline by the same convention the console uses.
-    private List<string> ThemeNets =>
-        ThemeSource.Where(s => RatingGroupOf(s.RatingAvg) == EffectiveThemeRatingGroup)
-                   .Select(s => s.NeuralNet)
-                   .Where(n => !string.IsNullOrEmpty(n))
-                   .Distinct()
-                   .ToList();
+    /// Net keys on the panel's Type, rating group and slice, in CONFIG order: the first
+    /// is the baseline by the same convention the console and the written files use.
+    private List<string> ThemeNets
+    {
+        get
+        {
+            var type = ThemeType; var rg = EffectiveThemeRatingGroup; var sl = EffectiveThemeSlice;
+            if (sl == null) return new List<string>();
+            return ThemeSource.Where(x => ThemeMatches(x, type, rg, sl))
+                              .Where(x => !string.IsNullOrEmpty(x.NeuralNet))
+                              .Select(ThemeKeyOf)
+                              .Distinct()
+                              .OrderBy(ThemeOrderOf).ThenBy(k => k, StringComparer.Ordinal)
+                              .ToList();
+        }
+    }
 
     /// The nets the chart actually compares, and the values the two selects show.
     ///
@@ -565,7 +698,6 @@
     /// The 6 worst and 6 best themes for the compared net, with the middle elided.
     private ThemeView ThemeRows()
     {
-        var rg = EffectiveThemeRatingGroup;
         var nets = ThemeNets;
         if (nets.Count < 2) return EmptyThemeView;
 
@@ -573,11 +705,8 @@
         var cmpNet = ThemeCompare;
         if (string.IsNullOrEmpty(baseNet) || string.IsNullOrEmpty(cmpNet)) return EmptyThemeView;
 
-        Score Find(string net) => ThemeSource.FirstOrDefault(
-            s => s.NeuralNet == net && RatingGroupOf(s.RatingAvg) == rg);
-
-        var a = Find(baseNet);
-        var b = Find(cmpNet);
+        var a = FindThemeScore(baseNet);
+        var b = FindThemeScore(cmpNet);
         if (a is null || b is null) return EmptyThemeView;
 
         var result = ChessLibrary.PuzzleThemes.diff(
@@ -607,12 +736,10 @@
     /// Mirrors PuzzleThemes.renderSingle in the console output.
     private ThemeSingleView ThemeSingleRows()
     {
-        var rg = EffectiveThemeRatingGroup;
         var net = ThemeNets.FirstOrDefault();
         if (net is null) return EmptyThemeSingleView;
 
-        var score = ThemeSource.FirstOrDefault(
-            s => s.NeuralNet == net && RatingGroupOf(s.RatingAvg) == rg);
+        var score = FindThemeScore(net);
         if (score is null) return EmptyThemeSingleView;
 
         var all = ChessLibrary.PuzzleThemes.breakdown(score).ToList();
@@ -628,6 +755,39 @@
             ? usable
             : usable.Take(ThemeTopN).Concat(usable.Skip(usable.Count - ThemeTopN)).ToList();
         return new ThemeSingleView(shown, dropped, usable.Count - shown.Count);
+    }
+
+    // ---- memoised views ---------------------------------------------------------
+    // The render body asks for these on EVERY render, and during a run the Update handler
+    // renders on every progress tick (every 10 puzzles) and every finished Score. Each
+    // call re-parses every solved and failed puzzle's theme string for both nets; on a
+    // 4-net, 3-test, 2000-puzzle run that was thousands of full breakdown passes on the
+    // circuit thread for output that only changes when a Score or a select changes.
+    private (string Tab, string Type, int Rg, string Slice, string Base, string Cmp, int MinN, int Ver) themeCacheKey;
+    private ThemeView themeRowsCache;
+    private ThemeSingleView themeSingleCache;
+
+    private bool ThemeCacheCurrent()
+    {
+        var key = (activeScoreTab, ThemeType, EffectiveThemeRatingGroup, ThemeSliceKey,
+                   ThemeBaseline, ThemeCompare, themeMinN, scoresVersion);
+        if (key == themeCacheKey) return true;
+        themeCacheKey = key;
+        themeRowsCache = null;
+        themeSingleCache = null;
+        return false;
+    }
+
+    private ThemeView ThemeRowsCached()
+    {
+        ThemeCacheCurrent();
+        return themeRowsCache ??= ThemeRows();
+    }
+
+    private ThemeSingleView ThemeSingleRowsCached()
+    {
+        ThemeCacheCurrent();
+        return themeSingleCache ??= ThemeSingleRows();
     }
 
     private static string SingleBarWidth(ChessLibrary.PuzzleThemes.ThemeStat t) =>
@@ -809,6 +969,7 @@
                             SolveScores.Add(pRes.Item);
                         else
                             SearchScores.Add(pRes.Item);
+                        scoresVersion++;
 
                         // Auto-select first tab with data
                         if (!ActiveTabs.Contains(activeScoreTab))
@@ -889,6 +1050,7 @@
             ValueScores = new List<Score>();
             SearchScores = new List<Score>();
             SolveScores = new List<Score>();
+            scoresVersion++;
 
             expandedScoreIds.Clear();
 
@@ -1261,6 +1423,7 @@
                 var engineConfigs = data.Engines
               .SelectMany(e => mapToEngPuzzleConfig(data.EngineFolder, e))
               .ToList();
+                themeEngineOrder = engineConfigs.Select(c => c.Item1.Name).ToList();
 
                 puzzles = parsePuzzle(normalizedPath, false);
                 var formattedLength = puzzles.Length.ToString("N0");
@@ -1270,78 +1433,29 @@
                 var puzzleInput = TypesDef.PuzzleInput.PuzzleInput.Create(puzzles, data.MaxRating, data.MinRating, data.RatingGroups, data.PuzzleFilter,
                                   engineConfigs, 1, data.SampleSize, data.Nodes, data.Failed, data.Solved, concurrency, data.IncludeFailedPuzzles, data.ScoreAllPositions);
 
-                var types = string.IsNullOrWhiteSpace(data.Type)
-            ? new List<string>()
-            : data.Type
-              .ToLowerInvariant()
-              .Split(',')
-              .Select(e => e.Trim())
-              .Where(e => e.Length > 0)
-              .ToList();
-
                 List<Score> scores;
 
-                switch (types.Count)
+                // One parser with the console (PuzzleRunners.parseSubTests). An unknown
+                // token used to be a log line nobody reads, after which the run went ahead
+                // with whatever remained - or with the policy+value default when nothing
+                // remained - and finished green under the config's own label.
+                var parsedTypes = PuzzleRunners.parseSubTests(data.Type, ChessLibrary.PuzzleDataUtils.parseNodes(puzzleInput.nodes));
+                if (parsedTypes.IsError)
                 {
-                    case 0:
-                        logger.LogInformation("No puzzle types specified, defaulting to policy and value test");
-                        scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, cts.Token);
-                        break;
-
-                    default:
-                        {
-                            logger.LogInformation($"Puzzle types specified: {data.Type}");
-                            var set = new HashSet<string>(types);
-                            var nodeList = ChessLibrary.PuzzleDataUtils.parseNodes(puzzleInput.nodes);
-                            var subTests = new List<ChessLibrary.PuzzleEngineAgent.SubTest>();
-                            foreach (var t in types)
-                            {
-                                switch (t)
-                                {
-                                    case "policy":
-                                        subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.Policy);
-                                        break;
-                                    case "value":
-                                        subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.Value);
-                                        break;
-                                    case "policyvalue":
-                                    case "dual":
-                                        subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.PolicyValue);
-                                        break;
-                                    case "search":
-                                        foreach (var n in nodeList)
-                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewSearch(n));
-                                        break;
-                                    case "solve":
-                                        foreach (var n in nodeList)
-                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewSolve(n));
-                                        break;
-                                    default:
-                                        // policytop3 / policy3 → PolicyTopN
-                                        if (t.StartsWith("policytop") && int.TryParse(t.Substring("policytop".Length), out int topN) && topN >= 1)
-                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewPolicyTopN(topN));
-                                        else if (t.StartsWith("policy") && t.Length > 6 && int.TryParse(t.Substring("policy".Length), out int pn) && pn >= 1)
-                                            subTests.Add(ChessLibrary.PuzzleEngineAgent.SubTest.NewPolicyTopN(pn));
-                                        // No top-N value test exists: only the policy head ranks every
-                                        // move, the value head answers with one best child. `value3`
-                                        // falls through to the unknown-type warning.
-                                        else
-                                            logger.LogWarning($"Unknown puzzle type '{t}', skipping");
-                                        break;
-                                }
-                            }
-                            if (subTests.Count == 0)
-                            {
-                                logger.LogInformation("No valid puzzle types found, defaulting to policy and value test");
-                                scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, cts.Token);
-                            }
-                            else
-                            {
-                                var subTestList = Microsoft.FSharp.Collections.ListModule.OfSeq(subTests);
-                                scores = ChessLibrary.PuzzleEngineAgent.runTest(puzzleInput, Update, subTestList, cts.Token);
-                            }
-                        }
-                        break;
+                    var msg = PuzzleRunners.unknownSubTestsMessage(parsedTypes.ErrorValue);
+                    logger.LogWarning(msg);
+                    await InvokeAsync(() => { errorMessage = msg; StateHasChanged(); });
+                    return;
+                }
+                if (parsedTypes.ResultValue.IsEmpty)
+                {
+                    logger.LogInformation("No puzzle types specified, defaulting to policy and value test");
+                    scores = PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, Update, cts.Token);
+                }
+                else
+                {
+                    logger.LogInformation($"Puzzle types specified: {data.Type}");
+                    scores = ChessLibrary.PuzzleEngineAgent.runTest(puzzleInput, Update, parsedTypes.ResultValue, cts.Token);
                 }
 
                 // Re-sort on the dispatcher: Update callbacks add to these lists via
@@ -1393,6 +1507,7 @@
 
                     // Auto-select first available tab
                     activeScoreTab = ActiveTabs.FirstOrDefault() ?? "Policy";
+                    scoresVersion++;
                 });
 
                 var normalized = outputFolder;
@@ -1622,7 +1737,12 @@
                             data.RatingGroups,
                             runStartedUtc,
                             (DateTime.UtcNow - runStartedUtc).TotalSeconds,
-                            allScoresForCross);
+                            // The raw runner output, as the console writes it - NOT the tab
+                            // lists, which drop TotalNumber = 0 rows. The schema promises
+                            // scores[] is the complete record including slices that produced
+                            // nothing (a readiness failure), and the report page's handling
+                            // of exactly that case never triggered on GUI-written files.
+                            scores);
                         PuzzleJsonOutput.writeToFile(jsonFileName, result);
                     }
                     catch (Exception ex)
@@ -1652,6 +1772,8 @@
             {
                 logger.LogError("Lichess puzzle failed to start/run - ");
                 logger.LogError(ex.Message);
+                var msg = ex.Message;
+                await InvokeAsync(() => { errorMessage = $"Puzzle run failed: {msg}"; StateHasChanged(); });
             }
 
             finally
