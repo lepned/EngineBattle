@@ -199,7 +199,6 @@ module PuzzleTypes =
     //Define the engine-actor message type
     type EngineMsg =
         | Ok      of AsyncReplyChannel<bool>
-        | BestMove  of cmd:Position * AsyncReplyChannel<string*float>
         | BestMoveWithPolicy  of cmd:Position * correct:string * AsyncReplyChannel<string * string>
         | BestMoveWithAllPolicies of cmd:Position * AsyncReplyChannel<string * EngineTypes.NNValues list>
         | SolvePuzzle of command:string * AsyncReplyChannel<string * string * ResizeArray<EngineTypes.NNValues>>
@@ -251,7 +250,6 @@ module PuzzleTypes =
         WasCorrect : bool
         MovePlayed : string
         FailedMove : string
-        ValueHead: bool
         Policy: string
         /// Positions of this puzzle the engine got right, and how many were scored.
         /// Both 0 unless the run set ScoreAllPositions.
@@ -262,14 +260,6 @@ module PuzzleTypes =
         /// counters this costs nothing, since the first position is always queried.
         FirstMoveCorrect: int
         FirstMoveScored: int
-        KLD: float
-        // Engine's rank (1-indexed) of the correct move at the puzzle command that
-        // produced KLD. 0 = no rank data (e.g. classical engine, no policy probed,
-        // value puzzles, solve test). Used for the rank-weighted KLD aggregate
-        // metric: only puzzles with EngineRank > 0 contribute to AvgRankWeightedKld.
-        EngineRank: int
-        MarginLoss: float
-        ValueLoss: float
       }
 
     /// One puzzle's outcome from the multi-topN policy runner, which answers several

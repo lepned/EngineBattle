@@ -95,31 +95,6 @@ let bestMoveByEvalForLimit (limit: TimeControlTypes.TimeControlCommands.SearchLi
     | TimeControlTypes.TimeControlCommands.SearchLimit.TimeLimit ms -> return! bestMoveByEvalWithTimeAsync ms engine fen
 }
 
-//for Ceres TB run
-let bestQ (nodes:int) (engine: ChessEngine) (pos: EPDEntry) (board:Board inref)  =
-  let qList = ResizeArray<float*string>()
-  let fen = pos.FEN
-  board.LoadFen fen
-  let legalMoves = board.GetLegalMoves()
-  for (lSan,_) in legalMoves do
-    let cmd = sprintf "position fen %s moves %s" fen lSan
-    engine.Position cmd
-    engine.GoNodes nodes
-
-    let mutable cont = true
-    let mutable infoString = ""
-    while cont do
-      let line = readLineChecked engine
-      if line.StartsWith "bestmove" then
-        cont <- false
-      elif line.StartsWith "info string node" then
-        infoString <- line
-
-    let res = Regex.floatParser infoString Regex.v
-    qList.Add (res,lSan)
-  let m = qList |> Seq.minBy fst
-  m
-
 let solvePuzzleSearch (nodes: int) (engine: ChessEngine) (pos: string) =
   // A valid UCI move is 4-5 chars: [a-h][1-8][a-h][1-8][qrbn]?
   // Used to strip non-move tokens from PV (e.g. Ceres appends "string M= N").

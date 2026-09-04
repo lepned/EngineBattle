@@ -675,6 +675,39 @@ module JSONParser =
     let private emptyPositions : Position seq = Seq.empty
     let private emptyFens : string seq = Seq.empty
 
+    /// Every puzzle needs an id that is non-blank and unique within the file: the
+    /// first-move theme credit, the McNemar id sets and the failed-puzzle CSV all key on
+    /// it. The Lichess database guarantees both, but a hand-made or re-exported CSV need
+    /// not - and with a shared id every failed puzzle inherits the first solved one's
+    /// key-move credit, both nets collapse to a one-element paired set, and the failed
+    /// CSV writes a single row. A blank id becomes `row<N>` (N = line in the file, so it
+    /// is stable across runs of the same file); a repeat gets `#2`, `#3`, ... appended.
+    /// Ids are taken in file order, so this runs BEFORE any shuffle.
+    let ensureUniquePuzzleIds (records: CsvPuzzleData[]) =
+        let seen = Collections.Generic.Dictionary<string, int>()
+        let mutable blank = 0
+        let mutable repeated = 0
+        for i in 0 .. records.Length - 1 do
+            let raw = records.[i].PuzzleId
+            let baseId =
+                if String.IsNullOrWhiteSpace raw then
+                    blank <- blank + 1
+                    sprintf "row%d" (i + 2) // +1 for the header, +1 for 1-based lines
+                else raw
+            let id =
+                match seen.TryGetValue baseId with
+                | true, n ->
+                    repeated <- repeated + 1
+                    seen.[baseId] <- n + 1
+                    sprintf "%s#%d" baseId (n + 1)
+                | _ ->
+                    seen.[baseId] <- 1
+                    baseId
+            if id <> raw then records.[i] <- { records.[i] with PuzzleId = id }
+        if blank > 0 || repeated > 0 then
+            printfn "Puzzle ids rewritten: %d blank -> row<N>, %d repeated -> id#N (ids must be unique for theme and paired scoring)" blank repeated
+        records
+
     let parsePuzzle (filePath: string) (random: bool) : CsvPuzzleData[] =
         let parseLine (line: string) =
             let fields = line.Split(',')
@@ -700,6 +733,7 @@ module JSONParser =
           File.ReadAllLines(filePath)
           |> Array.skip 1
           |> Array.map parseLine
+          |> ensureUniquePuzzleIds
 
         if random then
             System.Random.Shared.Shuffle(records)
@@ -728,6 +762,7 @@ module JSONParser =
                     emptyPositions,
                     emptyFens,
                     0 ))
+            |> ensureUniquePuzzleIds
 
         if random then
             System.Random.Shared.Shuffle(recordsArray)

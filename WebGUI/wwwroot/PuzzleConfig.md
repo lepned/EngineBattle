@@ -14,8 +14,16 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   - There is no top-N *value* test. Only the policy head exposes a ranking of every move;
     the value head answers with one best child move, in both Lc0 and Ceres. Use `policy3`
     and friends for top-N.
+  - `policyvalue` (alias `dual`) — the `policy` and `value` tests on ONE engine instance,
+    policy pass first, value pass second. Same rows as running the two separately; saves an
+    engine start-up per net.
   - `search` — Search accuracy at N nodes (uses the `Nodes` setting).
   - `solve` — Solve from first position, verify full PV (uses the `Nodes` setting).
+
+  A token that is not on this list (a typo, or `value3`, which has never been a test) refuses
+  the run with a message naming it, in both the console and the GUI. It used to be logged and
+  skipped, so `"policy, value3"` ran policy only and finished green under a label that
+  promised more.
 
   **KLD (Kullback-Leibler Divergence)**: Reported for all policy types. Measures `-log(P_correct / 100)` — how much probability the policy assigns to the correct move. Lower = better. KLD is identical across all policy TopN thresholds since it depends on the raw probability, not the threshold.
 
@@ -44,7 +52,8 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   whether the flag is on or off — this only adds `positionsCorrect`/`positionsScored`/
   `positionAccuracy` to the result JSON, which are `0` when the flag is off so a consumer can
   tell "not measured" from "measured as zero". (Comparability across BUILDS is a separate
-  matter — see the stalemate discontinuity noted in `Console/PuzzleJsonSchema.md`.) For the `value` test it also costs engine time, since positions after a
+  matter — see the stalemate discontinuity noted in `Console/PuzzleJsonSchema.md`.) For the `value` test — and the value half of
+  `policyvalue`, which honours the flag the same way — it also costs engine time, since positions after a
   mistake are queried where they would otherwise be skipped; the policy tests already query
   every position, so there the flag only changes what is reported.
 

@@ -1922,55 +1922,22 @@ module Program =
         | LichessError msg ->
             RuntimeUtilities.ConsoleUtils.redConsole $"\nPuzzle Error: {msg}"
                   
-    let types = 
-        if String.IsNullOrEmpty(data.Type) || String.IsNullOrWhiteSpace (data.Type.Trim()) then            
-            []
-        else
-            data.Type.ToLower().Split(",") 
-            |> Seq.map (fun e -> e.Trim()) 
-            |> Seq.toList
-    
     let ct = CancellationToken.None
     let scores =
-        match types with
-        | [] ->
+        // One parser with the GUI (PuzzleRunners.parseSubTests). An unknown token refuses
+        // the run: silently running the tokens that did parse produced a narrower run that
+        // finished green under the config's own label.
+        match PuzzleRunners.parseSubTests data.Type (PuzzleDataUtils.parseNodes puzzleInput.nodes) with
+        | Result.Error unknown ->
+            RuntimeUtilities.ConsoleUtils.redConsole $"
+Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
+            exit 1
+        | Result.Ok [] ->
             printfn "No puzzle types specified, defaulting to both policy and value test"
             PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
-        | _ ->
+        | Result.Ok subTests ->
             printfn "Puzzle types specified: %s" data.Type
-            let nodeList = PuzzleDataUtils.parseNodes puzzleInput.nodes
-            let subTests =
-                types
-                |> List.collect (fun t ->
-                    match t with
-                    | "policy" -> [ PuzzleEngineAgent.SubTest.Policy ]
-                    | "value"  -> [ PuzzleEngineAgent.SubTest.Value ]
-                    | "policyvalue" | "dual" -> [ PuzzleEngineAgent.SubTest.PolicyValue ]
-                    | "search" -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Search
-                    | "solve"  -> nodeList |> Array.toList |> List.map PuzzleEngineAgent.SubTest.Solve
-                    | t when t.StartsWith("policytop") ->
-                        match System.Int32.TryParse(t.Substring("policytop".Length)) with
-                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.PolicyTopN n ]
-                        | _ ->
-                            printfn "Invalid policytop value '%s', expected e.g. policytop3" t
-                            []
-                    | t when t.StartsWith("policy") && t.Length > 6 ->
-                        match System.Int32.TryParse(t.Substring("policy".Length)) with
-                        | true, n when n >= 1 -> [ PuzzleEngineAgent.SubTest.PolicyTopN n ]
-                        | _ ->
-                            printfn "Invalid policy value '%s', expected e.g. policy3" t
-                            []
-                    // No top-N value test exists: only the policy head ranks every move, the
-                    // value head answers with one best child. `value3` and `valuetop3` fall
-                    // through to the unknown-type warning below.
-                    | other ->
-                        printfn "Unknown puzzle type '%s', skipping" other
-                        [])
-            if subTests.IsEmpty then
-                printfn "No valid puzzle types found, defaulting to policy and value test"
-                PuzzleRunners.runValueAndPolicyHeadTest(puzzleInput, update, ct)
-            else
-                PuzzleEngineAgent.runTest puzzleInput (Action<Lichess>(update)) subTests ct
+            PuzzleEngineAgent.runTest puzzleInput (Action<Lichess>(update)) subTests ct
 
     let valueScores = 
         scores 
@@ -2211,7 +2178,9 @@ module Program =
         if pairedSummary <> "" then
             printfn "  Full paired table: %s" (Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.txt"))
 
-        let testTypeInfo = String.Join("-", types)
+        let testTypeInfo =
+            let tokens = if String.IsNullOrWhiteSpace data.Type then [||] else data.Type.ToLower().Split(',') |> Array.map (fun t -> t.Trim())
+            String.Join("-", tokens)
         let engineCount = engineConfigs.Count
         //write table to file with date and time
         let tableFileName = Path.Combine(escaped, $"LichessSummary_{filenameFriendlyDate}.txt")

@@ -58,16 +58,6 @@ let getPVMoves (pv: string) =
       pvMoves.Add(item)
   pvMoves
 
-let getAllFens (fen: string) (moves: string seq) =
-  chess.ResetBoardState()
-  let fens = ResizeArray<string>()
-  fens.Add(fen)
-  chess.LoadFen(fen)
-  for move in moves do
-    chess.PlayUciMove(move)
-    fens.Add(chess.FEN())
-  fens
-
 let getUpdatedRecord (record: CsvPuzzleData) =
     // 1) parse SAN moves once
     let moves = getPVMoves record.Moves

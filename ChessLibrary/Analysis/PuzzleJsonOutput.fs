@@ -238,7 +238,10 @@ let buildResultWithPaired
       MaxRating = maxRating
       Filter = (if isNull filter then "" else filter)
       RatingGroups = (if isNull ratingGroups then "" else ratingGroups)
-      StartedUtc = utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+      // Invariant, like every other timestamp in the pipeline: without it the ':' is the
+      // culture's time separator, and a host that has not forced InvariantCulture writes
+      // "12.30.00" into a documented ISO-8601 field.
+      StartedUtc = utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", Globalization.CultureInfo.InvariantCulture)
       ElapsedSeconds = safeFinite elapsedSeconds
       Scores = materialized |> Seq.map toEntry |> Seq.toArray
       Paired = paired.Comparisons |> List.map toPairedEntry |> List.toArray

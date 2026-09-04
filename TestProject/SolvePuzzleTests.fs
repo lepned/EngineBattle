@@ -17,7 +17,6 @@ let private mkMockSolveAgent (bestmove: string) (pv: string) =
             | Ok reply               -> reply.Reply(true)
             | Network reply          -> reply.Reply("mock-net")
             | Quit reply             -> reply.Reply()
-            | BestMove (_, reply)    -> reply.Reply("", 0.0)
             | BestMoveWithPolicy (_, _, reply) -> reply.Reply("", "")
             | BestMoveWithAllPolicies (_, reply) -> reply.Reply("", [])
             | BestMoveValueHead (_, reply) -> reply.Reply("")

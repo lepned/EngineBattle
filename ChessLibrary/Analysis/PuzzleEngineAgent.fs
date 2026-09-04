@@ -35,9 +35,6 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                         engine.UciNewGame()
                         engine.WaitForReadyOk() |> ignore
                         reply.Reply()
-                    | BestMove (cmd, reply) ->
-                        let mv = bestQPuzzleValueOnly engine cmd
-                        reply.Reply (mv,0.0)
                     | BestMoveWithPolicy (cmd, correctMove, reply) ->
                         let mv = bestQPuzzleValueOnly engine cmd
                         reply.Reply (mv,String.Empty)
@@ -54,7 +51,6 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                 with ex ->
                     eprintfn "PuzzleEngineAgent (value) error: %s" ex.Message
                     match msg with
-                    | BestMove (_, reply) -> reply.Reply ("", 0.0)
                     | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
                     | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
                     | BestMoveValueHead (_, reply) -> reply.Reply ""
@@ -110,9 +106,6 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
                     engine.UciNewGame()
                     engine.WaitForReadyOk() |> ignore
                     reply.Reply()
-                | BestMove (cmd, reply) ->
-                    let mv, nnValue = bestPolicyMove nodes engine cmd.Command
-                    reply.Reply (mv,(if nnValue.IsSome then 0.0 else 0.0))
                 | BestMoveWithPolicy (cmd, correctMove, reply) ->
                     let mv, nnValue = bestPolicyMoveWithPolicy correctMove nodes engine cmd.Command
                     if nnValue.Length = 0 then
@@ -137,7 +130,6 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
             with ex ->
                 eprintfn "PuzzleEngineAgent (policy) error: %s" ex.Message
                 match msg with
-                | BestMove (_, reply) -> reply.Reply ("", 0.0)
                 | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
                 | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
                 | BestMoveValueHead (_, reply) -> reply.Reply ""
@@ -156,7 +148,7 @@ let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
 /// `scoreAllPositions` keeps querying after the first mistake so every position of a
 /// multi-move puzzle is scored. Unlike the policy paths this costs real engine time -
 /// positions after a miss are skipped today - which is why it is opt-in.
-let runPuzzleViaAgentEx (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (scoreAllPositions: bool) (puzzle:CsvPuzzleData)  = async {
+let runPuzzleViaAgentEx (agent:MailboxProcessor<EngineMsg>) (scoreAllPositions: bool) (puzzle:CsvPuzzleData)  = async {
     // Reset engine state between puzzles
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
 
@@ -222,16 +214,11 @@ let runPuzzleViaAgentEx (agent:MailboxProcessor<EngineMsg>) (valueHead : bool) (
         WasCorrect = correct
         MovePlayed = movePlayed
         FailedMove = failedMove
-        ValueHead = valueHead
         Policy = policy
         PositionsCorrect = posCorrect
         PositionsScored = posScored
         FirstMoveCorrect = firstMoveCorrect
         FirstMoveScored = firstMoveScored
-        KLD = 0.0
-        EngineRank = 0
-        MarginLoss = 0.0
-        ValueLoss = 0.0
       }
   }
 
@@ -418,26 +405,6 @@ let computeKLD (allNNValues: EngineTypes.NNValues list) (correctMove: string) =
         | Some v when v.P > 0.0 -> -log(v.P / 100.0)
         | _ -> -log(0.01 / 100.0)  // floor: treat as 0.01% policy
 
-/// Softmax with numerical stability (subtract max before exp).
-let softmax (values: float list) =
-    if values.IsEmpty then []
-    else
-        let maxV = values |> List.max
-        let exps = values |> List.map (fun v -> exp(v - maxV))
-        let sumExps = exps |> List.sum
-        exps |> List.map (fun e -> e / sumExps)
-
-/// Compute Value KLD from per-move V evaluations. V values should already be negated
-/// (from parent's perspective: higher = better for us).
-let computeValueKLD (moveVals: (string * float) list) (correctMove: string) =
-    if moveVals.IsEmpty then 0.0
-    else
-        let probs = softmax (moveVals |> List.map snd)
-        let moveProbs = List.zip (moveVals |> List.map fst) probs
-        match moveProbs |> List.tryFind (fun (m, _) -> m = correctMove) with
-        | Some (_, p) when p > 0.0 -> -log(p)
-        | _ -> -log(0.01 / 100.0)
-
 /// Per-puzzle multi-topN workflow: one engine call, check all thresholds at once.
 /// Returns (puzzle, maxKLD, maxMarginLoss, engineRankAtMaxKld, avgValueLoss, maxEstNodes, correctPerTopN) where:
 ///   * maxKLD = max log-loss across the puzzle's commands
@@ -611,16 +578,11 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             WasCorrect = false
             MovePlayed = ""
             FailedMove = ""
-            ValueHead = false
             Policy = ""
             PositionsCorrect = 0
             PositionsScored = 0
             FirstMoveCorrect = 0
-            FirstMoveScored = 0
-            KLD = 0.0
-            EngineRank = 0
-            MarginLoss = 0.0
-            ValueLoss = 0.0 }
+            FirstMoveScored = 0 }
     else
         // Send SolvePuzzle with the first position
         let! (bestmove, pvString, nnValues) = agent.PostAndAsyncReply(fun ch -> SolvePuzzle(commands.[0].Command, ch))
@@ -774,7 +736,6 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             WasCorrect = correct
             MovePlayed = movePlayed
             FailedMove = failedMove
-            ValueHead = false
             Policy = policyString
             // Solve checks every command against ONE search's PV, so it does have a verdict
             // per position - but only up to the first mistake, after which the PV no longer
@@ -785,11 +746,7 @@ let runSolvePuzzleViaAgent (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzle
             FirstMoveCorrect = firstMoveCorrect
             // Always 1 here: this branch is only reached when the puzzle has commands. Stated
             // rather than hardcoded, so it stays true if the empty-puzzle guard above moves.
-            FirstMoveScored = if commands.Length > 0 then 1 else 0
-            KLD = 0.0
-            EngineRank = 0
-            MarginLoss = 0.0
-            ValueLoss = 0.0 }
+            FirstMoveScored = if commands.Length > 0 then 1 else 0 }
   }
 
 /// Shutdown agents safely, swallowing any exceptions
@@ -837,7 +794,7 @@ let performValueNetworkTest
                 while keepGoing && not ct.IsCancellationRequested do
                     let ok, puzzle = puzzleCh.Reader.TryRead()
                     if ok then
-                        let! result = runPuzzleViaAgentEx agent true scoreAllPositions puzzle
+                        let! result = runPuzzleViaAgentEx agent scoreAllPositions puzzle
                         resultsBag.Add(result)
                         let count = Interlocked.Increment(&processedCount)
                         if count % 10 = 0 || count = total then onProgress count
@@ -951,7 +908,7 @@ let performPolicyOrSearchTest
                     // Same loop as the value test - it stops at the first mistake unless
                     // the flag says otherwise. Search pays engine time per position, so with
                     // the flag on this costs more than it does for a 1-node value run.
-                    let! result = runPuzzleViaAgentEx agent false scoreAllPositions puzzle
+                    let! result = runPuzzleViaAgentEx agent scoreAllPositions puzzle
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
@@ -1298,35 +1255,49 @@ let performPolicyMultiTopNTest
         shutdownAgents agents
 
 
-// Per-puzzle value-head workflow using BestMoveValueHead (for combo agent)
-let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzzle:CsvPuzzleData) = async {
+// Per-puzzle value-head workflow using BestMoveValueHead (for combo agent).
+// `scoreAllPositions` means the same as in runPuzzleViaAgentEx: keep querying past the
+// first mistake so every position gets a verdict. Without it the policyvalue combo
+// reported positionsScored = 0 on its Value row - "not measured", per the schema - while
+// the same net under Type "value" reported real counts, so the two Value rows disagreed.
+let runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (scoreAllPositions: bool) (puzzle:CsvPuzzleData) = async {
     do! agent.PostAndAsyncReply(fun ch -> NewGame ch)
     let board = Board()
     let mutable correct    = true
     let mutable movePlayed = ""
     let mutable failedMove = ""
+    let mutable posCorrect = 0
+    let mutable posScored = 0
     // Commands[0] is the move the puzzle exists for, and its themes describe THAT move.
     // Costs nothing: the first position is always queried. Same rule as runPuzzleViaAgentEx.
     let mutable firstMoveCorrect = 0
     let mutable firstMoveScored = 0
 
     for cmd in puzzle.Commands do
-      if correct then
+      if correct || scoreAllPositions then
         let! mv = agent.PostAndAsyncReply(fun ch -> BestMoveValueHead(cmd, ch))
-        movePlayed <- mv
+        // Only the first failure is reported downstream, so later positions must not
+        // overwrite what the failing one played.
+        if correct then movePlayed <- mv
         let mutable solved = cmd.CorrectMove = mv
         if not solved then
           // IsMate, not AnyLegalMove: the latter also fires on stalemate.
           board.PlayCommands cmd.Command
           board.PlayUciMove mv
           solved <- board.IsMate()
+        // Counted only under the flag - see runPuzzleViaAgentEx for why counting anyway
+        // would report a censored denominator.
+        if scoreAllPositions then
+            if solved then posCorrect <- posCorrect + 1
+            posScored <- posScored + 1
         if firstMoveScored = 0 then
             firstMoveScored <- 1
             if solved then firstMoveCorrect <- 1
-        // After the fallback, so a position the fallback RESCUED is not recorded as the
-        // failure. Matches runPuzzleViaAgentEx; these two loops used to disagree.
-        if not solved then failedMove <- cmd.CorrectMove
-        correct <- solved
+        if correct then
+          // After the fallback, so a position the fallback RESCUED is not recorded as the
+          // failure. Matches runPuzzleViaAgentEx; these two loops used to disagree.
+          if not solved then failedMove <- cmd.CorrectMove
+          correct <- solved
 
     // Sentinel: when the engine returned an empty bestmove for a failed puzzle
     // (e.g. the agent's exception handler fell back to ""), stamp "0000" so the
@@ -1342,16 +1313,11 @@ let private runPuzzleViaAgentValueHead (agent:MailboxProcessor<EngineMsg>) (puzz
         WasCorrect = correct
         MovePlayed = movePlayed
         FailedMove = failedMove
-        ValueHead = true
         Policy = ""
-        PositionsCorrect = 0
-        PositionsScored = 0
+        PositionsCorrect = posCorrect
+        PositionsScored = posScored
         FirstMoveCorrect = firstMoveCorrect
         FirstMoveScored = firstMoveScored
-        KLD = 0.0
-        EngineRank = 0
-        MarginLoss = 0.0
-        ValueLoss = 0.0
       }
   }
 
@@ -1526,7 +1492,7 @@ let performPolicyValueTest
                     while keepGoing && not ct.IsCancellationRequested do
                         let ok, puzzle = puzzleCh2.Reader.TryRead()
                         if ok then
-                            let! result = runPuzzleViaAgentValueHead agent puzzle
+                            let! result = runPuzzleViaAgentValueHead agent scoreAllPositions puzzle
                             valueResultsBag.Add(result)
                             let count = Interlocked.Increment(&processedCount)
                             if count % 10 = 0 || count = total then onProgress count
@@ -1575,8 +1541,10 @@ let performPolicyValueTest
                       EstNodesP99 = 0.0
                       EstNodesCdf100 = 0.0
                       HardestByEstNodes = ResizeArray<CsvPuzzleData * float>()
-                      PositionsCorrect = 0
-                      PositionsScored = 0
+                      // Summed exactly as performValueNetworkTest does, so a net's Value row
+                      // reads the same whether it came from "value" or "policyvalue".
+                      PositionsCorrect = valueResults |> Array.sumBy (fun r -> r.PositionsCorrect)
+                      PositionsScored = valueResults |> Array.sumBy (fun r -> r.PositionsScored)
                       FirstMoveCorrect = valueResults |> Array.sumBy (fun r -> r.FirstMoveCorrect)
                       FirstMoveScored = valueResults |> Array.sumBy (fun r -> r.FirstMoveScored)
                       FirstMoveCorrectIds =

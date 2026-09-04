@@ -57,18 +57,6 @@ let runSearchTests
     |> List.map Search
   runTest input callback searches ct
 
-/// Only "solve" runs at each node setting
-let runSolveTests
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  let solves =
-    parseNodes input.nodes
-    |> Array.toList
-    |> List.map Solve
-  runTest input callback solves ct
-
 /// Value + Policy
 let runValueAndPolicyHeadTest
     (input      : PuzzleInput,
@@ -78,84 +66,53 @@ let runValueAndPolicyHeadTest
   let testTypes = [ Value; Policy ]
   runTest input callback testTypes ct
 
-/// Policy + Value combo (single engine init, both heads evaluated on same engine)
-let runPolicyValueComboTest
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  runTest input callback [ PolicyValue ] ct
+/// The config's `Type` string ("policy, value, policy3, search") as sub-tests, or the
+/// tokens it could not read. One parser for the console and the GUI: they used to carry
+/// their own copies, and both handled an unknown token by warning into a log nobody
+/// reads and then running whatever remained - so `"policy, value3"` (a test that never
+/// existed: no engine can rank moves by value head, the parser merely accepted the token
+/// once) quietly became a policy-only run that finished green, and a lone typo like
+/// `"polcy"` fell through to the policy+value default, a different test set than the one
+/// asked for. A run that cannot do what its config says must refuse, not narrow.
+///
+/// `Ok []` means the spec was empty; the caller decides the default for that.
+let parseSubTests (typeSpec: string) (nodes: int[]) : Result<SubTest list, string list> =
+  let tokens =
+    if String.IsNullOrWhiteSpace typeSpec then []
+    else
+      typeSpec.ToLowerInvariant().Split(',')
+      |> Array.map (fun t -> t.Trim())
+      |> Array.filter (fun t -> t.Length > 0)
+      |> Array.toList
+  let nodeList = nodes |> Array.toList
+  let parseOne (t: string) =
+    match t with
+    | "policy" -> Result.Ok [ Policy ]
+    | "value" -> Result.Ok [ Value ]
+    | "policyvalue" | "dual" -> Result.Ok [ PolicyValue ]
+    | "search" -> Result.Ok (nodeList |> List.map Search)
+    | "solve" -> Result.Ok (nodeList |> List.map Solve)
+    | _ when t.StartsWith "policytop" ->
+        match Int32.TryParse(t.Substring "policytop".Length) with
+        | true, n when n >= 1 -> Result.Ok [ PolicyTopN n ]
+        | _ -> Result.Error t
+    | _ when t.StartsWith "policy" ->
+        match Int32.TryParse(t.Substring "policy".Length) with
+        | true, n when n >= 1 -> Result.Ok [ PolicyTopN n ]
+        | _ -> Result.Error t
+    // No top-N value test exists: only the policy head ranks every move, the value
+    // head answers with one best child. `value3` and `valuetop3` are unknown.
+    | _ -> Result.Error t
+  let parsed = tokens |> List.map parseOne
+  let unknown = parsed |> List.choose (function Result.Error t -> Some t | _ -> None)
+  if not unknown.IsEmpty then Result.Error unknown
+  else Result.Ok (parsed |> List.collect (function Result.Ok l -> l | Result.Error _ -> []))
 
-/// Value + Search
-let runValueAndSearchTest
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  let searches =
-    parseNodes input.nodes
-    |> Array.toList
-    |> List.map Search
-  runTest input callback (Value :: searches) ct
-
-/// Policy + Search
-let runPolicyAndSearchTests
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  let searches =
-    parseNodes input.nodes
-    |> Array.toList
-    |> List.map Search
-  runTest input callback (Policy :: searches) ct
-
-/// Search + Solve
-let runSearchAndSolveTests
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  let nodes = parseNodes input.nodes |> Array.toList
-  let tests = (nodes |> List.map Search) @ (nodes |> List.map Solve)
-  runTest input callback tests ct
-
-/// Policy + Solve
-let runPolicyAndSolveTests
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  let solves =
-    parseNodes input.nodes
-    |> Array.toList
-    |> List.map Solve
-  runTest input callback (Policy :: solves) ct
-
-/// Value + Solve
-let runValueAndSolveTests
-    (input    : PuzzleInput,
-     callback : Action<Lichess>,
-     ct       : CancellationToken)
-  =
-  let solves =
-    parseNodes input.nodes
-    |> Array.toList
-    |> List.map Solve
-  runTest input callback (Value :: solves) ct
-
-/// All: Value, Policy, Search, and Solve
-let runAllTests
-    (input      : PuzzleInput,
-     callback   : Action<Lichess>,
-     ct         : CancellationToken)
-  =
-  let baseTests = [ Value; Policy ]
-  let allTests =
-      baseTests @
-      (parseNodes input.nodes |> Array.toList |> List.map Search) @
-      (parseNodes input.nodes |> Array.toList |> List.map Solve)
-  runTest input callback allTests ct
+/// The message a refused `Type` gets, worded so the fix is obvious.
+let unknownSubTestsMessage (unknown: string list) =
+  sprintf "Unknown puzzle type%s: %s. Valid: policy, value, policyvalue, policy<N> (e.g. policy3), search, solve."
+    (if unknown.Length > 1 then "s" else "")
+    (String.Join(", ", unknown |> List.map (sprintf "'%s'")))
 
 let writeToFile (data:EretConfig) (scores: ERETResults seq) (sw:StreamWriter) (boardBm: Chess.Board) (boardAm: Chess.Board) =
     for item in scores do

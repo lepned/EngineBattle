@@ -39,6 +39,7 @@
 		<Compile Include="PuzzleMateFallbackTests.fs" />
 		<Compile Include="PuzzleThemeTests.fs" />
 		<Compile Include="PuzzleReportTests.fs" />
+		<Compile Include="PuzzlePipelineFixesTests.fs" />
 		<Compile Include="OutputFolderTests.fs" />
 		<Compile Include="EngineDefGenTests.fs" />
 		<Compile Include="GameAccuracyAnalysisTests.fs" />
