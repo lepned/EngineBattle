@@ -426,7 +426,10 @@ module Program =
 
       engine.UciNewGame()
       let ok = engine.WaitForReadyOk(900000)
-      if not ok then failwith "Engine did not respond to isready"
+      if not ok then
+          // Startup-class failure: the caller should stop, not retry it per position.
+          raise (CustomException.EngineStartupException
+                    (sprintf "engine %s is not ready: %s" engine.Name engine.ReadyFailure))
 
       let movesStr = if moves.Length > 0 then " moves " + String.concat " " moves else ""
       if isStartpos then
@@ -484,6 +487,10 @@ module Program =
                   running <- false
 
       sw.Stop()
+      if bestmove = "" && engine.HasExited() then
+          raise (CustomException.EngineStartupException
+                    (sprintf "engine %s exited during the search (code %s)" engine.Name
+                        (match engine.LastExitCode with Some c -> string c | None -> "?")))
       let sanPV =
           if not (String.IsNullOrWhiteSpace lastPV) then
               let moveList = Array.init 256 (fun _ -> Unchecked.defaultof<MoveTypes.TMove>)
@@ -958,7 +965,13 @@ module Program =
                         (GameAnalysis.Formatting.formatNPS (float r2.Nps))
                         npsRatio
                         moveStr
-            with ex ->
+            with
+            | :? CustomException.EngineStartupException as ex ->
+                // A refused or dead engine cannot recover on the next position; stop
+                // here (the finally below still shuts both engines down).
+                ConsoleUtils.printInColor ConsoleColor.Red (sprintf "%-4d  %-*s  FATAL: %s" (i + 1) fenW fen ex.Message)
+                raise ex
+            | ex ->
                 printfn "%-4d  %-*s  ERROR: %s" (i + 1) fenW fen ex.Message
 
         // Summary
@@ -993,7 +1006,8 @@ module Program =
             engine1.StopProcess()
             engine2.StopProcess()
     with ex ->
-        printfn "Error during comparison: %s" ex.Message
+        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Comparison aborted: %s" ex.Message)
+        exit 1
 
   // ---------- Contextual piece valuation (leave-one-out net eval) ----------
   // "What is a piece worth to the net in THIS position" = how much the eval drops

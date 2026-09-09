@@ -136,3 +136,25 @@ let ``combo option with multi-word values parses each var run`` () =
             Assert.Equal("Very Solid", def)
         | _ -> failwith "Expected combo option"
     | None -> failwith "Option did not parse"
+
+// ---------------------------------------------------------------------------
+// Fatal-init markers: an engine that gives up on initialization WITHOUT exiting
+// (Ceres after a refused network) never answers isready. The waits key off these
+// lines to fail at once instead of sitting out the readyok timeout.
+// ---------------------------------------------------------------------------
+
+[<Theory>]
+[<InlineData("Cannot initialize engine.")>]
+[<InlineData("No evaluator created, ERROR encountered.")>]
+[<InlineData("info string no evaluator created")>]
+let ``isFatalInitLine recognises the engine's give-up lines`` (line: string) =
+    Assert.True(ChessLibrary.Engine.isFatalInitLine line)
+
+[<Theory>]
+[<InlineData("readyok")>]
+[<InlineData("info depth 1 score cp 12 nodes 1 nps 1 pv e2e4")>]
+[<InlineData("[TensorRT] Cache miss (no cached engine file found): x")>]
+[<InlineData("")>]
+[<InlineData(null)>]
+let ``isFatalInitLine ignores ordinary output`` (line: string) =
+    Assert.False(ChessLibrary.Engine.isFatalInitLine line)

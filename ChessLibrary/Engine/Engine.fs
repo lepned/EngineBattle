@@ -33,6 +33,17 @@ module Engine =
     elif line.IndexOf '\u001b' < 0 then line   // the common case: nothing to strip
     else ansiEscape.Replace(line, "")
 
+  /// Lines an engine prints on stdout when it has given up on initialization WITHOUT
+  /// exiting. Ceres stays alive after a failed network/device load (so a GUI can send
+  /// another setoption), which means "isready" never gets its "readyok" and a plain wait
+  /// runs to its timeout (15 min in cmp, 2 h in tournaments) with the GPU idle. Seeing
+  /// one of these ends the wait as a failure at once. Engines that exit instead are
+  /// caught by the HasExited checks next to every wait.
+  let private fatalInitMarkers = [| "Cannot initialize engine"; "No evaluator created" |]
+  let isFatalInitLine (line: string) =
+    not (String.IsNullOrEmpty line)
+    && fatalInitMarkers |> Array.exists (fun m -> line.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
+
   // Define a class to manage the chess engine process and communicate with it 
   type ChessEngineWithUCIProcessing (callback, config : EngineConfig, initCommands: string seq, logger:ILogger, writeToConsole: bool, ?logToFile: bool)  =
       let logDebug (text: string) = logger.LogDebug text
@@ -104,6 +115,9 @@ module Engine =
       let mutable isReference = false
       let mutable inUciResponsMode = true
       let mutable inIsreadyMode = false
+      // Set by the stdout handler when the engine reports a fatal init error while we
+      // wait for uciok/readyok; read by waitForInitialization so it fails at once.
+      let mutable initFailure : string option = None
       let moveList = Array.init 256 (fun _ -> defaultof<TMove> )
       let optionsMap = System.Collections.Generic.Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)     
       let engineProcess = new Process()
@@ -168,6 +182,17 @@ module Engine =
                 let mode = if uciMode = "uci" then inUciResponsMode else inIsreadyMode
                 if cancellationToken.IsCancellationRequested then
                     printfn "Timeout for %s" uciMode
+                    ok <- false
+                    cont <- false
+                elif mode && engineProcess.HasExited then
+                    // Dead engines never answer: fail now instead of at the (2 h) timeout.
+                    let code = try string engineProcess.ExitCode with _ -> "?"
+                    initFailure <- Some (sprintf "process exited with code %s" code)
+                    ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Engine %s exited (code %s) while waiting for %s" name code uciMode)
+                    ok <- false
+                    cont <- false
+                elif mode && initFailure.IsSome then
+                    ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Engine %s failed to initialize while waiting for %s: %s" name uciMode initFailure.Value)
                     ok <- false
                     cont <- false
                 elif mode then
@@ -574,6 +599,8 @@ module Engine =
                       elif inIsreadyMode then
                         if args.Data = "readyok" then
                           inIsreadyMode <- false
+                        elif isFatalInitLine args.Data then
+                          initFailure <- Some args.Data
                       else
                         processLine callbackFunc name args.Data
               with ex ->
@@ -625,7 +652,8 @@ module Engine =
               let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
               let ok = waitForInitialization ((new CancellationTokenSource(timeout)).Token) "uci"
               if not ok then
-                failwith "Engine did not respond to UCI command."
+                failwith (sprintf "Engine %s did not respond to the uci command%s" name
+                            (match initFailure with Some r -> " (" + r + ")" | None -> ""))
           
           for cmd in configCmds do
             match UciOption.parseSetOptionCommand cmd with
@@ -662,7 +690,8 @@ module Engine =
               let timeout = TimeSpan.FromHours(2).TotalMilliseconds |> int
               let ok = waitForInitialization((new CancellationTokenSource(timeout)).Token) "readyok"
               if not ok then
-                  failwith "Engine did not respond to isready command."
+                  failwith (sprintf "Engine %s did not respond to the isready command%s" name
+                              (match initFailure with Some r -> " (" + r + ")" | None -> ""))
           
           // Snapshot before enumerating: the stderr callback thread may be appending.
           let pending = lock stderrLock (fun () -> stderrBuffer.ToArray())
@@ -1095,6 +1124,9 @@ module Engine =
       let mutable isRunning = false
       let mutable isReference = false
       let mutable validate = true
+      // Why the last WaitForReadyOk returned false ("" after a successful one). Callers
+      // (cmp, analyze) have no logger, so the reason must travel with the engine.
+      let mutable readyFailure = ""
     
       let write (s:string) = 
         try
@@ -1524,34 +1556,38 @@ module Engine =
         // The loop takes its CancellationTokenSource explicitly so each protocol branch
         // controls its own timeout (the Winboard 1s CTS used to be shadowed and unused).
         let readUntilReady (cts: CancellationTokenSource) (timeoutForLog: int) =
+          let fail (reason: string) =
+            readyFailure <- reason
+            logCritical (sprintf "Engine %s: %s" name reason)
+            false
           let rec loop() = async {
               try
                 if this.HasExited() then
-                  logCritical (sprintf "Engine %s has exited while waiting for readyok" name)
-                  return false
+                  let code = match lastExitCode with Some c -> string c | None -> "?"
+                  return fail (sprintf "exited (code %s) while waiting for readyok" code)
                 elif cts.Token.IsCancellationRequested then
-                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutForLog)
-                  return false
+                  return fail (sprintf "timeout after %d ms waiting for readyok" timeoutForLog)
                 else
                   let! line = this.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-
                   if isNull line then
-                    logCritical (sprintf "Engine %s: read returned null while waiting for readyok" name)
-                    return false
+                    return fail (if this.HasExited() then "exited while waiting for readyok" else "output closed while waiting for readyok")
                   elif line = "readyok" then
                     // Every caller lands here; GameInitialization logs the milestone.
+                    readyFailure <- ""
                     logDebug (sprintf "Engine %s responded with readyok" name)
                     return true
+                  elif isFatalInitLine line then
+                    // The engine is alive but has given up (Ceres after a refused net):
+                    // no readyok will ever come, so do not sit out the timeout.
+                    return fail (sprintf "reported a fatal initialization error: %s" line)
                   else
                     do! Async.Sleep 100
                     return! loop()
               with
               | :? OperationCanceledException ->
-                  logCritical (sprintf "|||||Timeout after %d ms in WaitForReadyOk |||||" timeoutForLog)
-                  return false
+                  return fail (sprintf "timeout after %d ms waiting for readyok" timeoutForLog)
               | ex ->
-                  logCritical (sprintf "Error in WaitForReadyOk: %s" ex.Message)
-                  return false
+                  return fail (sprintf "error while waiting for readyok: %s" ex.Message)
             }
           loop()
         match winboardHandler with
@@ -1576,8 +1612,10 @@ module Engine =
             write "isready"
             readUntilReady cts timeoutInMs |> Async.RunSynchronously
       
+      /// Why the last WaitForReadyOk returned false; "" when it succeeded.
+      member _.ReadyFailure = readyFailure
       member this.IsRunning
-        with get () = isRunning 
+        with get () = isRunning
         and set (v) = isRunning <- v
 
       member this.HasExited() = 
