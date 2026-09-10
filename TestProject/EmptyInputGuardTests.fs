@@ -22,12 +22,17 @@ let ``an empty PGN gives a deviation fraction of zero, not NaN`` () =
     Assert.Equal(0.0, fraction, 10)
 
 [<Fact>]
-let ``the deviation fraction is still a real ratio when there are games`` () =
-    // Guarding the zero case must not flatten the normal one. With no games there is
-    // nothing to deviate from either, so the honest check is that the guard leaves a
-    // finite value on real input rather than short-circuiting everything to 0.
-    let games = [ PgnGame.Empty 1; PgnGame.Empty 2 ]
+let ``the deviation fraction is a real ratio when games deviate`` () =
+    // Guarding the zero case must not flatten the normal one. Two games between the same
+    // players in the same opening, White choosing a different second move: at least one
+    // deviation, so the guarded division must give devs/games, not the zero short-circuit.
+    // (Two empty games could not tell the two apart: 0/2 and the short-circuit are both 0.)
+    let pgn moves = sprintf "[Event \"t\"]\n[White \"A\"]\n[Black \"B\"]\n[Result \"1/2-1/2\"]\n\n%s 1/2-1/2\n" moves
+    let g1 = FullPGNParser.parseFullPgnGame (pgn "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6")
+    let g2 = FullPGNParser.parseFullPgnGame (pgn "1. e4 e5 2. Nc3 Nc6 3. Bc4 Nf6")
+    g1.GameMetaData.OpeningHash <- "same-opening"
+    g2.GameMetaData.OpeningHash <- "same-opening"
     let _, _, _, _, _, fraction =
-        DeviationAnalysis.analyzeDeviations games
+        DeviationAnalysis.analyzeDeviations [ g1; g2 ]
     Assert.False(Double.IsNaN fraction)
-    Assert.True(fraction >= 0.0 && fraction <= 1.0, sprintf "fraction out of range: %f" fraction)
+    Assert.True(fraction > 0.0, sprintf "expected a positive devs/games ratio, got %f" fraction)

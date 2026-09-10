@@ -662,7 +662,12 @@ module Program =
                 printfn "No search info received from engine."
         finally
             engine.StopProcess()
-    with ex ->
+    with
+    | :? CustomException.EngineStartupException as ex ->
+        // Refused or dead engine: the same exit code cmp and the puzzle command give.
+        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Aborted (analysis): %s" ex.Message)
+        exit 1
+    | ex ->
         printfn "Error during analysis: %s" ex.Message
 
   /// Position-query verb: machine-readable JSON for validator/tooling use (python-chess
@@ -970,7 +975,7 @@ module Program =
                 // A refused or dead engine cannot recover on the next position; stop
                 // here (the finally below still shuts both engines down).
                 ConsoleUtils.printInColor ConsoleColor.Red (sprintf "%-4d  %-*s  FATAL: %s" (i + 1) fenW fen ex.Message)
-                raise ex
+                reraise()
             | ex ->
                 printfn "%-4d  %-*s  ERROR: %s" (i + 1) fenW fen ex.Message
 
@@ -1276,7 +1281,12 @@ module Program =
             printfn ""
         finally
             engine.StopProcess()
-    with ex ->
+    with
+    | :? CustomException.EngineStartupException as ex ->
+        // Refused or dead engine: the same exit code cmp and the puzzle command give.
+        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Aborted (piece valuation): %s" ex.Message)
+        exit 1
+    | ex ->
         printfn "Error during piece valuation: %s" ex.Message
 
   // ---------- Multi-position piece-value regression (AlphaZero-style) ----------
@@ -1681,7 +1691,9 @@ module Program =
                                      yield feat, y, pvTotalPieces squares
                              | Some _ -> nSat <- nSat + 1    // saturated (|logit| ≥ 4)
                              | None -> ()
-                     with _ -> () |]
+                     with
+                     | :? CustomException.EngineStartupException as ex -> raise ex   // dead engine: stop the batch (no reraise inside a comprehension)
+                     | _ -> () |]
             printfn " %d usable  (dropped: %d in-check, %d capture-best, %d saturated).\n"
                 data.Length nCheck nCapture nSat
 
@@ -1945,7 +1957,15 @@ module Program =
         // One parser with the GUI (PuzzleRunners.parseSubTests). An unknown token refuses
         // the run: silently running the tokens that did parse produced a narrower run that
         // finished green under the config's own label.
-        match PuzzleRunners.parseSubTests data.Type (PuzzleDataUtils.parseNodes puzzleInput.nodes) with
+        // A malformed Nodes value is a config error whatever Type says; refuse it with the
+        // offending text instead of an unhandled FormatException (it used to be read lazily,
+        // so an empty Type never touched it).
+        let nodeList =
+            try PuzzleDataUtils.parseNodes puzzleInput.nodes
+            with ex ->
+                RuntimeUtilities.ConsoleUtils.redConsole $"Puzzle Error: {ex.Message}"
+                exit 1
+        match PuzzleRunners.parseSubTests data.Type nodeList with
         | Result.Error unknown ->
             RuntimeUtilities.ConsoleUtils.redConsole $"
 Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
@@ -2522,7 +2542,12 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                 host.StopAsync().Wait()
                 printfn "\n==== BATCH DONE ====\nSummary: %s\n" summaryPath
                 if File.Exists summaryPath then printfn "%s" (File.ReadAllText summaryPath)
-    with ex ->
+    with
+    | :? CustomException.EngineStartupException as ex ->
+        // Refused or dead engine: the same exit code cmp and the puzzle command give.
+        ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Aborted (pvbatch): %s" ex.Message)
+        exit 1
+    | ex ->
         printfn "Error during pvbatch: %s" ex.Message
 
   /// <summary>

@@ -87,6 +87,16 @@ let ``ensureUniquePuzzleIds leaves a well-formed file untouched`` () =
     let out = JSONParser.ensureUniquePuzzleIds records
     Assert.Equal<string[]>([| "a"; "b"; "c" |], out |> Array.map (fun p -> p.PuzzleId))
 
+[<Fact>]
+let ``ensureUniquePuzzleIds never hands out an id that appears literally elsewhere`` () =
+    let mk id =
+        CsvPuzzleData.Create(id, "8/8/8/8/8/8/8/K6k w - - 0 1", "", 1000.0, 50.0, 90, 10, "", "", "", "", Seq.empty, Seq.empty, 0)
+    // `abc` repeats before a literal `abc#2`; a blank row 5 (file line) before a literal `row5`.
+    let records = [| mk "abc"; mk "abc"; mk "abc#2"; mk ""; mk "row5" |]
+    let out = JSONParser.ensureUniquePuzzleIds records |> Array.map (fun p -> p.PuzzleId)
+    Assert.Equal<string[]>([| "abc"; "abc#3"; "abc#2"; "row5#2"; "row5" |], out)
+    Assert.Equal(out.Length, (out |> Array.distinct).Length)
+
 // ---------------------------------------------------------------------------
 // ScoreAllPositions on the value half of policyvalue
 // ---------------------------------------------------------------------------

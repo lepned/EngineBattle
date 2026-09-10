@@ -264,7 +264,10 @@
           <h2 style="margin:0">Where the difference is</h2>
           <div class="theme-sub">@ThemeType accuracy by Lichess theme</div>
         </div>
-        <div class="tool-controls" style="margin:0; @(ThemeNets.Count < 2 ? "display:none" : "")">
+        @* The picker row used to hide whenever fewer than two nets ran, which also hid the
+           rating-group and slice selects a single-net run with several filters or node
+           budgets needs; only Baseline/Compare require two nets. *@
+        <div class="tool-controls" style="margin:0; @(ThemeNets.Count < 2 && ThemeRatingGroups.Count < 2 && ThemeSlices.Count < 2 ? "display:none" : "")">
           <div class="tool-input-group" style="margin-bottom:0">
             <label>Rating group</label>
             <select class="tool-input" @bind="themeRatingGroup" @bind:after="CloseThemeBoards">
@@ -286,24 +289,27 @@
               </select>
             </div>
           }
-          <div class="tool-input-group" style="margin-bottom:0">
-            <label>Baseline</label>
-            <select class="tool-input" style="max-width:230px" @bind="ThemeBaseline" @bind:after="CloseThemeBoards">
-              @foreach (var n in ThemeNets)
-              {
-                <option value="@n">@ThemeNetLabel(n)</option>
-              }
-            </select>
-          </div>
-          <div class="tool-input-group" style="margin-bottom:0">
-            <label>Compare</label>
-            <select class="tool-input" style="max-width:230px" @bind="ThemeCompare" @bind:after="CloseThemeBoards">
-              @foreach (var n in ThemeNets.Where(n => n != ThemeBaseline))
-              {
-                <option value="@n">@ThemeNetLabel(n)</option>
-              }
-            </select>
-          </div>
+          @if (ThemeNets.Count > 1)
+          {
+            <div class="tool-input-group" style="margin-bottom:0">
+              <label>Baseline</label>
+              <select class="tool-input" style="max-width:230px" @bind="ThemeBaseline" @bind:after="CloseThemeBoards">
+                @foreach (var n in ThemeNets)
+                {
+                  <option value="@n">@ThemeNetLabel(n)</option>
+                }
+              </select>
+            </div>
+            <div class="tool-input-group" style="margin-bottom:0">
+              <label>Compare</label>
+              <select class="tool-input" style="max-width:230px" @bind="ThemeCompare" @bind:after="CloseThemeBoards">
+                @foreach (var n in ThemeNets.Where(n => n != ThemeBaseline))
+                {
+                  <option value="@n">@ThemeNetLabel(n)</option>
+                }
+              </select>
+            </div>
+          }
           <div class="tool-input-group" style="margin-bottom:0">
             <label>Min n</label>
             <input type="number" class="tool-input" style="width:82px" @bind="themeMinN" @bind:after="CloseThemeBoards" min="1" step="1" />
@@ -587,7 +593,7 @@
         set
         {
             var i = value.LastIndexOf('|');
-            themeSlice = i > 0 && int.TryParse(value.Substring(i + 1), System.Globalization.NumberStyles.Integer,
+            themeSlice = i >= 0 && int.TryParse(value.Substring(i + 1), System.Globalization.NumberStyles.Integer,
                              System.Globalization.CultureInfo.InvariantCulture, out var n)
                 ? new ThemeSlice(value.Substring(0, i), n)
                 : null;

@@ -685,24 +685,42 @@ module JSONParser =
     /// Ids are taken in file order, so this runs BEFORE any shuffle.
     let ensureUniquePuzzleIds (records: CsvPuzzleData[]) =
         let seen = Collections.Generic.Dictionary<string, int>()
+        // Every id that appears literally anywhere in the file. A synthesized id must not
+        // collide with one of these further down (`abc, abc, abc#2` used to come out as
+        // `abc, abc#2, abc#2`, and the tool's own failed-puzzle CSV carries the rewritten
+        // ids, so re-running it together with its source hit exactly that).
+        let literal = Collections.Generic.HashSet<string>(records |> Seq.map (fun r -> r.PuzzleId) |> Seq.filter (String.IsNullOrWhiteSpace >> not))
         let mutable blank = 0
         let mutable repeated = 0
+        // First candidate that is neither a literal id nor already handed out.
+        // `countBase` continues the repeat counter of a literal id; a blank row's synthesized
+        // base must NOT be registered, or the literal `rowN` further down would read as a repeat.
+        let fresh (baseId: string) (firstK: int) (countBase: bool) =
+            let mutable k = firstK
+            while literal.Contains (sprintf "%s#%d" baseId k) || seen.ContainsKey (sprintf "%s#%d" baseId k) do
+                k <- k + 1
+            if countBase then seen.[baseId] <- k
+            let id = sprintf "%s#%d" baseId k
+            seen.[id] <- 1
+            id
         for i in 0 .. records.Length - 1 do
             let raw = records.[i].PuzzleId
-            let baseId =
+            let id =
                 if String.IsNullOrWhiteSpace raw then
                     blank <- blank + 1
-                    sprintf "row%d" (i + 2) // +1 for the header, +1 for 1-based lines
-                else raw
-            let id =
-                match seen.TryGetValue baseId with
-                | true, n ->
-                    repeated <- repeated + 1
-                    seen.[baseId] <- n + 1
-                    sprintf "%s#%d" baseId (n + 1)
-                | _ ->
-                    seen.[baseId] <- 1
-                    baseId
+                    let baseId = sprintf "row%d" (i + 2) // +1 for the header, +1 for 1-based lines
+                    if literal.Contains baseId || seen.ContainsKey baseId then fresh baseId 2 false
+                    else
+                        seen.[baseId] <- 1
+                        baseId
+                else
+                    match seen.TryGetValue raw with
+                    | true, n ->
+                        repeated <- repeated + 1
+                        fresh raw (n + 1) true
+                    | _ ->
+                        seen.[raw] <- 1
+                        raw
             if id <> raw then records.[i] <- { records.[i] with PuzzleId = id }
         if blank > 0 || repeated > 0 then
             printfn "Puzzle ids rewritten: %d blank -> row<N>, %d repeated -> id#N (ids must be unique for theme and paired scoring)" blank repeated

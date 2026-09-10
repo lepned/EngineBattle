@@ -48,7 +48,10 @@ let parseNodes (s:string) =
   if System.String.IsNullOrWhiteSpace s then [|0|]
   else
     s.Split(',')
-    |> Array.map int
+    |> Array.map (fun t ->
+        match System.Int32.TryParse(t.Trim()) with
+        | true, n -> n
+        | _ -> failwithf "Nodes value '%s' is not a comma-separated list of integers (bad item '%s')" s (t.Trim()))
 
 let getPVMoves (pv: string) =
   let pvMoves = ResizeArray<string>()

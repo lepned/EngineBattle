@@ -4,6 +4,7 @@ open System
 open System.Threading
 open System.Threading.Channels
 open System.Collections.Concurrent
+open System.Runtime.CompilerServices
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.PuzzleTypes
 open ChessLibrary.Chess
@@ -20,7 +21,9 @@ open ChessLibrary.Engine
 // forever (a puzzle run sat on an idle GPU after a TensorRT-build crash). And an engine
 // that died mid-sweep was scored as an empty move on every remaining puzzle.
 // ---------------------------------------------------------------------------
-let private deadAgents = ConcurrentDictionary<MailboxProcessor<EngineMsg>, string>(HashIdentity.Reference)
+// Weak keys: the GUI process lives for days, and a strong table would keep every failed
+// agent (and its closure over the engine) alive for the rest of it.
+let private deadAgents = ConditionalWeakTable<MailboxProcessor<EngineMsg>, string>()
 
 let private markDead (agent: MailboxProcessor<EngineMsg>) (reason: string) =
     if deadAgents.TryAdd(agent, reason) then
@@ -115,7 +118,7 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
           }
           loop()
       | None ->
-          markDead inbox (sprintf "value engine %s could not be started (see the message above)" engineCfg.Name)
+          markDead inbox (sprintf "no value-test engine for %s: unsupported engine family for value tests, or it failed to start (see any message above)" engineCfg.Name)
           deadAgentLoop inbox
 
     )
@@ -817,7 +820,9 @@ let performValueNetworkTest
     try
         let ok = agents |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Ok ch)) |> Async.Parallel |> Async.RunSynchronously
         if ok |> Array.exists (fun x -> not x) then
-            Score.empty
+            // Report a dead agent at the handshake like a mid-sweep death; an empty score
+            // here was flagged by nothing (no error line, exit code 0).
+            engineDied (agents |> Array.tryPick agentDeath |> Option.defaultValue "engine agent not ready")
         else
             printfn "Starting value network test with %d concurrent agents..." concurrencyLevel
 
@@ -1416,7 +1421,7 @@ let performPolicyValueTest
     try
         let ok = agents |> Array.map (fun a -> a.PostAndAsyncReply(fun ch -> Ok ch)) |> Async.Parallel |> Async.RunSynchronously
         if ok |> Array.exists (fun x -> not x) then
-            []
+            engineDied (agents |> Array.tryPick agentDeath |> Option.defaultValue "engine agent not ready")
         else
             let networkName =
                 let engineNet = agents.[0].PostAndAsyncReply(fun ch -> Network ch) |> Async.RunSynchronously
