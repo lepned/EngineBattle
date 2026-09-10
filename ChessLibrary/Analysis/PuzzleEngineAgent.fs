@@ -10,6 +10,58 @@ open ChessLibrary.Chess
 open ChessLibrary.Statistics
 open ChessLibrary.TypesDef.PuzzleInput
 open ChessLibrary.PuzzleEngineAnalysis
+open ChessLibrary.Engine
+
+// ---------------------------------------------------------------------------
+// Dead-agent tracking (2026-09-10). An agent whose engine failed to start, or exited
+// mid-sweep, registers itself here and the runners consult it. Before this, a policy
+// agent whose engine died during init took its exception inside the MailboxProcessor
+// body: the agent silently ceased to exist and the runner's PostAndAsyncReply waited
+// forever (a puzzle run sat on an idle GPU after a TensorRT-build crash). And an engine
+// that died mid-sweep was scored as an empty move on every remaining puzzle.
+// ---------------------------------------------------------------------------
+let private deadAgents = ConcurrentDictionary<MailboxProcessor<EngineMsg>, string>(HashIdentity.Reference)
+
+let private markDead (agent: MailboxProcessor<EngineMsg>) (reason: string) =
+    if deadAgents.TryAdd(agent, reason) then
+        ChessLibrary.RuntimeUtilities.ConsoleUtils.redConsole (sprintf "%sPuzzle engine agent is dead: %s" Environment.NewLine reason)
+
+/// The reason an agent's engine is gone, if it is.
+let agentDeath (agent: MailboxProcessor<EngineMsg>) =
+    match deadAgents.TryGetValue agent with
+    | true, r -> Some r
+    | _ -> None
+
+/// Loop of an agent without an engine: every request gets an empty reply (Ok = false)
+/// so a runner sees the failure at once instead of hanging; Quit ends the loop.
+let private deadAgentLoop (inbox: MailboxProcessor<EngineMsg>) =
+    let rec loop() = async {
+        let! msg = inbox.Receive()
+        match msg with
+        | Ok reply -> reply.Reply(false); return! loop()
+        | NewGame reply -> reply.Reply(); return! loop()
+        | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty); return! loop()
+        | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", []); return! loop()
+        | BestMoveValueHead (_, reply) -> reply.Reply ""; return! loop()
+        | SolvePuzzle (_, reply) -> reply.Reply ("", "", ResizeArray()); return! loop()
+        | Network reply -> reply.Reply ""; return! loop()
+        | Quit reply -> reply.Reply()
+    }
+    loop()
+
+/// An exception escaped a request handler: if the engine is gone, mark the agent dead so
+/// the sweep aborts with the reason; otherwise it is a per-puzzle error as before.
+let private noteAgentError (inbox: MailboxProcessor<EngineMsg>) (engine: ChessEngine) (kind: string) (ex: exn) =
+    if engine.HasExited() then
+        let code = match engine.LastExitCode with Some c -> string c | None -> "?"
+        markDead inbox (sprintf "%s engine %s exited (code %s): %s" kind engine.Name code ex.Message)
+    else
+        eprintfn "PuzzleEngineAgent (%s) error: %s" kind ex.Message
+
+/// Raised by a runner when an agent's engine died during the sweep. runTest reports it
+/// for that engine/rating group and moves on; the partial sweep is not scored.
+let private engineDied (reason: string) =
+    raise (CustomException.EngineStartupException (sprintf "puzzle sweep aborted: %s" reason))
 
 //Start the engine agent for value head tests (single consumer of UCI calls)
 let startValueEngineAgent (engineCfg:EngineConfig) =
@@ -30,7 +82,7 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                 try
                     match msg with
                     | Ok reply ->
-                        reply.Reply(true)
+                        reply.Reply((agentDeath inbox).IsNone)
                     | NewGame reply ->
                         engine.UciNewGame()
                         engine.WaitForReadyOk() |> ignore
@@ -49,7 +101,7 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
                         reply.Reply engine.Network
                     | Quit _ -> ()
                 with ex ->
-                    eprintfn "PuzzleEngineAgent (value) error: %s" ex.Message
+                    noteAgentError inbox engine "value" ex
                     match msg with
                     | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
                     | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
@@ -63,84 +115,72 @@ let startValueEngineAgent (engineCfg:EngineConfig) =
           }
           loop()
       | None ->
-          let rec loop() = async {
-            let! msg = inbox.Receive()
-            match msg with
-            | Ok reply ->
-                reply.Reply(false)
-                return! loop()
-            | NewGame reply ->
-                reply.Reply()
-                return! loop()
-            | SolvePuzzle (_, reply) ->
-                reply.Reply ("", "", ResizeArray())
-                return! loop()
-            | Quit reply ->
-                reply.Reply()
-            | _ ->
-                return! loop()
-          }
-          loop()
+          markDead inbox (sprintf "value engine %s could not be started (see the message above)" engineCfg.Name)
+          deadAgentLoop inbox
 
     )
 
 //Start the engine agent for policy head tests (single consumer of UCI calls)
 let startPolicyEngineAgent (engineCfg:EngineConfig) nodes =
     MailboxProcessor.Start(fun inbox ->
-      // Spin up one engine instance
-      let engine = getPuzzlePolicyEngine (engineCfg,None)
-      engine.Name <- engine.Name
+      // Spin up one engine instance. A failure here used to be an exception inside the
+      // agent body (agent gone, callers hang); now it becomes a dead agent that answers.
+      match (try Choice1Of2 (getPuzzlePolicyEngine (engineCfg, None)) with ex -> Choice2Of2 ex.Message) with
+      | Choice2Of2 reason ->
+          markDead inbox (sprintf "policy engine %s could not be started: %s" engineCfg.Name reason)
+          deadAgentLoop inbox
+      | Choice1Of2 engine ->
 
-      let rec loop() = async {
-        let! msg = inbox.Receive()
-        match msg with
-        | Quit reply ->
-            engine.StopProcess()
-            reply.Reply()
-        | _ ->
-            try
-                match msg with
-                | Ok reply ->
-                     reply.Reply(true)
-                | NewGame reply ->
-                    engine.UciNewGame()
-                    engine.WaitForReadyOk() |> ignore
-                    reply.Reply()
-                | BestMoveWithPolicy (cmd, correctMove, reply) ->
-                    let mv, nnValue = bestPolicyMoveWithPolicy correctMove nodes engine cmd.Command
-                    if nnValue.Length = 0 then
-                      reply.Reply (mv, String.Empty)
-                    elif nnValue.Length = 1 then
-                      reply.Reply (mv, sprintf "%.2f" nnValue.Head.P)
-                    else
-                      let nnValueString = nnValue |> List.map (fun v -> sprintf "%.2f" v.P) |> String.concat ", "
-                      reply.Reply (mv, nnValueString)
-                | BestMoveWithAllPolicies (cmd, reply) ->
-                    let mv, allNNValues = bestPolicyMoveAllPolicies nodes engine cmd.Command
-                    reply.Reply (mv, allNNValues)
-                | BestMoveValueHead (cmd, reply) ->
-                    let mv = bestQPuzzleValueOnly engine cmd
-                    reply.Reply mv
-                | SolvePuzzle (cmd, reply) ->
-                    let bm, pv, nnValues = solvePuzzleSearch nodes engine cmd
-                    reply.Reply (bm, pv, nnValues)
-                | Network reply ->
-                    reply.Reply engine.Network
-                | Quit _ -> ()
-            with ex ->
-                eprintfn "PuzzleEngineAgent (policy) error: %s" ex.Message
-                match msg with
-                | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
-                | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
-                | BestMoveValueHead (_, reply) -> reply.Reply ""
-                | SolvePuzzle (_, reply) -> reply.Reply ("", "", ResizeArray())
-                | NewGame reply -> reply.Reply()
-                | Ok reply -> reply.Reply(false)
-                | Network reply -> reply.Reply ""
-                | Quit _ -> ()
-            return! loop()
-      }
-      loop()
+          let rec loop() = async {
+            let! msg = inbox.Receive()
+            match msg with
+            | Quit reply ->
+                engine.StopProcess()
+                reply.Reply()
+            | _ ->
+                try
+                    match msg with
+                    | Ok reply ->
+                         reply.Reply((agentDeath inbox).IsNone)
+                    | NewGame reply ->
+                        engine.UciNewGame()
+                        engine.WaitForReadyOk() |> ignore
+                        reply.Reply()
+                    | BestMoveWithPolicy (cmd, correctMove, reply) ->
+                        let mv, nnValue = bestPolicyMoveWithPolicy correctMove nodes engine cmd.Command
+                        if nnValue.Length = 0 then
+                          reply.Reply (mv, String.Empty)
+                        elif nnValue.Length = 1 then
+                          reply.Reply (mv, sprintf "%.2f" nnValue.Head.P)
+                        else
+                          let nnValueString = nnValue |> List.map (fun v -> sprintf "%.2f" v.P) |> String.concat ", "
+                          reply.Reply (mv, nnValueString)
+                    | BestMoveWithAllPolicies (cmd, reply) ->
+                        let mv, allNNValues = bestPolicyMoveAllPolicies nodes engine cmd.Command
+                        reply.Reply (mv, allNNValues)
+                    | BestMoveValueHead (cmd, reply) ->
+                        let mv = bestQPuzzleValueOnly engine cmd
+                        reply.Reply mv
+                    | SolvePuzzle (cmd, reply) ->
+                        let bm, pv, nnValues = solvePuzzleSearch nodes engine cmd
+                        reply.Reply (bm, pv, nnValues)
+                    | Network reply ->
+                        reply.Reply engine.Network
+                    | Quit _ -> ()
+                with ex ->
+                    noteAgentError inbox engine "policy" ex
+                    match msg with
+                    | BestMoveWithPolicy (_, _, reply) -> reply.Reply ("", String.Empty)
+                    | BestMoveWithAllPolicies (_, reply) -> reply.Reply ("", [])
+                    | BestMoveValueHead (_, reply) -> reply.Reply ""
+                    | SolvePuzzle (_, reply) -> reply.Reply ("", "", ResizeArray())
+                    | NewGame reply -> reply.Reply()
+                    | Ok reply -> reply.Reply(false)
+                    | Network reply -> reply.Reply ""
+                    | Quit _ -> ()
+                return! loop()
+          }
+          loop()
     )
 
 
@@ -789,15 +829,20 @@ let performValueNetworkTest
             let mutable processedCount = 0
             let total = puzzles.Length
             let resultsBag = ConcurrentBag<PuzzleResult>()
+            let abort = new CancellationTokenSource()
+            let deathReason : string option ref = ref None
             let worker (agent: MailboxProcessor<EngineMsg>) = async {
                 let mutable keepGoing = true
-                while keepGoing && not ct.IsCancellationRequested do
+                while keepGoing && not ct.IsCancellationRequested && not abort.IsCancellationRequested do
                     let ok, puzzle = puzzleCh.Reader.TryRead()
                     if ok then
                         let! result = runPuzzleViaAgentEx agent scoreAllPositions puzzle
                         resultsBag.Add(result)
                         let count = Interlocked.Increment(&processedCount)
                         if count % 10 = 0 || count = total then onProgress count
+                        match agentDeath agent with
+                        | Some reason -> deathReason.Value <- Some reason; abort.Cancel()
+                        | None -> ()
                     else
                         keepGoing <- false
             }
@@ -806,6 +851,9 @@ let performValueNetworkTest
             |> Async.Parallel
             |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
             |> ignore
+            match deathReason.Value with
+            | Some reason -> engineDied reason
+            | None -> ()
 
             let results = resultsBag.ToArray()
 
@@ -900,9 +948,11 @@ let performPolicyOrSearchTest
         let mutable processedCount = 0
         let total = puzzles.Length
         let resultsBag = ConcurrentBag<PuzzleResult>()
+        let abort = new CancellationTokenSource()
+        let deathReason : string option ref = ref None
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
-            while keepGoing && not ct.IsCancellationRequested do
+            while keepGoing && not ct.IsCancellationRequested && not abort.IsCancellationRequested do
                 let ok, puzzle = puzzleCh.Reader.TryRead()
                 if ok then
                     // Same loop as the value test - it stops at the first mistake unless
@@ -912,6 +962,9 @@ let performPolicyOrSearchTest
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
+                    match agentDeath agent with
+                    | Some reason -> deathReason.Value <- Some reason; abort.Cancel()
+                    | None -> ()
                 else
                     keepGoing <- false
         }
@@ -920,6 +973,9 @@ let performPolicyOrSearchTest
         |> Async.Parallel
         |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
         |> ignore
+        match deathReason.Value with
+        | Some reason -> engineDied reason
+        | None -> ()
 
         let results = resultsBag.ToArray()
 
@@ -1010,15 +1066,20 @@ let performSolveTest
         let mutable processedCount = 0
         let total = puzzles.Length
         let resultsBag = ConcurrentBag<PuzzleResult>()
+        let abort = new CancellationTokenSource()
+        let deathReason : string option ref = ref None
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
-            while keepGoing && not ct.IsCancellationRequested do
+            while keepGoing && not ct.IsCancellationRequested && not abort.IsCancellationRequested do
                 let ok, puzzle = puzzleCh.Reader.TryRead()
                 if ok then
                     let! result = runSolvePuzzleViaAgent agent puzzle
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
+                    match agentDeath agent with
+                    | Some reason -> deathReason.Value <- Some reason; abort.Cancel()
+                    | None -> ()
                 else
                     keepGoing <- false
         }
@@ -1027,6 +1088,9 @@ let performSolveTest
         |> Async.Parallel
         |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
         |> ignore
+        match deathReason.Value with
+        | Some reason -> engineDied reason
+        | None -> ()
 
         let results = resultsBag.ToArray()
 
@@ -1116,15 +1180,20 @@ let performPolicyMultiTopNTest
         let mutable processedCount = 0
         let total = puzzles.Length
         let resultsBag = ConcurrentBag<PolicyRunResult>()
+        let abort = new CancellationTokenSource()
+        let deathReason : string option ref = ref None
         let worker (agent: MailboxProcessor<EngineMsg>) = async {
             let mutable keepGoing = true
-            while keepGoing && not ct.IsCancellationRequested do
+            while keepGoing && not ct.IsCancellationRequested && not abort.IsCancellationRequested do
                 let ok, puzzle = puzzleCh.Reader.TryRead()
                 if ok then
                     let! result = runPuzzleViaAgentMultiTopN agent topNs scoreAllPositions puzzle
                     resultsBag.Add(result)
                     let count = Interlocked.Increment(&processedCount)
                     if count % 10 = 0 || count = total then onProgress count
+                    match agentDeath agent with
+                    | Some reason -> deathReason.Value <- Some reason; abort.Cancel()
+                    | None -> ()
                 else
                     keepGoing <- false
         }
@@ -1133,6 +1202,9 @@ let performPolicyMultiTopNTest
         |> Async.Parallel
         |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
         |> ignore
+        match deathReason.Value with
+        | Some reason -> engineDied reason
+        | None -> ()
 
         let allResults = resultsBag.ToArray()
 
@@ -1364,15 +1436,20 @@ let performPolicyValueTest
 
             let mutable processedCount = 0
             let policyResultsBag = ConcurrentBag<PolicyRunResult>()
+            let abort = new CancellationTokenSource()
+            let deathReason : string option ref = ref None
             let policyWorker (agent: MailboxProcessor<EngineMsg>) = async {
                 let mutable keepGoing = true
-                while keepGoing && not ct.IsCancellationRequested do
+                while keepGoing && not ct.IsCancellationRequested && not abort.IsCancellationRequested do
                     let ok, puzzle = puzzleCh.Reader.TryRead()
                     if ok then
                         let! result = runPuzzleViaAgentMultiTopN agent [1] scoreAllPositions puzzle
                         policyResultsBag.Add(result)
                         let count = Interlocked.Increment(&processedCount)
                         if count % 10 = 0 || count = total then onProgress count
+                        match agentDeath agent with
+                        | Some reason -> deathReason.Value <- Some reason; abort.Cancel()
+                        | None -> ()
                     else
                         keepGoing <- false
             }
@@ -1381,6 +1458,9 @@ let performPolicyValueTest
             |> Async.Parallel
             |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
             |> ignore
+            match deathReason.Value with
+            | Some reason -> engineDied reason
+            | None -> ()
 
             let policyResults = policyResultsBag.ToArray()
 
@@ -1487,15 +1567,20 @@ let performPolicyValueTest
 
                 processedCount <- 0
                 let valueResultsBag = ConcurrentBag<PuzzleResult>()
+                let abort = new CancellationTokenSource()
+                let deathReason : string option ref = ref None
                 let valueWorker (agent: MailboxProcessor<EngineMsg>) = async {
                     let mutable keepGoing = true
-                    while keepGoing && not ct.IsCancellationRequested do
+                    while keepGoing && not ct.IsCancellationRequested && not abort.IsCancellationRequested do
                         let ok, puzzle = puzzleCh2.Reader.TryRead()
                         if ok then
                             let! result = runPuzzleViaAgentValueHead agent scoreAllPositions puzzle
                             valueResultsBag.Add(result)
                             let count = Interlocked.Increment(&processedCount)
                             if count % 10 = 0 || count = total then onProgress count
+                            match agentDeath agent with
+                            | Some reason -> deathReason.Value <- Some reason; abort.Cancel()
+                            | None -> ()
                         else
                             keepGoing <- false
                 }
@@ -1504,6 +1589,9 @@ let performPolicyValueTest
                 |> Async.Parallel
                 |> fun a -> Async.RunSynchronously(a, cancellationToken = ct)
                 |> ignore
+                match deathReason.Value with
+                | Some reason -> engineDied reason
+                | None -> ()
 
                 let valueResults = valueResultsBag.ToArray()
                 let vCorrect = valueResults |> Array.filter (fun r -> r.WasCorrect)

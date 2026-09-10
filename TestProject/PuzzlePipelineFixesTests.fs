@@ -181,3 +181,26 @@ let ``startedUtc keeps its colons under a culture whose time separator is a dot`
         Assert.Equal("2026-09-04T12:30:45.123Z", result.StartedUtc)
     finally
         CultureInfo.CurrentCulture <- saved
+
+// ---------------------------------------------------------------------------
+// Dead agents (2026-09-10): an engine that cannot start must surface as Ok=false and an
+// agentDeath reason within seconds, not as an agent that never answers.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a policy agent whose engine cannot start answers Ok=false instead of hanging`` () =
+    let cfg = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = "ghost"; Path = @"C:\definitely\not\here\ghost.exe"; Protocol = "UCI" }
+    let agent = startPolicyEngineAgent cfg 1
+    let ok = agent.PostAndAsyncReply((fun ch -> EngineMsg.Ok ch), timeout = 30000) |> Async.RunSynchronously
+    Assert.False ok
+    Assert.True((agentDeath agent).IsSome)
+    agent.PostAndAsyncReply((fun ch -> EngineMsg.Quit ch), timeout = 30000) |> Async.RunSynchronously
+
+[<Fact>]
+let ``a value agent whose engine cannot start answers Ok=false instead of hanging`` () =
+    let cfg = { ChessLibrary.TypesDef.CoreTypes.EngineConfig.Empty with Name = "ghost"; Path = @"C:\definitely\not\here\ceres.exe"; Protocol = "UCI" }
+    let agent = startValueEngineAgent cfg
+    let ok = agent.PostAndAsyncReply((fun ch -> EngineMsg.Ok ch), timeout = 30000) |> Async.RunSynchronously
+    Assert.False ok
+    Assert.True((agentDeath agent).IsSome)
+    agent.PostAndAsyncReply((fun ch -> EngineMsg.Quit ch), timeout = 30000) |> Async.RunSynchronously

@@ -1922,6 +1922,9 @@ module Program =
             data.IncludeFailedPuzzles,
             data.ScoreAllPositions )
 
+    // Engine failures (refused net, crash mid-sweep) arrive here as LichessError; counted so
+    // the exit code below can say the run is incomplete.
+    let engineErrors = ref 0
     let update (res: Lichess) =
         match res with
         | PuzzleResult score ->
@@ -1934,6 +1937,7 @@ module Program =
         | Progress (processed, total, label) ->
             printf "\r  %s: %d / %d" label processed total
         | LichessError msg ->
+            engineErrors.Value <- engineErrors.Value + 1
             RuntimeUtilities.ConsoleUtils.redConsole $"\nPuzzle Error: {msg}"
                   
     let ct = CancellationToken.None
@@ -2266,6 +2270,15 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
         with ex ->
             RuntimeUtilities.ConsoleUtils.redConsole $"Failed to write JSON results to {out}: {ex.Message}"
     | None -> ()
+    // Exit code. A run in which an engine failed (refused network, crash mid-sweep) used to
+    // end with 0 like a finished one, so a script could not tell them apart without parsing
+    // the log. The files for the groups that did run are written above; the code says the
+    // run is incomplete. No scores at all is the same failure even without an error line.
+    let scored = scores |> Seq.filter (fun sc -> sc.TotalNumber > 0) |> Seq.length
+    if engineErrors.Value > 0 || scored = 0 then
+        RuntimeUtilities.ConsoleUtils.redConsole
+            $"Puzzle run incomplete: {engineErrors.Value} engine error(s), {scored} score(s) recorded (exit code 1)"
+        exit 1
 
   let runTournament (tournament:Tournament.Tournament) (logger: Microsoft.Extensions.Logging.ILogger) =
     let cts = new CancellationTokenSource()

@@ -34,6 +34,14 @@ let private readLineCheckedAsync (engine: ChessEngine) = async {
         return line
 }
 
+/// A puzzle engine never became ready: stop it (a mute-but-alive engine must not be leaked)
+/// and fail with the reason WaitForReadyOk recorded — exit code, timeout, or the fatal
+/// marker the engine printed — instead of a bare "did not respond to isready".
+let private notReady (engine: ChessEngine) =
+    let reason = if String.IsNullOrEmpty engine.ReadyFailure then "no readyok" else engine.ReadyFailure
+    (try engine.StopProcess() with _ -> ())
+    failwithf "Engine %s did not become ready: %s" engine.Name reason
+
 let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async {
    let cmd = sprintf "position fen %s" fen
    engine.UciNewGame()
@@ -156,7 +164,7 @@ let getPuzzlePolicyEngine config =
   let engine = EngineHelper.createEngine(config)
   let ok = engine.WaitForReadyOk() // wait for readyok
   if not ok then
-      failwith "Engine did not respond to isready command."
+      notReady engine
   engine
 
 /// Cache of default UCI option names per engine binary.
@@ -208,7 +216,7 @@ let getPuzzleValueEngine config =
               let engine = EngineHelper.createEngineWithoutValidation(config, None)
               let ok = engine.WaitForReadyOk() // wait for readyok
               if not ok then
-                  failwith "Engine did not respond to isready command."
+                  notReady engine
               Some engine
           else
               let redMsg = sprintf "\nValueOnly option is not available for %s with args: %s, will try valuehead argument next." config.Name config.Args
@@ -223,13 +231,13 @@ let getPuzzleValueEngine config =
               let engine = EngineHelper.createEngineWithoutValidation(config, None)
               let ok = engine.WaitForReadyOk() // wait for readyok
               if not ok then
-                  failwith "Engine did not respond to isready command."
+                  notReady engine
               Some engine
       elif isCeres then
           let engine = EngineHelper.createEngineWithoutValidation(config, None)
           let ok = engine.WaitForReadyOk() // wait for readyok
           if not ok then
-              failwith "Engine did not respond to isready command."
+              notReady engine
           Some engine
       else
           // Neither the path nor the probed UCI identity says Lc0 or Ceres:
@@ -454,7 +462,7 @@ let performPositionEvalTestOnEpdPositions (limits : ResizeArray<TimeControlTypes
       for engine in engines do
           let ok = engine.WaitForReadyOk() // wait for readyok
           if not ok then
-              failwith "Engine did not respond to isready command."
+              notReady engine
       let filtered = ResizeArray()
       try
           for id, epd in epds |> Seq.indexed do
@@ -530,7 +538,7 @@ let performPositionEvalTestOnPgnGames (limits : ResizeArray<TimeControlTypes.Tim
       for engine in engines do
           let ok = engine.WaitForReadyOk() // wait for readyok
           if not ok then
-              failwith "Engine did not respond to isready command."
+              notReady engine
       let filtered = ResizeArray()
       try
           for pgnIdx, pgn in openings |> Seq.indexed do
