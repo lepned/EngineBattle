@@ -32,6 +32,9 @@ internal sealed class ServerProcess : IDisposable
     private readonly object _outputLock = new();
     private Process? _process;
     private StreamWriter? _log;
+    private IProgress<string>? _status;
+    private bool _reportedBuilding;
+    private bool _reportedBuilt;
 
     public string BaseUrl { get; private set; } = "";
 
@@ -94,6 +97,7 @@ internal sealed class ServerProcess : IDisposable
         psi.ArgumentList.Add(BaseUrl);
         psi.ArgumentList.Add("--no-browser");
 
+        _status = status;
         status.Report("Starting EngineBattle…");
 
         OpenLog(launch);
@@ -143,6 +147,8 @@ internal sealed class ServerProcess : IDisposable
             try { _log?.WriteLine(line); } catch { /* disk full, locked, ... */ }
         }
 
+        ReportBuildProgress(line);
+
         var marker = line.IndexOf(StartupUrlMarker, StringComparison.Ordinal);
         if (marker >= 0)
         {
@@ -154,6 +160,33 @@ internal sealed class ServerProcess : IDisposable
         // Raised outside the lock: a subscriber marshalling to the UI thread must never be
         // able to block the pipe readers.
         LineWritten?.Invoke(line);
+    }
+
+    /// <summary>
+    /// In a source checkout the server starts through `dotnet run`, which compiles first if
+    /// anything changed. Without this the splash reads "Waiting for the server..." for the whole
+    /// build, making a slow rebuild indistinguishable from a hang.
+    /// </summary>
+    private void ReportBuildProgress(string line)
+    {
+        if (_status is null || _reportedBuilt) return;
+
+        // `dotnet run` announces a compile with exactly this line before it blocks.
+        if (!_reportedBuilding &&
+            (line.Trim().Equals("Building...", StringComparison.Ordinal) ||
+             line.Contains("Determining projects to restore", StringComparison.Ordinal)))
+        {
+            _reportedBuilding = true;
+            _status.Report("Building WebGUI… (first run after a source change)");
+            return;
+        }
+
+        // The server's own first line of output: the build is over and it is starting.
+        if (_reportedBuilding && line.Contains("Runtime version:", StringComparison.Ordinal))
+        {
+            _reportedBuilt = true;
+            _status.Report("Starting EngineBattle…");
+        }
     }
 
     private async Task WaitForReadyAsync(IProgress<string> status, CancellationToken ct)
