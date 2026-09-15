@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<RootNamespace>EngineBattle.Desktop</RootNamespace>
+		<AssemblyName>EngineBattleDesktop</AssemblyName>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+
+		<!-- WPF, not WinUI: this shell is a window around a WebView2 and uses no XAML controls
+		     of its own, so the Windows App SDK's ~149 MB of runtime (ONNX, DirectML, the whole
+		     WinUI control set) would be dead weight. WPF ships in the Windows Desktop runtime. -->
+		<UseWPF>true</UseWPF>
+
+		<ApplicationIcon>..\..\WebGUI\chessIcon.ico</ApplicationIcon>
+		<ApplicationManifest>app.manifest</ApplicationManifest>
+
+		<RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+	</ItemGroup>
+
+	<!-- No ProjectReference to WebGUI or ChessLibrary on purpose. The shell talks to the
+	     server over a process + HTTP contract only, so this Windows-only project can never
+	     break the cross-platform build. -->
+
+</Project>
