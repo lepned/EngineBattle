@@ -473,7 +473,6 @@
 	//private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 	private double tournamentHeight = 0;
 	private double windowHeight = 0;
-	private double pvLabelsHeight = 0;
 	private int moveListHeight = 100;
 	private int totalNumberOfPairs = 0;
 	private string roundNr = string.Empty;
@@ -489,20 +488,48 @@
 		return Math.Clamp(buffer, 130, 170);
 	}
 
+	/// <summary>Everything measureTournamentLayout() reports, in one payload.</summary>
+	private sealed record LayoutMetrics(
+		double WindowHeight,
+		double UnzoomedViewportHeight,
+		double Lhs,
+		double Rhs,
+		double StandingTable,
+		double PvHeight);
+
+	// Resize events arrive in bursts -- one F11 toggle or window drag produces several -- and
+	// this method is a long async sequence. Without a generation guard two runs interleave, and
+	// the measured fit at the end of one corrects a layout the other is still changing. Only the
+	// newest run is allowed to continue.
+	private int _resizeGeneration;
+
+	private bool IsSupersededResize(int generation) =>
+		generation != System.Threading.Volatile.Read(ref _resizeGeneration);
+
 	[JSInvokable]
 	public async Task OnBrowserResize()
 	{
+		var generation = System.Threading.Interlocked.Increment(ref _resizeGeneration);
+
 		await Task.Delay(300);
+		if (IsSupersededResize(generation)) return;
+
 		var nCharts = CalcNumberOfChartsToShow();
-		var unzoomedHeight = await chessModule.InvokeAsync<double>("getUnzoomedViewportHeight");
-		windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight");
-		var elementsAboveCycleTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "rhs");
-		var standingTableHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "standingTable");
-		int buffer = 140; //CalcBufferFunction((int)unzoomedHeight);
-		var elementsAboveStandings = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "lhs") + buffer;
+
+		// One round-trip for every measurement. These used to be six separate interop calls,
+		// which on Blazor Server are six messages over the circuit -- per resize event, and
+		// resize events arrive in bursts.
+		var metrics = await chessModule.InvokeAsync<LayoutMetrics>("measureTournamentLayout");
+		if (IsSupersededResize(generation)) return;
+
+		windowHeight = metrics.WindowHeight;
+		var elementsAboveCycleTableHeight = metrics.Rhs;
+		var standingTableHeight = metrics.StandingTable;
+		int buffer = 140; //CalcBufferFunction((int)metrics.UnzoomedViewportHeight);
+		var elementsAboveStandings = metrics.Lhs + buffer;
 		if (showPVBoard)
 		{
-			pvBoardHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "pvHeight");
+			pvBoardHeight = metrics.PvHeight;
 			elementsAboveStandings += 35;
 		}
 
@@ -517,18 +544,11 @@
 		}
 
 		//Console.WriteLine($"Window height: {windowHeight} standingTableHeight: {standingTableHeight} buffer: {buffer} pvBoardHeight: {pvBoardHeight}");
-		var infoB = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "infoB");
-		var streamingBoardHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "streaming-board");
-		pvLabelsHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "pv");
-		var boardHeight = pvLabelsHeight + streamingBoardHeight + infoB + 165;
-		var windowBoardHeightDiff = (int)(windowHeight - boardHeight);
-		var cyclingTableHeight = windowHeight - elementsAboveCycleTableHeight;
 		var absTableDiff = Math.Abs(windowHeight - elementsAboveCycleTableHeight);
 
-		if (windowBoardHeightDiff > 0)
-		{
-			moveListHeight = Math.Max(0, windowBoardHeightDiff);
-		}
+		// The move list is no longer predicted from the board, PV and banner heights plus a
+		// constant. FitMoveListToMeasuredSlack() below measures the space the layout actually
+		// left, which also drops three interop round-trips per resize.
 
 		if (windowHeight > elementsAboveStandings)
 		{
@@ -543,7 +563,50 @@
 
 		await InvokeAsync(StateHasChanged);
 		await Task.Delay(200);
-		//logger.LogInformation($"Extra: {extraLimit} Window height: {windowHeight} height: {height} standingTableHeight: {standingTableHeight} shouldCycle: {shouldCycle} pvBoardHeight: {pvBoardHeight} elementsAboveStandings: {elementsAboveStandings} infoB: {infoB} streamingBoardHeight: {streamingBoardHeight} pvLabelsHeight: {pvLabelsHeight} boardHeight: {boardHeight} cyclingTableHeight: {cyclingTableHeight}");
+		//logger.LogInformation($"Window height: {windowHeight} height: {height} standingTableHeight: {standingTableHeight} shouldCycle: {shouldCycle} pvBoardHeight: {pvBoardHeight} elementsAboveStandings: {elementsAboveStandings} moveListHeight: {moveListHeight} pairingTableHeight: {pairingTableHeight}");
+
+		if (IsSupersededResize(generation)) return;
+		await FitMoveListToMeasuredSlack(generation);
+	}
+
+	// Small gap kept under the last PV box so it never sits flush against the bottom edge.
+	private const int PvBottomPadding = 8;
+
+	/// <summary>
+	/// Sizes the move list from the space the layout actually left over, rather than from part
+	/// heights plus tuned constants.
+	///
+	/// The constants above encode one particular viewport height — a maximised browser, with its
+	/// chrome. Any host with a different viewport height (browser F11, a WebView shell, a
+	/// different monitor) pushed the white PV box past the bottom edge, where .main-screen's
+	/// overflow:hidden left it unreachable.
+	///
+	/// The move list is the only elastic region in that column, so one pass converges: a pixel of
+	/// move-list height moves the PV box by exactly one pixel.
+	/// </summary>
+	private async Task FitMoveListToMeasuredSlack(int generation)
+	{
+		if (chessModule is null) return;
+
+		// Two passes, because growing the move list can reflow a neighbour and break the
+		// one-pixel-for-one-pixel assumption. In the common case the second pass is a no-op.
+		for (var pass = 0; pass < 2; pass++)
+		{
+			if (IsSupersededResize(generation)) return;
+
+			// 0 also means "no PV box on this layout", which correctly leaves the height alone.
+			var slack = await chessModule.InvokeAsync<double>("getSlackBelow", ".pv-white-box");
+
+			// Ignore sub-pixel churn so a resize storm cannot oscillate the layout.
+			if (Math.Abs(slack) <= 2) return;
+
+			var fitted = Math.Clamp(moveListHeight + (int)slack - PvBottomPadding, 0, (int)windowHeight);
+			if (fitted == moveListHeight) return;
+
+			moveListHeight = fitted;
+			await InvokeAsync(StateHasChanged);
+			await Task.Delay(50);
+		}
 	}
 
 	private int CalcNumberOfChartsToShow()
@@ -3180,17 +3243,10 @@
 			windowHeight = await chessModule.InvokeAsync<double>("getWindowHeight") - 10;
 			tournamentHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "main-screen");
 			var cycleT = await chessModule.InvokeAsync<double>("calculateHeightByElementId", "cycleTable");
-			var streamingBoardHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "streaming-board");
-			pvLabelsHeight = await chessModule.InvokeAsync<double>("calculateHeightByClassName", "pv");
-
 			var tournamentHeightWithouthCycleTable = tournamentHeight - cycleT;
-			var boardHeight = pvLabelsHeight + streamingBoardHeight;
-			var windowBoardHeightDiff = (int)(windowHeight - boardHeight) - 220;
 
-			if (windowBoardHeightDiff > 0)
-			{
-				moveListHeight = Math.Max(0, windowBoardHeightDiff);
-			}
+			// Move-list sizing happens in the OnBrowserResize() call at the end of this block,
+			// measured rather than predicted.
 			if (windowHeight < tournamentHeightWithouthCycleTable)
 			{
 				pairingTableHeight = 0;

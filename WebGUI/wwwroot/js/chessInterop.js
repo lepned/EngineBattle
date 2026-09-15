@@ -38,6 +38,38 @@ export function getUnzoomedViewportHeight() {
     return window.innerHeight * zoom;
 }
 
+// Every measurement the tournament page needs, in one call. On Blazor Server each interop
+// call is a round-trip over the SignalR circuit, and resize events arrive in bursts, so taking
+// these one at a time cost six round-trips per resize.
+export function measureTournamentLayout() {
+  const sum = (className) => {
+    const els = document.getElementsByClassName(className);
+    let total = 0;
+    for (let i = 0; i < els.length; i++) total += els[i].offsetHeight;
+    return total;
+  };
+
+  return {
+    windowHeight: window.innerHeight,
+    unzoomedViewportHeight: window.innerHeight * (window.screen.width / window.innerWidth),
+    lhs: sum('lhs'),
+    rhs: sum('rhs'),
+    standingTable: sum('standingTable'),
+    pvHeight: sum('pvHeight')
+  };
+}
+
+// Unused space between the bottom of an element and the bottom of the viewport.
+// Positive means there is slack left over, negative means the element has been pushed past
+// the bottom edge. Callers use it to size an elastic region from what the layout actually
+// did, instead of predicting it from part heights plus tuned constants.
+// Returns 0 when the element is absent, which callers treat as "nothing to do".
+export function getSlackBelow(selector) {
+  const el = document.querySelector(selector);
+  if (!el) return 0;
+  return window.innerHeight - el.getBoundingClientRect().bottom;
+}
+
 //function to calculate the height of all elements with the given class name
 export function calculateHeightByClassName(className) {
   var elements = document.getElementsByClassName(className);
