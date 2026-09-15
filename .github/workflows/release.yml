@@ -94,7 +94,10 @@ jobs:
           path: ${{ steps.pack.outputs.zip }}
 
   release:
-    needs: [build, desktop-shell]
+    # Deliberately not gated on desktop-shell: the Windows shell is a secondary artifact and
+    # must never block the cross-platform release. A failure there still turns the run red,
+    # it just ships without the shell zip.
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
