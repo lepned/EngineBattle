@@ -54,8 +54,50 @@ jobs:
           name: ${{ steps.names.outputs.artifact }}
           path: ${{ steps.names.outputs.zip }}
 
+  # The Windows desktop shell. Separate job because it targets net10.0-windows and needs a
+  # Windows runner for the WPF markup compiler, and it is deliberately not part of
+  # EngineBattle.sln so the ubuntu jobs above keep building. Ships as its own zip: unpack it
+  # into the same folder as EngineBattle.exe and the shell finds the server as a sibling.
+  desktop-shell:
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+        selfcontained: [true, false]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish and zip
+        shell: pwsh
+        run: |
+          $sc = '${{ matrix.selfcontained }}' -eq 'true'
+          # No PublishSingleFile: WebView2 ships native libraries beside the exe.
+          # Not named $args -- that is a PowerShell automatic variable.
+          $publishArgs = @('publish', 'Desktop/EngineBattle.Desktop', '-c', 'Release',
+                           '-r', '${{ matrix.rid }}', '-p:DebugType=none', '-o', 'publish/shell')
+          $publishArgs += $(if ($sc) { '--self-contained' } else { '--no-self-contained' })
+          dotnet @publishArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $zip = if ($sc) { 'EngineBattle-Desktop-${{ matrix.rid }}.zip' }
+                 else { 'EngineBattle-Desktop-${{ matrix.rid }}-framework-dependent.zip' }
+          Compress-Archive -Path publish/shell/* -DestinationPath $zip
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "zip=$zip"
+        id: pack
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.zip }}
+          path: ${{ steps.pack.outputs.zip }}
+
   release:
-    needs: build
+    # Deliberately not gated on desktop-shell: the Windows shell is a secondary artifact and
+    # must never block the cross-platform release. A failure there still turns the run red,
+    # it just ships without the shell zip.
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

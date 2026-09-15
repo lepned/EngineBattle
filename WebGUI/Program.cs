@@ -241,6 +241,14 @@ if (!hasExplicitUrls && !app.Environment.IsDevelopment())
     }
 }
 
+// Hosts that supply their own window -- the WinUI desktop shell in Desktop/ -- start the
+// server themselves and navigate their own WebView, so the browser launch must be suppressed.
+// The environment variable exists because a valueless switch is awkward for the command-line
+// configuration provider; the flag is the documented form.
+bool suppressBrowser =
+    args.Any(a => a.Equals("--no-browser", StringComparison.OrdinalIgnoreCase))
+    || Environment.GetEnvironmentVariable("ENGINEBATTLE_NO_BROWSER") is "1" or "true";
+
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     var startupPage = app.Services.GetRequiredService<GlobalSettingsService>().Settings.StartupPage;
@@ -250,6 +258,14 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var bound = (app.Urls.FirstOrDefault() ?? "http://localhost:5000").TrimEnd('/');
     var browseHost = bound.Replace("://0.0.0.0", "://localhost").Replace("://[::]", "://localhost").Replace("://+", "://localhost");
     var address = browseHost + page;
+
+    // Printed unconditionally so a host that supplies its own window (the WPF desktop
+    // shell in Desktop/) can navigate to the user's configured startup page instead of "/".
+    // The server stays the single source of truth for that setting.
+    Console.WriteLine($"EngineBattle startup URL: {address}");
+
+    if (suppressBrowser) return;
+
     try
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
