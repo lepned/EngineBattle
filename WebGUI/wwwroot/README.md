@@ -114,6 +114,17 @@ Your browser opens automatically. If not, navigate to the localhost URL shown in
 
 > **Windows note:** Windows may show a SmartScreen warning for unsigned executables. To bypass this, right-click `EngineBattle.exe` → **Properties** → check **Unblock** → **OK**, then run it normally.
 
+> **macOS note:** the release builds are not signed or notarised, so macOS quarantines them on download and refuses to start them ("cannot be opened because the developer cannot be verified"). Clear the quarantine flag after extracting:
+>
+> ```bash
+> xattr -dr com.apple.quarantine EngineBattle
+> ./EngineBattle
+> ```
+>
+> Alternatively, right-click `EngineBattle` in Finder → **Open** → **Open** confirms it once for that file.
+
+> **Linux note:** the release zip keeps the executable bit, so `./EngineBattle` should just work. If your extraction tool dropped permissions, restore it with `chmod +x EngineBattle`.
+
 ### 3. First Run
 
 A blank `tournament.json` is auto-created next to the executable on first startup. See [Configuration](#configuration) below to set up your engines.
