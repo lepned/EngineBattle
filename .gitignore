@@ -380,3 +380,7 @@ FodyWeavers.xsd
 /WebGUI/wwwroot/swiss_state.json
 /WebGUI/wwwroot/swiss_state.json.bak
 /WebGUI/wwwroot/Img/imgEB
+
+# Per-user settings written by the app at runtime. Never commit: it ships inside the release
+# zip, so a committed copy would replace every user's settings on their next update.
+/WebGUI/Data/globalSettings.json
