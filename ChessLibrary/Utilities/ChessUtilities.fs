@@ -167,6 +167,86 @@ module ZobrishHash =
     key
 
 
+/// Where a game's opening moves end and the engines' own choices begin.
+///
+/// One rule, shared by the opening hash and the deviation analysis, so the two can never
+/// disagree about which plies were played out of the book.
+module Opening =
+
+  /// How the boundary was found for one game, which decides how much its numbers are worth.
+  type OpeningSource =
+    /// Per-move search data present: each ply is classified individually. The reliable case.
+    | FromSearchData
+    /// No search data, but a book marker gives the boundary - TCEC archives write "{ Book exit }".
+    | FromBookMarker
+    /// Neither. Opening moves cannot be separated from choices.
+    | Unknown
+    /// The game has no moves at all - an abandoned pairing. Nothing to classify.
+    | NoMoves
+
+  /// Whether a ply was actually searched, judged by the per-move data engines record.
+  ///
+  /// A searched move carries move time, time left and the engine's eval; a book move carries
+  /// only "book, mb=...". Testing for the search data is more reliable than looking for the
+  /// word "book": it needs no assumption that the book is a contiguous prefix, and it handles
+  /// the first ply, whose comment is the pre-game tournament header rather than the book marker.
+  let private searchMarkers = [| "mt="; "tl="; "wv=" |]
+
+  let wasSearched (comment: string) =
+    comment <> null &&
+    searchMarkers |> Array.exists (fun m -> comment.Contains(m, StringComparison.Ordinal))
+
+  /// What a comment says about the opening. The two book markers mean opposite things and had
+  /// been treated alike: "{book}" marks a ply that CAME from the book, while TCEC's
+  /// "{ Book exit }" marks the first ply that did NOT - the book ended before it.
+  type BookMark =
+    | BookMove
+    | BookEnded
+    | NoMark
+
+  let private markOf (comment: string) =
+    if isNull comment then NoMark
+    elif comment.Contains("book exit", StringComparison.OrdinalIgnoreCase) then BookEnded
+    elif comment.Contains("book", StringComparison.OrdinalIgnoreCase) then BookMove
+    else NoMark
+
+  /// Which plies of a game count as a choice the engine made, rather than an opening move.
+  let choicePlies (game: PgnGame) : bool[] * OpeningSource =
+    let plies = game.Mainline |> Seq.toArray
+    let searched = plies |> Array.map (fun p -> wasSearched p.Comment)
+
+    if plies.Length = 0 then
+      Array.empty, NoMoves
+    elif Array.exists id searched then
+      searched, FromSearchData
+    else
+      // Two conventions, tried in order.
+      //
+      // 1. Plies marked as coming from the book, as EngineBattle and CCC write them. Only the
+      //    LEADING run counts: an annotation such as "out of book theory" at move 25 must not
+      //    reclassify the first 25 moves as opening.
+      let mutable leadingBook = 0
+      while leadingBook < plies.Length && markOf plies.[leadingBook].Comment = BookMove do
+        leadingBook <- leadingBook + 1
+
+      // 2. A single "book exit" marker, as TCEC writes it. The plies it covers carry no comment
+      //    at all, so there is no leading run to walk - the marker itself is the boundary, and
+      //    it sits on the FIRST ply that was a choice.
+      let bookEndedAt = plies |> Array.tryFindIndex (fun p -> markOf p.Comment = BookEnded)
+
+      match leadingBook, bookEndedAt with
+      | 0, None -> plies |> Array.map (fun _ -> true), Unknown
+      | 0, Some i -> plies |> Array.mapi (fun j _ -> j >= i), FromBookMarker
+      | n, _ -> plies |> Array.mapi (fun j _ -> j >= n), FromBookMarker
+
+  /// How many plies of the game were opening moves, and how that was decided.
+  let plyCount (game: PgnGame) : int * OpeningSource =
+    let isChoice, source = choicePlies game
+    match isChoice |> Array.tryFindIndex id with
+    | Some i -> i, source
+    | None -> isChoice.Length, source
+
+
 module Hash =
 
   let computeOpeningHash (input: string) =
@@ -182,12 +262,18 @@ module Hash =
       if String.IsNullOrEmpty fen |> not then
         sb.AppendLine(sprintf "[Fen \"%s\"]" fen ) |> ignore
       let sanMoves =
-        let moves = game.Mainline |> Seq.takeWhile (fun m -> m.Comment.Contains "book") |> Seq.toList
-        if moves.Length = 0 then
-          // take while comment is empty
+        match Opening.choicePlies game with
+        | _, (Opening.Unknown | Opening.NoMoves) ->
+          // Nothing marks where the book ended. Keep the old rule rather than treating the game
+          // as having no opening: this hash is what pairs games for pentanomial statistics, and
+          // collapsing every unidentifiable game onto one hash would pair unrelated games.
           game.Mainline |> Seq.takeWhile (fun m -> m.Comment = "") |> Seq.toList
-        else
-          moves
+        | isChoice, _ ->
+          let openingPlies =
+            match isChoice |> Array.tryFindIndex id with
+            | Some i -> i
+            | None -> isChoice.Length
+          game.Mainline |> Seq.truncate openingPlies |> Seq.toList
       for m in sanMoves do
           if m.Color = "w" then
             sb.Append(sprintf "%d.%s " m.MoveNumber m.San) |> ignore

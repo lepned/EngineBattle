@@ -634,17 +634,9 @@ type EngineSelfSummary =
     DistinctPositions: int }
 
 /// How the opening was identified for one game, which decides how much its numbers are worth.
-type OpeningSource =
-  /// Per-move search data present: each ply is classified individually. The reliable case.
-  | FromSearchData
-  /// No search data, but a book marker gives the boundary - TCEC archives write "{ Book exit }".
-  | FromBookMarker
-  /// Neither. Opening moves cannot be separated from choices, so none are excluded and any
-  /// self-deviation the caller sees may be an artefact of both sides following the same line.
-  | Unknown
-  /// The game has no moves at all - an abandoned pairing. Nothing to classify, and no reason
-  /// to warn about it.
-  | NoMoves
+/// The rule lives in ChessUtilities.Opening so the opening hash and this analysis cannot drift
+/// apart about which plies came out of the book.
+type OpeningSource = Opening.OpeningSource
 
 /// How trustworthy the opening detection was across a set of games.
 type OpeningCoverage =
@@ -669,18 +661,7 @@ module private PositionScan =
       Color: string
       Fen: string }
 
-  /// Whether a ply was actually searched, judged by the per-move data EngineBattle records.
-  ///
-  /// A searched move carries move time, time left and the engine's eval; a book move carries
-  /// only "book, mb=...". Testing for the search data is more reliable than looking for the
-  /// word "book": it needs no assumption that the book is a contiguous prefix, and it handles
-  /// the first ply, whose comment is the pre-game tournament header rather than the book
-  /// marker. Anything we cannot attribute to a search is treated as not-a-choice and left out.
-  let private searchMarkers = [| "mt="; "tl="; "wv=" |]
-
-  let wasSearched (comment: string) =
-    comment <> null &&
-    searchMarkers |> Array.exists (fun m -> comment.Contains(m, System.StringComparison.Ordinal))
+  let wasSearched = Opening.wasSearched
 
   /// Moves since the last capture or pawn push - FEN field five. Part of the position key,
   /// because it is what separates two identical boards that are different distances from a
@@ -693,30 +674,7 @@ module private PositionScan =
       | _ -> 0
     else 0
 
-  let private mentionsBook (comment: string) =
-    comment <> null && comment.Contains("book", System.StringComparison.OrdinalIgnoreCase)
-
-  /// Which plies of a game count as a choice the engine made, rather than an opening move.
-  let choicePlies (game: PgnGame) =
-    let plies = game.Mainline |> Seq.toArray
-    let searched = plies |> Array.map (fun p -> wasSearched p.Comment)
-
-    if plies.Length = 0 then
-      Array.empty, NoMoves
-    elif Array.exists id searched then
-      searched, FromSearchData
-    else
-      // End of the LEADING run of book plies, not the last ply mentioning "book" anywhere: an
-      // annotation such as "out of book theory" at move 25 would otherwise reclassify the first
-      // 25 moves as opening and hide every deviation in them.
-      let mutable lastLeading = -1
-      let mutable i = 0
-      while i < plies.Length && mentionsBook plies.[i].Comment do
-        lastLeading <- i
-        i <- i + 1
-      if lastLeading >= 0 then plies |> Array.mapi (fun j _ -> j > lastLeading), FromBookMarker
-      else plies |> Array.map (fun _ -> true), Unknown
-
+  let choicePlies = Opening.choicePlies
 
   /// Replays every game once and buckets each ply by the hash of the position before it.
   ///
@@ -736,10 +694,10 @@ module private PositionScan =
       let mutable abandoned = false
       let isChoice, source = choicePlies game
       match source with
-      | FromSearchData -> fromSearch <- fromSearch + 1
-      | FromBookMarker -> fromMarker <- fromMarker + 1
-      | Unknown -> unknown <- unknown + 1
-      | NoMoves -> empty <- empty + 1
+      | Opening.FromSearchData -> fromSearch <- fromSearch + 1
+      | Opening.FromBookMarker -> fromMarker <- fromMarker + 1
+      | Opening.Unknown -> unknown <- unknown + 1
+      | Opening.NoMoves -> empty <- empty + 1
       let mutable plyIndex = -1
       for san in movesFromPgn game do
         plyIndex <- plyIndex + 1
@@ -896,3 +854,10 @@ let analyzePositionDeviations (pgnGames: PgnGame seq) =
   let table, coverage = PositionScan.scan (pgnGames |> Seq.toList)
   deviationsFromScan table, selfSummaryFromScan table, coverage
 
+
+
+/// Where the opening ends for one game: how many leading plies were not the engine's own
+/// choice, and how that was decided. Exposed so the rule can be tested directly - it is the
+/// single most consequential judgement the analysis makes, and the two PGN conventions for
+/// marking a book mean opposite things.
+let openingPlyCount (game: PgnGame) : int * OpeningSource = Opening.plyCount game
