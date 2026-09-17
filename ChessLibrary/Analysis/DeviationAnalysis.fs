@@ -145,13 +145,13 @@ let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string optio
 
   let prepareDeviationPlay () =
     let allGames = pgnGames |> Seq.toList
-    let openingHashesExists = allGames |> List.exists(fun e -> e.GameMetaData.OpeningHash <> "")
-    let gamesGroupedPerOpening =
-      if openingHashesExists then
-        allGames |> List.groupBy(fun e -> e.GameMetaData.OpeningHash)
-      else
-        allGames |> List.iter(fun game -> Hash.writeOpeningHashToPgnGame game)
-        allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash )
+    // Per game, not all-or-nothing: a single tagged game used to send every untagged game into
+    // one "" bucket, where unrelated openings look like deviations from each other.
+    allGames
+    |> List.iter (fun game ->
+        if String.IsNullOrWhiteSpace game.GameMetaData.OpeningHash then
+          Hash.writeOpeningHashToPgnGame game)
+    let gamesGroupedPerOpening = allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash)
     let devs =
       [
         for (openingHash, gamesInOpening) in gamesGroupedPerOpening do
@@ -323,13 +323,12 @@ let findAllDeviationsForPlayersAlt (pgnGames: PgnGame seq) (refPlayer: string op
     |list -> list
 
   let allGames = pgnGames |> Seq.toList
-  let openingHashesExists = allGames |> List.exists(fun e -> e.GameMetaData.OpeningHash <> "")
-  let gamesGroupedPerOpening =
-    if openingHashesExists then
-      allGames |> List.groupBy(fun e -> e.GameMetaData.OpeningHash)
-    else
-      allGames |> List.iter(fun game -> Hash.writeOpeningHashToPgnGame game)
-      allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash )
+  // Per game, not all-or-nothing - see prepareDeviationPlay.
+  allGames
+  |> List.iter (fun game ->
+      if String.IsNullOrWhiteSpace game.GameMetaData.OpeningHash then
+        Hash.writeOpeningHashToPgnGame game)
+  let gamesGroupedPerOpening = allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash)
 
   let gameStore = ResizeArray<GameStore>()
   for (openingHash, gamesInOpening) in gamesGroupedPerOpening do

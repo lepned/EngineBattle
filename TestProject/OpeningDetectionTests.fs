@@ -92,3 +92,35 @@ let ``an abandoned game with no moves is not an unidentifiable opening`` () =
   let plies, source = ChessUtilities.Opening.plyCount (gameWith [])
   Assert.Equal(0, plies)
   Assert.Equal(ChessUtilities.Opening.NoMoves, source)
+
+// --- openingPrefix: the grouping/hashing view, which differs from plyCount on book files ---
+
+[<Fact>]
+let ``an opening book game is all opening, even though the rule calls it Unknown`` () =
+  // A book file carries no comments at all. plyCount says 0; the prefix used for hashing must
+  // still be the whole game, or every opening in the book collapses onto one hash.
+  let g = gameWith [ ""; ""; ""; "" ]
+  let plies, source = ChessUtilities.Opening.plyCount g
+  Assert.Equal(0, plies)
+  Assert.Equal(ChessUtilities.Opening.Unknown, source)
+  Assert.Equal(4, (ChessUtilities.Opening.openingPrefix g).Length)
+
+[<Fact>]
+let ``two different book games keep different opening prefixes`` () =
+  let a = gameWith [ ""; ""; "" ]
+  let b = gameWith [ ""; "" ]
+  Assert.NotEqual<int>((ChessUtilities.Opening.openingPrefix a).Length, (ChessUtilities.Opening.openingPrefix b).Length)
+
+[<Fact>]
+let ``with search data the prefix stops at the first searched ply`` () =
+  let g = gameWith [ book; book; search; search ]
+  Assert.Equal(2, (ChessUtilities.Opening.openingPrefix g).Length)
+
+[<Fact>]
+let ``a book exit marker bounds the prefix too`` () =
+  let g = gameWith [ ""; ""; ""; "Book exit"; "" ]
+  Assert.Equal(3, (ChessUtilities.Opening.openingPrefix g).Length)
+
+[<Fact>]
+let ``a game with no moves has no opening prefix`` () =
+  Assert.Empty(ChessUtilities.Opening.openingPrefix (gameWith []))

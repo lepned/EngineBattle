@@ -342,7 +342,14 @@ let loadOpeningsUnlimited (path: string option) (defaultRounds: int) : PgnGame[]
 let loadGamesAlreadyPlayed (pgnOutPath: string) : PgnGame[] =
     if File.Exists pgnOutPath then
         let parsed = ChessLibrary.FullPGNParser.parsePgnFile pgnOutPath |> Seq.toArray
-        parsed |> Array.iter Hash.writeOpeningHashToPgnGame
+        // Only fill in a MISSING hash. The tag EngineBattle wrote is the pairing's own hash,
+        // computed from the opening book; recomputing it from the played game can produce a
+        // different value, and `Diff.diff` compares these against the plan to decide what is
+        // left to play - a mismatch would silently replay the whole tournament.
+        parsed
+        |> Array.iter (fun g ->
+            if String.IsNullOrWhiteSpace g.GameMetaData.OpeningHash then
+                Hash.writeOpeningHashToPgnGame g)
         parsed
     else
         [||]
