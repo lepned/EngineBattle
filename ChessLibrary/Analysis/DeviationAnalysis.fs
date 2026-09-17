@@ -535,3 +535,184 @@ let printDeviationsToConsole (summary: DeviationPlayerSummary seq) =
   appendLine $"Total points: {allPoints}"
   appendLine "\n```\n"
   sb.ToString()
+
+
+// ---------------------------------------------------------------------------
+// Position-keyed deviation analysis.
+//
+// The older functions above replay a reference game and compare by ply index. That finds
+// disagreements between two games of the same opening, but it cannot see an engine
+// contradicting *itself*: in a colour-reversed pair the same engine is never on move in the
+// same position twice, and in a gauntlet the repeats it does get are spread across games
+// that the reference-replay never compares. Measured against four real PGNs,
+// findAllDeviationsForAllPlayers returned 0 where 8, 4, 3 and 2 genuine self-deviations existed.
+//
+// Keying on the position instead removes that blind spot. The unit of a deviation is one
+// position: if three games reach it and play two different moves, that is one deviation with
+// two choices, not two deviations.
+// ---------------------------------------------------------------------------
+
+/// One move that was played in a given position, and by whom.
+type PositionChoice =
+  { Move: string          // UCI
+    San: string
+    Engines: string list  // engines that chose this move here
+    GameNumbers: int list
+    Results: string list }
+
+/// A position that more than one game reached, where not everyone played the same move.
+type PositionDeviation =
+  { PositionHash: uint64
+    /// FEN of the position before the move, so callers can show or link to it.
+    Fen: string
+    OpeningHash: string
+    MoveNumber: int
+    /// Side to move, taken from the FEN rather than ply parity - games can start from a FEN.
+    Color: string
+    /// Engines that played more than one distinct move here across different games.
+    /// Empty means the disagreement is purely between different engines.
+    SelfEngines: string list
+    Choices: PositionChoice list }
+  member this.IsSelfDeviation = not this.SelfEngines.IsEmpty
+  member this.GameCount = this.Choices |> List.sumBy (fun c -> c.GameNumbers.Length)
+
+/// Per-engine self-consistency, which is the headline number for a gauntlet.
+type EngineSelfSummary =
+  { Engine: string
+    /// Positions where this engine contradicted an earlier choice of its own.
+    SelfDeviations: int
+    /// Positions this engine reached in more than one game - the denominator.
+    RepeatedPositions: int }
+
+[<RequireQualifiedAccess>]
+module private PositionScan =
+
+  type Entry =
+    { Engine: string
+      Uci: string
+      San: string
+      GameNumber: int
+      Result: string
+      OpeningHash: string
+      MoveNumber: int
+      Color: string
+      Fen: string }
+
+  /// Replays every game once and buckets each ply by the hash of the position before it.
+  let scan (games: PgnGame list) =
+    let table = Dictionary<uint64, ResizeArray<Entry>>()
+    for game in games do
+      let board = Chess.Board()
+      if game.Fen <> "" then board.LoadFen game.Fen
+      for san in movesFromPgn game do
+        let fenBefore = board.FEN()
+        let parts = fenBefore.Split(' ')
+        let color = if parts.Length > 1 && parts.[1] = "b" then "b" else "w"
+        let moveNumber =
+          if parts.Length > 5 then
+            match System.Int32.TryParse parts.[5] with
+            | true, n -> n
+            | _ -> 0
+          else 0
+        let engine =
+          if color = "w" then game.GameMetaData.White else game.GameMetaData.Black
+        let hashBefore = board.DeviationHash()
+        board.PlaySanMove san
+        let uci =
+          if board.UciMovesPlayed.Count > 0 then board.UciMovesPlayed.[board.UciMovesPlayed.Count - 1]
+          else ""
+        let entry =
+          { Engine = engine
+            Uci = uci
+            San = san
+            GameNumber = game.GameNumber
+            Result = game.GameMetaData.Result
+            OpeningHash = game.GameMetaData.OpeningHash
+            MoveNumber = moveNumber
+            Color = color
+            Fen = fenBefore }
+        match table.TryGetValue hashBefore with
+        | true, list -> list.Add entry
+        | _ ->
+          let list = ResizeArray<Entry>()
+          list.Add entry
+          table.[hashBefore] <- list
+    table
+
+let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : PositionDeviation list =
+  [ for kv in table do
+      let entries = kv.Value
+      let distinctGames = entries |> Seq.map (fun e -> e.GameNumber) |> Seq.distinct |> Seq.length
+      let distinctMoves = entries |> Seq.map (fun e -> e.Uci) |> Seq.distinct |> Seq.length
+      // A position repeated inside a single game is not a deviation, so require two games.
+      if distinctGames > 1 && distinctMoves > 1 then
+        let selfEngines =
+          entries
+          |> Seq.groupBy (fun e -> e.Engine)
+          |> Seq.filter (fun (_, es) ->
+               (es |> Seq.map (fun e -> e.Uci) |> Seq.distinct |> Seq.length) > 1 &&
+               (es |> Seq.map (fun e -> e.GameNumber) |> Seq.distinct |> Seq.length) > 1)
+          |> Seq.map fst
+          |> Seq.sort
+          |> Seq.toList
+        let choices =
+          entries
+          |> Seq.groupBy (fun e -> e.Uci)
+          |> Seq.map (fun (uci, es) ->
+               let es = es |> Seq.toList
+               { Move = uci
+                 San = (es |> List.head).San
+                 Engines = es |> List.map (fun e -> e.Engine) |> List.distinct |> List.sort
+                 GameNumbers = es |> List.map (fun e -> e.GameNumber) |> List.distinct |> List.sort
+                 Results = es |> List.map (fun e -> e.Result) |> List.distinct })
+          |> Seq.sortByDescending (fun c -> c.GameNumbers.Length)
+          |> Seq.toList
+        let first = entries.[0]
+        yield
+          { PositionHash = kv.Key
+            Fen = first.Fen
+            OpeningHash = first.OpeningHash
+            MoveNumber = first.MoveNumber
+            Color = first.Color
+            SelfEngines = selfEngines
+            Choices = choices } ]
+  |> List.sortBy (fun d -> d.MoveNumber)
+
+let private selfSummaryFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : EngineSelfSummary list =
+  let repeated = Dictionary<string, int>()
+  let deviated = Dictionary<string, int>()
+  let bump (d: Dictionary<string, int>) key =
+    match d.TryGetValue key with
+    | true, v -> d.[key] <- v + 1
+    | _ -> d.[key] <- 1
+
+  for kv in table do
+    for (engine, es) in kv.Value |> Seq.groupBy (fun e -> e.Engine) do
+      let games = es |> Seq.map (fun e -> e.GameNumber) |> Seq.distinct |> Seq.length
+      if games > 1 then
+        bump repeated engine
+        if (es |> Seq.map (fun e -> e.Uci) |> Seq.distinct |> Seq.length) > 1 then
+          bump deviated engine
+
+  [ for kv in repeated do
+      yield
+        { Engine = kv.Key
+          SelfDeviations = (match deviated.TryGetValue kv.Key with | true, v -> v | _ -> 0)
+          RepeatedPositions = kv.Value } ]
+  |> List.sortByDescending (fun s -> s.SelfDeviations)
+
+
+/// Both views from a single replay of the games. Scanning a large PGN is the expensive part
+/// -- 1811 games take ~3.5s -- so callers that want deviations and the per-engine summary
+/// should ask for them together rather than paying for two scans.
+let analyzePositionDeviations (pgnGames: PgnGame seq) : PositionDeviation list * EngineSelfSummary list =
+  let table = PositionScan.scan (pgnGames |> Seq.toList)
+  deviationsFromScan table, selfSummaryFromScan table
+
+/// Every position reached by more than one game where the played move was not unanimous.
+let findPositionDeviations (pgnGames: PgnGame seq) : PositionDeviation list =
+  PositionScan.scan (pgnGames |> Seq.toList) |> deviationsFromScan
+
+/// Per-engine self-consistency: how often an engine contradicted an earlier choice of its own.
+let summarizeSelfDeviations (pgnGames: PgnGame seq) : EngineSelfSummary list =
+  PositionScan.scan (pgnGames |> Seq.toList) |> selfSummaryFromScan
