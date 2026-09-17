@@ -486,8 +486,15 @@ module Manager =
       if fileExists then
         match x.PgnReader.TryPostAndReply((fun reply -> ChessLibrary.FullPGNParser.GetPGNGames reply), timeout = 30000) with
         | Some results ->
-            // Always recompute opening hashes to keep resume logic compatible across versions.
-            results |> Seq.iter Hash.writeOpeningHashToPgnGame
+            // Fill in only a MISSING hash. The stored tag is the pairing hash from the opening
+            // book; a hash recomputed from the played game can differ (a replay that stops two
+            // plies short of a long book opening, say) and would then split one opening into
+            // two for the pentanomial pairing and the games-left count. Resume itself no longer
+            // depends on this: Diff.diff accepts either the stored or a recomputed hash.
+            results
+            |> Seq.iter (fun g ->
+                if String.IsNullOrWhiteSpace g.GameMetaData.OpeningHash then
+                    Hash.writeOpeningHashToPgnGame g)
             results
         | None ->
             printfn "WARNING: GetPGNGames timed out after 30s"
