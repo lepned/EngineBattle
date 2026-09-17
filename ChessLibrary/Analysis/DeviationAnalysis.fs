@@ -584,6 +584,25 @@ type EngineSelfSummary =
     /// Positions this engine reached in more than one game - the denominator.
     RepeatedPositions: int }
 
+/// How the opening was identified for one game, which decides how much its numbers are worth.
+type OpeningSource =
+  /// Per-move search data present: each ply is classified individually. The reliable case.
+  | FromSearchData
+  /// No search data, but a book marker gives the boundary - TCEC archives write "{ Book exit }".
+  | FromBookMarker
+  /// Neither. Opening moves cannot be separated from choices, so none are excluded and any
+  /// self-deviation the caller sees may be an artefact of both sides following the same line.
+  | Unknown
+
+/// How trustworthy the opening detection was across a set of games.
+type OpeningCoverage =
+  { FromSearchData: int
+    FromBookMarker: int
+    Unknown: int }
+  member this.Total = this.FromSearchData + this.FromBookMarker + this.Unknown
+  /// True when some games had no way to tell opening moves from choices.
+  member this.HasUnverifiedOpenings = this.Unknown > 0
+
 [<RequireQualifiedAccess>]
 module private PositionScan =
 
@@ -611,6 +630,28 @@ module private PositionScan =
     comment <> null &&
     searchMarkers |> Array.exists (fun m -> comment.Contains(m, System.StringComparison.Ordinal))
 
+  let private mentionsBook (comment: string) =
+    comment <> null && comment.Contains("book", System.StringComparison.OrdinalIgnoreCase)
+
+  /// Which plies of a game count as a choice the engine made, rather than an opening move.
+  let choicePlies (game: PgnGame) =
+    let plies = game.Mainline |> Seq.toArray
+    let searched = plies |> Array.map (fun p -> wasSearched p.Comment)
+
+    if Array.exists id searched then
+      searched, FromSearchData
+    else
+      let lastBook =
+        plies
+        |> Array.mapi (fun i p -> i, p)
+        |> Array.filter (fun (_, p) -> mentionsBook p.Comment)
+        |> Array.tryLast
+        |> Option.map fst
+      match lastBook with
+      | Some i -> plies |> Array.mapi (fun j _ -> j > i), FromBookMarker
+      | None -> plies |> Array.map (fun _ -> true), Unknown
+
+
   /// Replays every game once and buckets each ply by the hash of the position before it.
   ///
   /// Unsearched plies are replayed but not recorded: both sides were following the same opening
@@ -619,15 +660,21 @@ module private PositionScan =
   /// move in another would be reported as a disagreement that never happened.
   let scan (games: PgnGame list) =
     let table = Dictionary<uint64, ResizeArray<Entry>>()
+    let mutable fromSearch = 0
+    let mutable fromMarker = 0
+    let mutable unknown = 0
     for game in games do
       let board = Chess.Board()
       if game.Fen <> "" then board.LoadFen game.Fen
-      let plies = game.Mainline |> Seq.toArray
+      let isChoice, source = choicePlies game
+      match source with
+      | FromSearchData -> fromSearch <- fromSearch + 1
+      | FromBookMarker -> fromMarker <- fromMarker + 1
+      | Unknown -> unknown <- unknown + 1
       let mutable plyIndex = -1
       for san in movesFromPgn game do
         plyIndex <- plyIndex + 1
-        let searched =
-          plyIndex < plies.Length && wasSearched plies.[plyIndex].Comment
+        let searched = plyIndex < isChoice.Length && isChoice.[plyIndex]
         let fenBefore = board.FEN()
         let parts = fenBefore.Split(' ')
         let color = if parts.Length > 1 && parts.[1] = "b" then "b" else "w"
@@ -661,7 +708,7 @@ module private PositionScan =
             let list = ResizeArray<Entry>()
             list.Add entry
             table.[hashBefore] <- list
-    table
+    table, ({ FromSearchData = fromSearch; FromBookMarker = fromMarker; Unknown = unknown } : OpeningCoverage)
 
 let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : PositionDeviation list =
   [ for kv in table do
@@ -729,14 +776,14 @@ let private selfSummaryFromScan (table: Dictionary<uint64, ResizeArray<PositionS
 /// Both views from a single replay of the games. Scanning a large PGN is the expensive part
 /// -- 1811 games take ~3.5s -- so callers that want deviations and the per-engine summary
 /// should ask for them together rather than paying for two scans.
-let analyzePositionDeviations (pgnGames: PgnGame seq) : PositionDeviation list * EngineSelfSummary list =
-  let table = PositionScan.scan (pgnGames |> Seq.toList)
-  deviationsFromScan table, selfSummaryFromScan table
+let analyzePositionDeviations (pgnGames: PgnGame seq) =
+  let table, coverage = PositionScan.scan (pgnGames |> Seq.toList)
+  deviationsFromScan table, selfSummaryFromScan table, coverage
 
 /// Every position reached by more than one game where the played move was not unanimous.
 let findPositionDeviations (pgnGames: PgnGame seq) : PositionDeviation list =
-  PositionScan.scan (pgnGames |> Seq.toList) |> deviationsFromScan
+  PositionScan.scan (pgnGames |> Seq.toList) |> fst |> deviationsFromScan
 
 /// Per-engine self-consistency: how often an engine contradicted an earlier choice of its own.
 let summarizeSelfDeviations (pgnGames: PgnGame seq) : EngineSelfSummary list =
-  PositionScan.scan (pgnGames |> Seq.toList) |> selfSummaryFromScan
+  PositionScan.scan (pgnGames |> Seq.toList) |> fst |> selfSummaryFromScan
