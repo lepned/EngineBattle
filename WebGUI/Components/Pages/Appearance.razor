@@ -5,18 +5,45 @@
 @using WebGUI.Services
 @using WebGUI.Components.Layout.ChessboardLayout
 
-<PageTitle>Board Appearance</PageTitle>
+<PageTitle>Appearance</PageTitle>
 
 <div class="appearance-container">
-    <h2>Board Appearance</h2>
+    <h2>Appearance</h2>
     <div class="appearance-description">
-        Themes, piece sets, coordinates and effects for every chessboard in EngineBattle.
-        Changes apply immediately to all boards.
+        Text and menu size for the whole application, and themes, piece sets, coordinates and
+        effects for every chessboard. Changes apply immediately.
     </div>
 
     <div class="appearance-layout">
         <div class="appearance-controls">
             <div class="controls-col">
+
+            <div class="appearance-section @SectionClass("interface")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("interface")'>
+                    <span class="section-title">Text &amp; menu <span class="scope-badge all">Whole application</span></span>
+                    <span class="collapse-indicator">@Indicator("interface")</span>
+                </h4>
+                <div style="display:flex; gap:1rem;">
+                    <div class="field-group" style="flex:1; margin-bottom:0;">
+                        <label>Text size</label>
+                        <select @bind="uiFontScale" @bind:after="Apply">
+                            <option value="small">Small</option>
+                            <option value="normal">Normal</option>
+                            <option value="large">Large</option>
+                            <option value="xlarge">Extra Large</option>
+                        </select>
+                    </div>
+                    <div class="field-group" style="flex:1; margin-bottom:0;">
+                        <label>Menu width</label>
+                        <select @bind="navDrawerWidth" @bind:after="Apply">
+                            <option value="narrow">Narrow</option>
+                            <option value="normal">Normal</option>
+                            <option value="wide">Wide</option>
+                        </select>
+                    </div>
+                </div>
+                <small>Text scales everywhere, boards keep their size. Widen the menu if larger text makes entries wrap.</small>
+            </div>
 
             <div class="appearance-section @SectionClass("theme")">
                 <h4 class="collapsible-header" @onclick='() => Toggle("theme")'>
@@ -164,72 +191,6 @@
                         }
                     </div>
                     <small>Auto uses the opposite square color for contrast on any theme</small>
-                </div>
-            </div>
-
-            <div class="appearance-section @SectionClass("highlight")">
-                <h4 class="collapsible-header" @onclick='() => Toggle("highlight")'>
-                    <span class="section-title">Highlight <span class="scope-badge all">All boards</span></span>
-                    <span class="collapse-indicator">@Indicator("highlight")</span>
-                </h4>
-                <div class="field-group">
-                    <label>Last-Move Highlight Style</label>
-                    <select @bind="highlightStyle" @bind:after="Apply">
-                        <option value="replace">Replace square color</option>
-                        <option value="tint">Translucent tint</option>
-                        <option value="frame">Border frame</option>
-                    </select>
-                </div>
-                <div class="field-group">
-                    <label>Last-Move Highlight Color</label>
-                    <div class="coord-color-row">
-                        <select @bind="moveHighlightMode" @bind:after="Apply">
-                            <option value="auto">Theme default</option>
-                            <option value="custom">Custom</option>
-                        </select>
-                        @if (moveHighlightMode == "custom")
-                        {
-                            <input type="color" value="@moveHighlightColor"
-                                   @oninput="e => moveHighlightColor = (string)e.Value" @onchange="Apply" />
-                        }
-                    </div>
-                    <small>Overrides the theme's last-move highlight on any preset</small>
-                </div>
-            </div>
-
-            <div class="appearance-section @SectionClass("evalbar")">
-                <h4 class="collapsible-header" @onclick='() => Toggle("evalbar")'>
-                    <span class="section-title">Eval Bar <span class="scope-badge all">All boards</span></span>
-                    <span class="collapse-indicator">@Indicator("evalbar")</span>
-                </h4>
-                <div class="field-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" @bind="showEvalBar" @bind:after="Apply" />
-                        Show eval bar
-                    </label>
-                    <small>Vertical win-probability bar on boards with a live eval — analysis pages, Game Review, tournament board and live games grid (the broadcast page always shows it; never shown in Play vs Computer)</small>
-                </div>
-                <div class="field-group">
-                    <label>Placement</label>
-                    <select @bind="evalBarPlacement" @bind:after="Apply">
-                        <option value="left">Left side of the frame</option>
-                        <option value="right">Right side of the frame</option>
-                    </select>
-                    <small>The bar is drawn in the board frame; a frame is added if none is set. Dual Analysis ignores the side — it shows one bar per engine, one on each. PV boards and grid tiles keep their bar beside the board, being too small for a frame.</small>
-                </div>
-            </div>
-
-            <div class="appearance-section @SectionClass("banner")">
-                <h4 class="collapsible-header" @onclick='() => Toggle("banner")'>
-                    <span class="section-title">Tournament header <span class="scope-badge all">Tournament page</span></span>
-                    <span class="collapse-indicator">@Indicator("banner")</span>
-                </h4>
-                <div class="field-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" @bind="useNewTournamentBanner" @bind:after="Apply" />
-                        Use the new tournament header
-                    </label>
-                    <small>Label above value, with the win and draw rules beside the counters that run against them, and a progress bar for the games played. Turn it off to go back to the old two-row header while the new one is being proven.</small>
                 </div>
             </div>
 
@@ -384,6 +345,72 @@
                 </div>
             </div>
 
+            <div class="appearance-section @SectionClass("highlight")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("highlight")'>
+                    <span class="section-title">Highlight <span class="scope-badge all">All boards</span></span>
+                    <span class="collapse-indicator">@Indicator("highlight")</span>
+                </h4>
+                <div class="field-group">
+                    <label>Last-Move Highlight Style</label>
+                    <select @bind="highlightStyle" @bind:after="Apply">
+                        <option value="replace">Replace square color</option>
+                        <option value="tint">Translucent tint</option>
+                        <option value="frame">Border frame</option>
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label>Last-Move Highlight Color</label>
+                    <div class="coord-color-row">
+                        <select @bind="moveHighlightMode" @bind:after="Apply">
+                            <option value="auto">Theme default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        @if (moveHighlightMode == "custom")
+                        {
+                            <input type="color" value="@moveHighlightColor"
+                                   @oninput="e => moveHighlightColor = (string)e.Value" @onchange="Apply" />
+                        }
+                    </div>
+                    <small>Overrides the theme's last-move highlight on any preset</small>
+                </div>
+            </div>
+
+            <div class="appearance-section @SectionClass("evalbar")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("evalbar")'>
+                    <span class="section-title">Eval Bar <span class="scope-badge all">All boards</span></span>
+                    <span class="collapse-indicator">@Indicator("evalbar")</span>
+                </h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="showEvalBar" @bind:after="Apply" />
+                        Show eval bar
+                    </label>
+                    <small>Vertical win-probability bar on boards with a live eval — analysis pages, Game Review, tournament board and live games grid (the broadcast page always shows it; never shown in Play vs Computer)</small>
+                </div>
+                <div class="field-group">
+                    <label>Placement</label>
+                    <select @bind="evalBarPlacement" @bind:after="Apply">
+                        <option value="left">Left side of the frame</option>
+                        <option value="right">Right side of the frame</option>
+                    </select>
+                    <small>The bar is drawn in the board frame; a frame is added if none is set. Dual Analysis ignores the side — it shows one bar per engine, one on each. PV boards and grid tiles keep their bar beside the board, being too small for a frame.</small>
+                </div>
+            </div>
+
+            <div class="appearance-section @SectionClass("banner")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("banner")'>
+                    <span class="section-title">Tournament header <span class="scope-badge all">Tournament page</span></span>
+                    <span class="collapse-indicator">@Indicator("banner")</span>
+                </h4>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="useNewTournamentBanner" @bind:after="Apply" />
+                        Use the new tournament header
+                    </label>
+                    <small>Label above value, with the win and draw rules beside the counters that run against them, and a progress bar for the games played. Turn it off to go back to the old two-row header while the new one is being proven.</small>
+                </div>
+            </div>
+
             <div class="appearance-section @SectionClass("effects")">
                 <h4 class="collapsible-header" @onclick='() => Toggle("effects")'>
                     <span class="section-title">Interaction &amp; Effects <span class="scope-badge analysis">Analysis &amp; play</span></span>
@@ -474,6 +501,8 @@
 </div>
 
 @code {
+    private string uiFontScale = "normal";
+    private string navDrawerWidth = "normal";
     private string themePreset = "eb-blue";
     private string customLight = "#B1D8DB";
     private string customDark = "#619EB3";
@@ -595,6 +624,8 @@
     {
         pieceSets = BoardThemeSvc.GetAvailablePieceSets();
         var s = SettingsService.Settings;
+        uiFontScale = s.UiFontScale is "small" or "large" or "xlarge" ? s.UiFontScale : "normal";
+        navDrawerWidth = s.NavDrawerWidth is "narrow" or "wide" ? s.NavDrawerWidth : "normal";
         themePreset = string.IsNullOrEmpty(s.BoardThemePreset) ? "eb-blue" : s.BoardThemePreset;
         customLight = s.BoardCustomLightColor ?? "#B1D8DB";
         customDark = s.BoardCustomDarkColor ?? "#619EB3";
@@ -638,7 +669,7 @@
     }
 
     // Collapsible sections: Theme and Pieces start open, the rest collapsed.
-    private readonly HashSet<string> openSections = new() { "theme", "pieces" };
+    private readonly HashSet<string> openSections = new() { "interface", "theme", "pieces" };
     private string SectionClass(string key) => openSections.Contains(key) ? "" : "collapsed";
     private string Indicator(string key) => openSections.Contains(key) ? "▾" : "▸";
     private void Toggle(string key)
@@ -655,6 +686,8 @@
     {
         var current = SettingsService.Settings;
         var merged = JsonSerializer.Deserialize<GlobalSettings>(JsonSerializer.Serialize(current)) ?? new GlobalSettings();
+        merged.UiFontScale = uiFontScale;
+        merged.NavDrawerWidth = navDrawerWidth;
         merged.BoardThemePreset = themePreset;
         merged.BoardCustomLightColor = customLight;
         merged.BoardCustomDarkColor = customDark;

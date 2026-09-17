@@ -105,6 +105,11 @@ public class GlobalSettings
     // Puzzle display
     public bool ShowPuzzleEngineColumn { get; set; } = true;
 
+    // Interface. "normal" means whatever the stylesheets do on their own, so a settings file
+    // from before these existed renders exactly as it did.
+    public string UiFontScale { get; set; } = "normal";        // small | normal | large | xlarge - root font size
+    public string NavDrawerWidth { get; set; } = "normal";     // narrow | normal | wide - the menu on the left
+
     // Board theme
     public string BoardThemePreset { get; set; } = "eb-blue";   // preset key or "custom"
     public string BoardCustomLightColor { get; set; } = "#B1D8DB";
@@ -141,4 +146,28 @@ public class GlobalSettings
 
     // App behavior
     public string StartupPage { get; set; } = "";
+}
+
+/// CSS for the interface-scale settings. Null means "emit nothing": the stylesheets' own
+/// default, which is what every installation had before the settings existed.
+public static class UiScale
+{
+    // Percent of the browser's default rather than px, so a user who already enlarged fonts
+    // in the browser keeps that ratio. MudBlazor and the tool pages size text in rem, so this
+    // scales all of it; the chessboards are sized in px on purpose and stay put.
+    public static string FontSizeCss(string scale) => scale switch
+    {
+        "small" => "87.5%",
+        "large" => "112.5%",
+        "xlarge" => "125%",
+        _ => null
+    };
+
+    // MudBlazor's own default is 240px.
+    public static string DrawerWidthCss(string width) => width switch
+    {
+        "narrow" => "200px",
+        "wide" => "300px",
+        _ => null
+    };
 }

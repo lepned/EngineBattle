@@ -3,11 +3,19 @@
 @implements IAsyncDisposable
 @inject NotifierService notify
 @inject IJSRuntime JS
+@inject GlobalSettingsService SettingsService
 
 <MudThemeProvider Theme="theme" @bind-IsDarkMode="isDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
+
+@* Interface scale. Nothing is emitted for "normal", so the page is byte-for-byte what it was
+   before the setting existed. *@
+@if (fontSizeCss is not null)
+{
+  <style>html { font-size: @fontSizeCss; }</style>
+}
 
 <MudLayout>
   <MudAppBar>
@@ -39,6 +47,48 @@
   MudTheme theme = new();
   private bool isDarkMode = true;
   private IJSObjectReference _chessModule;
+
+  // Interface scale from settings; null = leave the stylesheets alone.
+  private string fontSizeCss;
+  private string drawerWidth;
+
+  /// Re-reads the two interface settings; true when either differs from what is rendered.
+  private bool ReadInterfaceSettings()
+  {
+    var s = SettingsService.Settings;
+    var font = UiScale.FontSizeCss(s.UiFontScale);
+    var width = UiScale.DrawerWidthCss(s.NavDrawerWidth);
+    var changed = font != fontSizeCss || width != drawerWidth;
+    fontSizeCss = font;
+    if (width != drawerWidth)
+    {
+      drawerWidth = width;
+      // The width belongs in the theme, not on the drawer. MudThemeProvider emits it as
+      // --mud-drawer-width-left at :root, which BOTH the drawer and the main-content margin
+      // read. MudDrawer.Width only resizes the drawer element and leaves the margin at the
+      // old value, so the drawer either overlapped the page or left a gap beside it.
+      // A new theme instance, because the provider re-renders on reference change.
+      theme = width is null
+        ? new MudTheme()
+        : new MudTheme { LayoutProperties = new LayoutProperties { DrawerWidthLeft = width } };
+    }
+    return changed;
+  }
+
+  protected override void OnInitialized() => ReadInterfaceSettings();
+
+  // Fires on EVERY settings save, from the saving circuit's thread. Marshal onto this
+  // circuit, and only re-lay-out the boards when one of our two values actually changed -
+  // a board-theme save must not trigger 25 resize frames.
+  private void Settings_OnSettingsChanged()
+  {
+    _ = InvokeAsync(async () =>
+    {
+      if (!ReadInterfaceSettings()) return;
+      StateHasChanged();
+      await ResizeChessboardsAfterDelay();
+    });
+  }
 
   void DrawerToggle()
   {
@@ -72,6 +122,7 @@
     if (firstRender)
     {
       notify.IsFullScreenRequested += Notify_IsFullScreenRequested;
+      SettingsService.OnSettingsChanged += Settings_OnSettingsChanged;
     }
     base.OnAfterRender(firstRender);
   }
@@ -79,6 +130,7 @@
   public async ValueTask DisposeAsync()
   {
     notify.IsFullScreenRequested -= Notify_IsFullScreenRequested;
+    SettingsService.OnSettingsChanged -= Settings_OnSettingsChanged;
     await ValueTask.CompletedTask;
   }
  
