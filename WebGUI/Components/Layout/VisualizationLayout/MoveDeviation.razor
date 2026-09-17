@@ -24,7 +24,6 @@
 
 @code {
   [Parameter] public TypesDef.CoreTypes.MoveDeviation MoveDeviationInput { get; set; }
-  [Parameter] public bool OwnDeviations { get; set; }
   /// Edge length of the board; the card is this plus padding.
   [Parameter] public int BoardSizePx { get; set; } = 240;
 
@@ -52,8 +51,7 @@
     refSan = d.PrevSanMove.Item1;
     devSan = d.DevSanMove.Item1;
     refLabel = $"game #{prevGame.GameNumber} · {prevGame.GameMetaData.Result}";
-    devLabel = $"game #{devGame.GameNumber} · {devGame.GameMetaData.Result}"
-             + (OwnDeviations ? "  (same engine)" : "");
+    devLabel = $"game #{devGame.GameNumber} · {devGame.GameMetaData.Result}";
 
     var list = new List<EbArrow>();
     Add(list, d.PrevSanMove.Item2, RefColor);

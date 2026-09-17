@@ -8,87 +8,6 @@ open ChessLibrary.EngineTypes
 open ChessLibrary.ChessUtilities
 open ChessLibrary.GameAnalysis
 
-type DeviationInput = {Board: Chess.Board; PGN: PgnGame; Moves: string list }
-type DeviationDescription = {Result:string; White:string; Black:string; Move: MoveAndFen; MoveHistory:string }
-type DeviationPlayerSummary = {Player:string; Deviations:int; Points:float; OwnDeviationScore: float; GauntletDeviationScore: float; AdjustedScore: float; Ref:bool }
-
-let res (moveDev: MoveDeviation) =
-    let score =
-      match moveDev.Result, moveDev.DevRes with
-      | "1-0", "1/2-1/2" -> -0.5
-      | "1-0", "0-1" -> -1.0
-      | "1-0", "1-0" -> 0.0
-      | "1/2-1/2", "1-0" -> 0.5
-      | "1/2-1/2", "0-1" -> -0.5
-      | "1/2-1/2", "1/2-1/2" -> 0.0
-      | "0-1", "1-0" -> 1.0
-      | "0-1", "1/2-1/2" -> 0.5
-      | "0-1", "0-1" -> 0.0
-      | _ -> 0.0
-
-    // Color is the side to move at the deviation - the deviator by definition. Deriving it
-    // from the deviating game's White gave the same answer, until one engine plays both sides.
-    if moveDev.Color = "w" then score else -score
-
-let getScore (res: string) iswhite =
-  if iswhite then
-    match res with
-    | "1-0" -> 1.0
-    | "1/2-1/2" -> 0.5
-    | "0-1" -> 0.0
-    | _ -> 0.0
-  else
-    match res with
-    | "1-0" -> 0.0
-    | "1/2-1/2" -> 0.5
-    | "0-1" -> 1.0
-    | _ -> 0.0
-
-let createDeviationSummary (moveDeviations: MoveDeviation seq) (pgn: PgnGame seq) =
-  [
-    let distinctAll = moveDeviations|> Seq.distinctBy(fun e -> e.PlayerToDeviate)
-    //create deviation summary here
-    let criticalDevs = moveDeviations |> Seq.filter(fun e -> e.Result <> e.DevRes)
-    let criticalDevCount player = criticalDevs |> Seq.filter(fun e -> e.PlayerToDeviate = player) |> Seq.length
-    let ownDevsScore player = criticalDevs |> Seq.filter(fun e -> e.PlayerToDeviate = player) |> Seq.sumBy(fun e -> res e)
-
-    for p in distinctAll do
-       let devScore = ownDevsScore p.PlayerToDeviate
-       let opponentsDeviated = moveDeviations |> Seq.filter(fun e -> e.PlayerToDeviate <> p.PlayerToDeviate && e.Opponent = p.PlayerToDeviate)
-       let opponentDevScore = opponentsDeviated |> Seq.sumBy(fun e -> res e)
-       let allOpponentsDevScore =
-        if opponentDevScore = 0.0 then
-          0.0
-        else
-          -opponentDevScore
-
-       let adjusted = allOpponentsDevScore //totalDevScore + devScore
-       let myGames =
-          pgn
-          |> Seq.filter(fun e -> e.GameMetaData.White = p.PlayerToDeviate || e.GameMetaData.Black = p.PlayerToDeviate)
-       let totalScore =
-          myGames
-          |> Seq.sumBy(fun e ->
-                let isWhite = e.GameMetaData.White = p.PlayerToDeviate
-                getScore e.GameMetaData.Result isWhite)
-       {
-        Player = p.PlayerToDeviate
-        Deviations = criticalDevCount p.PlayerToDeviate
-        Points = totalScore
-        OwnDeviationScore = devScore
-        GauntletDeviationScore = allOpponentsDevScore
-        AdjustedScore = totalScore + adjusted
-        Ref = false }
-  ]
-
-
-let createDeviationDescription (input:DeviationInput) =
-  let move = input.Board.MovesAndFenPlayed |> Seq.last
-  let result = input.PGN.GameMetaData.Result
-  let history = input.Board.GetMoveHistory()
-  {Result=result; White = input.PGN.GameMetaData.White; Black = input.PGN.GameMetaData.Black; Move=move; MoveHistory = history; }
-
-  //collect all moves in a pgn-game
 let movesFromPgn (pgn:PgnGame) =
   [
     for m in pgn.Mainline -> m.San
@@ -104,213 +23,6 @@ type GameStore = {Moves: MoveStore list; Game: PgnGame; Board: Chess.Board; Open
 
 let createGameStore (moves: MoveStore list) (pgn: PgnGame) (board: Chess.Board) (opening : string ) =
   {Moves=moves; Game=pgn; Board=board ; Opening = opening}
-
-type ReplayDataExtended =
-  { Engine:string
-    Move: string * string
-    TimeLeftInMs: int64
-    FirstGame: PgnGame
-    SecondGame: PgnGame
-    Fen1:string
-  }
-
-type ReferenceGameReplayExtended() =
-    inherit Dictionary<uint64, ReplayDataExtended>()
-
-    member this.TryGet (hash) =
-        match this.TryGetValue(hash) with
-        | true, data -> Some data
-        | false, _ -> None
-
-    member this.Seed (initialData: seq<uint64 * ReplayDataExtended>) =
-        for (key, value) in initialData do
-            this.Add(key, value)
-
-    member this.PrettyPrint() =
-      this |> Seq.map (fun kvp -> sprintf "Key: %A, Engine %s played Move: %A, TimeLeft: %d ms" kvp.Key kvp.Value.Engine kvp.Value.Move kvp.Value.TimeLeftInMs)
-           |> String.concat "\n"
-
-let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string option) (comparePlayers: string list option ) =
-  let replayBoard = Chess.Board()
-  let oppBoard = Chess.Board()
-  let players =
-    match comparePlayers with
-    |Some p -> p
-    |None -> pgnGames |> Seq.map(fun e -> e.GameMetaData.White) |> Seq.distinct |> Seq.toList
-
-  let replayDicts =
-      [ for eng in players -> eng, ReferenceGameReplayExtended()] |> Map.ofList
-
-  let getReplayDictForPlayer name = replayDicts.[name]
-
-  let prepareDeviationPlay () =
-    let allGames = pgnGames |> Seq.toList
-    // Per game, not all-or-nothing: a single tagged game used to send every untagged game into
-    // one "" bucket, where unrelated openings look like deviations from each other.
-    allGames
-    |> List.iter (fun game ->
-        if String.IsNullOrWhiteSpace game.GameMetaData.OpeningHash then
-          Hash.writeOpeningHashToPgnGame game)
-    let gamesGroupedPerOpening = allGames |> List.groupBy (fun game -> game.GameMetaData.OpeningHash)
-    let devs =
-      [
-        for (openingHash, gamesInOpening) in gamesGroupedPerOpening do
-          for player in players do
-            let dict = getReplayDictForPlayer player
-            dict.Clear()
-            let games =
-              match refPlayer with
-              |Some p ->
-                gamesInOpening
-                |> Seq.filter(fun e -> e.GameMetaData.White = p || e.GameMetaData.Black = p)
-                |> Seq.filter(fun e -> e.GameMetaData.White = player || e.GameMetaData.Black = player)
-                |> Seq.toList
-              |None ->
-                gamesInOpening
-                |> Seq.filter(fun e -> e.GameMetaData.White = player || e.GameMetaData.Black = player)
-                |> Seq.toList
-            for game in games do
-              let iAmWhite = game.GameMetaData.White = player
-              replayBoard.ResetBoardState()
-              oppBoard.ResetBoardState()
-              if game.Fen <> "" then
-                replayBoard.LoadFen game.Fen
-
-              let mutable idx = 0
-              let moves = movesFromPgn game
-              let mutable cont = true
-
-              for m in moves do
-                if cont then
-                  let whiteToMove = replayBoard.Position.STM = 0uy
-                  let hash = replayBoard.DeviationHash()
-                  let lastmove = m
-                  let oldFen = replayBoard.FEN()
-                  replayBoard.PlaySanMove lastmove
-                  let newFen = replayBoard.FEN()
-                  let moveCombo = lastmove, (replayBoard.MovesAndFenPlayed |> Seq.last).Move.LongSan
-                  if iAmWhite && whiteToMove then
-                    match dict.TryGet hash with
-                    |None ->
-                      let data : ReplayDataExtended =
-                        {
-                          Engine=player
-                          Move = moveCombo
-                          TimeLeftInMs = 0
-                          FirstGame = game
-                          SecondGame = PgnGame.Empty game.GameNumber
-                          Fen1 = oldFen }
-                      dict[hash] <- data
-                    |Some replayData ->
-                      let (sSan,_) = replayData.Move
-                      if sSan <> lastmove then
-                        oppBoard.LoadFen replayData.Fen1
-                        oppBoard.PlaySanMove sSan
-                        let oppFen = oppBoard.FEN()
-                        let prevMoveCombo = sSan, (oppBoard.MovesAndFenPlayed |> Seq.last).Move.LongSan
-                        cont <- false
-                        let opp = game.GameMetaData.Black
-                        let moveDeviation =
-                          { Round = game.GameMetaData.Round
-                            GameNr = game.GameNumber
-                            MoveNr = idx
-                            Color = "w"
-                            PrevSanMove = prevMoveCombo
-                            PlayerToDeviate = player
-                            Opponent = opp
-                            DevSanMove = moveCombo
-                            // Result belongs to PgnGamePair's first element (the reference)
-                            // and DevRes to the second (the deviating game) - the order every
-                            // consumer and the scoring table assume. These were the other way
-                            // round, so a score from a record made here came out with the
-                            // opposite sign to one from findDeviationDetailsAlt.
-                            Result = replayData.FirstGame.GameMetaData.Result
-                            DevRes = game.GameMetaData.Result
-                            PgnGamePair = replayData.FirstGame, game
-                            PreFen = replayData.Fen1
-                            PrevFen = oppFen
-                            DevFen = newFen }
-                        let data : ReplayDataExtended =
-                          {
-                            Engine=player
-                            Move = moveCombo
-                            TimeLeftInMs = 0
-                            FirstGame = game
-                            SecondGame = replayData.FirstGame
-                            Fen1 = oldFen }
-                        dict[hash] <- data
-                        yield moveDeviation, game.GameNumber
-
-
-                  elif not iAmWhite && not whiteToMove then
-                    match dict.TryGet hash with
-                    |None ->
-                      let data : ReplayDataExtended =
-                        {
-                          Engine=player
-                          Move = moveCombo
-                          TimeLeftInMs = 0
-                          FirstGame = game
-                          SecondGame = PgnGame.Empty game.GameNumber
-                          Fen1 = oldFen }
-                      dict[hash] <- data
-                    |Some replayData ->
-                      let (sSan,_) = replayData.Move
-                      if sSan <> lastmove then
-                        oppBoard.LoadFen replayData.Fen1
-                        oppBoard.PlaySanMove sSan
-                        let oppFen = oppBoard.FEN()
-                        let prevMoveCombo = sSan, (oppBoard.MovesAndFenPlayed |> Seq.last).Move.LongSan
-                        cont <- false
-                        let opp = game.GameMetaData.White
-                        let moveDeviation =
-                          { Round = game.GameMetaData.Round
-                            GameNr = game.GameNumber
-                            MoveNr = idx
-                            Color = "b"
-                            PrevSanMove = prevMoveCombo
-                            PlayerToDeviate = player
-                            Opponent = opp
-                            DevSanMove = moveCombo  //replayData.Move
-                            // Result belongs to PgnGamePair's first element (the reference)
-                            // and DevRes to the second (the deviating game) - the order every
-                            // consumer and the scoring table assume. These were the other way
-                            // round, so a score from a record made here came out with the
-                            // opposite sign to one from findDeviationDetailsAlt.
-                            Result = replayData.FirstGame.GameMetaData.Result
-                            DevRes = game.GameMetaData.Result
-                            PgnGamePair = replayData.FirstGame, game
-                            PreFen = replayData.Fen1
-                            PrevFen = oppFen
-                            DevFen = newFen}
-                        yield moveDeviation, game.GameNumber
-                        let data : ReplayDataExtended =
-                          {
-                            Engine=player
-                            Move = moveCombo
-                            TimeLeftInMs = 0
-                            FirstGame = game
-                            SecondGame = replayData.FirstGame
-                            Fen1 = oldFen
-                            }
-                        dict[hash] <- data
-
-                  if cont then
-                    idx <- idx + 1
-
-                    ] |> List.sortBy(fun (dev,nr) -> nr) |> List.map fst |> List.toSeq
-    devs
-  prepareDeviationPlay()
-
-let findAllDeviationsForAllPlayers (pgnGames: PgnGame seq) =
-    let res =
-      try
-          findAllDeviationsForPlayers (pgnGames |> Seq.toList) None None
-      with
-      | ex ->
-          printfn "Exception in findAllDeviationsForPlayers: %s" ex.Message
-          Seq.empty
-    res
 
 let findAllDeviationsForPlayersAlt (pgnGames: PgnGame seq) (refPlayer: string option) (comparePlayers: string list ) =
   let players =
@@ -495,67 +207,6 @@ let findMoveDifferencesInPGN (pgn: PgnGame seq) refPlayer compareList =
     |> Seq.truncate 100
   res
 
-let returnListOfPositionsToCheck (fen:string) (list: string ResizeArray) =
-    let movesToCheck = ResizeArray<PuzzleTypes.Position>()
-    let mutable moves = ""
-    list
-    |> Seq.iteri(fun idx el ->
-          moves <-
-          if idx % 2 = 1 then
-            let puzzle = $"position fen {fen} moves {moves}"
-            let pos : PuzzleTypes.Position = {Command=puzzle; CorrectMove = list[idx]; MovePlayed = ""}
-            movesToCheck.Add pos
-          if idx = 0 then
-            sprintf "%s" el
-          else
-            $"{moves} {el}" )
-    movesToCheck
-
-let analyzeDeviations (pgnGames: PgnGame seq) =
-  let pgnGames = pgnGames |> Seq.toList
-  let consoleResString, engineStats, crossTable, allResults = PGNCalculator.getEngineDataResults pgnGames
-  let moveDevs = findAllDeviationsForAllPlayers pgnGames
-  let devSummary = createDeviationSummary moveDevs pgnGames
-  let numberOfGames = pgnGames.Length
-  let numberOfDevs = moveDevs |> Seq.length
-  // 0/0 is NaN, and this fraction is returned to callers that print it. An empty PGN, or a
-  // filter that matched nothing, is a normal input - not a reason to hand back NaN.
-  let fraction =
-    if numberOfGames > 0 then float numberOfDevs / float numberOfGames else 0.0
-  let sortedSummary = devSummary |> Seq.sortByDescending(fun e -> e.AdjustedScore)
-  allResults, consoleResString, sortedSummary, engineStats, crossTable, fraction
-
-let writeSummaryHeader (n:int) : string =
-    sprintf "%-*s : %8s %7s %8s %8s %14s" n "# PLAYER" "Points" "Devs" "OwnDevs" "OppDevs" "ScoreAdjusted"
-
-let writeSummaryForPlayer (p : DeviationPlayerSummary) (n:int) : string =
-    let player = if p.Ref then p.Player + " *" else p.Player
-    sprintf "%-*s : %8.1f %7d %8.1f %8.1f %14.1f" n player p.Points p.Deviations p.OwnDeviationScore p.GauntletDeviationScore p.AdjustedScore
-
-let printDeviationsToConsole (summary: DeviationPlayerSummary seq) =
-  let sb = System.Text.StringBuilder()
-  let appendLine (txt:string) = sb.AppendLine txt |> ignore
-  appendLine "\n```\n"
-  appendLine "Game deviations (devs) summary (not validated):\n"
-  //find longest player name and add 2 chars
-  let longest =
-    if Seq.isEmpty summary then 10
-    else summary |> Seq.maxBy (fun e -> e.Player.Length) |> fun e -> (e.Player.Length + 2)
-  writeSummaryHeader longest |> appendLine
-  for player in summary do
-    writeSummaryForPlayer player longest |> appendLine
-  let allPoints = summary |> Seq.sumBy(fun e -> e.Points)
-  if summary |>Seq.exists(fun e -> e.Ref) then
-    appendLine "\n* indicates reference player - the game result which is used in the comparison"
-  appendLine "\nDevs: Number of critical deviations played by the player"
-  appendLine "OwnDevs: The score of the player's own deviation from his perspective"
-  appendLine "OppDevs: The score of the gauntlet players's own deviations (from his perspective) against the opponent"
-  appendLine "ScoreAdjusted: Points + OppDevs"
-  appendLine $"Total points: {allPoints}"
-  appendLine "\n```\n"
-  sb.ToString()
-
-
 // ---------------------------------------------------------------------------
 // Position-keyed deviation analysis.
 //
@@ -563,8 +214,9 @@ let printDeviationsToConsole (summary: DeviationPlayerSummary seq) =
 // disagreements between two games of the same opening, but it cannot see an engine
 // contradicting *itself*: in a colour-reversed pair the same engine is never on move in the
 // same position twice, and in a gauntlet the repeats it does get are spread across games
-// that the reference-replay never compares. Measured against four real PGNs,
-// findAllDeviationsForAllPlayers returned 0 where 8, 4, 3 and 2 genuine self-deviations existed.
+// that the reference-replay never compares. Measured against four real PGNs, the old
+// reference-replay self-comparison returned 0 where 8, 4, 3 and 2 genuine self-deviations
+// existed; it has since been removed, and this is the only self view.
 //
 // Keying on the position instead removes that blind spot. The unit of a deviation is one
 // position: if three games reach it and play two different moves, that is one deviation with
@@ -598,10 +250,10 @@ type PositionChoice =
     Instances: ChoiceInstance list }
   member this.Engines = this.Instances |> List.map (fun i -> i.Engine) |> List.distinct |> List.sort
   member this.GameNumbers = this.Instances |> List.map (fun i -> i.GameNumber) |> List.sort
-  /// Average score for the engines that chose this move, from their own perspective.
-  member this.AverageScore =
-    if this.Instances.IsEmpty then 0.0
-    else this.Instances |> List.averageBy (fun i -> i.Score)
+  /// Points from the games in which this move was chosen, from the perspective of the engine
+  /// that chose it. A win and a loss are one point of two, as in any chess score - the average
+  /// this used to be read as half a point of two.
+  member this.Points = this.Instances |> List.sumBy (fun i -> i.Score)
 
 /// A position that more than one game reached, where not everyone played the same move.
 type PositionDeviation =

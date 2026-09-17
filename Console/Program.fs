@@ -2619,7 +2619,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
         //let playDemo = Engine.playMovesFromFen engine1 engine2 TestPath.startPos 5000 10   
         
         
-        //Test.Deviations.deviationSummaryFromPGNs testPGN
         //ParsingTests.parsAllPGNgames bigLichess false
         //ParsingTests.gameAnalysisFromFolderAndSubFolder ceresFolder 2 4.0 (3.0, 0.5)       
         //let files = [pgnTest1; pgnTest2; pgnTest3; pgnTest4; pgnTest5 ; pgnTest6; pgnTest7; pgnTest8; pgnTest13 ]   
@@ -2804,8 +2803,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                 if blocked > 0 then
                                     printfn "  %d skipped: a file of that name already exists (--force to overwrite)." blocked
                 | Verb (Deviations path) ->
-                    // The same two views the deviation page shows. Position-keyed first: it is
-                    // the one that can see an engine contradicting itself across games.
+                    // The same position-keyed view the deviation page shows.
                     let normalizedPath = normalizePath path
                     if not (File.Exists normalizedPath) then
                         printfn "PGN file not found: %s" normalizedPath
@@ -2815,9 +2813,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         printfn "Deviation analysis: %s (%d games)" normalizedPath games.Length
                         let devs, summary, coverage = ChessLibrary.DeviationAnalysis.analyzePositionDeviations games
                         printf "%s" (ChessLibrary.DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage)
-                        let _, _, devSummary, _, _, _ = ChessLibrary.DeviationAnalysis.analyzeDeviations games
-                        printfn "\nReference-replay summary - each game against one reference game per opening, ply by ply:"
-                        printf "%s" (ChessLibrary.DeviationAnalysis.printDeviationsToConsole devSummary)
                         printfn "Done in %.1fs" sw.Elapsed.TotalSeconds
                 | Verb (PgnCheck path) ->
                     // Pure parser health check: stream the file (never materialize it),

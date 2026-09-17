@@ -400,9 +400,8 @@ dotnet run -c Release -- pgncheck <path-to-pgn-file>
 
 ### deviations
 
-Runs the same two analyses as the Move Deviation page in the GUI and prints them.
-
-**Position-keyed** (printed first): every game is replayed once and each move is bucketed by
+Runs the same position-keyed analysis as the Move Deviation page in the GUI and prints it:
+every game is replayed once and each move is bucketed by
 the position it was played from. A position reached in more than one game where the games
 did not all play the same move is a deviation; when one engine played two different moves
 there it is a *self* deviation, otherwise *cross*. Opening moves are excluded — identified
@@ -411,11 +410,6 @@ marker — and the report says how many games it could do that for. The per-engi
 self-deviations over positions the engine reached more than once, with the rate beside it;
 the size of the denominator is the measure of what that rate is worth. Reverse-colour
 pairings such as a superfinal give an empty denominator, which the report says outright.
-
-**Reference-replay** (printed second): the older summary, comparing each game ply by ply
-against one reference game per opening, with per-player deviation scores. It cannot see an
-engine contradicting itself across games that were never compared, which is why the two
-self counts can differ.
 
 **Syntax:**
 ```bash

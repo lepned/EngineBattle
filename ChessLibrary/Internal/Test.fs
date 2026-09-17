@@ -15,23 +15,6 @@ open Perft
 
 open System.Diagnostics
 
-module Deviations =  
-    
-  let deviationSummaryFromPGNs (filePath: string) =    
-    printfn "Parsing and analyzing file: %s\n" filePath
-    let games = FullPGNParser.parsePgnFile filePath |> Seq.truncate 100000 |> Seq.toList
-    if games |> Seq.forall (fun e -> e.GameMetaData.Round <> "") then      
-      printfn "Start of deviation test - number of games %d\n" games.Length
-      let _, consoleRes, devSummary, data, cross, fraction = DeviationAnalysis.analyzeDeviations games
-      let consoleSummary = DeviationAnalysis.printDeviationsToConsole devSummary
-      PGNCalculator.idealizedEloPrint cross
-      //printfn "Gauntlet player: %s" gauntletPlayer
-      printfn "%s" consoleRes
-      printfn "%s" consoleSummary
-
-    else
-      printfn "Not all games has a valid round number in file: %s" filePath
-
 let parseChess960Record (input: string) =
     //printfn "%s" input
     let parts = input.Split('\t')
