@@ -501,6 +501,13 @@ let parallelTournamentRun
               try
                   let mutable keepGoing = true
                   while keepGoing do
+                      // TODO (deviation prevention under parallelism): nothing here stops a game
+                      // that repeats an earlier game's opening AND colours from starting while that
+                      // game is still being played, so the repeat sees a partial predecessor. A guard
+                      // would keep a set of in-flight (opening hash, engine, colour) keys and re-queue
+                      // a pairing whose key is in flight. Until then prevention is only guaranteed
+                      // sequentially; the console forces it off above one game, and the tuner is
+                      // safe because its references come from a complete file.
                       let! canRead = pairingCh.Reader.WaitToReadAsync(cts.Token)
                       if canRead then
                           match pairingCh.Reader.TryRead() with

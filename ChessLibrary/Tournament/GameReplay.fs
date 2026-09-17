@@ -95,7 +95,12 @@ let prepareGameReplay
             if pairing.Opening.Fen <> "" then
                 replayBoard.LoadFen pairing.Opening.Fen
         for game in lastRelevantGames do
-            let isWhite = game.GameMetaData.White = pairing.White.Name
+            // Seed each colour on its own match. One flag for both used to derive from White
+            // alone, so a saved game with the SAME pairing in the same colours seeded White and
+            // never Black - Black then searched fresh and deviated while White was held.
+            // Measured: with a reference PGN, both replayed games diverged on a Black move.
+            let seedWhite = game.GameMetaData.White = pairing.White.Name
+            let seedBlack = game.GameMetaData.Black = pairing.Black.Name
             replayBoard.ResetBoardState()
             tryInitBoard()
             let mutable idx = 0
@@ -106,14 +111,14 @@ let prepareGameReplay
                     if replayBoard.UciMovesPlayed.Count > idx then
                         let lastmove = replayBoard.UciMovesPlayed[idx]
                         let data : ReplayData = {Engine=game.GameMetaData.White; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}
-                        if isWhite then
+                        if seedWhite then
                             replayDictWhite[hash] <- data
                         idx <- idx + 1
                 elif m.Color = "b" then
                     if replayBoard.UciMovesPlayed.Count > idx then
                         let lastmove = replayBoard.UciMovesPlayed[idx]
                         let data : ReplayData = {Engine=game.GameMetaData.Black; Move = lastmove; TimeLeftInMs = 0; Hash = game.GameMetaData.OpeningHash}
-                        if not isWhite then
+                        if seedBlack then
                             replayDictBlack[hash] <- data
                         idx <- idx + 1
 

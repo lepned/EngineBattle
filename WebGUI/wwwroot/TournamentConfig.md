@@ -54,7 +54,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **PolicyTest**: Enable or disable policy tests.
 - **ValueTest**: Enable or disable value tests - WIP.
 - **WriteToConsole**: Enable or disable writing to console - WIP.
-- **NumberOfGamesInParallel**: Number of games to run in parallel (console and WebGUI). Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. PreventMoveDeviation still works in parallel play (replay data is shared across concurrent games). In the WebGUI, starting a tournament with a value above 1 opens the multi-board grid (`/tournament-grid`); single-game user adjudication is not available during parallel runs. The old name `NumberOfGamesInParallelConsoleOnly` is still accepted when loading.
+- **NumberOfGamesInParallel**: Number of games to run in parallel (console and WebGUI). Applies to Round Robin and Gauntlet; Cup, Swiss and Ladder always run sequentially. PreventMoveDeviation is only guaranteed with sequential play: a game that repeats an earlier game's opening and colours must not run at the same time as that game, and nothing orders them, so the console turns prevention off when this is above 1. Replay from a reference PGN or a resumed PGN is unaffected by parallelism (the file is complete before play starts), which is how the tuner uses it. In the WebGUI, starting a tournament with a value above 1 opens the multi-board grid (`/tournament-grid`); single-game user adjudication is not available during parallel runs. The old name `NumberOfGamesInParallelConsoleOnly` is still accepted when loading.
 
 ### LiveFeed (optional)
 
