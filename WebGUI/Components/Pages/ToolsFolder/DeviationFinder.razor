@@ -38,7 +38,7 @@
       <input type="checkbox" @bind="isFindMoveAllDifferencesEnabled" style="width:16px; height:16px; accent-color:#8b9ce8;" />
       Compare between different engines
     </label>
-    <span style="font-size:0.85rem; color:#787890;">Off: analyze single engine inconsistencies</span>
+    <span style="font-size:0.85rem; color:#787890;">Off: compare each engine's games against its own reference game (reference-replay)</span>
   </div>
 
   <div class="file-name">@fileName</div>
@@ -77,12 +77,23 @@
         How often an engine played a different move in a position it had <em>already reached in
         another game</em>. Opening moves are excluded, so only positions the engine actually
         chose in are counted.
+        <div style="margin-top:6px; color:#787890;">
+          This is a different count from the reference-replay results above: those compare each
+          game against one reference game ply by ply, so they miss an engine contradicting itself
+          across games that were never compared. Here every position is compared across all games.
+        </div>
+        @if (focusEngines.Count > 0)
+        {
+          <div style="margin-top:6px; color:#c7ccd8;">
+            Showing only: @string.Join(", ", focusEngines) — from the Reference / Compare players fields.
+          </div>
+        }
       </div>
 
       @if (measurableEngines.Count == 0)
       {
         <div style="border-left:3px solid #5b8def; padding:10px 14px; color:#c7ccd8;">
-          <strong>Not measurable in this PGN.</strong>
+          <strong>@(focusEngines.Count > 0 ? "Not measurable for the selected engine(s) in this PGN." : "Not measurable in this PGN.")</strong>
           <div style="margin-top:6px; color:#9aa1b1; font-size:0.9rem;">
             No engine reached the same position in more than one game, so there was never an
             opportunity to contradict itself — the result is an empty denominator, not a clean
@@ -98,7 +109,6 @@
         <div class="tool-puzzle-grid">
           @foreach (var e in measurableEngines)
           {
-            var rated = e.RepeatedPositions >= MinimumForRate;
             var rate = 100.0 * e.SelfDeviations / e.RepeatedPositions;
             var share = e.DistinctPositions > 0 ? 100.0 * e.RepeatedPositions / e.DistinctPositions : 0.0;
             <div class="tool-puzzle-card">
@@ -107,27 +117,17 @@
                 <span style="font-size:1.6rem; color:@(e.SelfDeviations > 0 ? "#e8a33d" : "#6fbf73");">
                   @e.SelfDeviations / @e.RepeatedPositions.ToString("N0")
                 </span>
-                <span style="font-size:0.95rem; color:@(rated ? "#9aa1b1" : "#d9a441");">
+                <span style="font-size:0.95rem; color:#9aa1b1;">
                   @rate.ToString("0.0") %
                 </span>
               </div>
               <div style="color:#9aa1b1; font-size:0.85rem;">
                 positions it reached in more than one game, and played differently the second time
               </div>
-              @if (rated)
-              {
-                <div style="color:#787890; font-size:0.78rem; margin-top:4px;">
-                  those @e.RepeatedPositions.ToString("N0") are @share.ToString("0.0") % of the
-                  @e.DistinctPositions.ToString("N0") positions it chose in
-                </div>
-              }
-              else
-              {
-                <div style="color:#d9a441; font-size:0.78rem; margin-top:4px;">
-                  from only @e.RepeatedPositions repeat(s) — not comparable with a rate built on
-                  hundreds
-                </div>
-              }
+              <div style="color:#787890; font-size:0.78rem; margin-top:4px;">
+                those @e.RepeatedPositions.ToString("N0") are @share.ToString("0.0") % of the
+                @e.DistinctPositions.ToString("N0") positions it chose in
+              </div>
             </div>
           }
         </div>
@@ -153,18 +153,24 @@
 
       <div class="tool-tab-bar">
         <button class="tool-tab @(typeFilter == "all" ? "active" : "")" @onclick='() => SetTypeFilter("all")'>
-          All (@positionDeviations.Count)
+          All (@FocusedPositions.Count())
         </button>
         <button class="tool-tab @(typeFilter == "self" ? "active" : "")" @onclick='() => SetTypeFilter("self")'>
-          Self (@selfCount)
+          Self (@FocusedSelfCount)
         </button>
         <button class="tool-tab @(typeFilter == "cross" ? "active" : "")" @onclick='() => SetTypeFilter("cross")'>
-          Cross (@(positionDeviations.Count - selfCount))
+          Cross (@(FocusedPositions.Count() - FocusedSelfCount))
         </button>
         <span style="flex:1"></span>
         <button class="tool-action-btn-sm" @onclick="CopyPositionDeviations">Copy as text</button>
       </div>
 
+      @if (focusEngines.Count > 0 && !FocusedPositions.Any())
+      {
+        <div style="color:#9aa1b1; font-size:0.9rem; margin:8px 0;">
+          None of the @positionDeviations.Count position deviations involve @string.Join(", ", focusEngines).
+        </div>
+      }
       <div class="tool-table-container">
         <table class="tool-table dense">
           <thead>
@@ -399,22 +405,33 @@
   private ChessLibrary.DeviationAnalysis.OpeningCoverage coverage;
   private ChessLibrary.DeviationAnalysis.PositionDeviation selectedPosition;
   private string typeFilter = "all";
-  private int selfCount;
+
+  // Engines named in the Reference / Compare players fields when the file was loaded. Empty
+  // means no focus. Snapshotted at load, like the legacy analysis, so the two sections never
+  // answer for different inputs.
+  private HashSet<string> focusEngines = new(StringComparer.OrdinalIgnoreCase);
+
+  private IEnumerable<ChessLibrary.DeviationAnalysis.PositionDeviation> FocusedPositions =>
+      focusEngines.Count == 0
+        ? positionDeviations
+        : positionDeviations.Where(d => d.Choices.Any(c => c.Instances.Any(i => focusEngines.Contains(i.Engine))));
+
+  private int FocusedSelfCount => FocusedPositions.Count(d => d.IsSelfDeviation);
 
   // An engine with no repeated positions has an empty denominator, which is a different
-  // statement from "perfectly consistent" and must not be shown as a score.
-  // Below this the rate is still shown, but in amber and with the denominator spelled out: a
-  // single deviation out of a single repeat reads as 100%, and would otherwise sit next to a
-  // real 7.8% off 245 as though the two were the same kind of number.
-  private const int MinimumForRate = 20;
+  // statement from "perfectly consistent" and must not be shown as a score. With any
+  // denominator at all the rate is shown; the denominator beside it says what it is worth.
+
+  private IEnumerable<ChessLibrary.DeviationAnalysis.EngineSelfSummary> focusedConsistency =>
+      focusEngines.Count == 0 ? engineConsistency : engineConsistency.Where(e => focusEngines.Contains(e.Engine));
 
   private List<ChessLibrary.DeviationAnalysis.EngineSelfSummary> measurableEngines =>
-      engineConsistency
+      focusedConsistency
         .Where(e => e.RepeatedPositions > 0)
         .OrderByDescending(e => e.RepeatedPositions)
         .ToList();
 
-  private int unmeasurableCount => engineConsistency.Count(e => e.RepeatedPositions == 0);
+  private int unmeasurableCount => focusedConsistency.Count(e => e.RepeatedPositions == 0);
 
   private string posSortColumn = "Move";
   private bool posSortAscending = true;
@@ -425,9 +442,9 @@
     {
       var rows = typeFilter switch
       {
-        "self" => positionDeviations.Where(d => d.IsSelfDeviation),
-        "cross" => positionDeviations.Where(d => !d.IsSelfDeviation),
-        _ => (IEnumerable<ChessLibrary.DeviationAnalysis.PositionDeviation>)positionDeviations
+        "self" => FocusedPositions.Where(d => d.IsSelfDeviation),
+        "cross" => FocusedPositions.Where(d => !d.IsSelfDeviation),
+        _ => FocusedPositions
       };
 
       Func<ChessLibrary.DeviationAnalysis.PositionDeviation, IComparable> key = posSortColumn switch
@@ -732,6 +749,9 @@
       processingStatus = $"Analyzing move deviations in {games.Count:N0} games…";
       StateHasChanged();
       var comparList = ConvertCsvStringToList(comparePlayers);
+      focusEngines = new HashSet<string>(
+        new[] { refPlayer }.Concat(comparList).Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()),
+        StringComparer.OrdinalIgnoreCase);
       // Deviation analysis compares games pairwise — quadratic-ish work that must not
       // run on the dispatcher. Materialize the lazy sequences once inside the task
       // instead of re-running the whole analysis on every LINQ enumeration below.
@@ -786,7 +806,6 @@
       positionDeviations = positions?.Item1?.ToList() ?? new();
       engineConsistency = positions?.Item2?.ToList() ?? new();
       coverage = positions?.Item3;
-      selfCount = positionDeviations.Count(d => d.IsSelfDeviation);
       selectedPosition = null;
       typeFilter = "all";
       logger.LogInformation(resultDescription1);

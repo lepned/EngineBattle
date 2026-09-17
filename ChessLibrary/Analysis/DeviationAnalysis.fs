@@ -13,7 +13,6 @@ type DeviationDescription = {Result:string; White:string; Black:string; Move: Mo
 type DeviationPlayerSummary = {Player:string; Deviations:int; Points:float; OwnDeviationScore: float; GauntletDeviationScore: float; AdjustedScore: float; Ref:bool }
 
 let res (moveDev: MoveDeviation) =
-    let _,pgnGame = moveDev.PgnGamePair
     let score =
       match moveDev.Result, moveDev.DevRes with
       | "1-0", "1/2-1/2" -> -0.5
@@ -27,8 +26,9 @@ let res (moveDev: MoveDeviation) =
       | "0-1", "0-1" -> 0.0
       | _ -> 0.0
 
-    let isWhite = moveDev.PlayerToDeviate = pgnGame.GameMetaData.White
-    if isWhite then score else -score
+    // Color is the side to move at the deviation - the deviator by definition. Deriving it
+    // from the deviating game's White gave the same answer, until one engine plays both sides.
+    if moveDev.Color = "w" then score else -score
 
 let getScore (res: string) iswhite =
   if iswhite then
@@ -854,6 +854,53 @@ let analyzePositionDeviations (pgnGames: PgnGame seq) =
   deviationsFromScan table, selfSummaryFromScan table, coverage
 
 
+
+/// Text report of the position-keyed analysis, for the console verb. Same content the GUI
+/// shows: opening coverage, per-engine self-consistency, then one line per position.
+let printPositionDeviationsToConsole (devs: PositionDeviation list) (summary: EngineSelfSummary list) (coverage: OpeningCoverage) =
+  let sb = System.Text.StringBuilder()
+  let line (s: string) = sb.AppendLine s |> ignore
+  line ""
+  line (sprintf "Opening detection: %d games - search data %d, book marker %d, unknown %d, no moves %d"
+          coverage.Total coverage.FromSearchData coverage.FromBookMarker coverage.Unknown coverage.Empty)
+  if coverage.HasUnverifiedOpenings then
+    line (sprintf "  WARNING: %d game(s) carry neither search data nor a book marker - self-deviations there may be book artefacts"
+            coverage.Unknown)
+  line ""
+  line "Engine self-consistency - positions reached in more than one game, played differently the second time:"
+  let measurable =
+    summary |> List.filter (fun s -> s.RepeatedPositions > 0) |> List.sortByDescending (fun s -> s.RepeatedPositions)
+  let unmeasurable = summary |> List.filter (fun s -> s.RepeatedPositions = 0)
+  if measurable.IsEmpty then
+    line "  not measurable: no engine reached the same position in more than one game"
+    line "  (normal for reverse-colour pairings: the engine that faces a position in one game is the opponent in the other)"
+  else
+    let w = measurable |> List.map (fun s -> s.Engine.Length) |> List.max |> max 8
+    // The rate is always shown when there is a denominator; the denominator beside it is the
+    // measure of how much it is worth. 1 of 1 and 18 of 239 are left for the reader to weigh.
+    line (sprintf "  %-*s %9s %9s %7s %9s" w "ENGINE" "SelfDevs" "Repeated" "Rate" "Distinct")
+    for s in measurable do
+      let rate = 100.0 * float s.SelfDeviations / float s.RepeatedPositions
+      line (sprintf "  %-*s %9d %9d %6.1f%% %9d" w s.Engine s.SelfDeviations s.RepeatedPositions rate s.DistinctPositions)
+  if not unmeasurable.IsEmpty then
+    line (sprintf "  never met the same position twice: %s" (unmeasurable |> List.map (fun s -> s.Engine) |> String.concat ", "))
+  line ""
+  let selfN = devs |> List.filter (fun d -> d.IsSelfDeviation) |> List.length
+  line (sprintf "Position deviations: %d (%d self, %d cross)" devs.Length selfN (devs.Length - selfN))
+  if not devs.IsEmpty then
+    line "  Move Side Type  Games  Choices as move [engines: #game result, ...]"
+    for d in devs do
+      let choices =
+        d.Choices
+        |> List.map (fun c ->
+             let played = c.Instances |> List.map (fun i -> sprintf "#%d %s" i.GameNumber i.Result) |> String.concat ", "
+             sprintf "%s [%s: %s]" c.San (c.Engines |> String.concat "/") played)
+        |> String.concat "  |  "
+      let selfNote = if d.IsSelfDeviation then sprintf "  (self: %s)" (d.SelfEngines |> String.concat ", ") else ""
+      line (sprintf "  %4d %-4s %-5s %5d  %s%s"
+              d.MoveNumber (if d.Color = "w" then "W" else "B")
+              (if d.IsSelfDeviation then "self" else "cross") d.GameCount choices selfNote)
+  sb.ToString()
 
 /// Where the opening ends for one game: how many leading plies were not the engine's own
 /// choice, and how that was decided. Exposed so the rule can be tested directly - it is the

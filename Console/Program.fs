@@ -2803,6 +2803,22 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                 let blocked = p.ToWrite.Length - written.Length
                                 if blocked > 0 then
                                     printfn "  %d skipped: a file of that name already exists (--force to overwrite)." blocked
+                | Verb (Deviations path) ->
+                    // The same two views the deviation page shows. Position-keyed first: it is
+                    // the one that can see an engine contradicting itself across games.
+                    let normalizedPath = normalizePath path
+                    if not (File.Exists normalizedPath) then
+                        printfn "PGN file not found: %s" normalizedPath
+                    else
+                        let sw = Diagnostics.Stopwatch.StartNew()
+                        let games = ChessLibrary.FullPGNParser.parsePgnFile normalizedPath |> Seq.toList
+                        printfn "Deviation analysis: %s (%d games)" normalizedPath games.Length
+                        let devs, summary, coverage = ChessLibrary.DeviationAnalysis.analyzePositionDeviations games
+                        printf "%s" (ChessLibrary.DeviationAnalysis.printPositionDeviationsToConsole devs summary coverage)
+                        let _, _, devSummary, _, _, _ = ChessLibrary.DeviationAnalysis.analyzeDeviations games
+                        printfn "\nReference-replay summary - each game against one reference game per opening, ply by ply:"
+                        printf "%s" (ChessLibrary.DeviationAnalysis.printDeviationsToConsole devSummary)
+                        printfn "Done in %.1fs" sw.Elapsed.TotalSeconds
                 | Verb (PgnCheck path) ->
                     // Pure parser health check: stream the file (never materialize it),
                     // report structure and throughput. Deliberately does NO analysis —
@@ -2929,6 +2945,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
                     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
                     printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
+                    printfn "  deviations, dev <pgnFile>               Self-consistency and position deviations from PGN"
                     printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
                     printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
                     printfn "  validate, v <config>                    Validate a tournament config without running"

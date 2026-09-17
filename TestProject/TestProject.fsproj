@@ -48,6 +48,7 @@
 		<Compile Include="CeresWireTests.fs" />
 		<Compile Include="EmptyInputGuardTests.fs" />
 		<Compile Include="OpeningDetectionTests.fs" />
+		<Compile Include="DeviationReportTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

@@ -71,6 +71,7 @@ type VerbResult =
     | GUI of page: string * port: int option
     | PgnSummary of path:string
     | PgnCheck of path:string
+    | Deviations of path:string
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
     | PuzzleTrend of folder:string * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
     | GenDefs of template:string * netFolder:string option * outFolder:string option * dryRun:bool * force:bool
@@ -623,6 +624,11 @@ module CustomParser =
                     let path = args.[index + 1]
                     parseArgs args (index + 2) (Verb (PgnCheck path) :: acc)
                 else failwith "Missing parameter for pgncheck"
+            | "deviations" | "dev" ->
+                if index + 1 < args.Length then
+                    let path = args.[index + 1]
+                    parseArgs args (index + 2) (Verb (Deviations path) :: acc)
+                else failwith "Missing parameter for deviations"
             | "puzzletrend" | "pt" ->
                 if index + 1 < args.Length then
                     let folder = args.[index + 1]
