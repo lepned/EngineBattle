@@ -3,6 +3,7 @@ module ChessLibrary.Scheduler.Diff
 open System.Collections.Generic
 open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.PGNTypes
+open ChessLibrary.ChessUtilities
 
 /// Subtract already-played games (by `GameKey`) from a plan. Multiset-style:
 /// each played game consumes at most one planned entry. Order of the returned
@@ -16,25 +17,49 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
     if Array.isEmpty played then
         plan
     else
-        let counts = Dictionary<GameKey, int>()
-        for g in played do
-            let key : GameKey =
-                { OpeningHash =
-                    if System.String.IsNullOrEmpty g.GameMetaData.OpeningHash
-                    then g.GameNumber.ToString()
-                    else g.GameMetaData.OpeningHash
-                  Fen = g.GameMetaData.Fen
-                  White = g.GameMetaData.White
-                  Black = g.GameMetaData.Black }
-            match counts.TryGetValue key with
-            | true, n -> counts.[key] <- n + 1
-            | false, _ -> counts.[key] <- 1
+        // Each played game offers TWO keys, because there is no single hash that matches every
+        // PGN we might be resuming from:
+        //
+        //  * the hash EngineBattle stored. Authoritative for games this version wrote - it is
+        //    the pairing's own hash, taken from the opening book.
+        //  * a hash recomputed from the played game. The only key that can match a PGN written
+        //    before 2026-01-16, whose stored hash was taken from the raw book text and which no
+        //    current computation reproduces.
+        //
+        // Neither alone is enough. Recomputing everything breaks current files whenever the
+        // replayed opening does not reproduce the book move for move (measured: a 102-ply book
+        // opening replayed as 100 plies). Trusting the stored tag alone breaks older files.
+        let keyWith (hash: string) (g: PgnGame) : GameKey =
+            { OpeningHash = if System.String.IsNullOrEmpty hash then g.GameNumber.ToString() else hash
+              Fen = g.GameMetaData.Fen
+              White = g.GameMetaData.White
+              Black = g.GameMetaData.Black }
+
+        let consumed = Array.zeroCreate<bool> played.Length
+        let index = Dictionary<GameKey, ResizeArray<int>>()
+        let add (key: GameKey) (i: int) =
+            match index.TryGetValue key with
+            | true, xs -> xs.Add i
+            | false, _ -> index.[key] <- ResizeArray [ i ]
+
+        for i in 0 .. played.Length - 1 do
+            let g = played.[i]
+            let stored = keyWith g.GameMetaData.OpeningHash g
+            add stored i
+            let recomputed = keyWith (Hash.computeOpeningHashFromGame g) g
+            if recomputed <> stored then add recomputed i
+
+        /// Claim one unconsumed played game matching this key, if there is one.
+        let claim (key: GameKey) =
+            match index.TryGetValue key with
+            | true, xs ->
+                match xs |> Seq.tryFind (fun i -> not consumed.[i]) with
+                | Some i -> consumed.[i] <- true; true
+                | None -> false
+            | false, _ -> false
+
         [ for p in plan do
-            match counts.TryGetValue p.Key with
-            | true, n when n > 0 ->
-                counts.[p.Key] <- n - 1
-            | _ ->
-                yield p ]
+            if not (claim p.Key) then yield p ]
 
 /// Per-engine quota enforcement for Gauntlet resume. When a new opponent is
 /// added mid-tournament, the regenerated plan may schedule games for existing

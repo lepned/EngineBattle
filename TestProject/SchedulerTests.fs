@@ -783,3 +783,75 @@ let ``EPD openings: resume via Diff.diff identifies played games by FEN-derived 
     Assert.Equal(2, remaining.Length)
     Assert.Equal("2.1", remaining.[0].RoundLabel)
     Assert.Equal("2.2", remaining.[1].RoundLabel)
+
+// ============================================================================
+// Diff.diff — resuming across a change in the opening-hash rule
+// ============================================================================
+
+/// An opening/played game carrying real moves, so the opening hash has something to hash.
+let private withMoves (sans: string list) (comment: string) (g: PgnGame) =
+    sans
+    |> List.iteri (fun i san ->
+        g.Mainline.Add(
+            { Ply = i
+              MoveNumber = i / 2 + 1
+              Color = (if i % 2 = 0 then "w" else "b")
+              San = san
+              Comment = comment
+              Nags = []
+              Variations = ResizeArray() }))
+    g
+
+let private bookLine = [ "e4"; "c6"; "d4"; "d5" ]
+
+[<Fact>]
+let ``Diff matches a played game whose stored hash predates the current rule`` () =
+    // A PGN written before 2026-01-16 carries a hash of the raw book text, which no current
+    // computation reproduces. The played moves still do, so the game must not be replayed.
+    let opening = withMoves bookLine "" (mkOpening 1)
+    let cfg = gauntletConfig [ mkEngine "Hero" ] [ mkEngine "A" ] [ opening ] 1
+    let plan = Gauntlet.generate cfg
+
+    let played =
+        plan
+        |> List.map (fun p ->
+            let g = playedPgnOf p
+            g.GameMetaData.OpeningHash <- "a-hash-from-an-older-EngineBattle"
+            withMoves bookLine "" g)
+        |> List.toArray
+
+    Assert.Empty(Diff.diff plan played)
+
+[<Fact>]
+let ``Diff trusts the stored hash when the played moves do not reproduce the book`` () =
+    // The CupTest case: the book opening is longer than what the game replayed, so recomputing
+    // gives a different hash. The tag EngineBattle stored is the authoritative one.
+    let opening = withMoves (bookLine @ [ "e5"; "Bf5" ]) "" (mkOpening 1)
+    let cfg = gauntletConfig [ mkEngine "Hero" ] [ mkEngine "A" ] [ opening ] 1
+    let plan = Gauntlet.generate cfg
+
+    let played =
+        plan
+        |> List.map (fun p -> playedPgnOf p |> withMoves bookLine "")
+        |> List.toArray
+
+    Assert.NotEqual<string>(
+        (played |> Array.head).GameMetaData.OpeningHash,
+        ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame (Array.head played))
+    Assert.Empty(Diff.diff plan played)
+
+[<Fact>]
+let ``Diff still replays a game that matches neither hash`` () =
+    let opening = withMoves bookLine "" (mkOpening 1)
+    let cfg = gauntletConfig [ mkEngine "Hero" ] [ mkEngine "A" ] [ opening ] 1
+    let plan = Gauntlet.generate cfg
+
+    let played =
+        plan
+        |> List.map (fun p ->
+            let g = playedPgnOf p
+            g.GameMetaData.OpeningHash <- "unrelated"
+            withMoves [ "d4"; "Nf6" ] "" g)
+        |> List.toArray
+
+    Assert.Equal(plan.Length, (Diff.diff plan played).Length)
