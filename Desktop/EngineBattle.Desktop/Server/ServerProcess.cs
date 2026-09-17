@@ -73,8 +73,17 @@ internal sealed class ServerProcess : IDisposable
     /// </summary>
     public async Task<string> GetStartupUrlAsync(TimeSpan timeout, CancellationToken ct)
     {
-        var completed = await Task.WhenAny(_startupUrl.Task, Task.Delay(timeout, ct));
-        return completed == _startupUrl.Task ? _startupUrl.Task.Result : BaseUrl;
+        try
+        {
+            // WaitAsync rather than WhenAny + Task.Delay: the latter leaves the Delay's Timer
+            // alive for the full timeout even once the URL has arrived (the pattern .NET 11's
+            // CA2027 analyzer flags), and it swallows cancellation into a normal return.
+            return await _startupUrl.Task.WaitAsync(timeout, ct);
+        }
+        catch (TimeoutException)
+        {
+            return BaseUrl;
+        }
     }
 
     public async Task StartAsync(ServerLaunch launch, IProgress<string> status, CancellationToken ct)
