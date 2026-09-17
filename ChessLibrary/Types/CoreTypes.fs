@@ -331,6 +331,10 @@ module TypesDef =
         Result: string
         DevRes: string
         PgnGamePair: PgnGame * PgnGame
+        /// The position both engines faced, before either move was played. Showing one board
+        /// from here with an arrow per move makes the disagreement visible; two boards of the
+        /// resulting positions leave the reader to spot the difference.
+        PreFen: string
         PrevFen: string
         DevFen: string}
       with
@@ -346,6 +350,7 @@ module TypesDef =
             Result = ""
             DevRes = ""
             PgnGamePair = PgnGame.Empty 0, PgnGame.Empty 0
+            PreFen = String.Empty
             PrevFen = String.Empty
             DevFen = String.Empty}
 

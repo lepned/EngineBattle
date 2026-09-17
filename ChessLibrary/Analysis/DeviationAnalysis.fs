@@ -219,9 +219,15 @@ let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string optio
                             PlayerToDeviate = player
                             Opponent = opp
                             DevSanMove = moveCombo
-                            Result = game.GameMetaData.Result
-                            DevRes = replayData.FirstGame.GameMetaData.Result
+                            // Result belongs to PgnGamePair's first element (the reference)
+                            // and DevRes to the second (the deviating game) - the order every
+                            // consumer and the scoring table assume. These were the other way
+                            // round, so a score from a record made here came out with the
+                            // opposite sign to one from findDeviationDetailsAlt.
+                            Result = replayData.FirstGame.GameMetaData.Result
+                            DevRes = game.GameMetaData.Result
                             PgnGamePair = replayData.FirstGame, game
+                            PreFen = replayData.Fen1
                             PrevFen = oppFen
                             DevFen = newFen }
                         let data : ReplayDataExtended =
@@ -266,9 +272,15 @@ let findAllDeviationsForPlayers (pgnGames: PgnGame seq) (refPlayer: string optio
                             PlayerToDeviate = player
                             Opponent = opp
                             DevSanMove = moveCombo  //replayData.Move
-                            Result = game.GameMetaData.Result
-                            DevRes = replayData.FirstGame.GameMetaData.Result
+                            // Result belongs to PgnGamePair's first element (the reference)
+                            // and DevRes to the second (the deviating game) - the order every
+                            // consumer and the scoring table assume. These were the other way
+                            // round, so a score from a record made here came out with the
+                            // opposite sign to one from findDeviationDetailsAlt.
+                            Result = replayData.FirstGame.GameMetaData.Result
+                            DevRes = game.GameMetaData.Result
                             PgnGamePair = replayData.FirstGame, game
+                            PreFen = replayData.Fen1
                             PrevFen = oppFen
                             DevFen = newFen}
                         yield moveDeviation, game.GameNumber
@@ -362,6 +374,8 @@ type DeviationDetail = {
     DevGame : PgnGame
     PreviousMove: string*string
     DeviationMove: string*string
+    /// Position before either move - the shared starting point of the disagreement.
+    FENBefore: string
     FENPrev: string
     FENDev: string
     WhitePlayer: string
@@ -406,6 +420,11 @@ let findDeviationDetailsAlt (collection: GameStore array) =
                             Some {
                                 ReferenceGame = refGame.Game
                                 DevGame = gs.Game
+                                FENBefore =
+                                  if moveIndex > 0 then
+                                    refGame.Board.MovesAndFenPlayed.[moveIndex - 1].FenAfterMove
+                                  elif refGame.Game.Fen <> "" then refGame.Game.Fen
+                                  else "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
                                 PreviousMove = moveFen.ShortSan, moveFen.Move.LongSan  // the expected (majority) move at this index
                                 DeviationMove = moveFenDev.ShortSan, moveFenDev.Move.LongSan
                                 FENPrev = refGame.Board.MovesAndFenPlayed.[moveIndex].FenAfterMove
@@ -462,6 +481,7 @@ let mapDevDetailToMoveDeviation (dev: DeviationDetail) =
       Result = dev.ReferenceGame.GameMetaData.Result
       DevRes = dev.DevGame.GameMetaData.Result
       PgnGamePair = dev.ReferenceGame, dev.DevGame
+      PreFen = dev.FENBefore
       PrevFen = dev.FENPrev
       DevFen = dev.FENDev }
   moveDeviation
@@ -550,22 +570,46 @@ let printDeviationsToConsole (summary: DeviationPlayerSummary seq) =
 // Keying on the position instead removes that blind spot. The unit of a deviation is one
 // position: if three games reach it and play two different moves, that is one deviation with
 // two choices, not two deviations.
+//
+// The key is the position plus the halfmove clock, so a transposition is matched when the two
+// games are equally far from a fifty-move draw, and not otherwise. One game can still reach a
+// bucket more than once, so each game contributes only its first move there: a repetition
+// inside a single game is not a disagreement with anyone, and taking the first occurrence also
+// means both games have seen the position the same number of times.
 // ---------------------------------------------------------------------------
+
+/// One game in which a particular move was chosen here.
+type ChoiceInstance =
+  { GameNumber: int
+    Engine: string
+    /// The game's result as written in the PGN, which is always White-relative.
+    Result: string
+    /// The same result from the perspective of the engine that made this choice: 1, 0.5 or 0.
+    /// Without this a "1-0" tells you nothing about whether choosing this move worked out,
+    /// because the chooser may have been Black.
+    Score: float }
 
 /// One move that was played in a given position, and by whom.
 type PositionChoice =
   { Move: string          // UCI
     San: string
-    Engines: string list  // engines that chose this move here
-    GameNumbers: int list
-    Results: string list }
+    /// One entry per game, so game, engine and result stay tied together. Keeping them as
+    /// three separate de-duplicated lists lost that: two games and two results could not be
+    /// matched up again.
+    Instances: ChoiceInstance list }
+  member this.Engines = this.Instances |> List.map (fun i -> i.Engine) |> List.distinct |> List.sort
+  member this.GameNumbers = this.Instances |> List.map (fun i -> i.GameNumber) |> List.sort
+  /// Average score for the engines that chose this move, from their own perspective.
+  member this.AverageScore =
+    if this.Instances.IsEmpty then 0.0
+    else this.Instances |> List.averageBy (fun i -> i.Score)
 
 /// A position that more than one game reached, where not everyone played the same move.
 type PositionDeviation =
-  { PositionHash: uint64
-    /// FEN of the position before the move, so callers can show or link to it.
+  { /// FEN of the position before the move - this is how a caller identifies it. The scan's
+    /// internal key is deliberately not exposed: it mixes in the halfmove clock and means
+    /// nothing outside a single run.
     Fen: string
-    OpeningHash: string
     MoveNumber: int
     /// Side to move, taken from the FEN rather than ply parity - games can start from a FEN.
     Color: string
@@ -574,15 +618,20 @@ type PositionDeviation =
     SelfEngines: string list
     Choices: PositionChoice list }
   member this.IsSelfDeviation = not this.SelfEngines.IsEmpty
-  member this.GameCount = this.Choices |> List.sumBy (fun c -> c.GameNumbers.Length)
+  member this.GameCount = this.Choices |> List.sumBy (fun c -> c.Instances.Length)
 
 /// Per-engine self-consistency, which is the headline number for a gauntlet.
 type EngineSelfSummary =
   { Engine: string
     /// Positions where this engine contradicted an earlier choice of its own.
     SelfDeviations: int
-    /// Positions this engine reached in more than one game - the denominator.
-    RepeatedPositions: int }
+    /// Positions this engine reached in more than one game - the denominator. A position seen
+    /// once can never show an inconsistency, so it is not evidence of consistency either.
+    RepeatedPositions: int
+    /// Every distinct position this engine chose a move in. RepeatedPositions is a subset, and
+    /// often a small one: in a reverse-colour pairing it is structurally zero, because the
+    /// engine is never the side to move in the same position twice.
+    DistinctPositions: int }
 
 /// How the opening was identified for one game, which decides how much its numbers are worth.
 type OpeningSource =
@@ -616,7 +665,6 @@ module private PositionScan =
       San: string
       GameNumber: int
       Result: string
-      OpeningHash: string
       MoveNumber: int
       Color: string
       Fen: string }
@@ -634,6 +682,17 @@ module private PositionScan =
     comment <> null &&
     searchMarkers |> Array.exists (fun m -> comment.Contains(m, System.StringComparison.Ordinal))
 
+  /// Moves since the last capture or pawn push - FEN field five. Part of the position key,
+  /// because it is what separates two identical boards that are different distances from a
+  /// fifty-move draw.
+  let private halfmoveClock (fen: string) =
+    let parts = fen.Split(' ')
+    if parts.Length > 4 then
+      match System.Int32.TryParse parts.[4] with
+      | true, n -> n
+      | _ -> 0
+    else 0
+
   let private mentionsBook (comment: string) =
     comment <> null && comment.Contains("book", System.StringComparison.OrdinalIgnoreCase)
 
@@ -647,15 +706,16 @@ module private PositionScan =
     elif Array.exists id searched then
       searched, FromSearchData
     else
-      let lastBook =
-        plies
-        |> Array.mapi (fun i p -> i, p)
-        |> Array.filter (fun (_, p) -> mentionsBook p.Comment)
-        |> Array.tryLast
-        |> Option.map fst
-      match lastBook with
-      | Some i -> plies |> Array.mapi (fun j _ -> j > i), FromBookMarker
-      | None -> plies |> Array.map (fun _ -> true), Unknown
+      // End of the LEADING run of book plies, not the last ply mentioning "book" anywhere: an
+      // annotation such as "out of book theory" at move 25 would otherwise reclassify the first
+      // 25 moves as opening and hide every deviation in them.
+      let mutable lastLeading = -1
+      let mutable i = 0
+      while i < plies.Length && mentionsBook plies.[i].Comment do
+        lastLeading <- i
+        i <- i + 1
+      if lastLeading >= 0 then plies |> Array.mapi (fun j _ -> j > lastLeading), FromBookMarker
+      else plies |> Array.map (fun _ -> true), Unknown
 
 
   /// Replays every game once and buckets each ply by the hash of the position before it.
@@ -673,6 +733,7 @@ module private PositionScan =
     for game in games do
       let board = Chess.Board()
       if game.Fen <> "" then board.LoadFen game.Fen
+      let mutable abandoned = false
       let isChoice, source = choicePlies game
       match source with
       | FromSearchData -> fromSearch <- fromSearch + 1
@@ -694,22 +755,40 @@ module private PositionScan =
           else 0
         let engine =
           if color = "w" then game.GameMetaData.White else game.GameMetaData.Black
-        let hashBefore = board.DeviationHash()
+        // Key = Zobrist position + halfmove clock.
+        //
+        // The Zobrist hash alone covers the board, side to move, castling and en passant, but
+        // not how the position was arrived at. Two games can show the same board while one is
+        // far closer to a fifty-move draw than the other, and an engine may rightly choose
+        // differently there. Measured on a 955-game file, keying on the position alone produced
+        // 129 self-deviations of which 48 had a different clock.
+        //
+        // The obvious guard is the ply number (what Board.DeviationHash adds), but ply is only a
+        // proxy: it also rejects transpositions whose context is genuinely identical. Keying on
+        // the clock instead kept all 48 out and recovered 8 of those, for 81.
+        let hashBefore = board.PositionHash() ^^^ (uint64 (halfmoveClock fenBefore) * 0x9E3779B97F4A7C15UL)
+        // PlaySanMove ignores input it cannot resolve - a null move, an ambiguous or illegal
+        // SAN - without throwing and without advancing the board. Reading the last UCI blindly
+        // would attribute the PREVIOUS ply's move to this position, inventing a deviation, and
+        // every later ply would be replayed from a board that no longer matches the PGN.
+        let movesBefore = board.UciMovesPlayed.Count
         board.PlaySanMove san
-        let uci =
-          if board.UciMovesPlayed.Count > 0 then board.UciMovesPlayed.[board.UciMovesPlayed.Count - 1]
-          else ""
+        let advanced = board.UciMovesPlayed.Count > movesBefore
+        let uci = if advanced then board.UciMovesPlayed.[board.UciMovesPlayed.Count - 1] else ""
         let entry =
           { Engine = engine
             Uci = uci
             San = san
             GameNumber = game.GameNumber
             Result = game.GameMetaData.Result
-            OpeningHash = game.GameMetaData.OpeningHash
             MoveNumber = moveNumber
             Color = color
             Fen = fenBefore }
-        if searched then
+        if not advanced then
+          // Board and PGN have diverged; nothing later in this game can be trusted.
+          abandoned <- true
+
+        if searched && not abandoned then
           match table.TryGetValue hashBefore with
           | true, list -> list.Add entry
           | _ ->
@@ -720,20 +799,35 @@ module private PositionScan =
 
 let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : PositionDeviation list =
   [ for kv in table do
-      let entries = kv.Value
-      let distinctGames = entries |> Seq.map (fun e -> e.GameNumber) |> Seq.distinct |> Seq.length
-      let distinctMoves = entries |> Seq.map (fun e -> e.Uci) |> Seq.distinct |> Seq.length
-      // A position repeated inside a single game is not a deviation, so require two games.
+      // One entry per game: the move that game played the FIRST time it reached this position.
+      // A position repeated inside a single game is not a disagreement, and collapsing it here
+      // stops the tests below from pairing two moves that both came from the same game - which
+      // a ply-free key now makes possible.
+      let entries =
+        kv.Value
+        |> Seq.groupBy (fun e -> e.GameNumber)
+        |> Seq.map (fun (_, es) -> Seq.head es)
+        |> Seq.sortBy (fun e -> e.GameNumber)
+        |> Seq.toList
+      let distinctGames = entries.Length
+      let distinctMoves = entries |> List.map (fun e -> e.Uci) |> List.distinct |> List.length
       if distinctGames > 1 && distinctMoves > 1 then
+        // entries already holds one move per game, so two distinct moves for one engine here
+        // necessarily come from two different games.
         let selfEngines =
           entries
-          |> Seq.groupBy (fun e -> e.Engine)
-          |> Seq.filter (fun (_, es) ->
-               (es |> Seq.map (fun e -> e.Uci) |> Seq.distinct |> Seq.length) > 1 &&
-               (es |> Seq.map (fun e -> e.GameNumber) |> Seq.distinct |> Seq.length) > 1)
-          |> Seq.map fst
-          |> Seq.sort
-          |> Seq.toList
+          |> List.groupBy (fun e -> e.Engine)
+          |> List.filter (fun (_, es) ->
+               (es |> List.map (fun e -> e.Uci) |> List.distinct |> List.length) > 1)
+          |> List.map fst
+          |> List.sort
+        // The PGN result is White-relative; the chooser may have been either colour.
+        let scoreFor (color: string) (result: string) =
+          match result, color with
+          | "1-0", "w" | "0-1", "b" -> 1.0
+          | "1-0", "b" | "0-1", "w" -> 0.0
+          | "1/2-1/2", _ -> 0.5
+          | _ -> 0.5   // unfinished or unknown: neither a win nor a loss
         let choices =
           entries
           |> Seq.groupBy (fun e -> e.Uci)
@@ -741,16 +835,19 @@ let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionSc
                let es = es |> Seq.toList
                { Move = uci
                  San = (es |> List.head).San
-                 Engines = es |> List.map (fun e -> e.Engine) |> List.distinct |> List.sort
-                 GameNumbers = es |> List.map (fun e -> e.GameNumber) |> List.distinct |> List.sort
-                 Results = es |> List.map (fun e -> e.Result) |> List.distinct })
-          |> Seq.sortByDescending (fun c -> c.GameNumbers.Length)
+                 Instances =
+                   es
+                   |> List.map (fun e ->
+                        { GameNumber = e.GameNumber
+                          Engine = e.Engine
+                          Result = e.Result
+                          Score = scoreFor e.Color e.Result })
+                   |> List.sortBy (fun i -> i.GameNumber) })
+          |> Seq.sortByDescending (fun c -> c.Instances.Length)
           |> Seq.toList
-        let first = entries.[0]
+        let first = List.head entries
         yield
-          { PositionHash = kv.Key
-            Fen = first.Fen
-            OpeningHash = first.OpeningHash
+          { Fen = first.Fen
             MoveNumber = first.MoveNumber
             Color = first.Color
             SelfEngines = selfEngines
@@ -760,24 +857,35 @@ let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionSc
 let private selfSummaryFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : EngineSelfSummary list =
   let repeated = Dictionary<string, int>()
   let deviated = Dictionary<string, int>()
+  let distinct = Dictionary<string, int>()
   let bump (d: Dictionary<string, int>) key =
     match d.TryGetValue key with
     | true, v -> d.[key] <- v + 1
     | _ -> d.[key] <- 1
 
   for kv in table do
-    for (engine, es) in kv.Value |> Seq.groupBy (fun e -> e.Engine) do
-      let games = es |> Seq.map (fun e -> e.GameNumber) |> Seq.distinct |> Seq.length
-      if games > 1 then
+    // Same reduction as above: one move per game, so a repetition inside one game is never
+    // mistaken for the engine contradicting itself between games.
+    let firstPerGame =
+      kv.Value
+      |> Seq.groupBy (fun e -> e.GameNumber)
+      |> Seq.map (fun (_, es) -> Seq.head es)
+      |> Seq.toList
+    for (engine, es) in firstPerGame |> List.groupBy (fun e -> e.Engine) do
+      bump distinct engine
+      if es.Length > 1 then
         bump repeated engine
-        if (es |> Seq.map (fun e -> e.Uci) |> Seq.distinct |> Seq.length) > 1 then
+        if (es |> List.map (fun e -> e.Uci) |> List.distinct |> List.length) > 1 then
           bump deviated engine
 
-  [ for kv in repeated do
+  // Keyed on every engine that made a move, not just those with repeats: an engine with no
+  // repeated positions is exactly the case the caller must be told about.
+  [ for kv in distinct do
       yield
         { Engine = kv.Key
           SelfDeviations = (match deviated.TryGetValue kv.Key with | true, v -> v | _ -> 0)
-          RepeatedPositions = kv.Value } ]
+          RepeatedPositions = (match repeated.TryGetValue kv.Key with | true, v -> v | _ -> 0)
+          DistinctPositions = kv.Value } ]
   |> List.sortByDescending (fun s -> s.SelfDeviations)
 
 
@@ -788,10 +896,3 @@ let analyzePositionDeviations (pgnGames: PgnGame seq) =
   let table, coverage = PositionScan.scan (pgnGames |> Seq.toList)
   deviationsFromScan table, selfSummaryFromScan table, coverage
 
-/// Every position reached by more than one game where the played move was not unanimous.
-let findPositionDeviations (pgnGames: PgnGame seq) : PositionDeviation list =
-  PositionScan.scan (pgnGames |> Seq.toList) |> fst |> deviationsFromScan
-
-/// Per-engine self-consistency: how often an engine contradicted an earlier choice of its own.
-let summarizeSelfDeviations (pgnGames: PgnGame seq) : EngineSelfSummary list =
-  PositionScan.scan (pgnGames |> Seq.toList) |> fst |> selfSummaryFromScan
