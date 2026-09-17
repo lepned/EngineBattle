@@ -598,36 +598,36 @@ module private PositionScan =
       Color: string
       Fen: string }
 
-  /// Number of leading plies that came from the opening book rather than from the engine.
+  /// Whether a ply was actually searched, judged by the per-move data EngineBattle records.
   ///
-  /// EngineBattle marks them with a "book" comment, but the first ply carries the pre-game
-  /// tournament comment instead, so the marker is missing there. The book is always a
-  /// contiguous prefix, so the last marked ply defines its length. A PGN from elsewhere has no
-  /// such markers and yields 0, which leaves every ply in play.
-  let bookPlyCount (game: PgnGame) =
-    let mutable last = -1
-    let mutable i = 0
-    for ply in game.Mainline do
-      if ply.Comment <> null && ply.Comment.StartsWith("book", System.StringComparison.OrdinalIgnoreCase) then
-        last <- i
-      i <- i + 1
-    last + 1
+  /// A searched move carries move time, time left and the engine's eval; a book move carries
+  /// only "book, mb=...". Testing for the search data is more reliable than looking for the
+  /// word "book": it needs no assumption that the book is a contiguous prefix, and it handles
+  /// the first ply, whose comment is the pre-game tournament header rather than the book
+  /// marker. Anything we cannot attribute to a search is treated as not-a-choice and left out.
+  let private searchMarkers = [| "mt="; "tl="; "wv=" |]
+
+  let wasSearched (comment: string) =
+    comment <> null &&
+    searchMarkers |> Array.exists (fun m -> comment.Contains(m, System.StringComparison.Ordinal))
 
   /// Replays every game once and buckets each ply by the hash of the position before it.
   ///
-  /// Book plies are replayed but not recorded: both sides were following the same opening line
-  /// without thinking, so they are not choices. Counting them would inflate the denominator of
-  /// every self-consistency rate, and - worse - a book move in one game meeting a searched move
-  /// in another would be reported as a disagreement that never happened.
+  /// Unsearched plies are replayed but not recorded: both sides were following the same opening
+  /// line without thinking, so they are not choices. Counting them would inflate the denominator
+  /// of every self-consistency rate, and - worse - a book move in one game meeting a searched
+  /// move in another would be reported as a disagreement that never happened.
   let scan (games: PgnGame list) =
     let table = Dictionary<uint64, ResizeArray<Entry>>()
     for game in games do
       let board = Chess.Board()
       if game.Fen <> "" then board.LoadFen game.Fen
-      let bookPlies = bookPlyCount game
+      let plies = game.Mainline |> Seq.toArray
       let mutable plyIndex = -1
       for san in movesFromPgn game do
         plyIndex <- plyIndex + 1
+        let searched =
+          plyIndex < plies.Length && wasSearched plies.[plyIndex].Comment
         let fenBefore = board.FEN()
         let parts = fenBefore.Split(' ')
         let color = if parts.Length > 1 && parts.[1] = "b" then "b" else "w"
@@ -654,7 +654,7 @@ module private PositionScan =
             MoveNumber = moveNumber
             Color = color
             Fen = fenBefore }
-        if plyIndex >= bookPlies then
+        if searched then
           match table.TryGetValue hashBefore with
           | true, list -> list.Add entry
           | _ ->
