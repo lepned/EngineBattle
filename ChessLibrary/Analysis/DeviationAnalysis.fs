@@ -598,13 +598,36 @@ module private PositionScan =
       Color: string
       Fen: string }
 
+  /// Number of leading plies that came from the opening book rather than from the engine.
+  ///
+  /// EngineBattle marks them with a "book" comment, but the first ply carries the pre-game
+  /// tournament comment instead, so the marker is missing there. The book is always a
+  /// contiguous prefix, so the last marked ply defines its length. A PGN from elsewhere has no
+  /// such markers and yields 0, which leaves every ply in play.
+  let bookPlyCount (game: PgnGame) =
+    let mutable last = -1
+    let mutable i = 0
+    for ply in game.Mainline do
+      if ply.Comment <> null && ply.Comment.StartsWith("book", System.StringComparison.OrdinalIgnoreCase) then
+        last <- i
+      i <- i + 1
+    last + 1
+
   /// Replays every game once and buckets each ply by the hash of the position before it.
+  ///
+  /// Book plies are replayed but not recorded: both sides were following the same opening line
+  /// without thinking, so they are not choices. Counting them would inflate the denominator of
+  /// every self-consistency rate, and - worse - a book move in one game meeting a searched move
+  /// in another would be reported as a disagreement that never happened.
   let scan (games: PgnGame list) =
     let table = Dictionary<uint64, ResizeArray<Entry>>()
     for game in games do
       let board = Chess.Board()
       if game.Fen <> "" then board.LoadFen game.Fen
+      let bookPlies = bookPlyCount game
+      let mutable plyIndex = -1
       for san in movesFromPgn game do
+        plyIndex <- plyIndex + 1
         let fenBefore = board.FEN()
         let parts = fenBefore.Split(' ')
         let color = if parts.Length > 1 && parts.[1] = "b" then "b" else "w"
@@ -631,12 +654,13 @@ module private PositionScan =
             MoveNumber = moveNumber
             Color = color
             Fen = fenBefore }
-        match table.TryGetValue hashBefore with
-        | true, list -> list.Add entry
-        | _ ->
-          let list = ResizeArray<Entry>()
-          list.Add entry
-          table.[hashBefore] <- list
+        if plyIndex >= bookPlies then
+          match table.TryGetValue hashBefore with
+          | true, list -> list.Add entry
+          | _ ->
+            let list = ResizeArray<Entry>()
+            list.Add entry
+            table.[hashBefore] <- list
     table
 
 let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : PositionDeviation list =
