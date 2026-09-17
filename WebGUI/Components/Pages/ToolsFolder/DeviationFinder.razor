@@ -24,21 +24,32 @@
   <div class="tool-controls">
     <button class="tool-upload-btn" @onclick="BrowsePgnFile" disabled="@isProcessing">Load PGN file</button>
     <div class="tool-input-group" style="margin-bottom:0; min-width:220px;">
-      <label>Reference player name</label>
-      <input type="text" class="tool-input" style="width:100%" @bind="refPlayer" />
+      <label>Reference player</label>
+      <select class="tool-input" style="width:100%" @bind="refPlayer" disabled="@(availableEngines.Count == 0)">
+        <option value="">(none)</option>
+        @foreach (var e in availableEngines)
+        {
+          <option value="@e">@e</option>
+        }
+      </select>
     </div>
     <div class="tool-input-group" style="margin-bottom:0; min-width:320px;">
-      <label>Compare players (csv, empty = all)</label>
-      <input type="text" class="tool-input" style="width:100%" @bind="comparePlayers" />
+      <label>Compare players (none selected = all)</label>
+      <select class="tool-input" style="width:100%" multiple size="5" @bind="compareSelection" @bind:after="ClearCompareIfAll"
+              disabled="@(availableEngines.Count == 0)">
+        <option value="">(all)</option>
+        @foreach (var e in availableEngines)
+        {
+          <option value="@e">@e</option>
+        }
+      </select>
     </div>
+    <button class="tool-action-btn" style="align-self:flex-end;" @onclick="RunAnalysis"
+            disabled="@(isProcessing || loadedGames.Count == 0)">Apply</button>
   </div>
-
-  <div class="tool-controls">
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#c0c0d0; font-size:0.92rem;">
-      <input type="checkbox" @bind="isFindMoveAllDifferencesEnabled" style="width:16px; height:16px; accent-color:#8b9ce8;" />
-      Compare between different engines
-    </label>
-    <span style="font-size:0.85rem; color:#787890;">Off: compare each engine's games against its own reference game (reference-replay)</span>
+  <div style="font-size:0.85rem; color:#787890; margin:-6px 0 10px 0;">
+    Engines are read from the loaded file. Ctrl-click to pick several to compare. Apply re-runs
+    the analysis on the games already in memory - no need to load the file again.
   </div>
 
   <div class="file-name">@fileName</div>
@@ -53,7 +64,7 @@
 
   @if (!string.IsNullOrEmpty(resultDescription1))
   {
-    <h2>@(isFindMoveAllDifferencesEnabled ? "Critical Move Differences Between Engines" : "Move Deviations By Same Engine")</h2>
+    <h2>Critical Move Differences Between Engines</h2>
     <pre style="font-size:0.88rem; color:#c0c0d0; margin:8px 0 16px 0; line-height:1.6;">@resultDescription1</pre>
   }
 
@@ -220,15 +231,15 @@
           </MudItem>
           <MudItem md="7" lg="8">
             <div style="color:#787890; font-size:0.8rem; margin-bottom:6px;">
-              Scored is 1 for a win, 0.5 for a draw and 0 for a loss, seen from the engine that
-              chose the move — so it answers whether the choice worked out, which the
-              White-relative PGN result on its own cannot.
+              Points are counted for the engine that chose the move — 1 for a win, ½ for a draw,
+              0 for a loss — so they say whether the choice worked out, which the White-relative
+              PGN result on its own cannot.
             </div>
             <table class="tool-table dense">
               <thead>
                 <tr>
                   <th></th><th>Move</th><th>Played by</th><th>In</th>
-                  <th title="1 = win, 0.5 = draw, 0 = loss, from the point of view of the engine that chose this move — not the White-relative PGN result">Scored</th>
+                  <th title="Points over games, for the engine that chose this move: 1 = win, ½ = draw, 0 = loss — not the White-relative PGN result">Points</th>
                 </tr>
               </thead>
               <tbody>
@@ -250,11 +261,8 @@
                           : $"#{i.GameNumber} {i.Engine} {ResultGlyph(i.Result)}"))
                     </td>
                     <td style="white-space:nowrap;">
-                      @c.AverageScore.ToString("0.##")
-                      @if (c.Instances.Count() > 1)
-                      {
-                        <span style="color:#787890; font-size:0.8rem;"> of @c.Instances.Count()</span>
-                      }
+                      @FormatPoints(c.Points)
+                      <span style="color:#787890; font-size:0.8rem;"> of @c.Instances.Count()</span>
                     </td>
                   </tr>
                 }
@@ -313,8 +321,7 @@
           {
             <WebGUI.Components.Layout.VisualizationLayout.MoveDeviation
                 MoveDeviationInput="item"
-                BoardSizePx="@boardSizePx"
-                OwnDeviations=@(!isFindMoveAllDifferencesEnabled) />
+                BoardSizePx="@boardSizePx" />
           }
         </div>
       }
@@ -489,6 +496,15 @@
     _ => "?"
   };
 
+  // Chess notation for a point total: 1, ½, 1½, 2 — never 0.5 or 1.5.
+  private static string FormatPoints(double points)
+  {
+    var whole = (int)Math.Floor(points + 1e-9);
+    var half = points - whole >= 0.5 - 1e-9;
+    if (whole == 0 && half) return "½";
+    return half ? $"{whole}½" : whole.ToString();
+  }
+
   private static string ChoiceColor(int index) => index switch
   {
     0 => "#5b8def",
@@ -528,7 +544,7 @@
     {
       var type = d.IsSelfDeviation ? "self:" + string.Join("/", d.SelfEngines) : "cross";
       var choices = string.Join("  ", d.Choices.Select(c =>
-        $"{c.San}[{string.Join("/", c.Engines)} {string.Join(",", c.Instances.Select(i => $"#{i.GameNumber}:{i.Result}"))} avg {c.AverageScore:0.##}]"));
+        $"{c.San}[{string.Join("/", c.Engines)} {string.Join(",", c.Instances.Select(i => $"#{i.GameNumber}:{i.Result}"))} {FormatPoints(c.Points)}/{c.Instances.Count()}]"));
       sb.AppendLine($"{d.MoveNumber}	{(d.Color == "w" ? "White" : "Black")}	{type}	{d.GameCount}	{choices}");
     }
     try
@@ -549,9 +565,19 @@
   private string resultDescription1;
   private string resultDescription2;
   private string fileName;
-  private string comparePlayers = "";
+  // Parsed once per file. Apply re-runs the analysis on these with the current selection,
+  // so changing the engines does not mean reading and parsing the file again.
+  private List<ChessLibrary.PGNTypes.PgnGame> loadedGames = new();
+  private List<string> availableEngines = new();
   private string refPlayer = String.Empty;
-  private bool isFindMoveAllDifferencesEnabled = true;
+  private string[] compareSelection = Array.Empty<string>();
+
+  // "(all)" is a real entry so the selection can be emptied with one click; picking it
+  // clears everything else, and an empty selection means no filter.
+  private void ClearCompareIfAll()
+  {
+    if (compareSelection.Contains("")) compareSelection = Array.Empty<string>();
+  }
   private string selectedEngine = "All";
   private bool showCriticalVisualizations = false;
   private int boardSizePx = 240;
@@ -716,18 +742,11 @@
     var pgnName = Path.GetFileName(filePath);
     fileName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
-    deviationListCritical.Clear();
-    deviationListAll.Clear();
-    positionDeviations.Clear();
-    engineConsistency.Clear();
-    coverage = null;
-    selectedPosition = null;
-    resultDescription1 = "";
-    resultDescription2 = "";
 
     isProcessing = true;
     processingStatus = "Parsing PGN…";
     StateHasChanged();
+    var parsed = false;
     try
     {
       List<ChessLibrary.PGNTypes.PgnGame> games;
@@ -745,10 +764,52 @@
         logger.LogWarning("No games found in {File} — not a PGN file?", pgnName);
         return;
       }
-
-      processingStatus = $"Analyzing move deviations in {games.Count:N0} games…";
+      loadedGames = games;
+      availableEngines = games
+        .SelectMany(g => new[] { g.GameMetaData.White, g.GameMetaData.Black })
+        .Where(n => !string.IsNullOrWhiteSpace(n))
+        .Select(n => n.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+      // A selection made for the previous file may not exist in this one.
+      if (!availableEngines.Contains(refPlayer, StringComparer.OrdinalIgnoreCase)) refPlayer = "";
+      compareSelection = compareSelection.Where(e => availableEngines.Contains(e, StringComparer.OrdinalIgnoreCase)).ToArray();
+      parsed = true;
+    }
+    finally
+    {
+      isProcessing = false;
+      processingStatus = "";
       StateHasChanged();
-      var comparList = ConvertCsvStringToList(comparePlayers);
+    }
+    if (parsed) await RunAnalysis();
+  }
+
+  /// <summary>
+  /// Runs the analysis on the games already in memory with the current engine selection.
+  /// Apply calls this directly; loading a file calls it once the file is parsed.
+  /// </summary>
+  private async Task RunAnalysis()
+  {
+    if (isProcessing || loadedGames.Count == 0) return;
+    var games = loadedGames;
+    var pgnName = fileName;
+    deviationListCritical.Clear();
+    deviationListAll.Clear();
+    positionDeviations.Clear();
+    engineConsistency.Clear();
+    coverage = null;
+    selectedPosition = null;
+    resultDescription1 = "";
+    resultDescription2 = "";
+
+    isProcessing = true;
+    processingStatus = $"Analyzing move deviations in {games.Count:N0} games…";
+    StateHasChanged();
+    try
+    {
+      var comparList = compareSelection.ToList();
       focusEngines = new HashSet<string>(
         new[] { refPlayer }.Concat(comparList).Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()),
         StringComparer.OrdinalIgnoreCase);
@@ -757,11 +818,7 @@
       // instead of re-running the whole analysis on every LINQ enumeration below.
       var (deviations, critical, desc1, desc2, positions) = await Task.Run(() =>
       {
-        var devs =
-          (isFindMoveAllDifferencesEnabled ?
-            DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList) :
-            DeviationAnalysis.findAllDeviationsForAllPlayers(games))
-          .ToList();
+        var devs = DeviationAnalysis.findMoveDifferencesInPGN(games, refPlayer, comparList).ToList();
         var crit = devs.Where(e => e.Result != e.DevRes).ToList();
         // Guarded separately from the legacy analysis: scan replays every game, and a
         // truncated [FEN] tag makes LoadFen throw. Without this, one bad game in a file would
@@ -825,15 +882,5 @@
     }
   }
 
-
-  private List<string> ConvertCsvStringToList(string input)
-  {
-    return
-      string.IsNullOrEmpty(input) ?
-        new List<string>() :
-        input.Split(',')
-             .Select(part => part.Trim())
-             .ToList();
-  }
 
 }
