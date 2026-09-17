@@ -593,13 +593,17 @@ type OpeningSource =
   /// Neither. Opening moves cannot be separated from choices, so none are excluded and any
   /// self-deviation the caller sees may be an artefact of both sides following the same line.
   | Unknown
+  /// The game has no moves at all - an abandoned pairing. Nothing to classify, and no reason
+  /// to warn about it.
+  | NoMoves
 
 /// How trustworthy the opening detection was across a set of games.
 type OpeningCoverage =
   { FromSearchData: int
     FromBookMarker: int
-    Unknown: int }
-  member this.Total = this.FromSearchData + this.FromBookMarker + this.Unknown
+    Unknown: int
+    Empty: int }
+  member this.Total = this.FromSearchData + this.FromBookMarker + this.Unknown + this.Empty
   /// True when some games had no way to tell opening moves from choices.
   member this.HasUnverifiedOpenings = this.Unknown > 0
 
@@ -638,7 +642,9 @@ module private PositionScan =
     let plies = game.Mainline |> Seq.toArray
     let searched = plies |> Array.map (fun p -> wasSearched p.Comment)
 
-    if Array.exists id searched then
+    if plies.Length = 0 then
+      Array.empty, NoMoves
+    elif Array.exists id searched then
       searched, FromSearchData
     else
       let lastBook =
@@ -663,6 +669,7 @@ module private PositionScan =
     let mutable fromSearch = 0
     let mutable fromMarker = 0
     let mutable unknown = 0
+    let mutable empty = 0
     for game in games do
       let board = Chess.Board()
       if game.Fen <> "" then board.LoadFen game.Fen
@@ -671,6 +678,7 @@ module private PositionScan =
       | FromSearchData -> fromSearch <- fromSearch + 1
       | FromBookMarker -> fromMarker <- fromMarker + 1
       | Unknown -> unknown <- unknown + 1
+      | NoMoves -> empty <- empty + 1
       let mutable plyIndex = -1
       for san in movesFromPgn game do
         plyIndex <- plyIndex + 1
@@ -708,7 +716,7 @@ module private PositionScan =
             let list = ResizeArray<Entry>()
             list.Add entry
             table.[hashBefore] <- list
-    table, ({ FromSearchData = fromSearch; FromBookMarker = fromMarker; Unknown = unknown } : OpeningCoverage)
+    table, ({ FromSearchData = fromSearch; FromBookMarker = fromMarker; Unknown = unknown; Empty = empty } : OpeningCoverage)
 
 let private deviationsFromScan (table: Dictionary<uint64, ResizeArray<PositionScan.Entry>>) : PositionDeviation list =
   [ for kv in table do
