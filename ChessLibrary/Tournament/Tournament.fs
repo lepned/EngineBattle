@@ -446,15 +446,10 @@ module Manager =
 
     member x.GetGamesLeftToPlay() =
       let gamesAlreadyPlayed = x.GetPGNGames() |> Seq.toArray
-      let playedSet = PairingHelper.playedSet gamesAlreadyPlayed
-      let gamesLeftToPlay = 
-        [
-          for p in x.Pairings do
-          if PairingHelper.hasPlayedBefore p playedSet |> not then
-            yield p
-        ]
-      gamesLeftToPlay
-    
+      // The same matching the runner uses to decide what to play, so the count shown can
+      // never disagree with what is played.
+      ChessLibrary.Scheduler.Diff.diffPairings (x.Pairings |> List.ofSeq) gamesAlreadyPlayed
+
     member x.GetAllPairings() =
       let gamesLeftToPlay = x.GetGamesLeftToPlay()
       if gamesLeftToPlay.Length = 0 then

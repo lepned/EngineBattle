@@ -224,10 +224,12 @@ let ``legacy PGN round-robin resume ends on opening 25`` () =
             |> Seq.map (fun name -> { EngineConfig.Empty with Name = name })
             |> Seq.toList
         let pairings = ChessLibrary.TournamentPairing.PairingHelper.generateAllRoundRobinDoubleRounds engines bookGames
-        let playedSet = ChessLibrary.TournamentPairing.PairingHelper.playedSet (games |> Seq.toArray)
+        let left =
+            System.Collections.Generic.HashSet<_>(
+                ChessLibrary.Scheduler.Diff.diffPairings pairings (games |> Seq.toArray), HashIdentity.Reference)
         let usedOpeningNumbers =
             pairings
-            |> Seq.filter (fun p -> ChessLibrary.TournamentPairing.PairingHelper.hasPlayedBefore p playedSet)
+            |> Seq.filter (fun p -> not (left.Contains p))
             |> Seq.map (fun p -> p.Opening.GameNumber)
             |> Seq.distinct
             |> Seq.toList

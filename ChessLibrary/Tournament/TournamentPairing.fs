@@ -101,35 +101,6 @@ module PairingHelper =
                 index <- index + 1
             index
 
-    // ---- Pairing key / played-set (legacy `Pairing`-keyed tracking) -------
-    // Used by Tournament.GetGamesLeftToPlay and one legacy PGN-replay test.
-    // The Scheduler's `Diff.diff` uses the same semantics but keyed on
-    // `GameKey` instead; these remain for callers that haven't migrated.
-
-    let pairingKey (openingHash: string) (fen: string) (white: string) (black: string) =
-        sprintf "%s|%s|%s|%s" openingHash fen (white.Trim()) (black.Trim())
-
-    let playedSet (gamesAlreadyPlayed: PgnGame array) : Set<string> =
-        gamesAlreadyPlayed
-        |> Array.map (fun g ->
-            pairingKey
-                (if String.IsNullOrEmpty g.GameMetaData.OpeningHash
-                 then g.GameNumber.ToString()
-                 else g.GameMetaData.OpeningHash)
-                g.GameMetaData.Fen
-                g.GameMetaData.White
-                g.GameMetaData.Black)
-        |> Set.ofArray
-
-    let hasPlayedBefore (pairing: Pairing) (playedSet: Set<string>) =
-        let key =
-            pairingKey
-                pairing.OpeningHash
-                pairing.Opening.GameMetaData.Fen
-                pairing.White.Name
-                pairing.Black.Name
-        playedSet.Contains key
-
     /// Legacy RR helper used by one offline PGN-replay regression test.
     /// Forwards to `Scheduler.RoundRobin.generate` and adapts the output
     /// to `Pairing list`. No other callers.

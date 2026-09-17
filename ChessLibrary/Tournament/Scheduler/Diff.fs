@@ -5,41 +5,59 @@ open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.PGNTypes
 open ChessLibrary.ChessUtilities
 
-/// Subtract already-played games (by `GameKey`) from a plan. Multiset-style:
-/// each played game consumes at most one planned entry. Order of the returned
-/// list preserves the scheduler's original order.
-///
-/// This is the single source of resume semantics — no separate filter or
-/// quota pass is needed because the plan is already correctly sized by
-/// `Gauntlet.generate`. Any planned game whose `Key` matches an already-played
-/// PGN entry is removed; anything left is what remains to be played.
-let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
-    if Array.isEmpty played then
-        plan
-    else
-        // Each played game offers TWO keys, because there is no single hash that matches every
-        // PGN we might be resuming from:
-        //
-        //  * the hash EngineBattle stored. Authoritative for games this version wrote - it is
-        //    the pairing's own hash, taken from the opening book.
-        //  * a hash recomputed from the played game. The only key that can match a PGN written
-        //    before 2026-01-16, whose stored hash was taken from the raw book text and which no
-        //    current computation reproduces.
-        //
-        // Neither alone is enough. Recomputing everything breaks current files whenever the
-        // replayed opening does not reproduce the book move for move (measured: a 102-ply book
-        // opening replayed as 100 plies). Trusting the stored tag alone breaks older files.
-        let keyWith (hash: string) (g: PgnGame) : GameKey =
-            { OpeningHash = if System.String.IsNullOrEmpty hash then g.GameNumber.ToString() else hash
-              Fen = g.GameMetaData.Fen
-              White = g.GameMetaData.White
-              Black = g.GameMetaData.Black }
+// ---------------------------------------------------------------------------
+// The one rule for "has this planned game been played?". Every consumer of that question
+// goes through here - the runner deciding what to play, the GUI counting what is left, the
+// round label counting how often an opening has been used - so they can never disagree.
+//
+// Each played game offers TWO keys, because there is no single hash that matches every PGN
+// we might be resuming from:
+//
+//  * the hash EngineBattle stored. Authoritative for games this version wrote - it is the
+//    pairing's own hash, taken from the opening book.
+//  * a hash recomputed from the played game. The only key that can match a PGN written before
+//    2026-01-16, whose stored hash was taken from the raw book text and which no current
+//    computation reproduces.
+//
+// Neither alone is enough. Recomputing everything breaks current files whenever the replayed
+// opening does not reproduce the book move for move (measured: a 102-ply book opening replayed
+// as 100 plies). Trusting the stored tag alone breaks older files. The two key sets are kept
+// apart and tried in order, stored first: mixed into one index, a recomputed key could claim a
+// game that another planned entry matches exactly, and the wrong opening would be replayed.
+//
+// A played game answers for ONE planned game. The GUI count used to keep a Set of keys, so a
+// key planned twice - the book wrapping when Rounds exceeds the openings - read as fully played
+// after one game, and the count shown disagreed with what was played.
+//
+// Engine names are compared trimmed. Nothing legitimate differs by whitespace, and one of the
+// old checks trimmed while the other did not.
+// ---------------------------------------------------------------------------
 
-        // The two key sets are kept apart and tried in order, stored first. Mixing them into one
-        // index lets a recomputed key claim a game that another planned entry matches exactly:
-        // if a game replayed only the first 4 plies of a 6-ply book opening, its recomputed key
-        // is the key of the 4-ply opening, and it would answer for THAT entry instead - leaving
-        // the opening it really played to be played again.
+let private trimmed (name: string) = if isNull name then "" else name.Trim()
+
+let private normalise (k: GameKey) : GameKey =
+    { k with White = trimmed k.White; Black = trimmed k.Black }
+
+// The recomputed hash of a played game never changes, and the runners ask for it once per
+// game they play, against the same objects, for as long as the tournament runs. Keyed on the
+// object, so a freshly parsed copy of the same game simply computes its own.
+let private recomputedHashes = System.Runtime.CompilerServices.ConditionalWeakTable<PgnGame, string>()
+
+let private recomputedHash (g: PgnGame) : string =
+    recomputedHashes.GetValue(g, fun game -> Hash.computeOpeningHashFromGame game)
+
+let private keyOfPlayed (hash: string) (g: PgnGame) : GameKey =
+    normalise
+        { OpeningHash = if System.String.IsNullOrEmpty hash then g.GameNumber.ToString() else hash
+          Fen = g.GameMetaData.Fen
+          White = g.GameMetaData.White
+          Black = g.GameMetaData.Black }
+
+/// For each plan key, true when NO played game accounts for it. Multiset, two passes.
+let private unmatched (planKeys: GameKey[]) (played: PgnGame array) : bool[] =
+    let remaining = Array.create planKeys.Length true
+    if played.Length = 0 then remaining
+    else
         let consumed = Array.zeroCreate<bool> played.Length
         let storedIndex = Dictionary<GameKey, ResizeArray<int>>()
         let recomputedIndex = Dictionary<GameKey, ResizeArray<int>>()
@@ -47,14 +65,12 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
             match index.TryGetValue key with
             | true, xs -> xs.Add i
             | false, _ -> index.[key] <- ResizeArray [ i ]
-
         for i in 0 .. played.Length - 1 do
             let g = played.[i]
-            let stored = keyWith g.GameMetaData.OpeningHash g
+            let stored = keyOfPlayed g.GameMetaData.OpeningHash g
             add storedIndex stored i
-            let recomputed = keyWith (Hash.computeOpeningHashFromGame g) g
+            let recomputed = keyOfPlayed (recomputedHash g) g
             if recomputed <> stored then add recomputedIndex recomputed i
-
         /// Claim one unconsumed played game matching this key, if there is one.
         let claim (index: Dictionary<GameKey, ResizeArray<int>>) (key: GameKey) =
             match index.TryGetValue key with
@@ -63,11 +79,46 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
                 | Some i -> consumed.[i] <- true; true
                 | None -> false
             | false, _ -> false
+        let keys = planKeys |> Array.map normalise
+        for p in 0 .. keys.Length - 1 do
+            if claim storedIndex keys.[p] then remaining.[p] <- false
+        for p in 0 .. keys.Length - 1 do
+            if remaining.[p] && claim recomputedIndex keys.[p] then remaining.[p] <- false
+        remaining
 
-        // Pass one: everything the stored tags account for. Pass two: whatever is left, against
-        // hashes recomputed under the current rule. Plan order is preserved by both passes.
-        let unmatched = plan |> List.filter (fun p -> not (claim storedIndex p.Key))
-        unmatched |> List.filter (fun p -> not (claim recomputedIndex p.Key))
+/// Subtract already-played games (by `GameKey`) from a plan. Multiset-style:
+/// each played game consumes at most one planned entry. Order of the returned
+/// list follows the plan.
+///
+/// This is the single source of resume semantics - no separate filter or
+/// quota pass is needed because the plan is already correctly sized by
+/// `Gauntlet.generate`. Any planned game whose `Key` matches an already-played
+/// PGN entry is removed; anything left is what remains to be played.
+let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
+    let keys = plan |> List.map (fun p -> p.Key) |> List.toArray
+    let left = unmatched keys played
+    plan |> List.mapi (fun i p -> i, p) |> List.filter (fun (i, _) -> left.[i]) |> List.map snd
+
+/// The same subtraction for the legacy `Pairing` shape the runners and the GUI hold.
+let diffPairings (plan: Pairing list) (played: PgnGame array) : Pairing list =
+    let keys =
+        plan
+        |> List.map (fun p ->
+            { OpeningHash = p.OpeningHash
+              Fen = p.Opening.GameMetaData.Fen
+              White = p.White.Name
+              Black = p.Black.Name })
+        |> List.toArray
+    let left = unmatched keys played
+    plan |> List.mapi (fun i p -> i, p) |> List.filter (fun (i, _) -> left.[i]) |> List.map snd
+
+/// How many played games used this opening, under either hash rule. Feeds the round label.
+let countPlayedWithOpening (played: PgnGame array) (openingHash: string) : int =
+    played
+    |> Array.filter (fun g ->
+        g.GameMetaData.OpeningHash = openingHash
+        || recomputedHash g = openingHash)
+    |> Array.length
 
 /// Per-engine quota enforcement for Gauntlet resume. When a new opponent is
 /// added mid-tournament, the regenerated plan may schedule games for existing

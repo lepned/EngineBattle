@@ -885,3 +885,61 @@ let ``Diff does not let a recomputed hash claim another opening's planned game``
 
     Assert.Equal(1, remaining.Length)
     Assert.Equal<string>(shortHash, (List.head remaining).OpeningHash)
+
+// ============================================================================
+// Diff.diffPairings and countPlayedWithOpening: the GUI count and the round
+// label go through the same rule as the runner
+// ============================================================================
+
+let private pairingOf (opening: PgnGame) (w: string) (b: string) : Pairing =
+    { Opening = opening
+      White = mkEngine w
+      Black = mkEngine b
+      GameNr = 0
+      RoundNr = ""
+      OpeningHash = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame opening }
+
+let private playedGameOf (p: Pairing) : PgnGame =
+    { PgnGame.Empty 0 with
+        GameMetaData =
+            { GameMetadata.Empty with
+                OpeningHash = p.OpeningHash
+                Fen = p.Opening.GameMetaData.Fen
+                White = p.White.Name
+                Black = p.Black.Name } }
+
+[<Fact>]
+let ``diffPairings is a multiset: a key planned twice with one game played leaves one`` () =
+    // The book wraps when Rounds exceeds the openings, so the same (opening, white, black) is
+    // planned twice. The old Set-based GUI count dropped both after one game.
+    let opening = withMoves bookLine "" (mkOpening 1)
+    let p = pairingOf opening "Hero" "A"
+    let left = Diff.diffPairings [ p; p ] [| playedGameOf p |]
+    Assert.Equal(1, left.Length)
+
+[<Fact>]
+let ``diffPairings compares engine names trimmed`` () =
+    let opening = withMoves bookLine "" (mkOpening 1)
+    let p = pairingOf opening "Hero" "A"
+    let g = playedGameOf p
+    let g = { g with GameMetaData = { g.GameMetaData with White = "Hero "; Black = " A" } }
+    Assert.Empty(Diff.diffPairings [ p ] [| g |])
+
+[<Fact>]
+let ``diffPairings accepts the recomputed hash when the stored one predates the rule`` () =
+    let opening = withMoves bookLine "" (mkOpening 1)
+    let p = pairingOf opening "Hero" "A"
+    let g = playedGameOf p |> withMoves bookLine ""
+    g.GameMetaData.OpeningHash <- "a-hash-from-an-older-EngineBattle"
+    Assert.Empty(Diff.diffPairings [ p ] [| g |])
+
+[<Fact>]
+let ``countPlayedWithOpening counts under either hash rule`` () =
+    let opening = withMoves bookLine "" (mkOpening 1)
+    let h = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame opening
+    let p = pairingOf opening "Hero" "A"
+    let tagged = playedGameOf p
+    let legacy = playedGameOf p |> withMoves bookLine ""
+    legacy.GameMetaData.OpeningHash <- "a-hash-from-an-older-EngineBattle"
+    let other = playedGameOf (pairingOf (withMoves [ "d4"; "Nf6" ] "" (mkOpening 2)) "Hero" "A")
+    Assert.Equal(2, Diff.countPlayedWithOpening [| tagged; legacy; other |] h)

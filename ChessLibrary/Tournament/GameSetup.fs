@@ -85,9 +85,9 @@ let computeRoundTextFromPairing
     else
         GameHelpers.computeRoundText pair.Opening.GameNumber openingsAlreadyPlayed liveGamesPlayed
 
-/// Count openings already played with same hash
+/// Count games already played with this opening, under either hash rule - see Scheduler.Diff.
 let countOpeningsAlreadyPlayed (gamesAlreadyPlayed: PgnGame[]) (openingHash: string) : int =
-    gamesAlreadyPlayed |> Seq.filter (fun e -> e.GameMetaData.OpeningHash = openingHash) |> Seq.length
+    ChessLibrary.Scheduler.Diff.countPlayedWithOpening gamesAlreadyPlayed openingHash
 
 // ============================================================================
 // Full Game Execution with Setup
