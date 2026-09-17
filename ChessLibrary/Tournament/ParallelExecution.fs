@@ -117,9 +117,9 @@ let parallelTournamentRun
       let gamesAlreadyPlayed =
           let fileExists = File.Exists tourny.PgnOutPath
           if fileExists then
-              let parsed = ChessLibrary.FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
-              parsed |> Array.iter Hash.writeOpeningHashToPgnGame
-              parsed
+              // Shared with the sequential runners on purpose: this used to be a second copy that
+              // overwrote the stored opening hash, which undoes the two-key matching in Diff.diff.
+              GameHelpers.loadGamesAlreadyPlayed tourny.PgnOutPath
           else
               [||]
 

@@ -35,9 +35,15 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
               White = g.GameMetaData.White
               Black = g.GameMetaData.Black }
 
+        // The two key sets are kept apart and tried in order, stored first. Mixing them into one
+        // index lets a recomputed key claim a game that another planned entry matches exactly:
+        // if a game replayed only the first 4 plies of a 6-ply book opening, its recomputed key
+        // is the key of the 4-ply opening, and it would answer for THAT entry instead - leaving
+        // the opening it really played to be played again.
         let consumed = Array.zeroCreate<bool> played.Length
-        let index = Dictionary<GameKey, ResizeArray<int>>()
-        let add (key: GameKey) (i: int) =
+        let storedIndex = Dictionary<GameKey, ResizeArray<int>>()
+        let recomputedIndex = Dictionary<GameKey, ResizeArray<int>>()
+        let add (index: Dictionary<GameKey, ResizeArray<int>>) (key: GameKey) (i: int) =
             match index.TryGetValue key with
             | true, xs -> xs.Add i
             | false, _ -> index.[key] <- ResizeArray [ i ]
@@ -45,12 +51,12 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
         for i in 0 .. played.Length - 1 do
             let g = played.[i]
             let stored = keyWith g.GameMetaData.OpeningHash g
-            add stored i
+            add storedIndex stored i
             let recomputed = keyWith (Hash.computeOpeningHashFromGame g) g
-            if recomputed <> stored then add recomputed i
+            if recomputed <> stored then add recomputedIndex recomputed i
 
         /// Claim one unconsumed played game matching this key, if there is one.
-        let claim (key: GameKey) =
+        let claim (index: Dictionary<GameKey, ResizeArray<int>>) (key: GameKey) =
             match index.TryGetValue key with
             | true, xs ->
                 match xs |> Seq.tryFind (fun i -> not consumed.[i]) with
@@ -58,8 +64,10 @@ let diff (plan: PlannedGame list) (played: PgnGame array) : PlannedGame list =
                 | None -> false
             | false, _ -> false
 
-        [ for p in plan do
-            if not (claim p.Key) then yield p ]
+        // Pass one: everything the stored tags account for. Pass two: whatever is left, against
+        // hashes recomputed under the current rule. Plan order is preserved by both passes.
+        let unmatched = plan |> List.filter (fun p -> not (claim storedIndex p.Key))
+        unmatched |> List.filter (fun p -> not (claim recomputedIndex p.Key))
 
 /// Per-engine quota enforcement for Gauntlet resume. When a new opponent is
 /// added mid-tournament, the regenerated plan may schedule games for existing

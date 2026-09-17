@@ -855,3 +855,33 @@ let ``Diff still replays a game that matches neither hash`` () =
         |> List.toArray
 
     Assert.Equal(plan.Length, (Diff.diff plan played).Length)
+
+[<Fact>]
+let ``Diff does not let a recomputed hash claim another opening's planned game`` () =
+    // The game replayed only the first 4 plies of a 6-ply book opening, so its recomputed hash
+    // is exactly the 4-ply opening's hash. It must still answer for the opening it actually
+    // played - otherwise the wrong opening is replayed and the other is played twice.
+    let short_ = withMoves bookLine "" (mkOpening 1)
+    let long_ = withMoves (bookLine @ [ "e5"; "Bf5" ]) "" (mkOpening 2)
+    let hashOf = ChessLibrary.ChessUtilities.Hash.computeOpeningHashFromGame
+    let shortHash, longHash = hashOf short_, hashOf long_
+
+    let keyFor h : GameKey = { OpeningHash = h; Fen = ""; White = "Hero"; Black = "A" }
+    let plannedFor (opening: PgnGame) h =
+        { White = mkEngine "Hero"
+          Black = mkEngine "A"
+          Opening = opening
+          OpeningHash = h
+          RoundLabel = ""
+          RoleWhite = Challenger
+          RoleBlack = Opponent
+          Key = keyFor h }
+    let plan = [ plannedFor short_ shortHash; plannedFor long_ longHash ]
+
+    let playedLong = plannedFor long_ longHash |> playedPgnOf |> withMoves bookLine ""
+    Assert.Equal<string>(shortHash, hashOf playedLong)
+
+    let remaining = Diff.diff plan [| playedLong |]
+
+    Assert.Equal(1, remaining.Length)
+    Assert.Equal<string>(shortHash, (List.head remaining).OpeningHash)
