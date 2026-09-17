@@ -1261,7 +1261,8 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
     let gamesPerMatch = gamesPerMatchForRound roundNumber
     let plannedPairings = ResizeArray<Pairing>()
     let mutable previewIndex = openingIndex
-    for pairing in round.Pairings do
+    for pairIndex in 0 .. round.Pairings.Count - 1 do
+      let pairing = round.Pairings.[pairIndex]
       if pairing.IsDecided || pairing.PlayerB = "BYE" then
         ()
       else
@@ -1291,11 +1292,24 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
           pairing.PlayerB, pairing.PlayerA
       let whiteFirst = tourny.EngineSetup.Engines |> List.find (fun e -> e.Name = firstWhite)
       let blackFirst = tourny.EngineSetup.Engines |> List.find (fun e -> e.Name = firstBlack)
+      // Same inputs as the play loop below, so the preview names and picks each game the way
+      // the PGN will: pairIndex * gamesPerMatch is where this pairing's games sit in the
+      // round, Games.Count is how many of them are already played on a resume, and a pair
+      // left half-played continues on the opening its first game used.
+      let halfPairOpening =
+        if pairing.Games.Count % 2 = 1 then
+          let last = pairing.Games.[pairing.Games.Count - 1]
+          matchOpenings |> List.tryFind (fun o -> getOpeningHash o = last.OpeningHash)
+        else None
       if tourny.SwissOptions.UniquePerMatchOnly then
-        PairingHelper.addPlannedPairings plannedPairings whiteFirst blackFirst matchOpenings gamesPerMatch 0
+        // The per-match index restarts at the number of pairs already played.
+        PairingHelper.addPlannedPairings plannedPairings whiteFirst blackFirst matchOpenings gamesPerMatch (pairing.Games.Count / 2)
+          roundNumber (pairIndex * gamesPerMatch) pairing.Games.Count gameNr halfPairOpening
         |> ignore
       else
-        previewIndex <- PairingHelper.addPlannedPairings plannedPairings whiteFirst blackFirst matchOpenings gamesPerMatch previewIndex
+        previewIndex <-
+          PairingHelper.addPlannedPairings plannedPairings whiteFirst blackFirst matchOpenings gamesPerMatch previewIndex
+            roundNumber (pairIndex * gamesPerMatch) pairing.Games.Count gameNr halfPairOpening
     callback (Update.PairingList plannedPairings)
 
     for pairIndex in 0 .. round.Pairings.Count - 1 do

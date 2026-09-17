@@ -49,6 +49,18 @@ module PairingHelper =
     /// returns the next opening index). Used by the Swiss runner as it walks
     /// through score-group pairings round by round. Alternates White-first
     /// with Black-first across each opening pick.
+    ///
+    /// Each preview game is labelled and chosen exactly as the runner will label and choose
+    /// it when it is played: RoundNr is "<round>.<position>", the position counted across
+    /// every game of the round whether played yet or not; GameNr continues the running game
+    /// counter; and on a resume a pair with one game already played gets the SAME opening
+    /// for its second game, colours reversed, rather than whatever the index points at. The
+    /// console schedule line and the GUI pairings table show these, and they used to carry
+    /// the opening's book number instead of the round - a round-one game read as "Round
+    /// 43.3, game 0" while the PGN said "1.3".
+    ///
+    /// `startIndex` is the opening index of the first pair NOT yet started - what the runner
+    /// will pick next - so pairs already played consume nothing here.
     let addPlannedPairings
         (planned: ResizeArray<Pairing>)
         (whiteFirst: EngineConfig)
@@ -56,29 +68,36 @@ module PairingHelper =
         (openings: PgnGame list)
         (gamesPerMatch: int)
         (startIndex: int)
+        (roundNumber: int)
+        (positionBase: int)             // games of the earlier pairings in this round: pairIndex * gamesPerMatch
+        (alreadyPlayed: int)            // games of THIS pairing already in the PGN, on a resume - not previewed
+        (nextGameNr: int)               // the running counter as it stands when the preview is built
+        (halfPairOpening: PgnGame option)  // the opening of the last played game, when alreadyPlayed is odd
         =
         if openings.IsEmpty then
             startIndex
         else
             let gamesPerPair = max 1 (gamesPerMatch / 2)
             let mutable index = startIndex
-            for _ in 0 .. gamesPerPair - 1 do
+            let add (opening: PgnGame) (white: EngineConfig) (black: EngineConfig) (position: int) =
+                planned.Add
+                    { Opening = opening
+                      White = white
+                      Black = black
+                      GameNr = nextGameNr + planned.Count + 1
+                      RoundNr = sprintf "%d.%d" roundNumber (positionBase + position + 1)
+                      OpeningHash = Hash.computeOpeningHashFromGame opening }
+            let playedPairs = alreadyPlayed / 2
+            let halfPair = alreadyPlayed % 2 = 1
+            if halfPair then
+                // The runner replays the last game's opening with colours reversed and does not
+                // touch the opening index for it.
+                let opening = halfPairOpening |> Option.defaultValue openings.[index % openings.Length]
+                add opening blackFirst whiteFirst alreadyPlayed
+            for pair in playedPairs + (if halfPair then 1 else 0) .. gamesPerPair - 1 do
                 let opening = openings.[index % openings.Length]
-                let openingHash = Hash.computeOpeningHashFromGame opening
-                planned.Add
-                    { Opening = opening
-                      White = whiteFirst
-                      Black = blackFirst
-                      GameNr = 0
-                      RoundNr = sprintf "%d.%d" opening.GameNumber (planned.Count + 1)
-                      OpeningHash = openingHash }
-                planned.Add
-                    { Opening = opening
-                      White = blackFirst
-                      Black = whiteFirst
-                      GameNr = 0
-                      RoundNr = sprintf "%d.%d" opening.GameNumber (planned.Count + 1)
-                      OpeningHash = openingHash }
+                add opening whiteFirst blackFirst (pair * 2)
+                add opening blackFirst whiteFirst (pair * 2 + 1)
                 index <- index + 1
             index
 

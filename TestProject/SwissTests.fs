@@ -206,7 +206,7 @@ let ``swiss planned pairings include full round`` () =
         let seedA = seedMap.[a.Name]
         let seedB = seedMap.[b.Name]
         let whiteFirst, blackFirst = if seedA <= seedB then a, b else b, a
-        previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex
+        previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex 1 0 0 0 None
     Assert.Equal(roundPairs.Length * 2, planned.Count)
 
 [<Fact>]
@@ -2154,7 +2154,7 @@ let ``swiss planned pairings skip decided matches on resume`` () =
             let seedA = seedMap.[a.Name]
             let seedB = seedMap.[b.Name]
             let whiteFirst, blackFirst = if seedA <= seedB then a, b else b, a
-            previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex
+            previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex 1 0 0 0 None
 
     // Only undecided pairings should be in the planned list (1 of 2 pairings is decided)
     let undecidedCount = swissPairings |> List.filter (fun sp -> not sp.IsDecided) |> List.length
@@ -2193,7 +2193,7 @@ let ``swiss planned pairings shrink when match completes`` () =
         let seedA = seedMap.[a.Name]
         let seedB = seedMap.[b.Name]
         let whiteFirst, blackFirst = if seedA <= seedB then a, b else b, a
-        previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex
+        previewIndex <- addPlannedPairings planned whiteFirst blackFirst openings 2 previewIndex 1 0 0 0 None
 
     let totalBefore = planned.Count
     Assert.Equal(roundPairs.Length * 2, totalBefore)
@@ -2214,3 +2214,23 @@ let ``swiss planned pairings shrink when match completes`` () =
             (p.Black.Name = completedA.Name || p.Black.Name = completedB.Name))
     Assert.False(hasCompletedPair,
         $"After completion, planned pairings should not include {completedA.Name} vs {completedB.Name}")
+
+[<Fact>]
+let ``preview labels are what the runner will write: round.position and a running game number`` () =
+    let a, b, c, d = mkRatedPlayer "A" 3200, mkRatedPlayer "B" 3100, mkRatedPlayer "C" 3000, mkRatedPlayer "D" 2900
+    let openings = [ mkOpening 1; mkOpening 2; mkOpening 3 ]
+    let planned = ResizeArray<Pairing>()
+    // Round 3, two games per match, four games played so far in the tournament. The first
+    // pairing already has one of its two games in the PGN - a resume - the second has none.
+    // The half-played pair continues on the opening its first game used (book game 2 here),
+    // and consumes no index: the next pairing starts at the same index it was given.
+    let idx = addPlannedPairings planned a b openings 2 0 3 0 1 4 (Some (mkOpening 2))
+    Assert.Equal(0, idx)
+    addPlannedPairings planned c d openings 2 idx 3 2 0 4 None |> ignore
+    let labels =
+        planned |> Seq.map (fun p -> p.RoundNr, p.GameNr, p.White.Name, p.Black.Name, p.Opening.GameNumber) |> Seq.toList
+    Assert.Equal<(string * int * string * string * int) list>(
+        [ "3.2", 5, "B", "A", 2     // the pairing's remaining game: colours reversed, position 2, SAME opening
+          "3.3", 6, "C", "D", 1
+          "3.4", 7, "D", "C", 1 ],
+        labels)
