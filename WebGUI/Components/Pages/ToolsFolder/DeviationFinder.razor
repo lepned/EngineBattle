@@ -1,6 +1,8 @@
 @page "/results/move-deviation"
 @page "/deviationFinder"
 @using System.Text
+@using Microsoft.FSharp.Collections
+@using Microsoft.JSInterop
 @using WebGUI.Components.Layout
 @using WebGUI.Components.Layout.ChessboardLayout
 @using WebGUI.Services
@@ -10,6 +12,8 @@
 @inject NotifierService Notifier
 @inject IDialogService DialogService
 @inject GlobalSettingsService SettingsService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>Move deviation page</PageTitle>
 
@@ -53,6 +57,212 @@
     <pre style="font-size:0.88rem; color:#c0c0d0; margin:8px 0 16px 0; line-height:1.6;">@resultDescription1</pre>
   }
 
+  @if (coverage is not null && coverage.HasUnverifiedOpenings)
+  {
+    <div class="tool-section" style="border-left:3px solid #d9a441; padding-left:12px;">
+      <strong style="color:#d9a441;">@coverage.Unknown of @coverage.Total games have no opening information.</strong>
+      <div style="color:#9aa1b1; font-size:0.9rem; margin-top:4px;">
+        Neither per-move search data nor a book marker was found, so opening moves could not be
+        separated from real choices in those games. Self-deviations below may be artefacts of
+        both sides following the same book line.
+      </div>
+    </div>
+  }
+
+  @if (coverage is not null)
+  {
+    <div class="tool-section">
+      <h2>Engine self-consistency</h2>
+      <div class="tool-section-desc">
+        How often an engine played a different move in a position it had <em>already reached in
+        another game</em>. Opening moves are excluded, so only positions the engine actually
+        chose in are counted.
+      </div>
+
+      @if (measurableEngines.Count == 0)
+      {
+        <div style="border-left:3px solid #5b8def; padding:10px 14px; color:#c7ccd8;">
+          <strong>Not measurable in this PGN.</strong>
+          <div style="margin-top:6px; color:#9aa1b1; font-size:0.9rem;">
+            No engine reached the same position in more than one game, so there was never an
+            opportunity to contradict itself — the result is an empty denominator, not a clean
+            score. This is normal for reverse-colour pairings such as a superfinal or a paired
+            match: when the two games of a pair swap colours, the engine that faces a given
+            position in one game is the opponent in the other. Gauntlets, ladders and long
+            events that repeat openings against several opponents do produce a denominator.
+          </div>
+        </div>
+      }
+      else
+      {
+        <div class="tool-puzzle-grid">
+          @foreach (var e in measurableEngines)
+          {
+            var rated = e.RepeatedPositions >= MinimumForRate;
+            var rate = 100.0 * e.SelfDeviations / e.RepeatedPositions;
+            var share = e.DistinctPositions > 0 ? 100.0 * e.RepeatedPositions / e.DistinctPositions : 0.0;
+            <div class="tool-puzzle-card">
+              <div style="font-weight:600; color:#e8eaf0;">@e.Engine</div>
+              <div style="display:flex; align-items:baseline; gap:10px; margin:4px 0 2px 0;">
+                <span style="font-size:1.6rem; color:@(e.SelfDeviations > 0 ? "#e8a33d" : "#6fbf73");">
+                  @e.SelfDeviations / @e.RepeatedPositions.ToString("N0")
+                </span>
+                <span style="font-size:0.95rem; color:@(rated ? "#9aa1b1" : "#d9a441");">
+                  @rate.ToString("0.0") %
+                </span>
+              </div>
+              <div style="color:#9aa1b1; font-size:0.85rem;">
+                positions it reached in more than one game, and played differently the second time
+              </div>
+              @if (rated)
+              {
+                <div style="color:#787890; font-size:0.78rem; margin-top:4px;">
+                  those @e.RepeatedPositions.ToString("N0") are @share.ToString("0.0") % of the
+                  @e.DistinctPositions.ToString("N0") positions it chose in
+                </div>
+              }
+              else
+              {
+                <div style="color:#d9a441; font-size:0.78rem; margin-top:4px;">
+                  from only @e.RepeatedPositions repeat(s) — not comparable with a rate built on
+                  hundreds
+                </div>
+              }
+            </div>
+          }
+        </div>
+        @if (unmeasurableCount > 0)
+        {
+          <div style="color:#787890; font-size:0.85rem; margin-top:8px;">
+            @unmeasurableCount other engine(s) never met the same position twice, so they cannot
+            be scored.
+          </div>
+        }
+      }
+    </div>
+  }
+
+  @if (positionDeviations.Count > 0)
+  {
+    <div class="tool-section">
+      <h2>Position deviations</h2>
+      <div class="tool-section-desc">
+        One row per position where the games did not agree. Self means one engine contradicted
+        an earlier choice of its own; cross means different engines disagreed.
+      </div>
+
+      <div class="tool-tab-bar">
+        <button class="tool-tab @(typeFilter == "all" ? "active" : "")" @onclick='() => SetTypeFilter("all")'>
+          All (@positionDeviations.Count)
+        </button>
+        <button class="tool-tab @(typeFilter == "self" ? "active" : "")" @onclick='() => SetTypeFilter("self")'>
+          Self (@selfCount)
+        </button>
+        <button class="tool-tab @(typeFilter == "cross" ? "active" : "")" @onclick='() => SetTypeFilter("cross")'>
+          Cross (@(positionDeviations.Count - selfCount))
+        </button>
+        <span style="flex:1"></span>
+        <button class="tool-action-btn-sm" @onclick="CopyPositionDeviations">Copy as text</button>
+      </div>
+
+      <div class="tool-table-container">
+        <table class="tool-table dense">
+          <thead>
+            <tr>
+              <th @onclick='() => SortPositionsBy("Move")'>Move @PosSortIndicator("Move")</th>
+              <th @onclick='() => SortPositionsBy("Color")'>To play @PosSortIndicator("Color")</th>
+              <th @onclick='() => SortPositionsBy("Type")'>Type @PosSortIndicator("Type")</th>
+              <th @onclick='() => SortPositionsBy("Games")'>Games @PosSortIndicator("Games")</th>
+              <th @onclick='() => SortPositionsBy("Choices")'>Choices @PosSortIndicator("Choices")</th>
+            </tr>
+          </thead>
+          <tbody>
+            @foreach (var d in FilteredPositionDeviations)
+            {
+              <tr style="cursor:pointer; @(ReferenceEquals(d, selectedPosition) ? "background:#2a2d38;" : "")"
+                  @onclick="() => SelectPosition(d)">
+                <td>@d.MoveNumber</td>
+                <td>@(d.Color == "w" ? "White" : "Black")</td>
+                <td>
+                  @if (d.IsSelfDeviation)
+                  {
+                    <span style="color:#e8a33d;">self</span>
+                    <span style="color:#787890; font-size:0.85rem;"> @string.Join(", ", d.SelfEngines)</span>
+                  }
+                  else
+                  {
+                    <span style="color:#5b8def;">cross</span>
+                  }
+                </td>
+                <td>@d.GameCount</td>
+                <td>@string.Join("  ·  ", d.Choices.Select(c => $"{c.San} ({c.GameNumbers.Count()})"))</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    @if (selectedPosition is not null)
+    {
+      <div class="tool-section">
+        <h2>Move @selectedPosition.MoveNumber — @(selectedPosition.Color == "w" ? "White" : "Black") to play</h2>
+        <MudGrid>
+          <MudItem md="5" lg="4">
+            <EbChessboard Fen="@selectedPosition.Fen" SizePx="null" ShowCoordinates="true"
+                          Arrows="@selectedArrows" />
+          </MudItem>
+          <MudItem md="7" lg="8">
+            <div style="color:#787890; font-size:0.8rem; margin-bottom:6px;">
+              Scored is 1 for a win, 0.5 for a draw and 0 for a loss, seen from the engine that
+              chose the move — so it answers whether the choice worked out, which the
+              White-relative PGN result on its own cannot.
+            </div>
+            <table class="tool-table dense">
+              <thead>
+                <tr>
+                  <th></th><th>Move</th><th>Played by</th><th>In</th>
+                  <th title="1 = win, 0.5 = draw, 0 = loss, from the point of view of the engine that chose this move — not the White-relative PGN result">Scored</th>
+                </tr>
+              </thead>
+              <tbody>
+                @{ var ci = 0; }
+                @foreach (var c in selectedPosition.Choices)
+                {
+                  var color = ChoiceColor(ci++);
+                  <tr>
+                    <td><span style="display:inline-block; width:14px; height:14px; border-radius:3px; background:@color;"></span></td>
+                    <td style="font-weight:600;">@c.San</td>
+                    @* One engine for every game: name it once. Several: name it per game, or
+                       the reader cannot tell which engine played where. *@
+                    @{ var oneEngine = c.Engines.Count() == 1; }
+                    <td>@(oneEngine ? c.Engines.First() : "—")</td>
+                    <td>
+                      @string.Join("  ·  ", c.Instances.Select(i =>
+                        oneEngine
+                          ? $"#{i.GameNumber} {ResultGlyph(i.Result)}"
+                          : $"#{i.GameNumber} {i.Engine} {ResultGlyph(i.Result)}"))
+                    </td>
+                    <td style="white-space:nowrap;">
+                      @c.AverageScore.ToString("0.##")
+                      @if (c.Instances.Count() > 1)
+                      {
+                        <span style="color:#787890; font-size:0.8rem;"> of @c.Instances.Count()</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+            <div style="margin-top:10px;">
+              <button class="tool-action-btn-sm" @onclick="OpenSelectedInAnalysis">Open position in analysis</button>
+            </div>
+          </MudItem>
+        </MudGrid>
+      </div>
+    }
+  }
+
   @if (deviationListCritical.Count > 0)
   {
     <div class="tool-section">
@@ -72,16 +282,33 @@
         <button class="tool-action-btn" @onclick="ToggleCriticalVisualizations">
           @(showCriticalVisualizations ? "Hide Boards" : "Render Boards")
         </button>
+        @if (showCriticalVisualizations)
+        {
+          <div class="tool-input-group" style="margin-bottom:0">
+            <label>Board size</label>
+            <select class="tool-input" @bind="boardSizePx">
+              <option value="170">Small</option>
+              <option value="240">Medium</option>
+              <option value="340">Large</option>
+            </select>
+          </div>
+          <span style="font-size:0.85rem; color:#787890; align-self:center;">
+            @FilteredCriticalDeviations.Count() pairs
+          </span>
+        }
       </div>
 
       @if (showCriticalVisualizations)
       {
-        <div style="margin-top:12px;">
+        @* Flow the pairs across the width instead of one per row - at fluid board width only
+           a single pair fitted, which meant scrolling past one deviation at a time. *@
+        <div style="display:flex; flex-wrap:wrap; margin-top:12px;">
           @foreach (var item in FilteredCriticalDeviations)
           {
-            <div style="margin-bottom:8px;">
-              <WebGUI.Components.Layout.VisualizationLayout.MoveDeviation MoveDeviationInput="item" OwnDeviations=@(!isFindMoveAllDifferencesEnabled) />
-            </div>
+            <WebGUI.Components.Layout.VisualizationLayout.MoveDeviation
+                MoveDeviationInput="item"
+                BoardSizePx="@boardSizePx"
+                OwnDeviations=@(!isFindMoveAllDifferencesEnabled) />
           }
         </div>
       }
@@ -163,6 +390,143 @@
           (string.IsNullOrWhiteSpace(filterRes1) || (d.Result?.Contains(filterRes1, StringComparison.OrdinalIgnoreCase) ?? false)) &&
           (string.IsNullOrWhiteSpace(filterRes2) || (d.DevRes?.Contains(filterRes2, StringComparison.OrdinalIgnoreCase) ?? false))
       );
+  // --- Position-keyed analysis -------------------------------------------------
+  // Unlike the reference-replay path below, this keys on the position rather than on a
+  // designated reference game, so it can see an engine contradicting itself. Opening moves are
+  // excluded by the library; coverage reports how reliably that could be determined.
+  private List<ChessLibrary.DeviationAnalysis.PositionDeviation> positionDeviations = new();
+  private List<ChessLibrary.DeviationAnalysis.EngineSelfSummary> engineConsistency = new();
+  private ChessLibrary.DeviationAnalysis.OpeningCoverage coverage;
+  private ChessLibrary.DeviationAnalysis.PositionDeviation selectedPosition;
+  private string typeFilter = "all";
+  private int selfCount;
+
+  // An engine with no repeated positions has an empty denominator, which is a different
+  // statement from "perfectly consistent" and must not be shown as a score.
+  // Below this the rate is still shown, but in amber and with the denominator spelled out: a
+  // single deviation out of a single repeat reads as 100%, and would otherwise sit next to a
+  // real 7.8% off 245 as though the two were the same kind of number.
+  private const int MinimumForRate = 20;
+
+  private List<ChessLibrary.DeviationAnalysis.EngineSelfSummary> measurableEngines =>
+      engineConsistency
+        .Where(e => e.RepeatedPositions > 0)
+        .OrderByDescending(e => e.RepeatedPositions)
+        .ToList();
+
+  private int unmeasurableCount => engineConsistency.Count(e => e.RepeatedPositions == 0);
+
+  private string posSortColumn = "Move";
+  private bool posSortAscending = true;
+
+  private IEnumerable<ChessLibrary.DeviationAnalysis.PositionDeviation> FilteredPositionDeviations
+  {
+    get
+    {
+      var rows = typeFilter switch
+      {
+        "self" => positionDeviations.Where(d => d.IsSelfDeviation),
+        "cross" => positionDeviations.Where(d => !d.IsSelfDeviation),
+        _ => (IEnumerable<ChessLibrary.DeviationAnalysis.PositionDeviation>)positionDeviations
+      };
+
+      Func<ChessLibrary.DeviationAnalysis.PositionDeviation, IComparable> key = posSortColumn switch
+      {
+        "Color" => d => d.Color,
+        // Self first when descending: the interesting rows, not alphabetical order.
+        "Type" => d => d.IsSelfDeviation ? 1 : 0,
+        "Games" => d => d.GameCount,
+        "Choices" => d => d.Choices.Count(),
+        _ => d => d.MoveNumber
+      };
+
+      return posSortAscending ? rows.OrderBy(key) : rows.OrderByDescending(key);
+    }
+  }
+
+  private void SortPositionsBy(string column)
+  {
+    if (posSortColumn == column) posSortAscending = !posSortAscending;
+    else { posSortColumn = column; posSortAscending = true; }
+    selectedPosition = null;
+  }
+
+  private string PosSortIndicator(string column) =>
+      posSortColumn != column ? "" : posSortAscending ? "▲" : "▼";
+
+  private void SetTypeFilter(string value)
+  {
+    typeFilter = value;
+    selectedPosition = null;
+  }
+
+  private void SelectPosition(ChessLibrary.DeviationAnalysis.PositionDeviation d) => selectedPosition = d;
+
+  // Distinct colours for the first few choices; anything beyond that is rare and grey is fine.
+  // Compact, colour-free result marker so a game and its outcome read as one token.
+  private static string ResultGlyph(string result) => result switch
+  {
+    "1-0" => "1-0",
+    "0-1" => "0-1",
+    "1/2-1/2" => "½",
+    _ => "?"
+  };
+
+  private static string ChoiceColor(int index) => index switch
+  {
+    0 => "#5b8def",
+    1 => "#e8a33d",
+    2 => "#6fbf73",
+    3 => "#c96b6b",
+    _ => "#8a8fa3"
+  };
+
+  private IReadOnlyList<EbArrow> selectedArrows =>
+      selectedPosition is null
+        ? Array.Empty<EbArrow>()
+        : selectedPosition.Choices
+            .Select((c, i) => new { c, i })
+            .Where(x => x.c.Move != null && x.c.Move.Length >= 4)
+            .Select(x => new EbArrow(x.c.Move.Substring(0, 2), x.c.Move.Substring(2, 2), ChoiceColor(x.i)))
+            .ToList();
+
+  private async Task OpenSelectedInAnalysis()
+  {
+    if (selectedPosition is null) return;
+    try
+    {
+      await JS.InvokeVoidAsync("open", $"/analysis/single?fen={Uri.EscapeDataString(selectedPosition.Fen)}", "_blank");
+    }
+    catch (JSException ex)
+    {
+      logger.LogWarning(ex, "Could not open the analysis window");
+    }
+  }
+
+  private async Task CopyPositionDeviations()
+  {
+    var sb = new StringBuilder();
+    sb.AppendLine("Move	ToPlay	Type	Games	Choices");
+    foreach (var d in FilteredPositionDeviations)
+    {
+      var type = d.IsSelfDeviation ? "self:" + string.Join("/", d.SelfEngines) : "cross";
+      var choices = string.Join("  ", d.Choices.Select(c =>
+        $"{c.San}[{string.Join("/", c.Engines)} {string.Join(",", c.Instances.Select(i => $"#{i.GameNumber}:{i.Result}"))} avg {c.AverageScore:0.##}]"));
+      sb.AppendLine($"{d.MoveNumber}	{(d.Color == "w" ? "White" : "Black")}	{type}	{d.GameCount}	{choices}");
+    }
+    try
+    {
+      // navigator.clipboard is undefined on a non-secure origin, which is how this page is
+      // reached when the GUI is opened over plain HTTP from another machine. Every other
+      // clipboard call in this app guards for the same reason.
+      await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+    }
+    catch (JSException ex)
+    {
+      logger.LogWarning(ex, "Clipboard unavailable - copy skipped");
+    }
+  }
+
   private List<MoveDeviation> deviationListCritical = new();
   private List<MoveDeviation> deviationListAll = new();
   private string resultDescription1;
@@ -173,6 +537,7 @@
   private bool isFindMoveAllDifferencesEnabled = true;
   private string selectedEngine = "All";
   private bool showCriticalVisualizations = false;
+  private int boardSizePx = 240;
 
   // Sorting state
   private string sortColumn = "Round";
@@ -246,7 +611,11 @@
 
   double GetScore(MoveDeviation game)
   {
-    var deviatorColor = game.PgnGamePair.Item1.GameMetaData.White == game.Opponent ? "w" : "b";
+    // The deviator is by definition the side to move at the deviation, which is what Color
+    // holds. Deriving it from the reference game's White and the opponent's name only worked
+    // when the two games were a straight colour reversal of the same pairing; in a gauntlet the
+    // reference game is often against a different opponent, and the colour came out inverted.
+    var deviatorColor = game.Color;
 
     var res = game.Result switch
     {
@@ -267,6 +636,39 @@
 
   private bool isProcessing;
   private string processingStatus = "";
+  private bool queryLoadAttempted;
+
+  /// Reads one query-string value from the current URL, dependency-free.
+  private string GetQuery(string key)
+  {
+    var q = new Uri(Nav.Uri).Query;
+    if (string.IsNullOrEmpty(q)) return null;
+    foreach (var part in q.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+    {
+      var kv = part.Split('=', 2);
+      if (kv.Length == 2 && Uri.UnescapeDataString(kv[0]).Equals(key, StringComparison.OrdinalIgnoreCase))
+        return Uri.UnescapeDataString(kv[1]);
+    }
+    return null;
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (!firstRender || queryLoadAttempted) return;
+    queryLoadAttempted = true;
+
+    var path = GetQuery("pgn");
+    if (string.IsNullOrWhiteSpace(path)) return;
+    if (!File.Exists(path))
+    {
+      logger.LogWarning("PGN from query string not found: {File}", path);
+      return;
+    }
+
+    fileName = Path.GetFileName(path);
+    await LoadPgnFile(path);
+    StateHasChanged();
+  }
 
   private async Task BrowsePgnFile()
   {
@@ -283,12 +685,26 @@
     var result = await dialog.Result;
     if (result == null || result.Canceled) return;
     var filePath = (string)result.Data!;
+    await LoadPgnFile(filePath);
+  }
+
+  /// <summary>
+  /// Runs the analysis for one PGN. Split out from the file dialog so the page can also be
+  /// opened straight at /deviationFinder?pgn=&lt;path&gt;, the way the analysis pages accept ?fen=.
+  /// </summary>
+  private async Task LoadPgnFile(string filePath)
+  {
+    if (isProcessing) return;
 
     var pgnName = Path.GetFileName(filePath);
     fileName = pgnName;
     logger.LogInformation("PGN file opened {File}", pgnName);
     deviationListCritical.Clear();
     deviationListAll.Clear();
+    positionDeviations.Clear();
+    engineConsistency.Clear();
+    coverage = null;
+    selectedPosition = null;
     resultDescription1 = "";
     resultDescription2 = "";
 
@@ -319,7 +735,7 @@
       // Deviation analysis compares games pairwise — quadratic-ish work that must not
       // run on the dispatcher. Materialize the lazy sequences once inside the task
       // instead of re-running the whole analysis on every LINQ enumeration below.
-      var (deviations, critical, desc1, desc2) = await Task.Run(() =>
+      var (deviations, critical, desc1, desc2, positions) = await Task.Run(() =>
       {
         var devs =
           (isFindMoveAllDifferencesEnabled ?
@@ -327,6 +743,21 @@
             DeviationAnalysis.findAllDeviationsForAllPlayers(games))
           .ToList();
         var crit = devs.Where(e => e.Result != e.DevRes).ToList();
+        // Guarded separately from the legacy analysis: scan replays every game, and a
+        // truncated [FEN] tag makes LoadFen throw. Without this, one bad game in a file would
+        // blank the whole page, including the reference-replay results that worked before.
+        // F# hands back a reference Tuple, not a C# value tuple.
+        Tuple<FSharpList<DeviationAnalysis.PositionDeviation>,
+              FSharpList<DeviationAnalysis.EngineSelfSummary>,
+              DeviationAnalysis.OpeningCoverage> positionResult = null;
+        try
+        {
+          positionResult = DeviationAnalysis.analyzePositionDeviations(games);
+        }
+        catch (Exception ex)
+        {
+          logger.LogError(ex, "Position-keyed deviation analysis failed for {File}", pgnName);
+        }
 
         var sb = new StringBuilder();
         foreach (var deviator in crit.Select(e => e.PlayerToDeviate).Distinct())
@@ -342,13 +773,22 @@
           var playerScore = playerDeviations.Sum(e => GetScore(e));
           sb1.AppendLine($"Player: {deviator} did deviate {playerDeviations.Count} times and resulted in a calculated net score of: {playerScore}");
         }
-        return (devs, crit, sb.ToString(), sb1.ToString());
+        return (devs, crit, sb.ToString(), sb1.ToString(), positionResult);
       });
 
       deviationListAll.AddRange(deviations);
       deviationListCritical.AddRange(critical);
       resultDescription1 = desc1;
       resultDescription2 = desc2;
+
+      // F# returns the three views as a tuple; Item3 carries how reliably opening moves
+      // could be identified, which decides whether the self numbers can be trusted.
+      positionDeviations = positions?.Item1?.ToList() ?? new();
+      engineConsistency = positions?.Item2?.ToList() ?? new();
+      coverage = positions?.Item3;
+      selfCount = positionDeviations.Count(d => d.IsSelfDeviation);
+      selectedPosition = null;
+      typeFilter = "all";
       logger.LogInformation(resultDescription1);
       logger.LogInformation(resultDescription2);
       logger.LogInformation("Done with calculation");

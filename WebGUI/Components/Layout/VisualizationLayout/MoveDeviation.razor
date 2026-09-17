@@ -1,59 +1,71 @@
 @using WebGUI.Components.Layout.ChessboardLayout
 
-<h4 class="mud-centerTxt mb-3">@moveTitle</h4>
-<MudGrid>
-  <MudItem md="4" lg="5">
-    <div>@board1Header</div>
-    <EbChessboard Fen="@fenPrev" SizePx="null" ShowCoordinates="false"
-                  LastMoveFrom="@move1From" LastMoveTo="@move1To" LastMoveColor="@moveColor" />
-    <div>@board1Subtitle</div>
-  </MudItem>
-  <MudItem md="4" lg="5">
-    <div>@board2Header</div>
-    <EbChessboard Fen="@fenDev" SizePx="null" ShowCoordinates="false"
-                  LastMoveFrom="@move2From" LastMoveTo="@move2To" LastMoveColor="@moveColor" />
-    <div>@board2Subtitle</div>
-  </MudItem>
-</MudGrid>
+@* One board showing the position both engines faced, with an arrow per move. Two boards of the
+   resulting positions made the reader hunt for the difference; here the disagreement is the
+   picture. Falls back to the deviating position if the pre-move FEN is missing. *@
+<div style="display:inline-block; background:#22242c; border-radius:8px; padding:10px 12px; margin:0 10px 10px 0; width:@(BoardSizePx + 24)px;">
+  <div style="font-size:0.8rem; color:#c7ccd8; margin-bottom:6px;">@moveTitle</div>
 
+  <EbChessboard Fen="@boardFen" SizePx="@BoardSizePx" ShowCoordinates="false" Arrows="@arrows" />
+
+  <div style="margin-top:8px; font-size:0.78rem;">
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span style="display:inline-block; width:11px; height:11px; border-radius:2px; background:@RefColor;"></span>
+      <span style="color:#e8eaf0; font-weight:600;">@refSan</span>
+      <span style="color:#9aa1b1;">@refLabel</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+      <span style="display:inline-block; width:11px; height:11px; border-radius:2px; background:@DevColor;"></span>
+      <span style="color:#e8eaf0; font-weight:600;">@devSan</span>
+      <span style="color:#9aa1b1;">@devLabel</span>
+    </div>
+  </div>
+</div>
 
 @code {
-
   [Parameter] public TypesDef.CoreTypes.MoveDeviation MoveDeviationInput { get; set; }
   [Parameter] public bool OwnDeviations { get; set; }
+  /// Edge length of the board; the card is this plus padding.
+  [Parameter] public int BoardSizePx { get; set; } = 240;
+
+  private const string RefColor = "#5b8def";
+  private const string DevColor = "#e8a33d";
 
   private string moveTitle;
-  private string board1Header;
-  private string board1Subtitle;
-  private string board2Header;
-  private string board2Subtitle;
-  private string fenPrev;
-  private string fenDev;
-  private string moveColor;
-  private string move1From;
-  private string move1To;
-  private string move2From;
-  private string move2To;
+  private string boardFen;
+  private string refSan, devSan, refLabel, devLabel;
+  private IReadOnlyList<EbArrow> arrows = Array.Empty<EbArrow>();
 
   protected override void OnParametersSet()
   {
     if (MoveDeviationInput is null) return;
 
-    fenPrev = MoveDeviationInput.PrevFen;
-    fenDev = MoveDeviationInput.DevFen;
-    moveColor = MoveDeviationInput.Color;
-    move1From = MoveDeviationInput.PrevSanMove.Item2.Substring(0, 2);
-    move1To = MoveDeviationInput.PrevSanMove.Item2.Substring(2, 2);
-    move2From = MoveDeviationInput.DevSanMove.Item2.Substring(0, 2);
-    move2To = MoveDeviationInput.DevSanMove.Item2.Substring(2, 2);
+    var d = MoveDeviationInput;
+    // PreFen is the shared position. Older records may not carry it; the deviating position is
+    // a poorer but non-empty fallback.
+    boardFen = string.IsNullOrWhiteSpace(d.PreFen) ? d.DevFen : d.PreFen;
 
-    var (prevPGN, devPGN) = MoveDeviationInput.PgnGamePair;
-    moveTitle =
-      OwnDeviations ? $"Move deviation by {MoveDeviationInput.PlayerToDeviate} compared to own game" :
-      $"Move deviation by {MoveDeviationInput.PlayerToDeviate} compared to {MoveDeviationInput.Opponent}";
-    board1Header = $"Game#: {prevPGN.GameNumber} Black: {prevPGN.GameMetaData.Black}";
-    board1Subtitle = $"White: {prevPGN.GameMetaData.White} :  {prevPGN.GameMetaData.Result}";
-    board2Header = $"Game#: {devPGN.GameNumber} Black: {devPGN.GameMetaData.Black}";
-    board2Subtitle = $"White: {devPGN.GameMetaData.White} :  {devPGN.GameMetaData.Result}";
+    var (prevGame, devGame) = d.PgnGamePair;
+    var side = d.Color == "w" ? "White" : "Black";
+    moveTitle = $"Move {d.MoveNr}, {side} — {d.PlayerToDeviate} vs {d.Opponent}";
+
+    refSan = d.PrevSanMove.Item1;
+    devSan = d.DevSanMove.Item1;
+    refLabel = $"game #{prevGame.GameNumber} · {prevGame.GameMetaData.Result}";
+    devLabel = $"game #{devGame.GameNumber} · {devGame.GameMetaData.Result}"
+             + (OwnDeviations ? "  (same engine)" : "");
+
+    var list = new List<EbArrow>();
+    Add(list, d.PrevSanMove.Item2, RefColor);
+    Add(list, d.DevSanMove.Item2, DevColor);
+    arrows = list;
+  }
+
+  // A long SAN shorter than four characters would throw on Substring; a board without that
+  // arrow is a better outcome than a crashed page.
+  private static void Add(List<EbArrow> list, string longSan, string color)
+  {
+    if (string.IsNullOrEmpty(longSan) || longSan.Length < 4) return;
+    list.Add(new EbArrow(longSan.Substring(0, 2), longSan.Substring(2, 2), color));
   }
 }
