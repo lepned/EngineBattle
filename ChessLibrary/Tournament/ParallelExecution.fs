@@ -107,6 +107,191 @@ type LazyPool<'T>(capacity: int, spawn: int -> 'T) =
                | true, item -> yield item
                | _ -> go <- false |]
 
+/// What a run plays, worked out once before any engine starts: the book sized for the mode,
+/// the plan, and the plan diffed against the games already in the output PGN (a resume plays
+/// only what is missing). Sets TotalGames and CurrentGameNr on the tournament as before.
+type private Schedule =
+    { /// The whole plan with its round labels, for the total the page shows.
+      AllPairings: Pairing list
+      GamesLeftToPlay: Pairing list
+      GamesAlreadyPlayed: PgnGame[]
+      /// PreventMoveDeviation's reference games, if a ReferencePGNPath is set.
+      ReferenceGames: PgnGame[]
+      /// An EPD book carries no moves to play out.
+      EpdBook: bool
+      StartInfo: StartOfTournamentInfo }
+
+let private buildSchedule (logger: ILogger) (tourny: Tournament) : Schedule =
+    let challengers = tourny.EngineSetup.Engines |> List.filter(fun e -> e.IsChallenger)
+    let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
+    let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
+
+    // The new Scheduler expects the book to already be sized for the chosen
+    // distribution. For Gauntlet + Spread (= RandomOpenings=true) with more
+    // than one opponent, that means `rounds × numOpp` distinct openings; for
+    // Gauntlet + Shared and all non-Gauntlet modes, just `rounds` openings.
+    let numOpps = rest.Length
+    let gauntletDistribution =
+        if tourny.Opening.RandomOpenings then Scheduler.Spread else Scheduler.Shared
+    let effectiveBookSize =
+        if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 then
+            tourny.Rounds * numOpps
+        else
+            tourny.Rounds
+
+    let mutable epdBook = false
+    let games =
+        match tourny.Opening.OpeningsPath with
+        |Some path ->
+        if File.Exists path |> not then
+            if tourny.VerboseLogging then
+                logger.LogError($"Opening file {path} does not exist")
+            [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
+        elif path.ToLower().Contains ".epd" then
+            epdBook <- true
+            let all = EPDExtractor.parseEPDFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
+            all
+        else
+            let all = ChessLibrary.FullPGNParser.parsePgnFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
+            if tourny.VerboseLogging then
+                logger.LogInformation $"Total number of openings in PGN = {all.Length}"
+            all
+        |_ ->
+            [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
+
+    if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 && games.Length < effectiveBookSize then
+        ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow
+            (sprintf "Warning: Gauntlet with %d opponents and %d rounds needs %d openings to avoid wrap, but the book only has %d. Some openings will be reused and engines may play them more than expected."
+                numOpps tourny.Rounds effectiveBookSize games.Length)
+
+    let gamesAlreadyPlayed =
+        let fileExists = File.Exists tourny.PgnOutPath
+        if fileExists then
+            // Shared with the sequential runners on purpose: this used to be a second copy that
+            // overwrote the stored opening hash, which undoes the two-key matching in Diff.diff.
+            GameHelpers.loadGamesAlreadyPlayed tourny.PgnOutPath
+        else
+            [||]
+
+    let referencGamesPlayed =
+        let fileExists = File.Exists tourny.ReferencePGNPath
+        if fileExists then
+            ChessLibrary.FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
+        else
+            [||]
+    let gamesToPlay =
+        let openings = games |> Seq.truncate effectiveBookSize |> Seq.toList
+        if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpeningsForTournament tourny.Opening openings
+        else openings
+
+    // Build one ScheduleConfig and reuse it for both total-plan and diff.
+    let scheduleCfg : Scheduler.ScheduleConfig =
+        if isGauntlet then
+            { Mode = Scheduler.Gauntlet
+              Challengers = challengers
+              Opponents = rest
+              Openings = gamesToPlay
+              Rounds = tourny.Rounds
+              OpeningsTwice = tourny.Opening.OpeningsTwice
+              PreventDeviation = tourny.PreventMoveDeviation
+              Distribution = gauntletDistribution }
+        else
+            { Mode = Scheduler.RoundRobin
+              Challengers = tourny.EngineSetup.Engines
+              Opponents = []
+              Openings = gamesToPlay
+              Rounds = tourny.Rounds
+              OpeningsTwice = tourny.Opening.OpeningsTwice
+              PreventDeviation = tourny.PreventMoveDeviation
+              Distribution = Scheduler.Shared }
+    let plan =
+        if isGauntlet
+        then ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg
+        else ChessLibrary.Scheduler.RoundRobin.generate scheduleCfg
+    let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
+    let priorGames = gamesAlreadyPlayed.Length
+    let allPairings =
+        plan
+        |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
+        |> ChessLibrary.Scheduler.Diff.toPairings
+    let gamesLeftToPlay =
+        let afterDiff = ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
+        let afterLimits =
+            if isGauntlet
+            then ChessLibrary.Scheduler.Diff.enforceGameLimits challengers rest tourny.Rounds tourny.Opening.OpeningsTwice gamesAlreadyPlayed afterDiff
+            else afterDiff
+        afterLimits
+        |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
+        |> ChessLibrary.Scheduler.Diff.toPairings
+
+    if tourny.VerboseLogging then
+        PairingHelper.logOpeningPairs logger gamesLeftToPlay
+
+    let totalGames = allPairings.Length
+    tourny.TotalGames <- totalGames
+    let numberOfGamesPlayed = gamesAlreadyPlayed.Length
+    tourny.CurrentGameNr <- numberOfGamesPlayed
+
+    let (tTime, gTime) = estimateTournamentAndGameTime (gamesLeftToPlay.Length) tourny gamesLeftToPlay
+    let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
+    { AllPairings = allPairings
+      GamesLeftToPlay = gamesLeftToPlay
+      GamesAlreadyPlayed = gamesAlreadyPlayed
+      ReferenceGames = referencGamesPlayed
+      EpdBook = epdBook
+      StartInfo = startInfo }
+
+/// Every outlet for gameId-stamped updates: the optional file recorder and HTTP sink from
+/// tournament.json's LiveFeed section (an EB_LIVEFEED_* env var overrides the matching field;
+/// nothing configured means no feed, the normal case), and the in-process sink the WebGUI
+/// multi-board grid listens on. `Any` says whether per-game events need stamping at all.
+type private LiveFeed =
+    { Any: bool
+      Emit: string -> Update -> unit
+      Dispose: unit -> unit }
+
+let private openLiveFeed (logger: ILogger) (tourny: Tournament) (taggedSink: (string -> Update -> unit) option) : LiveFeed =
+    let liveFeedCfg = if obj.ReferenceEquals(box tourny.LiveFeed, null) then LiveFeedConfig.Empty else tourny.LiveFeed
+    let pickFeed (envName: string) (cfgVal: string) =
+        match Environment.GetEnvironmentVariable envName with
+        | null | "" -> (if isNull cfgVal then "" else cfgVal)
+        | v -> v
+    let feedFile   = pickFeed "EB_LIVEFEED_FILE"   liveFeedCfg.File
+    let feedUrl    = pickFeed "EB_LIVEFEED_URL"    liveFeedCfg.Url
+    let feedSource = pickFeed "EB_LIVEFEED_SOURCE" liveFeedCfg.Source
+    let feedToken  = pickFeed "EB_LIVEFEED_TOKEN"  liveFeedCfg.Token
+    let liveFeedRecorder : LiveFeedRecorder option =
+        if String.IsNullOrEmpty feedFile then None
+        else
+            try
+                logger.LogInformation("Live feed recording to {path}", feedFile)
+                Some (new LiveFeedRecorder(feedFile))
+            with ex ->
+                logger.LogError("Failed to open live feed file {path}: {msg}", feedFile, ex.Message)
+                None
+    let liveFeedHttpSink : LiveFeedHttpSink option =
+        if String.IsNullOrEmpty feedUrl then None
+        else
+            try
+                logger.LogInformation("Live feed posting to {url}", feedUrl)
+                Some (new LiveFeedHttpSink(feedUrl, feedSource, feedToken))
+            with ex ->
+                logger.LogError("Failed to init live feed URL sink {url}: {msg}", feedUrl, ex.Message)
+                None
+    { Any = liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome || taggedSink.IsSome
+      Emit =
+        fun gid u ->
+            // Serialise once, fan out to file and/or HTTP; the in-process sink gets the Update itself.
+            if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome then
+                let line = LiveFeedWire.withGameId gid (LiveFeedWire.serializeUpdate u)
+                liveFeedRecorder |> Option.iter (fun r -> r.RecordLine line)
+                liveFeedHttpSink |> Option.iter (fun s -> s.Send line)
+            taggedSink |> Option.iter (fun s -> s gid u)
+      Dispose =
+        fun () ->
+            liveFeedRecorder |> Option.iter (fun r -> r.Dispose())
+            liveFeedHttpSink |> Option.iter (fun s -> s.Dispose()) }
+
 let parallelTournamentRun
   (logger: ILogger)
   (tourny: Tournament)
@@ -135,165 +320,16 @@ let parallelTournamentRun
 
       logger.LogInformation("Tournament in parallel run about to start")
 
-      let challengers = tourny.EngineSetup.Engines |> List.filter(fun e -> e.IsChallenger)
-      let rest = tourny.EngineSetup.Engines |>  List.filter(fun e -> not e.IsChallenger)
-      let isGauntlet = tourny.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
-
-      // The new Scheduler expects the book to already be sized for the chosen
-      // distribution. For Gauntlet + Spread (= RandomOpenings=true) with more
-      // than one opponent, that means `rounds × numOpp` distinct openings; for
-      // Gauntlet + Shared and all non-Gauntlet modes, just `rounds` openings.
-      let numOpps = rest.Length
-      let gauntletDistribution =
-          if tourny.Opening.RandomOpenings then Scheduler.Spread else Scheduler.Shared
-      let effectiveBookSize =
-          if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 then
-              tourny.Rounds * numOpps
-          else
-              tourny.Rounds
-
-      let mutable epdBook = false
-      let games =
-          match tourny.Opening.OpeningsPath with
-          |Some path ->
-          if File.Exists path |> not then
-              if tourny.VerboseLogging then
-                  logger.LogError($"Opening file {path} does not exist")
-              [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
-          elif path.ToLower().Contains ".epd" then
-              epdBook <- true
-              let all = EPDExtractor.parseEPDFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
-              all
-          else
-              let all = ChessLibrary.FullPGNParser.parsePgnFile path |> Seq.truncate effectiveBookSize |> Seq.toArray
-              if tourny.VerboseLogging then
-                  logger.LogInformation $"Total number of openings in PGN = {all.Length}"
-              all
-          |_ ->
-              [| for i = 1 to effectiveBookSize do yield PGNTypes.PgnGame.Empty i |]
-
-      if isGauntlet && gauntletDistribution = Scheduler.Spread && numOpps > 1 && games.Length < effectiveBookSize then
-          ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow
-              (sprintf "Warning: Gauntlet with %d opponents and %d rounds needs %d openings to avoid wrap, but the book only has %d. Some openings will be reused and engines may play them more than expected."
-                  numOpps tourny.Rounds effectiveBookSize games.Length)
-
-      let gamesAlreadyPlayed =
-          let fileExists = File.Exists tourny.PgnOutPath
-          if fileExists then
-              // Shared with the sequential runners on purpose: this used to be a second copy that
-              // overwrote the stored opening hash, which undoes the two-key matching in Diff.diff.
-              GameHelpers.loadGamesAlreadyPlayed tourny.PgnOutPath
-          else
-              [||]
-
-      let referencGamesPlayed =
-          let fileExists = File.Exists tourny.ReferencePGNPath
-          if fileExists then
-              ChessLibrary.FullPGNParser.parsePgnFile tourny.ReferencePGNPath |> Seq.toArray
-          else
-              [||]
-      let gamesToPlay =
-          let openings = games |> Seq.truncate effectiveBookSize |> Seq.toList
-          if tourny.Opening.RandomOpenings then PairingHelper.shuffleOpeningsForTournament tourny.Opening openings
-          else openings
-
-      // Build one ScheduleConfig and reuse it for both total-plan and diff.
-      let scheduleCfg : Scheduler.ScheduleConfig =
-          if isGauntlet then
-              { Mode = Scheduler.Gauntlet
-                Challengers = challengers
-                Opponents = rest
-                Openings = gamesToPlay
-                Rounds = tourny.Rounds
-                OpeningsTwice = tourny.Opening.OpeningsTwice
-                PreventDeviation = tourny.PreventMoveDeviation
-                Distribution = gauntletDistribution }
-          else
-              { Mode = Scheduler.RoundRobin
-                Challengers = tourny.EngineSetup.Engines
-                Opponents = []
-                Openings = gamesToPlay
-                Rounds = tourny.Rounds
-                OpeningsTwice = tourny.Opening.OpeningsTwice
-                PreventDeviation = tourny.PreventMoveDeviation
-                Distribution = Scheduler.Shared }
-      let plan =
-          if isGauntlet
-          then ChessLibrary.Scheduler.Gauntlet.generate scheduleCfg
-          else ChessLibrary.Scheduler.RoundRobin.generate scheduleCfg
-      let gamesPerPair = if tourny.Opening.OpeningsTwice then 2 else 1
-      let priorGames = gamesAlreadyPlayed.Length
-      let allPairings =
-          plan
-          |> ChessLibrary.Scheduler.Diff.applyPairLabels 0 gamesPerPair
-          |> ChessLibrary.Scheduler.Diff.toPairings
-      let gamesLeftToPlay =
-          let afterDiff = ChessLibrary.Scheduler.Diff.diff plan gamesAlreadyPlayed
-          let afterLimits =
-              if isGauntlet
-              then ChessLibrary.Scheduler.Diff.enforceGameLimits challengers rest tourny.Rounds tourny.Opening.OpeningsTwice gamesAlreadyPlayed afterDiff
-              else afterDiff
-          afterLimits
-          |> ChessLibrary.Scheduler.Diff.applyPairLabels priorGames gamesPerPair
-          |> ChessLibrary.Scheduler.Diff.toPairings
-
-      if tourny.VerboseLogging then
-          PairingHelper.logOpeningPairs logger gamesLeftToPlay
-
-      let totalGames = allPairings.Length
-      tourny.TotalGames <- totalGames
-      let numberOfGamesPlayed = gamesAlreadyPlayed.Length
-      tourny.CurrentGameNr <- numberOfGamesPlayed
-
-      let (tTime, gTime) = estimateTournamentAndGameTime (gamesLeftToPlay.Length) tourny gamesLeftToPlay
-      let startInfo = {NumberOfGames=numberOfGamesPlayed + gamesLeftToPlay.Length; TournamentDurationSec = tTime; GameDurationInSec = gTime; Tournament = Some tourny}
-      // Optional live feed recording (EB_LIVEFEED_FILE): tee gameId-stamped wire events for the
-      // multi-game grid view to tail live. No-op unless the env var is set.
-      // Live-feed settings come from tournament.json's LiveFeed section; an EB_LIVEFEED_* env var
-      // overrides the matching field. Missing section + no env var => no feed (normal tournament).
-      let liveFeedCfg = if obj.ReferenceEquals(box tourny.LiveFeed, null) then LiveFeedConfig.Empty else tourny.LiveFeed
-      let pickFeed (envName: string) (cfgVal: string) =
-          match Environment.GetEnvironmentVariable envName with
-          | null | "" -> (if isNull cfgVal then "" else cfgVal)
-          | v -> v
-      let feedFile   = pickFeed "EB_LIVEFEED_FILE"   liveFeedCfg.File
-      let feedUrl    = pickFeed "EB_LIVEFEED_URL"    liveFeedCfg.Url
-      let feedSource = pickFeed "EB_LIVEFEED_SOURCE" liveFeedCfg.Source
-      let feedToken  = pickFeed "EB_LIVEFEED_TOKEN"  liveFeedCfg.Token
-      let liveFeedRecorder : LiveFeedRecorder option =
-          if String.IsNullOrEmpty feedFile then None
-          else
-              try
-                  logger.LogInformation("Live feed recording to {path}", feedFile)
-                  Some (new LiveFeedRecorder(feedFile))
-              with ex ->
-                  logger.LogError("Failed to open live feed file {path}: {msg}", feedFile, ex.Message)
-                  None
-      let liveFeedHttpSink : LiveFeedHttpSink option =
-          if String.IsNullOrEmpty feedUrl then None
-          else
-              try
-                  logger.LogInformation("Live feed posting to {url}", feedUrl)
-                  Some (new LiveFeedHttpSink(feedUrl, feedSource, feedToken))
-              with ex ->
-                  logger.LogError("Failed to init live feed URL sink {url}: {msg}", feedUrl, ex.Message)
-                  None
-      // Serialize once, fan out to file and/or HTTP sinks (no-op when neither is configured).
-      let emitFeed (gid: string) (u: Update) =
-          if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome then
-              let line = LiveFeedWire.withGameId gid (LiveFeedWire.serializeUpdate u)
-              liveFeedRecorder |> Option.iter (fun r -> r.RecordLine line)
-              liveFeedHttpSink |> Option.iter (fun s -> s.Send line)
-      // Tagged fan-out to every sink, including the in-process one (WebGUI multi-board grid).
-      let emitAll (gid: string) (u: Update) =
-          emitFeed gid u
-          taggedSink |> Option.iter (fun s -> s gid u)
+      let { AllPairings = allPairings; GamesLeftToPlay = gamesLeftToPlay
+            GamesAlreadyPlayed = gamesAlreadyPlayed; ReferenceGames = referenceGames
+            EpdBook = epdBook; StartInfo = startInfo } = buildSchedule logger tourny
+      let feed = openLiveFeed logger tourny taggedSink
       // The pairing table and the total the page shows come from these two; the sequential
       // runner sent them and this path never did, so the page sat empty until the first game.
       callback (Update.TotalNumberOfPairs allPairings.Length)
       callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
       callback (Update.StartOfTournament startInfo)
-      emitAll "" (Update.StartOfTournament startInfo)
+      feed.Emit "" (Update.StartOfTournament startInfo)
 
       // Verbose-only diagnostics go to stdout: the console host's logger is silent below Critical.
       let verbose (msg: string) =
@@ -311,7 +347,7 @@ let parallelTournamentRun
       let seedReplay (pair: Pairing) (white: ReferenceGameReplay) (black: ReferenceGameReplay) =
           lock replayLock (fun () ->
               let localDicts = [ pair.White.Name, white; pair.Black.Name, black ] |> Map.ofList
-              prepareGameReplay pair localDicts replayList referencGamesPlayed gamesAlreadyPlayed
+              prepareGameReplay pair localDicts replayList referenceGames gamesAlreadyPlayed
               for kvp in replayDicts.[pair.White.Name] do
                   if not (white.ContainsKey kvp.Key) then white.[kvp.Key] <- kvp.Value
               for kvp in replayDicts.[pair.Black.Name] do
@@ -400,6 +436,7 @@ let parallelTournamentRun
       let initPerGame = not tourny.ConsoleOnly && concurrency = 1
 
       if gamesLeftToPlay.Length = 0 then
+          feed.Dispose()
           return []
       else
           // 1) the pairing queue: plan order, except that with deviation prevention on a pairing
@@ -551,16 +588,16 @@ let parallelTournamentRun
                           let currentBoard = boardAfterOpening pair
                           let sb = StringBuilder()
                           Update.RoundNr pair.RoundNr |> callback
-                          emitAll "" (Update.RoundNr pair.RoundNr)
+                          feed.Emit "" (Update.RoundNr pair.RoundNr)
 
                           let localWhiteDict = ReferenceGameReplay()
                           let localBlackDict = ReferenceGameReplay()
 
                           // Per-game callback: stamp this game's events with its worker slot for the live feed.
                           let gameCallback =
-                              if liveFeedRecorder.IsSome || liveFeedHttpSink.IsSome || taggedSink.IsSome then
+                              if feed.Any then
                                   let gid = string slot
-                                  fun (u: Update) -> emitAll gid u; callback u
+                                  fun (u: Update) -> feed.Emit gid u; callback u
                               else callback
 
                           // The game itself. Pooled engines skip per-game init (see initPerGame);
@@ -664,7 +701,7 @@ let parallelTournamentRun
           // distinct "Completed" state (vs a silently dropped feed). The internal callback's own
           // EndOfTournament fires later in Tournament.fs — after these sinks are disposed — so we
           // tee it here while the recorder/HTTP sinks are still alive. No-op when no feed is set.
-          emitAll "" (Update.EndOfTournament tourny)
+          feed.Emit "" (Update.EndOfTournament tourny)
           // Bounded like every other agent round-trip in the project: if the PGN agent has
           // died, an unbounded PostAndReply hangs the tournament permanently at the point
           // where all games are already played and only the ordered copy is left to write.
@@ -684,8 +721,7 @@ let parallelTournamentRun
               ChessLibrary.PGNWriter.writeRawPgnGamesAdjustedToFile combined games
           return results |> Seq.toList
           finally
-              liveFeedRecorder |> Option.iter (fun r -> r.Dispose())
-              liveFeedHttpSink |> Option.iter (fun s -> s.Dispose())
+              feed.Dispose()
               // Safety net: stop any engine processes still running (no-op if teardown already stopped them)
               for eng in allEngines do
                   try
