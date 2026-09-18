@@ -66,3 +66,25 @@ let ``drain returns every instance that was returned`` () =
     pool.Return a
     pool.Return b
     Assert.Equal<int list>([ 0; 1 ], pool.Drain() |> Array.sort |> Array.toList)
+
+[<Fact>]
+let ``an eviction wakes a borrower waiting on a full pool`` () =
+    let pool = LazyPool<int>(1, fun i -> i)
+    let a = pool.Borrow().Result
+    let waiter = pool.Borrow()
+    Assert.False(waiter.Wait(50))         // full, nothing returned: waits
+    pool.Evict a                          // the borrower of `a` stopped it instead of returning it
+    Assert.True(waiter.Wait(1000), "the waiter must be woken by the freed slot, not wait for a return")
+    Assert.Equal(0, waiter.Result)        // spawned fresh into the freed slot
+    Assert.Equal(1, pool.Spawned)
+
+[<Fact>]
+let ``a return still wakes a waiter`` () =
+    let pool = LazyPool<int>(1, fun i -> i * 10)
+    let a = pool.Borrow().Result
+    let waiter = pool.Borrow()
+    Assert.False(waiter.Wait(50))
+    pool.Return a
+    Assert.True(waiter.Wait(1000))
+    Assert.Equal(a, waiter.Result)
+    Assert.Equal(1, pool.Spawned)

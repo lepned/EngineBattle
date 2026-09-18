@@ -83,6 +83,10 @@ type ReplayGate(plan: Pairing list, enabled: bool, preventFor: string[]) =
     member _.PeekNext() : Pairing option =
         lock sync (fun () -> if pending.Count = 0 then None else Some (fst pending.[0]))
 
+    /// The next `n` pairings in plan order, fewer when fewer are pending.
+    member _.PeekNext(n: int) : Pairing list =
+        lock sync (fun () -> pending |> Seq.truncate (max 0 n) |> Seq.map fst |> List.ofSeq)
+
     /// The game is finished and its moves are merged: free its keys and wake the waiters.
     member _.Release(p: Pairing) =
         lock sync (fun () ->

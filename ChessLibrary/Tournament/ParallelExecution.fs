@@ -64,6 +64,20 @@ let private notPlayed (r: Result) =
 type LazyPool<'T>(capacity: int, spawn: int -> 'T) =
     let available = Channel.CreateUnbounded<'T>()
     let mutable spawned = 0
+    let sync = obj()
+    // Replaced whenever a slot is freed. A borrower captures it BEFORE it looks at the pool,
+    // so a slot freed between its decision to wait and the wait itself still wakes it - the
+    // same no-gap pattern as ReplayGate.released.
+    let mutable slotFreed = TaskCompletionSource<unit>(TaskCreationOptions.RunContinuationsAsynchronously)
+
+    let freeSlot () =
+        Interlocked.Decrement(&spawned) |> ignore
+        let toWake =
+            lock sync (fun () ->
+                let t = slotFreed
+                slotFreed <- TaskCompletionSource<unit>(TaskCreationOptions.RunContinuationsAsynchronously)
+                t)
+        toWake.TrySetResult() |> ignore
 
     // A failed spawn must not keep its slot, or at capacity 1 every later borrow of this
     // pool waits forever for a return that never comes. Plain try/with: inside the task
@@ -71,29 +85,34 @@ type LazyPool<'T>(capacity: int, spawn: int -> 'T) =
     let spawnSlot (slot: int) =
         try spawn (slot - 1)
         with _ ->
-            Interlocked.Decrement(&spawned) |> ignore
+            freeSlot ()
             reraise ()
 
-    member _.Borrow() : Task<'T> = task {
+    /// A returned instance if there is one, else a fresh one while the pool is under capacity,
+    /// else the next instance to be returned - or the next slot to be freed by an eviction,
+    /// after which a fresh one is spawned into it.
+    member this.Borrow() : Task<'T> = task {
+        let freed = lock sync (fun () -> slotFreed.Task)
         match available.Reader.TryRead() with
         | true, item -> return item
         | _ ->
-            // Claim a slot first; if that overshoots, give it back and wait for a return.
+            // Claim a slot first; if that overshoots, give it back and wait.
             let slot = Interlocked.Increment(&spawned)
             if slot <= capacity then
                 return spawnSlot slot
             else
                 Interlocked.Decrement(&spawned) |> ignore
-                return! available.Reader.ReadAsync()
+                let! _ = Task.WhenAny(available.Reader.WaitToReadAsync().AsTask(), freed)
+                // Drain closes the channel; a borrow after that would otherwise spin here.
+                if available.Reader.Completion.IsCompleted then invalidOp "LazyPool: borrow after Drain"
+                return! this.Borrow()
     }
 
     member _.Return(item: 'T) = available.Writer.TryWrite item |> ignore
 
     /// The borrower is not returning this instance: it has been stopped. Frees its slot so a
-    /// later borrow spawns a fresh one. Only while no other borrow is waiting: a waiter decided
-    /// to wait when the pool was full and is not told that a slot opened, so it would wait for
-    /// a return that never comes. The runner evicts only with a single worker.
-    member _.Evict(_item: 'T) = Interlocked.Decrement(&spawned) |> ignore
+    /// later borrow spawns a fresh one, and wakes a borrower waiting on the full pool.
+    member _.Evict(_item: 'T) = freeSlot ()
 
     /// How many instances exist right now (spawned, whether out on loan or returned).
     member _.Spawned = spawned
@@ -522,22 +541,23 @@ let parallelTournamentRun
           }
 
 
-          // After a game: keep the engine in the pool, or stop it. With one board and more than
-          // two engines, an engine that does not play the next game is stopped rather than kept:
-          // the sequential runner this path replaced spawned per pairing and killed after the
-          // game, and keeping every engine of a ten-engine round robin alive - ten networks on
-          // one GPU - is not what anyone signed up for. The engine the next game needs stays, so
-          // the colour-swapped twin costs no respawn. Multi-board runs keep the pool: they need
-          // the instances. (Not a closure inside playOne's finally: the task builder emits a
+          // After a game: keep the engine in the pool, or stop it. An engine that none of the
+          // next games needs is stopped rather than kept: the sequential runner this path
+          // replaced spawned per pairing and killed after the game, and keeping every engine
+          // of a ten-engine round robin alive - ten networks on one GPU, times the number of
+          // boards - is not what anyone signed up for. "The next games" are the next
+          // `concurrency` pairings in plan order: the one game to come on one board, roughly
+          // what the boards pick next on several (under prevention the gate can pick
+          // differently - a respawn, never a hang: an eviction wakes a borrower waiting on the
+          // full pool). The colour-swapped twin costs no respawn. Two engines play every game
+          // and are kept. (Not a closure inside playOne's finally: the task builder emits a
           // finally twice and the compiler rejects the duplicate.)
-          let keepAllEngines = concurrency > 1 || tourny.EngineSetup.Engines.Length <= 2
+          let keepAllEngines = tourny.EngineSetup.Engines.Length <= 2
           let settleEngine (name: string) (eng: ChessEngine) =
-              let playsNext =
+              let neededSoon =
                   keepAllEngines ||
-                  (match gate.PeekNext() with
-                   | Some p -> p.White.Name = name || p.Black.Name = name
-                   | None -> false)
-              if playsNext then enginePools.[name].Return eng
+                  (gate.PeekNext concurrency |> List.exists (fun p -> p.White.Name = name || p.Black.Name = name))
+              if neededSoon then enginePools.[name].Return eng
               else
                   enginePools.[name].Evict eng
                   stopEngine eng

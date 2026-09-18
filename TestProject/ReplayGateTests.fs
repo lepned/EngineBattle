@@ -119,6 +119,15 @@ let ``PeekNext shows the next pairing in plan order without taking it`` () =
     Assert.True((gate.PeekNext()).IsNone)
 
 [<Fact>]
+let ``PeekNext n lists the next n pending pairings, fewer when fewer remain`` () =
+    let a, b, c = pairing "o1" "A" "B", pairing "o2" "C" "D", pairing "o3" "E" "F"
+    let gate = ReplayGate([ a; b; c ], true, null)
+    Assert.Equal<Pairing list>([ a; b ], gate.PeekNext 2)
+    start (gate.TryTake()) |> ignore
+    Assert.Equal<Pairing list>([ b; c ], gate.PeekNext 5)
+    Assert.Empty(gate.PeekNext 0)
+
+[<Fact>]
 let ``Done once everything is taken even while games are still in flight`` () =
     let gate = ReplayGate([ pairing "o1" "A" "B" ], true, null)
     start (gate.TryTake()) |> ignore
