@@ -1298,21 +1298,6 @@ let play
   callback  =
   playGeneric false None None sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
 
-/// Play a game without engine initialization (engines must already be running).
-/// Used by parallel/console execution where engines are pre-initialized.
-let playConsole
-  (sb : StringBuilder)
-  (cts : CancellationTokenSource)
-  (logger : ILogger)
-  (tourny : Tournament)
-  (board : Board)
-  (player1 : ChessEngine)
-  (player2 : ChessEngine)
-  (pairing: Pairing)
-  (tryGetUserAdjudication: unit -> UserAdjudication option)
-  callback  =
-  playGeneric true None None sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
-
 /// Play a game with deviation prevention enabled
 let playDoNotDeviate
   (replayWhite: ReferenceGameReplay)
@@ -1329,19 +1314,3 @@ let playDoNotDeviate
   callback  =
   playGeneric false (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback
 
-/// Play a game with deviation prevention, without engine initialization.
-/// Used by parallel/console execution where engines are pre-initialized.
-let playConsoleDoNotDeviate
-  (replayWhite: ReferenceGameReplay)
-  (replayBlack: ReferenceGameReplay)
-  (sb : StringBuilder)
-  (cts : CancellationTokenSource)
-  (logger : ILogger)
-  (tourny : Tournament)
-  (board : Board)
-  (player1 : ChessEngine)
-  (player2 : ChessEngine)
-  (pairing : Pairing)
-  (tryGetUserAdjudication: unit -> UserAdjudication option)
-  callback  =
-  playGeneric true (Some replayWhite) (Some replayBlack) sb cts logger tourny board player1 player2 pairing tryGetUserAdjudication callback

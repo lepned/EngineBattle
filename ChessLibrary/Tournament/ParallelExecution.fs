@@ -45,6 +45,18 @@ let assignDeviceToConfig (config: EngineConfig) (gpu: int) =
         newOptions.[config.DeviceOption] <- box value
         { config with Options = newOptions }
 
+/// Quit politely, then make sure the process is gone. Never throws: teardown must go on.
+let private stopEngine (eng: ChessEngine) =
+    try eng.Quit() with _ -> ()
+    try eng.StopProcess() with _ -> ()
+
+/// A crashed or aborted game. It carries "1/2-1/2" purely as a placeholder (NotStarted is
+/// Result.Empty from a cancellation race), so it must neither be scored, written to the PGN
+/// nor seed replay state - a written game counts in standings/SPRT and makes Scheduler.Diff
+/// treat the pair as played on resume.
+let private notPlayed (r: Result) =
+    r.Reason = MiscTypes.ResultReason.Cancel || r.Reason = MiscTypes.ResultReason.NotStarted
+
 /// A pool of up to `capacity` instances created on demand by `spawn` (given the instance
 /// index). Returned instances are handed out again before any new one is spawned. Generic so
 /// the slot accounting can be tested without a process behind it; the runner uses it with
@@ -283,10 +295,71 @@ let parallelTournamentRun
       callback (Update.StartOfTournament startInfo)
       emitAll "" (Update.StartOfTournament startInfo)
 
+      // Verbose-only diagnostics go to stdout: the console host's logger is silent below Critical.
+      let verbose (msg: string) =
+          if tourny.VerboseLogging then
+              ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray msg
+
+      // Deviation prevention shares moves between games through replayDicts, one per engine. A
+      // game seeds its own copies before it starts - saved games first, then what earlier games
+      // of this run established - and merges them back only when it has finished, so a game
+      // running alongside it never sees a partial line. Both under one lock.
       let replayList = ResizeArray<GameReplay>()
       let replayDicts =
           [ for eng in tourny.EngineSetup.Engines -> eng.Name, ReferenceGameReplay()] |> Map.ofList
       let replayLock = obj()
+      let seedReplay (pair: Pairing) (white: ReferenceGameReplay) (black: ReferenceGameReplay) =
+          lock replayLock (fun () ->
+              let localDicts = [ pair.White.Name, white; pair.Black.Name, black ] |> Map.ofList
+              prepareGameReplay pair localDicts replayList referencGamesPlayed gamesAlreadyPlayed
+              for kvp in replayDicts.[pair.White.Name] do
+                  if not (white.ContainsKey kvp.Key) then white.[kvp.Key] <- kvp.Value
+              for kvp in replayDicts.[pair.Black.Name] do
+                  if not (black.ContainsKey kvp.Key) then black.[kvp.Key] <- kvp.Value)
+      let mergeReplay (pair: Pairing) (white: ReferenceGameReplay) (black: ReferenceGameReplay) (result: Result) (gameData: PGNTypes.GameMetadata) (moves: ResizeArray<string>) =
+          lock replayLock (fun () ->
+              for kvp in white do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value
+              for kvp in black do replayDicts.[pair.Black.Name].[kvp.Key] <- kvp.Value
+              addToReplayList replayList tourny result gameData moves)
+
+      // The board at the end of the opening: the FEN (or the start position), then the book
+      // moves up to OpeningsPly. EPD books carry no moves. Sets the tournament's FRC flag from
+      // a FEN opening, as before.
+      let boardAfterOpening (pair: Pairing) =
+          let board = Board()
+          let start = if String.IsNullOrEmpty pair.Opening.Fen then Chess.startPos else pair.Opening.Fen
+          board.LoadFen start
+          board.StartPosition <- start
+          if not (String.IsNullOrEmpty pair.Opening.Fen) then tourny.IsChess960 <- board.IsFRC
+          let openingMoves = pair.Opening.Mainline |> Seq.truncate tourny.Opening.OpeningsPly |> Seq.toArray
+          if not epdBook then
+              for m in openingMoves do board.PlayOpeningMove m.San
+          if tourny.VerboseLogging then
+              let line =
+                  openingMoves
+                  |> Seq.map (fun m -> if m.Color = "w" then sprintf "%d. %s" m.MoveNumber m.San else m.San)
+                  |> String.concat " "
+              logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, line)
+              logger.LogDebug("{position}", sprintf "position fen %s moves %s" board.StartPosition (String.concat " " board.UciMovesPlayed))
+          board
+
+      let metadataOf (pair: Pairing) (result: Result) : PGNTypes.GameMetadata =
+          { OpeningHash = pair.OpeningHash
+            Event = tourny.Description
+            Site = tourny.Name
+            Date = DateTime.Now.ToShortDateString()
+            Round = pair.RoundNr
+            White = result.Player1
+            Black = result.Player2
+            Result = result.Result
+            Reason = result.Reason
+            GameTime = result.GameTime
+            Moves = result.Moves
+            Fen = pair.Opening.Fen
+            OpeningName = pair.Opening.GameMetaData.OpeningName
+            Deviations = tourny.DeviationCounter
+            StartEvals = result.OutOfOpeningEvals
+            OtherTags = pair.Opening.GameMetaData.OtherTags }
 
       // The sequential runners reseed the deviation counter from PGN history before every
       // pairing (via searchAndPrepareReplay); the parallel path called the bare
@@ -412,16 +485,13 @@ let parallelTournamentRun
           }
 
 
-          // 4) helper to play one pairing using borrowed engines.
-          // `slot` is the worker/board index — used as the live-feed gameId so the grid shows a
-          // fixed set of boards (one tile per slot), reused as games finish and new ones start.
           // After a game: keep the engine in the pool, or stop it. With one board and more than
           // two engines, an engine that does not play the next game is stopped rather than kept:
           // the sequential runner this path replaced spawned per pairing and killed after the
           // game, and keeping every engine of a ten-engine round robin alive - ten networks on
           // one GPU - is not what anyone signed up for. The engine the next game needs stays, so
           // the colour-swapped twin costs no respawn. Multi-board runs keep the pool: they need
-          // the instances. (Not a closure inside the finally below: the task builder emits a
+          // the instances. (Not a closure inside playOne's finally: the task builder emits a
           // finally twice and the compiler rejects the duplicate.)
           let keepAllEngines = concurrency > 1 || tourny.EngineSetup.Engines.Length <= 2
           let settleEngine (name: string) (eng: ChessEngine) =
@@ -433,8 +503,7 @@ let parallelTournamentRun
               if playsNext then enginePools.[name].Return eng
               else
                   enginePools.[name].Evict eng
-                  try eng.Quit() with _ -> ()
-                  try eng.StopProcess() with _ -> ()
+                  stopEngine eng
                   // Stopped for good: the safety net has nothing to do for it, and a long run
                   // with many engines would otherwise hold every wrapper it ever spawned.
                   lock allEngines (fun () -> allEngines.Remove eng |> ignore)
@@ -454,6 +523,9 @@ let parallelTournamentRun
                   System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
                   return Unchecked.defaultof<ChessEngine> }
 
+          // 4) play one pairing on borrowed engines. `slot` is the worker/board index - the
+          //    live-feed gameId, so the grid shows a fixed set of boards (one tile per slot),
+          //    reused as games finish and new ones start.
           let playOne (slot: int) (pair: Pairing) = task {
               // Borrow engines in sorted name order to prevent ABBA deadlock.
               // With openingsTwice, consecutive pairings swap colors (A-white/B-black then B-white/A-black).
@@ -473,53 +545,10 @@ let parallelTournamentRun
                   if wOk |> not || bOk |> not then
                       logger.LogCritical($"One of the engines is unhealthy, skipping game between {pair.White.Name} and {pair.Black.Name}")
                       Exception("Unhealthy engine detected, potentially skipping game") |> raise
-                  let! (res, pairing) =
+                  let! res =
                       async {
-                          let currentBoard = Board()
-                          match pair with
-                          |_ when String.IsNullOrEmpty pair.Opening.Fen |> not ->
-                              currentBoard.LoadFen(pair.Opening.Fen)
-                              currentBoard.StartPosition <- pair.Opening.Fen
-                              tourny.IsChess960 <- currentBoard.IsFRC
-                          |_ ->
-                            currentBoard.LoadFen Chess.startPos
                           tourny.OpeningName <- PGNHelper.getOpeningInfo pair.Opening
-                          let limit = tourny.Opening.OpeningsPly
-                          let openingMoves = pair.Opening.Mainline |> Seq.truncate(limit)
-                          let completeGame =
-                            openingMoves
-                            |> Seq.mapi(fun i m ->
-                                  if m.Color = "w" then
-                                    sprintf "%d. %s" m.MoveNumber m.San
-                                  else
-                                    sprintf "%s" m.San)
-                            |> String.concat " "
-
-                          if tourny.VerboseLogging then
-                              logger.LogInformation("Opening number {gameNr} - with opening moves {completeGame}", pair.Opening.GameNumber, completeGame)
-
-                          if pair.Opening.Fen = "" then
-                              currentBoard.LoadFen Chess.startPos
-                              currentBoard.StartPosition <- Chess.startPos
-                          else
-                              currentBoard.LoadFen pair.Opening.Fen
-                              currentBoard.StartPosition <- pair.Opening.Fen
-                              tourny.IsChess960 <- currentBoard.IsFRC
-                          let mutable moveIndex = 0
-                          if not epdBook then
-                              for m in openingMoves do
-                                  currentBoard.PlayOpeningMove m.San
-
-                          let posWithMoves =
-                              let fen = currentBoard.StartPosition
-                              let start = $"position fen {fen} moves"
-                              currentBoard.UciMovesPlayed
-                              |> Seq.fold(fun state m -> sprintf "%s %s" state m) start
-
-                          if tourny.VerboseLogging then
-                              logger.LogDebug("{position}", posWithMoves)
-
-
+                          let currentBoard = boardAfterOpening pair
                           let sb = StringBuilder()
                           Update.RoundNr pair.RoundNr |> callback
                           emitAll "" (Update.RoundNr pair.RoundNr)
@@ -534,72 +563,31 @@ let parallelTournamentRun
                                   fun (u: Update) -> emitAll gid u; callback u
                               else callback
 
+                          // The game itself. Pooled engines skip per-game init (see initPerGame);
+                          // with prevention on, each side is held to the moves in its replay copy.
                           let! result =
                               let gametimer = Stopwatch.GetTimestamp()
                               async {
                                   try
-                                      if tourny.PreventMoveDeviation then
-                                          lock replayLock (fun () ->
-                                              let localDicts = [ pair.White.Name, localWhiteDict; pair.Black.Name, localBlackDict ] |> Map.ofList
-                                              prepareGameReplay pair localDicts replayList referencGamesPlayed gamesAlreadyPlayed
-                                              for kvp in replayDicts.[pair.White.Name] do
-                                                  if not (localWhiteDict.ContainsKey kvp.Key) then localWhiteDict[kvp.Key] <- kvp.Value
-                                              for kvp in replayDicts.[pair.Black.Name] do
-                                                  if not (localBlackDict.ContainsKey kvp.Key) then localBlackDict[kvp.Key] <- kvp.Value)
-                                          if initPerGame then
-                                              return! playDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
-                                          else
-                                              return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
-                                      else
-                                          if initPerGame then
-                                              return! play sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
-                                          else
-                                              return! playConsole sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
-
+                                      let replayWhite, replayBlack =
+                                          if tourny.PreventMoveDeviation then
+                                              seedReplay pair localWhiteDict localBlackDict
+                                              Some localWhiteDict, Some localBlackDict
+                                          else None, None
+                                      return! playGeneric (not initPerGame) replayWhite replayBlack sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
                                   with
                                   | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
 
-                          let gameData : PGNTypes.GameMetadata =
-                              {
-                                  OpeningHash = pair.OpeningHash
-                                  Event = tourny.Description
-                                  Site = tourny.Name
-                                  Date = DateTime.Now.ToShortDateString()
-                                  Round = pair.RoundNr
-                                  White = result.Player1
-                                  Black = result.Player2
-                                  Result = result.Result
-                                  Reason = result.Reason
-                                  GameTime = result.GameTime
-                                  Moves = result.Moves
-                                  Fen = pair.Opening.Fen
-                                  OpeningName = pair.Opening.GameMetaData.OpeningName
-                                  Deviations = tourny.DeviationCounter
-                                  StartEvals = result.OutOfOpeningEvals
-                                  OtherTags = pair.Opening.GameMetaData.OtherTags
-                              }
-
-                          // Cancel results (crashed/aborted games) must not seed replay state or
-                          // reach the PGN — a written game counts in standings/SPRT and makes
-                          // Scheduler.Diff treat the pair as played on resume.
-                          // NotStarted is Result.Empty from a cancellation race — not a played game either.
-                          let isCancelled =
-                              result.Reason = MiscTypes.ResultReason.Cancel
-                              || result.Reason = MiscTypes.ResultReason.NotStarted
-                          if tourny.PreventMoveDeviation && not isCancelled then
-                              lock replayLock (fun () ->
-                                  for kvp in localWhiteDict do replayDicts.[pair.White.Name].[kvp.Key] <- kvp.Value
-                                  for kvp in localBlackDict do replayDicts.[pair.Black.Name].[kvp.Key] <- kvp.Value
-                                  addToReplayList replayList tourny result gameData (ResizeArray(currentBoard.UciMovesPlayed)))
-
-                          let moveSection = sb.ToString()
-                          if not isCancelled && not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
-                              pgnAgent.Post (ChessLibrary.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, moveSection, result))
+                          let gameData = metadataOf pair result
+                          if tourny.PreventMoveDeviation && not (notPlayed result) then
+                              mergeReplay pair localWhiteDict localBlackDict result gameData (ResizeArray(currentBoard.UciMovesPlayed))
+                          if not (notPlayed result) && not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
+                              pgnAgent.Post (ChessLibrary.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, sb.ToString(), result))
                           if tourny.VerboseLogging then
                               logger.LogInformation(gameMetadataSummary gameData)
-                          return result, pair
+                          return result
                       } |> Async.StartAsTask
-                  if res.Reason <> MiscTypes.ResultReason.Cancel then
+                  if not (notPlayed res) then
                       results.Add res
 
               finally
@@ -620,20 +608,15 @@ let parallelTournamentRun
                       match gate.TryTake() with
                       | ReplayGate.Done -> keepGoing <- false
                       | ReplayGate.Wait released ->
-                          // Verbose only, on stdout like the replay diagnostics: one line per wake-up
-                          // explains why fewer boards are busy.
-                          if tourny.VerboseLogging then
-                              ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
-                                  (sprintf "Gate: worker %d waits - every pending game repeats one still in flight" i)
+                          // One line per wake-up explains why fewer boards are busy.
+                          verbose (sprintf "Gate: worker %d waits - every pending game repeats one still in flight" i)
                           do! released.WaitAsync(cts.Token)
                       | ReplayGate.Start pair ->
                           try
                               try
                                   // The round label is the one id that is unique per game; the
                                   // console's own G-number is not reliable once games overlap.
-                                  if tourny.VerboseLogging then
-                                      ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
-                                          (sprintf "Gate: worker %d starts round %s: %s vs %s" i pair.RoundNr pair.White.Name pair.Black.Name)
+                                  verbose (sprintf "Gate: worker %d starts round %s: %s vs %s" i pair.RoundNr pair.White.Name pair.Black.Name)
                                   logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
                                   do! playOne i pair
                                   let gc = Interlocked.Increment(&gameCounter)
@@ -648,9 +631,7 @@ let parallelTournamentRun
                               // Released whether the game was played, cancelled or failed: a key
                               // held by a dead game would stall every repeat of it for the run.
                               gate.Release pair
-                              if tourny.VerboseLogging then
-                                  ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
-                                      (sprintf "Gate: worker %d finished round %s" i pair.RoundNr)
+                              verbose (sprintf "Gate: worker %d finished round %s" i pair.RoundNr)
                           // The pause the sequential runner gave the GUI after every game: the final
                           // position stays on the board for DelayBetweenGames before the next game
                           // starts. initEngines also waits this long at the NEXT start, in parallel
@@ -673,10 +654,7 @@ let parallelTournamentRun
 
           // 7) teardown
           for KeyValue(e, pool) in enginePools do
-              pool.Drain()
-              |> Array.Parallel.iter (fun eng ->
-                  try eng.Quit() with _ -> ()
-                  try eng.StopProcess() with _ -> ())
+              pool.Drain() |> Array.Parallel.iter stopEngine
               printfn $"Engine {e} stopped"
 
           // 8) collect results
@@ -711,8 +689,6 @@ let parallelTournamentRun
               // Safety net: stop any engine processes still running (no-op if teardown already stopped them)
               for eng in allEngines do
                   try
-                      if not (eng.HasExited()) then
-                          try eng.Quit() with _ -> ()
-                          try eng.StopProcess() with _ -> ()
+                      if not (eng.HasExited()) then stopEngine eng
                   with _ -> ()
   }
