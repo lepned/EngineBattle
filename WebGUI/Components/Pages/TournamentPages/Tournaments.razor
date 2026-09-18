@@ -2119,9 +2119,13 @@
 				if (runner != null)
 					runner.Pairings = list.Pairings;
 				pairings = list.Pairings;
+				// Both arrive before the first game starts; render them, or the page shows
+				// nothing until StartOfGame - which waits for the engines to come up.
+				await InvokeAsync(StateHasChanged);
 				break;
 			case TournamentTypes.Update.TotalNumberOfPairs games:
 				totalNumberOfPairs = games.PairingsNumber;
+				await InvokeAsync(StateHasChanged);
 				break;
 			case TournamentTypes.Update.RoundNr data:
 				roundNr = data.Round;

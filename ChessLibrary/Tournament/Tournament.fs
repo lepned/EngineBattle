@@ -153,10 +153,10 @@ module Manager =
       lastLoadError <- msg
       Tournament.Empty
   
-  /// RR/Gauntlet are the only modes the parallel runner actually plays in parallel
-  /// (unknown modes fall back to RR, matching the sequential dispatch below).
-  /// Cup/Swiss/Ladder must stay on the sequential runners when started from the GUI:
-  /// routing them through parallelTournamentRun would drop user adjudication and cup resume.
+  /// RR and Gauntlet (and unknown modes, which fall back to RR) run on the worker-based
+  /// runner at ANY parallelism - one worker is the sequential case, and it keeps user
+  /// adjudication. Cup, Swiss and Ladder have their own stateful runners and stay sequential:
+  /// routing them through parallelTournamentRun would drop cup resume.
   let isParallelCapableMode (tournament: Tournament) =
     let mode =
       if String.IsNullOrWhiteSpace tournament.TournamentMode then ""
@@ -177,13 +177,13 @@ module Manager =
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()
-      let useParallel =
-        consoleMode ||
-        (tournament.TestOptions.NumberOfGamesInParallel > 1 && isParallelCapableMode tournament)
+      // RR/Gauntlet always take the worker runner (one worker when NumberOfGamesInParallel is
+      // 1); it used to have a sequential twin, and a fix applied to one of them missed the
+      // other. The stateful modes keep their own runners.
+      let useParallel = consoleMode || isParallelCapableMode tournament
       let tourny =
-        //let nodeLimit = tournament.EngineSetup.Engines |> List.map(fun e -> tournament.FindTimeControl e.TimeControlID) |> List.forall(fun e -> e.NodeLimit)
         if useParallel then
-          ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink cts pgnAgent
+          ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
         else
           let mode =
             if String.IsNullOrWhiteSpace tournament.TournamentMode then "RR"
@@ -195,8 +195,6 @@ module Manager =
             | s when s.Equals("random", StringComparison.OrdinalIgnoreCase) -> PairingHelper.CupSeedingStrategy.Random
             | _ -> PairingHelper.CupSeedingStrategy.ByRating
           match modeNormalized with
-          | "gauntlet" ->
-              TournamentRunners.gauntlet logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "cup" ->
               let resumeRequested = consumeCupResumeRequested ()
               TournamentRunners.cup seeding tournament.CupOptions.UniquePerMatchOnly resumeRequested logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
@@ -204,8 +202,9 @@ module Manager =
               TournamentRunners.swiss logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
           | "ladder" ->
               TournamentRunners.ladder logger tournament sendResponse cts tryGetUserAdjudication pgnAgent
-          | "rr" | "roundrobin" | "round-robin" | _ ->
-              TournamentRunners.roundRobin logger tournament sendResponse cts tryGetUserAdjudication pgnAgent            
+          | _ ->
+              // Not reachable: every other mode is parallel-capable and took the branch above.
+              ParallelExecution.parallelTournamentRun logger tournament sendResponse taggedSink tryGetUserAdjudication cts pgnAgent
       
       let mutable validationPassed = true
       //check for value head tests

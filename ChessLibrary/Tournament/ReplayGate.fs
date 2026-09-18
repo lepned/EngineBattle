@@ -77,6 +77,12 @@ type ReplayGate(plan: Pairing list, enabled: bool, preventFor: string[]) =
                     Start p
                 | None -> Wait released.Task)
 
+    /// The pairing that would be handed out next in plan order, if any - what the runner uses
+    /// to decide which engines are worth keeping alive between games. Ignores conflicts: with
+    /// prevention on the actual next pick can differ, which costs a respawn, never correctness.
+    member _.PeekNext() : Pairing option =
+        lock sync (fun () -> if pending.Count = 0 then None else Some (fst pending.[0]))
+
     /// The game is finished and its moves are merged: free its keys and wake the waiters.
     member _.Release(p: Pairing) =
         lock sync (fun () ->

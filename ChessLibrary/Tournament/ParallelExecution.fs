@@ -45,11 +45,62 @@ let assignDeviceToConfig (config: EngineConfig) (gpu: int) =
         newOptions.[config.DeviceOption] <- box value
         { config with Options = newOptions }
 
+/// A pool of up to `capacity` instances created on demand by `spawn` (given the instance
+/// index). Returned instances are handed out again before any new one is spawned. Generic so
+/// the slot accounting can be tested without a process behind it; the runner uses it with
+/// ChessEngine.
+type LazyPool<'T>(capacity: int, spawn: int -> 'T) =
+    let available = Channel.CreateUnbounded<'T>()
+    let mutable spawned = 0
+
+    // A failed spawn must not keep its slot, or at capacity 1 every later borrow of this
+    // pool waits forever for a return that never comes. Plain try/with: inside the task
+    // builder a handler cannot re-raise.
+    let spawnSlot (slot: int) =
+        try spawn (slot - 1)
+        with _ ->
+            Interlocked.Decrement(&spawned) |> ignore
+            reraise ()
+
+    member _.Borrow() : Task<'T> = task {
+        match available.Reader.TryRead() with
+        | true, item -> return item
+        | _ ->
+            // Claim a slot first; if that overshoots, give it back and wait for a return.
+            let slot = Interlocked.Increment(&spawned)
+            if slot <= capacity then
+                return spawnSlot slot
+            else
+                Interlocked.Decrement(&spawned) |> ignore
+                return! available.Reader.ReadAsync()
+    }
+
+    member _.Return(item: 'T) = available.Writer.TryWrite item |> ignore
+
+    /// The borrower is not returning this instance: it has been stopped. Frees its slot so a
+    /// later borrow spawns a fresh one. Only while no other borrow is waiting: a waiter decided
+    /// to wait when the pool was full and is not told that a slot opened, so it would wait for
+    /// a return that never comes. The runner evicts only with a single worker.
+    member _.Evict(_item: 'T) = Interlocked.Decrement(&spawned) |> ignore
+
+    /// How many instances exist right now (spawned, whether out on loan or returned).
+    member _.Spawned = spawned
+
+    /// Every instance that was returned, for teardown. Never called while borrows are live.
+    member _.Drain() : 'T[] =
+        available.Writer.Complete()
+        [| let mutable go = true
+           while go do
+               match available.Reader.TryRead() with
+               | true, item -> yield item
+               | _ -> go <- false |]
+
 let parallelTournamentRun
   (logger: ILogger)
   (tourny: Tournament)
   (callback: Update -> unit)
   (taggedSink: (string -> Update -> unit) option)
+  (tryGetUserAdjudication: unit -> UserAdjudication option)
   (cts: CancellationTokenSource)
   (externalPgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
   // Ladder, Cup, and Swiss manage their own pairings — dispatch directly
@@ -57,16 +108,16 @@ let parallelTournamentRun
   ChessLibrary.Engine.resetPrintedEngines()
   match mode with
   | "ladder" ->
-      TournamentRunners.ladder logger tourny callback cts (fun () -> None) externalPgnAgent
+      TournamentRunners.ladder logger tourny callback cts tryGetUserAdjudication externalPgnAgent
   | "cup" ->
       let seeding =
         match tourny.CupOptions.SeedingStrategy with
         | null -> TournamentPairing.PairingHelper.CupSeedingStrategy.ByRating
         | s when s.Equals("random", StringComparison.OrdinalIgnoreCase) -> TournamentPairing.PairingHelper.CupSeedingStrategy.Random
         | _ -> TournamentPairing.PairingHelper.CupSeedingStrategy.ByRating
-      TournamentRunners.cup seeding tourny.CupOptions.UniquePerMatchOnly false logger tourny callback cts (fun () -> None) externalPgnAgent
+      TournamentRunners.cup seeding tourny.CupOptions.UniquePerMatchOnly false logger tourny callback cts tryGetUserAdjudication externalPgnAgent
   | "swiss" ->
-      TournamentRunners.swiss logger tourny callback cts (fun () -> None) externalPgnAgent
+      TournamentRunners.swiss logger tourny callback cts tryGetUserAdjudication externalPgnAgent
   | _ ->
   async {
 
@@ -225,6 +276,10 @@ let parallelTournamentRun
       let emitAll (gid: string) (u: Update) =
           emitFeed gid u
           taggedSink |> Option.iter (fun s -> s gid u)
+      // The pairing table and the total the page shows come from these two; the sequential
+      // runner sent them and this path never did, so the page sat empty until the first game.
+      callback (Update.TotalNumberOfPairs allPairings.Length)
+      callback (Update.PairingList (ResizeArray<Pairing>(gamesLeftToPlay)))
       callback (Update.StartOfTournament startInfo)
       emitAll "" (Update.StartOfTournament startInfo)
 
@@ -257,6 +312,20 @@ let parallelTournamentRun
                   memBased
           max 1 gpuBased
 
+      // A user can adjudicate "the" running game only when there is exactly one; with several
+      // boards the request has no single target, so it is answered with None.
+      let adjudicate = if concurrency = 1 then tryGetUserAdjudication else (fun () -> None)
+      // Standings refresh. Console: every 10 games as before - each refresh re-reads the PGN
+      // and runs Ordo there, and the tuner's SPRT check hangs off it. GUI: every 2 games with
+      // one board, what the sequential runner it replaces did, and every `concurrency` above.
+      let periodicEvery = if tourny.ConsoleOnly then 10 else max 2 concurrency
+      // Per-game engine initialisation (ucinewgame + readyok, and the GUI's opening delay) is
+      // what the sequential runner this replaces did for the GUI. Pooled engines in the console
+      // and in multi-board runs skip it on purpose - Ceres and Lc0 spend ~10 s on readyok, see
+      // playGeneric - so the choice keeps every mode exactly as it was: only the GUI with one
+      // board initialises per game.
+      let initPerGame = not tourny.ConsoleOnly && concurrency = 1
+
       if gamesLeftToPlay.Length = 0 then
           return []
       else
@@ -271,33 +340,33 @@ let parallelTournamentRun
 
           try // safety net: ensure engine processes are killed even if async fails before teardown
 
-          // 2) build one engine‐pool channel per engine‐name, capacity = parallelism.
-          // Built inside the safety net: a createEngine/initEngine failure mid-pool must
-          // not leak the engines already spawned. Each engine is registered before init
-          // so an init failure still gets it killed by the finally below.
+          // 2) one engine pool per engine name, capacity = parallelism. Instances are spawned on
+          //    the first borrow, not up front: a run starts as soon as the first game's two
+          //    engines are ready instead of after every instance of every name has started and
+          //    answered readyok - with several Ceres or Lc0 engines that was minutes before the
+          //    first move, and the sequential runner this path replaced for the GUI only ever
+          //    started the two engines about to play. Each engine is registered in allEngines
+          //    before init, so an init failure still gets it killed by the finally below.
+          let spawnEngine (e: EngineConfig) (i: int) =
+              let cfg =
+                  if gpus <> null && gpus.Length > 0 then
+                      let gpu = gpus.[i % gpus.Length]
+                      logger.LogInformation($"Engine pool {e.Name} instance {i}: assigning GPU {gpu}")
+                      assignDeviceToConfig e gpu
+                  else e
+              let eng = EngineHelper.createEngine (cfg, Some logger)
+              lock allEngines (fun () -> allEngines.Add(eng))
+              // Pooled engines that skip per-game init must be initialised here. When the game
+              // initialises its own engines (GUI, one board) it must NOT happen here: the game
+              // sends StartOfGame before it initialises, so the board shows the pairing while
+              // Ceres or Lc0 spend their seconds on readyok - initialising at spawn moved that
+              // wait in front of the first thing the page could show.
+              if not initPerGame then EngineHelper.initEngine 0 eng
+              eng
           let enginePools =
               tourny.EngineSetup.Engines
-              |> List.toArray
-              |> Array.Parallel.map (fun e ->
-                  let ch = Channel.CreateBounded<ChessEngine>(concurrency)
-                  // pre-spawn p instances
-                  let engines =
-                      [| 0..concurrency - 1 |]
-                      |> Array.Parallel.map (fun i ->
-                          let cfg =
-                            if gpus <> null && gpus.Length > 0 then
-                              let gpu = gpus.[i % gpus.Length]
-                              logger.LogInformation($"Engine pool {e.Name} instance {i}: assigning GPU {gpu}")
-                              assignDeviceToConfig e gpu
-                            else e
-                          let eng = EngineHelper.createEngine (cfg, Some logger)
-                          lock allEngines (fun () -> allEngines.Add(eng))
-                          EngineHelper.initEngine 0 eng
-                          ch.Writer.TryWrite(eng) |> ignore
-                          eng.Name, ch )
-                  engines )
-              |> Array.concat
-              |> Map.ofArray
+              |> List.map (fun e -> e.Name, LazyPool<ChessEngine>(concurrency, spawnEngine e))
+              |> Map.ofList
 
           // 3) PGN agent: use external if provided, else create local
           let pgnAgent, ownsAgent =
@@ -346,6 +415,45 @@ let parallelTournamentRun
           // 4) helper to play one pairing using borrowed engines.
           // `slot` is the worker/board index — used as the live-feed gameId so the grid shows a
           // fixed set of boards (one tile per slot), reused as games finish and new ones start.
+          // After a game: keep the engine in the pool, or stop it. With one board and more than
+          // two engines, an engine that does not play the next game is stopped rather than kept:
+          // the sequential runner this path replaced spawned per pairing and killed after the
+          // game, and keeping every engine of a ten-engine round robin alive - ten networks on
+          // one GPU - is not what anyone signed up for. The engine the next game needs stays, so
+          // the colour-swapped twin costs no respawn. Multi-board runs keep the pool: they need
+          // the instances. (Not a closure inside the finally below: the task builder emits a
+          // finally twice and the compiler rejects the duplicate.)
+          let keepAllEngines = concurrency > 1 || tourny.EngineSetup.Engines.Length <= 2
+          let settleEngine (name: string) (eng: ChessEngine) =
+              let playsNext =
+                  keepAllEngines ||
+                  (match gate.PeekNext() with
+                   | Some p -> p.White.Name = name || p.Black.Name = name
+                   | None -> false)
+              if playsNext then enginePools.[name].Return eng
+              else
+                  enginePools.[name].Evict eng
+                  try eng.Quit() with _ -> ()
+                  try eng.StopProcess() with _ -> ()
+                  // Stopped for good: the safety net has nothing to do for it, and a long run
+                  // with many engines would otherwise hold every wrapper it ever spawned.
+                  lock allEngines (fun () -> allEngines.Remove eng |> ignore)
+
+          // Pools spawn on borrow, so a borrow can fail - a binary that is missing or dies at
+          // start - with the pairing's other engine already out. Give that one back (with one
+          // board a leaked engine hangs every later game it is in) and stop the run: an engine
+          // that cannot start ended the run before the pools were lazy, and a run that quietly
+          // plays on without it is worse. The logger is not visible in the console, so stdout.
+          let borrowEngine (name: string) (giveBack: unit -> unit) = task {
+              try return! enginePools.[name].Borrow()
+              with ex ->
+                  giveBack ()
+                  ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
+                      (sprintf "Engine %s failed to start: %s - stopping the tournament" name ex.Message)
+                  cts.Cancel()
+                  System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                  return Unchecked.defaultof<ChessEngine> }
+
           let playOne (slot: int) (pair: Pairing) = task {
               // Borrow engines in sorted name order to prevent ABBA deadlock.
               // With openingsTwice, consecutive pairings swap colors (A-white/B-black then B-white/A-black).
@@ -354,8 +462,8 @@ let parallelTournamentRun
                   if String.Compare(pair.White.Name, pair.Black.Name, StringComparison.Ordinal) <= 0
                   then pair.White.Name, pair.Black.Name
                   else pair.Black.Name, pair.White.Name
-              let! firstEng = enginePools.[firstName].Reader.ReadAsync()
-              let! secondEng = enginePools.[secondName].Reader.ReadAsync()
+              let! firstEng = borrowEngine firstName ignore
+              let! secondEng = borrowEngine secondName (fun () -> enginePools.[firstName].Return firstEng)
               let wEng, bEng =
                   if firstName = pair.White.Name then firstEng, secondEng
                   else secondEng, firstEng
@@ -438,9 +546,15 @@ let parallelTournamentRun
                                                   if not (localWhiteDict.ContainsKey kvp.Key) then localWhiteDict[kvp.Key] <- kvp.Value
                                               for kvp in replayDicts.[pair.Black.Name] do
                                                   if not (localBlackDict.ContainsKey kvp.Key) then localBlackDict[kvp.Key] <- kvp.Value)
-                                          return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) gameCallback
+                                          if initPerGame then
+                                              return! playDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
+                                          else
+                                              return! playConsoleDoNotDeviate localWhiteDict localBlackDict sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
                                       else
-                                          return! playConsole sb cts logger tourny currentBoard wEng bEng pair (fun () -> None) gameCallback
+                                          if initPerGame then
+                                              return! play sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
+                                          else
+                                              return! playConsole sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
 
                                   with
                                   | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
@@ -489,10 +603,8 @@ let parallelTournamentRun
                       results.Add res
 
               finally
-                  if not (enginePools.[pair.White.Name].Writer.TryWrite(wEng)) then
-                      logger.LogError("Failed to return engine {Engine} to pool", wEng.Name)
-                  if not (enginePools.[pair.Black.Name].Writer.TryWrite(bEng)) then
-                      logger.LogError("Failed to return engine {Engine} to pool", bEng.Name)
+                  settleEngine pair.White.Name wEng
+                  settleEngine pair.Black.Name bEng
               }
 
           // 5) worker loop: task CE with proper cancellation
@@ -501,6 +613,10 @@ let parallelTournamentRun
               try
                   let mutable keepGoing = true
                   while keepGoing do
+                      // The channel this loop replaced threw out of WaitToReadAsync(cts.Token) the
+                      // moment the run was cancelled; the gate has no token, so ask before taking
+                      // the next pairing, or a cancelled run marches through the rest of the plan.
+                      if cts.IsCancellationRequested then keepGoing <- false else
                       match gate.TryTake() with
                       | ReplayGate.Done -> keepGoing <- false
                       | ReplayGate.Wait released ->
@@ -521,7 +637,7 @@ let parallelTournamentRun
                                   logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
                                   do! playOne i pair
                                   let gc = Interlocked.Increment(&gameCounter)
-                                  if gc % 10 = 0 then
+                                  if gc % periodicEvery = 0 then
                                       let res = ResizeArray<Result>(results)
                                       callback (Update.PeriodicResults res)
                               with ex ->
@@ -535,6 +651,14 @@ let parallelTournamentRun
                               if tourny.VerboseLogging then
                                   ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
                                       (sprintf "Gate: worker %d finished round %s" i pair.RoundNr)
+                          // The pause the sequential runner gave the GUI after every game: the final
+                          // position stays on the board for DelayBetweenGames before the next game
+                          // starts. initEngines also waits this long at the NEXT start, in parallel
+                          // with readyok, which is what the old runner did too - but that wait is
+                          // invisible, the board has already moved on. The console sets it to zero.
+                          // After Release, so a repeat of this key is not held for the pause as well.
+                          if tourny.DelayBetweenGames > TimeSpan.Zero && not cts.IsCancellationRequested then
+                              do! Task.Delay(tourny.DelayBetweenGames, cts.Token)
               with
               | :? OperationCanceledException -> ()
               | :? AggregateException as ae
@@ -548,14 +672,11 @@ let parallelTournamentRun
               |> Async.AwaitTask
 
           // 7) teardown
-          for KeyValue(e, ch) in enginePools do
-              ch.Writer.Complete()
-              let _ =
-                  [|1.. ch.Reader.Count|]
-                  |> Array.Parallel.map (fun _ ->
-                      let eng = enginePools.[e].Reader.ReadAsync().AsTask().Result
-                      try eng.Quit() with _ -> ()
-                      try eng.StopProcess() with _ -> ())
+          for KeyValue(e, pool) in enginePools do
+              pool.Drain()
+              |> Array.Parallel.iter (fun eng ->
+                  try eng.Quit() with _ -> ()
+                  try eng.StopProcess() with _ -> ())
               printfn $"Engine {e} stopped"
 
           // 8) collect results

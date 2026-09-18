@@ -109,6 +109,16 @@ let ``PreventMoveDeviationFor narrows the keys to the listed engines`` () =
     Assert.True(isWait (gate.TryTake()))   // D-B: B as Black is in flight
 
 [<Fact>]
+let ``PeekNext shows the next pairing in plan order without taking it`` () =
+    let a, b = pairing "o1" "A" "B", pairing "o2" "C" "D"
+    let gate = ReplayGate([ a; b ], true, null)
+    Assert.Same(a, (gate.PeekNext()).Value)
+    start (gate.TryTake()) |> ignore
+    Assert.Same(b, (gate.PeekNext()).Value)
+    start (gate.TryTake()) |> ignore
+    Assert.True((gate.PeekNext()).IsNone)
+
+[<Fact>]
 let ``Done once everything is taken even while games are still in flight`` () =
     let gate = ReplayGate([ pairing "o1" "A" "B" ], true, null)
     start (gate.TryTake()) |> ignore
