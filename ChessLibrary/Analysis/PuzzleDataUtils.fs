@@ -141,6 +141,8 @@ let ensureOutputFolder (folder: string) : OutputFolderStatus =
         with ex ->
             Failed(raw, ex.Message)
 
+/// The puzzles of one (theme, rating group): the `sampleSize` highest rated at or below the
+/// group, file order breaking ties, with their positions prepared.
 let sortPuzzleData (theme:string) ratingGroup input =
       let byTheme =
           if String.IsNullOrWhiteSpace theme then
@@ -154,3 +156,14 @@ let sortPuzzleData (theme:string) ratingGroup input =
       |> Array.sortByDescending (fun e -> e.Rating)
       |> Array.truncate input.sampleSize
       |> Array.map getUpdatedRecord
+
+/// Every (theme, rating group) sample of a run, drawn once up front so the runner can let
+/// the database go. A group listed twice in the config ("2500, 2500") is drawn once and
+/// looked up twice - the run loop still visits it twice, as it always did.
+let drawSamples (themes: string[]) (ratings: int[]) input =
+    let samples = Collections.Generic.Dictionary<string * int, CsvPuzzleData[]>()
+    for theme in themes do
+        for rating in ratings do
+            if not (samples.ContainsKey((theme, rating))) then
+                samples.[(theme, rating)] <- sortPuzzleData theme rating input
+    samples

@@ -214,3 +214,46 @@ let ``a value agent whose engine cannot start answers Ok=false instead of hangin
     Assert.False ok
     Assert.True((agentDeath agent).IsSome)
     agent.PostAndAsyncReply((fun ch -> EngineMsg.Quit ch), timeout = 30000) |> Async.RunSynchronously
+
+// ---------------------------------------------------------------------------
+// Memory: the two low-cardinality columns are shared across rows
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``parsePuzzle shares equal Themes and OpeningTags strings between rows`` () =
+    let path = Path.Combine(Path.GetTempPath(), sprintf "eb_intern_%s.csv" (Guid.NewGuid().ToString "N"))
+    let fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+    let line id themes tags = sprintf "%s,%s,f1b5 a7a6,1500,80,90,1000,%s,https://lichess.org/%s,%s" id fen themes id tags
+    File.WriteAllLines(
+        path,
+        [| "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags"
+           line "a" "opening short" "Ruy"; line "b" "opening short" "Ruy"; line "c" "endgame" "Ruy" |])
+    try
+        let p = JSONParser.parsePuzzle path false
+        Assert.Same(p.[0].Themes, p.[1].Themes)
+        Assert.NotSame(p.[0].Themes, p.[2].Themes)
+        Assert.Same(p.[0].OpeningTags, p.[2].OpeningTags)
+        // Per-row columns are not shared, whatever their content.
+        Assert.NotSame(p.[0].Fen, p.[1].Fen)
+        Assert.Equal("endgame", p.[2].Themes)
+    finally
+        File.Delete path
+
+[<Fact>]
+let ``drawSamples tolerates a theme or rating group listed twice`` () =
+    let fen = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+    let row id rating themes =
+        CsvPuzzleData.Create(id, fen, "f1b5 a7a6", rating, 80, 90, 1000, themes, "", "", "", [], [], 0)
+    let db = [| row "a" 2600 "opening"; row "b" 2400 "endgame"; row "c" 2500 "opening"; row "d" 2500 "endgame" |]
+    let input =
+        TypesDef.PuzzleInput.PuzzleInput.Create(
+            db, 3000, 0, "2500, 2500", "opening, opening", ResizeArray(), 1, 2, "", 0, 0, 1)
+    let themes = PuzzleDataUtils.parseThemes input.puzzleFilter
+    let ratings = PuzzleDataUtils.parseRatingGroups input.ratingGroups input.maxRating
+    Assert.Equal(2, themes.Length)
+    Assert.Equal(2, ratings.Length)
+    let samples = PuzzleDataUtils.drawSamples themes ratings input   // must not throw on the duplicates
+    Assert.Equal(1, samples.Count)
+    let expected = PuzzleDataUtils.sortPuzzleData "opening" 2500 input |> Array.map (fun p -> p.PuzzleId)
+    Assert.Equal<string[]>([| "c" |], expected)   // 2600 is above the group; one "opening" puzzle at or below
+    Assert.Equal<string[]>(expected, samples.[("opening", 2500)] |> Array.map (fun p -> p.PuzzleId))

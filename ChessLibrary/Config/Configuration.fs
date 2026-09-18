@@ -726,7 +726,22 @@ module JSONParser =
             printfn "Puzzle ids rewritten: %d blank -> row<N>, %d repeated -> id#N (ids must be unique for theme and paired scoring)" blank repeated
         records
 
+    /// The whole Lichess database as records. Five million rows cost ~2.8 GB of heap as
+    /// plain strings; this keeps it as low as the record layout allows:
+    /// - the file is streamed, not ReadAllLines'd: that array alone was ~1.8 GB of UTF-16
+    ///   live at the same time as the records, and the peak is what the machine has to have;
+    /// - Themes and OpeningTags are interned per load - 55k and 1.4k distinct values over
+    ///   5M rows, ~650 MB of duplicates otherwise. Per load, not String.Intern: that table
+    ///   is process-wide and never shrinks.
+    /// The other columns are unique per row and cannot be shared. A run only needs a few
+    /// thousand of these records; PuzzleEngineAgent.runTest drops the rest once it has drawn
+    /// its samples.
     let parsePuzzle (filePath: string) (random: bool) : CsvPuzzleData[] =
+        let intern = Collections.Generic.Dictionary<string, string>()
+        let shared (s: string) =
+            match intern.TryGetValue s with
+            | true, existing -> existing
+            | _ -> intern.[s] <- s; s
         let parseLine (line: string) =
             let fields = line.Split(',')
             // The Lichess id verbatim - see CsvPuzzleData.PuzzleId for why this is not a hash.
@@ -737,9 +752,9 @@ module JSONParser =
             let ratingDeviation = int fields.[4]
             let popularity      = int fields.[5]
             let nbPlays         = int fields.[6]
-            let themes          = fields.[7]
+            let themes          = shared fields.[7]
             let gameUrl         = fields.[8]
-            let openingTags     = fields.[9]
+            let openingTags     = shared fields.[9]
 
             CsvPuzzleData.Create(
               puzzleId, fen, moves, rating, ratingDeviation,
@@ -748,44 +763,16 @@ module JSONParser =
             )
 
         let records =
-          File.ReadAllLines(filePath)
-          |> Array.skip 1
-          |> Array.map parseLine
+          File.ReadLines(filePath)
+          |> Seq.skip 1
+          |> Seq.map parseLine
+          |> Seq.toArray
           |> ensureUniquePuzzleIds
 
         if random then
             System.Random.Shared.Shuffle(records)
 
         records
-
-    let parsePuzzleInParallel (filePath: string) (random: bool) : CsvPuzzleData[] =
-        let lines = File.ReadAllLines(filePath) |> Array.skip 1
-
-        let recordsArray =
-            lines
-            |> Array.Parallel.map (fun line ->
-                let fields = line.Split(',')
-                CsvPuzzleData.Create(
-                    fields.[0].Trim(),
-                    fields.[1],
-                    fields.[2],
-                    int fields.[3],
-                    int fields.[4],
-                    int fields.[5],
-                    int fields.[6],
-                    fields.[7],
-                    fields.[8],
-                    fields.[9],
-                    "",
-                    emptyPositions,
-                    emptyFens,
-                    0 ))
-            |> ensureUniquePuzzleIds
-
-        if random then
-            System.Random.Shared.Shuffle(recordsArray)
-
-        recordsArray
 
     let normalizePath (path: string) =
       if String.IsNullOrEmpty path then
@@ -810,6 +797,24 @@ module JSONParser =
             JsonSerializer.Deserialize<PuzzleTypes.EngineListConfig>(json, options)
         else
             failwithf "File not found: %s" filePath
+
+    /// A PuzzleInput over the database in `puzzleFile` - the way to build one for a run.
+    /// The runner empties `puzzleData` once its samples are drawn (see PuzzleInput), but
+    /// that only frees the database if nothing else holds the array. A caller that writes
+    /// `Create(parsePuzzle path, ...)` does: the tier-0 JIT reports every local of a method
+    /// live until the method returns, the array lands in a temp of the method that then runs
+    /// the whole sweep, and 2.2 GB stayed in the working set for the run (measured). Here the
+    /// array lives in this frame only, and NoInlining keeps it that way.
+    [<System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)>]
+    let loadPuzzleInput
+        (puzzleFile: string, maxRating: int, minRating: int, ratingGroups: string, puzzleFilter: string,
+         engines: ResizeArray<EngineConfig * int>, iterations: int, sampleSize: int, nodes: string,
+         failed: int, solved: int, concurrency: int, includeFailedPuzzles: bool, scoreAllPositions: bool)
+        : TypesDef.PuzzleInput.PuzzleInput =
+        TypesDef.PuzzleInput.PuzzleInput.Create(
+            parsePuzzle puzzleFile false, maxRating, minRating, ratingGroups, puzzleFilter,
+            engines, iterations, sampleSize, nodes, failed, solved, concurrency,
+            includeFailedPuzzles, scoreAllPositions)
 
     let loadPuzzleConfig (filePath: string) : PuzzleTypes.PuzzleConfig =
         let options = new JsonSerializerOptions(AllowTrailingCommas = true)

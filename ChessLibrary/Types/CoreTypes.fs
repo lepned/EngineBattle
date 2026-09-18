@@ -1018,7 +1018,12 @@ module TypesDef =
     open PuzzleTypes
 
     type PuzzleInput =
-      { puzzleData: CsvPuzzleData array
+      { /// The whole puzzle database on entry. Mutable for one reason: the runner draws its
+        /// samples from it up front and then sets it to empty, so the ~2.8 GB of records a
+        /// full Lichess database costs are collectable during the run instead of parked
+        /// behind the caller's reference for its whole duration. The array itself is never
+        /// cleared - the tuner keeps its own and rebuilds this record per evaluation.
+        mutable puzzleData: CsvPuzzleData array
         maxRating: int
         minRating: int
         ratingGroups: string

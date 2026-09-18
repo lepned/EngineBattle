@@ -1913,13 +1913,11 @@ module Program =
         |> Seq.collect (mapToEngPuzzleConfig data.EngineFolder)
         |> ResizeArray
 
-    let puzzles = parsePuzzle normalizedPath false
-    let formattedLength = puzzles.Length.ToString("N0")
-    printfn $"Loaded {formattedLength} puzzles from {normalizedPath}"
-
+    // The record is the only holder of the database, so the runner can release it once the
+    // samples are drawn (see JSONParser.loadPuzzleInput for why it is not built here).
     let puzzleInput =
-        TypesDef.PuzzleInput.PuzzleInput.Create(
-            puzzles,
+        loadPuzzleInput(
+            normalizedPath,
             data.MaxRating,
             data.MinRating,
             data.RatingGroups,
@@ -1933,6 +1931,9 @@ module Program =
             data.Concurrency,
             data.IncludeFailedPuzzles,
             data.ScoreAllPositions )
+    // Only the count outlives the run: the runner empties puzzleData once it has its samples.
+    let puzzleDbCount = puzzleInput.puzzleData.Length
+    printfn $"Loaded {puzzleDbCount:N0} puzzles from {normalizedPath}"
 
     // Engine failures (refused net, crash mid-sweep) arrive here as LichessError; counted so
     // the exit code below can say the run is incomplete.
@@ -2239,7 +2240,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
             PuzzleJsonOutput.buildResultWithPaired
                 pairedOutcome
                 normalizedPath
-                puzzles.Length
+                puzzleDbCount
                 data.SampleSize
                 data.MinRating
                 data.MaxRating
@@ -2271,7 +2272,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                 PuzzleJsonOutput.buildResultWithPaired
                     pairedOutcome
                     normalizedPath
-                    puzzles.Length
+                    puzzleDbCount
                     data.SampleSize
                     data.MinRating
                     data.MaxRating
