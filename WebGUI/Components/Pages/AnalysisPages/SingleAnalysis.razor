@@ -335,7 +335,6 @@
     EngineConfig Engine;
     private int? frcPositionId = null;
     private int? frcInput = null;
-    private List<string> uciInfo = new();
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private EnginePanel analysisWithEngine;
     private bool showOverlayControls = false;
@@ -869,13 +868,23 @@
         return (string)result.Data!;
     }
 
-    public async void OnUCIReceived(List<string> config)
+    // The UCI button on the engine panel. A dialog, not a popup window: the desktop shell
+    // answers window.open with null (new windows go to the system browser), which threw
+    // inside this handler and, because it ran unawaited, took the whole circuit down.
+    public async Task OnUCIReceived(List<string> config)
     {
-        uciInfo = config;
-        if (chessModule != null)
+        try
         {
-            var content = string.Join("\n", uciInfo);
-            await chessModule.InvokeVoidAsync("openNewWindowAndWriteContent", content);
+            var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.TextDialog>
+            {
+                { x => x.Text, string.Join("\n", config) }
+            };
+            var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+            await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.TextDialog>("Engine UCI output", parameters, options);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not show the UCI output");
         }
     }
 

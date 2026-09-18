@@ -317,7 +317,6 @@
     bool tbFilesLoaded = false;
     CoreTypes.EngineConfig Engine1;
     CoreTypes.EngineConfig Engine2;
-    private List<string> uciInfo = new();
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private IJSObjectReference chessModule;
     private HashSet<PGNTypes.PgnGame> selectedItems = new();
@@ -879,12 +878,24 @@
         return (string)result.Data!;
     }
 
-    public async void OnUCIReceived(List<string> config)
+    // The UCI button on the engine panel. A dialog, not a popup window: the desktop shell
+    // answers window.open with null (new windows go to the system browser), which threw
+    // inside this handler and, because it ran unawaited, took the whole circuit down.
+    public async Task OnUCIReceived(List<string> config)
     {
-        uciInfo = config;
-        var content = string.Join("\n", uciInfo);
-        if (chessModule != null)
-            await chessModule.InvokeVoidAsync("openNewWindowAndWriteContent", content);
+        try
+        {
+            var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.TextDialog>
+            {
+                { x => x.Text, string.Join("\n", config) }
+            };
+            var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+            await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.TextDialog>("Engine UCI output", parameters, options);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not show the UCI output");
+        }
     }
 
     public async void OnNewFENOnBoard(string newFen)

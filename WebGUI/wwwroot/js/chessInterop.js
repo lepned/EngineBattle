@@ -117,12 +117,6 @@ export function triggerResizeEvent() {
   window.dispatchEvent(new Event('resize'));
 }
 
-export function openNewWindowAndWriteContent(content) {
-  var newWindow = window.open("", "_blank");
-  newWindow.document.write('<pre>' + content + '</pre>');
-  newWindow.document.close();
-}
-
 // ── Native board drag & drop (EbChessboard) ─────────────────────────────
 // Pointer tracking only: a ghost image follows the pointer; all chess logic
 // (legality, promotion) stays in .NET. Drop reports fromSq/toSq via dotnetRef.
@@ -377,14 +371,7 @@ export function updateMoveIndicator(div, moveIndex, color = '#FFD400') {
     Plotly.relayout(div, { shapes: existing });
 }
 
-// ── Misc window / scrolling helpers ─────────────────────────────────────
-export function openBrowserWindow(content) {
-  var doc = window.open().document;
-  doc.write("<pre>");
-  doc.write(content);
-  doc.write(" </pre>");
-}
-
+// ── Scrolling helpers ───────────────────────────────────────────────────
 // Scroll within the container using rect deltas (works with inline spans + wrapping/comments).
 function centerInContainer(container, el) {
     const cRect = container.getBoundingClientRect();

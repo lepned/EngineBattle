@@ -1,0 +1,40 @@
+@inject IJSRuntime JS
+
+@* A block of plain text - an engine's UCI output, a log - in a scrollable dialog with a copy
+   button. Replaces window.open popups: the desktop shell answers every new-window request by
+   sending its URI to the system browser, so a blank popup comes back as null and the page's
+   circuit died on it. A dialog behaves the same in the browser and in the shell. *@
+<MudDialog>
+  <DialogContent>
+    <pre style="max-height:70vh; overflow:auto; font-size:13px; margin:0; white-space:pre-wrap;">@Text</pre>
+  </DialogContent>
+  <DialogActions>
+    <MudButton OnClick="Copy">@copyLabel</MudButton>
+    <MudButton Color="Color.Primary" OnClick="Close">Close</MudButton>
+  </DialogActions>
+</MudDialog>
+
+@code {
+  [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+  [Parameter] public string Text { get; set; } = string.Empty;
+
+  private string copyLabel = "Copy";
+
+  private async Task Copy()
+  {
+    try
+    {
+      await JS.InvokeVoidAsync("navigator.clipboard.writeText", Text);
+      copyLabel = "Copied ✓";
+      StateHasChanged();
+      await Task.Delay(1500);
+      copyLabel = "Copy";
+    }
+    catch
+    {
+      copyLabel = "Copy failed";
+    }
+  }
+
+  void Close() => MudDialog.Close(DialogResult.Ok(true));
+}
