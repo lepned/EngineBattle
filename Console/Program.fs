@@ -2331,7 +2331,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
 
     /// Define the MailboxProcessor for handling updates asynchronously
     let createUpdateProcessor (verbose:bool) =
-        let mutable currentGameNr = 0
         MailboxProcessor.Start(fun inbox ->
             let rec loop () =
                 async {
@@ -2342,8 +2341,9 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     | GameStarted _ -> ()  // white-player info already shown in StartOfGame line
                     | EndOfGame result ->
                         let time = float result.GameTime / 1000.0
-                        printfn "\u25C0 G%d  %-7s  %-12s  %dm %.1fs"
-                            currentGameNr result.Result (shortReason result.Reason) result.Moves time
+                        // Named, not numbered: the result carries no game number, and the last STARTED number is wrong once games overlap.
+                        printfn "\u25C0 %s vs %s  %-7s  %-12s  %dm %.1fs"
+                            result.Player1 result.Player2 result.Result (shortReason result.Reason) result.Moves time
                     | BestMove (bm, status) -> 
                         if verbose then
                             printfn "Player %s: BestMove %s with eval %A" bm.Player bm.Move bm.Eval
@@ -2366,7 +2366,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         if verbose then
                             printfn "NNSeq: %A" nnSeq
                     | StartOfGame startGameInfo ->
-                        currentGameNr <- startGameInfo.CurrentGameNr
                         printfn "\u25B6 G%d  %s vs %s"
                             startGameInfo.CurrentGameNr
                             startGameInfo.WhitePlayer.Name
@@ -2692,7 +2691,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                         tournament <- 
                             {tourny with 
                                 EngineSetup = engineSetup
-                                PreventMoveDeviation = tourny.TestOptions.NumberOfGamesInParallel <= 1
                                 MinMoveTimeInMS = 0
                                 ConsoleOnly = true
                                 DelayBetweenGames = TimeSpan.Zero

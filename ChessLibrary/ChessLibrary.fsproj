@@ -135,6 +135,7 @@
 		<Compile Include="Tournament\GamePersistence.fs" />
 		<Compile Include="Tournament\GameSetup.fs" />
 		<Compile Include="Tournament\TournamentRunners.fs" />
+		<Compile Include="Tournament\ReplayGate.fs" />
 		<Compile Include="Tournament\ParallelExecution.fs" />
 
 		<!-- Tournament runner (depends on everything) -->

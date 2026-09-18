@@ -260,11 +260,11 @@ let parallelTournamentRun
       if gamesLeftToPlay.Length = 0 then
           return []
       else
-          // 1) build pairing channel
-          let pairingCh = Channel.CreateUnbounded<Pairing>()
-          for pair in gamesLeftToPlay do
-              pairingCh.Writer.TryWrite(pair) |> ignore
-          pairingCh.Writer.Complete()
+          // 1) the pairing queue: plan order, except that with deviation prevention on a pairing
+          //    whose replay key is held by a game still in flight waits for it - a repeat of an
+          //    earlier game's opening and colours must see that game finished and merged, or it
+          //    plays against a partial line and the two then race to define it. See ReplayGate.
+          let gate = ReplayGate.ReplayGate(gamesLeftToPlay, tourny.PreventMoveDeviation, tourny.PreventMoveDeviationFor)
 
           // Track all spawned engines for cleanup safety net
           let allEngines = ResizeArray<ChessEngine>()
@@ -501,18 +501,23 @@ let parallelTournamentRun
               try
                   let mutable keepGoing = true
                   while keepGoing do
-                      // TODO (deviation prevention under parallelism): nothing here stops a game
-                      // that repeats an earlier game's opening AND colours from starting while that
-                      // game is still being played, so the repeat sees a partial predecessor. A guard
-                      // would keep a set of in-flight (opening hash, engine, colour) keys and re-queue
-                      // a pairing whose key is in flight. Until then prevention is only guaranteed
-                      // sequentially; the console forces it off above one game, and the tuner is
-                      // safe because its references come from a complete file.
-                      let! canRead = pairingCh.Reader.WaitToReadAsync(cts.Token)
-                      if canRead then
-                          match pairingCh.Reader.TryRead() with
-                          | true, pair ->
+                      match gate.TryTake() with
+                      | ReplayGate.Done -> keepGoing <- false
+                      | ReplayGate.Wait released ->
+                          // Verbose only, on stdout like the replay diagnostics: one line per wake-up
+                          // explains why fewer boards are busy.
+                          if tourny.VerboseLogging then
+                              ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
+                                  (sprintf "Gate: worker %d waits - every pending game repeats one still in flight" i)
+                          do! released.WaitAsync(cts.Token)
+                      | ReplayGate.Start pair ->
+                          try
                               try
+                                  // The round label is the one id that is unique per game; the
+                                  // console's own G-number is not reliable once games overlap.
+                                  if tourny.VerboseLogging then
+                                      ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
+                                          (sprintf "Gate: worker %d starts round %s: %s vs %s" i pair.RoundNr pair.White.Name pair.Black.Name)
                                   logger.LogDebug("Worker {worker} starting {white} vs {black}", i, pair.White.Name, pair.Black.Name)
                                   do! playOne i pair
                                   let gc = Interlocked.Increment(&gameCounter)
@@ -523,9 +528,13 @@ let parallelTournamentRun
                                   logger.LogError(ex, "Worker {Worker} failed game {White} vs {Black}, continuing",
                                       i, pair.White.Name, pair.Black.Name)
                                   Interlocked.Increment(&gameCounter) |> ignore
-                          | _ -> ()
-                      else
-                          keepGoing <- false
+                          finally
+                              // Released whether the game was played, cancelled or failed: a key
+                              // held by a dead game would stall every repeat of it for the run.
+                              gate.Release pair
+                              if tourny.VerboseLogging then
+                                  ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.DarkGray
+                                      (sprintf "Gate: worker %d finished round %s" i pair.RoundNr)
               with
               | :? OperationCanceledException -> ()
               | :? AggregateException as ae
