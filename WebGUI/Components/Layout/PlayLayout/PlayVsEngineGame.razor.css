@@ -146,6 +146,12 @@
     gap: 20px;
 }
 
+/* Board card and results side by side need ~1100px; below that they stack instead of
+   overflowing the window. */
+@media (max-width: 1150px) {
+    .play-vs-computer .pvc-main { grid-template-columns: minmax(0, 1fr); }
+}
+
 .play-vs-computer .pvc-board-card,
 .play-vs-computer .pvc-panel {
     background: var(--pvc-card);

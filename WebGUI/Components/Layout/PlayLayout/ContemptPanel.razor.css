@@ -1,0 +1,92 @@
+.cp-panel {
+    --cp-bg: #171b25;
+    --cp-bg-deep: #0f1218;
+    --cp-border: #262c3a;
+    --cp-text: #e6e9f0;
+    --cp-muted: #8b93a7;
+    --cp-faint: #6f7890;
+    --cp-accent: #8ad5ff;
+    --cp-accent-2: #5d7bff;
+    --cp-on: #22304f;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 14px;
+    background: var(--cp-bg);
+    border: 1px solid var(--cp-border);
+    border-radius: 12px;
+    color: var(--cp-text);
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.cp-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cp-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.cp-sub { font-size: 12px; color: var(--cp-muted); }
+
+.cp-lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--cp-muted); }
+.cp-hint { font-size: 12px; color: var(--cp-muted); line-height: 1.4; }
+.cp-hint.cp-good { color: #9fe3b3; }
+.cp-hint.cp-warn { color: #ffd479; }
+.cp-hint.cp-bad { color: #ffb4b4; }
+.cp-field { display: flex; flex-direction: column; gap: 6px; }
+.cp-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cp-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cp-mono { font-family: ui-monospace, Consolas, "Cascadia Mono", monospace; }
+.cp-val { font-size: 12px; color: #c9d0de; }
+.cp-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--cp-faint); }
+
+.cp-input {
+    background: var(--cp-bg-deep);
+    border: 1px solid #2c3446;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    color: var(--cp-text);
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+.cp-input:disabled { opacity: .45; }
+
+.cp-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-pill, .cp-seg button {
+    border: 1px solid #2c3446;
+    background: #11151d;
+    color: #c9d0de;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.cp-pill { border-radius: 999px; padding: 6px 12px; }
+.cp-pill.on, .cp-seg button.on { background: var(--cp-on); border-color: var(--cp-accent-2); color: #fff; }
+.cp-chip { cursor: default; }
+
+/* Beside a board there is room for one column; above it (narrow windows, see the page) the
+   panel spreads over two. */
+@media (max-width: 1700px) {
+    .cp-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; align-items: start; }
+    .cp-head, .cp-sent, .cp-advanced { grid-column: 1 / -1; }
+    .cp-sent { margin-top: 0; }
+}
+
+.cp-seg { display: flex; border: 1px solid #2c3446; border-radius: 8px; overflow: hidden; }
+.cp-seg button { flex-grow: 1; border: none; border-radius: 0; padding: 9px 0; }
+
+.cp-contempt { background: #11151d; border: 1px solid var(--cp-border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.cp-contempt.off { opacity: .6; }
+.cp-contempt-value { display: flex; align-items: center; gap: 8px; }
+.cp-contempt-value .cp-input { width: 110px; font-size: 18px; font-weight: 500; color: var(--cp-accent); text-align: right; }
+.cp-unit { font-size: 12px; color: var(--cp-muted); }
+
+.cp-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: #2c3446; }
+.cp-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--cp-accent); border: 2px solid var(--cp-bg-deep); cursor: pointer; }
+.cp-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--cp-accent); border: 2px solid var(--cp-bg-deep); cursor: pointer; }
+.cp-range:disabled { opacity: .45; }
+
+.cp-advanced { border-top: 1px solid var(--cp-border); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.cp-advanced summary { cursor: pointer; font-size: 13px; color: #c9d0de; }
+
+.cp-sent { margin-top: auto; }
+.cp-copy { background: #1f2637; color: var(--cp-text); border: 1px solid #2c3446; border-radius: 8px; padding: 4px 10px; font-size: 12px; font-family: inherit; cursor: pointer; }
+.cp-lines { margin: 0; background: #0b0e14; border: 1px solid var(--cp-border); border-radius: 8px; padding: 10px 12px; font-size: 11.5px; line-height: 1.5; color: #b7c0d3; white-space: pre; overflow-x: auto; }

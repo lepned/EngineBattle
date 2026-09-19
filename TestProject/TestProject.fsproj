@@ -51,6 +51,7 @@
 		<Compile Include="GameReplayTests.fs" />
 		<Compile Include="ReplayGateTests.fs" />
 		<Compile Include="LazyPoolTests.fs" />
+		<Compile Include="Lc0ContemptTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

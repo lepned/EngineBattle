@@ -1,0 +1,102 @@
+.lc-page {
+    --lc-bg: #0f1218;
+    --lc-bar: #12161f;
+    --lc-border: #1f2532;
+    --lc-text: #e6e9f0;
+    --lc-muted: #8b93a7;
+    --lc-accent: #8ad5ff;
+    --lc-accent-2: #5d7bff;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: calc(100vh - 64px);
+    background: var(--lc-bg);
+    color: var(--lc-text);
+    font-size: 14px;
+}
+
+.lc-top {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--lc-border);
+    background: var(--lc-bar);
+    flex-wrap: wrap;
+}
+.lc-title { display: flex; align-items: baseline; gap: 12px; }
+.lc-title h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.lc-title span { font-size: 13px; color: var(--lc-muted); }
+.lc-spacer { flex-grow: 1; }
+
+.lc-tabs { display: flex; gap: 6px; }
+.lc-tabs button {
+    border: 1px solid #2c3446; background: #11151d; color: #c9d0de;
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.lc-tabs button.on { background: #22304f; border-color: var(--lc-accent-2); color: #fff; }
+
+.lc-charts {
+    border: 1px solid #2c3446; background: #11151d; color: #c9d0de;
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.lc-charts.on { background: #22304f; border-color: var(--lc-accent-2); color: #fff; }
+
+.lc-engine { display: flex; align-items: center; gap: 10px; }
+.lc-engine label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--lc-muted); }
+.lc-engine select {
+    min-width: 260px; background: var(--lc-bg); border: 1px solid #2c3446; border-radius: 8px;
+    padding: 8px 10px; font-size: 14px; color: var(--lc-text); font-family: inherit;
+}
+.lc-status { font-size: 12px; color: var(--lc-muted); }
+.lc-status.lc-good { color: #9fe3b3; }
+.lc-status.lc-warn { color: #ffd479; }
+.lc-status.lc-bad { color: #ffb4b4; }
+
+.lc-body { display: flex; gap: 20px; padding: 20px 24px; align-items: flex-start; }
+.lc-side { width: 340px; flex-shrink: 0; position: sticky; top: 72px; }
+.lc-main { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+
+.lc-evals {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; align-items: center;
+    background: #171b25; border: 1px solid #262c3a; border-radius: 12px; padding: 12px 16px;
+}
+.lc-eval { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.lc-eval-lbl { font-size: 13px; }
+.lc-eval-val { font-family: ui-monospace, Consolas, monospace; font-size: 22px; color: #c9d0de; }
+.lc-eval-side .lc-eval-val { color: var(--lc-accent); }
+.lc-eval-note { grid-column: 1 / -1; font-size: 12px; color: var(--lc-muted); }
+
+/* The same track recipe as Dual analysis, for the same reason: the two engine columns are
+   capped in px, not fr, so their content (PV lines, charts redrawing during a search) cannot
+   shift the distribution and move the board; the centre takes what is left, and with capped
+   neighbours an auto track cannot grow past the window, so the move list under the board
+   wraps instead of widening the column. */
+.lc-analyse { display: grid; grid-template-columns: minmax(320px, 700px) minmax(380px, auto) minmax(320px, 700px); gap: 16px; align-items: start; justify-content: center; }
+.lc-col { min-width: 0; }
+.lc-col-head {
+    font-size: 13px; font-weight: 600; letter-spacing: .02em; padding: 8px 12px; margin-bottom: 8px;
+    border-radius: 8px; border: 1px solid #262c3a; background: #171b25; color: #c9d0de;
+}
+.lc-col-side { border-color: var(--lc-accent-2); color: var(--lc-accent); }
+.lc-board { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.lc-overlay { display: flex; align-items: center; gap: 10px; font-size: 13px; align-self: center; }
+.lc-overlay label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--lc-muted); }
+.lc-overlay select { background: var(--lc-bg); border: 1px solid #2c3446; border-radius: 8px; padding: 6px 10px; font-size: 13px; color: var(--lc-text); font-family: inherit; }
+.lc-overlay-from { font-size: 12px; color: var(--lc-muted); }
+.lc-overlay-src { display: flex; border: 1px solid #2c3446; border-radius: 8px; overflow: hidden; }
+.lc-overlay-src button { border: none; background: #11151d; color: #c9d0de; padding: 6px 12px; font-size: 13px; font-family: inherit; cursor: pointer; }
+.lc-overlay-src button.on { background: #22304f; color: #fff; }
+.lc-overlay-src button.lc-src-side { color: var(--lc-accent); }
+
+/* The game beside the panel needs ~1400px of its own (700px board, move list, results); below
+   that the panel goes on top, in two columns, and the game keeps its own layout. */
+@media (max-width: 1700px) {
+    .lc-body { flex-direction: column; }
+    .lc-side { width: 100%; position: static; }
+}
+@media (max-width: 1500px) {
+    .lc-analyse { grid-template-columns: 1fr; }
+    .lc-board { order: -1; }
+}

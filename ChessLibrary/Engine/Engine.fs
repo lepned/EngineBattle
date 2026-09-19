@@ -1632,27 +1632,6 @@ module Engine =
 module EngineHelper =
   open Engine
   
-  //create setoption commands for contempt settings
-  let createContemptSetoptions (settings: (string*obj) seq) =
-    let options = ResizeArray<EngineOption>()
-    let settings = settings |> Seq.toArray
-    for (key,v) in settings do
-      let value = v.ToString()
-      let opt = EngineOption.Create key value
-      options.Add opt    
-    options
-
-
-  let contemptPlaySettings : ((string*obj) array) =
-    [|
-      ("Contempt", box 200)
-      ("ContemptMode", box "play")
-      ("WDLCalibrationElo", box 2200)
-      ("WDLContemptAttenuation", box 0.6)
-      ("WDLDrawRateReference", box 0.61)
-      ("WDLEvalObjectivity", box 1.0)
-    |]
-  
   let valueHeadCommands =
     [    
       sprintf "setoption name %s value %f" "DirichletNoiseEpsilon" 1.0

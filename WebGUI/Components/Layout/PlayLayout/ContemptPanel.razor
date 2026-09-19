@@ -1,0 +1,332 @@
+@using ChessLibrary
+@using static ChessLibrary.Lc0Contempt
+@inject IJSRuntime JS
+
+@* Lc0's contempt as a user sets it: a preset or the fields, two ratings that become the
+   Elo advantage, the two sliders that matter most, the four hidden options under Advanced,
+   and the exact setoption lines that leave for the engine. The same panel serves a game
+   (ContemptMode play) and analysis (one side's view). *@
+<div class="cp-panel">
+    <div class="cp-head">
+        <h2>Contempt</h2>
+        <span class="cp-sub">@(AnalyseMode ? "whose game is this?" : "what Lc0 assumes about the game")</span>
+    </div>
+
+    @if (AnalyseMode)
+    {
+        <div class="cp-field">
+            <span class="cp-lbl">Analyze for</span>
+            <div class="cp-seg">
+                <button class="@(!objective && analyseWhite ? "on" : "")" @onclick="() => SetAnalyseSide(true)">White</button>
+                <button class="@(!objective && !analyseWhite ? "on" : "")" @onclick="() => SetAnalyseSide(false)">Black</button>
+                <button class="@(objective ? "on" : "")" @onclick="SetObjective">Nobody (objective)</button>
+            </div>
+        </div>
+    }
+
+    <div class="cp-field">
+        <span class="cp-lbl">Preset</span>
+        <div class="cp-pills">
+            @foreach (var p in (AnalyseMode ? analysisPresets : presets))
+            {
+                <button class="cp-pill @(presetId == p.Id ? "on" : "")" @onclick="() => ApplyPreset(p)">@p.Name</button>
+            }
+            @if (presetId == "custom")
+            {
+                <span class="cp-pill on cp-chip">Custom</span>
+            }
+        </div>
+        <span class="cp-hint">@presetDescription</span>
+    </div>
+
+    <div class="cp-grid2">
+        <div class="cp-field">
+            <label class="cp-lbl" for="@($"{Id}-playsat")">@(AnalyseMode ? (analyseWhite ? "White plays at" : "Black plays at") : "Lc0 plays at")</label>
+            <input id="@($"{Id}-playsat")" class="cp-input" type="number" min="0" max="10000" step="50" value="@playsAt" @onchange="e => SetPlaysAt(e.Value)" disabled="@objective" />
+            <span class="cp-hint">@CalibrationHint()</span>
+        </div>
+        <div class="cp-field">
+            <label class="cp-lbl" for="@($"{Id}-opp")">@(AnalyseMode ? (analyseWhite ? "Black's strength" : "White's strength") : "Your rating")</label>
+            <input id="@($"{Id}-opp")" class="cp-input" type="number" min="0" max="10000" step="50" value="@opponent" @onchange="e => SetOpponent(e.Value)" disabled="@objective" />
+            <span class="cp-hint">the opponent it prepares for</span>
+        </div>
+    </div>
+
+    <div class="cp-contempt @(objective ? "off" : "")">
+        <div class="cp-row">
+            <label class="cp-lbl" for="@($"{Id}-contempt")">Contempt</label>
+            <div class="cp-contempt-value">
+                <input id="@($"{Id}-contempt")" class="cp-input cp-mono" type="number" min="-10000" max="10000" step="10" value="@contempt" @onchange="e => SetContempt(e.Value)" disabled="@objective" />
+                <span class="cp-unit">Elo</span>
+            </div>
+        </div>
+        <span class="cp-hint">@ContemptExplanation()</span>
+    </div>
+
+    <div class="cp-field">
+        <div class="cp-row">
+            <label class="cp-lbl" for="@($"{Id}-att")">Attenuation</label>
+            <span class="cp-mono cp-val">@attenuation.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</span>
+        </div>
+        <input id="@($"{Id}-att")" class="cp-range" type="range" min="0" max="1" step="0.05" value="@attenuation" @oninput="e => SetAttenuation(e.Value)" disabled="@objective" />
+        <div class="cp-ends"><span>0.5 – 0.6 best match play</span><span>1.0 realistic analysis</span></div>
+    </div>
+
+    <div class="cp-field">
+        <div class="cp-row">
+            <label class="cp-lbl" for="@($"{Id}-obj")">Eval shown</label>
+            <span class="cp-mono cp-val">objectivity @objectivity.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)</span>
+        </div>
+        <input id="@($"{Id}-obj")" class="cp-range" type="range" min="0" max="1" step="0.1" value="@objectivity" @oninput="e => SetObjectivity(e.Value)" disabled="@objective" />
+        <div class="cp-ends"><span>Lc0's own view</span><span>objective</span></div>
+    </div>
+
+    <div class="cp-field">
+        <label class="cp-lbl" for="@($"{Id}-tc")">Time control</label>
+        @if (AnalyseMode)
+        {
+            <select id="@($"{Id}-tc")" class="cp-input" value="@tcMinutes" @onchange="e => SetTimeControl(e.Value)">
+                @foreach (var (name, minutes) in timeControlChoices)
+                {
+                    <option value="@minutes.ToString(System.Globalization.CultureInfo.InvariantCulture)">@name</option>
+                }
+            </select>
+        }
+        else
+        {
+            <span class="cp-val">@(GameBaseMinutes.HasValue ? $"{GameBaseMinutes.Value:0.#} min base · from the game" : "no clock (nodes or infinite)")</span>
+        }
+        <span class="cp-hint">Ratings are blitz/rapid ratings; Lc0's rule adds 50 Elo to the calibration per doubling of thinking time, 10 minutes being the reference.</span>
+    </div>
+
+    <details class="cp-advanced">
+        <summary>Advanced · 4 more options</summary>
+        <div class="cp-grid2">
+            <div class="cp-field"><label class="cp-lbl" for="@($"{Id}-max")">Contempt max</label><input id="@($"{Id}-max")" class="cp-input" type="number" min="0" max="10000" step="10" value="@maxValue" @onchange="e => SetMaxValue(e.Value)" /></div>
+            <div class="cp-field"><label class="cp-lbl" for="@($"{Id}-maxs")">WDL max S</label><input id="@($"{Id}-maxs")" class="cp-input" type="number" min="0" max="10" step="0.1" value="@maxS" @onchange="e => SetMaxS(e.Value)" /></div>
+            <div class="cp-field"><label class="cp-lbl" for="@($"{Id}-drt")">Draw-rate target</label><input id="@($"{Id}-drt")" class="cp-input" type="number" min="0" max="1" step="0.05" value="@drawRateTarget" @onchange="e => SetDrawRateTarget(e.Value)" /></div>
+            <div class="cp-field"><label class="cp-lbl" for="@($"{Id}-drr")">Draw-rate reference</label><input id="@($"{Id}-drr")" class="cp-input" type="number" min="0" max="1" step="0.01" value="@drawRateReference" @onchange="e => SetDrawRateReference(e.Value)" /></div>
+        </div>
+        <span class="cp-hint">Raise WDL max S for DFRC or piece odds. Draw-rate target 0 is off, and it is ignored while a calibration Elo is set. Draw-rate reference 0.58 is Lc0's advice for recent strong nets (its own default is 0.5).</span>
+    </details>
+
+    <div class="cp-field cp-sent">
+        <div class="cp-row">
+            <span class="cp-lbl">Sent to Lc0</span>
+            <button class="cp-copy" @onclick="CopyLines">@copyLabel</button>
+        </div>
+        <pre class="cp-mono cp-lines">@string.Join("\n", toUciLines(Current))</pre>
+        <span class="cp-hint">Contempt reshapes the values, not the policy: Lc0's advice is at least 10k nodes per move for it to shape the moves, not only the eval.</span>
+        @if (Support == null)
+        {
+            <span class="cp-hint">Checked against the engine's option list when it starts.</span>
+        }
+        else if (!Support.HasContempt)
+        {
+            <span class="cp-hint cp-bad">@EngineName has no ContemptMode option - contempt is an Lc0 feature.</span>
+        }
+        else if (Support.Missing.Length > 0)
+        {
+            <span class="cp-hint cp-warn">Older Lc0: it does not list @string.Join(", ", Support.Missing).</span>
+        }
+        else
+        {
+            <span class="cp-hint cp-good">@EngineName lists @Support.Visible.Length contempt options; the four under Advanced are hidden in Lc0's list but accepted.</span>
+        }
+    </div>
+</div>
+
+@code {
+    /// Distinguishes the inputs' ids when two panels share a page.
+    [Parameter] public string Id { get; set; } = "cp";
+    /// Analysis from one side's view rather than a game against Lc0.
+    [Parameter] public bool AnalyseMode { get; set; }
+    [Parameter] public EventCallback<ContemptSettings> SettingsChanged { get; set; }
+    /// Analyse mode: the side whose view it is. Nobody (objective) is Mode = Disable.
+    [Parameter] public EventCallback<bool> AnalyseWhiteChanged { get; set; }
+    [Parameter] public ContemptSupport Support { get; set; }
+    [Parameter] public string EngineName { get; set; } = "This engine";
+    /// Train mode: the game's clock, base minutes; null when it plays by nodes or without a
+    /// clock. Analyse mode picks a time control itself.
+    [Parameter] public double? GameBaseMinutes { get; set; }
+
+    // The fields are the truth; a preset only fills them in.
+    private string presetId = "sparring";
+    private string presetDescription = "";
+    private bool objective;
+    private bool analyseWhite = true;
+    // 200 Elo of contempt to start with: at 400 Lc0 already plays visibly odd moves.
+    private int playsAt = 2400;
+    private int opponent = 2200;
+    private int contempt = 200;
+    private double attenuation = 0.6;
+    private double objectivity = 1.0;
+    private int maxValue = ContemptSettings.Lc0Defaults.MaxValue;
+    private double maxS = ContemptSettings.Lc0Defaults.MaxS;
+    private double drawRateTarget = ContemptSettings.Lc0Defaults.DrawRateTarget;
+    private double drawRateReference = ContemptSettings.Recommended.DrawRateReference;
+    private bool wasAnalyseMode;
+    private double? lastGameMinutes;
+    private double tcMinutes = 10.0;
+    private string copyLabel = "Copy";
+
+    // The calibration Elo that is sent: the rating plus Lc0's time-control adjustment.
+    private int TcAdjust => timeControlAdjustment(AnalyseMode
+        ? Microsoft.FSharp.Core.FSharpOption<double>.Some(tcMinutes)
+        : (GameBaseMinutes.HasValue ? Microsoft.FSharp.Core.FSharpOption<double>.Some(GameBaseMinutes.Value) : Microsoft.FSharp.Core.FSharpOption<double>.None));
+    private int CalibrationSent => playsAt + TcAdjust;
+
+    public ContemptSettings Current => new(
+        objective ? ContemptMode.Disable : AnalyseMode ? (analyseWhite ? ContemptMode.WhiteSideAnalysis : ContemptMode.BlackSideAnalysis) : ContemptMode.Play,
+        contempt, CalibrationSent, attenuation, objectivity, maxValue, maxS, drawRateTarget, drawRateReference);
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApplyPresetSilently(AnalyseMode ? tryAnalysisPreset("prep").Value : tryPreset("sparring").Value);
+        wasAnalyseMode = AnalyseMode;
+        lastGameMinutes = GameBaseMinutes;
+        await Emit();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AnalyseMode != wasAnalyseMode)
+        {
+            wasAnalyseMode = AnalyseMode;
+            objective = false;
+            ApplyPresetSilently(AnalyseMode ? tryAnalysisPreset("prep").Value : tryPreset("sparring").Value);
+            await Emit();
+        }
+        else if (GameBaseMinutes != lastGameMinutes)
+        {
+            // A new game with another clock: the calibration follows it, the rest stays.
+            lastGameMinutes = GameBaseMinutes;
+            await Emit();
+        }
+    }
+
+    private string CalibrationHint()
+    {
+        var adj = TcAdjust;
+        if (adj == 0) return "WDLCalibrationElo · sharpness of its own play";
+        return $"sent as {CalibrationSent} ({(adj > 0 ? "+" : "")}{adj} for the time control)";
+    }
+
+    private async Task SetTimeControl(object v)
+    {
+        if (TryDouble(v, out var m)) { tcMinutes = m; await Emit(); }
+    }
+
+    private void Load(ContemptSettings s)
+    {
+        objective = s.Mode.IsDisable;
+        contempt = s.Contempt;
+        attenuation = s.Attenuation;
+        objectivity = s.Objectivity;
+        maxValue = s.MaxValue;
+        maxS = s.MaxS;
+        drawRateTarget = s.DrawRateTarget;
+        drawRateReference = s.DrawRateReference;
+    }
+
+    private void ApplyPresetSilently(Preset p)
+    {
+        presetId = p.Id;
+        presetDescription = p.Description;
+        var applied = applyPreset(p, playsAt, opponent);
+        playsAt = applied.PlaysAt;
+        opponent = applied.Opponent;
+        Load(applied.Settings);
+    }
+
+    private async Task ApplyPreset(Preset p)
+    {
+        ApplyPresetSilently(p);
+        await Emit();
+    }
+
+    private async Task SetAnalyseSide(bool white)
+    {
+        objective = false;
+        if (analyseWhite != white)
+        {
+            analyseWhite = white;
+            await AnalyseWhiteChanged.InvokeAsync(white);
+        }
+        await Emit();
+    }
+
+    private async Task SetObjective()
+    {
+        objective = true;
+        await Emit();
+    }
+
+    private async Task SetPlaysAt(object v)
+    {
+        if (!TryInt(v, out var n)) return;
+        // The Elo gap follows the ratings unless the user typed a contempt of their own.
+        var followed = contempt == contemptBetween(playsAt, opponent);
+        playsAt = n;
+        if (followed) contempt = contemptBetween(playsAt, opponent);
+        await Custom();
+    }
+
+    private async Task SetOpponent(object v)
+    {
+        if (!TryInt(v, out var n)) return;
+        var followed = contempt == contemptBetween(playsAt, opponent);
+        opponent = n;
+        if (followed) contempt = contemptBetween(playsAt, opponent);
+        await Custom();
+    }
+
+    private async Task SetContempt(object v) { if (TryInt(v, out var n)) { contempt = n; await Custom(); } }
+    private async Task SetAttenuation(object v) { if (TryDouble(v, out var d)) { attenuation = d; await Custom(); } }
+    private async Task SetObjectivity(object v) { if (TryDouble(v, out var d)) { objectivity = d; await Custom(); } }
+    private async Task SetMaxValue(object v) { if (TryInt(v, out var n)) { maxValue = n; await Custom(); } }
+    private async Task SetMaxS(object v) { if (TryDouble(v, out var d)) { maxS = d; await Custom(); } }
+    private async Task SetDrawRateTarget(object v) { if (TryDouble(v, out var d)) { drawRateTarget = d; await Custom(); } }
+    private async Task SetDrawRateReference(object v) { if (TryDouble(v, out var d)) { drawRateReference = d; await Custom(); } }
+
+    private async Task Custom()
+    {
+        presetId = "custom";
+        presetDescription = "Your own values.";
+        await Emit();
+    }
+
+    private Task Emit() => SettingsChanged.InvokeAsync(Current);
+
+    private string ContemptExplanation()
+    {
+        if (objective) return "Off: Lc0 plays and evaluates as if nobody in particular were at the board.";
+        var who = AnalyseMode ? (analyseWhite ? "White" : "Black") : "Lc0";
+        var capped = Math.Abs(contempt) > maxValue ? $" Capped at {maxValue} (Contempt max)." : "";
+        if (contempt > 0) return $"{who} expects to be {contempt} Elo stronger and plays for the win: keeps the game alive, avoids the drawish lines.{capped}";
+        if (contempt < 0) return $"{who} expects to be {-contempt} Elo weaker and plays to hold: solid, drawish choices.{capped}";
+        return $"{who} expects an equal opponent; only the calibration Elo shapes its play.";
+    }
+
+    private async Task CopyLines()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", string.Join("\n", toUciLines(Current)));
+            copyLabel = "Copied ✓";
+            StateHasChanged();
+            await Task.Delay(1500);
+            copyLabel = "Copy";
+        }
+        catch
+        {
+            copyLabel = "Copy failed";
+        }
+    }
+
+    // Blazor hands the raw input string; the number inputs are culture-neutral (a point).
+    private static bool TryInt(object v, out int n) =>
+        int.TryParse(v?.ToString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out n);
+    private static bool TryDouble(object v, out double d) =>
+        double.TryParse(v?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d);
+}

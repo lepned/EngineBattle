@@ -17,6 +17,8 @@ public class GlobalSettings
 
     // Browser state
     public string LastBrowsedPath { get; set; } = "";
+    /// The engine def last chosen on the Lc0 Contempt page; remembered silently, like LastBrowsedPath.
+    public string ContemptEnginePath { get; set; } = "";
     public string[] RecentBrowsePaths { get; set; } = [];
 
     // Tool paths

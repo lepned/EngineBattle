@@ -212,7 +212,7 @@
         </div>
     }
 
-    <div class="ep-charts" hidden="@(!showCharts)">
+    <div class="ep-charts" hidden="@(!showCharts || HideCharts)">
         <div class="ep-charts-controls">
             <div class="ep-slider" style="min-width:200px;">
                 <label>PV lines: @numberOfLines</label>
@@ -244,7 +244,7 @@
         </div>
     </div>
 
-    <div class="ep-charts" hidden="@(!showCpChart)">
+    <div class="ep-charts" hidden="@(!showCpChart || HideCharts)">
         <div class="ep-charts-controls">
             <div class="ep-slider" style="min-width:200px;">
                 <label>PV lines: @cpChartLines</label>
@@ -357,6 +357,18 @@
     [Parameter] public Func<bool> SuppressAutoOverlay { get; set; }
 
     [Parameter] public int Nodes { get; set; } = 0;
+    /// setoption lines a host wants sent right after the engine starts and again whenever it
+    /// passes a new list - Lc0 Contempt's side view, for one. Lc0 takes them between searches.
+    [Parameter] public IReadOnlyList<EngineOption> ExtraSetOptions { get; set; }
+    private IReadOnlyList<EngineOption> appliedExtraSetOptions;
+    /// The engine's UCI option names once it has answered `uci`.
+    [Parameter] public EventCallback<IReadOnlyCollection<string>> OnEngineStarted { get; set; }
+    /// Start in time mode with this limit instead of the analysis defaults from Settings; the
+    /// user can still change it. Lc0 Contempt asks for 3000 ms.
+    [Parameter] public int? InitialTimeMs { get; set; }
+    /// Keep the charts out of view - a display choice only; the data, the chart-lines slider
+    /// and MultiPV are untouched, so showing them again later costs nothing but a resize.
+    [Parameter] public bool HideCharts { get; set; }
     private string zobristHash;
     private bool overlayDropdownOpen = false;
 
@@ -522,6 +534,8 @@
         if (analyzer == null)
             return;
 
+        if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
+            ApplyExtraSetOptions();
         NoteSearchStarted(ChessBoard?.FEN());
         if (searchMode == SearchMode.Nodes)
         {
@@ -1184,16 +1198,19 @@
         }
     }
 
-    private void SetDefaultContempt()
+    // A new list instance is sent right before the next search, followed by ucinewgame: Lc0
+    // keeps its tree for a repeated position, and the old nodes keep the old contempt - the
+    // eval did not move until the tree was cleared. Only a freshly started engine, with no
+    // tree yet, gets the options at once.
+    private void ApplyExtraSetOptions(bool engineJustStarted = false)
     {
-        var options = ChessLibrary.EngineHelper.contemptPlaySettings.ToArray();
-        var opts = ChessLibrary.EngineHelper.createContemptSetoptions(options);
-        if (analyzer == null)
-            return;
-        foreach (var item in opts)
-        {
-            analyzer.AddSetoption(item);
-        }
+        if (analyzer == null) return;
+        appliedExtraSetOptions = ExtraSetOptions;
+        if (ExtraSetOptions == null) return;
+        foreach (var option in ExtraSetOptions)
+            analyzer.AddSetoption(option);
+        if (!engineJustStarted)
+            analyzer.NewGame();
     }
 
     private async Task StartAnalyzer()
@@ -1212,6 +1229,13 @@
             newAnalyzer.Board = ChessBoard;
             analyzer = newAnalyzer;
             ApplyChartLinesToMultiPV();
+            appliedExtraSetOptions = null;
+            ApplyExtraSetOptions(engineJustStarted: true);
+            if (OnEngineStarted.HasDelegate)
+            {
+                IReadOnlyCollection<string> names = newAnalyzer.Engine.GetUCICommands().Keys.ToList();
+                await OnEngineStarted.InvokeAsync(names);
+            }
         }
     }
 
@@ -2230,6 +2254,11 @@
             numberOfNodes = Math.Max(1, SettingsService.Settings.DefaultSearchNodes);
             if (string.Equals(SettingsService.Settings.DefaultSearchMode, "Time", StringComparison.OrdinalIgnoreCase))
                 searchMode = SearchMode.Time;
+            if (InitialTimeMs is > 0)
+            {
+                searchMode = SearchMode.Time;
+                numberOfTimeMs = InitialTimeMs.Value;
+            }
         }
         MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
         Notifier.NotifyFen += OnNotifyFen;

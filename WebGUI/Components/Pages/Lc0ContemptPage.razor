@@ -1,0 +1,330 @@
+@page "/play/contempt"
+@using WebGUI.Components.Layout
+@using WebGUI.Components.Layout.PlayLayout
+@using WebGUI.Components.Layout.ChessboardLayout
+@using WebGUI.Services
+@using ChessLibrary
+@using static ChessLibrary.Lc0Contempt
+@using static ChessLibrary.EngineTypes
+@inject GlobalSettingsService SettingsService
+@inject NotifierService Notifier
+@inject OverlaySetting overlaySettings
+@inject ILogger<Lc0ContemptPage> logger
+@inject JavaScriptInteropService JsInteropService
+@inject IJSRuntime JS
+
+@* Lc0's contempt made usable: one panel of settings, and either a game against Lc0 that
+   plays with them (Train) or two views of the same position, objective and from one side's
+   point of view (Analyse). The engine options leave this page as the exact setoption lines
+   the panel shows; nothing is hidden in an engine def. *@
+<PageTitle>Lc0 Contempt</PageTitle>
+
+<div class="lc-page">
+    <div class="lc-top">
+        <div class="lc-title">
+            <h1>Lc0 Contempt</h1>
+            <span>Play &amp; Analysis</span>
+        </div>
+        <div class="lc-tabs">
+            <button class="@(analyse ? "on" : "")" @onclick="() => SetMode(true)">Analyze · one side's view</button>
+            <button class="@(!analyse ? "on" : "")" @onclick="() => SetMode(false)">Train · play vs Lc0</button>
+        </div>
+        <span class="lc-spacer"></span>
+        @if (analyse)
+        {
+            <button class="lc-charts @(showCharts ? "on" : "")" @onclick="ToggleCharts" title="Charts take the room the PV lines and the move stats could use">Charts @(showCharts ? "on" : "off")</button>
+        }
+        <div class="lc-engine">
+            <label for="lc-engine-select">Engine</label>
+            <select id="lc-engine-select" @bind="selectedEnginePath" @bind:after="OnEngineChosen">
+                @if (engineFiles.Count == 0)
+                {
+                    <option value="">No engine defs in @SettingsService.Settings.EngineDefsFolder</option>
+                }
+                @foreach (var f in engineFiles)
+                {
+                    <option value="@f">@Path.GetFileNameWithoutExtension(f)</option>
+                }
+            </select>
+            <span class="lc-status @statusClass">@statusText</span>
+        </div>
+    </div>
+
+    <div class="lc-body">
+        <div class="lc-side">
+            <ContemptPanel AnalyseMode="@analyse" SettingsChanged="OnSettingsChanged" AnalyseWhiteChanged="w => analyseWhite = w"
+                           Support="@support" EngineName="@(engine?.Name ?? "This engine")" GameBaseMinutes="@gameMinutes" />
+        </div>
+
+        <div class="lc-main">
+            @if (!analyse)
+            {
+                <PlayVsEngineGame Engine="@engine" ShowEngineLoader="false" EngineOptions="@gameOptions"
+                                  PgnEvent="Lc0 contempt training" OnEngineReady="OnEngineReady"
+                                  OnTimeControlApplied="m => gameMinutes = m" />
+            }
+            else
+            {
+                <div class="lc-evals">
+                    <div class="lc-eval">
+                        <span class="lc-eval-lbl">Objective</span>
+                        <span class="lc-eval-val">@objectiveEval</span>
+                    </div>
+                    <div class="lc-eval lc-eval-side">
+                        <span class="lc-eval-lbl">@SideViewLabel</span>
+                        <span class="lc-eval-val">@sideEval</span>
+                    </div>
+                    <span class="lc-eval-note">Same net, same position. Start both panels; the difference is what contempt does to the search.</span>
+                </div>
+                <div class="lc-analyse">
+                    <div class="lc-col">
+                        <div class="lc-col-head lc-col-objective">Objective · contempt off</div>
+                        <EnginePanel @key="@(selectedEnginePath + "|objective")" Id="nnInput1" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@objectiveOptions"
+                                     OnEngineMoveMade="OnEngineMoveMade" OnEngineStarted="OnEngineReady" OnEvalUpdated="OnObjectiveEval"
+                                     CompactChartLegend="true" StatsPanelKey="lc0-contempt-objective" InitialTimeMs="3000" HideCharts="@(!showCharts)" />
+                    </div>
+                    <div class="lc-col lc-board">
+                        @if (supportsOverlay)
+                        {
+                            <div class="lc-overlay">
+                                <label for="lc-overlay-select">Overlay</label>
+                                <select id="lc-overlay-select" @bind="selectedOverlay" @bind:after="ApplyOverlay">
+                                    @foreach (var setting in Enum.GetValues(typeof(OverlaySettings)).Cast<OverlaySettings>())
+                                    {
+                                        <option value="@setting">@setting</option>
+                                    }
+                                </select>
+                                <span class="lc-overlay-from">from</span>
+                                <div class="lc-overlay-src">
+                                    <button class="@(overlayEngineSource == 1 ? "on" : "")" @onclick="() => SetOverlaySource(1)">Objective</button>
+                                    <button class="@(overlayEngineSource == 2 ? "on lc-src-side" : "")" @onclick="() => SetOverlaySource(2)">Side view</button>
+                                </div>
+                            </div>
+                        }
+                        <ModernChessboard @ref="chessboardRef" ShowFenField="true" FENposition="@fen" ShowChessNavButtons="true" ShowMoveList="true"
+                                          MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Below"
+                                          ShowSizeSlider="true" SizeKey="lc0-contempt"
+                                          OnMoveMadeOnBoard="OnBoardChanged" OnNewFENOnBoard="OnBoardChanged" ChessBoard="@board" />
+                    </div>
+                    <div class="lc-col">
+                        <div class="lc-col-head lc-col-side">@SideViewLabel</div>
+                        <EnginePanel @key="@(selectedEnginePath + "|side")" Id="nnInput2" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@sideOptions"
+                                     OnEngineMoveMade="OnEngineMoveMade" OnEvalUpdated="OnSideEval"
+                                     CompactChartLegend="true" StatsPanelKey="lc0-contempt-side" InitialTimeMs="3000" HideCharts="@(!showCharts)" />
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool analyse = true;   // the page opens in Analyze mode
+    private bool analyseWhite = true;
+    private double? gameMinutes;
+    private ContemptSettings settings = ContemptSettings.Lc0Defaults;
+    private ContemptSupport support;
+
+    private readonly List<string> engineFiles = new();
+    private string selectedEnginePath = "";
+    private EngineConfig engine;
+
+    // New list instances on every change: the components send a list once per instance.
+    private IReadOnlyList<EngineOption> gameOptions;
+    private IReadOnlyList<EngineOption> sideOptions;
+    private IReadOnlyList<EngineOption> objectiveOptions = toOptions(objective).ToList();
+
+    // Analyse mode's board, shared by both panels the way Dual analysis shares its board.
+    private Chess.Board board = new();
+    private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    private ModernChessboard chessboardRef;
+    private string objectiveEval = "–";
+    private string sideEval = "–";
+
+    // The board overlay can come from either search; the side view is the one this page is
+    // about, so it is the default source. SearchPolicy, not Policy: contempt does not touch the
+    // policy head, so raw policy is the same from both searches - the search-weighted one is
+    // where they differ. Same OverlaySetting ids as Dual analysis.
+    private OverlaySettings selectedOverlay = OverlaySettings.SearchPolicy;
+    private int overlayEngineSource = 2;
+    // Charts off by default here: the PV lines and the move stats are what a side-by-side
+    // comparison needs, and the charts are one click away.
+    private bool showCharts;
+    private bool supportsOverlay => engine?.Options?.Keys.Contains("LogLiveStats") ?? false;
+
+    private string statusText = "";
+    private string statusClass = "";
+    private string SideViewLabel =>
+        settings.Mode.IsDisable ? "Nobody (objective)"
+        : $"{(analyseWhite ? "White" : "Black")}'s view · {(settings.Contempt >= 0 ? "+" : "")}{settings.Contempt} Elo";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && analyse) await ApplyOverlay();
+    }
+
+    protected override void OnInitialized()
+    {
+        var folder = SettingsService.Settings.EngineDefsFolder;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+                engineFiles.AddRange(Directory.GetFiles(folder, "*.json").OrderBy(Path.GetFileName));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not list engine defs in {folder}", folder);
+        }
+        // The def chosen here last time; else the default engine if it is an Lc0; else the first
+        // def that looks like one.
+        var remembered = SettingsService.Settings.ContemptEnginePath;
+        var preferred = SettingsService.Settings.DefaultEnginePath;
+        selectedEnginePath =
+            engineFiles.FirstOrDefault(f => string.Equals(f, remembered, StringComparison.OrdinalIgnoreCase))
+            ?? engineFiles.FirstOrDefault(f => string.Equals(f, preferred, StringComparison.OrdinalIgnoreCase) && LooksLikeLc0(f))
+            ?? engineFiles.FirstOrDefault(LooksLikeLc0)
+            ?? engineFiles.FirstOrDefault()
+            ?? "";
+        LoadEngine();
+    }
+
+    private static bool LooksLikeLc0(string path) =>
+        Path.GetFileName(path).Contains("lc0", StringComparison.OrdinalIgnoreCase)
+        || Path.GetFileName(path).Contains("leela", StringComparison.OrdinalIgnoreCase);
+
+    private async Task OnEngineChosen()
+    {
+        support = null;
+        LoadEngine();
+        if (engine != null)
+        {
+            var s = SettingsService.Settings;
+            s.ContemptEnginePath = selectedEnginePath;
+            SettingsService.Save(s);
+        }
+        if (analyse) await ApplyOverlay();
+    }
+
+    private void LoadEngine()
+    {
+        if (string.IsNullOrEmpty(selectedEnginePath))
+        {
+            engine = null;
+            statusText = "no engine";
+            statusClass = "lc-bad";
+            return;
+        }
+        try
+        {
+            engine = Configuration.JSON.readSingleEngineConfig(selectedEnginePath);
+            statusText = "loaded · options are checked when the engine starts";
+            statusClass = "";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not read {file}", selectedEnginePath);
+            engine = null;
+            statusText = $"could not read {Path.GetFileName(selectedEnginePath)}: {ex.Message}";
+            statusClass = "lc-bad";
+        }
+    }
+
+    private async Task SetMode(bool toAnalyse)
+    {
+        if (analyse == toAnalyse) return;
+        // The other mode's components dispose their engines; the panel re-seeds itself.
+        analyse = toAnalyse;
+        support = null;
+        objectiveEval = "–";
+        sideEval = "–";
+        if (analyse) await ApplyOverlay();
+    }
+
+    private async Task ToggleCharts()
+    {
+        showCharts = !showCharts;
+        if (showCharts)
+        {
+            // Plotly laid the charts out while hidden; a resize event makes it measure again.
+            try
+            {
+                var module = await JsInteropService.ImportModuleAsync(JS);
+                await module.InvokeVoidAsync("triggerResizeEvent");
+            }
+            catch (Exception ex) { logger.LogWarning(ex, "Chart resize after showing the charts failed"); }
+        }
+    }
+
+    private async Task SetOverlaySource(int source)
+    {
+        overlayEngineSource = source;
+        await ApplyOverlay();
+    }
+
+    // Both panels keep the chosen overlay type; the board shows the one from the active source.
+    private async Task ApplyOverlay()
+    {
+        var setting = supportsOverlay ? selectedOverlay : OverlaySettings.None;
+        overlaySettings.SetOverlaySetting("nnInput1", setting);
+        overlaySettings.SetOverlaySetting("nnInput2", setting);
+        await Notifier.UpdateDisplaySettings(setting, overlayEngineSource == 1 ? "nnInput1" : "nnInput2");
+    }
+
+    private void OnSettingsChanged(ContemptSettings s)
+    {
+        settings = s;
+        var list = toOptions(s).ToList();
+        if (analyse) sideOptions = list; else gameOptions = list;
+    }
+
+    private void OnEngineReady(IReadOnlyCollection<string> optionNames)
+    {
+        support = supportOf(optionNames);
+        if (!support.HasContempt)
+        {
+            statusText = "this engine has no ContemptMode - contempt is an Lc0 feature";
+            statusClass = "lc-bad";
+        }
+        else if (support.Missing.Length > 0)
+        {
+            statusText = $"older Lc0: missing {string.Join(", ", support.Missing)}";
+            statusClass = "lc-warn";
+        }
+        else
+        {
+            statusText = $"ready · {support.Visible.Length} contempt options listed";
+            statusClass = "lc-good";
+        }
+        StateHasChanged();
+    }
+
+    // --- Analyse mode: the board feeds both panels through the shared FEN ----------------------
+    private async Task OnBoardChanged(string _)
+    {
+        fen = board.FEN();
+        objectiveEval = "–";
+        sideEval = "–";
+        await Notifier.UpdateFen(fen);
+    }
+
+    private async Task OnEngineMoveMade(string move)
+    {
+        chessboardRef?.UpdateVariationsDisplay();
+        fen = board.FEN();
+        objectiveEval = "–";
+        sideEval = "–";
+        await Notifier.UpdateFen(fen);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnObjectiveEval((double? Cp, int? Mate) e) { objectiveEval = FormatEval(e); }
+    private void OnSideEval((double? Cp, int? Mate) e) { sideEval = FormatEval(e); }
+
+    private static string FormatEval((double? Cp, int? Mate) e)
+    {
+        if (e.Mate.HasValue) return $"M{e.Mate.Value}";
+        // EvalType.CP carries pawns, white's perspective (EnginePanel.PublishEval), not centipawns.
+        if (e.Cp.HasValue) return e.Cp.Value.ToString("+0.00;-0.00;0.00", System.Globalization.CultureInfo.InvariantCulture);
+        return "–";
+    }
+}
