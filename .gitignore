@@ -368,11 +368,11 @@ FodyWeavers.xsd
 /EngineBattle/log.txt
 /WebGUI/wwwroot/tournamentNode.json
 /WebGUI/wwwroot/FenPositions.json
-/WebGUI/wwwroot/tournament.json
 /WebGUI/wwwroot/tournamentNodes.json
 /WebGUI/BT2_TCEC.txt
 /WebGUI/log.txt
 /WebGUI/wwwroot/tournament.json
+/WebGUI/wwwroot/tournament.json.bak
 /Console/log.txt
 /copilot-instructions.md
 /WebGUI/wwwroot/cup_bracket.json
@@ -380,6 +380,10 @@ FodyWeavers.xsd
 /WebGUI/wwwroot/swiss_state.json
 /WebGUI/wwwroot/swiss_state.json.bak
 /WebGUI/wwwroot/Img/imgEB
+
+# Working notes: design plans, investigation write-ups, API references kept while building.
+# Local only, never pushed. Code that needs to explain itself does so in its own comments.
+/docs/
 
 # Per-user settings written by the app at runtime. Never commit: it ships inside the release
 # zip, so a committed copy would replace every user's settings on their next update.

@@ -1,4 +1,4 @@
-@using System.Text.Json
+﻿@using System.Text.Json
 @inject IWebHostEnvironment Environment
 
 @{
@@ -105,7 +105,7 @@
 @if (UseContainer)
 {
     <MudContainer Class="pa-4">
-        <MudPaper Class="pa-4" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+        <MudPaper Class="pa-4 eb-scale eb-g-brackets" style="@(FontSize > 0 ? $"--eb-font-max: {FontSize}px;" : "")">
             <div class="swiss-shell swiss-overview-view">
                 @content
             </div>
@@ -114,7 +114,7 @@
 }
 else
 {
-    <MudPaper Class="pa-4" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+    <MudPaper Class="pa-4 eb-scale eb-g-brackets" style="@(FontSize > 0 ? $"--eb-font-max: {FontSize}px;" : "")">
         <div class="swiss-shell swiss-overview-view">
             @content
         </div>

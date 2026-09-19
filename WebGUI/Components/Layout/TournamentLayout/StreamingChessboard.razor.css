@@ -72,4 +72,11 @@
    little breathing room the text reads as part of it. */
 .sb-opening {
     margin-top: 10px;
+    font-size: var(--font-size, 15px);
+}
+
+/* The move list takes its size from the same token the opening line does. The global .moveList
+   rule sets no font-size at all, so this supplies it rather than overriding anything. */
+.moveList {
+    font-size: var(--font-size, 18px);
 }

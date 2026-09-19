@@ -13,10 +13,24 @@
     {
       if (_module == null)
       {
-        _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js?v=1.91.0");
+        _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js?v=1.96.0");
       }
       Module = _module;
       return _module;
+    }
+
+    /// <summary>
+    /// The current screen's key for per-screen settings, or "" if the browser will not say.
+    /// An empty key is not an error: it simply falls back to the shared default.
+    /// </summary>
+    public async Task<string> GetScreenBucketAsync(IJSRuntime jsRuntime)
+    {
+      try
+      {
+        var module = await ImportModuleAsync(jsRuntime);
+        return await module.InvokeAsync<string>("getScreenBucket") ?? "";
+      }
+      catch { return ""; }
     }
   }
 

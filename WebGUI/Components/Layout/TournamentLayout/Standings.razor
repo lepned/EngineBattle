@@ -8,7 +8,10 @@
 
 @inject NotifierService notify
 
-<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
+<div class="standings-container eb-fit eb-g-standings"
+     style="--eb-font-max: @(FontSize > 0 ? Ceiling() : "1rem");
+            --eb-rows: @ScoreTable.Count;
+            --eb-box-h: @(Height > 0 ? $"{Height}px" : "9999px")">
     <div class="header">
         <span class="header-text">Standings</span>
     </div>
@@ -30,7 +33,7 @@
                 @foreach (var context in scoreTable)
                 {
                     <tr class="data-row @(context.Challenger ? "challenger" : "")">
-                        <td class="data-cell">@context.Player</td>
+                        <td class="data-cell name" title="@context.Player">@context.Player</td>
                         <td class="data-cell">@FormatPoints(context)</td>
                         <td class="data-cell">@FormatPerf(context)</td>
                         <td class="data-cell center">@FormatEloWithError(context, context.Challenger, scoreTable.Length == 2 && Array.IndexOf(scoreTable, context) == 0)</td>
@@ -59,6 +62,18 @@
 
     [Parameter]
     public int FontSize { get; set; }
+
+    /// <summary>
+    /// How much of the configured size the table may use, 0.6-1. The page measures how far the
+    /// table overflows its column - the headings no longer wrap, so it can - and hands the
+    /// answer back; 1 means it fits.
+    /// </summary>
+    [Parameter]
+    public double WidthFit { get; set; } = 1.0;
+
+    /// The configured size after that measurement, with a dot whatever the locale.
+    private string Ceiling() =>
+        (FontSize * WidthFit).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "px";
 
     [Parameter]
     public bool ShowNPM { get; set; }

@@ -1,7 +1,15 @@
 ﻿@implements IDisposable
 @using System.Timers
 
-<div class="table-container" >
+@* The id is what the page measures the slack under; the two branches below are mutually
+   exclusive, so only one of these ever exists at a time.
+
+   The height is set here, on the box, rather than left to whichever table happens to be inside
+   it. Without it the box is as tall as its content, so the page measured a different thing
+   depending on where the cycle had got to - starting a run while Latest Games was showing
+   measured an empty "No games available" table and sized the box for that. *@
+<div class="table-container" id="pairingsBox"
+     style="@(tableHeight > 0 ? $"height:{tableHeight}px;" : "")">
 
   @if (activeTableIndex == 0)
   {
@@ -73,7 +81,9 @@
       StateHasChanged();
     }
 
-    if (TableHeight > 0 && TableHeight != tableHeight && TableHeight > 5)
+    // Zero is meaningful: the page uses it to collapse this table when the layout has no room
+    // for it. Anything between 1 and 5 is a transient measurement, not an instruction.
+    if (TableHeight != tableHeight && (TableHeight == 0 || TableHeight > 5))
     {
       tableHeight = TableHeight;
       StateHasChanged();

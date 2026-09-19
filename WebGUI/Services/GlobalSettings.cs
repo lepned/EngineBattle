@@ -112,6 +112,88 @@ public class GlobalSettings
     public string UiFontScale { get; set; } = "normal";        // small | normal | large | xlarge - root font size
     public string NavDrawerWidth { get; set; } = "normal";     // narrow | normal | wide - the menu on the left
 
+    // Tournament text scale: the user's one nudge, multiplied into the ceiling of every
+    // region that opts in (docs/FontScalingPlan.md). Keyed by screen bucket - "1920x1080@1.5" -
+    // because the right nudge on a laptop panel is the wrong one on the 4K monitor it docks to,
+    // and being asked to redo it on every dock is the fiddling this feature exists to remove.
+    // TournamentFontScale is what a screen with no entry of its own gets.
+    public double TournamentFontScale { get; set; } = 1.0;
+    public Dictionary<string, double> TournamentFontScaleByScreen { get; set; } = new();
+
+    // Per-region nudges, by group key ("standings", "crosstable", ...). A group with no entry
+    // follows the global number, which is the case for everyone who never opens Advanced.
+    public Dictionary<string, double> TournamentFontScaleByGroup { get; set; } = new();
+
+    // Chart height on the tournament page, as a multiplier on the two numbers in
+    // tournament.json (LayoutOption.Sizes.LiveChartHeight and MoveChartHeight). Same bargain as
+    // the text nudge and kept per screen for the same reason: how many charts fit above the
+    // fold is a property of the screen, not of the tournament.
+    public double TournamentChartScale { get; set; } = 1.0;
+    public Dictionary<string, double> TournamentChartScaleByScreen { get; set; } = new();
+
+    /// <summary>The chart scale for a screen, falling back to the shared default.</summary>
+    public double ChartScaleFor(string screenKey) =>
+        ClampChartScale(!string.IsNullOrEmpty(screenKey)
+                        && TournamentChartScaleByScreen.TryGetValue(screenKey, out var v)
+                        ? v : TournamentChartScale);
+
+    /// A wider range than the text nudge: a chart can be halved and still read, and doubling one
+    /// is a reasonable thing to want when there is only one on screen.
+    public static double ClampChartScale(double v) => v is >= 0.5 and <= 2.0 ? v : 1.0;
+
+    // The two PV boards under the engine panel: "off", "small", "medium", "large", or "" to
+    // use whatever tournament.json says. An override rather than a replacement, because the
+    // file's answer is right for a two-engine broadcast and wrong the moment several boards
+    // run at once and the row has nowhere to go. "off" removes the row, it does not hide it.
+    public string TournamentPvBoard { get; set; } = "";
+
+    /// <summary>The scale for a screen, falling back to the shared default.</summary>
+    public double FontScaleFor(string screenKey) =>
+        ClampFontScale(!string.IsNullOrEmpty(screenKey)
+                       && TournamentFontScaleByScreen.TryGetValue(screenKey, out var v)
+                       ? v : TournamentFontScale);
+
+    /// <summary>The scale for one region, falling back to that screen's number.</summary>
+    public double FontScaleFor(string screenKey, string group) =>
+        !string.IsNullOrEmpty(group) && TournamentFontScaleByGroup.TryGetValue(group, out var g)
+            ? ClampFontScale(g) : FontScaleFor(screenKey);
+
+    /// Out-of-range, zero and NaN all mean "no nudge" rather than an unreadable page.
+    public static double ClampFontScale(double v) => v is >= 0.6 and <= 1.6 ? v : 1.0;
+
+    /// <summary>
+    /// The regions of the tournament page that can be nudged, and written back, on their own.
+    ///
+    /// One array, three readers: Appearance builds a slider per entry, MainLayout turns the
+    /// saved numbers into CSS rules, and "save sizes to tournament.json" knows which fields to
+    /// write. Keeping them here is also what keeps a hand-edited settings file from reaching a
+    /// stylesheet - a group name that is not in this list is simply not a group.
+    ///
+    /// Selector is the element that ends up CARRYING the size, and is null for the regions
+    /// whose size needs no measuring: nothing clamps them, so the size on screen is exactly
+    /// the ceiling times the nudge and C# can work it out without asking the browser.
+    ///
+    /// JsonFields may be EMPTY, which means the group can be nudged but not written back. That
+    /// is the cup and ladder progress tables: what is on screen there is fed from StandingsFont,
+    /// not from CupBracketFont, so writing the measured size into the three bracket fields would
+    /// overwrite three separately tuned settings with the standings size.
+    /// </summary>
+    public sealed record FontGroup(string Key, string Label, string Selector, string[] JsonFields);
+
+    public static readonly FontGroup[] FontGroups =
+    {
+        new("standings",   "Standings",       ".eb-g-standings .data-cell",  ["StandingsFont"]),
+        new("crosstable",  "Crosstable",      ".eb-g-crosstable .data-cell", ["CrossTableFont"]),
+        new("pairings",    "Pairings",        ".eb-g-pairings .data-cell",   ["PairingsFont"]),
+        new("latest",      "Latest games",    ".eb-g-latest .data-cell",     ["LatestGamesFont"]),
+        new("brackets",    "Cup and ladder",  ".eb-g-brackets .data-cell", []),
+        new("movelist",    "Move list",       null, ["MoveListFont"]),
+        new("enginepanel", "Engine panel",    null, ["EnginesPanelFont"]),
+        new("banner",      "Header banner",   null, ["InfoBannerFont"]),
+        new("description", "Description",     null, ["TournamentDescFont"]),
+        new("pv",          "PV lines",        null, ["PVLabelFont"]),
+    };
+
     // Board theme
     public string BoardThemePreset { get; set; } = "eb-blue";   // preset key or "custom"
     public string BoardCustomLightColor { get; set; } = "#B1D8DB";

@@ -1,18 +1,23 @@
 ﻿@using MudBlazor
 
-<div class="pairings-container"
-style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
+@* The ceiling, with no row clamp. This list is the NEXT twenty, not a table you have to see
+   all of: the clamp would divide the box by twenty and land on the floor, so you would get all
+   twenty at 10px instead of the next seven at the size the file asks for. Reading the next few
+   is the job, and the rest clips. Standings and the crosstable keep the clamp because there
+   every row counts. *@
+<div class="pairings-container eb-scale eb-g-pairings"
+     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem");
             --max-height: @(tableHeight > 0 ? $"{tableHeight}px" : "inherit");">
   <div class="header">
     <span class="header-text">Upcoming Pairings@(HeaderSuffix)</span>
   </div>
-  <div class="table-wrapper" style="--min-height: @(tableHeight> 0 ? $"{tableHeight - 100}px" : "auto");">
+  <div class="table-wrapper">
     <table class="custom-table">
       <thead>
         <tr class="header-row">
           <th class="header-cell">White</th>
           <th class="header-cell">Black</th>
-          <th class="header-cell">Opening</th>
+          <th class="header-cell opening">Opening</th>
         </tr>
       </thead>
       <tbody>
@@ -22,15 +27,19 @@ style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "inherit");
           foreach (var context in pairingList)
           {
             <tr class="data-row">
-              <td class="data-cell">@context.White.Name</td>
-              <td class="data-cell">@context.Black.Name</td>
-              <td class="data-cell">@PGNHelper.getOpeningInfoOnly(context.Opening)</td>
+              <td class="data-cell name" title="@context.White.Name">@context.White.Name</td>
+              <td class="data-cell name" title="@context.Black.Name">@context.Black.Name</td>
+              @{ var opening = PGNHelper.getOpeningInfoOnly(context.Opening); }
+              <td class="data-cell opening" title="@opening">@opening</td>
             </tr>
           }
         }
         else
         {
-          <tr class="data-row" style="@($"height: {tableHeight}px;")">
+          @* An ordinary row. It used to be stretched to the height of the whole table, and a
+             table cell centres its content, so the message appeared halfway down the box with
+             nothing above or below it. *@
+          <tr class="data-row">
             <td class="data-cell" colspan="3">No pairings available</td>
           </tr>
         }

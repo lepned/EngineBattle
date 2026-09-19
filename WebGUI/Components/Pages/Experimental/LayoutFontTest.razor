@@ -1,0 +1,181 @@
+﻿@page "/layouttest"
+@using WebGUI.Components.Layout.TournamentLayout
+@using WebGUI.Components.Layout.CrosstableLayout
+@using System.Linq
+
+<PageTitle>Layout font test</PageTitle>
+
+@*
+    Dev page for the dynamic font scaling work (docs/FontScalingPlan.md).
+
+    Visual work has no unit test: the question "does a crowded table still fit, and does a small
+    one still look exactly as before" is answered by looking. This page puts one table type in
+    boxes of three heights at five field sizes, so a single screenshot covers the whole matrix -
+    including the two cases that matter most, 2 engines in a tall box (must hit the ceiling from
+    tournament.json, i.e. no visible change) and 24 in a short one (must shrink, not clip).
+
+    The scale slider previews the user's nudge, which is the next phase; here it only sets
+    --eb-font-scale on this page so the multiplication in the clamp can be seen working.
+*@
+
+<div style="padding:12px 16px;">
+    <h3 style="margin:0 0 4px 0;">Layout font test</h3>
+    <p style="margin:0 0 14px 0; opacity:0.75; max-width:70ch;">
+        Each box is exactly as tall as the number above it, and holds the number of rows in the
+        column heading. The ceiling is the size tournament.json would give this table.
+    </p>
+
+    <div style="display:flex; flex-wrap:wrap; gap:22px; align-items:center; margin-bottom:16px;">
+        <label>
+            Table:
+            <select @bind="table" @bind:event="onchange">
+                <option value="standings">Standings</option>
+                <option value="crosstable">Crosstable</option>
+                <option value="pairings">Pairings</option>
+                <option value="latest">Latest games</option>
+            </select>
+        </label>
+
+        <label>
+            Ceiling (tournament.json):
+            <input type="number" min="6" max="40" style="width:60px;" @bind="ceilingPx" @bind:event="onchange" />
+            px
+        </label>
+
+        <label>
+            User scale: @scale.ToString("0.00")
+            <input type="range" min="0.6" max="1.6" step="0.05" style="width:160px; vertical-align:middle;"
+                   @bind="scale" @bind:event="oninput" />
+        </label>
+
+        <label>
+            <input type="checkbox" @bind="longNames" />
+            Long engine names
+        </label>
+    </div>
+
+    <div style="--eb-font-scale: @scale.ToString(System.Globalization.CultureInfo.InvariantCulture);">
+        <table style="border-collapse:separate; border-spacing:10px;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; opacity:0.7;">box</th>
+                    @foreach (var n in Counts)
+                    {
+                        <th style="text-align:left; opacity:0.7;">@n rows</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var h in Heights)
+                {
+                    <tr>
+                        <td style="vertical-align:top; opacity:0.7; white-space:nowrap;">@h px</td>
+                        @foreach (var n in Counts)
+                        {
+                            <td style="vertical-align:top;">
+                                <div style="width:330px; height:@(h)px; overflow:hidden; border:1px solid #555; border-radius:4px;">
+                                    @RenderTable(n, h)
+                                </div>
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private static readonly int[] Counts = { 2, 4, 8, 16, 24 };
+    private static readonly int[] Heights = { 150, 250, 400 };
+
+    // Query parameters as well as controls: ?table=crosstable&ceiling=14 makes each case a URL,
+    // which is what lets a screenshot script walk the whole matrix without driving the page.
+    [SupplyParameterFromQuery(Name = "table")] private string TableQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "ceiling")] private int? CeilingQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "longnames")] private bool? LongNamesQuery { get; set; }
+
+    private string table = "standings";
+    private int ceilingPx = 12;
+    private double scale = 1.0;
+    private bool longNames;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(TableQuery)) table = TableQuery;
+        if (CeilingQuery is > 0) ceilingPx = CeilingQuery.Value;
+        if (LongNamesQuery.HasValue) longNames = LongNamesQuery.Value;
+    }
+
+    private RenderFragment RenderTable(int rows, int height) => builder =>
+    {
+        switch (table)
+        {
+            case "crosstable":
+                builder.OpenComponent<CrossTableSummary>(0);
+                builder.AddAttribute(1, "CrossTable", CrossTable(rows));
+                builder.AddAttribute(2, "FontSize", ceilingPx);
+                builder.AddAttribute(3, "Height", height);
+                builder.CloseComponent();
+                break;
+            case "pairings":
+                builder.OpenComponent<Pairings>(0);
+                builder.AddAttribute(1, "PairingList", PairingList(rows));
+                builder.AddAttribute(2, "FontSize", ceilingPx);
+                builder.AddAttribute(3, "TableHeight", height);
+                builder.CloseComponent();
+                break;
+            case "latest":
+                builder.OpenComponent<LatestGames>(0);
+                builder.AddAttribute(1, "Results", ResultList(rows));
+                builder.AddAttribute(2, "FontSize", ceilingPx);
+                builder.AddAttribute(3, "TableHeight", height);
+                builder.CloseComponent();
+                break;
+            default:
+                builder.OpenComponent<Standings>(0);
+                builder.AddAttribute(1, "ScoreTable", ScoreTable(rows));
+                builder.AddAttribute(2, "FontSize", ceilingPx);
+                builder.AddAttribute(3, "Height", height);
+                builder.CloseComponent();
+                break;
+        }
+    };
+
+    // A name long enough to be the width problem the plan calls out, or a short ordinary one.
+    private string Name(int i) =>
+        longNames
+            ? $"a4000-21bn11_prod_1024_10_f2_h1_{600 + i * 100}M"
+            : $"Engine {i + 1}";
+
+    private List<PlayerResult> ScoreTable(int rows) =>
+        Enumerable.Range(0, rows).Select(i =>
+            createPlayerResult(Name(i), (rows - i) * 1.5, 3200 - i * 17, 12.3, rows * 2,
+                               60 - i, 80 - i, rows - i, i, i / 2, 0,
+                               2, 1, 0, 1, 2, 0, 3, 1)).ToList();
+
+    private List<Result> ResultList(int rows) =>
+        Enumerable.Range(0, rows).Select(i =>
+            createResult(Name(i), Name((i + 1) % Math.Max(rows, 1)),
+                         new List<string>(Enumerable.Repeat("e4", 60 + i)),
+                         i % 3 == 0 ? "1-0" : "1/2-1/2",
+                         ResultReason.Checkmate, 90_000L + i * 1000)).ToList();
+
+    private List<Pairing> PairingList(int rows) =>
+        Enumerable.Range(0, rows).Select(i =>
+        {
+            var white = EngineConfig.Empty; white.Name = Name(i);
+            var black = EngineConfig.Empty; black.Name = Name((i + 1) % Math.Max(rows, 1));
+            return new Pairing(PgnGame.Empty(0), white, black, i + 1, "1", "");
+        }).ToList();
+
+    private List<CrossTableEntry> CrossTable(int rows) =>
+        Enumerable.Range(0, rows).Select(i =>
+            new CrossTableEntry(Name(i), Name(i), i + 1, false,
+                Enumerable.Range(0, rows)
+                          .Where(j => j != i)
+                          .Select(j => new Tuple<string, WDLStats>(Name(j), new WDLStats(2, 1, 1)))
+                          .ToArray(),
+                Array.Empty<Tuple<string, string[]>>(),
+                (rows - i) * 1.5, 55.0 - i)).ToList();
+}

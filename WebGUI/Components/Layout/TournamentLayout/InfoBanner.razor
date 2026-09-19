@@ -1,6 +1,8 @@
 ﻿@using System.Linq
 
-<MudItem Class="no-scroll ml-5 mr-5 mt-1">
+@* The three sizes below are all relative to one token, so the banner takes the user's nudge
+   like every other region and the arithmetic that used to run in C# now runs in CSS. *@
+<MudItem Class="no-scroll ml-5 mr-5 mt-1 eb-scale eb-g-banner" Style=@FontToken>
 
     <MudItem Class="d-flex">
         <MudItem Style=@FontHeader Class="d-flex infoBanner mr-3" lg="12">
@@ -104,10 +106,24 @@
     [Parameter]
     public InfoBannerInfo Info { get; set; }
 
-    private int fontSize = 8;
-    private string FontNormal;
-    private string FontHeader;
-    private string FontSmall;
+
+    // Constants now: the number they scale from arrives as --font-size, which .eb-scale
+    // computes from the ceiling below and the user's nudge. The caps stay where they were -
+    // this banner is one row across the whole page and cannot grow without wrapping.
+    private const string FontHeader = "font-size: calc(var(--font-size, 14px) + 1px);";
+    private const string FontNormal = "font-size: min(21px, calc(var(--font-size, 14px) - 1px));";
+    /// <summary>
+    /// How much of the configured size the banner may use, 0.5-1. The page measures how far the
+    /// strip overflows its width and hands the answer back; 1 means it fits.
+    /// </summary>
+    [Parameter]
+    public double WidthFit { get; set; } = 1.0;
+
+    private string FontToken =>
+        "--eb-font-max: "
+        + ((FontSize > 0 ? FontSize : 14) * WidthFit)
+            .ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)
+        + "px;";
     private string move50 => $"{Move50 / 2}.{Move50 % 2}"; //CalcMove50();
     private string ends { get; set; }
 
@@ -128,18 +144,5 @@
     }
 
     private int H2HMaxDigits => Math.Max(1, H2HGroups.Max(g => g.Length));
-
-    protected override void OnAfterRender(bool firstRender)
-    {
-        if (FontSize > 0 && FontSize != fontSize)
-        {
-            fontSize = FontSize;
-            FontHeader = $"font-size:{fontSize + 1}px;";
-            FontNormal = $"font-size:{Math.Min(21, fontSize - 1)}px;";
-            FontSmall = $"font-size:{Math.Min(18, fontSize - 2)}px;";
-            StateHasChanged();
-        }
-        base.OnAfterRender(firstRender);
-    }
 
 }

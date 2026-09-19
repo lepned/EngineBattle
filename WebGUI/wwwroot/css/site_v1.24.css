@@ -126,6 +126,15 @@ html {
 /* Ensure the scrollbar is only visible when needed */
 .standings-table-wrapper {
     overflow-y: auto; /* Show scrollbar only when content overflows */
+    /* The page measures this box's width to size the table inside it. Without a stable gutter
+       the vertical scrollbar appearing and disappearing changes that width by ~15px, which the
+       width fit reads as "the column resized" and answers by going back to full size - which
+       brings the scrollbar back. A reserved gutter takes the loop away. */
+    scrollbar-gutter: stable;
+    /* Sideways it clips instead of scrolling: the width fit has a floor, so an extremely
+       narrow column can still leave the table a little wider than its box, and a horizontal
+       scrollbar on a broadcast layout is worse than a slightly clipped last column. */
+    overflow-x: hidden;
     
     background-color: #2c2f35; /* Optional: Background color for the container */
 }
@@ -225,6 +234,8 @@ html {
 
 .pv-white-box,
 .pv-black-box {
+  /* The ceiling arrives as --eb-font-max on the element and .eb-scale turns it into this. */
+  font-size: var(--font-size, 16px);
   border-radius: 10px;
   font-weight: 400;
   padding: 5px;
@@ -279,6 +290,24 @@ html {
 .infoBanner {
   color: #b0b7c0;
   background-color: black;
+}
+
+/* The banner is one row by definition: a label that breaks in two ("Time control") turns the
+   whole strip into two rows and pushes everything below it down. So the cells never wrap, the
+   row overflows instead, and the page measures that overflow and lowers the banner's ceiling
+   until it fits - the same answer the crosstable gets, because it is the same question: the
+   width depends on content (the hardware line) that no formula predicts.
+
+   overflow:hidden is the safety net for the frame before the measurement lands: it clips
+   rather than pushing a scrollbar onto the page. */
+.infoBanner,
+.infoBannerContent {
+  overflow: hidden;
+}
+
+.infoBanner > *,
+.infoBannerContent > * {
+  white-space: nowrap;
 }
 
 .multiLine {
@@ -553,23 +582,86 @@ a, .btn-link {
   transform: translateZ(0); /* Improve scrolling */
 }
 
+/* Full width of its column, for the same reason .standings-container is. 10px a side is 20 of
+   about 310, and this table has to fit two engine names and an opening across three columns -
+   every pixel it gives back is a couple of characters of a name it would otherwise cut.
+   Shared with the latest-games table, which sits in the same div and wants the same thing. */
 .pairings-container {
   display: flex;
   flex-direction: column;
   height: 100%;
   max-height: var(--max-height);
-  margin-right: 10px;
-  margin-left: 10px;
 }
 
+/* Full width of the column it sits in, the way the engine panel above it is. The 15px a side
+   were costing this table 30px of a column that is only about 360px wide to begin with - a
+   whole column of numbers - and they bought nothing the panel above did not already align to.
+   Shared with the crosstable and the cup and ladder tables, which sit in the same column and
+   want the same thing. */
 .standings-container {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
   margin-top: 10px;
-  margin-left: 15px;
-  margin-right: 15px;
+}
+
+/* --- Dynamic font scaling, L1 (docs/FontScalingPlan.md) ---------------------------------------
+   A region marked .eb-fit says how much content it holds (--eb-rows) and how tall its box is
+   (--eb-box-h); CSS works out the size from that. The value in tournament.json becomes the
+   CEILING rather than the answer, so a small field on a big screen looks exactly as it does
+   today and only a crowded box shrinks - which is the case that used to send people back into
+   the JSON file.
+
+   The property is declared on the CHILDREN, not on .eb-fit itself: everything below reads
+   var(--font-size), and a custom property set on an element is inherited by its whole subtree.
+
+   The middle term: every row may take one slot of the box, plus two slots for the section
+   heading and the table's own header row, and a glyph may use 0.55 of its slot - the rest is
+   line spacing and cell padding. A region that does not know its height leaves --eb-box-h
+   unset, the term becomes huge, and the ceiling always wins: no height, no change. */
+/* The other half of the bargain: a region whose size is not decided by a row count - a banner,
+   a bracket, an engine panel - still wants the user's nudge. .eb-scale is the ceiling times
+   that nudge and nothing else, declared on the element itself since no container query units
+   are involved. Both classes end at the same place: everything below reads var(--font-size). */
+.eb-scale {
+    --font-size: calc(var(--eb-font-max, 1rem) * var(--eb-font-scale, 1));
+}
+
+/* Most regions are containers whose stylesheet spends var(--font-size) on the parts inside.
+   Where the marked element IS the text - a list item, a line of description - there is no
+   inner rule to do it, so spend it here. eb-text opts in; a container that sizes its own
+   parts must not, or it would resize its headings too. */
+.eb-scale.eb-text {
+    font-size: var(--font-size);
+}
+
+/* A setup line that breaks in two is a bullet with a widow under it, and the list grows a row
+   for no information. Same treatment as the banner: never wrap, overflow instead, and let the
+   page measure that overflow and lower the ceiling until every line fits. The paragraph above
+   the list is free text and still wraps - it shares the ceiling, not the rule.
+
+   Unlike the banner, this one has a hard limit on how far it may shrink (see the page's 0.8
+   floor): these lines are sentences, and the column they sit in is narrow, so fitting the
+   longest of them would mean a size nobody can read. Past that point the line gives up its
+   tail instead, with the whole of it one hover away - the same trade the engine names make. */
+li.eb-g-description {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The nudge multiplies ALL THREE terms, not just the ceiling. That matters: a nudge makes the
+   rest of the page taller, which leaves this box less room, which would push the middle term
+   DOWN - so asking for larger text could make a table smaller. Scaling the whole curve keeps
+   the control monotone, which is worth more than a guarantee that everything still fits: at a
+   big nudge a crowded table scrolls, which is what "make it bigger" asks for, and A- puts it
+   straight back. */
+.eb-fit > * {
+    --font-size: clamp(
+        calc(var(--eb-font-floor, 10px) * var(--eb-font-scale, 1)),
+        calc(var(--eb-box-h, 9999px) / (var(--eb-rows, 1) + 2) * 0.55 * var(--eb-font-scale, 1)),
+        calc(var(--eb-font-max, 1rem) * var(--eb-font-scale, 1)));
 }
 
 .header {
@@ -602,7 +694,10 @@ a, .btn-link {
 }
 
 .header-cell {
-  padding: 4px 12px;
+  /* em, not px: at 12px a side, six columns spend 144px on padding alone - close to half of
+     the ~330px this table usually gets. Tying it to the text means a narrower column gives up
+     whitespace first and size second, which is the right order. */
+  padding: 0.28em 0.38em;
   text-align: left;
   font-size: var(--font-size);
   font-weight: normal;
@@ -610,6 +705,10 @@ a, .btn-link {
   border-bottom: 2px solid #404040;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* A heading that breaks - "W-D-L" into "W-D-" and "L" - costs the table two extra rows and
+     reads as a mistake. The heading stays on one line and the table overflows instead, which
+     the page measures and answers by lowering the table's ceiling until it fits. */
+  white-space: nowrap;
 }
 
 .data-row {
@@ -621,11 +720,39 @@ a, .btn-link {
   }
 
 .data-cell {
-  padding: 2px 12px;
+  padding: 0.14em 0.38em;
   font-size: var(--font-size);
   color: #c7cace;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A long engine name is a WIDTH problem, and shrinking a whole table because one net is called
+   a4000-21bn11_prod_1024_10_f2_h1_900M is the wrong trade: every other column pays for one
+   name. The name column gives up its tail instead, and the title attribute keeps the whole
+   name one hover away. The cap is in ch, so it is a number of characters at whatever size the
+   clamp settled on rather than a pixel count that means something different at each size. */
+.data-cell.name {
+  /* 14ch, not 24: this column is the table's only elastic one, and it is the cheapest thing in
+     it to give up. A standings column is often barely 330px wide, where 24ch of name is half
+     the table and the numbers get squeezed off the right edge instead. Fourteen characters is
+     enough to tell two nets apart at a glance, and the whole name is one hover away. */
+  max-width: var(--eb-name-max, 14ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The opening column in the pairings table is the one cell that is not a name, and the table
+   has to fit two engine names beside it in about 330px. An opening reads fine truncated - the
+   family is the first word or two, and the whole of it is a hover away - whereas half an engine
+   name tells you nothing about which net is playing. So this one gives up its width first, but
+   only some of it. Sixteen characters, tuned by eye against real opening names. */
+.data-cell.opening,
+.header-cell.opening {
+  max-width: var(--eb-opening-max, 16ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .center {
@@ -837,8 +964,8 @@ a, .btn-link {
    button stayed in the flow, taking a row at the top of the page.
 
    A button that is always on screen costs a row, a column, or the page's first word. This one
-   costs nothing: it is invisible and takes no clicks until the pointer comes within 80px of
-   the corner (watchDrawerToggleCorner sets the class), and Ctrl+B does the same job without
+   costs nothing: it is invisible and takes no clicks until the pointer comes near
+   the corner - watchCorner uses this button's own box plus a margin - and Ctrl+B does it without
    the mouse. Fixed rather than in the flow, and above MudBlazor's drawer (z 1100-1200) so an
    overlay drawer on a narrow window cannot bury it. */
 .eb-drawer-toggle {
@@ -853,7 +980,11 @@ a, .btn-link {
     transition: opacity 120ms ease;
 }
 
-html.eb-toggle-near .eb-drawer-toggle,
+/* :hover is what keeps it open once it is open - the pointer being ON the control is the
+   clearest possible statement that it is wanted, and it needs no distance arithmetic to agree.
+   It can only fire while the control already takes events, which is exactly when we want it. */
+html.eb-near-toggle .eb-drawer-toggle,
+.eb-drawer-toggle:hover,
 .eb-drawer-toggle:focus-visible {
     opacity: 1;
     pointer-events: auto;
@@ -865,12 +996,100 @@ html.eb-toggle-near .eb-drawer-toggle,
     background: var(--mud-palette-action-default-hover);
 }
 
+/* The page-size controls, bottom-right: how big the tables read, and whether the PV boards are
+   there at all. Same bargain as the drawer toggle - nothing on screen until the pointer comes
+   near the corner, and no clicks taken while it is away - so a broadcast never shows
+   it. Small monospaced digits so the percentage does not make the row jump as it counts. */
+.eb-fontscale {
+    position: fixed;
+    right: 10px;
+    bottom: 10px;
+    z-index: 1300;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 5px 8px;
+    border: 1px solid rgba(125, 132, 156, 0.35);
+    border-radius: 6px;
+    background: var(--mud-palette-surface, #2c2f35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+/* :focus-visible, not :focus-within - a button keeps focus after a mouse click, so
+   :focus-within left the control sitting on screen until something else was clicked. This way
+   it stays open for someone tabbing to it and closes when the mouse is done with it. */
+html.eb-near-fontscale .eb-fontscale,
+.eb-fontscale:hover,
+.eb-fontscale:has(:focus-visible) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.eb-fontscale-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* A fixed width so the two rows' buttons line up under each other. */
+.eb-fontscale-label {
+    min-width: 2.4em;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--mud-palette-text-secondary, #b6b9c2);
+}
+
+.eb-fontscale button {
+    border: 1px solid rgba(125, 132, 156, 0.35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--mud-palette-text-secondary, #b6b9c2);
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 3px 7px;
+    cursor: pointer;
+}
+
+.eb-fontscale button:hover {
+    color: var(--mud-palette-text-primary, #e6e6e6);
+    border-color: rgba(125, 132, 156, 0.7);
+}
+
+/* Which PV size is in force. The border carries it rather than a fill, so the control stays
+   as quiet as the rest of the corner. */
+.eb-fontscale button.is-on {
+    color: var(--mud-palette-text-primary, #e6e6e6);
+    border-color: rgba(232, 200, 110, 0.75);
+}
+
+.eb-fontscale-reset {
+    font-size: 0.7rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.eb-fontscale-value {
+    min-width: 3.2em;
+    text-align: center;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--mud-palette-text-secondary, #b6b9c2);
+}
+
+
+
 /* Fullscreen is for the content: nothing floats over it. The drawer keeps whatever state it
    had on the way in, so navigation is still there if it was open - and F11 brings the rest
    back. Chromium matches display-mode for the browser's own F11; the Fullscreen API's
    :fullscreen does not, and the desktop shell has its own rule. */
-@media all and (display-mode: fullscreen) {
-    .eb-drawer-toggle {
+/* A broadcast in fullscreen shows nothing but the game: neither corner control appears. */
+@media (display-mode: fullscreen) {
+    .eb-drawer-toggle,
+    .eb-fontscale {
         display: none;
     }
 }

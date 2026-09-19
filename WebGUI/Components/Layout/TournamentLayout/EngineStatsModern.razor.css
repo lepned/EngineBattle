@@ -10,20 +10,28 @@
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #e0e0e0;
   align-items: center;
+  /* The size this panel ends up at: never above what tournament.json asked for, never below
+     the readable floor, and in between a share of the width the panel actually has. The user's
+     nudge multiplies both ends, so the control in the corner still moves it either way. */
+  font-size: clamp(
+      calc(var(--eb-font-floor, 10px) * var(--eb-font-scale, 1)),
+      calc(100cqi * var(--eb-panel-k, 0.039) * var(--eb-font-scale, 1)),
+      var(--font-size, 14px));
+}
+
+/* The container is the wrapper, not the panel: a container query never matches the element that
+   declares it, so the width rules below used to be dead and the panel never responded to its
+   column narrowing. Everything inside is sized in em off the panel, so one font-size still
+   drives the whole thing. */
+.engine-stats-fit {
   container-type: inline-size;
   container-name: engine-stats;
+  width: 100%;
 }
 
-/* Scale down fonts in very narrow containers while respecting user FontSize */
-@container engine-stats (max-width: 300px) {
-  .engine-stats-container {
-    font-size: max(0.7em, 10px);
-  }
-}
-
+/* Spacing only. The size itself is the clamp above, which is continuous rather than stepped. */
 @container engine-stats (max-width: 200px) {
   .engine-stats-container {
-    font-size: max(0.6em, 9px);
     gap: 0.2em 0.3em;
     padding: 0.5em;
   }
@@ -234,7 +242,10 @@
   justify-self: center;
 }
 
-/* Main logo - fluid scaling using container query width units */
+/* Main logo - fluid scaling using container query width units.
+   30cqw is deliberate: the grid is 1fr auto 1fr, so whatever this logo takes comes straight
+   out of the two engine cells beside it. Below a third of the panel they have room for a name
+   and a version; at 300px in a 360px panel they had room for two characters. */
 .main-logo {
   max-width: min(20em, 300px, 30cqw);
   max-height: min(12em, 200px, 20cqw);

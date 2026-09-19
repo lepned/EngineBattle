@@ -1,6 +1,8 @@
-@page "/appearance"
+﻿@page "/appearance"
 @inject GlobalSettingsService SettingsService
 @inject BoardThemeService BoardThemeSvc
+@inject IJSRuntime JS
+@inject JavaScriptInteropService JsInteropService
 @using System.Text.Json
 @using WebGUI.Services
 @using WebGUI.Components.Layout.ChessboardLayout
@@ -43,6 +45,54 @@
                     </div>
                 </div>
                 <small>Text scales everywhere, boards keep their size. Widen the menu if larger text makes entries wrap.</small>
+
+                @* A second scale, because the first one cannot do this job: Ctrl+ and the setting
+                   above enlarge everything at once, while the tournament tables need to shrink to
+                   fit their boxes and grow when there is room. This number moves the ceiling those
+                   tables are allowed to reach. *@
+                <div class="field-group" style="margin-top:0.8rem; margin-bottom:0;">
+                    <label>Tournament table text</label>
+                    <div class="coord-color-row">
+                        <input type="range" min="60" max="160" step="5" value="@tournamentFontPct"
+                               @oninput="e => tournamentFontPct = int.Parse((string)e.Value)" @onchange="Apply" />
+                        <span class="piece-scale-value">@tournamentFontPct%</span>
+                    </div>
+                    <small>
+                        Standings, crosstable, pairings and latest games, relative to the sizes in
+                        tournament.json. Remembered for this screen@(string.IsNullOrEmpty(screenKey) ? "" : $" ({screenKey})"),
+                        so docking to another monitor recalls its own setting.
+                    </small>
+                </div>
+            </div>
+
+            @* Collapsed by default, and it should stay that way: one number is the answer for
+               almost everyone, and this is the rare case where one region wants a different
+               balance from the rest. A region with no number of its own simply follows. *@
+            <div class="appearance-section @SectionClass("fontgroups")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("fontgroups")'>
+                    <span class="section-title">Text per region <span class="scope-badge tournament">Tournament page</span></span>
+                    <span class="collapse-indicator">@Indicator("fontgroups")</span>
+                </h4>
+                @foreach (var g in GlobalSettings.FontGroups)
+                {
+                    <div class="field-group" style="margin-bottom:0.35rem;">
+                        <label>@g.Label</label>
+                        <div class="coord-color-row">
+                            <input type="range" min="60" max="160" step="5" value="@GroupPct(g.Key)"
+                                   @oninput="e => groupPct[g.Key] = int.Parse((string)e.Value)" @onchange="Apply" />
+                            <span class="piece-scale-value">@GroupPct(g.Key)%</span>
+                            @if (groupPct.ContainsKey(g.Key))
+                            {
+                                <button type="button" @onclick="() => ClearGroup(g.Key)"
+                                        title="Drop this region's own size and follow the tournament number">follow</button>
+                            }
+                        </div>
+                    </div>
+                }
+                <small>
+                    Each region starts at the tournament number above and follows it until you move
+                    it. "Follow" gives that back.
+                </small>
             </div>
 
             <div class="appearance-section @SectionClass("theme")">
@@ -503,6 +553,12 @@
 @code {
     private string uiFontScale = "normal";
     private string navDrawerWidth = "normal";
+    private int tournamentFontPct = 100;
+    // Only the regions the user actually singled out; everything else follows the number above.
+    private Dictionary<string, int> groupPct = new();
+    // Empty until the browser answers, and empty for good if it never does; the scale is then
+    // stored as the shared default instead of under a screen of its own.
+    private string screenKey = "";
     private string themePreset = "eb-blue";
     private string customLight = "#B1D8DB";
     private string customDark = "#619EB3";
@@ -625,6 +681,10 @@
         pieceSets = BoardThemeSvc.GetAvailablePieceSets();
         var s = SettingsService.Settings;
         uiFontScale = s.UiFontScale is "small" or "large" or "xlarge" ? s.UiFontScale : "normal";
+        tournamentFontPct = (int)Math.Round(s.FontScaleFor(screenKey) * 100);
+        groupPct = s.TournamentFontScaleByGroup
+                    .Where(kv => GlobalSettings.FontGroups.Any(g => g.Key == kv.Key))
+                    .ToDictionary(kv => kv.Key, kv => (int)Math.Round(GlobalSettings.ClampFontScale(kv.Value) * 100));
         navDrawerWidth = s.NavDrawerWidth is "narrow" or "wide" ? s.NavDrawerWidth : "normal";
         themePreset = string.IsNullOrEmpty(s.BoardThemePreset) ? "eb-blue" : s.BoardThemePreset;
         customLight = s.BoardCustomLightColor ?? "#B1D8DB";
@@ -672,6 +732,42 @@
     private readonly HashSet<string> openSections = new() { "interface", "theme", "pieces" };
     private string SectionClass(string key) => openSections.Contains(key) ? "" : "collapsed";
     private string Indicator(string key) => openSections.Contains(key) ? "▾" : "▸";
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        screenKey = await JsInteropService.GetScreenBucketAsync(JS);
+        var pct = (int)Math.Round(SettingsService.Settings.FontScaleFor(screenKey) * 100);
+        if (pct == tournamentFontPct) return;
+        tournamentFontPct = pct;   // this screen has its own number; show that one
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Writes the nudge where it will be found again: under this screen's key, or as the shared
+    /// default when the browser would not name a screen. 100% removes the entry rather than
+    /// storing a no-op, so the settings file only lists screens that actually wanted something.
+    /// </summary>
+    private void SetTournamentFontScale(GlobalSettings merged)
+    {
+        var scale = Math.Round(tournamentFontPct / 100.0, 2);
+        if (string.IsNullOrEmpty(screenKey))
+        {
+            merged.TournamentFontScale = scale;
+            return;
+        }
+        if (scale == 1.0) merged.TournamentFontScaleByScreen.Remove(screenKey);
+        else merged.TournamentFontScaleByScreen[screenKey] = scale;
+    }
+
+    /// The number a region is showing: its own if it has one, otherwise the tournament number.
+    private int GroupPct(string key) => groupPct.TryGetValue(key, out var v) ? v : tournamentFontPct;
+
+    private void ClearGroup(string key)
+    {
+        groupPct.Remove(key);
+        Apply();
+    }
+
     private void Toggle(string key)
     {
         if (!openSections.Remove(key)) openSections.Add(key);
@@ -688,6 +784,9 @@
         var merged = JsonSerializer.Deserialize<GlobalSettings>(JsonSerializer.Serialize(current)) ?? new GlobalSettings();
         merged.UiFontScale = uiFontScale;
         merged.NavDrawerWidth = navDrawerWidth;
+        SetTournamentFontScale(merged);
+        merged.TournamentFontScaleByGroup = groupPct
+            .ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value / 100.0, 2));
         merged.BoardThemePreset = themePreset;
         merged.BoardCustomLightColor = customLight;
         merged.BoardCustomDarkColor = customDark;

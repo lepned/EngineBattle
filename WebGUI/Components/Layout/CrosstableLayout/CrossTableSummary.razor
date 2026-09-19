@@ -3,11 +3,20 @@
 
 @inject NotifierService notify
 
-<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
+@* --eb-rows counts players. The crosstable also grows SIDEWAYS with the field, and no formula
+   predicts that: the column count and the width of the header text grow together. WidthFit is
+   the page's measurement of how much too wide the table came out, folded into the ceiling so
+   the same clamp handles both directions. *@
+<div class="standings-container eb-fit eb-g-crosstable"
+     style="--eb-font-max: @(FontSize > 0 ? Ceiling() : "1rem");
+            --eb-rows: @CrossTable.Count;
+            --eb-box-h: @(Height > 0 ? $"{Height}px" : "9999px")">
   <div class="header">
     <span class="header-text">Crosstable</span>
   </div>
-    <div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "auto");" id="standingsDiv">
+    @* Its own id: the standings table used to answer to this one too, so a page showing both
+       measured whichever the DOM listed first. *@
+    <div class="standings-table-wrapper" style="max-height: @(Height > 0 ? $"{Height}px" : "auto");" id="crosstableDiv">
     <table class="custom-table">
       <thead>
         <tr class="header-row">
@@ -27,7 +36,7 @@
           var (wins, draws, losses) = GetAllPairs(item);
           <tr class="data-row @(item.Challenger ? "challenger" : "")">
             <td class="data-cell">@item.Rank</td>
-            <td class="data-cell">@item.Player</td>
+            <td class="data-cell name" title="@item.Player">@item.Player</td>
             <td class="data-cell">
               <span style="color: rgba(0, 255, 0, 0.5)">+@wins</span>
               <span>-@draws</span>
@@ -71,8 +80,18 @@
 
   [Parameter]  public List<CrossTableEntry> CrossTable { get; set; } = new();
   [Parameter]  public int FontSize { get; set; }
-  [Parameter]  public int Players { get; set; }
   [Parameter] public int Height { get; set; }
+
+  /// <summary>
+  /// How much of the configured size this table may use, 0.55-1. The page measures the overflow
+  /// and hands the answer back; 1 means it fits, and is what every other caller gets.
+  /// </summary>
+  [Parameter] public double WidthFit { get; set; } = 1.0;
+
+  /// The configured size after the width measurement, written with a dot whatever the locale:
+  /// a comma here is a broken declaration, not a differently formatted one.
+  private string Ceiling() =>
+      (FontSize * WidthFit).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "px";
 
 
   private int fontSize = 8;

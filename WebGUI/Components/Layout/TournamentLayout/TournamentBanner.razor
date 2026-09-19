@@ -1,4 +1,4 @@
-@using System.Linq
+﻿@using System.Linq
 
 @* Tournament header, label above value, grouped by what each number is for: identity, then
    the setup that does not change, then live state, then progress on the right.
@@ -11,7 +11,7 @@
    narrows the viewport, which makes every responsive chart below redraw a few pixels
    smaller. That was a long afternoon to find once. *@
 
-<div class="ib" style="@FontVars">
+<div class="ib eb-scale eb-g-banner" style="@FontVars">
     @* No wordmark here: the app bar already carries it, and two of them read as a mistake.
        The live dot stays — it says something the app bar does not. *@
     <span class="ib-dot @(IsLive ? "live" : null)" title="@(IsLive ? "Tournament running" : "Idle")"></span>
@@ -114,7 +114,9 @@
 
     // One size drives both label and value, so the layout option still controls the banner
     // as a whole rather than only one of the two type sizes.
-    private string FontVars => $"--ib-font:{(FontSize > 0 ? FontSize : 14)}px";
+    // --ib-font is the ceiling; the nudge is folded in here rather than in every rule below.
+    private string FontVars =>
+        $"--eb-font-max:{(FontSize > 0 ? FontSize : 14)}px; --ib-font:var(--font-size)";
 
     private bool HasGames => Info is { TotalGames: > 0 };
 

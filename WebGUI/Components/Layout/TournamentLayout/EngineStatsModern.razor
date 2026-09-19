@@ -1,20 +1,38 @@
-@using WebGUI.Components.Layout.ChessboardLayout
+﻿@using WebGUI.Components.Layout.ChessboardLayout
 @inject NotifierService notify
 
 @implements IAsyncDisposable
 
-<div class="engine-stats-container" style="font-size: @(FontSize)px;">
+@* The size arrives as a token like everywhere else; the stylesheet spends it. Everything
+   inside this box is sized in em, so this one value still drives the whole panel.
+
+   The wrapper exists to BE the container. A container query never matches the container element
+   itself, so the rules that used to sit on .engine-stats-container - which declared the
+   container - could never fire, and the panel kept its configured size however narrow its
+   column got. With the declaration one level out, the panel is a descendant and can be sized
+   from the width it actually has.
+
+   --eb-panel-k is the configured size divided by the width that size was chosen for, so the
+   middle term of the clamp reaches the ceiling at exactly that width and falls away below it. *@
+<div class="engine-stats-fit">
+<div class="engine-stats-container eb-scale eb-g-enginepanel"
+     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem"); --eb-panel-k: @PanelWidthFactor;">
   <!-- Row 1: Engine Headers & Main Logo -->
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
     <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
       <img src="@Engine1Logo" alt="@Engine1Name" title="@GetEngineOptionsTooltip(Engine1Config, Engine1Name)" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
-    <h3 class="engine-name">@Engine1Name</h3>
+    <h3 class="engine-name" title="@Engine1Name">@Engine1Name</h3>
     <span class="engine-version">@Engine1Version</span>
   </div>
+  @* No inline size here. The stylesheet already scales this logo with the container it sits
+     in - five breakpoints and a cqw term - and an inline max-width beat every one of them, so
+     the logo stayed 300px wide in a 360px panel and the two engine cells beside it were left
+     with 30px each. The ceiling the inline style set is the same 300x200 the stylesheet caps
+     at, so nothing is lost by letting the stylesheet do its job. *@
   <div class="main-logo-wrapper" style="overflow:hidden;max-width:100%;">
-    <img src="@MainLogo" alt="EngineBattle" class="main-logo" style="max-width:300px;max-height:200px;object-fit:contain;" />
+    <img src="@MainLogo" alt="EngineBattle" class="main-logo" />
     <span class="powered-by">Powered by EngineBattle</span>
     <span class="author">Lars E. Pedersen</span>
   </div>
@@ -23,7 +41,7 @@
     <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
       <img src="@Engine2Logo" alt="@Engine2Name" title="@GetEngineOptionsTooltip(Engine2Config, Engine2Name)" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
-    <h3 class="engine-name">@Engine2Name</h3>
+    <h3 class="engine-name" title="@Engine2Name">@Engine2Name</h3>
     <span class="engine-version">@Engine2Version</span>
   </div>
 
@@ -66,6 +84,7 @@
   <div class="stat-cell move-time @(Engine1ToMove ? "active-time" : "")">@Engine1TimePerMove</div>
   <div class="label-cell">Move time</div>
   <div class="stat-cell move-time @(Engine1ToMove ? "" : "active-time")">@Engine2TimePerMove</div>
+</div>
 </div>
 
 @code {
@@ -142,6 +161,19 @@
 
   [Parameter]
   public int FontSize { get; set; }
+
+  /// <summary>
+  /// The panel's configured size per pixel of panel width, as a plain number for calc().
+  ///
+  /// 360px is the width this panel has in EB's own tournament layout on a wide window, measured
+  /// rather than picked: at that width the clamp lands exactly on the configured size, so a
+  /// maximised window looks as it always did, and a narrower column scales down from there.
+  /// </summary>
+  private const double PanelReferenceWidthPx = 360.0;
+
+  private string PanelWidthFactor =>
+      ((FontSize > 0 ? FontSize : 14) / PanelReferenceWidthPx)
+      .ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture);
 
   [Parameter]
   public string MainLogoFileName { get; set; }

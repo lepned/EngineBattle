@@ -13,11 +13,11 @@
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-@* Interface scale. Nothing is emitted for "normal", so the page is byte-for-byte what it was
-   before the setting existed. *@
-@if (fontSizeCss is not null)
+@* Interface scale, and the tournament text nudge. Nothing is emitted while both are at their
+   defaults, so the page is byte-for-byte what it was before either setting existed. *@
+@if (rootStyleCss is not null)
 {
-  <style>html { font-size: @fontSizeCss; }</style>
+  <style>@rootStyleCss</style>
 }
 
 <MudLayout>
@@ -55,6 +55,11 @@
   // Interface scale from settings; null = leave the stylesheets alone.
   private string fontSizeCss;
   private string drawerWidth;
+  // The whole stylesheet these two settings produce, or null when there is nothing to say.
+  private string rootStyleCss;
+  // Which screen this browser is on. Empty until the first interop call answers, and empty
+  // for good if it never does - the scale then falls back to the shared default.
+  private string screenKey = "";
 
   /// Re-reads the two interface settings; true when either differs from what is rendered.
   private bool ReadInterfaceSettings()
@@ -62,8 +67,11 @@
     var s = SettingsService.Settings;
     var font = UiScale.FontSizeCss(s.UiFontScale);
     var width = UiScale.DrawerWidthCss(s.NavDrawerWidth);
-    var changed = font != fontSizeCss || width != drawerWidth;
+    var root = BuildRootCss(s, font);
+
+    var changed = font != fontSizeCss || width != drawerWidth || root != rootStyleCss;
     fontSizeCss = font;
+    rootStyleCss = root;
     if (width != drawerWidth)
     {
       drawerWidth = width;
@@ -75,6 +83,38 @@
       theme = new MudTheme { LayoutProperties = BuildLayout(width) };
     }
     return changed;
+  }
+
+  /// <summary>
+  /// The stylesheet for the interface-scale settings: the root font size, the tournament text
+  /// nudge, and a rule per region that was given a nudge of its own.
+  ///
+  /// The nudge travels as one INHERITED custom property, which is what makes the per-region
+  /// override a one-liner: a rule on .eb-g-standings redeclares --eb-font-scale for that
+  /// subtree, and the region's own clamp picks it up without knowing anything about groups,
+  /// screens or settings. Null when every setting is at its default, so an installation that
+  /// never touched them gets the byte-for-byte page it always had.
+  /// </summary>
+  private string BuildRootCss(GlobalSettings s, string font)
+  {
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    var scale = s.FontScaleFor(screenKey);
+    var sb = new System.Text.StringBuilder();
+
+    if (font is not null) sb.Append($"html {{ font-size: {font}; }} ");
+    if (scale != 1.0) sb.Append($"html {{ --eb-font-scale: {scale.ToString(inv)}; }} ");
+
+    // Iterating the KNOWN groups rather than the dictionary keys: a settings file is a text
+    // file someone can edit, and a key from it would otherwise land inside a CSS selector.
+    foreach (var group in GlobalSettings.FontGroups)
+    {
+      if (!s.TournamentFontScaleByGroup.TryGetValue(group.Key, out var raw)) continue;
+      var g = GlobalSettings.ClampFontScale(raw);
+      if (g == scale) continue;   // saying the same thing twice helps nobody
+      sb.Append($".eb-g-{group.Key} {{ --eb-font-scale: {g.ToString(inv)}; }} ");
+    }
+
+    return sb.Length == 0 ? null : sb.ToString();
   }
 
   // The room MudMainContent leaves for an app bar is dealt with in site.css, not here:
@@ -141,7 +181,13 @@
       try
       {
         _chessModule = await JsInteropService.ImportModuleAsync(JS);
-        await _chessModule.InvokeVoidAsync("watchDrawerToggleCorner", 80);
+        await _chessModule.InvokeVoidAsync("watchCorner", "toggle", ".eb-drawer-toggle", 70);
+
+        // The screen is only knowable from the browser, so the first paint uses the shared
+        // default and this corrects it. One re-render, and only when the screen has its own
+        // number - which is the exception, not the rule.
+        screenKey = await JsInteropService.GetScreenBucketAsync(JS);
+        if (ReadInterfaceSettings()) StateHasChanged();
       }
       catch { /* the corner watcher is a convenience, never a requirement */ }
     }

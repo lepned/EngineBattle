@@ -1,4 +1,4 @@
-@using System.Text.Json
+﻿@using System.Text.Json
 @using WebGUI.Services
 @using System.Timers
 @implements IDisposable
@@ -8,7 +8,10 @@
 @inject IWebHostEnvironment Environment
 @inject NotifierService Notifier
 
-<div class="standings-container" style="--font-size: @(FontSize > 0 ? $"{FontSize}px" : "")">
+<div class="standings-container eb-fit eb-g-brackets"
+     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem");
+            --eb-rows: @progressEntries.Count;
+            --eb-box-h: @(Height > 0 ? $"{Height}px" : "9999px")">
     <div class="header">
         <span class="header-text">Cup Progress</span>
     </div>
@@ -29,7 +32,7 @@
                 {
                     <tr class="data-row @(IsActivePlayer(entry.Player) ? "challenger" : "")">
                         <td class="data-cell">@entry.Seed</td>
-                        <td class="data-cell">@entry.Player</td>
+                        <td class="data-cell name" title="@entry.Player">@entry.Player</td>
                         <td class="data-cell center">@FormatRating(entry.Rating)</td>
                         <td class="data-cell">@entry.RoundLabel</td>
                         <td class="data-cell center">@entry.CurrentMatchScore</td>

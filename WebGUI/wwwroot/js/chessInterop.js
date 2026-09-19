@@ -54,27 +54,91 @@ export function measureTournamentLayout() {
     unzoomedViewportHeight: window.innerHeight * (window.screen.width / window.innerWidth),
     lhs: sum('lhs'),
     rhs: sum('rhs'),
-    standingTable: sum('standingTable'),
-    pvHeight: sum('pvHeight')
+    standingTable: sum('standingTable')
   };
 }
 
-// The drawer toggle is invisible until the pointer comes for it, so it never sits on top of
-// what the page draws in that corner. A class on <html> rather than styling the element from
-// here, so the look stays in CSS; while it is hidden the button also takes no clicks, which a
-// plain opacity:0 would not give us.
-export function watchDrawerToggleCorner(radiusPx) {
-  if (window.__ebToggleCorner) return;
-  window.__ebToggleCorner = true;
-  const r = radiusPx || 80;
+// A control that is invisible until the pointer comes for it, so it never sits on top of what
+// the page draws in that corner. A class on <html> rather than styling the element from here,
+// so the look stays in CSS; while it is hidden the control also takes no clicks, which a plain
+// opacity:0 would not give us. Registering the same name twice is a no-op, so a component may
+// call this on every render.
+//
+// The region is the CONTROL'S OWN BOX grown by a margin, not a guessed radius from the corner.
+// A fixed radius only works while the control is smaller than it: a control two rows tall and
+// 200px wide reaches outside the region it is summoned by, so moving onto its far button takes
+// the pointer out of range and the thing vanishes under the cursor. The element is laid out
+// even while it is transparent, so its rect is always the truth.
+export function watchCorner(name, selector, marginPx) {
+  window.__ebCorners = window.__ebCorners || {};
+  if (window.__ebCorners[name]) return;
+  window.__ebCorners[name] = true;
+  const m = marginPx || 60;
+  const cls = 'eb-near-' + name;
+  const near = function (e) {
+    const el = document.querySelector(selector);
+    if (!el) return false;               // not rendered on this page, or not right now
+    const r = el.getBoundingClientRect();
+    if (!r.width && !r.height) return false;
+    return e.clientX >= r.left - m && e.clientX <= r.right + m
+        && e.clientY >= r.top - m && e.clientY <= r.bottom + m;
+  };
   document.addEventListener('pointermove', function (e) {
-    const near = e.clientX <= r && e.clientY <= r;
-    document.documentElement.classList.toggle('eb-toggle-near', near);
+    document.documentElement.classList.toggle(cls, near(e));
   }, { passive: true });
-  // A pointer that leaves the window entirely should not leave the button showing.
+  // A pointer that leaves the window entirely should not leave the control showing.
   document.addEventListener('pointerleave', function () {
-    document.documentElement.classList.remove('eb-toggle-near');
+    document.documentElement.classList.remove(cls);
   }, { passive: true });
+}
+
+// How much wider the content of a box is than the box itself, and how wide the box is. Used
+// where the width depends on content no formula predicts: the crosstable, whose column count
+// and header text grow together, and the info banner, whose hardware line is whatever the user
+// typed.
+//
+// `ratio` is the WORST of all matches, because a banner is two rows and the wider one decides.
+// It is never below 1: scrollWidth cannot be smaller than clientWidth, so a box can report
+// that it is too small but never that it has room to spare. `box` is what makes growing back
+// possible at all - when it changes, the caller knows to start again from the full size
+// instead of dividing a number it can only ever make smaller.
+export function measureOverflow(selector) {
+  const els = document.querySelectorAll(selector);
+  let ratio = 1;
+  let box = 0;
+  for (const el of els) {
+    if (!el.clientWidth) continue;
+    const r = el.scrollWidth / el.clientWidth;
+    if (r > ratio) ratio = r;
+    if (!box || el.clientWidth < box) box = el.clientWidth;
+  }
+  return { ratio: ratio, box: box };
+}
+
+// The font size each of these selectors ACTUALLY ended up with, rounded to whole pixels. This
+// is what "save these sizes" writes to tournament.json: the ceiling, the nudge and the clamp
+// have all already been applied, so the file records what is on screen rather than an input.
+export function getComputedFontSizes(selectors) {
+  const out = {};
+  for (const key of Object.keys(selectors || {})) {
+    const el = document.querySelector(selectors[key]);
+    if (!el) continue;
+    const px = parseFloat(getComputedStyle(el).fontSize);
+    if (px > 0) out[key] = Math.round(px);
+  }
+  return out;
+}
+
+// Which screen this browser is on, as a key the settings file can store a font scale under.
+// Physical pixels and the OS scaling both matter: 1920x1080 at 150% is a different reading
+// distance from 1920x1080 at 100%.
+export function getScreenBucket() {
+  try {
+    const dpr = Math.round((window.devicePixelRatio || 1) * 100) / 100;
+    return screen.width + 'x' + screen.height + '@' + dpr;
+  } catch (e) {
+    return '';
+  }
 }
 
 // Unused space between the bottom of an element and the bottom of the viewport.

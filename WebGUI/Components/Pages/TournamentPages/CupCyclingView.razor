@@ -1,4 +1,4 @@
-@using WebGUI.Components.Layout.TournamentLayout
+﻿@using WebGUI.Components.Layout.TournamentLayout
 @using static ChessLibrary.TypesDef.CoreTypes
 @implements IAsyncDisposable
 
@@ -12,12 +12,19 @@
 }
 else
 {
-	<Standings FontSize="@FontSize" ScoreTable="@ScoreTable" ShowNPM="@ShowNPM"
+	<Standings FontSize="@FontSize" WidthFit="@StandingsWidthFit" ScoreTable="@ScoreTable" ShowNPM="@ShowNPM"
 			   Height="@Height" CycleSeconds="@CycleSeconds" ShouldCycle="false" />
 }
 
 @code {
 	#nullable enable
+
+	/// <summary>
+	/// How much of its configured size the table it wraps may use. Passed straight through: the
+	/// page measures the table that is on screen, and this component is one of the layouts that
+	/// puts it there. Without it the measurement still runs and nothing moves.
+	/// </summary>
+	[Parameter] public double StandingsWidthFit { get; set; } = 1.0;
 
 	[Parameter]
 	public int FontSize { get; set; }

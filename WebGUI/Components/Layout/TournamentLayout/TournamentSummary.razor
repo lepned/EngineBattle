@@ -1,11 +1,11 @@
-@* What this tournament is, in the shape a viewer reads it: name and format on one line,
+﻿@* What this tournament is, in the shape a viewer reads it: name and format on one line,
    the setup as a sentence. Replaces four bullets in a MudPaper where the format, the
    openings and both adjudication rules all had the same weight.
 
    The win and draw rules are deliberately not here — TournamentBanner carries them, next
    to the counters that run against them, which is where they mean something. *@
 
-<div class="ts" style="@FontVars">
+<div class="ts eb-scale eb-g-banner" style="@FontVars">
     <div class="ts-head">
         <span class="ts-name">@Name</span>
         @if (!string.IsNullOrWhiteSpace(Mode))
@@ -45,5 +45,7 @@
     [Parameter] public string Setup { get; set; }
     [Parameter] public int FontSize { get; set; }
 
-    private string FontVars => $"--ts-font:{(FontSize > 0 ? FontSize : 14)}px";
+    // --ts-font is the ceiling; the nudge is folded in here rather than in every rule below.
+    private string FontVars =>
+        $"--eb-font-max:{(FontSize > 0 ? FontSize : 14)}px; --ts-font:var(--font-size)";
 }

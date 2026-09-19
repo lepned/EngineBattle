@@ -6,13 +6,13 @@
   @if (activeTableIndex == 0)
   {
     <div class="table-wrapper active">
-      <Standings ScoreTable="@ScoreTable" FontSize="@fontSizeStandings" Height="Height" ShowNPM=ShowNPM />
+      <Standings ScoreTable="@ScoreTable" FontSize="@fontSizeStandings" WidthFit="@StandingsWidthFit" Height="Height" ShowNPM=ShowNPM />
     </div>
   }
   else
   {
     <div class="table-wrapper">
-      <CrossTableSummary CrossTable="@CrossTable" Players=@Players FontSize="@fontSizeCross" Height="Height" />
+      <CrossTableSummary CrossTable="@CrossTable" FontSize="@fontSizeCross" WidthFit="@CrosstableWidthFit" Height="Height" />
     </div>
   }
 </div>
@@ -27,8 +27,17 @@
   [Parameter] public bool ShowNPM { get; set; }
   [Parameter] public int CycleSeconds { get; set; } = 20; // Default 20 seconds
   [Parameter] public List<CrossTableEntry> CrossTable { get; set; } = new();
-  [Parameter] public int Players { get; set; }    
   [Parameter] public int Height { get; set; }
+
+  /// <summary>
+  /// How much of its configured size the table it wraps may use. Passed straight through: the
+  /// page measures the table that is on screen, and this component is one of the layouts that
+  /// puts it there. Without it the measurement still runs and nothing moves.
+  /// </summary>
+  [Parameter] public double StandingsWidthFit { get; set; } = 1.0;
+
+  /// <summary>As StandingsWidthFit, for the crosstable this component cycles to.</summary>
+  [Parameter] public double CrosstableWidthFit { get; set; } = 1.0;
 
   private int fontSizeStandings = 12;
   private int fontSizeCross = 14;

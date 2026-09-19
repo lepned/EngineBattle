@@ -1,4 +1,4 @@
-@using System.Text.Json
+﻿@using System.Text.Json
 @implements IDisposable
 @inject IWebHostEnvironment Environment
 @inject NotifierService Notifier
@@ -94,7 +94,7 @@
 {
     <MudContainer Class="pa-4">
         <MudPaper Class="pa-4">
-            <div class="bracket-shell cup-bracket-view" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+            <div class="bracket-shell cup-bracket-view eb-scale eb-g-brackets" style="@(FontSize > 0 ? $"--eb-font-max: {FontSize}px;" : "")">
                 @content
             </div>
         </MudPaper>
@@ -103,7 +103,7 @@
 else
 {
     <MudPaper Class="pa-4">
-        <div class="bracket-shell cup-bracket-view" style="@(FontSize > 0 ? $"--font-size: {FontSize}px;" : "")">
+        <div class="bracket-shell cup-bracket-view eb-scale eb-g-brackets" style="@(FontSize > 0 ? $"--eb-font-max: {FontSize}px;" : "")">
             @content
         </div>
     </MudPaper>
