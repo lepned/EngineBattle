@@ -8,6 +8,37 @@
     Background="#FF1F2128"
     ShowInTaskbar="True">
 
+    <Window.Resources>
+        <!-- The three buttons below are the only controls here; the rest is already dark. -->
+        <Style TargetType="{x:Type Button}">
+            <Setter Property="Foreground" Value="#FFE8EAF0" />
+            <Setter Property="Background" Value="#FF333845" />
+            <Setter Property="BorderBrush" Value="#FF454B5C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF3E4450" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF2A2E3A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <DockPanel>
         <Border DockPanel.Dock="Bottom" Background="#FF262932" Padding="10,8">
             <DockPanel>

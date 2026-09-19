@@ -36,6 +36,11 @@ internal partial class MainWindow : Window
         // four sizes (16/32/48/256) so Windows can pick the right one per DPI.
         SourceInitialized += OnSourceInitialized;
         Closed += OnClosed;
+        // Note for anyone adding WPF chrome here: on a scaled display this window lays out
+        // wider than the screen shows it (measured: Window.ActualWidth 2560 DIP at dpiScale
+        // 1.5 in a window the OS reports as 2575 physical px), so content docked or aligned
+        // RIGHT is arranged past the visible edge and never appears. Dock left, or measure
+        // before trusting the right-hand side.
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -43,6 +48,10 @@ internal partial class MainWindow : Window
         // The handle only exists from here on, and placement must be applied before the
         // window is first painted.
         _hwnd = new WindowInteropHelper(this).Handle;
+
+        // The caption and border are drawn by Windows, not WPF: without this they stay light
+        // whatever the app looks like.
+        DarkTitleBar.Apply(_hwnd);
 
         // Hooked before restoring placement, because restoring can maximise straight away.
         HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
@@ -60,14 +69,14 @@ internal partial class MainWindow : Window
             e.Handled = true;
         };
 
-        ApplyResizeGutter();
-
         _ = StartAsync();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == BorderlessWindow.WM_GETMINMAXINFO)
+        // Only a borderless window needs the work area spelled out; a framed one is maximised
+        // correctly by Windows, and these numbers would fight its own frame arithmetic.
+        if (msg == BorderlessWindow.WM_GETMINMAXINFO && WindowStyle == WindowStyle.None)
             BorderlessWindow.ConstrainMaximizeToWorkArea(hwnd, lParam);
 
         return IntPtr.Zero;
@@ -134,6 +143,10 @@ internal partial class MainWindow : Window
 
             ConfigureWebView();
 
+            var zoom = ShellPreferences.LoadZoom();
+            try { WebView.ZoomFactor = zoom; } catch { /* ignore */ }
+            ShowZoomInMenu(zoom);
+
             // Must be registered before navigating so it runs for the first document too.
             await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(TitleBarScript.Script);
 
@@ -180,6 +193,11 @@ internal partial class MainWindow : Window
         };
 
         core.WebMessageReceived += OnWebMessageReceived;
+
+        // The page learns the window state from a message, and one is only sent when the state
+        // CHANGES - so a freshly loaded page would not know it was in fullscreen, and would
+        // show what fullscreen hides. Every document gets the current state as it appears.
+        core.DOMContentLoaded += (_, _) => PublishWindowState();
 
         core.ProcessFailed += (_, e) =>
         {
@@ -229,38 +247,27 @@ internal partial class MainWindow : Window
 
         switch (action)
         {
-            case "drag": BeginNativeDrag(); break;
-            case "minimize": WindowState = WindowState.Minimized; break;
-            case "toggleMaximize": ToggleMaximize(); break;
             case "toggleFullScreen": ToggleFullScreen(); break;
-            case "close": Close(); break;
             case "output": ShowOutputWindow(); break;
             case "devtools": OpenDevTools(); break;
+            // Keyboard shortcuts arrive from the page: keys pressed inside the WebView never
+            // reach WPF, so the menu's accelerators are handled there and posted here.
+            case "zoomIn": StepZoom(+1); break;
+            case "zoomOut": StepZoom(-1); break;
+            case "zoomReset": SetZoom(1.0); break;
+            case "reload": ReloadPage(); break;
         }
     }
-
-    /// <summary>
-    /// Hands the drag to Windows so snapping, monitor changes and restore-on-drag all behave
-    /// natively, instead of moving the window by hand from mouse deltas.
-    /// </summary>
-    private void BeginNativeDrag()
-    {
-        ReleaseCapture();
-        SendMessage(_hwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
-    }
-
-    private void ToggleMaximize() =>
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void OnStateChanged(object? sender, EventArgs e) => PublishWindowState();
 
     private void PublishWindowState()
     {
-        ApplyResizeGutter();
-
         var state = _isFullScreen ? "fullscreen"
                   : WindowState == WindowState.Maximized ? "maximized"
                   : "normal";
+        // The menu belongs to the frame: fullscreen is fullscreen.
+        AppMenu.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
         try
         {
             WebView.CoreWebView2?.PostWebMessageAsJson("{\"ebWindowState\":\"" + state + "\"}");
@@ -291,8 +298,15 @@ internal partial class MainWindow : Window
             _preFullScreenBounds = (bx, by, bw, bh);
 
         // Explicit bounds rather than WindowState.Maximized: maximising is clamped to the work
-        // area by the WM_GETMINMAXINFO hook, which is exactly what fullscreen must bypass.
+        // area, which is exactly what fullscreen must bypass.
         if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+
+        // The frame goes first: its caption and border would otherwise sit inside the monitor
+        // rectangle we are about to fill, leaving the page short by their thickness. NoResize
+        // as well as None: a resizable window keeps WS_THICKFRAME, whose sizing border is part
+        // of the non-client area, so the page would stop a few pixels short of every edge.
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
 
         _isFullScreen = true;
         BorderlessWindow.SetBounds(_hwnd, x, y, w, h);
@@ -304,6 +318,8 @@ internal partial class MainWindow : Window
     private void ExitFullScreen()
     {
         _isFullScreen = false;
+        ResizeMode = ResizeMode.CanResize;
+        WindowStyle = WindowStyle.SingleBorderWindow;
 
         if (_wasMaximized)
         {
@@ -318,14 +334,76 @@ internal partial class MainWindow : Window
         PublishWindowState();
     }
 
-    /// <summary>
-    /// A maximised window has no edges to resize, and the gutter would otherwise show as a
-    /// border strip against the screen edge, so it only applies while the window is restored.
-    /// </summary>
-    private void ApplyResizeGutter() =>
-        RootHost.Margin = _isFullScreen || WindowState == WindowState.Maximized
-            ? new Thickness(0)
-            : new Thickness(ResizeGutter);
+    // ---- menu -------------------------------------------------------------------------------
+
+    /// Browser-like steps rather than a fixed percentage, so every press lands on a round number.
+    private static readonly double[] ZoomSteps = { 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0 };
+
+    private void OnMenuExit(object sender, RoutedEventArgs e) => Close();
+
+    /// The drawer belongs to the web app, so the shell asks rather than reaches in.
+    private void OnMenuToggleDrawer(object sender, RoutedEventArgs e)
+    {
+        try { WebView.CoreWebView2?.PostWebMessageAsJson("{\"ebCommand\":\"toggleDrawer\"}"); }
+        catch { /* nothing loaded yet */ }
+    }
+    private void OnMenuZoomIn(object sender, RoutedEventArgs e) => StepZoom(+1);
+    private void OnMenuZoomOut(object sender, RoutedEventArgs e) => StepZoom(-1);
+    private void OnMenuZoomReset(object sender, RoutedEventArgs e) => SetZoom(1.0);
+    private void OnMenuReload(object sender, RoutedEventArgs e) => ReloadPage();
+    private void OnMenuFullScreen(object sender, RoutedEventArgs e) => ToggleFullScreen();
+    private void OnMenuServerOutput(object sender, RoutedEventArgs e) => ShowOutputWindow();
+    private void OnMenuDevTools(object sender, RoutedEventArgs e) => OpenDevTools();
+
+    private void StepZoom(int direction)
+    {
+        var current = WebView.ZoomFactor;
+        // The nearest step, so a zoom restored from disk (or set from the page) still steps sanely.
+        var index = 0;
+        for (var i = 1; i < ZoomSteps.Length; i++)
+            if (Math.Abs(ZoomSteps[i] - current) < Math.Abs(ZoomSteps[index] - current))
+                index = i;
+
+        var next = Math.Clamp(index + direction, 0, ZoomSteps.Length - 1);
+        SetZoom(ZoomSteps[next]);
+    }
+
+    private void SetZoom(double zoom)
+    {
+        zoom = Math.Clamp(zoom, ShellPreferences.MinZoom, ShellPreferences.MaxZoom);
+        try { WebView.ZoomFactor = zoom; }
+        catch { return; }   // the WebView may not be initialised yet
+
+        ShellPreferences.SaveZoom(zoom);
+        ShowZoomInMenu(zoom);
+    }
+
+    /// The Reset item carries the current level, so there is somewhere to read it off.
+    private void ShowZoomInMenu(double zoom) =>
+        ResetZoomItem.Header = zoom == 1.0 ? "_Reset Zoom" : $"_Reset Zoom (now {zoom * 100:0}%)";
+
+    private void ReloadPage()
+    {
+        // Blazor Server: this drops the circuit and builds a new one, so the page starts over.
+        // Tournaments and analysis run in the server's own singletons and keep going.
+        try { WebView.CoreWebView2?.Reload(); }
+        catch { /* nothing loaded yet */ }
+    }
+
+    private void OnMenuAbout(object sender, RoutedEventArgs e)
+    {
+        var shell = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+        var runtime = "not found";
+        try { runtime = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+        catch { /* leave the default */ }
+
+        MessageBox.Show(this,
+            $"EngineBattle desktop shell {shell}\n" +
+            $"WebView2 runtime {runtime}\n" +
+            $"Server {(string.IsNullOrEmpty(_server?.BaseUrl) ? "not started" : _server!.BaseUrl)}\n\n" +
+            "The shell hosts EngineBattle's web interface; the chess engine work happens in the server process.",
+            "About EngineBattle", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
 
     private void OpenDevTools()
     {
@@ -351,15 +429,6 @@ internal partial class MainWindow : Window
         }
     }
 
-    private const int ResizeGutter = 6;
-    private const int WM_NCLBUTTONDOWN = 0x00A1;
-    private const int HTCAPTION = 2;
-
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
     private void ShowLoading()
     {

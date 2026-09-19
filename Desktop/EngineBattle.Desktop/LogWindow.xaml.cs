@@ -24,6 +24,8 @@ internal partial class LogWindow : Window
     {
         _server = server;
         InitializeComponent();
+        // Windows draws this caption too.
+        SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
 
         Output.Text = string.Join(Environment.NewLine, server.Snapshot());
         Output.ScrollToEnd();
