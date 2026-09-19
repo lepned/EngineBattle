@@ -525,6 +525,7 @@
 		windowHeight = metrics.WindowHeight;
 		var elementsAboveCycleTableHeight = metrics.Rhs;
 		var standingTableHeight = metrics.StandingTable;
+		standingsTableHeightPx = standingTableHeight;
 		int buffer = 140; //CalcBufferFunction((int)metrics.UnzoomedViewportHeight);
 		var elementsAboveStandings = metrics.Lhs + buffer;
 		if (showPVBoard)
@@ -567,6 +568,9 @@
 
 		if (IsSupersededResize(generation)) return;
 		await FitMoveListToMeasuredSlack(generation);
+
+		if (IsSupersededResize(generation)) return;
+		await FitStandingsToMeasuredSlack(generation);
 	}
 
 	// Small gap kept under the last PV box so it never sits flush against the bottom edge.
@@ -584,6 +588,48 @@
 	/// The move list is the only elastic region in that column, so one pass converges: a pixel of
 	/// move-list height moves the PV box by exactly one pixel.
 	/// </summary>
+	/// <summary>
+	/// Grows (or shrinks) the standings box to the space the layout actually left below it.
+	///
+	/// The height above is predicted: window height minus the measured elements above minus a
+	/// tuned buffer. The buffer encodes one particular set of chrome - it was calibrated when
+	/// the app bar existed - so on any other layout the box ends up short of the bottom edge
+	/// and clips rows that had room, or overshoots and pushes itself past it. Standings.razor
+	/// caps the table with max-height, so a box that is too short simply hides engines.
+	///
+	/// The box is the elastic region in its column, so one pixel of height moves its bottom
+	/// edge by one pixel and a pass converges. The cycling decision follows the new height:
+	/// once the table fits, there is nothing to cycle through.
+	/// </summary>
+	private async Task FitStandingsToMeasuredSlack(int generation)
+	{
+		if (chessModule is null) return;
+
+		for (var pass = 0; pass < 2; pass++)
+		{
+			if (IsSupersededResize(generation)) return;
+
+			// 0 also means "no standings on this layout" (cup, ladder, feed view), which
+			// correctly leaves the height alone.
+			var slack = await chessModule.InvokeAsync<double>("getSlackBelow", "#standingsDiv");
+			if (Math.Abs(slack) <= 2) return;
+
+			var fitted = Math.Clamp(height + (int)slack - StandingsBottomPadding, 50, (int)windowHeight);
+			if (fitted == height) return;
+
+			height = fitted;
+			// A table that now fits must stop cycling, and one that still does not must keep it.
+			shouldCycle = standingsTableHeightPx > height;
+			await InvokeAsync(StateHasChanged);
+			await Task.Delay(50);
+		}
+	}
+
+	private const int StandingsBottomPadding = 8;
+	/// The measured height of the standings table itself, kept from the last resize so the
+	/// cycling decision can be revisited when the box is refitted.
+	private double standingsTableHeightPx;
+
 	private async Task FitMoveListToMeasuredSlack(int generation)
 	{
 		if (chessModule is null) return;
