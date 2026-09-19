@@ -10,14 +10,28 @@ html {
    fixed third. Only from MudBlazor's md breakpoint up — below it the grid stacks the
    columns, and that must keep working. Both classes are absent until a size is chosen. */
 @media (min-width: 960px) {
+    /* The board column is capped at HALF the row, whatever tournament.json asked for. Without
+       the cap it kept its full pixel width at every window width and the two side columns
+       divided the remainder - which at a 1200px window was 35px each, too narrow to draw
+       anything in.
+
+       A cap rather than a minimum on the side columns: flex decides which items go on a line
+       from their basis before it shrinks anything, so a minimum there just pushes the third
+       column onto its own row. Capping the board's basis keeps all three on one line and lets
+       the side columns grow into what it gives up. The board inside is already max-width:100%
+       of its box, so it follows the column down without any of this reaching C#.
+
+       At a wide window the cap does not bind - half of 1660px is more than the 826 the file
+       asks for - so a maximised window looks exactly as it did. */
     .mud-grid-item.tp-col-board {
-        flex: 0 0 var(--tp-board-col, 33.3333%);
-        max-width: none;
+        flex: 0 1 var(--tp-board-col, 33.3333%);
+        max-width: min(var(--tp-board-col, 100%), 50%);
+        min-width: 0;
     }
 
     /* min-width:0 is what keeps the board centred. Without it each side column refuses to
        shrink below its own min-content, and the wide standings/crosstable on the left wins
-       against the charts on the right — pushing the board off centre as it grows. */
+       against the charts on the right - pushing the board off centre as it grows. */
     .mud-grid-item.tp-col-flex {
         flex: 1 1 0;
         max-width: none;
@@ -308,6 +322,26 @@ html {
 .infoBanner > *,
 .infoBannerContent > * {
   white-space: nowrap;
+}
+
+/* Between MudBlazor's md and lg the banner has no column widths at all: its items carry lg
+   sizes, and below 1280px those simply do not apply, so every label packs against the next and
+   the strip reads as one word. A gutter is all it needs. Scoped to that range so the wide
+   layout, where the lg widths do the spacing, is untouched. */
+@media (min-width: 960px) and (max-width: 1279.98px) {
+    .infoBanner > * + *,
+    .infoBannerContent > * + * {
+        margin-left: 0.9em;
+    }
+
+    /* Same cause, different symptom. The description sits in a row whose columns are also lg
+       only, so below 1280px the inner one takes its CONTENT's width - 527px inside a parent of
+       215 - and the overflow is cut off by the page. A flex item will not shrink below its own
+       min-content unless it is told it may; told, it comes back inside the column and the
+       ellipsis on each line does the rest. */
+    .eb-desc-row > .mud-grid-item {
+        min-width: 0;
+    }
 }
 
 .multiLine {
