@@ -12,6 +12,7 @@
 @inject ILogger<Lc0ContemptPage> logger
 @inject JavaScriptInteropService JsInteropService
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 
 @* Lc0's contempt made usable: one panel of settings, and either a game against Lc0 that
    plays with them (Train) or two views of the same position, objective and from one side's
@@ -81,6 +82,7 @@
                         <div class="lc-col-head lc-col-objective">Objective · contempt off</div>
                         <EnginePanel @key="@(selectedEnginePath + "|objective")" Id="nnInput1" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@objectiveOptions"
                                      OnEngineMoveMade="OnEngineMoveMade" OnEngineStarted="OnEngineReady" OnEvalUpdated="OnObjectiveEval"
+                                     OnUCIReceived="ShowObjectiveUci"
                                      CompactChartLegend="true" StatsPanelKey="lc0-contempt-objective" InitialTimeMs="3000" HideCharts="@(!showCharts)" />
                     </div>
                     <div class="lc-col lc-board">
@@ -110,6 +112,7 @@
                         <div class="lc-col-head lc-col-side">@SideViewLabel</div>
                         <EnginePanel @key="@(selectedEnginePath + "|side")" Id="nnInput2" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@sideOptions"
                                      OnEngineMoveMade="OnEngineMoveMade" OnEvalUpdated="OnSideEval"
+                                     OnUCIReceived="ShowSideUci"
                                      CompactChartLegend="true" StatsPanelKey="lc0-contempt-side" InitialTimeMs="3000" HideCharts="@(!showCharts)" />
                     </div>
                 </div>
@@ -315,6 +318,30 @@
         sideEval = "–";
         await Notifier.UpdateFen(fen);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private Task ShowObjectiveUci(List<string> config) => ShowUciOutput(config, "objective");
+    private Task ShowSideUci(List<string> config) => ShowUciOutput(config, "side view");
+
+    // The UCI button on either panel. Both run the same engine with different contempt, so the
+    // title says which search answered - the option VALUES differ between them. Reached through
+    // the two methods above: a lambda with a quoted string in a component attribute does not
+    // survive the Razor parser.
+    private async Task ShowUciOutput(List<string> config, string which)
+    {
+        try
+        {
+            var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.TextDialog>
+            {
+                { x => x.Text, string.Join("\n", config) }
+            };
+            var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+            await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.TextDialog>($"Engine UCI output - {which}", parameters, options);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not show the UCI output");
+        }
     }
 
     private void OnObjectiveEval((double? Cp, int? Mate) e) { objectiveEval = FormatEval(e); }
