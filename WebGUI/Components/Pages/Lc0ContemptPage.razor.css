@@ -1,4 +1,4 @@
-.lc-page {
+﻿.lc-page {
     --lc-bg: #0f1218;
     --lc-bar: #12161f;
     --lc-border: #1f2532;
@@ -9,7 +9,8 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    min-height: calc(100vh - 64px);
+    /* The layout has no app bar; the page owns the full viewport height. */
+    min-height: 100vh;
     background: var(--lc-bg);
     color: var(--lc-text);
     font-size: 14px;
@@ -54,7 +55,7 @@
 .lc-status.lc-bad { color: #ffb4b4; }
 
 .lc-body { display: flex; gap: 20px; padding: 20px 24px; align-items: flex-start; }
-.lc-side { width: 340px; flex-shrink: 0; position: sticky; top: 72px; }
+.lc-side { width: 340px; flex-shrink: 0; position: sticky; top: 8px; }
 .lc-main { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 
 .lc-evals {

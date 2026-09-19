@@ -1,9 +1,12 @@
 ﻿@using WebGUI.Services;
+@using Toolbelt.Blazor.HotKeys2
 @inherits LayoutComponentBase
 @implements IAsyncDisposable
 @inject NotifierService notify
 @inject IJSRuntime JS
 @inject GlobalSettingsService SettingsService
+@inject JavaScriptInteropService JsInteropService
+@inject HotKeys HotKeys
 
 <MudThemeProvider Theme="theme" @bind-IsDarkMode="isDarkMode" />
 <MudPopoverProvider />
@@ -18,26 +21,26 @@
 }
 
 <MudLayout>
-  <MudAppBar>
-    <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
-    <MudSpacer />
-    <MudText Typo="Typo.h5" Class="mudblazor-appbar-brand-text d-none d-md-flex">EngineBattle</MudText>
-
-    <MudSpacer />
-    <MudDivider Vertical="true" FlexItem="true" DividerType="DividerType.Middle" Class="mx-4 my-3" />
-      <MudImage Class="ml-4" Src="Img/chessIcon.png" />
-    @*<MudTooltip Text="Toggle light/dark theme">
-      <MudIconButton Icon="@Icons.Material.Filled.Brightness4" Color="Color.Inherit" OnClick="@((e) => DarkMode())" />
-    </MudTooltip>*@
-  </MudAppBar>
+  @* No app bar: it held the drawer toggle, the name and the logo, and the drawer's own header
+     shows the name and the logo already. The toggle became the button below, which costs a
+     corner instead of a full-width strip across every page. *@
+  @if (!_drawerOpen)
+  {
+    <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                   Class="eb-drawer-toggle" aria-label="Show navigation"
+                   OnClick="@((e) => DrawerToggle())" />
+  }
   <MudDrawer @bind-Open="@_drawerOpen">
     <MudDrawerHeader Class="mudblazor-brand d-flex justify-center" LinkToIndex="true">
       <img src="Img/EngineBattle.png" style="width:170px; height:181px; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));" />
-  </MudDrawerHeader>
+    </MudDrawerHeader>
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" Color="Color.Inherit"
+                   Class="eb-drawer-close" aria-label="Hide navigation"
+                   OnClick="@((e) => DrawerToggle())" />
     <NavMenu />
   </MudDrawer>
 
-  <MudMainContent Class=pl-2>
+  <MudMainContent Class="pl-2">
     @Body
   </MudMainContent>
 </MudLayout>
@@ -47,6 +50,7 @@
   MudTheme theme = new();
   private bool isDarkMode = true;
   private IJSObjectReference _chessModule;
+  private HotKeysContext keyContext;
 
   // Interface scale from settings; null = leave the stylesheets alone.
   private string fontSizeCss;
@@ -68,12 +72,18 @@
       // read. MudDrawer.Width only resizes the drawer element and leaves the margin at the
       // old value, so the drawer either overlapped the page or left a gap beside it.
       // A new theme instance, because the provider re-renders on reference change.
-      theme = width is null
-        ? new MudTheme()
-        : new MudTheme { LayoutProperties = new LayoutProperties { DrawerWidthLeft = width } };
+      theme = new MudTheme { LayoutProperties = BuildLayout(width) };
     }
     return changed;
   }
+
+  // The room MudMainContent leaves for an app bar is dealt with in site.css, not here:
+  // MudBlazor 8.5.1 never emits --mud-appbar-height, so LayoutProperties.AppbarHeight has no
+  // effect at all. DrawerWidthLeft, which it does emit, is set below.
+  private static LayoutProperties BuildLayout(string drawerWidth) =>
+    drawerWidth is null
+      ? new LayoutProperties()
+      : new LayoutProperties { DrawerWidthLeft = drawerWidth };
 
   protected override void OnInitialized() => ReadInterfaceSettings();
 
@@ -107,7 +117,7 @@
   {
     try
     {
-      _chessModule = _chessModule ?? await JS.InvokeAsync<IJSObjectReference>("import", "./js/chessInterop.js");
+      _chessModule = _chessModule ?? await JsInteropService.ImportModuleAsync(JS);
       for (int i = 0; i < 25; i++)
       {
         await Task.Delay(16);
@@ -117,21 +127,32 @@
     catch { }
   }
 
-  protected override void OnAfterRender(bool firstRender)
+  protected override async Task OnAfterRenderAsync(bool firstRender)
   {
     if (firstRender)
     {
       notify.IsFullScreenRequested += Notify_IsFullScreenRequested;
       SettingsService.OnSettingsChanged += Settings_OnSettingsChanged;
+
+      // The drawer is reachable without the mouse, and without anything on screen.
+      keyContext = HotKeys.CreateContext()
+        .Add(ModKey.Ctrl, Key.b, (() => DrawerToggle()), "Show or hide the navigation");
+
+      try
+      {
+        _chessModule = await JsInteropService.ImportModuleAsync(JS);
+        await _chessModule.InvokeVoidAsync("watchDrawerToggleCorner", 80);
+      }
+      catch { /* the corner watcher is a convenience, never a requirement */ }
     }
-    base.OnAfterRender(firstRender);
+    await base.OnAfterRenderAsync(firstRender);
   }
 
   public async ValueTask DisposeAsync()
   {
     notify.IsFullScreenRequested -= Notify_IsFullScreenRequested;
     SettingsService.OnSettingsChanged -= Settings_OnSettingsChanged;
-    await ValueTask.CompletedTask;
+    if (keyContext is not null) await keyContext.DisposeAsync();
   }
  
 }

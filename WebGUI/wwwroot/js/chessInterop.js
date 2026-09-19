@@ -59,6 +59,24 @@ export function measureTournamentLayout() {
   };
 }
 
+// The drawer toggle is invisible until the pointer comes for it, so it never sits on top of
+// what the page draws in that corner. A class on <html> rather than styling the element from
+// here, so the look stays in CSS; while it is hidden the button also takes no clicks, which a
+// plain opacity:0 would not give us.
+export function watchDrawerToggleCorner(radiusPx) {
+  if (window.__ebToggleCorner) return;
+  window.__ebToggleCorner = true;
+  const r = radiusPx || 80;
+  document.addEventListener('pointermove', function (e) {
+    const near = e.clientX <= r && e.clientY <= r;
+    document.documentElement.classList.toggle('eb-toggle-near', near);
+  }, { passive: true });
+  // A pointer that leaves the window entirely should not leave the button showing.
+  document.addEventListener('pointerleave', function () {
+    document.documentElement.classList.remove('eb-toggle-near');
+  }, { passive: true });
+}
+
 // Unused space between the bottom of an element and the bottom of the viewport.
 // Positive means there is slack left over, negative means the element has been pushed past
 // the bottom edge. Callers use it to size an elastic region from what the layout actually

@@ -1,4 +1,4 @@
-/* Always reserve the scrollbar gutter. Without it, content that grows past the viewport
+﻿/* Always reserve the scrollbar gutter. Without it, content that grows past the viewport
    toggles the vertical scrollbar, the viewport narrows by the scrollbar width, and every
    fr-based grid column reflows — visible as a jitter on pages with a fluid chessboard. */
 html {
@@ -830,3 +830,65 @@ a, .btn-link {
 .pgl-table-container::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
 .pgl-table-container::-webkit-scrollbar-thumb { background: rgba(125, 132, 156, 0.4); border-radius: 4px; }
 .pgl-table-container::-webkit-scrollbar-thumb:hover { background: rgba(125, 132, 156, 0.6); }
+
+/* -- Drawer toggle (there is no app bar to hold it) --
+   Global, NOT in MainLayout.razor.css: CSS isolation scopes a stylesheet to the component's
+   own elements, and MudIconButton renders this one, so a scoped rule never matched and the
+   button stayed in the flow, taking a row at the top of the page.
+
+   A button that is always on screen costs a row, a column, or the page's first word. This one
+   costs nothing: it is invisible and takes no clicks until the pointer comes within 80px of
+   the corner (watchDrawerToggleCorner sets the class), and Ctrl+B does the same job without
+   the mouse. Fixed rather than in the flow, and above MudBlazor's drawer (z 1100-1200) so an
+   overlay drawer on a narrow window cannot bury it. */
+.eb-drawer-toggle {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 1300;
+    color: var(--mud-palette-text-secondary);
+    background: var(--mud-palette-surface);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+html.eb-toggle-near .eb-drawer-toggle,
+.eb-drawer-toggle:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.eb-drawer-toggle:hover,
+.eb-drawer-toggle:focus-visible {
+    color: var(--mud-palette-text-primary);
+    background: var(--mud-palette-action-default-hover);
+}
+
+/* Fullscreen is for the content: nothing floats over it. The drawer keeps whatever state it
+   had on the way in, so navigation is still there if it was open - and F11 brings the rest
+   back. Chromium matches display-mode for the browser's own F11; the Fullscreen API's
+   :fullscreen does not, and the desktop shell has its own rule. */
+@media all and (display-mode: fullscreen) {
+    .eb-drawer-toggle {
+        display: none;
+    }
+}
+
+/* Closes the drawer from inside it, where the app bar's toggle used to reach. */
+.eb-drawer-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+}
+
+/* -- No app bar --
+   MudMainContent reserves a row for MudAppBar (padding-top: var(--mud-appbar-height)) and
+   this layout has none, so every page started ~64px down with empty layout background above
+   it. Setting LayoutProperties.AppbarHeight does NOT remove it - measured on MudBlazor
+   8.5.1 - so the padding is cleared here. This file is linked after MudBlazor.min.css, so
+   the plain rule wins. */
+.mud-main-content {
+    padding-top: 0;
+}

@@ -1,4 +1,4 @@
-/* SingleAnalysis - Modern Single Engine Analysis Page Styles */
+﻿/* SingleAnalysis - Modern Single Engine Analysis Page Styles */
 /* Self-contained CSS with CSS variables for theming */
 
 .single-analysis {
@@ -16,7 +16,8 @@
 
     font-family: "Space Grotesk", "Karla", "Segoe UI", sans-serif;
     color: var(--sa-text);
-    min-height: calc(100vh - 64px);
+    /* The layout has no app bar; the page owns the full viewport height. */
+    min-height: 100vh;
     background: var(--sa-bg);
     padding: 12px 20px 20px 20px;
     display: flex;
