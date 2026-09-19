@@ -1,14 +1,15 @@
 namespace EngineBattle.Desktop;
 
 /// <summary>
-/// Injected into every document at creation time, turning EngineBattle's own MudBlazor app bar
-/// into the window caption.
+/// Injected into every document at creation time. It draws nothing of its own: the window has
+/// an ordinary Windows title bar and a menu, so what is left for the page is what only the page
+/// can do - route the shortcuts (keys pressed inside the WebView never reach WPF), click the
+/// drawer toggle when the shell's menu asks for it, and hide that toggle while the menu is
+/// carrying one.
 ///
 /// This lives in the shell rather than in WebGUI on purpose: the web app stays completely
-/// unchanged, and a normal browser session can never render window buttons that do nothing.
-/// The only coupling is the <c>header.mud-appbar</c> selector; if that ever changes, the
-/// buttons still appear (they are positioned against the viewport) and only dragging by the
-/// header is lost.
+/// unchanged, and a normal browser session is not affected at all. The only coupling is the
+/// toggle's own class; if that changes, the menu's hamburger stops working and nothing else.
 /// </summary>
 internal static class TitleBarScript
 {
@@ -25,130 +26,19 @@ internal static class TitleBarScript
                 try { window.chrome.webview.postMessage({ ebWindow: action }); } catch (e) { }
             };
 
+            // The menu strip carries the toggle, so the page's own is never needed here - and
+            // fullscreen drops the chrome entirely. The drawer keeps the state it had on the way
+            // in, so navigation is still there if it was open, and F11 brings the menu back.
             var style = document.createElement('style');
-            style.textContent = [
-                '#eb-window-controls { position: fixed; top: 0; right: 0; height: 40px;',
-                '  display: flex; z-index: 2147483000; -webkit-user-select: none; user-select: none; }',
-                '#eb-window-controls button { width: 46px; height: 40px; border: 0; padding: 0;',
-                '  background: transparent; color: #e8eaf0; cursor: default; line-height: 1;',
-                '  display: flex; align-items: center; justify-content: center; }',
-                '#eb-window-controls svg { width: 12px; height: 12px; stroke: currentColor;',
-                '  fill: none; stroke-width: 1; shape-rendering: crispEdges; }',
-                '#eb-window-controls button:hover { background: rgba(255,255,255,0.09); }',
-                '#eb-window-controls button.eb-close:hover { background: #c42b1c; color: #fff; }',
-                '#eb-window-controls button.eb-output { font-size: 13px; }',
-                'header.mud-appbar { -webkit-user-select: none; user-select: none; }',
-                /* Fullscreen hides the window buttons, exactly as a browser hides its chrome
-                   on F11. F11 or Esc brings them back. */
-                'html.eb-fullscreen #eb-window-controls { display: none; }',
-                'html.eb-fullscreen header.mud-appbar .mud-toolbar { padding-right: 0 !important; }',
-                /* Keep the app bar's own trailing content clear of the buttons. */
-                'header.mud-appbar .mud-toolbar { padding-right: 200px !important; }'
-            ].join('\n');
-
+            style.textContent = '.eb-drawer-toggle { display: none; }';
             var addStyle = function () { (document.head || document.documentElement).appendChild(style); };
             if (document.head) { addStyle(); } else { document.addEventListener('DOMContentLoaded', addStyle); }
 
-            // Inline SVG rather than the Segoe icon font: WebView2 does not reliably resolve
-            // "Segoe Fluent Icons", and a missing glyph on a transparent button is invisible
-            // rather than obviously broken.
-            var svg = function (inner) {
-                return '<svg viewBox="0 0 12 12" aria-hidden="true">' + inner + '</svg>';
-            };
-            var ICON_OUTPUT = svg('<path d="M1.5 2.5l3 2.5-3 2.5"/><path d="M6 9.5h4.5"/>');
-            var ICON_MIN = svg('<path d="M1.5 6.5h9"/>');
-            var ICON_MAX = svg('<rect x="1.5" y="1.5" width="9" height="9"/>');
-            var ICON_RESTORE = svg('<rect x="1.5" y="3.5" width="7" height="7"/><path d="M3.5 3.5v-2h7v7h-2"/>');
-            var ICON_CLOSE = svg('<path d="M1.5 1.5l9 9"/><path d="M10.5 1.5l-9 9"/>');
-
-            var build = function () {
-                if (!document.body || document.getElementById('eb-window-controls')) return;
-                var host = document.createElement('div');
-                host.id = 'eb-window-controls';
-                host.innerHTML =
-                    '<button class="eb-output" title="Server output (Ctrl+Shift+L)">' + ICON_OUTPUT + '</button>' +
-                    '<button class="eb-min" title="Minimise">' + ICON_MIN + '</button>' +
-                    '<button class="eb-max" title="Maximise">' + ICON_MAX + '</button>' +
-                    '<button class="eb-close" title="Close">' + ICON_CLOSE + '</button>';
-                document.body.appendChild(host);
-                host.querySelector('.eb-output').onclick = function () { post('output'); };
-                host.querySelector('.eb-min').onclick = function () { post('minimize'); };
-                host.querySelector('.eb-max').onclick = function () { post('toggleMaximize'); };
-                host.querySelector('.eb-close').onclick = function () { post('close'); };
-            };
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', build);
-            } else {
-                build();
-            }
-
-            // Blazor replaces large parts of the DOM on navigation; re-add if we get removed.
-            var observer = new MutationObserver(build);
-            var observe = function () {
-                if (document.body) observer.observe(document.body, { childList: true });
-            };
-            if (document.body) { observe(); } else { document.addEventListener('DOMContentLoaded', observe); }
-
-            // Fullscreen reclaims the navigation rail for the board, the way EngineBattle's own
-            // full-screen layout mode does. Driven from here rather than from WebGUI so the web
-            // app stays unaware of the shell. Only MudBlazor's own classes are touched, and if
-            // they ever change this degrades to doing nothing.
-            var wasFullscreen = false;
-            var drawerClosedByShell = false;
-
-            var drawerIsOpen = function () {
-                var d = document.querySelector('.mud-drawer');
-                return !!(d && d.classList.contains('mud-drawer--open'));
-            };
-
             var toggleDrawer = function () {
-                var btn = document.querySelector('header.mud-appbar .mud-toolbar button');
+                // Either button toggles it; only one of them is rendered at a time.
+                var btn = document.querySelector('.eb-drawer-toggle, .eb-drawer-close');
                 if (btn) btn.click();
             };
-
-            var syncDrawerToFullscreen = function (fullscreen) {
-                if (fullscreen === wasFullscreen) return false;
-                wasFullscreen = fullscreen;
-
-                if (fullscreen) {
-                    if (!drawerIsOpen()) return false;
-                    toggleDrawer();
-                    // Remembered, so a drawer the user had already closed is not forced open
-                    // again on the way out of fullscreen.
-                    drawerClosedByShell = true;
-                    return true;
-                }
-
-                if (!drawerClosedByShell) return false;
-                drawerClosedByShell = false;
-                if (drawerIsOpen()) return false;
-                toggleDrawer();
-                return true;
-            };
-
-            var isInteractive = function (el) {
-                return !!(el && el.closest && el.closest(
-                    'button, a, input, select, textarea, [role="button"], .mud-icon-button, #eb-window-controls'));
-            };
-
-            var onAppBar = function (el) {
-                return !!(el && el.closest && el.closest('header.mud-appbar'));
-            };
-
-            // Dragging cannot use WindowChrome's caption area: the WebView2 is an HwndHost and
-            // takes the mouse input first, so the host window never hit-tests it. Instead the
-            // page reports the gesture and the shell starts a native move loop.
-            document.addEventListener('pointerdown', function (e) {
-                if (e.button !== 0) return;
-                if (!onAppBar(e.target) || isInteractive(e.target)) return;
-                post('drag');
-            }, true);
-
-            document.addEventListener('dblclick', function (e) {
-                if (!onAppBar(e.target) || isInteractive(e.target)) return;
-                post('toggleMaximize');
-            }, true);
 
             document.addEventListener('keydown', function (e) {
                 if (e.ctrlKey && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
@@ -169,34 +59,40 @@ internal static class TitleBarScript
                     e.preventDefault();
                     post('toggleFullScreen');
                 }
+                // The View menu's accelerators. Ctrl+= is the unshifted '+' key, and the numpad
+                // sends '+'/'-'/'0' as the key itself.
+                if (e.ctrlKey && !e.altKey && (e.key === '+' || e.key === '=')) {
+                    e.preventDefault();
+                    post('zoomIn');
+                }
+                if (e.ctrlKey && !e.altKey && e.key === '-') {
+                    e.preventDefault();
+                    post('zoomOut');
+                }
+                if (e.ctrlKey && !e.altKey && e.key === '0') {
+                    e.preventDefault();
+                    post('zoomReset');
+                }
+                if (e.key === 'F5') {
+                    e.preventDefault();
+                    post('reload');
+                }
             }, true);
 
-            // The shell reports maximise state so the glyph matches.
+            // The shell reports the window state; Escape reads eb-fullscreen to leave it.
             try {
                 window.chrome.webview.addEventListener('message', function (ev) {
                     var data = ev.data;
-                    if (!data || !data.ebWindowState) return;
+                    if (!data) return;
+                    if (data.ebCommand === 'toggleDrawer') { toggleDrawer(); return; }
+                    if (!data.ebWindowState) return;
                     var fullscreen = data.ebWindowState === 'fullscreen';
-                    var maximised = data.ebWindowState === 'maximized';
-                    var btn = document.querySelector('#eb-window-controls .eb-max');
-                    if (btn) {
-                        btn.innerHTML = maximised ? ICON_RESTORE : ICON_MAX;
-                        btn.title = maximised ? 'Restore' : 'Maximise';
-                    }
-                    document.documentElement.classList.toggle('eb-maximized', maximised);
                     document.documentElement.classList.toggle('eb-fullscreen', fullscreen);
 
-                    var drawerMoved = syncDrawerToFullscreen(fullscreen);
-
-                    // The viewport changed height without a window resize event in some
-                    // transitions; nudge listeners that size themselves from innerHeight.
+                    // The drawer is left exactly as the user set it - fullscreen is about the
+                    // window - so all that is left is to tell the page its height changed:
+                    // some transitions do that without a window resize event.
                     window.dispatchEvent(new Event('resize'));
-
-                    // The drawer slides for 225ms and changes the width the board lays out in,
-                    // so re-measure once it has settled. The page debounces, so this is cheap.
-                    if (drawerMoved) {
-                        setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 350);
-                    }
                 });
             } catch (e) { }
           } catch (err) {
