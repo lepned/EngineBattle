@@ -74,9 +74,11 @@ jobs:
           path: ${{ steps.names.outputs.zip }}
 
   # The Windows desktop shell. Separate job because it targets net10.0-windows and needs a
-  # Windows runner for the WPF markup compiler, and it is deliberately not part of
-  # EngineBattle.sln so the ubuntu jobs above keep building. Ships as its own zip: unpack it
-  # into the same folder as EngineBattle.exe and the shell finds the server as a sibling.
+  # Windows runner for the WPF markup compiler. It IS part of EngineBattle.sln - it was kept out
+  # once, to protect the ubuntu jobs, and the price was a shell that went quietly stale on every
+  # machine; the csproj now makes itself an empty library off Windows instead, which the ubuntu
+  # job above proves on every run. Ships as its own zip: unpack it into the same folder as
+  # EngineBattle.exe and the shell finds the server as a sibling.
   desktop-shell:
     needs: test
     runs-on: windows-latest
