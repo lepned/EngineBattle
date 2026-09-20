@@ -425,7 +425,7 @@ This application uses the following libraries, which are licensed under their re
 - **MudBlazor** - [MIT License](https://github.com/MudBlazor/MudBlazor/blob/dev/LICENSE)
 - **Serilog** - [Apache License 2.0](https://github.com/serilog/serilog/blob/dev/LICENSE)
 - **CommandLineParser** - [MIT License](https://github.com/commandlineparser/commandline/blob/master/License.md)
-- **Fathom** - [MIT License](https://github.com/basil00/Fathom/blob/master/LICENSE)
+- **Fathom** - [MIT License](https://github.com/jdart1/Fathom/blob/master/LICENSE) (the bundled macOS prober is a universal arm64 + x86_64 build of Jon Dart's fork; the licence notice names Ronald de Man, basil00 and Jon Dart)
 - **Toolbelt.Blazor.HotKeys2** - [Mozilla Public License 2.0](https://github.com/jsakamoto/Toolbelt.Blazor.HotKeys/blob/master/LICENSE)
 - **CliWrap** - [MIT License](https://github.com/Tyrrrz/CliWrap/blob/master/License.txt)
 - **Chess piece images** (cburnett/wikipedia set, from the chessboardjs project) - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
