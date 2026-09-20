@@ -149,14 +149,12 @@ html {
        narrow column can still leave the table a little wider than its box, and a horizontal
        scrollbar on a broadcast layout is worse than a slightly clipped last column. */
     overflow-x: hidden;
-    
-    background-color: #2c2f35; /* Optional: Background color for the container */
 }
 
     /* Style the scrollbar */
     .standings-table-wrapper::-webkit-scrollbar {
         width: 12px; /* Width of the scrollbar */
-        background-color: #2c2f35; /* Dark background for the scrollbar track */
+        background-color: transparent;   /* the table has no panel behind it to match */
     }
 
     /* Style the scrollbar thumb (the draggable part) */
@@ -173,7 +171,7 @@ html {
 /* For Firefox */
 .standings-table-wrapper {
     scrollbar-width: thin; /* Thin scrollbar */
-    scrollbar-color: #555 #2c2f35; /* Thumb color and track color */
+    scrollbar-color: #555 transparent; /* Thumb color and track color */
 }
 
 .overlay-menu-button {
@@ -1144,4 +1142,70 @@ html.eb-near-fontscale .eb-fontscale,
    the plain rule wins. */
 .mud-main-content {
     padding-top: 0;
+}
+
+/* --- The between-games ladder popup -----------------------------------------------------------
+   It shows the progress table and nothing else: no title bar, no buttons, no close button. So
+   the dialog should not look like a dialog with a table dropped into it - it should look like
+   the panels the tournament page is already made of, which is what the rest of the screen
+   behind it looks like.
+
+   Everything is scoped to the class the dialog puts on its own paper. The same component is the
+   resume prompt when it has actions, and that one keeps MudBlazor's own look. */
+.eb-ladder-dialog {
+    background: #1f2125;
+    border: 1px solid #404040;
+    border-radius: 12px;
+    /* Deep enough to lift it off a busy tournament screen without a dimming overlay doing the
+       work; it appears between games, over a board the viewer is still looking at. */
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+    overflow: hidden;   /* so the corners actually cut the table's header strip */
+}
+
+/* Flush to the edges, so the table's own heading becomes the popup's title bar. MudBlazor's
+   .mud-dialog .mud-dialog-content sets BOTH padding and an 8px vertical margin; zeroing only the
+   padding left a band of the dialog's own background above the heading strip and below the last
+   row, inside the rounded corners. Both have to go, and both need !important to beat a
+   two-class selector.
+
+   overflow is deliberately NOT touched: MudBlazor's overflow:auto is what keeps a ladder taller
+   than the viewport scrollable, since the table is rendered here with no height cap of its own. */
+.eb-ladder-dialog-content {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* The between-games form has no buttons, but the component always supplies the actions fragment
+   - the condition is inside it - so MudBlazor renders the strip anyway, as an empty bar under
+   the table. Hidden here rather than by splitting the component in two, which would duplicate
+   the resume prompt's markup to remove 16 pixels. */
+.eb-ladder-dialog .mud-dialog-actions {
+    display: none;
+}
+
+.eb-ladder-dialog .standings-container {
+    margin-top: 0;      /* the 10px gap is for stacking panels in a column, not for a dialog */
+}
+
+/* The heading strip, filled in here. The page leaves it transparent because it sits on the
+   column's own background; here it is the title bar and wants to read as one. */
+.eb-ladder-dialog .header {
+    background: #2d2d2d;
+    padding: 10px 16px;
+}
+
+/* Room to breathe. The column on the page is tight enough that cell padding is measured in
+   fractions of the text size; a popup has the space, so it spends a little of it. */
+.eb-ladder-dialog .header-cell,
+.eb-ladder-dialog .data-cell {
+    padding: 0.45em 0.8em;
+}
+
+/* Banding, skipping the climber's row so its own highlight still wins. */
+.eb-ladder-dialog .data-row:not(.challenger):nth-child(even) {
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.eb-ladder-dialog .standings-table-wrapper {
+    padding-bottom: 6px;
 }
