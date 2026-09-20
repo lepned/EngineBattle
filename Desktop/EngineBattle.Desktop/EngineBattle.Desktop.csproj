@@ -1,8 +1,28 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
+	<!-- This project is in EngineBattle.sln so that an ordinary `dotnet build` at the root keeps
+	     the shell up to date. It used to be outside the solution, and the cost was a shell that
+	     went quietly stale on every machine: a pull changed nothing, and the give-away was the
+	     old close/minimise/restore buttons drawn INSIDE the page by the injected script.
+
+	     Being in the solution means a build on Linux or macOS reaches it too, and net10.0-windows
+	     cannot be built there. So off Windows the project deliberately becomes an empty library:
+	     it restores, it builds, it produces nothing, and the cross-platform build stays green. -->
 	<PropertyGroup>
+		<IsWindowsHost Condition="'$(OS)' == 'Windows_NT'">true</IsWindowsHost>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(IsWindowsHost)' == 'true'">
 		<OutputType>WinExe</OutputType>
 		<TargetFramework>net10.0-windows</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(IsWindowsHost)' != 'true'">
+		<OutputType>Library</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+	</PropertyGroup>
+
+	<PropertyGroup>
 		<RootNamespace>EngineBattle.Desktop</RootNamespace>
 		<AssemblyName>EngineBattleDesktop</AssemblyName>
 		<Nullable>enable</Nullable>
@@ -11,21 +31,29 @@
 		<!-- WPF, not WinUI: this shell is a window around a WebView2 and uses no XAML controls
 		     of its own, so the Windows App SDK's ~149 MB of runtime (ONNX, DirectML, the whole
 		     WinUI control set) would be dead weight. WPF ships in the Windows Desktop runtime. -->
-		<UseWPF>true</UseWPF>
+		<UseWPF Condition="'$(IsWindowsHost)' == 'true'">true</UseWPF>
 
-		<ApplicationIcon>..\..\WebGUI\chessIcon.ico</ApplicationIcon>
-		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<ApplicationIcon Condition="'$(IsWindowsHost)' == 'true'">..\..\WebGUI\chessIcon.ico</ApplicationIcon>
+		<ApplicationManifest Condition="'$(IsWindowsHost)' == 'true'">app.manifest</ApplicationManifest>
 
-		<RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+		<RuntimeIdentifiers Condition="'$(IsWindowsHost)' == 'true'">win-x64;win-arm64</RuntimeIdentifiers>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 
-	<ItemGroup>
+	<ItemGroup Condition="'$(IsWindowsHost)' == 'true'">
 		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
 	</ItemGroup>
 
-	<!-- No ProjectReference to WebGUI or ChessLibrary on purpose. The shell talks to the
-	     server over a process + HTTP contract only, so this Windows-only project can never
-	     break the cross-platform build. -->
+	<!-- Nothing to compile off Windows: every file here is WPF. Without this the SDK's default
+	     globbing would still hand the C# to the compiler, and it would fail on types that do not
+	     exist outside the Windows Desktop runtime. -->
+	<ItemGroup Condition="'$(IsWindowsHost)' != 'true'">
+		<Compile Remove="**/*.cs" />
+		<None Remove="**/*.xaml" />
+	</ItemGroup>
+
+	<!-- No ProjectReference to WebGUI or ChessLibrary on purpose. The shell talks to the server
+	     over a process + HTTP contract only, so nothing here can be a dependency of the parts
+	     that do build everywhere. -->
 
 </Project>
