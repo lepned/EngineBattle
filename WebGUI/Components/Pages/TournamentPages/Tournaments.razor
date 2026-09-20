@@ -163,7 +163,8 @@
 			<MudItem>
 				<div class="lhs">
 
-					<EngineStatsModern Engine1Logo="@whiteEngineLogo"
+					<EngineStatsModern @ref="engineStats"
+								 Engine1Logo="@whiteEngineLogo"
 								 Engine1Name="@whitePlayer"
 								 Engine2Logo="@blackEngineLogo"
 								 Engine2Name="@blackPlayer"
@@ -183,16 +184,11 @@
 								 FontSize="@layoutOptions.Fonts.EnginesPanelFont"
 								 IsFRC=@tournament.IsChess960
 								 MainLogoFileName="@tournament.MainLogoFileName"
-								 LogoSize="@layoutOptions.Sizes.LogoSize" />
+								 LogoSize="@layoutOptions.Sizes.LogoSize"
+								 WhiteMoveAndFen="WhiteMoveAndFen"
+								 BlackMoveAndFen="BlackMoveAndFen"
+								 PvBoardSizePx="@PvBoardSizePx" />
 
-				</div>
-				@* Off leaves nothing behind - not a collapsed board, not a spacer - so the
-				   standings below get the row's height back. *@
-				<div class="lhs pvHeight">
-					@if (showPVBoard)
-					{
-						<PVboardDuo @ref="pvBoardDuo" BoardSize="@PvBoardMode" WhiteMoveAndFen="WhiteMoveAndFen" BlackMoveAndFen="BlackMoveAndFen" IsWhite="@whiteToMove" IsDeviation="@showCompletePV" />
-					}
 				</div>
 
 		@if (layoutOptions.ShowCrosstableBelowStandings)

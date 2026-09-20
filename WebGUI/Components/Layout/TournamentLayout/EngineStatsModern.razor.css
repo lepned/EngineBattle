@@ -245,10 +245,30 @@
 /* Main logo - fluid scaling using container query width units.
    30cqw is deliberate: the grid is 1fr auto 1fr, so whatever this logo takes comes straight
    out of the two engine cells beside it. Below a third of the panel they have room for a name
-   and a version; at 300px in a 360px panel they had room for two characters. */
+   and a version; at 300px in a 360px panel they had room for two characters.
+
+   The pixel terms are the ceiling, and they are lower than they were. Every vertical dimension
+   in this column is a function of its WIDTH, so a wider window made the panel taller: measured
+   at a fixed 1100px window height, this logo went 50px tall at a 1400px window to 117px at
+   2560px. The cap sits just above that 4K figure (2560 CSS px at 150% scaling), so the logo is
+   the same size as before on every screen it is watched on - it only stops growing past that.
+   Past 4K it is the max-width term that binds first on the default logo, which is 1.84:1; a
+   squarer tournament logo meets the 130px height first and does shrink there.
+
+   What this cap does NOT do is give the tables their height back, and it would be easy to
+   believe otherwise. The grid row is as tall as its tallest cell, and with LogoSize=280x140 the
+   engine-logo cells beside this one are taller than it - so holding this logo down frees zero
+   panel height until the engine logos come down too, which is the user's setting to make. The
+   cap is here to stop one uncapped thing growing without end, not to reclaim space.
+
+   The engine logos beside it keep the ceilings they have. They are capped in this file too
+   (.engine-logo-wrapper above), but tournament.json's LogoSize is layered on top of that as an
+   inline max-width/max-height, so a user who wants them bigger has somewhere to say so - and at
+   2560px it is that setting, 280x140, they stop at. The main logo has no such setting, which is
+   why its ceiling is a number here. */
 .main-logo {
-  max-width: min(20em, 300px, 30cqw);
-  max-height: min(12em, 200px, 20cqw);
+  max-width: min(20em, 240px, 30cqw);
+  max-height: min(12em, 130px, 20cqw);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -256,7 +276,14 @@
   flex-shrink: 1;
 }
 
-/* Shrink main logo progressively in narrow containers */
+/* Shrink main logo progressively in narrow containers.
+
+   The pixel terms in all five of these blocks are unreachable and always have been: inside
+   (max-width: 600px) the 30cqw term is at most 180px and the 20cqw term at most 120px, both
+   below the pixel numbers beside them, and every narrower block is further below its own. Only
+   the BASE rule's pixel terms can ever bind, which is why the cap belongs there and nowhere
+   else. Left exactly as they were - a dead number lowered is still dead, and editing one
+   suggests to the next reader that it does something. */
 @container engine-stats (max-width: 600px) {
   .main-logo {
     max-width: min(16em, 240px, 30cqw);
@@ -323,3 +350,8 @@
 }
 
 /* Responsive - no changes needed, compact design works for narrow spaces */
+
+/* The PV board cells are NOT styled here. They are rendered by PvBoardRow, and a scoped
+   stylesheet only matches elements in its own component's markup - so these rules sat in this
+   file doing nothing: the boards drew hard against the left edge of their column instead of
+   centred on it, and lost the air under the stats row. They live in PvBoardRow.razor.css. */

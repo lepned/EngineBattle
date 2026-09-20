@@ -46,7 +46,7 @@ public partial class Tournaments
 	private ThreadSafeBoardState boardState = new();
 	private MoveAndFen WhiteMoveAndFen = MoveAndFen.FirstEntry;
 	private MoveAndFen BlackMoveAndFen = MoveAndFen.FirstEntry;
-	private PVboardDuo pvBoardDuo;
+	private EngineStatsModern engineStats;
 	private bool BestMoveWithPolicy = false;
 	private bool blackLogLive = false;
 	private bool whiteLogLive = false;
@@ -647,8 +647,13 @@ public partial class Tournaments
 				if (boardSyncGen != gen)
 					continue;
 				await streamingBoard.OnNotifyMoveAndFen(move);
-				if (pvBoardDuo != null)
-					await pvBoardDuo.SetPVMoveWithAnnotation(move, true);
+				// showPVBoard as well as the null check: the boards used to be their own component
+				// inside @if (showPVBoard), so a null ref WAS the "boards are off" test. They are
+				// part of the engine panel now, which is always there, and without this every
+				// opening-replay move would re-render the whole panel to update two boards that
+				// are not on screen.
+				if (engineStats != null && showPVBoard)
+					await engineStats.SetPVMoveWithAnnotation(move, true);
 			}
 		}
 

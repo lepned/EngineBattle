@@ -65,6 +65,61 @@ public partial class Tournaments
 	/// layoutOptions.ShowPVBoard directly, so the guards around those reads are untouched.
 	private void ApplyPvBoardMode() => showPVBoard = PvBoardMode != "off";
 
+	// ── How big the two PV boards actually are ───────────────────────────────────
+	// The share of the row each mode asks for. These used to be percentages in a global
+	// stylesheet, which meant the size lived somewhere no control on this page could reach:
+	// tournament.json, the S/M/L buttons above, ResetToConfiguredLayout and - the one that
+	// mattered - the main board's own size slider all changed the column and then had the
+	// result clipped by a CSS number none of them could see. The boards were the last in the app
+	// sized by a class rather than by a pixel value from here; every other one (LiveFeedGrid,
+	// PVtileBoard, StreamingChessboard, ModernChessboard) already took SizePx.
+	//
+	// The share is of the ENGINE PANEL's width, which is the row the two boards are cells of -
+	// they are grid cells of the panel now, not a component below it, so each one is centred on
+	// its own engine's column.
+	private static readonly Dictionary<string, double> PvBoardShare = new()
+	{
+		["small"] = 0.23,
+		["medium"] = 0.29,
+		["large"] = 0.35,
+	};
+
+	/// <summary>
+	/// Where the row stops counting. These boards are square, so their width is their height,
+	/// and a share of a column that grows with the window has no ceiling at all - measured at a
+	/// fixed 1100px window height, a board went 39px at a 1400px window to 144px at 2560px, and
+	/// that came straight out of the tables below.
+	///
+	/// ONE number rather than one cap per mode. Three caps are three chances to drift apart, and
+	/// they were saying the same thing three times over: 150/0.23, 190/0.29 and 230/0.35 are all
+	/// about 655. Expressed this way the modes keep their proportions above the ceiling as well
+	/// as below it, which three flat caps would have flattened.
+	///
+	/// 660 is just above what the row reaches on a 4K panel at 150% scaling (2560 CSS px), so no
+	/// board on a screen these are watched on gets smaller - the ceiling only stops the climb
+	/// past that. An earlier attempt calibrated on a 1920px window instead, and that visibly
+	/// shrank the boards; do not lower this without measuring the screen it will be seen on.
+	/// </summary>
+	private const double PvBoardRowCeilingPx = 660;
+
+	/// <summary>
+	/// The size for one PV board, or null while the panel has not been measured yet - before the
+	/// first layout pass. Null leaves the board filling its grid cell, which is its engine's
+	/// column: a sensible size rather than nothing, and slightly smaller than any of the three
+	/// modes, so the first paint settles UP to the measured size instead of jumping down from
+	/// something oversized. The percentages this used to fall back to are gone with the old
+	/// stylesheet row.
+	/// </summary>
+	private int? PvBoardSizePx
+	{
+		get
+		{
+			if (pvRowWidthPx <= 0 || !PvBoardShare.TryGetValue(PvBoardMode, out var share))
+				return null;
+			return (int)Math.Round(Math.Min(pvRowWidthPx, PvBoardRowCeilingPx) * share);
+		}
+	}
+
 	private void SetPvBoard(string mode)
 	{
 		if (mode == PvBoardMode && pvBoardChoice == mode) return;

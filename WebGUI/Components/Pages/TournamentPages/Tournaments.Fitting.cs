@@ -1,4 +1,4 @@
-﻿// Tournaments: measuring the layout, and sizing the regions that have to fit inside it.
+// Tournaments: measuring the layout, and sizing the regions that have to fit inside it.
 //
 // The tournament page cannot predict how much room anything gets. The window, the drawer, the
 // board size, the number of charts and the engine names all move it, so the page measures what
@@ -30,7 +30,8 @@ public partial class Tournaments
 		double UnzoomedViewportHeight,
 		double Lhs,
 		double Rhs,
-		double StandingTable);
+		double StandingTable,
+		double PvRow);
 
 	// Resize events arrive in bursts -- one F11 toggle or window drag produces several -- and
 	// this method is a long async sequence. Without a generation guard two runs interleave, and
@@ -58,15 +59,17 @@ public partial class Tournaments
 		if (IsSupersededResize(generation)) return;
 
 		windowHeight = metrics.WindowHeight;
+		pvRowWidthPx = metrics.PvRow;
 		var elementsAboveCycleTableHeight = metrics.Rhs;
 		var standingTableHeight = metrics.StandingTable;
 		standingsTableHeightPx = standingTableHeight;
 		int buffer = 140; //CalcBufferFunction((int)metrics.UnzoomedViewportHeight);
 		var elementsAboveStandings = metrics.Lhs + buffer;
-		if (showPVBoard)
-		{
-			elementsAboveStandings += 35;
-		}
+		// No PV allowance here any more. The 35 stood for the 1.5rem margins above and below the
+		// PV row's own wrapper div, which offsetHeight does not count and sum('lhs') therefore
+		// missed. That div is gone - the boards are a row of the engine panel, inside .lhs, and
+		// their only extra height is padding, which offsetHeight DOES count. Keeping the 35
+		// handed the standings box 35px less than the layout actually had.
 
 		if (!layoutOptions.OnlyShowStandings)
 		{
@@ -127,6 +130,18 @@ public partial class Tournaments
 	/// grows into it.
 	/// </summary>
 	private const int BottomPadding = 10;
+
+	/// <summary>
+	/// The engine panel's width, as last measured. Zero until the first pass, and the two PV
+	/// boards simply fill their grid cell until then.
+	///
+	/// This is a WIDTH feeding a width, not content feeding a size: it is read only by
+	/// PvBoardSizePx in Tournaments.SizeControls.cs, which sizes the two boards, and nothing
+	/// downstream of it changes this number back. The spiral the font work ran into - a measured
+	/// content height deciding a font that decides that height - needs the loop to close, and
+	/// here it does not.
+	/// </summary>
+	private double pvRowWidthPx;
 
 	/// <summary>
 	/// Sizes the move list from the space the layout actually left over, rather than from part

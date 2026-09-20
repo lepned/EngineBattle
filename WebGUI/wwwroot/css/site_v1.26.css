@@ -67,75 +67,11 @@ html {
   overflow: hidden; /* Disable scrollbars */
 }
 
-.pv-board-container {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 1.5rem;
-    margin-bottom: 1.5rem;
-    margin-left: 1.5rem;
-    margin-right: 0.5rem;
-    padding-right: 1.25rem;
-    flex-grow: 1;
-    gap: 0.25rem;
-}
-
-.pv-board {
-    flex-grow: 0;
-}
-
-.mud-td-two-lines {
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: normal;
-    line-height: 1.7; /* Adjust as needed */
-    /*min-height: calc(1.8em * 1);*/ /* 2 lines */
-    /*max-height: calc(1.8em * 1);*/ /* 2 lines */
-}
-
-.left-board {
-    margin-left: 2rem;
-}
-
-.right-board {
-    margin-right: 1rem;
-}
-
-/* Board size classes */
-.board-small {
-    width: 23%;
-}
-
-.board-medium {
-    width: 29%;
-}
-
-.board-large {
-    width: 35%;
-}
-
-/* Container size adjustments */
-.container-small {
-    padding-right: 2.0rem;
-    padding-left: 2.0rem;
-    margin-left: 1rem;
-    margin-right: 1rem;
-}
-
-.container-medium {
-    padding-right: 0.25rem;
-    margin-left: 1.0rem;
-    margin-right: 1.0rem;
-}
-
-.container-large {
-    padding-right: 0rem;
-    margin-left: 0rem;
-    margin-right: 0rem;
-}
-
+/* The PV boards used to live here: a flex row under the engine panel, two size classes per
+   mode, two margins and a strip to spread them across. All of it is gone. They are grid cells
+   of the engine panel now (EngineStatsModern.razor.css, .pv-cell), in the same columns as the
+   engines, so a board sits under its own engine by construction - which is the one thing about
+   them that carries meaning, and the one thing this arrangement could only approximate. */
 
 /* Ensure the scrollbar is only visible when needed */
 .standings-table-wrapper {

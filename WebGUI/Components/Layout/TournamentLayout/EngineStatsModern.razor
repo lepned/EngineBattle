@@ -29,8 +29,9 @@
   @* No inline size here. The stylesheet already scales this logo with the container it sits
      in - five breakpoints and a cqw term - and an inline max-width beat every one of them, so
      the logo stayed 300px wide in a 360px panel and the two engine cells beside it were left
-     with 30px each. The ceiling the inline style set is the same 300x200 the stylesheet caps
-     at, so nothing is lost by letting the stylesheet do its job. *@
+     with 30px each. The stylesheet's own ceiling is now 240x130 - LOWER than the 300x200 that
+     inline style set, so restoring it would not merely duplicate the cap, it would lift it, and
+     an inline style beats every @container rule in the scoped sheet. *@
   <div class="main-logo-wrapper" style="overflow:hidden;max-width:100%;">
     <img src="@MainLogo" alt="EngineBattle" class="main-logo" />
     <span class="powered-by">Powered by EngineBattle</span>
@@ -84,10 +85,88 @@
   <div class="stat-cell move-time @(Engine1ToMove ? "active-time" : "")">@Engine1TimePerMove</div>
   <div class="label-cell">Move time</div>
   <div class="stat-cell move-time @(Engine1ToMove ? "" : "active-time")">@Engine2TimePerMove</div>
+
+  @* Row 10: each engine's PV board, in that engine's own column. PvBoardRow renders the three
+     cells directly into this grid - see its own comment for why it is a component at all. *@
+  @if (ShowPV)
+  {
+    <PvBoardRow WhiteFen="@whiteFen" WhiteFrom="@whiteFrom" WhiteTo="@whiteTo"
+                WhiteMoveColor="@whiteMoveColor"
+                BlackFen="@blackFen" BlackFrom="@blackFrom" BlackTo="@blackTo"
+                BlackMoveColor="@blackMoveColor"
+                SizePx="@PvBoardSizePx" />
+  }
 </div>
 </div>
 
 @code {
+
+  // ── The two PV boards ────────────────────────────────────────────────────────
+  // Moved here from PVboardDuo, which no longer exists. The state is what it was there: a fen
+  // and a last move per side, set either by the parameters or, during opening replay, by a
+  // direct call from the page.
+  private string whiteFen = EbChessboard.StartFen;
+  private string whiteFrom;
+  private string whiteTo;
+  private string whiteMoveColor;
+  private string blackFen = EbChessboard.StartFen;
+  private string blackFrom;
+  private string blackTo;
+  private string blackMoveColor;
+
+  // Parameters only win when they actually CHANGE; otherwise a parent re-render would
+  // overwrite state set through SetPVMoveWithAnnotation, and opening replay runs before the
+  // first engine move updates the parameters.
+  private string lastWhiteParamFen;
+  private string lastBlackParamFen;
+
+  [Parameter]
+  public MoveAndFen WhiteMoveAndFen { get; set; }
+
+  [Parameter]
+  public MoveAndFen BlackMoveAndFen { get; set; }
+
+  /// <summary>One PV board's size in pixels, worked out by Tournaments.SizeControls.cs from the
+  /// panel width it measured, or null before the first measuring pass.</summary>
+  [Parameter]
+  public int? PvBoardSizePx { get; set; }
+
+  /// <summary>
+  /// Called during opening replay, which runs OFF the dispatcher thread - the render has to be
+  /// marshalled.
+  /// </summary>
+  public Task SetPVMoveWithAnnotation(MoveAndFen input, bool clear)
+  {
+    if (input?.FenAfterMove is { Length: > 0 })
+    {
+      whiteFen = blackFen = input.FenAfterMove;
+      whiteFrom = blackFrom = input.Move.FromSq;
+      whiteTo = blackTo = input.Move.ToSq;
+      whiteMoveColor = blackMoveColor = input.Move.Color;
+      return InvokeAsync(StateHasChanged);
+    }
+    return Task.CompletedTask;
+  }
+
+  protected override void OnParametersSet()
+  {
+    if (WhiteMoveAndFen?.FenAfterMove is { Length: > 0 } wf && wf != lastWhiteParamFen)
+    {
+      lastWhiteParamFen = wf;
+      whiteFen = wf;
+      whiteFrom = WhiteMoveAndFen.Move.FromSq;
+      whiteTo = WhiteMoveAndFen.Move.ToSq;
+      whiteMoveColor = WhiteMoveAndFen.Move.Color;
+    }
+    if (BlackMoveAndFen?.FenAfterMove is { Length: > 0 } bf && bf != lastBlackParamFen)
+    {
+      lastBlackParamFen = bf;
+      blackFen = bf;
+      blackFrom = BlackMoveAndFen.Move.FromSq;
+      blackTo = BlackMoveAndFen.Move.ToSq;
+      blackMoveColor = BlackMoveAndFen.Move.Color;
+    }
+  }
 
   private async Task OnNextTick(bool whiteToMove, string timeLeft, string moveTime)
   {

@@ -1,0 +1,63 @@
+@using WebGUI.Components.Layout.ChessboardLayout
+
+@* The engine panel's last row: each engine's PV board, in that engine's own column.
+
+   This renders three GRID CELLS, not a box around them - a Blazor component contributes its
+   root elements directly, so these are children of .engine-stats-container and land in the
+   same 1fr auto 1fr tracks the engines use. That is the whole point: a board sits under the
+   engine whose line it shows, exactly, at every width. The middle cell is deliberately empty,
+   which is what lets a board be wider than its column (they are - 93px board in a 69px column
+   at a 1400px window) without the two colliding.
+
+   It is a component ONLY to own ShouldRender. The panel around it re-renders ten times a
+   second off the clock tick, and without this gate that meant re-parsing two FENs and
+   rebuilding two 64-square render trees 20 times a second for a picture that had not changed.
+   EbChessboard reparses in OnParametersSet and has no gate of its own. *@
+<div class="pv-cell">
+    <EbChessboard Fen="@WhiteFen" SizePx="@SizePx"
+                  ShowCoordinates="false" FrameWidthPct="0"
+                  LastMoveFrom="@WhiteFrom" LastMoveTo="@WhiteTo" LastMoveColor="@WhiteMoveColor" />
+</div>
+<div></div>
+<div class="pv-cell">
+    <EbChessboard Fen="@BlackFen" SizePx="@SizePx"
+                  ShowCoordinates="false" FrameWidthPct="0"
+                  LastMoveFrom="@BlackFrom" LastMoveTo="@BlackTo" LastMoveColor="@BlackMoveColor" />
+</div>
+
+@code {
+    [Parameter] public string WhiteFen { get; set; }
+    [Parameter] public string WhiteFrom { get; set; }
+    [Parameter] public string WhiteTo { get; set; }
+    [Parameter] public string WhiteMoveColor { get; set; }
+    [Parameter] public string BlackFen { get; set; }
+    [Parameter] public string BlackFrom { get; set; }
+    [Parameter] public string BlackTo { get; set; }
+    [Parameter] public string BlackMoveColor { get; set; }
+    [Parameter] public int? SizePx { get; set; }
+
+    // Everything this component draws is in these nine values. Blazor re-renders a child
+    // whenever its parent renders, parameters changed or not, so without this the clock tick
+    // would drive both boards; with it, they redraw when the position or the size moves.
+    private string pWhiteFen, pWhiteFrom, pWhiteTo, pWhiteColor;
+    private string pBlackFen, pBlackFrom, pBlackTo, pBlackColor;
+    private int? pSize;
+    private bool first = true;
+
+    protected override bool ShouldRender()
+    {
+        if (!first
+            && WhiteFen == pWhiteFen && WhiteFrom == pWhiteFrom && WhiteTo == pWhiteTo
+            && WhiteMoveColor == pWhiteColor
+            && BlackFen == pBlackFen && BlackFrom == pBlackFrom && BlackTo == pBlackTo
+            && BlackMoveColor == pBlackColor
+            && SizePx == pSize)
+            return false;
+
+        first = false;
+        pWhiteFen = WhiteFen; pWhiteFrom = WhiteFrom; pWhiteTo = WhiteTo; pWhiteColor = WhiteMoveColor;
+        pBlackFen = BlackFen; pBlackFrom = BlackFrom; pBlackTo = BlackTo; pBlackColor = BlackMoveColor;
+        pSize = SizePx;
+        return true;
+    }
+}

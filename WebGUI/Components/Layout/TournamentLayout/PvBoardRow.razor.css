@@ -1,0 +1,26 @@
+/* The PV board cells - the engine panel's last row.
+
+   This file exists because these three cells are rendered by PvBoardRow and not by
+   EngineStatsModern: a scoped stylesheet only matches elements in its OWN component's markup,
+   so while these rules lived in EngineStatsModern.razor.css they matched nothing at all. The
+   boards sat hard against the left edge of their column - 119px off their engine at a 3440px
+   window - and had no air between them and the Move time row above.
+
+   The cell fills its grid track and centres the board in it, which is what puts each board on
+   the same centre line as the engine above it. */
+.pv-cell {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  padding-top: 1.1em;
+}
+
+/* The board keeps the pixel size it was given. A flex item shrinks by default, and these
+   boards are deliberately WIDER than the column they sit under - 93px in a 69px column at a
+   1400px window - so without this the cell would squeeze the board back to its track and the
+   size worked out in C# would quietly not be the size on screen. Overflowing is intended: it
+   spills into the empty middle cell, not into the other board. */
+.pv-cell > * {
+  flex-shrink: 0;
+}

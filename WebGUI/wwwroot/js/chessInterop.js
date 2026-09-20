@@ -49,12 +49,22 @@ export function measureTournamentLayout() {
     return total;
   };
 
+  // The engine panel's width. The two PV boards are cells of that panel's grid, so this is
+  // what they have to share, and C# turns it into a pixel size for each one - which is how
+  // the main board's size slider reaches them: it widens this column, this number grows.
+  // Measured on the panel rather than on the boards so it is still there when they are off.
+  const pvRow = () => {
+    const el = document.querySelector('.engine-stats-fit');
+    return el ? Math.round(el.clientWidth) : 0;
+  };
+
   return {
     windowHeight: window.innerHeight,
     unzoomedViewportHeight: window.innerHeight * (window.screen.width / window.innerWidth),
     lhs: sum('lhs'),
     rhs: sum('rhs'),
-    standingTable: sum('standingTable')
+    standingTable: sum('standingTable'),
+    pvRow: pvRow()
   };
 }
 
