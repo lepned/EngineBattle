@@ -1,4 +1,4 @@
-module ChessLibrary.TablebaseProbe
+﻿module ChessLibrary.TablebaseProbe
 
 open System
 open System.IO
@@ -113,10 +113,69 @@ let runFathom (tablebasePath: string) (fen: string) =
     proc.WaitForExit()
     output
 
+/// Stands in for the prober path until getFathomExecutablePath has returned one.
+let private unresolvedProber = "(not resolved)"
+
+/// <summary>
+/// Two guards, not one, and the difference matters.
+///
+/// A prober that CANNOT RUN is a standing condition: every position from here on will go
+/// unadjudicated, and the user needs to be told once. A TIMEOUT is not - a single slow spawn
+/// under load, or a cold tablebase directory on a spinning disk, costs one position and nothing
+/// more. Sharing a latch between them meant one early timeout both claimed that adjudication was
+/// over when it was not, and then swallowed the real failure if the prober later stopped working
+/// for good - which is the exact case this reporting exists for.
+/// </summary>
+let private proberUnusableReported = ref 0
+let private probeTimeoutReported = ref 0
+
+/// <summary>
+/// Clears both, so a long-lived host reports again for the next tournament. The WebGUI runs many
+/// of them in one process, with different TablebaseDirectory settings; without this, a failure
+/// reported during the first run would stay silent for every run after it. Same convention as
+/// resetPrintedEngines, and called from the same place.
+/// </summary>
+let resetProbeReports () =
+    probeTimeoutReported.Value <- 0
+    proberUnusableReported.Value <- 0
+
+/// <summary>
+/// Says once why the tablebase prober is not answering.
+///
+/// This runs for every position that reaches the adjudication threshold, so a prober that cannot
+/// run would either print for every move of every game or - as it did before - say nothing at
+/// all. Silence is the worse of the two: a user who has configured TablebaseDirectory gets no
+/// adjudication and no reason, and everything looks like it is working.
+///
+/// The Apple Silicon line is here because the bundled macOS prober is an x86_64 Mach-O binary and
+/// needs Rosetta 2 to start. The tablebase FILES are plain data and are fine on any machine; it
+/// is only this program that cannot run natively there.
+/// </summary>
+let private reportProberUnusable (exePath: string) (reason: string) =
+    if System.Threading.Interlocked.Exchange(proberUnusableReported, 1) = 0 then
+        Console.Error.WriteLine(
+            sprintf "Tablebase probe failed, so positions will not be adjudicated from tablebases: %s" reason)
+        // Only when we got that far: when resolving the path is what failed, the reason above
+        // already names it, and a second line saying "(not resolved)" reads as a contradiction.
+        if exePath <> unresolvedProber then
+            Console.Error.WriteLine(sprintf "  prober: %s" exePath)
+        if RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+           && RuntimeInformation.ProcessArchitecture = Architecture.Arm64 then
+            Console.Error.WriteLine(
+                "  The bundled macOS prober is x86_64. On Apple Silicon it needs Rosetta 2: softwareupdate --install-rosetta")
+
+/// One line for the first slow probe, and nothing after it: the position is lost, the run is not.
+let private reportProbeTimeout (timeoutMs: int) =
+    if System.Threading.Interlocked.Exchange(probeTimeoutReported, 1) = 0 then
+        Console.Error.WriteLine(
+            sprintf "Tablebase probe timed out after %d ms; that position was not adjudicated. Later timeouts are not repeated."
+                timeoutMs)
+
 /// Runs Fathom with a timeout, returning None on timeout or error
 let runFathomSafe (tablebasePath: string) (fen: string) (timeoutMs:int) : string option =
+    let mutable exePath = unresolvedProber
     try
-        let exePath = getFathomExecutablePath ()
+        exePath <- getFathomExecutablePath ()
         let startInfo = ProcessStartInfo()
         startInfo.FileName <- exePath
         startInfo.UseShellExecute <- false
@@ -128,14 +187,29 @@ let runFathomSafe (tablebasePath: string) (fen: string) (timeoutMs:int) : string
         startInfo.ArgumentList.Add(fen)
 
         use proc = new Process(StartInfo = startInfo)
-        if not (proc.Start()) then None
+        if not (proc.Start()) then
+            reportProberUnusable exePath "the process could not be started"
+            None
         else
             // Drain stdout concurrently: reading only after WaitForExit deadlocks when
             // Fathom's output exceeds the pipe buffer (child blocks writing, wait times out).
             let outputTask = proc.StandardOutput.ReadToEndAsync()
             if proc.WaitForExit(timeoutMs) then
-                Some outputTask.Result
+                let output = outputTask.Result
+                // It started, it exited, and it said nothing. That is the COMMONEST way this goes
+                // wrong - a TablebaseDirectory that exists but holds no table for this piece
+                // count, so the directory check upstream passes and the probe still cannot answer
+                // - and it produced no error of any kind before.
+                if String.IsNullOrWhiteSpace output then
+                    reportProberUnusable exePath
+                        (sprintf "the prober ran (exit code %d) but returned nothing. Check that %s holds tables for this piece count."
+                            proc.ExitCode tablebasePath)
+                    None
+                else Some output
             else
                 try proc.Kill(true) with _ -> ()
+                reportProbeTimeout timeoutMs
                 None
-    with _ -> None
+    with ex ->
+        reportProberUnusable exePath ex.Message
+        None

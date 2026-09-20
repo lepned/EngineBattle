@@ -1,4 +1,4 @@
-module ChessLibrary.ParallelExecution
+﻿module ChessLibrary.ParallelExecution
 
 open System
 open System.IO
@@ -322,6 +322,10 @@ let parallelTournamentRun
   // Ladder, Cup, and Swiss manage their own pairings — dispatch directly
   let mode = if String.IsNullOrWhiteSpace tourny.TournamentMode then "" else tourny.TournamentMode.Trim().ToLowerInvariant()
   ChessLibrary.Engine.resetPrintedEngines()
+  // Same reason, and this sits above the mode dispatch so it covers cup, swiss and ladder too:
+  // the WebGUI runs many tournaments in one process, and a prober failure reported during the
+  // first must not leave every run after it silent.
+  ChessLibrary.TablebaseProbe.resetProbeReports()
   match mode with
   | "ladder" ->
       TournamentRunners.ladder logger tourny callback cts tryGetUserAdjudication externalPgnAgent
