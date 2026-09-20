@@ -116,8 +116,17 @@ public partial class Tournaments
 		await FitWidths(generation);
 	}
 
-	// Small gap kept under the last PV box so it never sits flush against the bottom edge.
-	private const int PvBottomPadding = 8;
+	/// <summary>
+	/// The air kept under the LAST box in each of the three columns - the PV box, the pairings
+	/// box and the standings box - so none of them sits flush against the bottom edge.
+	///
+	/// One number, not one per column: this is a single visual property of the page, and three
+	/// constants that must stay equal are three places to forget the third. Raising it is the
+	/// only way to get more room at the foot of the page; every fit here is defined as "fill
+	/// down to the window minus this", so space freed anywhere above is taken by the box that
+	/// grows into it.
+	/// </summary>
+	private const int BottomPadding = 10;
 
 	/// <summary>
 	/// Sizes the move list from the space the layout actually left over, rather than from part
@@ -144,21 +153,144 @@ public partial class Tournaments
 	/// edge by one pixel and a pass converges. The cycling decision follows the new height:
 	/// once the table fits, there is nothing to cycle through.
 	/// </summary>
+	/// <summary>
+	/// The standings box, whichever table is in it at the moment. Every mode cycles something
+	/// else through that one place: cup and ladder their progress tables, and round-robin and
+	/// swiss the crosstable. The cycling components render one or the other, never both, so a
+	/// single element matches - and the layout where the crosstable is a second box below
+	/// standings, the one case where two would match, is routed to the two-box method instead.
+	///
+	/// Used for HEIGHT. The crosstable is deliberately absent from the width list below: it has
+	/// its own fit with a lower floor, and two fits writing to one element would fight.
+	/// </summary>
+	private const string StandingsBoxSelector =
+		"#standingsDiv, #cupProgressDiv, #ladderProgressDiv, #crosstableDiv";
+
+	/// The tables that take the standings font ceiling, for WIDTH.
+	private const string StandingsTablesSelector = "#standingsDiv, #cupProgressDiv, #ladderProgressDiv";
+
+	/// What one box was given, and what it wants. See measureBoxHeights in chessInterop.js.
+	private sealed record BoxHeight(bool Found, double Box, double Content);
+
+	/// <summary>
+	/// True when the crosstable is a second box UNDER the standings box rather than something
+	/// cycled through the same one. Only then do two boxes share the column.
+	/// </summary>
+	private bool CrosstableSitsBelowStandings =>
+		layoutOptions.ShowCrosstableBelowStandings && !layoutOptions.OnlyShowStandings
+		&& !IsCupMode && !IsLadderMode;
+
+	/// <summary>
+	/// Shares the column between the standings box and the crosstable under it.
+	///
+	/// Only standings had a cap. The crosstable was rendered without a Height, so it took its
+	/// natural height and its font stayed at the configured ceiling, and standings got whatever
+	/// was left - which with a full field is almost nothing. Because the font follows the box
+	/// height, standings then lost twice: a short box AND small text beside a crosstable at full
+	/// size.
+	///
+	/// So both get a cap, and the column is split by ROW COUNT - the same denominator the CSS
+	/// clamp uses, rows plus a slot for the section heading and one for the table's own header
+	/// row. Both tables show one line per engine, so that is close to an even split, and both
+	/// clamps then land on the same font: they shrink together, in step, which is the point.
+	///
+	/// Not by measured content height, which was the first attempt and spiralled. Content height
+	/// is a function of the font, and the font is what this method is about to decide. The
+	/// crosstable is wide, so its width fit lowers its ceiling; the font falls, the content gets
+	/// shorter, it is handed a smaller share, and the font falls again - down to the floor, where
+	/// it sits too small and stops responding to size at all. Row counts do not move when the
+	/// font does, so there is no loop to fall down.
+	/// </summary>
+	private async Task FitStandingsAndCrosstable(int generation)
+	{
+		for (var pass = 0; pass < 2; pass++)
+		{
+			if (IsSupersededResize(generation)) return;
+
+			var boxes = await chessModule.InvokeAsync<BoxHeight[]>(
+				"measureBoxHeights", "#standingsDiv", "#crosstableDiv");
+			if (IsSupersededResize(generation)) return;
+
+			// Not both on screen yet. Nothing is fitted this pass rather than guessing at a
+			// split from one box; the next resize finds them both.
+			if (boxes.Length < 2 || !boxes[0].Found || !boxes[1].Found) return;
+
+			var slack = await chessModule.InvokeAsync<double>("getSlackBelow", "#crosstableDiv");
+			if (IsSupersededResize(generation)) return;
+
+			var total = boxes[0].Box + boxes[1].Box + slack - BottomPadding;
+			if (total < 100) return;
+
+			// +2 apiece, matching the clamp: a slot for the section heading and one for the
+			// table's own header row. Equal fields give an even split and an equal font.
+			var standingsRows = scoreTable.Count + 2;
+			var crosstableRows = table.Count + 2;
+			var rows = standingsRows + crosstableRows;
+
+			var standings = (int)Math.Round(total * standingsRows / (double)rows);
+
+			// The floor is applied to the split, not to each cap on its own. Clamping them
+			// independently let the pair sum to MORE than the column they were dividing - a
+			// lopsided field in a short column gave 93 and 17, the 17 came up to 50, and the
+			// lower table hung 33px past the window edge and stayed there, because the next pass
+			// recomputes the same pair and finds nothing to change.
+			var fittedStandings = Math.Clamp(standings, 50, (int)total - 50);
+			var fittedCrosstable = (int)total - fittedStandings;
+
+			if (Math.Abs(fittedStandings - height) <= 2
+				&& Math.Abs(fittedCrosstable - crosstableHeight) <= 2) return;
+
+			height = fittedStandings;
+			crosstableHeight = fittedCrosstable;
+			shouldCycle = standingsTableHeightPx > height;
+			await InvokeAsync(StateHasChanged);
+			await Task.Delay(50);
+		}
+	}
+
 	private async Task FitStandingsToMeasuredSlack(int generation)
 	{
 		if (chessModule is null) return;
+
+		// Two boxes in the column is a different problem from one: the space under standings is
+		// not free, the crosstable is standing in it.
+		if (CrosstableSitsBelowStandings)
+		{
+			await FitStandingsAndCrosstable(generation);
+			return;
+		}
 
 		for (var pass = 0; pass < 2; pass++)
 		{
 			if (IsSupersededResize(generation)) return;
 
-			// 0 also means "no standings on this layout" (cup, ladder, feed view), which
-			// correctly leaves the height alone.
-			var slack = await chessModule.InvokeAsync<double>("getSlackBelow", "#standingsDiv");
+			// 0 also means "no standings box on this layout" (the feed view), which correctly
+			// leaves the height alone. It must NOT mean "standings is not the table showing right
+			// now": cup and ladder put a progress table in the same box under its own id, and the
+			// cycling view swaps in the crosstable under a third. Asking only for #standingsDiv
+			// found nothing while any of those was up, so the box kept its predicted height and
+			// stopped short of the window bottom, growing only in the seconds standings was in.
+			var boxes = await chessModule.InvokeAsync<BoxHeight[]>(
+				"measureBoxHeights", StandingsBoxSelector);
+			if (IsSupersededResize(generation)) return;
+			if (boxes.Length == 0 || !boxes[0].Found) return;
+
+			var slack = await chessModule.InvokeAsync<double>("getSlackBelow", StandingsBoxSelector);
+			if (IsSupersededResize(generation)) return;
 			if (Math.Abs(slack) <= 2) return;
 
-			var fitted = Math.Clamp(height + (int)slack - StandingsBottomPadding, 50, (int)windowHeight);
-			if (fitted == height) return;
+			// The box's MEASURED height plus the room under it, not the cap it was last given.
+			// A table with fewer rows than its cap allows is shorter than that cap, so adding the
+			// slack to the cap counted the same empty space twice and the loop could never close
+			// it: every pass handed out more, up to the whole window. Harmless while the box was
+			// standings alone - a cap above the content changes nothing - but cup and ladder
+			// share this one height between two tables of different length, so whichever one the
+			// cycle timer happened to be showing decided the cap, and the taller one then hung
+			// below the window edge. Measured height plus slack is the room from the box's own
+			// top edge to the bottom of the window, which does not depend on how full it is.
+			var fitted = Math.Clamp(
+				(int)(boxes[0].Box + slack) - BottomPadding, 50, (int)windowHeight);
+			if (Math.Abs(fitted - height) <= 2) return;
 
 			height = fitted;
 			// A table that now fits must stop cycling, and one that still does not must keep it.
@@ -198,10 +330,13 @@ public partial class Tournaments
 	private readonly RegionWidthFit bannerFit = new(".infoBanner, .infoBannerContent", 0.5);
 	/// The setup lines. A high floor, because past it the CSS ellipsis is the better answer.
 	private readonly RegionWidthFit descriptionFit = new("li.eb-g-description", 0.8);
-	/// The standings table, whose six headings are what run out of room first. A high floor:
-	/// past it the table is not worth reading, and the name column's own character limit gives
-	/// up far more width far more cheaply before this ever binds.
-	private readonly RegionWidthFit standingsFit = new("#standingsDiv", 0.8);
+	/// The standings box. The fit belongs to the BOX, not to one table: measuring only the
+	/// standings meant the cup table kept its full size while the standings beside it shrank, so
+	/// cycling between them looked like the font growing every time the column got narrower.
+	///
+	/// A high floor: past it the table is not worth reading, and the name column's own character
+	/// limit gives up far more width far more cheaply before this ever binds.
+	private readonly RegionWidthFit standingsFit = new(StandingsTablesSelector, 0.8);
 
 	private RegionWidthFit[] WidthFits => [crosstableFit, bannerFit, descriptionFit, standingsFit];
 
@@ -320,7 +455,7 @@ public partial class Tournaments
 			var slack = await chessModule.InvokeAsync<double>("getSlackBelow", "#pairingsBox");
 			if (Math.Abs(slack) <= 2) return;
 
-			var fitted = Math.Clamp(pairingTableHeight + (int)slack - PairingsBottomPadding, 50, (int)windowHeight);
+			var fitted = Math.Clamp(pairingTableHeight + (int)slack - BottomPadding, 50, (int)windowHeight);
 			if (fitted == pairingTableHeight) return;
 
 			pairingTableHeight = fitted;
@@ -329,9 +464,11 @@ public partial class Tournaments
 		}
 	}
 
-	private const int PairingsBottomPadding = 8;
 
-	private const int StandingsBottomPadding = 8;
+
+	/// The crosstable's cap in the layout that puts it below standings; 0 elsewhere, which leaves
+	/// it at its natural height as before.
+	private int crosstableHeight;
 	/// The measured height of the standings table itself, kept from the last resize so the
 	/// cycling decision can be revisited when the box is refitted.
 	private double standingsTableHeightPx;
@@ -352,7 +489,7 @@ public partial class Tournaments
 			// Ignore sub-pixel churn so a resize storm cannot oscillate the layout.
 			if (Math.Abs(slack) <= 2) return;
 
-			var fitted = Math.Clamp(moveListHeight + (int)slack - PvBottomPadding, 0, (int)windowHeight);
+			var fitted = Math.Clamp(moveListHeight + (int)slack - BottomPadding, 0, (int)windowHeight);
 			if (fitted == moveListHeight) return;
 
 			moveListHeight = fitted;

@@ -220,8 +220,10 @@
 			</div>
 			@if (!layoutOptions.OnlyShowStandings && !IsCupMode && !IsLadderMode)
 			{
+				@* It shares the column with the standings box above it, so it takes a cap of its
+				   own. Without one it grew to its natural height and left standings the crumbs. *@
 				<CrossTableSummary FontSize=@layoutOptions.Fonts.CrossTableFont CrossTable="table"
-								   WidthFit="@crosstableFit.Value" />
+								   WidthFit="@crosstableFit.Value" Height="@crosstableHeight" />
 			}
 		}
 

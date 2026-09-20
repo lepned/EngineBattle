@@ -9,7 +9,7 @@
 @inject NotifierService Notifier
 
 <div class="standings-container eb-fit eb-g-brackets"
-     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem");
+     style="--eb-font-max: @(FontSize > 0 ? Ceiling() : "1rem");
             --eb-rows: @progressEntries.Count;
             --eb-box-h: @(Height > 0 ? $"{Height}px" : "9999px")">
     <div class="header">
@@ -46,6 +46,17 @@
 
 @code {
     [Parameter] public int FontSize { get; set; }
+
+    /// <summary>
+    /// How much of the configured size this table may use, 0.8-1. It shares its box with the
+    /// standings table, and the page measures whichever of them is on screen.
+    /// </summary>
+    [Parameter] public double WidthFit { get; set; } = 1.0;
+
+    /// The configured size after that measurement, with a dot whatever the locale.
+    private string Ceiling() =>
+        (FontSize * WidthFit).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "px";
+
     [Parameter] public int Height { get; set; }
     [Parameter] public int CycleSeconds { get; set; } = 20;
     [Parameter] public bool ShouldCycle { get; set; }

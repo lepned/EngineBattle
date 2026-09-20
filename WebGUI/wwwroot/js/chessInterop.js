@@ -146,10 +146,42 @@ export function getScreenBucket() {
 // the bottom edge. Callers use it to size an elastic region from what the layout actually
 // did, instead of predicting it from part heights plus tuned constants.
 // Returns 0 when the element is absent, which callers treat as "nothing to do".
+// The box a region has, and the content it wants to put in it, for every selector named - one
+// round trip rather than one per box. clientHeight is what the cap left it; scrollHeight is what
+// the table would be if nothing capped it. A caller sharing one column between two boxes needs
+// both numbers for both boxes before it can decide anything.
+// Rest parameters, not an array parameter: InvokeAsync takes params object[], and a string[]
+// IS an object[], so an array argument arrives here spread into separate arguments rather than
+// as one list. This signature is the one that matches how the call site can actually send it.
+export function measureBoxHeights(...selectors) {
+  return selectors.map(sel => {
+    const el = document.querySelector(sel);
+    return el
+      ? { found: true, box: el.clientHeight, content: el.scrollHeight }
+      : { found: false, box: 0, content: 0 };
+  });
+}
+
+// How much room is left under a region, for a caller that grows that region into it.
+//
+// The LOWEST match, not the first. A selector can name several boxes, and then the free space
+// is the space under the bottom one: the standings column may carry a crosstable below the
+// standings box, and measuring the standings alone counted the crosstable's own height as free
+// room, so the box grew by it and pushed the crosstable out under the window edge. Where only
+// one box matches - every other caller, and the standings column in every other layout - this
+// is the same measurement as before.
+//
+// Hidden boxes are skipped rather than allowed to win with a zero rect, and no visible match
+// returns 0, which callers read as "nothing to fit on this layout" and leave the region alone.
 export function getSlackBelow(selector) {
-  const el = document.querySelector(selector);
-  if (!el) return 0;
-  return window.innerHeight - el.getBoundingClientRect().bottom;
+  let bottom = null;
+  for (const el of document.querySelectorAll(selector)) {
+    const r = el.getBoundingClientRect();
+    if (!r.width && !r.height) continue;
+    if (bottom === null || r.bottom > bottom) bottom = r.bottom;
+  }
+  if (bottom === null) return 0;
+  return window.innerHeight - bottom;
 }
 
 //function to calculate the height of all elements with the given class name
