@@ -1,3 +1,4 @@
+using System;
 namespace WebGUI.Services;
 
 public class GlobalSettings
@@ -153,13 +154,43 @@ public class GlobalSettings
                        && TournamentFontScaleByScreen.TryGetValue(screenKey, out var v)
                        ? v : TournamentFontScale);
 
-    /// <summary>The scale for one region, falling back to that screen's number.</summary>
-    public double FontScaleFor(string screenKey, string group) =>
-        !string.IsNullOrEmpty(group) && TournamentFontScaleByGroup.TryGetValue(group, out var g)
-            ? ClampFontScale(g) : FontScaleFor(screenKey);
+    /// <summary>
+    /// The scale for one region: this screen's number, TIMES whatever that region was set to
+    /// on its own.
+    ///
+    /// A region's number used to REPLACE the screen's, and that made the A-/A+ control in the
+    /// corner of the tournament page look broken. Those buttons move the screen's number, so
+    /// every region the user had tuned in Appearance silently ignored them - "make everything
+    /// bigger" quietly skipped exactly the regions someone had cared enough to adjust, with
+    /// nothing on screen to say why. As a factor, A-/A+ moves the whole page and the regions
+    /// keep the proportion they were given.
+    ///
+    /// It is the same reasoning as the clamp on the tables, where the nudge multiplies all
+    /// three terms rather than only the ceiling: a nudge should MOVE things, not overrule them.
+    ///
+    /// A region left alone has no entry and follows the screen exactly.
+    /// </summary>
+    public double FontScaleFor(string screenKey, string group)
+    {
+        var page = FontScaleFor(screenKey);
+        return !string.IsNullOrEmpty(group) && TournamentFontScaleByGroup.TryGetValue(group, out var g)
+            ? BoundFontScale(page * ClampFontScale(g))
+            : page;
+    }
 
     /// Out-of-range, zero and NaN all mean "no nudge" rather than an unreadable page.
     public static double ClampFontScale(double v) => v is >= 0.6 and <= 1.6 ? v : 1.0;
+
+    /// <summary>
+    /// The same range, but for a value that was COMPUTED rather than read from settings.
+    ///
+    /// ClampFontScale answers "unreadable" with 1.0, which is right for a number someone may
+    /// have hand-edited into the file. It is wrong for a product: 1.6 x 1.2 is not garbage, it
+    /// is simply past the top, and snapping it back to 1.0 would make a region jump DOWN as the
+    /// user pressed A+. This holds it at the edge instead.
+    /// </summary>
+    public static double BoundFontScale(double v) =>
+        double.IsFinite(v) ? Math.Clamp(v, 0.6, 1.6) : 1.0;
 
     /// <summary>
     /// The regions of the tournament page that can be nudged, and written back, on their own.

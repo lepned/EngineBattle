@@ -108,8 +108,10 @@
     // file someone can edit, and a key from it would otherwise land inside a CSS selector.
     foreach (var group in GlobalSettings.FontGroups)
     {
-      if (!s.TournamentFontScaleByGroup.TryGetValue(group.Key, out var raw)) continue;
-      var g = GlobalSettings.ClampFontScale(raw);
+      if (!s.TournamentFontScaleByGroup.TryGetValue(group.Key, out _)) continue;
+      // The region's number times this screen's, worked out in one place - see FontScaleFor.
+      // The variable emitted here is the FINAL scale, so nothing multiplies again in CSS.
+      var g = s.FontScaleFor(screenKey, group.Key);
       if (g == scale) continue;   // saying the same thing twice helps nobody
       sb.Append($".eb-g-{group.Key} {{ --eb-font-scale: {g.ToString(inv)}; }} ");
     }

@@ -67,7 +67,11 @@
 
             @* Collapsed by default, and it should stay that way: one number is the answer for
                almost everyone, and this is the rare case where one region wants a different
-               balance from the rest. A region with no number of its own simply follows. *@
+               balance from the rest. A region with no number of its own simply follows.
+
+               These numbers are FACTORS on the tournament number above, not sizes of their own -
+               see GlobalSettings.FontScaleFor(screenKey, group) for why they stopped being
+               absolute. *@
             <div class="appearance-section @SectionClass("fontgroups")">
                 <h4 class="collapsible-header" @onclick='() => Toggle("fontgroups")'>
                     <span class="section-title">Text per region <span class="scope-badge tournament">Tournament page</span></span>
@@ -84,14 +88,16 @@
                             @if (groupPct.ContainsKey(g.Key))
                             {
                                 <button type="button" @onclick="() => ClearGroup(g.Key)"
-                                        title="Drop this region's own size and follow the tournament number">follow</button>
+                                        title="Drop this region's own balance and follow the tournament number exactly">follow</button>
                             }
                         </div>
                     </div>
                 }
                 <small>
-                    Each region starts at the tournament number above and follows it until you move
-                    it. "Follow" gives that back.
+                    These are relative to the tournament number above: 100% follows it exactly,
+                    90% keeps that region a little smaller than the rest. The A-/A+ control on
+                    the tournament page moves everything and these keep their balance.
+                    "Follow" drops a region's own number.
                 </small>
             </div>
 
@@ -759,8 +765,16 @@
         else merged.TournamentFontScaleByScreen[screenKey] = scale;
     }
 
-    /// The number a region is showing: its own if it has one, otherwise the tournament number.
-    private int GroupPct(string key) => groupPct.TryGetValue(key, out var v) ? v : tournamentFontPct;
+    /// <summary>
+    /// What a region is set to RELATIVE to the tournament number above: its own factor if it
+    /// has one, otherwise 100%, which means "follow".
+    ///
+    /// This used to fall back to the tournament number itself, from when a region's value
+    /// replaced that number rather than multiplying it. Under the old meaning the fallback was
+    /// right; under this one it is a trap - a page at 110% would show 110 on an untouched
+    /// slider, and nudging it would write 1.1 as a FACTOR, landing the region at 121%.
+    /// </summary>
+    private int GroupPct(string key) => groupPct.TryGetValue(key, out var v) ? v : 100;
 
     private void ClearGroup(string key)
     {
