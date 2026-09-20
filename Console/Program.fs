@@ -191,20 +191,11 @@ module TestPath =
                 engine.IsChallenger <- false
             let engineSetup = {tourny.EngineSetup with Engines = engineList}
             {tourny with EngineSetup = engineSetup }
-          else               
-            let path = "C:\Dev\Chess\Networks\CeresLatest"
-            let dir = DirectoryInfo(path)
-            if dir.Exists then
-              let challengers = List<string>.Empty //["Ceres C1-640-34_4.4bn"]
-              let engineList = (EngineHelper.createEnginesFromFolder dir.FullName) |> Seq.toList
-              for engine in engineList do
-                engine.IsChallenger <- false
-                if challengers |> List.exists(fun e -> e.Contains engine.Name) then
-                    engine.IsChallenger <- true
-              let engineSetup = {tourny.EngineSetup with Engines = engineList}
-              {tourny with EngineSetup = engineSetup }
-            else 
-              tourny         
+          else
+            // No engine defs listed: use the tournament exactly as the file describes it. This
+            // used to fall back to a folder of Ceres networks on one particular Windows machine,
+            // which on any other machine - and on every Linux one - silently did nothing.
+            tourny
         {tourny with MinMoveTimeInMS = 0; ConsoleOnly = true; DelayBetweenGames = TimeSpan.Zero }        
       |_ -> //backup plan
         let dir = DirectoryInfo(Environment.CurrentDirectory).Parent.Parent.Parent.Parent.FullName

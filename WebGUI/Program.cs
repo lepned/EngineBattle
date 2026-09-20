@@ -1,4 +1,4 @@
-
+﻿
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -34,6 +34,11 @@ static int FindAvailablePort(int startPort)
 static string FindCssBundleDir(IWebHostEnvironment env)
 {
     var cssName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name + ".styles.css";
+
+    // WebRootPath is NULL when there is no wwwroot under the content root, which is exactly the
+    // case for an app that was built but not published and is run from its output directory.
+    // Path.Combine then threw and the app died at startup, before anything could say why.
+    if (string.IsNullOrEmpty(env.WebRootPath)) return "";
 
     // Published builds already have the CSS in wwwroot — no fallback needed
     if (File.Exists(Path.Combine(env.WebRootPath, cssName))) return "";
@@ -182,6 +187,25 @@ Console.WriteLine("Runtime version: " + Environment.Version);
 Console.WriteLine("Framework: " + RuntimeInformation.FrameworkDescription);
 
 app.MapStaticAssets();
+
+// A build is not a publish. Outside Development the app serves its static web assets from the
+// PUBLISHED layout, so one that was only built has no _framework/blazor.web.js, no MudBlazor css
+// and no scoped-css bundle under wwwroot: every page returns 200, renders nothing, and the log
+// fills with FileNotFoundException per asset. Nothing in that picture says what is wrong.
+//
+// The documented way of running from source - dotnet run - picks up launchSettings and lands in
+// Development, where this never happens. It bites whoever runs the built dll directly instead,
+// which is the natural thing to do on a machine with no installer.
+if (!app.Environment.IsDevelopment()
+    && !app.Environment.WebRootFileProvider.GetFileInfo("_framework/blazor.web.js").Exists)
+{
+    Console.WriteLine();
+    Console.WriteLine("WARNING: static web assets are missing, so every page will be blank.");
+    Console.WriteLine("  This app was built but not published, and is not running in Development.");
+    Console.WriteLine("  Either:   dotnet run --project WebGUI -c Release");
+    Console.WriteLine("  or:       dotnet publish WebGUI -c Release -o <dir>   and run from <dir>");
+    Console.WriteLine();
+}
 
 // CSS isolation fallback: serve CSS bundle directly from obj/ if not in wwwroot (dev mode with stale builds)
 var cssBundleDir = FindCssBundleDir(app.Environment);
