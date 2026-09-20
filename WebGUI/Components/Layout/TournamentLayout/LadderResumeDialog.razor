@@ -1,18 +1,24 @@
-@using System.IO
+﻿@using System.IO
 
-<MudDialog>
+@* Two dialogs in one component. With actions it is the resume prompt, and MudBlazor's own
+   paper is right for that. Without them it is the between-games popup, which shows nothing but
+   the table and should read as the same panel the tournament page uses. *@
+<MudDialog Class="@(ShowActions ? "" : "eb-ladder-dialog")"
+           ContentClass="@(ShowActions ? "" : "eb-ladder-dialog-content")">
     <DialogContent>
         @if (ShowActions)
         {
             <MudStack Spacing="2">
                 <MudText Typo="Typo.h5">@Title</MudText>
                 <MudText Typo="Typo.body2">@Subtitle</MudText>
-                <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="0" />
+                <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="0"
+                                     ElementId="ladderDialogDiv" />
             </MudStack>
         }
         else
         {
-            <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="0" />
+            <LadderProgressTable StateFileName="@StateFileName" FontSize="@FontSize" Height="0"
+                                     ElementId="ladderDialogDiv" />
         }
     </DialogContent>
     <DialogActions>

@@ -154,10 +154,14 @@ public partial class Tournaments
 	{
 		CloseAllDialogs();
 		await Task.Delay(1000);
+		// Not the full width of the screen. The cup bracket earns MaxWidth.ExtraExtraLarge - it
+		// draws a tree that grows sideways with the field - but this is a seven-column table, and
+		// stretched across a wide monitor it was a narrow strip of text adrift in a grey slab.
+		// FullWidth off lets the dialog take the width the table actually needs.
 		var options = new DialogOptions()
 		{
-			MaxWidth = MaxWidth.ExtraExtraLarge,
-			FullWidth = true,
+			MaxWidth = MaxWidth.Medium,
+			FullWidth = false,
 			CloseButton = false,
 			Position = DialogPosition.TopCenter
 		};
