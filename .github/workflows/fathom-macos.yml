@@ -1,0 +1,83 @@
+name: Fathom (macOS universal)
+
+# Manual only, and deliberately not part of releasing. This builds ONE file that then lives in
+# the repository next to fathom.exe and fathom.linux, and it only needs rebuilding when Fathom
+# itself changes - not on every tag.
+#
+# Why it exists: the bundled macOS prober is an x86_64 Mach-O binary, so on Apple Silicon it runs
+# only under Rosetta 2, and without it tablebase adjudication silently does nothing. The release
+# workflow publishes osx-arm64 already, but from ubuntu - .NET cross-publishes prebuilt runtime
+# pieces and compiles nothing for macOS. Fathom is C and needs a real macOS toolchain, which is
+# why this is the repository's first job that actually runs on a Mac.
+on:
+  workflow_dispatch:
+
+jobs:
+  fathom:
+    runs-on: macos-latest        # Apple Silicon; the SDK carries both slices
+    steps:
+      - name: Fetch Fathom
+        # basil00 is the fork README.md credits under MIT. Switching to jdart1 (maintained, adds
+        # 7-man support) is a deliberate choice that would also mean updating that attribution.
+        run: git clone --depth 1 https://github.com/basil00/Fathom fathom-src
+
+      - name: Build arm64 and x86_64, then join them
+        run: |
+          set -euo pipefail
+
+          # The Makefile's own CFLAGS, repeated here because a command-line CFLAGS= REPLACES them
+          # rather than adding to them. Dropping them is not subtle: -I.. is how apps/fathom.c
+          # finds ../tbprobe.h, so without it the build does not compile at all, and
+          # TB_NO_HW_POP_COUNT is what keeps the x86_64 pass off instructions we never asked the
+          # compiler to target.
+          CFLAGS_BASE="-std=gnu99 -O2 -Wall -D TB_NO_THREADS -D TB_NO_HW_POP_COUNT -I.."
+
+          # The Makefile lives in src/apps and names its Darwin target fathom.macosx, so the
+          # output path is known - no searching for whatever came out executable, which would
+          # pick by undefined traversal order.
+          cd fathom-src/src/apps
+          for arch in arm64 x86_64; do
+            rm -f fathom.macosx                      # there is no `clean` target in this Makefile
+            make fathom.macosx CC=clang CFLAGS="$CFLAGS_BASE -arch $arch"
+            mv fathom.macosx "$GITHUB_WORKSPACE/fathom-$arch"
+          done
+
+          cd "$GITHUB_WORKSPACE"
+          # If -arch had somehow failed to reach the compiler, both passes would be host arch and
+          # this fails with "have the same architectures" - loudly, rather than shipping a file
+          # that only looks universal.
+          lipo -create fathom-arm64 fathom-x86_64 -output fathom.macosx
+          chmod +x fathom.macosx
+
+      - name: It must contain both architectures
+        run: |
+          set -euo pipefail
+          archs=$(lipo -archs fathom.macosx)
+          echo "architectures: $archs"
+          echo "$archs" | grep -q x86_64
+          echo "$archs" | grep -q arm64
+
+      - name: It must actually probe
+        # Architecture alone proves the file loads, not that it answers. KQvK is the smallest
+        # tablebase there is - 272 bytes of WDL, 5 kB of DTZ - so a real probe costs nothing.
+        run: |
+          set -euo pipefail
+          mkdir -p tb
+          base=https://tablebase.lichess.ovh/tables/standard
+          curl -sSfL "$base/3-4-5-wdl/KQvK.rtbw" -o tb/KQvK.rtbw
+          curl -sSfL "$base/3-4-5-dtz/KQvK.rtbz" -o tb/KQvK.rtbz
+
+          # White queen against a bare king. The black king is off the a1-h8 diagonal on purpose:
+          # with it on e5 the side not to move would be in check, and Fathom probes illegal
+          # positions rather than rejecting them - a green light that means nothing.
+          out=$(./fathom.macosx --path=tb "7Q/8/8/3k4/8/8/8/K7 w - - 0 1")
+          echo "$out"
+          # The exact tag, not the word: "CursedWin" contains "Win" too, so a loose grep would
+          # stop meaning what it says the moment this position changes.
+          echo "$out" | grep -q '\[WDL "Win"\]'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fathom-macosx-universal
+          path: fathom.macosx
+          if-no-files-found: error

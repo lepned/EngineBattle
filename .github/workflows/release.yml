@@ -13,6 +13,25 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+      # The whole solution, on Linux, before anything is published. The desktop shell is a
+      # Windows-only project that lives in this solution and makes itself an empty library off
+      # Windows; without this step nothing would notice if that stopped working, and the break
+      # would surface on a contributor's machine rather than here.
+      - run: dotnet build EngineBattle.sln -c Release
+      - run: dotnet test TestProject -c Release
+
+  # The same build on a Mac. Informational on purpose - nothing depends on it, so a macOS runner
+  # having a bad day cannot hold up a release - but it is the only place anything of ours is
+  # compiled on macOS at all. The publish matrix below runs on ubuntu and cross-publishes the
+  # osx RIDs from prebuilt runtime pieces, which compiles nothing for that platform.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build EngineBattle.sln -c Release
       - run: dotnet test TestProject -c Release
 
   build:
