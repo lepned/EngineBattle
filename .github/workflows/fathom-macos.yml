@@ -1,4 +1,4 @@
-name: Fathom (macOS universal)
+﻿name: Fathom (macOS universal)
 
 # Manual only, and deliberately not part of releasing. This builds ONE file that then lives in
 # the repository next to fathom.exe and fathom.linux, and it only needs rebuilding when Fathom
@@ -17,9 +17,13 @@ jobs:
     runs-on: macos-latest        # Apple Silicon; the SDK carries both slices
     steps:
       - name: Fetch Fathom
-        # basil00 is the fork README.md credits under MIT. Switching to jdart1 (maintained, adds
-        # 7-man support) is a deliberate choice that would also mean updating that attribution.
-        run: git clone --depth 1 https://github.com/basil00/Fathom fathom-src
+        # Jon Dart's fork, not basil00's. The original predates Apple Silicon and includes
+        # <x86intrin.h> unconditionally, so the arm64 pass dies in the compiler's own headers
+        # ("This header is only meant to be used on x86 and x64 architecture") - measured, not
+        # assumed: that is exactly how the first run of this workflow failed. jdart1 gates the
+        # x86 intrinsics behind __x86_64__, is maintained, and adds 7-man support. Same MIT
+        # licence, whose notice names Ronald de Man, basil00 and Jon Dart together.
+        run: git clone --depth 1 https://github.com/jdart1/Fathom fathom-src
 
       - name: Build arm64 and x86_64, then join them
         run: |
@@ -27,10 +31,11 @@ jobs:
 
           # The Makefile's own CFLAGS, repeated here because a command-line CFLAGS= REPLACES them
           # rather than adding to them. Dropping them is not subtle: -I.. is how apps/fathom.c
-          # finds ../tbprobe.h, so without it the build does not compile at all, and
-          # TB_NO_HW_POP_COUNT is what keeps the x86_64 pass off instructions we never asked the
-          # compiler to target.
-          CFLAGS_BASE="-std=gnu99 -O2 -Wall -D TB_NO_THREADS -D TB_NO_HW_POP_COUNT -I.."
+          # finds ../tbprobe.h, so without it nothing compiles at all.
+          #
+          # No TB_NO_HW_POP_COUNT here, unlike the older fork: this one chooses its popcount by
+          # architecture itself, which is the whole reason for the switch.
+          CFLAGS_BASE="-std=gnu99 -O2 -Wall -Wshadow -DTB_NO_THREADS -I.."
 
           # The Makefile lives in src/apps and names its Darwin target fathom.macosx, so the
           # output path is known - no searching for whatever came out executable, which would
