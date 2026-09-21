@@ -183,7 +183,9 @@
 
 /* Premove squares: the queued move's origin and destination, in every highlight style the
    same way - a tint under the piece - so the queue reads as one thing across themes. */
-.eb-sq.eb-pre::after {
+/* .eb-board in the selector: the square may also carry the last-move class, whose tint is
+   an ::after too; equal specificity would let source order decide, and the queue must win. */
+.eb-board .eb-sq.eb-pre::after {
     content: "";
     position: absolute;
     inset: 0;

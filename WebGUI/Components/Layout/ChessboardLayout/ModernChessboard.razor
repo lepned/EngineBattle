@@ -568,7 +568,7 @@
         premoveDestKey = key;
         var set = new HashSet<string>();
         var piece = BoardUtils.pieceAt(fen, square);
-        if (piece != ' ')
+        if (piece != '\0')
         {
             var white = char.IsUpper(piece);
             var type = char.ToLowerInvariant(piece);
