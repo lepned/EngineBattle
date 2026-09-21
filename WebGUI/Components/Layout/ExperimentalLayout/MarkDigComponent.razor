@@ -1,6 +1,19 @@
-﻿   @inject IWebHostEnvironment Environment
-   @using Markdig
+﻿@inject IWebHostEnvironment Environment
+@using Markdig
 
+@* Renders one of the documentation files. The files live in the repository root - they are
+   what GitHub shows - and WebGUI.csproj links them into wwwroot. In a publish they are physical
+   files under wwwroot, so the web root file provider finds them. Under dotnet run a linked
+   file exists only in the static web assets manifest: MapStaticAssets serves it over HTTP,
+   but the file provider does not see it - builder.WebHost.UseStaticWebAssets() was tried and
+   made no difference - so the fallback is the file where it really is, one level above the
+   content root, in the repository. Only a bare file name is accepted, so neither path can be
+   walked.
+
+   Two rewrites make a file written for GitHub read right here: an image path that GitHub
+   needs relative to the repository (WebGUI/wwwroot/Img/x.png) becomes the served path
+   (Img/x.png), and a link to another document (Name.md) becomes its rendered page
+   (/docs/Name) instead of the raw markdown. *@
 <div class="markdown-content">
     @((MarkupString)markdownContent)
 </div>
@@ -11,21 +24,45 @@
     public string FileName { get; set; }
     private string markdownContent = string.Empty;
 
+    private static readonly System.Text.RegularExpressions.Regex DocLink = new(@"\]\((?:\./)?([A-Za-z0-9_]+)\.md(#[^)]*)?\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var filePath = Path.Combine(Environment.ContentRootPath, "wwwroot", FileName ?? "");
-            var raw = await File.ReadAllTextAsync(filePath);
+            var name = FileName ?? "";
+            if (name.Length == 0 || Path.GetFileName(name) != name)
+            {
+                markdownContent = $"<p>Documentation file not found: {FileName}</p>";
+                return;
+            }
+            string raw;
+            var info = Environment.WebRootFileProvider.GetFileInfo(name);
+            if (info.Exists && !info.IsDirectory)
+            {
+                using var stream = info.CreateReadStream();
+                using var reader = new StreamReader(stream);
+                raw = await reader.ReadToEndAsync();
+            }
+            else
+            {
+                var source = Path.Combine(Environment.ContentRootPath, "..", name);
+                if (!File.Exists(source))
+                {
+                    markdownContent = $"<p>Documentation file not found: {FileName}</p>";
+                    return;
+                }
+                raw = await File.ReadAllTextAsync(source);
+            }
+            raw = raw.Replace("WebGUI/wwwroot/Img/", "Img/");
+            raw = DocLink.Replace(raw, "](/docs/$1$2)");
+            raw = raw.Replace("](./License.txt)", "](/License.txt)");
             var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
             markdownContent = Markdig.Markdown.ToHtml(raw, pipeline);
         }
         catch (Exception)
         {
-            // Missing file, missing subfolder (DirectoryNotFoundException), bad path —
-            // show the not-found message instead of crashing the embedding page
             markdownContent = $"<p>Documentation file not found: {FileName}</p>";
         }
     }
 }
-

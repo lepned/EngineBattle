@@ -8,6 +8,9 @@ Contempt reshapes the values in the search tree, not the policy. Lc0's own discl
 
 Only Lc0 has these options (v0.31 and later). The page checks the engine's option list when it starts and says so if the engine is not an Lc0, or an Lc0 too old for the WDL options.
 
+![Lc0 Contempt](WebGUI/wwwroot/Img/Lc0Contempt.png)
+*Analyze mode: the same net on the same position, objective on the left and from White's view with +200 Elo contempt on the right.*
+
 ## Two modes, one panel
 
 **Train - play vs Lc0.** The Play vs Computer game with the contempt panel beside it. Pick what Lc0 plays at and your own rating; the difference is its contempt. Change a setting during a game and the next engine move uses it.

@@ -1,0 +1,95 @@
+@page "/docs"
+@page "/docs/{File}"
+@inject IWebHostEnvironment Environment
+
+@* The documentation, rendered. One route for every file, so a link from one document to
+   another (README.md -> SwissMode.md) lands on a page rather than on raw markdown or a 404.
+   The files themselves are the ones in the repository root, linked into wwwroot by
+   WebGUI.csproj; the list below is the index and the whitelist - a name that is not in it is
+   not served, however it is spelled in the URL. *@
+
+<PageTitle>@(Current is { } c ? c.Title : "Documentation")</PageTitle>
+
+<MudContainer>
+    @if (string.IsNullOrEmpty(File))
+    {
+        <MudText Typo="Typo.h4" Class="mt-5 mb-3">Documentation</MudText>
+        <MudText Class="mb-4">
+            The same pages as the project README on GitHub. Start with the overview if this is
+            your first time; the configuration references are what the creators write for you.
+        </MudText>
+        @foreach (var group in Sections)
+        {
+            <MudText Typo="Typo.h6" Class="mt-4 mb-1">@group.Key</MudText>
+            <MudList T="string" Dense="true">
+                @foreach (var d in group.Value)
+                {
+                    <MudListItem T="string" Href="@($"/docs/{d.Name}")" Icon="@Icons.Material.Filled.Description">
+                        <b>@d.Title</b> <span style="opacity:.7">— @d.Blurb</span>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    }
+    else if (Current is null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mt-5">No documentation page called "@File".</MudAlert>
+        <MudButton Href="/docs" Variant="Variant.Text" Class="mt-2">All documentation</MudButton>
+    }
+    else
+    {
+        <MudButton Href="/docs" Variant="Variant.Text" Size="Size.Small" Class="mt-3"
+                   StartIcon="@Icons.Material.Filled.ArrowBack">All documentation</MudButton>
+        <WebGUI.Components.Layout.ExperimentalLayout.MarkDigComponent FileName="@($"{Current.Name}.md")" />
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string File { get; set; }
+
+    private sealed record Doc(string Name, string Title, string Blurb);
+
+    // Section -> documents. Order is the order a new user needs them in.
+    private static readonly (string Section, Doc[] Docs)[] Index =
+    {
+        ("Getting started", new[]
+        {
+            new Doc("README", "Overview and quick start", "what EngineBattle does, download, first run"),
+            new Doc("EngineDefConfig", "Engine definitions", "the JSON file that describes one engine"),
+            new Doc("LC0Config", "Lc0 configuration", "Lc0-specific engine settings"),
+            new Doc("TournamentConfig", "Tournament configuration", "every field in tournament.json"),
+            new Doc("SettingsPage", "Settings", "the global settings page"),
+        }),
+        ("Tournament modes", new[]
+        {
+            new Doc("SwissMode", "Swiss", "pairings by score, byes, resuming"),
+            new Doc("CupMode", "Cup", "knockout brackets and seeding"),
+            new Doc("LadderMode", "Ladder", "climbing by rating"),
+        }),
+        ("Analysis and puzzles", new[]
+        {
+            new Doc("GameReview", "Game review", "accuracy, move classification, annotated PGN"),
+            new Doc("BookEvaluation", "Book evaluation", "screening openings with engines"),
+            new Doc("PuzzleConfig", "Puzzle configuration", "Lichess puzzle runs"),
+            new Doc("LichessPuzzle", "Lichess puzzles", "how to run and read a puzzle test"),
+            new Doc("EretConfig", "ERET configuration", "Eigenmann Rapid Engine Test runs"),
+            new Doc("EretPuzzles", "ERET puzzles", "how to run and read an ERET test"),
+            new Doc("Lc0Contempt", "Lc0 contempt", "analyze and train against contempt"),
+            new Doc("PieceValues", "Piece values", "what a network thinks a piece is worth"),
+        }),
+        ("Broadcasting and integration", new[]
+        {
+            new Doc("Broadcast", "Broadcast", "following a Lichess broadcast with engines"),
+            new Doc("LiveFeedContract", "Live feed", "the wire protocol between a runner and the GUI"),
+            new Doc("Winboard", "Winboard engines", "protocol support and troubleshooting"),
+            new Doc("ConsoleTools", "Console tools", "the command-line verbs in source builds"),
+        }),
+    };
+
+    private static IEnumerable<KeyValuePair<string, Doc[]>> Sections =>
+        Index.Select(s => new KeyValuePair<string, Doc[]>(s.Section, s.Docs));
+
+    private Doc Current =>
+        string.IsNullOrEmpty(File) ? null
+        : Index.SelectMany(s => s.Docs).FirstOrDefault(d => string.Equals(d.Name, File, StringComparison.OrdinalIgnoreCase));
+}

@@ -81,6 +81,65 @@
         </div>
     </details>
 
+    @* ── Branding ──
+       What the tournament page shows ABOUT the tournament - as opposed to how big it shows it,
+       which is set on the page itself and remembered per screen. These belong to the tournament,
+       so they live in its file: a broadcast carries its own logo and description wherever the
+       file goes. *@
+    <details class="settings-section">
+        <summary>Branding</summary>
+        <div class="section-body">
+            <div class="section-hint">Shown on the tournament page: the description under the name, the logo between the two engines, and how large the logos may be.</div>
+            <div class="field-group">
+                <label>Description</label>
+                <input type="text" @bind="description" placeholder="One line under the tournament name" />
+            </div>
+            <div class="two-col">
+                <div class="field-group">
+                    <label>Main logo</label>
+                    <select @bind="mainLogoFileName">
+                        <option value="">EngineBattle logo (default)</option>
+                        @foreach (var img in imageFiles)
+                        {
+                            <option value="@img">@img</option>
+                        }
+                    </select>
+                    <small>An image in the Img folder next to the app. Drop your own file there and it appears here.</small>
+                </div>
+                <div class="field-group">
+                    <label>Main logo max size</label>
+                    <input type="text" @bind="mainLogoSize" placeholder="240x130" />
+                    <small>Width x height in px, or one number for a square. Empty = 240x130. A ceiling: the logo still shrinks with the panel.</small>
+                </div>
+                <div class="field-group">
+                    <label>Engine logo max size</label>
+                    <input type="text" @bind="logoSize" placeholder="150x100" />
+                    <small>Same format. Empty = 150x100. The two engine logos in the engine panel.</small>
+                </div>
+            </div>
+            <div class="section-hint" style="margin-top:0.6rem;">The machine, shown as "Hardware" in the banner above the board. Filled in from what this computer reports; the GPU it cannot see. Leave a field empty and it is left out.</div>
+            <div class="two-col">
+                <div class="field-group">
+                    <label>CPU</label>
+                    <input type="text" @bind="machineCpu" placeholder="e.g. Ryzen 9 7950X 32 threads" />
+                </div>
+                <div class="field-group">
+                    <label>RAM</label>
+                    <input type="text" @bind="machineRam" placeholder="e.g. 64 GB RAM" />
+                </div>
+                <div class="field-group">
+                    <label>GPU</label>
+                    <input type="text" @bind="machineGpu" placeholder="e.g. 1x RTX 4090" />
+                </div>
+                <div class="field-group">
+                    <label>OS</label>
+                    <input type="text" @bind="machineOs" placeholder="e.g. Windows 11 x64" />
+                    <small>Kept in the file and printed by the console; the banner shows the other three.</small>
+                </div>
+            </div>
+        </div>
+    </details>
+
     @* ── Time Control ── *@
     <details class="settings-section" open>
         <summary>Time Control</summary>
@@ -340,6 +399,17 @@
     private bool preventMoveDeviation = false;
     private int ladderGamePairsPerMatch = 4;
 
+    // ── Branding ──
+    private string description = "";
+    private string mainLogoFileName = "";
+    private string logoSize = "";
+    private string mainLogoSize = "";
+    private List<string> imageFiles = new();
+    private string machineCpu = "";
+    private string machineRam = "";
+    private string machineGpu = "";
+    private string machineOs = "";
+
     // ── Time control ──
     private List<TimeControlEntry> timeControls = new() { new TimeControlEntry { Minutes = 1, Seconds = 0, IncrementSeconds = 1 } };
 
@@ -378,6 +448,19 @@
 
     protected override void OnInitialized()
     {
+        // The logos the tournament page can show: whatever image files sit in wwwroot/Img. The
+        // documentation screenshots live there too and are listed like anything else - the
+        // user picks by name, and a wrong pick is harmless.
+        try
+        {
+            var img = Path.Combine(AppPaths.BaseDir, "wwwroot", "Img");
+            if (Directory.Exists(img))
+                imageFiles = Directory.GetFiles(img)
+                    .Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+                    .Select(Path.GetFileName).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        catch { imageFiles = new(); }
+        (machineOs, machineCpu, machineRam) = DetectMachine();
         var s = SettingsService.Settings;
         if (!string.IsNullOrEmpty(s.EngineDefsFolder))
             engineDefsFolder = s.EngineDefsFolder;
@@ -452,6 +535,43 @@
         }
     }
 
+    /// What this computer says about itself, as a starting point for the three machine fields.
+    /// Every part is best effort and blank on failure: these are labels in a banner, not facts
+    /// the program relies on, and the user edits them anyway. The GPU is not detected - there
+    /// is no cheap, portable way to name it - so that field starts empty.
+    private static (string os, string cpu, string ram) DetectMachine()
+    {
+        string os = "", cpu = "", ram = "";
+        try
+        {
+            var arch = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant();
+            if (OperatingSystem.IsWindows())
+                // The version string says 10.0 for both; the build number is what tells them apart.
+                os = $"Windows {(Environment.OSVersion.Version.Build >= 22000 ? 11 : 10)} {arch}";
+            else
+                os = $"{System.Runtime.InteropServices.RuntimeInformation.OSDescription} {arch}".Trim();
+        }
+        catch { }
+        try
+        {
+            string name = null;
+            if (OperatingSystem.IsWindows())
+                name = Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString", null) as string;
+            else if (File.Exists("/proc/cpuinfo"))
+                name = File.ReadLines("/proc/cpuinfo").FirstOrDefault(l => l.StartsWith("model name"))?.Split(':', 2).ElementAtOrDefault(1);
+            name = System.Text.RegularExpressions.Regex.Replace((name ?? "").Trim(), @"\s+", " ");
+            cpu = name.Length > 0 ? $"{name} {Environment.ProcessorCount} threads" : $"{Environment.ProcessorCount} threads";
+        }
+        catch { }
+        try
+        {
+            var bytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+            if (bytes > 0) ram = $"{Math.Ceiling(bytes / 1024.0 / 1024 / 1024 / 4) * 4} GB RAM";
+        }
+        catch { }
+        return (os, cpu, ram);
+    }
+
     private async Task GenerateJson()
     {
         statusMessage = "";
@@ -492,6 +612,26 @@
             root["DelayBetweenGames"] = FormatTimeSpan(delayBetweenGamesSec * 1000);
             root["MoveOverhead"] = FormatTimeSpan(moveOverheadMs);
             root["MinMoveTimeInMS"] = minMoveTimeMs;
+
+            // Branding. The description and the logo are top-level fields; the two sizes sit in
+            // LayoutOption.Sizes, and the base file has no LayoutOption block any more (every
+            // other thing in it is a default in the code), so the block is created only when a
+            // size was actually given - a file without one is the normal case.
+            root["Description"] = description ?? "";
+            root["MainLogoFileName"] = mainLogoFileName ?? "";
+            root["OS"] = (machineOs ?? "").Trim();
+            root["CPU"] = (machineCpu ?? "").Trim();
+            root["RAM"] = (machineRam ?? "").Trim();
+            root["GPU"] = (machineGpu ?? "").Trim();
+            var logoSizeValue = (logoSize ?? "").Trim();
+            var mainLogoSizeValue = (mainLogoSize ?? "").Trim();
+            if (logoSizeValue.Length > 0 || mainLogoSizeValue.Length > 0)
+            {
+                if (root["LayoutOption"] is not JsonObject layout) { layout = new JsonObject(); root["LayoutOption"] = layout; }
+                if (layout["Sizes"] is not JsonObject sizes) { sizes = new JsonObject(); layout["Sizes"] = sizes; }
+                if (logoSizeValue.Length > 0) sizes["LogoSize"] = logoSizeValue;
+                if (mainLogoSizeValue.Length > 0) sizes["MainLogoSize"] = mainLogoSizeValue;
+            }
 
             // Ordo
             var ordoPath = SettingsService.Settings.OrdoExePath;

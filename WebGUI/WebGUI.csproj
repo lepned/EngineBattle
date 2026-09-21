@@ -25,5 +25,16 @@
 		<Content Update="wwwroot\AnalyzeConfig.json" CopyToPublishDirectory="Never" />
 	</ItemGroup>
 
+	<!-- The documentation has ONE source, the markdown files in the repository root, which is
+	     what GitHub renders. They are linked into wwwroot here so the app can serve and render
+	     the same files (start page, /docs/{name}); nothing is copied into the tree, so nothing
+	     can drift. Internal notes that are not user documentation are excluded by name. -->
+	<ItemGroup>
+		<Content Include="..\*.md"
+		         Exclude="..\CLAUDE.md;..\agent.md;..\NuGetPackagePlan.md;..\RunningCeresTournaments.md;..\SPRT.md"
+		         Link="wwwroot\%(Filename)%(Extension)" />
+		<Content Include="..\License.txt" Link="wwwroot\License.txt" />
+	</ItemGroup>
+
 </Project>
    

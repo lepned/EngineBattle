@@ -15,7 +15,7 @@
 
 - **ERET Puzzles:** Test engine performance using The Eigenmann Rapid Engine Test (ERET) puzzles designed for precise evaluation of chess positions.
 - **Lichess Puzzles:** Direct integration with Lichess puzzles, supporting policy head tests, value head tests, and combined evaluations.
-- **Visualization of Puzzles:** Automatically visualize puzzles that engines fail, clearly showing correct versus incorrect moves on an chessboard.
+- **Visualization of Puzzles:** Automatically visualize puzzles that engines fail, clearly showing correct versus incorrect moves on a chessboard.
 
 ### 🎯 Tournament Features
 
@@ -32,13 +32,13 @@
 
 ### Tournament Modes
 
-EngineBattle supports five tournament formats configured via `TournamentMode` in `tournament.json`:
+EngineBattle supports five tournament formats, configured via `TournamentMode` in `tournament.json`:
 
 - **Round Robin (RR):** Every engine plays every other engine once (or twice in double round-robin).
 - **Gauntlet:** One or more challengers play against a pool of opponents for fast benchmarking.
 - **Cup:** Single-elimination knockout with configurable games per match and optional seeding.
 - **Swiss:** Pairings are based on score each round, scaling well for larger fields.
-- **Swiss (odd players):** If the player count is odd, one engine receives a bye each round (worth 1 point) and byes are not repeated when possible.
+  - With an odd number of players one engine receives a bye each round (worth 1 point), and byes are not repeated when possible.
 - **Ladder:** Elimination-style climbing tournament where engines challenge upward by rating. The loser is eliminated and the winner keeps climbing until only one engine remains.
 
 See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [SwissMode.md](SwissMode.md), [CupMode.md](CupMode.md), and [LadderMode.md](LadderMode.md) for mode-specific notes.
@@ -51,10 +51,11 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Game Review:** Lichess-style move-by-move accuracy analysis with win probability tracking, move classifications (Brilliant, Great, Best, Inaccuracy, Mistake, Blunder), critical moves panel, and annotated PGN export. Supports single-game and batch review.
 - **Focus Mode:** Restrict engine search to specific candidate moves for targeted position exploration.
 - **UCI Script Loading:** Load a text file of UCI commands to quickly configure engine parameters during analysis.
+- **Lc0 Contempt:** Lc0's contempt as settings rather than UCI options - analyze a position objectively and from one side's view at once, or train against Lc0 playing for the win. See [Lc0Contempt.md](Lc0Contempt.md).
 
 ### 📚 PGN and EPD Tools
 
-- **Speed Calculation:** Benchmark chess engines by calculating their median and average speeds from a PGN-file, including out of book speed. (first search).
+- **Speed Calculation:** Benchmark chess engines by calculating their median and average speeds from a PGN file, including the out-of-book speed (first search).
 - **Ordo Tables:** Automatically generate Ordo rating tables to rank engine performance based on tournament outcomes.
 - **Opening Books from PGN:** Create custom opening books from existing PGN archives (such as TCEC games).
 - **Opening Books from EPD:** Generate opening books directly from EPD files.
@@ -75,7 +76,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 ### 💻 Console Mode
 
 - **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
-- **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (accessible via Tools > Test Canvas in the GUI menu).
+- **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (Tools > EPD visualizer in the GUI menu).
 
 ### ⚙️ Global Settings
 
@@ -103,14 +104,16 @@ Choose a variant:
 
 Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **osx-arm64**
 
+On Windows there is also **EngineBattle-Desktop** (`EngineBattle-Desktop-win-x64.zip` or `-win-arm64`): the same application in its own window, with a native menu, remembered zoom and F11 full screen - no browser involved. Pick it if you prefer an app to a browser tab; everything else is identical.
+
 ### 2. Run
 
 Extract the zip and run:
 
-- **Windows:** `EngineBattle.exe`
+- **Windows:** `EngineBattle.exe` (or `EngineBattle.Desktop.exe` from the desktop zip)
 - **Linux / macOS:** `./EngineBattle`
 
-Your browser opens automatically. If not, navigate to the localhost URL shown in the console.
+Your browser opens automatically. If not, navigate to the localhost URL shown in the console. To start the server without opening a browser, pass `--no-browser` or set `ENGINEBATTLE_NO_BROWSER=1`.
 
 > **Windows note:** Windows may show a SmartScreen warning for unsigned executables. To bypass this, right-click `EngineBattle.exe` → **Properties** → check **Unblock** → **OK**, then run it normally.
 
@@ -127,7 +130,16 @@ Your browser opens automatically. If not, navigate to the localhost URL shown in
 
 ### 3. First Run
 
-A blank `tournament.json` is auto-created next to the executable on first startup. See [Configuration](#configuration) below to set up your engines.
+EngineBattle plays chess engines against each other, so the first thing it needs is at least two engine definitions - a small JSON file each, pointing at an engine you already have on this machine (Stockfish, Lc0, Ceres, ...). The tournament page shows these three steps until they are done, with a button for each:
+
+1. **Engine definitions** - Tools > Engine creator writes one for each engine (pick the executable, set its options).
+2. **Tournament setup** - Tools > Tournament creator picks the engines, the time control, the openings, where the games are written, and the branding on the tournament page (description, main logo, logo sizes, and the machine shown in the banner - filled in from what the computer reports).
+3. **Run** - back on the tournament page, press Ctrl+R.
+
+![First run](WebGUI/wwwroot/Img/FirstRun.png)
+*The tournament page until the engines are in place: the three steps, each with its button.*
+
+Nothing has to be typed into a file. A `tournament.json` is created next to the executable on first startup and the creators write into it; the [Configuration](#configuration) section below is the reference for anyone who prefers a text editor.
 
 ---
 
@@ -164,10 +176,16 @@ dotnet run -c release -- puzzlejson <fullPathToPuzzleConfig.json>
 dotnet run -c release -- eretjson <fullPathToEretConfig.json>
 dotnet run -c release -- analyze <engine> [fen] [options]
 dotnet run -c release -- compare <engine1> <engine2> [options]
+dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--uci name value]...
 dotnet run -c release -- tune <fullPathToTunerConfig.json>
 dotnet run -c release -- query <fen|startpos> [square] [--pv "<uci moves>"]
 dotnet run -c release -- query --epd <file.epd>
+dotnet run -c release -- deviations <file.pgn>
+dotnet run -c release -- pgncheck <file.pgn>
+dotnet run -c release -- gui [page] [port]
 ```
+
+See [ConsoleTools.md](ConsoleTools.md) for the full list.
 
 #### Position queries (`query`)
 
@@ -199,7 +217,9 @@ absolute names like `e4`; field names are camelCase.
 
 ## Configuration
 
-Before you can do much with the GUI, you need to configure all the engines you want to use. Follow these steps to configure `EngineSetup`:
+The creators under **Tools** in the menu (Engine creator, Tournament creator) do all of this from the GUI, and the settings that decide how the tournament page looks - text sizes, chart heights, PV boards - are set on the page itself and remembered per screen (see [Running a Tournament](#running-a-tournament)). What follows is the reference for the two files they write, for anyone who prefers a text editor.
+
+Every engine needs an engine definition, and the tournament needs to know where they are. In `tournament.json`:
 
 1. Edit the `tournament.json` file - [Tournament Configuration Reference](TournamentConfig.md).
     - **Release binaries:** `tournament.json` is auto-created next to the executable on first startup.
@@ -233,7 +253,7 @@ Engines/
     └── Dragon.exe
 ```
 
-3. Set the `OpeningsPath` and the `PgnOutPath` and time settings. Time controls, `MoveOverhead`, and `DelayBetweenGames` (or any other time settings) are specified in `HH:MM:SS:MMM` (MMM = milliseconds).
+3. Set the `OpeningsPath` and the `PgnOutPath` and time settings. Time controls, `MoveOverhead`, and `DelayBetweenGames` (or any other time settings) are specified as `hh:mm:ss` or `hh:mm:ss.fff` (fff = milliseconds, after a dot).
 4. The `UseTBAdjudication` can be turned on and off.
 
 After you have created and configured a `tournament.json` file on your computer, it is highly advisable to make a backup copy. This ensures you can quickly restore your settings if you need to reinstall the application or encounter any configuration issues.
@@ -248,8 +268,12 @@ Log files are written to a `logs/` folder in the current working directory. Logs
 
 ## Running a Tournament
 
-Use your browser's built-in zoom function to adjust the GUI size to your preference. For streaming, it's recommended to set the zoom level to 80% or 90%, depending on your screen resolution and size.
-Press F11 to enter full-screen mode — this is also recommended for the best streaming experience.
+The page sizes itself: every table shrinks to fit its box and grows when there is room. To make the text bigger or smaller, move the pointer to the bottom-right corner of the tournament page - a control appears with **A-/A+** for the text, **off/S/M/L** for the two PV boards, **-/+** for the chart heights, **Eval / NPS / Time / Nodes** to choose which charts are shown, **save** to make what is on screen the baseline for this screen, and **reset** to go back to the defaults. Appearance (under Setup & Settings) has the rest: the size of each region on its own, chart lines and Q difference, nodes per move in the standings, where the crosstable goes (cycling with the standings, below them, or hidden), the crosstable between games, and the cycle time. Everything is remembered per screen, so a laptop and the monitor it docks to each keep their own numbers; no file is involved.
+
+![Corner control](WebGUI/wwwroot/Img/CornerControl.png)
+*The corner control: text, PV boards, chart heights, which charts to show, save and reset - per screen.*
+
+Press F11 for full screen - recommended for streaming, in the browser and in the desktop app alike.
 
 To operate a tournament, you only need two keys:
 
@@ -258,8 +282,11 @@ To operate a tournament, you only need two keys:
 
 Other useful keys are:
 
-- Validate your tournament.json which includes basic validation for all engine.json files, press: `ctrl + v`
-- Update and refresh tournament GUI, press: `ctrl + u`
+- Validate your tournament.json, which includes basic validation of every engine definition: `ctrl + v`
+- Update and refresh the tournament GUI: `ctrl + u`
+- Open the tournament view dialog: `ctrl + p`
+- Adjudicate the current game as a white win, black win or draw: `ctrl + alt + w` / `b` / `d`
+- Table text smaller / larger / back to the defaults: `ctrl + alt + -` / `+` / `0`
 
 It is strongly recommended to run validation before starting a tournament to ensure that all engine definitions are correct and that the tournament settings are valid.
 
@@ -267,7 +294,7 @@ When the tournament is running, you can use the GUI to follow the games, check t
 The console window will display additional tournament progress, including pairings, game results, standings, and other relevant information that can be useful for monitoring the tournament.
 
 ### Time Controls
-Time controls settings are specified in `HH:MM:SS:MMM` format, where `HH` is hours, `MM` is minutes, `SS` is seconds, and `MMM` is milliseconds. For example, a fixed time control of `00:01:00:000` with an Increment of `00:00:01:000` represents a time control of 1 minute and 1 second increment.
+Time control settings are specified as `hh:mm:ss` or `hh:mm:ss.fff`, where `hh` is hours, `mm` minutes, `ss` seconds and `fff` milliseconds after a dot; the hour field may exceed 23 for long controls. For example, a fixed time control of `00:01:00.000` with an increment of `00:00:01.000` is 1 minute plus 1 second per move.
 Each time control listed in the `tournament.json` file needs to have an Id and each engine.json file needs to have a corresponding time control Id that references on of the time controls in the `tournament.json` file.
 You can use node limits instead of time limits by setting the `NodesLimit` value to true, and the number of `nodes` you want to use in your test, in the `tournament.json` file.
 Example of a time control that can be used to run policy tests:
@@ -382,7 +409,10 @@ engine panel.
 The dual analysis mode is designed to compare two engines at a time, displaying their evaluations, moves, and search statistics in a clear and concise manner.
 
 ![Analysis](WebGUI/wwwroot/Img/AnalysisMode.png)
-*Example: Dual analysis mode — compare two engines side by side with synchronized move lists and evaluations.*
+*Example: Single engine analysis - policy overlay on the board, visited-move chart, PV lines and live move stats.*
+
+![Dual analysis](WebGUI/wwwroot/Img/DualAnalysis.png)
+*Dual analysis: Lc0 and Stockfish on the same position - visit shares and move stats for the MCTS engine, eval by depth and the iteration log for the alpha-beta one.*
 
 
 ## Puzzle Testing Mode
