@@ -9,7 +9,16 @@
   <base href="/" />
   <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
   <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
-  <link href="css/site_v1.26.css" rel="stylesheet" />
+  @* @Assets gives this link a content hash in the rendered HTML (css/site.<hash>.css). A
+     PUBLISHED app serves that URL as max-age=31536000, immutable - a returning browser never
+     re-fetches it until it changes, and the moment it changes the URL changes with it. Under
+     dotnet run (Development) the same URL is served no-cache on purpose, so an edit shows on
+     the next reload. Both measured 2026-09-21. This replaces a version number that was kept
+     in the FILENAME and bumped by hand on every commit, which turned out to do nothing for
+     caching (MapStaticAssets already serves the plain name as no-cache; tested in the desktop
+     shell 2026-09-21) and was the one way the link could break: a rename staged in one commit
+     and the link updated in the next left a commit whose every page rendered unstyled. *@
+  <link href="@Assets["css/site.css"]" rel="stylesheet" />
   <link href="css/tools-table.css" rel="stylesheet" />
   <link href="css/markdown-docs.css" rel="stylesheet" />
   <link href="EngineBattle.styles.css" rel="stylesheet" />
