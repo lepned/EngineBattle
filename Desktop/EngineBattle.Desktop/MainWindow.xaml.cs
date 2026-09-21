@@ -18,6 +18,8 @@ internal partial class MainWindow : Window
     private IntPtr _hwnd;
     private ServerProcess? _server;
     private LogWindow? _logWindow;
+    // The page the shell opened on: where Reload goes when the view is not on one of ours.
+    private string? _startupUrl;
     private bool _closing;
 
     // Pre-fullscreen state, so F11 restores exactly what was there before.
@@ -153,6 +155,7 @@ internal partial class MainWindow : Window
             // The user can pick any page as their startup page; the server resolves that
             // setting and reports the URL, so honour it instead of always opening the root.
             var startupUrl = await _server.GetStartupUrlAsync(TimeSpan.FromSeconds(5), _shutdown.Token);
+            _startupUrl = startupUrl;
             WebView.CoreWebView2.Navigate(startupUrl);
             WebView.Visibility = Visibility.Visible;
             Overlay.Visibility = Visibility.Collapsed;
@@ -184,6 +187,17 @@ internal partial class MainWindow : Window
         // browser address bar this is the only way to inspect a layout problem that only
         // reproduces inside the shell. Opened with F12 / Ctrl+Shift+I (see TitleBarScript).
         settings.AreDevToolsEnabled = true;
+
+        // A plain link to a website (a reference in the documentation, an engine's home page)
+        // would turn the shell into a browser with no way back: no address bar, no back
+        // button, and a menu talking to a page that is no longer ours. The app's own pages
+        // navigate; anything else goes to the system browser, like the new-window case below.
+        core.NavigationStarting += (_, e) =>
+        {
+            if (IsOurs(e.Uri)) return;
+            e.Cancel = true;
+            OpenExternally(e.Uri);
+        };
 
         // Documentation and engine links point at real websites; those belong in a browser.
         core.NewWindowRequested += (_, e) =>
@@ -386,8 +400,29 @@ internal partial class MainWindow : Window
     {
         // Blazor Server: this drops the circuit and builds a new one, so the page starts over.
         // Tournaments and analysis run in the server's own singletons and keep going.
-        try { WebView.CoreWebView2?.Reload(); }
+        // Off one of our pages (it should not happen any more, but a stuck view must have a
+        // way home), Reload is the way back to the start page.
+        try
+        {
+            var core = WebView.CoreWebView2;
+            if (core is null) return;
+            if (!IsOurs(core.Source) && !string.IsNullOrEmpty(_startupUrl)) core.Navigate(_startupUrl);
+            else core.Reload();
+        }
         catch { /* nothing loaded yet */ }
+    }
+
+    /// True for the app's own pages - the server's host and port - and for anything that is
+    /// not a website at all (about:blank, the startup navigation before the server has said
+    /// where it lives). Only http(s) elsewhere is "somewhere else".
+    private bool IsOurs(string? uri)
+    {
+        var baseUrl = _server?.BaseUrl;
+        if (string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(baseUrl)) return true;
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var u) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var b)) return true;
+        if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) return true;
+        var sameHost = string.Equals(u.Host, b.Host, StringComparison.OrdinalIgnoreCase) || (u.IsLoopback && b.IsLoopback);
+        return sameHost && u.Port == b.Port;
     }
 
     private void OnMenuAbout(object sender, RoutedEventArgs e)

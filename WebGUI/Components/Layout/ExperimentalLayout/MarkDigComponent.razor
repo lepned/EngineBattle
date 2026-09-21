@@ -59,6 +59,10 @@
             raw = raw.Replace("](./License.txt)", "](/License.txt)");
             var pipeline = new Markdig.MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
             markdownContent = Markdig.Markdown.ToHtml(raw, pipeline);
+            // Links to other websites open in a new tab - and, in the desktop shell, in the
+            // system browser: a same-window navigation would replace the app with the site.
+            // The app's own links are root-relative (/docs/..., /License.txt) and stay as they are.
+            markdownContent = markdownContent.Replace("<a href=\"http", "<a target=\"_blank\" rel=\"noopener\" href=\"http");
         }
         catch (Exception)
         {
