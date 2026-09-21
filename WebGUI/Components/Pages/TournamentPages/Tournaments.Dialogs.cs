@@ -82,7 +82,7 @@ public partial class Tournaments
 		CloseAllDialogs();
 
 		var players = tournament?.EngineSetup?.Engines?.Count() ?? 0;
-		var fontSize = layoutOptions.Fonts.CrossTableFont + 1;
+		var fontSize = FontCeiling(FontKey.Crosstable) + 1;
 		var crossTable = (IsGauntletMode || players == 2) ? GauntletCrosstable(results) : table;
 		crossTable ??= new List<CrossTableEntry>();
 		var tableCount = table?.Count ?? 0;
@@ -123,7 +123,7 @@ public partial class Tournaments
 			{ "ShowActions", showActions },
 			{ "SwissCompleted", false },
 			{ "SwissInvalid", false },
-			{ "FontSize", layoutOptions.Fonts.SwissOverviewFont }
+			{ "FontSize", FontCeiling(FontKey.Brackets) }
 		};
 		swissDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.SwissOverviewDialog>("", parameters, options);
 	}
@@ -142,7 +142,7 @@ public partial class Tournaments
 
 		var parameters = new DialogParameters
 		{
-			{ "FontSize", layoutOptions.Fonts.CupBracketFont }
+			{ "FontSize", FontCeiling(FontKey.Brackets) }
 		};
 		bracketDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupBracketDialog>("", parameters, options);
 	}
@@ -169,7 +169,7 @@ public partial class Tournaments
 			{ "ShowActions", false },
 			{ "LadderCompleted", false },
 			{ "LadderInvalid", false },
-			{ "FontSize", layoutOptions.Fonts.LadderOverviewFont }
+			{ "FontSize", FontCeiling(FontKey.Brackets) }
 		};
 		ladderDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.LadderResumeDialog>("", parameters, options);
 	}

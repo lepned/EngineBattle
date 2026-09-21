@@ -48,12 +48,41 @@
 	return;
 }
 
+@* A tournament.json that parsed but names no engines is not a failure - it is every fresh
+   installation. This is the way in, in the order the documentation walks it. *@
+@if (firstRun)
+{
+	<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-5">
+		<MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+			<MudText Typo="Typo.h6" Class="mb-2">No engines yet</MudText>
+			<MudText Class="mb-2">
+				EngineBattle plays chess engines against each other, so the first thing it needs is
+				at least two engine definitions: a small JSON file each, pointing at an engine you
+				already have on this machine (Stockfish, Lc0, Ceres, ...).
+			</MudText>
+			<MudText>
+				1. Create an engine definition for each engine.<br />
+				2. Set up the tournament: which engines, time control, openings.<br />
+				3. Come back here and press Start.
+			</MudText>
+		</MudAlert>
+		<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/tools/engine-creator"
+				   StartIcon="@Icons.Material.Filled.Memory" Class="mr-2 mb-2">1. Engine definitions</MudButton>
+		<MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/tools/tournament-creator"
+				   StartIcon="@Icons.Material.Filled.PostAdd" Class="mr-2 mb-2">2. Tournament setup</MudButton>
+		<MudButton Variant="Variant.Outlined" Href="/docs"
+				   StartIcon="@Icons.Material.Filled.MenuBook" Class="mb-2">Documentation</MudButton>
+	</MudContainer>
+	return;
+}
+
 <div class="main-screen" id="tournamentPage">
 
-	@* One number for every table on this page, offered where you are when you notice that a
-	   table is too small to read or too crowded to fit. Invisible until the pointer comes for
-	   the corner, the way the drawer toggle is: this is a broadcast layout, and a control that
-	   sits on screen permanently is a control in the picture. *@
+	@* Every size on this page, set where you are when you notice that a table is too small to
+	   read or too crowded to fit, and remembered for this screen - nobody has to open a file.
+	   Invisible until the pointer comes for the corner, the way the drawer toggle is: this is a
+	   broadcast layout, and a control that sits on screen permanently is a control in the
+	   picture. *@
 	<div class="eb-fontscale" aria-label="Page size controls">
 		<div class="eb-fontscale-row">
 			<span class="eb-fontscale-label">Text</span>
@@ -75,9 +104,8 @@
 			}
 		</div>
 
-		@* Chart height, on the same terms as the text: tournament.json carries the number and
-		   this moves it. Seven charts can share that column, so how much room each gets is a
-		   screen decision rather than a tournament one. *@
+		@* Chart height, on the same terms as the text. Seven charts can share that column, so
+		   how much room each gets is a screen decision rather than a tournament one. *@
 		<div class="eb-fontscale-row">
 			<span class="eb-fontscale-label">Chart</span>
 			<button type="button" title="Shorter charts"
@@ -87,17 +115,26 @@
 					@onclick="@(() => NudgeChartScale(10))">+</button>
 		</div>
 
+		@* Which charts. The same four that tournament.json can name, as toggles, per screen. *@
 		<div class="eb-fontscale-row">
-		<button type="button" class="eb-fontscale-reset" title="Back to what tournament.json says, text and PV boards (Ctrl + Alt + 0)"
+			<span class="eb-fontscale-label">Show</span>
+			<button type="button" title="Evaluation chart" class="@(layoutOptions.Charts.ShowEval ? "is-on" : "")"
+					@onclick="@(() => ToggleChart("eval"))">Eval</button>
+			<button type="button" title="Nodes per second chart" class="@(layoutOptions.Charts.ShowNPS ? "is-on" : "")"
+					@onclick="@(() => ToggleChart("nps"))">NPS</button>
+			<button type="button" title="Time usage chart" class="@(layoutOptions.Charts.ShowTime ? "is-on" : "")"
+					@onclick="@(() => ToggleChart("time"))">Time</button>
+			<button type="button" title="Nodes per move chart" class="@(layoutOptions.Charts.ShowNodes ? "is-on" : "")"
+					@onclick="@(() => ToggleChart("nodes"))">Nodes</button>
+		</div>
+
+		<div class="eb-fontscale-row">
+		<button type="button" class="eb-fontscale-reset" title="Forget everything this screen chose - text, PV boards, charts, panels - and go back to the defaults (Ctrl + Alt + 0)"
 				@onclick="ResetToConfiguredLayout">reset</button>
-		@* Only between runs, and never in feed mode: the sizes are read at load, so rewriting
-		   them under a live broadcast would change the file without changing the page, and a
-		   feed view is watching someone else's tournament through this page's layout. *@
-		@if (!FeedMode && !TournamentSvc.IsRunning)
-		{
-			<button type="button" class="eb-fontscale-reset" title="Write the sizes on screen into tournament.json"
-					@onclick="SaveSizesToTournamentJson">save</button>
-		}
+		@* Any time, feed view included: it writes only this screen's settings, and a viewer
+		   sizing someone else's tournament for their own monitor is exactly what it is for. *@
+		<button type="button" class="eb-fontscale-reset" title="Make the sizes on screen this screen's own - the nudge goes back to 100% and Appearance shows these numbers"
+				@onclick="SaveAsBaseline">save</button>
 		</div>
 	</div>
 
@@ -110,7 +147,7 @@
 		{
 			@* The dot follows the running-game marker the banner already carries, rather
 			   than a flag that would only ever say "yes". *@
-			<TournamentBanner FontSize=@layoutOptions.Fonts.InfoBannerFont R3="@r3" TB="TB"
+			<TournamentBanner FontSize="@FontCeiling(FontKey.Banner)" R3="@r3" TB="TB"
 							  Move50="move50" DrawP="DrawP" Info="infoBannerInfo"
 							  IsLive="@(infoBannerInfo?.ResultTxt?.Trim() == "*")"
 							  WinRule="@WinRuleToken" WinRuleText="@WinRuleText"
@@ -118,7 +155,7 @@
 		}
 		else
 		{
-			<InfoBanner FontSize=@layoutOptions.Fonts.InfoBannerFont R3="@r3" TB="TB"
+			<InfoBanner FontSize="@FontCeiling(FontKey.Banner)" R3="@r3" TB="TB"
 						Move50="move50" DrawP="DrawP" Info="infoBannerInfo" WidthFit="@bannerFit.Value" />
 		}
 	</div>
@@ -136,7 +173,7 @@
 				<MudItem Class="lhs mb-3" lg="12">
 					<TournamentSummary Name="@tournament?.Name" Mode="@ModeBadge" Pairing="@PairingBadge"
 									   Description="@tournament?.Description" Setup="@SetupLine"
-									   FontSize="@layoutOptions.Fonts.TournamentDescFont" />
+									   FontSize="@FontCeiling(FontKey.Description)" />
 				</MudItem>
 			}
 			else
@@ -181,7 +218,7 @@
 								 Engine1ToMove="whiteToMove"
 								 ShowPV="@showPVBoard"
 								 ShowCompletePV="showCompletePV"
-								 FontSize="@layoutOptions.Fonts.EnginesPanelFont"
+								 FontSize="@FontCeiling(FontKey.EnginePanel)"
 								 IsFRC=@tournament.IsChess960
 								 MainLogoFileName="@tournament.MainLogoFileName"
 								 LogoSize="@layoutOptions.Sizes.LogoSize"
@@ -192,47 +229,47 @@
 
 				</div>
 
-		@if (layoutOptions.ShowCrosstableBelowStandings)
+		@if (layoutOptions.CrosstableWithStandings.IsBelow)
 		{
 			<div class="standingTable">
 				@if (IsCupMode)
 				{
-					<CupCyclingView FontSize=@layoutOptions.Fonts.StandingsFont StandingsWidthFit="@standingsFit.Value" Height=@height
+					<CupCyclingView FontSize="@FontCeiling(FontKey.Standings)" StandingsWidthFit="@standingsFit.Value" Height=@height
 									CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 									WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 									ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 				}
 				else if (IsLadderMode)
 				{
-					<LadderCyclingView FontSize=@layoutOptions.Fonts.StandingsFont StandingsWidthFit="@standingsFit.Value" Height=@height
+					<LadderCyclingView FontSize="@FontCeiling(FontKey.Standings)" StandingsWidthFit="@standingsFit.Value" Height=@height
 									   CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 									   WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 									   ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 				}
 				else
 				{
-					<Standings FontSize=@layoutOptions.Fonts.StandingsFont WidthFit="@standingsFit.Value" ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
+					<Standings FontSize="@FontCeiling(FontKey.Standings)" WidthFit="@standingsFit.Value" ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
 							   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
 				}
 			</div>
-			@if (!layoutOptions.OnlyShowStandings && !IsCupMode && !IsLadderMode)
+			@if (!IsCupMode && !IsLadderMode)
 			{
 				@* It shares the column with the standings box above it, so it takes a cap of its
 				   own. Without one it grew to its natural height and left standings the crumbs. *@
-				<CrossTableSummary FontSize=@layoutOptions.Fonts.CrossTableFont CrossTable="table"
+				<CrossTableSummary FontSize="@FontCeiling(FontKey.Crosstable)" CrossTable="table"
 								   WidthFit="@crosstableFit.Value" Height="@crosstableHeight" />
 			}
 		}
 
 
-		@if (!layoutOptions.ShowCrosstableBelowStandings)
+		@if (!layoutOptions.CrosstableWithStandings.IsBelow)
 		{
-			@if (!layoutOptions.OnlyShowStandings)
+			@if (layoutOptions.CrosstableWithStandings.IsCycle)
 			{
 				@if (IsCupMode)
 				{
 					<div class="standingTable">
-						<CupCyclingView FontSize=@layoutOptions.Fonts.StandingsFont StandingsWidthFit="@standingsFit.Value" Height=@height
+						<CupCyclingView FontSize="@FontCeiling(FontKey.Standings)" StandingsWidthFit="@standingsFit.Value" Height=@height
 										CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 										WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 										ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
@@ -241,7 +278,7 @@
 				else if (IsLadderMode)
 				{
 					<div class="standingTable">
-						<LadderCyclingView FontSize=@layoutOptions.Fonts.StandingsFont StandingsWidthFit="@standingsFit.Value" Height=@height
+						<LadderCyclingView FontSize="@FontCeiling(FontKey.Standings)" StandingsWidthFit="@standingsFit.Value" Height=@height
 										   CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 										   WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 										   ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
@@ -250,7 +287,7 @@
 				else
 				{
 					<div class="standingTable">
-						<CyclingStandingTables CrossTable="table" Height="height" StandingsWidthFit="@standingsFit.Value" CrosstableWidthFit="@crosstableFit.Value" CycleSeconds=@layoutOptions.AutoCycleTimeInSec FontSizeStandings=@layoutOptions.Fonts.StandingsFont ShowNPM=@layoutOptions.UseNPM ScoreTable="scoreTable" FontSizeCross=@layoutOptions.Fonts.CrossTableFont />
+						<CyclingStandingTables CrossTable="table" Height="height" StandingsWidthFit="@standingsFit.Value" CrosstableWidthFit="@crosstableFit.Value" CycleSeconds=@layoutOptions.AutoCycleTimeInSec FontSizeStandings="@FontCeiling(FontKey.Standings)" ShowNPM=@layoutOptions.UseNPM ScoreTable="scoreTable" FontSizeCross="@FontCeiling(FontKey.Crosstable)" />
 					</div>
 				}
 
@@ -260,21 +297,21 @@
 				<div class="standingTable">
 					@if (IsCupMode)
 					{
-						<CupCyclingView FontSize=@layoutOptions.Fonts.StandingsFont StandingsWidthFit="@standingsFit.Value" Height=@height
+						<CupCyclingView FontSize="@FontCeiling(FontKey.Standings)" StandingsWidthFit="@standingsFit.Value" Height=@height
 										CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 										WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 										ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 					}
 					else if (IsLadderMode)
 					{
-						<LadderCyclingView FontSize=@layoutOptions.Fonts.StandingsFont StandingsWidthFit="@standingsFit.Value" Height=@height
+						<LadderCyclingView FontSize="@FontCeiling(FontKey.Standings)" StandingsWidthFit="@standingsFit.Value" Height=@height
 										   CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle="@(layoutOptions.AutoCycleTimeInSec > 0)"
 										   WhitePlayer="@whitePlayer" BlackPlayer="@blackPlayer"
 										   ScoreTable=@scoreTable ShowNPM=@layoutOptions.UseNPM />
 					}
 					else
 					{
-						<Standings FontSize=@layoutOptions.Fonts.StandingsFont WidthFit="@standingsFit.Value" ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
+						<Standings FontSize="@FontCeiling(FontKey.Standings)" WidthFit="@standingsFit.Value" ScoreTable="scoreTable" ShowNPM=@layoutOptions.UseNPM
 								   Height="height" CycleSeconds=@layoutOptions.AutoCycleTimeInSec ShouldCycle=shouldCycle />
 					}
 				</div>
@@ -291,8 +328,8 @@
 				<div>
 					<CyclingTables Results="@results"
 								   Pairings="@pairings"
-								   FontSizePairing=@layoutOptions.Fonts.PairingsFont
-								   FontSizeLatestGames=@layoutOptions.Fonts.LatestGamesFont
+								   FontSizePairing="@FontCeiling(FontKey.Pairings)"
+								   FontSizeLatestGames="@FontCeiling(FontKey.Latest)"
 								   TableHeight=@pairingTableHeight
 								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec
 								   HeaderSuffix="@swissRoundLabel" />
@@ -306,7 +343,7 @@
 		<MudItem Class="@($"mt-5 {BoardColumnClass}")" Style="@BoardColumnStyle"
 				 sm="12" md="4" lg="4" xl="4" xxl="4">
 			<StreamingChessboard @ref="streamingBoard" ShowMoveList=true OpeningMoves="@openingMoves" MoveListHeight=@moveListHeight
-								 MoveHistory="@moveHistory" OpeningName="@currentOpeningInPlay" MoveListFontSize="@layoutOptions.Fonts.MoveListFont"
+								 MoveHistory="@moveHistory" OpeningName="@currentOpeningInPlay" MoveListFontSize="@FontCeiling(FontKey.MoveList)"
 								 OpeningSansForDeviation="@openingSansForDeviation"
 								 ReferenceSansForDeviation="@referenceSansForDeviation"
 								 ShowCopyFen="@FeedMode"
@@ -360,8 +397,8 @@
 				<div id="cycleTable">
 					<CyclingTables Results="@results"
 								   Pairings="@pairings"
-								   FontSizePairing=@layoutOptions.Fonts.PairingsFont
-								   FontSizeLatestGames=@layoutOptions.Fonts.LatestGamesFont
+								   FontSizePairing="@FontCeiling(FontKey.Pairings)"
+								   FontSizeLatestGames="@FontCeiling(FontKey.Latest)"
 								   TableHeight=@pairingTableHeight
 								   CycleSeconds=@layoutOptions.AutoCycleTimeInSec
 								   HeaderSuffix="@swissRoundLabel" />

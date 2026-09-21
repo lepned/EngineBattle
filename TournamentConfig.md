@@ -113,26 +113,37 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
 
 ### Layout Options
 
-- **Fonts**:
-  - **InfoBannerFont**: Font size for the info banner - top row.
-  - **TournamentDescFont**: Font size for the tournament description.
-  - **EnginesPanelFont**: Font size for the engines panel that shows search and time info for each engine.
-  - **MoveListFont**: Font size for the move list below the chessboard.
-  - **PVLabelFont**: Font size for the PV label below the chessboard.
-  - **StandingsFont**: Font size for the standings table.
-  - **CrossTableFont**: Font size for the cross table.
-  - **CupBracketFont**: Font size for the cup bracket overview.
-  - **SwissOverviewFont**: Font size for the swiss overview.
-  - **LadderOverviewFont**: Font size for the ladder overview.
-  - **PairingsFont**: Font size for the pairings table.
-  - **LatestGamesFont**: Font size for the latest games.
+Everything about how the tournament page LOOKS is set **in the app**, not here. On the
+tournament page, the control in the bottom-right corner (it appears when the pointer comes for
+it) has A-/A+ for the text, off/S/M/L for the PV boards, -/+ for the chart heights, toggles for
+which charts are shown, **save** to make the sizes on screen the baseline for this screen, and
+**reset** to go back to the defaults. Appearance has the rest under *Tournament page*: each
+region of text on its own, chart lines and Q difference, nodes per move in the standings,
+where the crosstable goes (cycling with the standings, below them, or hidden), the crosstable between games, and the cycle time.
+Everything is remembered per screen, so a laptop and the monitor it docks to each keep their
+own numbers.
+
+The whole `LayoutOption` block is therefore **optional**, and a fresh installation does not
+have one. So is every field inside it: a block that sets nothing but a logo size leaves
+everything else at the default, and a `Charts` or `Sizes` block may name just the one value it
+wants. They are still read for a screen that has nothing saved yet -
+an older config keeps rendering exactly as it did - and ignored from the first "save" or slider
+on that screen. Without them the defaults are: standings, crosstable, brackets, banner and
+engine panel 18 px; pairings, latest games, move list and description 16 px; PV lines 17 px;
+charts 200 px; PV boards on, small.
+
+- **Fonts** (optional): a size in px per region, used until the screen has sizes of its own.
+  `InfoBannerFont`, `TournamentDescFont`, `EnginesPanelFont`, `MoveListFont`, `PVLabelFont`,
+  `StandingsFont`, `CrossTableFont`, `PairingsFont`, `LatestGamesFont`, and the three bracket
+  views `CupBracketFont`, `SwissOverviewFont`, `LadderOverviewFont` (one region on screen: the
+  largest of the three applies).
 - **Sizes**:
-  - **LiveChartHeight**: Height of the live chart, which is MCTS charts (typically Lc0 and Ceres) for Top N visited moves and Top N Q-values (eval).
-  - **MoveChartHeight**: Height of the move chart, which is regular Eval, NPS, NPM and Time charts.
-  - **PVboardSize**: Size of the PV board.
+  - **LiveChartHeight** (optional): Height of the live chart, which is MCTS charts (typically Lc0 and Ceres) for Top N visited moves and Top N Q-values (eval). Used until the screen has a height of its own.
+  - **MoveChartHeight** (optional): Height of the move chart, which is regular Eval, NPS, NPM and Time charts. Same rule.
+  - **PVboardSize** (optional): Size of the PV board, `small`, `medium` or `large`. The corner control's choice wins once made.
   - **LogoSize**: Maximum size for engine logos. Format: "WxH" (e.g., "150x100") for width x height, or "N" for square (e.g., "120" for 120x120). Empty string or omitted uses default sizing. These values act as upper bounds; logos still shrink on narrow screens.
   - **MainLogoSize**: Maximum size for the main logo in the middle of the engine panel (the image `MainLogoFileName` points at). Same format as LogoSize. Empty string or omitted means 240x130. An upper bound, like LogoSize: the logo still shrinks with the panel on narrow screens, it just never grows past this.
-- **Charts**:
+- **Charts** (optional, every field; the corner control and Appearance override them per screen):
   - **ShowEval**: Show evaluation chart.
   - **ShowNPS**: Show nodes per second chart.
   - **ShowTime**: Show time usage chart.
@@ -142,10 +153,9 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
 - **ShowPVBoard**: Principal Variation (PV) Boards below each player.
 - **UseNPM**: Use nodes per move in standings table instead of NPS.
 - **BestMoveWithPolicy**: Show best move with policy - WIP.
-- **OnlyShowStandings**: Only show standings.
-- **ShowCrosstableBetweenGames**: Show cross table between games.
-- **ShowCrosstableBelowStandings**: Show cross table below standings.
-- **AutoCycleTimeInSec**: Auto cycle time in seconds, used to recycle tournament tables.
+- **CrosstableWithStandings**: Where the crosstable goes in the left column: `"cycle"` (standings and crosstable take turns in the same box), `"below"` (a box of its own under the standings) or `"none"` (standings only, the default). Replaces the older `OnlyShowStandings` and `ShowCrosstableBelowStandings`, which are still read when this field is absent.
+- **ShowCrosstableBetweenGames**: Show the crosstable (the bracket in cup and ladder) in a dialog between games.
+- **AutoCycleTimeInSec**: Seconds between the tables the standings box cycles through - the crosstable in `cycle` mode, and the progress tables in cup and ladder.
 
 ### Time Control
 
@@ -249,29 +259,6 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
   },
 
   "LayoutOption": {
-    "Fonts": {
-      "InfoBannerFont": 21,
-      "TournamentDescFont": 20,
-      "EnginesPanelFont": 22,
-      "MoveListFont": 20,
-      "PVLabelFont": 21,
-      "StandingsFont": 20,
-      "CrossTableFont": 22,
-      "CupBracketFont": 20,
-      "SwissOverviewFont": 20,
-      "LadderOverviewFont": 20,
-      "PairingsFont": 16,
-      "LatestGamesFont": 16
-    },
-
-    "Sizes": {
-      "LiveChartHeight": 240,
-      "MoveChartHeight": 250,
-      "PVboardSize": "medium",
-      "LogoSize": "",
-      "MainLogoSize": ""
-    },
-
     "Charts": {
       "ShowEval": true,
       "ShowNPS": true,
@@ -284,9 +271,8 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
     "ShowPVBoard": true,
     "UseNPM": false,
     "BestMoveWithPolicy": false,
-    "OnlyShowStandings": true,
+    "CrosstableWithStandings": "none",
     "ShowCrosstableBetweenGames": true,
-    "ShowCrosstableBelowStandings": false,
     "AutoCycleTimeInSec": 30
   },
 

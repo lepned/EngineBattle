@@ -73,8 +73,8 @@ public partial class Tournaments
 	/// remember the same format, and now the measurement is a fourth input.
 	private string descriptionStyle =>
 		"margin-left:10px; --eb-font-max:"
-		+ ((layoutOptions.Fonts.TournamentDescFont > 0 ? layoutOptions.Fonts.TournamentDescFont : 14)
-		   * descriptionFit.Value).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)
+		+ (FontCeiling(FontKey.Description) * descriptionFit.Value)
+			.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)
 		+ "px;";
 
 	private string pvStyleWhite = "--eb-font-max:16px;";
@@ -89,6 +89,8 @@ public partial class Tournaments
 	private string tournamentGamesHeader = "";
 	private TypesDef.Tournament.Tournament tournament = TypesDef.Tournament.Tournament.Empty;
 	private string tournamentLoadError = "";
+	/// The file is fine and names no engines: show the way in, not an error.
+	private bool firstRun;
 	private InfoBannerInfo infoBannerInfo;
 	private string currentOpeningInPlay = "Opening:";
 	private string tournamentDesc = string.Empty;
@@ -245,33 +247,33 @@ public partial class Tournaments
 		}
 	}
 
-	private void SetPVStyle(LayoutOption layout)
+	private void SetPVStyle()
 	{
-		pvStyleWhite = $"--eb-font-max:{layout.Fonts.PVLabelFont}px;";
-		pvStyleBlack = $"--eb-font-max:{layout.Fonts.PVLabelFont}px;";
+		pvStyleWhite = $"--eb-font-max:{FontCeiling(FontKey.Pv)}px;";
+		pvStyleBlack = $"--eb-font-max:{FontCeiling(FontKey.Pv)}px;";
 	}
 
 	private bool ShowEval()
 	{
-		var showEval = tournament.LayoutOption.Charts.ShowEval;
+		var showEval = layoutOptions.Charts.ShowEval;
 		return runWithLogLiveStats ? showEval : true;
 	}
 
 	private bool ShowTime()
 	{
-		var showTime = tournament.LayoutOption.Charts.ShowTime;
+		var showTime = layoutOptions.Charts.ShowTime;
 		return runWithLogLiveStats ? showTime : true;
 	}
 
 	private bool ShowNodes()
 	{
-		var showNodes = tournament.LayoutOption.Charts.ShowNodes;
+		var showNodes = layoutOptions.Charts.ShowNodes;
 		return runWithLogLiveStats ? showNodes : true;
 	}
 
 	private bool ShowNPS()
 	{
-		var showNPS = tournament.LayoutOption.Charts.ShowNPS;
+		var showNPS = layoutOptions.Charts.ShowNPS;
 		return runWithLogLiveStats ? showNPS : true;
 	}
 
@@ -796,14 +798,11 @@ public partial class Tournaments
 
 	private void ValidatePVSize()
 	{
-		if (validSizes.Contains(layoutOptions.Sizes.PVboardSize) == false)
-		{
-			//write all available sizes to the log
-			string logMsg = "Available PV board sizes are: ";
-			foreach (var size in validSizes)
-				logMsg += size + ", ";
-			logger.LogInformation("Invalid PV board size: " + layoutOptions.Sizes.PVboardSize + " \n" + logMsg);
-		}
+		// Optional now: a config that says nothing is not wrong, only one that says something odd.
+		var configured = layoutOptions?.Sizes?.PVboardSize;
+		if (!string.IsNullOrEmpty(configured) && !validSizes.Contains(configured))
+			logger.LogInformation("Invalid PV board size in tournament.json: " + configured
+				+ " (available: " + string.Join(", ", validSizes) + ")");
 	}
 
 	private async Task PrepareRun()
@@ -838,7 +837,7 @@ public partial class Tournaments
 			fontScaleScreenKey = await JsInteropService.GetScreenBucketAsync(JS);
 			fontScalePct = (int)Math.Round(SettingsService.Settings.FontScaleFor(fontScaleScreenKey) * 100);
 			chartScalePct = (int)Math.Round(SettingsService.Settings.ChartScaleFor(fontScaleScreenKey) * 100);
-			pvBoardChoice = SettingsService.Settings.TournamentPvBoard ?? "";
+			RefreshLayoutOptions();   // the screen is known now, so its chart and panel choices apply
 			ApplyPvBoardMode();
 			// Nothing else schedules the frame that shows these, and without it the control
 			// reads 100% and the wrong PV button is lit until some unrelated event re-renders.
@@ -957,12 +956,21 @@ public partial class Tournaments
 				{
 					var r = TournamentSvc.GetConfigRunner(logger);
 					tournament = r.Tournament();
-					if (tournament == null || tournament.EngineSetup?.Engines == null || tournament.EngineSetup.Engines.Length == 0)
+					// loadTournament sets lastLoadError and hands back Tournament.Empty on ANY failure,
+					// a missing file included - so "no error and no engines" means exactly one thing:
+					// the file parsed and names no engines yet. That is every fresh installation, and
+					// it used to get the same red alert as a broken file, with a text about checking
+					// paths that gave that reader nothing to check.
+					var loadErr = ChessLibrary.Tournament.Manager.lastLoadError;
+					if (tournament == null || !string.IsNullOrEmpty(loadErr))
 					{
-						var loadErr = ChessLibrary.Tournament.Manager.lastLoadError;
-						tournamentLoadError = !string.IsNullOrEmpty(loadErr)
-							? loadErr
-							: "tournament.json could not be loaded. Check that all engine definition files exist and paths are correct.";
+						tournamentLoadError = !string.IsNullOrEmpty(loadErr) ? loadErr : "tournament.json could not be loaded.";
+						StateHasChanged();
+						return;
+					}
+					if (tournament.EngineSetup?.Engines == null || tournament.EngineSetup.Engines.Length == 0)
+					{
+						firstRun = true;
 						StateHasChanged();
 						return;
 					}
@@ -978,8 +986,8 @@ public partial class Tournaments
 					return;
 				}
 			}
-			layoutOptions = tournament.LayoutOption;
-			SetPVStyle(layoutOptions);
+			RefreshLayoutOptions();   // the block and its parts are optional, and this screen may override some
+			SetPVStyle();
 			BestMoveWithPolicy = layoutOptions.BestMoveWithPolicy;
 			if (pairingTableHeight > 0)
 			{
@@ -1065,12 +1073,12 @@ public partial class Tournaments
 		tournament.CurrentGameNr = game;
 		tournament.Rounds = round;
 		tournament.TotalGames = totalNumberOfPairs;
-		layoutOptions = tournament.LayoutOption;
+		RefreshLayoutOptions();   // the block and its parts are optional, and this screen may override some
 		ValidatePVSize();
 		BestMoveWithPolicy = layoutOptions.BestMoveWithPolicy;
 		ApplyPvBoardMode();
 		autoCycleTimeInSec = layoutOptions.AutoCycleTimeInSec;
-		SetPVStyle(layoutOptions);
+		SetPVStyle();
 		var bannerTime = infoBannerInfo.TimeLeftTxt;
 		var bannerEnd = infoBannerInfo.TournamentEndsTxt;
 		var headToHead = infoBannerInfo != null ? infoBannerInfo.HeadToHead : string.Empty;

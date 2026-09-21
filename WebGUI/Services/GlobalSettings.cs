@@ -1,6 +1,24 @@
 using System;
 namespace WebGUI.Services;
 
+/// <summary>
+/// The regions of the tournament page whose text size is set on its own. The strings are the
+/// keys the settings and the CSS groups (.eb-g-*) use; the names are what the code reads.
+/// </summary>
+public static class FontKey
+{
+    public const string Standings = "standings";
+    public const string Crosstable = "crosstable";
+    public const string Pairings = "pairings";
+    public const string Latest = "latest";
+    public const string Brackets = "brackets";
+    public const string MoveList = "movelist";
+    public const string EnginePanel = "enginepanel";
+    public const string Banner = "banner";
+    public const string Description = "description";
+    public const string Pv = "pv";
+}
+
 public class GlobalSettings
 {
     // Folder paths
@@ -121,10 +139,6 @@ public class GlobalSettings
     public double TournamentFontScale { get; set; } = 1.0;
     public Dictionary<string, double> TournamentFontScaleByScreen { get; set; } = new();
 
-    // Per-region nudges, by group key ("standings", "crosstable", ...). A group with no entry
-    // follows the global number, which is the case for everyone who never opens Advanced.
-    public Dictionary<string, double> TournamentFontScaleByGroup { get; set; } = new();
-
     // Chart height on the tournament page, as a multiplier on the two numbers in
     // tournament.json (LayoutOption.Sizes.LiveChartHeight and MoveChartHeight). Same bargain as
     // the text nudge and kept per screen for the same reason: how many charts fit above the
@@ -142,11 +156,69 @@ public class GlobalSettings
     /// is a reasonable thing to want when there is only one on screen.
     public static double ClampChartScale(double v) => v is >= 0.5 and <= 2.0 ? v : 1.0;
 
-    // The two PV boards under the engine panel: "off", "small", "medium", "large", or "" to
-    // use whatever tournament.json says. An override rather than a replacement, because the
-    // file's answer is right for a two-engine broadcast and wrong the moment several boards
-    // run at once and the row has nowhere to go. "off" removes the row, it does not hide it.
-    public string TournamentPvBoard { get; set; } = "";
+    /// <summary>
+    /// The tournament page's sizes for one screen: a text ceiling per region, the two chart
+    /// heights and the PV board mode. Every part is optional - a region or a height with no
+    /// entry falls back to tournament.json (older configs still carry these) and then to the
+    /// built-in default, so a fresh installation and an old config both render as they did.
+    ///
+    /// Per SCREEN, keyed like the nudges ("1920x1080@1.5"), because these are decisions about
+    /// how much fits on a particular monitor, not about the tournament. They are written by the
+    /// corner control on the tournament page ("save" bakes what is on screen) and by the
+    /// sliders in Appearance.
+    /// </summary>
+    public sealed class TournamentScreenLayout
+    {
+        /// Ceiling per region, by group key ("standings", "crosstable", ...), in px.
+        public Dictionary<string, int> FontPx { get; set; } = new();
+        /// 0 means not set.
+        public int LiveChartHeight { get; set; }
+        public int MoveChartHeight { get; set; }
+        /// "off", "small", "medium", "large", or "" for not set.
+        public string PvBoard { get; set; } = "";
+
+        // Which charts and panels the page shows, and how the charts are drawn. Every one is
+        // nullable: null means "whatever tournament.json says, or the built-in default" - the
+        // same fallback the sizes have - so a screen that never touched a toggle follows the
+        // file exactly, and one that did keeps its choice across tournaments.
+        public bool? ShowEval { get; set; }
+        public bool? ShowNps { get; set; }
+        public bool? ShowTime { get; set; }
+        public bool? ShowNodes { get; set; }
+        /// Nodes per move instead of nodes per second in the standings.
+        public bool? UseNpm { get; set; }
+        // BestMoveWithPolicy is deliberately NOT here: the feature is not ready to ship, so it
+        // stays a flag in tournament.json with no control in the GUI.
+        public bool? ShowCrosstableBetweenGames { get; set; }
+        /// Where the crosstable goes in the left column: "cycle", "below" or "none"; "" = not set.
+        public string CrosstableWithStandings { get; set; } = "";
+        /// Lines in the MCTS charts; 0 or null = not set.
+        public int? NumberOfLines { get; set; }
+        /// Moves further than this from the best Q are left out of the charts; 0 or null = not set.
+        public double? Qdiff { get; set; }
+        /// Seconds between the tables the standings box cycles through; 0 or null = not set.
+        public int? AutoCycleTimeInSec { get; set; }
+    }
+
+    public Dictionary<string, TournamentScreenLayout> TournamentLayoutByScreen { get; set; } = new();
+
+    /// The key a screen's layout is stored under. A browser that would not name its screen
+    /// gets one shared bucket rather than the empty string.
+    public static string ScreenBucket(string screenKey) => string.IsNullOrEmpty(screenKey) ? "*" : screenKey;
+
+    /// <summary>This screen's layout, or null when it has none.</summary>
+    public TournamentScreenLayout TournamentLayoutFor(string screenKey) =>
+        TournamentLayoutByScreen.TryGetValue(ScreenBucket(screenKey), out var l) ? l : null;
+
+    /// <summary>This screen's layout, created on first write.</summary>
+    public TournamentScreenLayout TournamentLayoutForWrite(string screenKey)
+    {
+        var key = ScreenBucket(screenKey);
+        if (!TournamentLayoutByScreen.TryGetValue(key, out var l) || l is null)
+            TournamentLayoutByScreen[key] = l = new TournamentScreenLayout();
+        l.FontPx ??= new();
+        return l;
+    }
 
     /// <summary>The scale for a screen, falling back to the shared default.</summary>
     public double FontScaleFor(string screenKey) =>
@@ -154,75 +226,87 @@ public class GlobalSettings
                        && TournamentFontScaleByScreen.TryGetValue(screenKey, out var v)
                        ? v : TournamentFontScale);
 
-    /// <summary>
-    /// The scale for one region: this screen's number, TIMES whatever that region was set to
-    /// on its own.
-    ///
-    /// A region's number used to REPLACE the screen's, and that made the A-/A+ control in the
-    /// corner of the tournament page look broken. Those buttons move the screen's number, so
-    /// every region the user had tuned in Appearance silently ignored them - "make everything
-    /// bigger" quietly skipped exactly the regions someone had cared enough to adjust, with
-    /// nothing on screen to say why. As a factor, A-/A+ moves the whole page and the regions
-    /// keep the proportion they were given.
-    ///
-    /// It is the same reasoning as the clamp on the tables, where the nudge multiplies all
-    /// three terms rather than only the ceiling: a nudge should MOVE things, not overrule them.
-    ///
-    /// A region left alone has no entry and follows the screen exactly.
-    /// </summary>
-    public double FontScaleFor(string screenKey, string group)
-    {
-        var page = FontScaleFor(screenKey);
-        return !string.IsNullOrEmpty(group) && TournamentFontScaleByGroup.TryGetValue(group, out var g)
-            ? BoundFontScale(page * ClampFontScale(g))
-            : page;
-    }
-
     /// Out-of-range, zero and NaN all mean "no nudge" rather than an unreadable page.
     public static double ClampFontScale(double v) => v is >= 0.6 and <= 1.6 ? v : 1.0;
 
     /// <summary>
-    /// The same range, but for a value that was COMPUTED rather than read from settings.
-    ///
-    /// ClampFontScale answers "unreadable" with 1.0, which is right for a number someone may
-    /// have hand-edited into the file. It is wrong for a product: 1.6 x 1.2 is not garbage, it
-    /// is simply past the top, and snapping it back to 1.0 would make a region jump DOWN as the
-    /// user pressed A+. This holds it at the edge instead.
-    /// </summary>
-    public static double BoundFontScale(double v) =>
-        double.IsFinite(v) ? Math.Clamp(v, 0.6, 1.6) : 1.0;
-
-    /// <summary>
     /// The regions of the tournament page that can be nudged, and written back, on their own.
     ///
-    /// One array, three readers: Appearance builds a slider per entry, MainLayout turns the
-    /// saved numbers into CSS rules, and "save sizes to tournament.json" knows which fields to
-    /// write. Keeping them here is also what keeps a hand-edited settings file from reaching a
-    /// stylesheet - a group name that is not in this list is simply not a group.
+    /// One array, three readers: Appearance builds a slider per entry, the tournament page reads
+    /// a ceiling per entry (FontCeiling), and "save" on that page measures each one. Keeping
+    /// them here is also what keeps a hand-edited settings file from reaching a stylesheet - a
+    /// group name that is not in this list is simply not a group.
     ///
     /// Selector is the element that ends up CARRYING the size, and is null for the regions
     /// whose size needs no measuring: nothing clamps them, so the size on screen is exactly
     /// the ceiling times the nudge and C# can work it out without asking the browser.
     ///
-    /// JsonFields may be EMPTY, which means the group can be nudged but not written back. That
-    /// is the cup and ladder progress tables: what is on screen there is fed from StandingsFont,
-    /// not from CupBracketFont, so writing the measured size into the three bracket fields would
-    /// overwrite three separately tuned settings with the standings size.
     /// </summary>
-    public sealed record FontGroup(string Key, string Label, string Selector, string[] JsonFields);
+    public sealed record FontGroup(string Key, string Label, string Selector);
+
+    /// <summary>
+    /// The built-in ceiling for a region, from LayoutOption.Default in ChessLibrary - what a
+    /// screen with nothing saved and a config that says nothing gets. The three bracket views
+    /// (cup, swiss, ladder) are one region on screen and one number here.
+    /// </summary>
+    /// <summary>
+    /// What a tournament.json asks for, per region, or 0 when it says nothing - the block and
+    /// every field in it are optional, and a field that is left out deserialises to 0. The
+    /// three bracket views (cup, swiss, ladder) are one region on screen: the largest applies.
+    /// Read by the tournament page for the size it renders and by Appearance for the number it
+    /// shows, so the two cannot disagree about what the file means.
+    /// </summary>
+    public static int FileFontPx(ChessLibrary.LayoutTypes.LayoutOption layout, string group)
+    {
+        var f = layout?.Fonts;
+        if (f is null) return 0;
+        return group switch
+        {
+            FontKey.Standings => f.StandingsFont,
+            FontKey.Crosstable => f.CrossTableFont,
+            FontKey.Pairings => f.PairingsFont,
+            FontKey.Latest => f.LatestGamesFont,
+            FontKey.Brackets => Math.Max(f.CupBracketFont, Math.Max(f.SwissOverviewFont, f.LadderOverviewFont)),
+            FontKey.MoveList => f.MoveListFont,
+            FontKey.EnginePanel => f.EnginesPanelFont,
+            FontKey.Banner => f.InfoBannerFont,
+            FontKey.Description => f.TournamentDescFont,
+            FontKey.Pv => f.PVLabelFont,
+            _ => 0
+        };
+    }
+
+    public static int DefaultFontPx(string group)
+    {
+        var f = ChessLibrary.LayoutTypes.LayoutOption.Default.Fonts;
+        return group switch
+        {
+            FontKey.Standings => f.StandingsFont,
+            FontKey.Crosstable => f.CrossTableFont,
+            FontKey.Pairings => f.PairingsFont,
+            FontKey.Latest => f.LatestGamesFont,
+            FontKey.Brackets => f.CupBracketFont,
+            FontKey.MoveList => f.MoveListFont,
+            FontKey.EnginePanel => f.EnginesPanelFont,
+            FontKey.Banner => f.InfoBannerFont,
+            FontKey.Description => f.TournamentDescFont,
+            FontKey.Pv => f.PVLabelFont,
+            _ => 14
+        };
+    }
 
     public static readonly FontGroup[] FontGroups =
     {
-        new("standings",   "Standings",       ".eb-g-standings .data-cell",  ["StandingsFont"]),
-        new("crosstable",  "Crosstable",      ".eb-g-crosstable .data-cell", ["CrossTableFont"]),
-        new("pairings",    "Pairings",        ".eb-g-pairings .data-cell",   ["PairingsFont"]),
-        new("latest",      "Latest games",    ".eb-g-latest .data-cell",     ["LatestGamesFont"]),
-        new("brackets",    "Cup and ladder",  ".eb-g-brackets .data-cell", []),
-        new("movelist",    "Move list",       null, ["MoveListFont"]),
-        new("enginepanel", "Engine panel",    null, ["EnginesPanelFont"]),
-        new("banner",      "Header banner",   null, ["InfoBannerFont"]),
-        new("description", "Description",     null, ["TournamentDescFont"]),
-        new("pv",          "PV lines",        null, ["PVLabelFont"]),
+        new(FontKey.Standings, "Standings", ".eb-g-standings .data-cell"),
+        new(FontKey.Crosstable, "Crosstable", ".eb-g-crosstable .data-cell"),
+        new(FontKey.Pairings, "Pairings", ".eb-g-pairings .data-cell"),
+        new(FontKey.Latest, "Latest games", ".eb-g-latest .data-cell"),
+        new(FontKey.Brackets, "Cup and ladder", ".eb-g-brackets .data-cell"),
+        new(FontKey.MoveList, "Move list", null),
+        new(FontKey.EnginePanel, "Engine panel", null),
+        new(FontKey.Banner, "Header banner", null),
+        new(FontKey.Description, "Description", null),
+        new(FontKey.Pv, "PV lines", null),
     };
 
     // Board theme

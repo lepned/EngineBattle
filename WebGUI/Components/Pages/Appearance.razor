@@ -54,24 +54,27 @@
                     <label>Tournament table text</label>
                     <div class="coord-color-row">
                         <input type="range" min="60" max="160" step="5" value="@tournamentFontPct"
-                               @oninput="e => tournamentFontPct = int.Parse((string)e.Value)" @onchange="Apply" />
+                               @oninput="e => { tournamentFontPct = int.Parse((string)e.Value); fontScaleTouched = true; }" @onchange="Apply" />
                         <span class="piece-scale-value">@tournamentFontPct%</span>
                     </div>
                     <small>
-                        Standings, crosstable, pairings and latest games, relative to the sizes in
-                        tournament.json. Remembered for this screen@(string.IsNullOrEmpty(screenKey) ? "" : $" ({screenKey})"),
-                        so docking to another monitor recalls its own setting.
+                        Every region of the tournament page, relative to its own size below.
+                        Remembered for this screen@(string.IsNullOrEmpty(screenKey) ? "" : $" ({screenKey})"),
+                        so docking to another monitor recalls its own setting. The A-/A+ control
+                        in the corner of the tournament page is this same number.
                     </small>
                 </div>
             </div>
 
-            @* Collapsed by default, and it should stay that way: one number is the answer for
-               almost everyone, and this is the rare case where one region wants a different
-               balance from the rest. A region with no number of its own simply follows.
+            @* Collapsed by default, and it should stay that way: the corner control on the
+               tournament page sets all of these at once by looking ("save" there makes what is
+               on screen the baseline), and this is the rare case where one region wants a
+               different size from the rest.
 
-               These numbers are FACTORS on the tournament number above, not sizes of their own -
-               see GlobalSettings.FontScaleFor(screenKey, group) for why they stopped being
-               absolute. *@
+               These are the SIZES themselves, in px, per screen: the largest each region may
+               use before the tables shrink to fit their boxes. A region with no number of its
+               own uses the built-in default - or, for an older tournament.json that still
+               carries sizes, the number in that file - until it is given one here or by "save". *@
             <div class="appearance-section @SectionClass("fontgroups")">
                 <h4 class="collapsible-header" @onclick='() => Toggle("fontgroups")'>
                     <span class="section-title">Text per region <span class="scope-badge tournament">Tournament page</span></span>
@@ -82,22 +85,75 @@
                     <div class="field-group" style="margin-bottom:0.35rem;">
                         <label>@g.Label</label>
                         <div class="coord-color-row">
-                            <input type="range" min="60" max="160" step="5" value="@GroupPct(g.Key)"
-                                   @oninput="e => groupPct[g.Key] = int.Parse((string)e.Value)" @onchange="Apply" />
-                            <span class="piece-scale-value">@GroupPct(g.Key)%</span>
-                            @if (groupPct.ContainsKey(g.Key))
+                            <input type="range" min="8" max="40" step="1" value="@GroupPx(g.Key)"
+                                   @oninput="e => { groupPx[g.Key] = int.Parse((string)e.Value); touchedGroups.Add(g.Key); }" @onchange="Apply" />
+                            <span class="piece-scale-value">@GroupPx(g.Key) px@(FallbackLabel(g.Key))</span>
+                            @if (groupPx.ContainsKey(g.Key))
                             {
                                 <button type="button" @onclick="() => ClearGroup(g.Key)"
-                                        title="Drop this region's own balance and follow the tournament number exactly">follow</button>
+                                        title="Drop this region's own size and go back to the default">default</button>
                             }
                         </div>
                     </div>
                 }
                 <small>
-                    These are relative to the tournament number above: 100% follows it exactly,
-                    90% keeps that region a little smaller than the rest. The A-/A+ control on
-                    the tournament page moves everything and these keep their balance.
-                    "Follow" drops a region's own number.
+                    The largest size each region may use on this screen; the tables still shrink
+                    to fit their boxes, and the tournament table text above scales all of them
+                    together. Easier than the sliders: press "save" in the corner of the
+                    tournament page and the sizes on screen become these numbers.
+                </small>
+            </div>
+
+            @* Which charts and panels the tournament page shows, and how the charts are drawn.
+               Each one is a three-way choice: follow (whatever tournament.json says, else the
+               built-in default - the label says which value that is right now), on, or off.
+               Per screen, like the sizes: a 1080p laptop wants fewer charts than a 4K monitor.
+               The four chart toggles are also in the corner control on the page itself. *@
+            <div class="appearance-section @SectionClass("tournamentpage")">
+                <h4 class="collapsible-header" @onclick='() => Toggle("tournamentpage")'>
+                    <span class="section-title">Charts &amp; panels <span class="scope-badge tournament">Tournament page</span></span>
+                    <span class="collapse-indicator">@Indicator("tournamentpage")</span>
+                </h4>
+                @foreach (var (key, label) in DisplayFlags)
+                {
+                    <div class="field-group" style="margin-bottom:0.35rem;">
+                        <label>@label</label>
+                        <select @bind="displayChoice[key]" @bind:after="() => ApplyDisplay(key)">
+                            <option value="">follow (@(FallbackFlag(key) ? "on" : "off"))</option>
+                            <option value="on">on</option>
+                            <option value="off">off</option>
+                        </select>
+                    </div>
+                }
+                <div class="field-group" style="margin-bottom:0.35rem;">
+                    <label>Crosstable in the left column</label>
+                    <select @bind="displayChoice[CrosstableKey]" @bind:after="() => ApplyDisplay(CrosstableKey)">
+                        <option value="">follow (@FallbackCrosstable())</option>
+                        <option value="cycle">cycle - takes turns with the standings in the same box</option>
+                        <option value="below">below - a box of its own under the standings</option>
+                        <option value="none">none - standings only</option>
+                    </select>
+                </div>
+                @foreach (var (key, label, min, max, step) in DisplayNumbers)
+                {
+                    <div class="field-group" style="margin-bottom:0.35rem;">
+                        <label>@label</label>
+                        <div class="coord-color-row">
+                            <input type="number" min="@min" max="@max" step="@step" placeholder="@FallbackNumber(key)"
+                                   @bind="displayChoice[key]" @bind:after="() => ApplyDisplay(key)" style="width:6rem" />
+                            <span class="piece-scale-value">@(string.IsNullOrEmpty(displayChoice[key]) ? $"follow ({FallbackNumber(key)})" : "")</span>
+                            @if (!string.IsNullOrEmpty(displayChoice[key]))
+                            {
+                                <button type="button" @onclick="() => { displayChoice[key] = string.Empty; ApplyDisplay(key); }"
+                                        title="Drop this screen’s own value and follow">follow</button>
+                            }
+                        </div>
+                    </div>
+                }
+                <small>
+                    "Follow" means whatever the tournament.json in use says, or the built-in default
+                    when it says nothing - the value in brackets is what that is right now. On and
+                    off are yours, for this screen, whatever tournament is loaded.
                 </small>
             </div>
 
@@ -560,8 +616,39 @@
     private string uiFontScale = "normal";
     private string navDrawerWidth = "normal";
     private int tournamentFontPct = 100;
-    // Only the regions the user actually singled out; everything else follows the number above.
-    private Dictionary<string, int> groupPct = new();
+    // Only the regions the user gave a size of their own, in px, for this screen; everything
+    // else shows what the tournament page would use without one.
+    private Dictionary<string, int> groupPx = new();
+    // The regions moved on THIS page. Apply() writes only these: the settings file is shared
+    // with the tournament page, whose "save" may have written other regions since this page was
+    // opened, and rewriting the whole dictionary from this page would put them back.
+    private readonly HashSet<string> touchedGroups = new();
+    private bool fontScaleTouched;
+
+    // The charts-and-panels choices, as the selects show them: "" (follow), "on", "off" for the
+    // flags, and the number as text for the three numbers ("" = follow). Written back one key
+    // at a time, so a choice made elsewhere (the corner control) is never overwritten.
+    private static readonly (string Key, string Label)[] DisplayFlags =
+    {
+        ("ShowEval", "Evaluation chart"),
+        ("ShowNps", "Nodes per second chart"),
+        ("ShowTime", "Time usage chart"),
+        ("ShowNodes", "Nodes per move chart"),
+        ("UseNpm", "Nodes per move in the standings, instead of per second"),
+        ("ShowCrosstableBetweenGames", "Crosstable between games"),
+    };
+    private const string CrosstableKey = "CrosstableWithStandings";
+    private static readonly (string Key, string Label, string Min, string Max, string Step)[] DisplayNumbers =
+    {
+        ("NumberOfLines", "Lines in the MCTS charts", "1", "10", "1"),
+        ("Qdiff", "Q difference cut-off for the charts", "0.1", "3", "0.1"),
+        ("AutoCycleTimeInSec", "Seconds between the tables the standings box cycles through", "5", "120", "5"),
+    };
+    private Dictionary<string, string> displayChoice = new();
+    // tournament.json as it is now, read once - the page falls back to it for a region with no
+    // size of its own, so the number shown here has to be the same one. Null when there is no
+    // file or it cannot be read; the built-in defaults apply then, on the page as here.
+    private ChessLibrary.LayoutTypes.LayoutOption fileLayout;
     // Empty until the browser answers, and empty for good if it never does; the scale is then
     // stored as the shared default instead of under a screen of its own.
     private string screenKey = "";
@@ -688,9 +775,17 @@
         var s = SettingsService.Settings;
         uiFontScale = s.UiFontScale is "small" or "large" or "xlarge" ? s.UiFontScale : "normal";
         tournamentFontPct = (int)Math.Round(s.FontScaleFor(screenKey) * 100);
-        groupPct = s.TournamentFontScaleByGroup
-                    .Where(kv => GlobalSettings.FontGroups.Any(g => g.Key == kv.Key))
-                    .ToDictionary(kv => kv.Key, kv => (int)Math.Round(GlobalSettings.ClampFontScale(kv.Value) * 100));
+        groupPx = LoadGroupPx(s);
+        displayChoice = LoadDisplayChoice(s);
+        // JSON.readTournamentJson is a parse and nothing else. Manager.loadTournament() is not:
+        // it re-reads every engine definition and consumes the one-shot cup bracket path override,
+        // which a cup resume in another tab sets and expects to find still there.
+        try
+        {
+            var path = System.IO.Path.Combine(Environment.CurrentDirectory, "wwwroot", "tournament.json");
+            fileLayout = ChessLibrary.Configuration.JSON.readTournamentJson(path)?.Value?.LayoutOption;
+        }
+        catch { fileLayout = null; }
         navDrawerWidth = s.NavDrawerWidth is "narrow" or "wide" ? s.NavDrawerWidth : "normal";
         themePreset = string.IsNullOrEmpty(s.BoardThemePreset) ? "eb-blue" : s.BoardThemePreset;
         customLight = s.BoardCustomLightColor ?? "#B1D8DB";
@@ -742,9 +837,10 @@
     {
         if (!firstRender) return;
         screenKey = await JsInteropService.GetScreenBucketAsync(JS);
-        var pct = (int)Math.Round(SettingsService.Settings.FontScaleFor(screenKey) * 100);
-        if (pct == tournamentFontPct) return;
-        tournamentFontPct = pct;   // this screen has its own number; show that one
+        // This screen has numbers of its own; show those.
+        tournamentFontPct = (int)Math.Round(SettingsService.Settings.FontScaleFor(screenKey) * 100);
+        groupPx = LoadGroupPx(SettingsService.Settings);
+        displayChoice = LoadDisplayChoice(SettingsService.Settings);
         StateHasChanged();
     }
 
@@ -765,20 +861,100 @@
         else merged.TournamentFontScaleByScreen[screenKey] = scale;
     }
 
-    /// <summary>
-    /// What a region is set to RELATIVE to the tournament number above: its own factor if it
-    /// has one, otherwise 100%, which means "follow".
-    ///
-    /// This used to fall back to the tournament number itself, from when a region's value
-    /// replaced that number rather than multiplying it. Under the old meaning the fallback was
-    /// right; under this one it is a trap - a page at 110% would show 110 on an untouched
-    /// slider, and nudging it would write 1.1 as a FACTOR, landing the region at 121%.
-    /// </summary>
-    private int GroupPct(string key) => groupPct.TryGetValue(key, out var v) ? v : 100;
+    private Dictionary<string, string> LoadDisplayChoice(GlobalSettings s)
+    {
+        var l = s.TournamentLayoutFor(screenKey);
+        var d = new Dictionary<string, string>();
+        string Flag(bool? v) => v is null ? "" : v.Value ? "on" : "off";
+        d["ShowEval"] = Flag(l?.ShowEval); d["ShowNps"] = Flag(l?.ShowNps); d["ShowTime"] = Flag(l?.ShowTime);
+        d["ShowNodes"] = Flag(l?.ShowNodes); d["UseNpm"] = Flag(l?.UseNpm);
+        d["ShowCrosstableBetweenGames"] = Flag(l?.ShowCrosstableBetweenGames);
+        d[CrosstableKey] = l?.CrosstableWithStandings is "cycle" or "below" or "none" ? l.CrosstableWithStandings : "";
+        d["NumberOfLines"] = l?.NumberOfLines is > 0 ? l.NumberOfLines.Value.ToString() : "";
+        d["Qdiff"] = l?.Qdiff is > 0 ? l.Qdiff.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+        d["AutoCycleTimeInSec"] = l?.AutoCycleTimeInSec is > 0 ? l.AutoCycleTimeInSec.Value.ToString() : "";
+        return d;
+    }
+
+    /// What "follow" gives right now: the file in use, normalised, else the built-in default.
+    private ChessLibrary.LayoutTypes.LayoutOption Followed => ChessLibrary.LayoutTypes.LayoutOption.Normalize(fileLayout);
+
+    private bool FallbackFlag(string key) => key switch
+    {
+        "ShowEval" => Followed.Charts.ShowEval,
+        "ShowNps" => Followed.Charts.ShowNPS,
+        "ShowTime" => Followed.Charts.ShowTime,
+        "ShowNodes" => Followed.Charts.ShowNodes,
+        "UseNpm" => Followed.UseNPM,
+        "ShowCrosstableBetweenGames" => Followed.ShowCrosstableBetweenGames,
+        _ => false
+    };
+
+    private string FallbackCrosstable() =>
+        Followed.CrosstableWithStandings.IsCycle ? "cycle" : Followed.CrosstableWithStandings.IsBelow ? "below" : "none";
+
+    private string FallbackNumber(string key) => key switch
+    {
+        "NumberOfLines" => Followed.Charts.NumberOfLines.ToString(),
+        "Qdiff" => Followed.Charts.Qdiff.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture),
+        "AutoCycleTimeInSec" => Followed.AutoCycleTimeInSec.ToString(),
+        _ => ""
+    };
+
+    /// One key, written straight away - the page has no other state to merge with, and the
+    /// tournament page may have changed a neighbour since this page was opened.
+    private void ApplyDisplay(string key)
+    {
+        var current = SettingsService.Settings;
+        var merged = JsonSerializer.Deserialize<GlobalSettings>(JsonSerializer.Serialize(current)) ?? new GlobalSettings();
+        var l = merged.TournamentLayoutForWrite(screenKey);
+        var v = displayChoice.TryGetValue(key, out var raw) ? raw?.Trim() ?? "" : "";
+        bool? flag = v == "on" ? true : v == "off" ? false : null;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        switch (key)
+        {
+            case "ShowEval": l.ShowEval = flag; break;
+            case "ShowNps": l.ShowNps = flag; break;
+            case "ShowTime": l.ShowTime = flag; break;
+            case "ShowNodes": l.ShowNodes = flag; break;
+            case "UseNpm": l.UseNpm = flag; break;
+            case "ShowCrosstableBetweenGames": l.ShowCrosstableBetweenGames = flag; break;
+            case CrosstableKey: l.CrosstableWithStandings = v is "cycle" or "below" or "none" ? v : ""; break;
+            case "NumberOfLines": l.NumberOfLines = int.TryParse(v, out var n) && n > 0 ? n : null; break;
+            case "Qdiff": l.Qdiff = double.TryParse(v.Replace(',', '.'), System.Globalization.NumberStyles.Float, inv, out var q) && q > 0 ? q : null; break;
+            case "AutoCycleTimeInSec": l.AutoCycleTimeInSec = int.TryParse(v, out var a) && a > 0 ? a : null; break;
+            default: return;
+        }
+        SettingsService.Save(merged);
+    }
+
+    /// The sizes this screen saved, for the regions that exist.
+    private Dictionary<string, int> LoadGroupPx(GlobalSettings s) =>
+        (s.TournamentLayoutFor(screenKey)?.FontPx ?? new())
+            .Where(kv => kv.Value > 0 && GlobalSettings.FontGroups.Any(g => g.Key == kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+    /// What a region shows: its own size if it has one, otherwise what the page uses without
+    /// one - the number in tournament.json if that file has one, else the built-in default.
+    private int GroupPx(string key) => groupPx.TryGetValue(key, out var v) ? v : FallbackPx(key);
+
+    private int FallbackPx(string key)
+    {
+        var file = GlobalSettings.FileFontPx(fileLayout, key);
+        return file > 0 ? file : GlobalSettings.DefaultFontPx(key);
+    }
+
+    /// Says where an unset number comes from, so a slider that reads 25 next to a page that
+    /// shows 25 is not a mystery.
+    private string FallbackLabel(string key) =>
+        groupPx.ContainsKey(key) ? ""
+        : GlobalSettings.FileFontPx(fileLayout, key) > 0 ? " (tournament.json)"
+        : " (default)";
 
     private void ClearGroup(string key)
     {
-        groupPct.Remove(key);
+        groupPx.Remove(key);
+        touchedGroups.Add(key);
         Apply();
     }
 
@@ -798,9 +974,16 @@
         var merged = JsonSerializer.Deserialize<GlobalSettings>(JsonSerializer.Serialize(current)) ?? new GlobalSettings();
         merged.UiFontScale = uiFontScale;
         merged.NavDrawerWidth = navDrawerWidth;
-        SetTournamentFontScale(merged);
-        merged.TournamentFontScaleByGroup = groupPct
-            .ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value / 100.0, 2));
+        if (fontScaleTouched) SetTournamentFontScale(merged);
+        if (touchedGroups.Count > 0)
+        {
+            var live = merged.TournamentLayoutForWrite(screenKey).FontPx;
+            foreach (var key in touchedGroups)
+            {
+                if (groupPx.TryGetValue(key, out var px) && px > 0) live[key] = px;
+                else live.Remove(key);
+            }
+        }
         merged.BoardThemePreset = themePreset;
         merged.BoardCustomLightColor = customLight;
         merged.BoardCustomDarkColor = customDark;

@@ -87,13 +87,12 @@
 
   /// <summary>
   /// The stylesheet for the interface-scale settings: the root font size, the tournament text
-  /// nudge, and a rule per region that was given a nudge of its own.
+  /// nudge.
   ///
-  /// The nudge travels as one INHERITED custom property, which is what makes the per-region
-  /// override a one-liner: a rule on .eb-g-standings redeclares --eb-font-scale for that
-  /// subtree, and the region's own clamp picks it up without knowing anything about groups,
-  /// screens or settings. Null when every setting is at its default, so an installation that
-  /// never touched them gets the byte-for-byte page it always had.
+  /// The nudge travels as one INHERITED custom property, and every region's clamp picks it up
+  /// without knowing anything about screens or settings. Null when every setting is at its
+  /// default, so an installation that never touched them gets the byte-for-byte page it always
+  /// had.
   /// </summary>
   private string BuildRootCss(GlobalSettings s, string font)
   {
@@ -102,19 +101,10 @@
     var sb = new System.Text.StringBuilder();
 
     if (font is not null) sb.Append($"html {{ font-size: {font}; }} ");
+    // One nudge for the whole tournament page. A region's own size is a px CEILING that the
+    // page hands each component directly (Tournaments.SizeControls.cs, FontCeiling), so there
+    // is nothing per region to say here any more.
     if (scale != 1.0) sb.Append($"html {{ --eb-font-scale: {scale.ToString(inv)}; }} ");
-
-    // Iterating the KNOWN groups rather than the dictionary keys: a settings file is a text
-    // file someone can edit, and a key from it would otherwise land inside a CSS selector.
-    foreach (var group in GlobalSettings.FontGroups)
-    {
-      if (!s.TournamentFontScaleByGroup.TryGetValue(group.Key, out _)) continue;
-      // The region's number times this screen's, worked out in one place - see FontScaleFor.
-      // The variable emitted here is the FINAL scale, so nothing multiplies again in CSS.
-      var g = s.FontScaleFor(screenKey, group.Key);
-      if (g == scale) continue;   // saying the same thing twice helps nobody
-      sb.Append($".eb-g-{group.Key} {{ --eb-font-scale: {g.ToString(inv)}; }} ");
-    }
 
     return sb.Length == 0 ? null : sb.ToString();
   }

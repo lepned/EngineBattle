@@ -4,6 +4,7 @@ module ChessLibrary.Configuration
 open System
 open System.IO
 open System.Text.Json
+open System.Text.Json.Nodes
 open System.Text.Json.Serialization
 open System.Text
 open System.Collections.Generic
@@ -544,27 +545,87 @@ module JSON =
   let readEngineDefs folder engineDefList =
     [ for def in engineDefList -> readEngineDef folder def ]
 
-  let readTournamentJson (path: string) : Tournament option =
+  /// A LayoutOption block says only what it wants to change. System.Text.Json gives every
+  /// field the block does not mention the type's zero - false, 0, null - so a block holding
+  /// just a logo size would switch the PV boards off, the cycle time to 0 and the crosstable
+  /// to "cycle". Before the file is deserialised, the block is laid over LayoutOption.Default
+  /// at the JSON level, one level deep into Fonts, Sizes and Charts, so that an absent field
+  /// means the default - exactly what no block at all means. Only the LayoutOption block gets
+  /// this: the rest of the file has always been written out in full.
+  ///
+  /// Fonts is left as written. A font the file does not give is 0 there, and every reader
+  /// already treats 0 as "not set" - the GUI falls back per region and the Appearance page
+  /// labels that region "(default)" rather than "(tournament.json)". Filling the block in
+  /// would make the label lie about where the number came from.
+  ///
+  /// A file from before CrosstableWithStandings existed says it with the two old flags. When
+  /// the new field is absent and either flag is present, the flags decide as they always did
+  /// (an absent flag is false, as it was); when neither is present, the default stands.
+  let layoutOverDefault (root: JsonNode) (options: JsonSerializerOptions) : unit =
+      match root with
+      | :? JsonObject as file when file.ContainsKey "LayoutOption" ->
+          match file.["LayoutOption"] with
+          | :? JsonObject as user ->
+              let merged = JsonSerializer.SerializeToNode(LayoutTypes.LayoutOption.Default, options) :?> JsonObject
+              merged.Remove "Fonts" |> ignore
+              for kv in List.ofSeq user do
+                  let value = if isNull kv.Value then null else kv.Value.DeepClone()
+                  match value, merged.[kv.Key] with
+                  | (:? JsonObject as userSub), (:? JsonObject as mergedSub) ->
+                      for sub in List.ofSeq userSub do
+                          mergedSub.[sub.Key] <- (if isNull sub.Value then null else sub.Value.DeepClone())
+                  | _ -> merged.[kv.Key] <- value
+              let hasNew = user.ContainsKey "CrosstableWithStandings"
+              let legacy = user.ContainsKey "OnlyShowStandings" || user.ContainsKey "ShowCrosstableBelowStandings"
+              if not hasNew && legacy then
+                  let flag (key: string) =
+                      match user.[key] with
+                      | null -> false
+                      | node -> (try node.GetValue<bool>() with _ -> false)
+                  let word = if flag "OnlyShowStandings" then "none" elif flag "ShowCrosstableBelowStandings" then "below" else "cycle"
+                  merged.["CrosstableWithStandings"] <- JsonValue.Create(word)
+              file.["LayoutOption"] <- merged
+          | _ -> ()
+      | _ -> ()
+
+  /// A file that is missing and a file that will not parse are different problems for the
+  /// person who has to fix them, and the second used to be reported as the first: the parse
+  /// error went to a console nobody was watching and the caller got None, which loadTournament
+  /// read as "not found". This says which it was. readTournamentJson below keeps returning an
+  /// option for every caller that only needs a maybe.
+  let tryReadTournamentJson (path: string) : Result<Tournament, string> =
       if not (File.Exists path) then
-          ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Note: Tournament.json file %s was not found" path)
-          ConsoleUtils.printInColor ConsoleColor.White "\nA new (empty) tournament.json will be created with default settings\n"
-          None
+          Error (sprintf "Tournament json file not found: %s" path)
       else
           try
               use reader = new StreamReader(path)
               let json = reader.ReadToEnd()
-              let tournament = JsonSerializer.Deserialize<Tournament>(json, createJsonOptions())
+              let options = createJsonOptions()
+              let node = JsonNode.Parse(json, Nullable(), JsonDocumentOptions(AllowTrailingCommas = true))
+              layoutOverDefault node options
+              let tournament = node.Deserialize<Tournament>(options)
               let tournament =
                   if obj.ReferenceEquals(box tournament.MoveAnnotation, null) then
                       { tournament with MoveAnnotation = MoveAnnotation.Standard }
                   else
                       tournament
               if tournament.EngineSetup.EngineDefList.Length = 0 then
-                 Some {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}
+                 Ok {tournament with EngineSetup = {tournament.EngineSetup with Engines = []}}
               else
-                  Some tournament
+                  Ok tournament
           with ex ->
-              ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Error deserializing %s: %s" path ex.Message)
+              Error (sprintf "tournament.json could not be parsed (%s): %s" path ex.Message)
+
+  let readTournamentJson (path: string) : Tournament option =
+      if not (File.Exists path) then
+          ConsoleUtils.printInColor ConsoleColor.Red (sprintf "***Note: Tournament.json file %s was not found" path)
+          ConsoleUtils.printInColor ConsoleColor.White "\nA new (empty) tournament.json will be created with default settings\n"
+          None
+      else
+          match tryReadTournamentJson path with
+          | Ok t -> Some t
+          | Error msg ->
+              ConsoleUtils.printInColor ConsoleColor.Red ("***" + msg)
               None
 
   let writeTournamentJson (tournament: Tournament) (path: string) : unit =

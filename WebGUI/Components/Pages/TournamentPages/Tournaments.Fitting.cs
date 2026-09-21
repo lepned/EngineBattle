@@ -71,7 +71,7 @@ public partial class Tournaments
 		// their only extra height is padding, which offsetHeight DOES count. Keeping the 35
 		// handed the standings box 35px less than the layout actually had.
 
-		if (!layoutOptions.OnlyShowStandings)
+		if (!layoutOptions.CrosstableWithStandings.IsHidden)
 		{
 			elementsAboveStandings += 10;
 		}
@@ -192,8 +192,7 @@ public partial class Tournaments
 	/// cycled through the same one. Only then do two boxes share the column.
 	/// </summary>
 	private bool CrosstableSitsBelowStandings =>
-		layoutOptions.ShowCrosstableBelowStandings && !layoutOptions.OnlyShowStandings
-		&& !IsCupMode && !IsLadderMode;
+		layoutOptions.CrosstableWithStandings.IsBelow && !IsCupMode && !IsLadderMode;
 
 	/// <summary>
 	/// Shares the column between the standings box and the crosstable under it.

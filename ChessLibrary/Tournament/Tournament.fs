@@ -75,11 +75,11 @@ module Manager =
     try
         let path = DirectoryInfo(Environment.CurrentDirectory).FullName //.Parent.Parent.FullName
         let pathToTournamentJson = Path.Combine(path,"wwwroot","tournament.json")
-        let tournyFromJson = JSON.readTournamentJson pathToTournamentJson
+        let tournyFromJson = JSON.tryReadTournamentJson pathToTournamentJson
     
         let tournament = 
           match tournyFromJson with
-          |Some tourny ->
+          |Ok tourny ->
             let tourny =           
               if tourny.EngineSetup.EngineDefList.Length > 0 then
                 let engineList = JSON.readEngineDefs tourny.EngineSetup.EngineDefFolder tourny.EngineSetup.EngineDefList            
@@ -142,9 +142,11 @@ module Manager =
               { tourny with MinMoveTimeInMS = 300 }
             else
               tourny          
-          |_ -> 
-            ConsoleUtils.printInColor ConsoleColor.Red "Tournament json file not found!"
-            failwith "Tournament json file not found!"
+          |Error msg ->
+            // The message says whether the file is missing or would not parse; failwith hands it
+            // to the handler below, which puts it in lastLoadError - and so on the page.
+            ConsoleUtils.printInColor ConsoleColor.Red msg
+            failwith msg
         tournament
     with exn ->
       let innerMsg = if exn.InnerException <> null then exn.InnerException.Message else exn.Message

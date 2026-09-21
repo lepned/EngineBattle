@@ -1,20 +1,28 @@
-﻿// Tournaments: the controls that decide how big things are, and what they write to.
+// Tournaments: the controls that decide how big things are, and where the numbers live.
 //
-// tournament.json carries a size for every region of this page. That answer is right for the
-// screen and the field it was written for and wrong for the next one, so it is treated as a
-// CEILING rather than an instruction: the control in the bottom-right corner nudges it, and
-// the measuring in Tournaments.Fitting.cs may lower it further to make something fit.
+// The sizes on this page belong to the SCREEN, not to the tournament. The number that makes a
+// 24-engine standings readable on a 4K monitor is wrong on the laptop panel it docks to, and
+// it has nothing to do with which engines are playing - so every size here is read from the
+// settings, under a key for the screen the page is on, and written there by the controls on
+// the page itself. Nobody has to open a JSON file to make the text bigger.
 //
-// Everything here is that control and its consequences - the text nudge, the chart height, the
-// PV boards, putting it all back, and baking the result into tournament.json so the next run
-// starts from it. The nudges are kept per SCREEN, because the number that suits a 4K monitor
-// is not the one that suits the laptop panel it docks to.
+// tournament.json USED to carry a font size per region and two chart heights, and "save" wrote
+// the sizes on screen back into it. Those fields are optional now and only consulted for a
+// screen that has nothing saved yet - an older config keeps rendering as it did, right up to
+// the first time a slider is moved or "save" is pressed. Then the settings own it.
 //
-// The design, and why the file is a ceiling rather than an answer, is in
+// Three layers, each with a job:
+//   - a CEILING per region, in px (FontCeiling): this screen's saved number, else the file's,
+//     else the built-in default;
+//   - a NUDGE per screen (fontScalePct, A-/A+), multiplied into every ceiling, for "a bit
+//     bigger" without opening anything;
+//   - the MEASURING in Tournaments.Fitting.cs, which may lower a region further so it fits.
+// "save" collapses the first two: the sizes on screen become the ceilings and the nudge goes
+// back to 100%, so the numbers in Appearance are the numbers on the page.
+//
+// The design, and why the ceiling is a ceiling rather than an answer, is in
 // docs/FontScalingPlan.md.
 
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.JSInterop;
 using MudBlazor;
 using WebGUI.Services;
@@ -24,22 +32,147 @@ namespace WebGUI.Components.Pages.TournamentPages;
 
 public partial class Tournaments
 {
-	/// The two chart heights from tournament.json, after the user's nudge. Computed rather than
-	/// assigned: they were being rebuilt in two places, and the nudge is a third input.
-	private string liveChartStyle => ChartHeightStyle(layoutOptions.Sizes.LiveChartHeight);
-	private string moveChartStyle => ChartHeightStyle(layoutOptions.Sizes.MoveChartHeight);
+	// ── Where the numbers come from ──────────────────────────────────────────────
 
-	private string ChartHeightStyle(int configured) =>
+	/// This screen's saved sizes, or null when it has none yet.
+	private GlobalSettings.TournamentScreenLayout ScreenLayout =>
+		SettingsService.Settings.TournamentLayoutFor(fontScaleScreenKey);
+
+	/// <summary>
+	/// The largest size a region's text may reach, in px, before the nudge and the clamp: this
+	/// screen's saved number, else what tournament.json says (older configs), else the built-in
+	/// default. Never zero - a zero ceiling is the floor, and a config that leaves a field out
+	/// deserialises to zero.
+	/// </summary>
+	private int FontCeiling(string group)
+	{
+		if (ScreenLayout?.FontPx is { } saved && saved.TryGetValue(group, out var px) && px > 0)
+			return px;
+		var file = FileFontSize(group);
+		return file > 0 ? file : GlobalSettings.DefaultFontPx(group);
+	}
+
+	/// What tournament.json asks for, per region, or 0 when it says nothing.
+	private int FileFontSize(string group) => GlobalSettings.FileFontPx(layoutOptions, group);
+
+	// ── Which charts and panels ──────────────────────────────────────────────────
+	// The screen decides these too. Rather than teach every read site about the settings, the
+	// choices are folded INTO layoutOptions when it is (re)built: a copy of the normalised block
+	// with this screen's non-null choices substituted. Every existing read of
+	// layoutOptions.Charts.X or layoutOptions.OnlyShowStandings then sees the effective value.
+
+	/// The block as this screen shows it.
+	private LayoutOption ApplyScreenDisplay(LayoutOption lo)
+	{
+		var l = ScreenLayout;
+		if (l is null) return lo;
+		var c = lo.Charts;
+		var charts = new Charts(
+			l.ShowNps ?? c.ShowNPS,
+			l.ShowEval ?? c.ShowEval,
+			l.ShowNodes ?? c.ShowNodes,
+			l.ShowTime ?? c.ShowTime,
+			l.NumberOfLines is > 0 ? l.NumberOfLines.Value : c.NumberOfLines,
+			l.Qdiff is > 0 ? l.Qdiff.Value : c.Qdiff);
+		return new LayoutOption(
+			lo.Fonts, lo.Sizes, charts, lo.ShowPVBoard,
+			l.UseNpm ?? lo.UseNPM,
+			lo.BestMoveWithPolicy,   // file only, by decision: not ready for a GUI control
+			lo.OnlyShowStandings,                  // legacy flags, read for old files only
+			l.ShowCrosstableBetweenGames ?? lo.ShowCrosstableBetweenGames,
+			lo.ShowCrosstableBelowStandings,
+			ParseCrosstable(l.CrosstableWithStandings) ?? lo.CrosstableWithStandings,
+			l.AutoCycleTimeInSec is > 0 ? l.AutoCycleTimeInSec.Value : lo.AutoCycleTimeInSec);
+	}
+
+	/// The settings spell the choice as it is spelled in tournament.json; null when not set.
+	private static CrosstableWithStandings ParseCrosstable(string s) => s switch
+	{
+		"cycle" => CrosstableWithStandings.Cycle,
+		"below" => CrosstableWithStandings.Below,
+		"none" => CrosstableWithStandings.Hidden,
+		_ => null
+	};
+
+	/// Rebuilds layoutOptions from the tournament and this screen. Called where the tournament is
+	/// loaded, when the screen key arrives, and after any choice made on this page.
+	private void RefreshLayoutOptions()
+	{
+		layoutOptions = ApplyScreenDisplay(LayoutOption.Normalize(tournament?.LayoutOption));
+		BestMoveWithPolicy = layoutOptions.BestMoveWithPolicy;
+	}
+
+	/// The four chart toggles in the corner. A chart appearing or going changes the height of
+	/// everything below it, so the same re-measure as a chart-height change follows.
+	private void ToggleChart(string which)
+	{
+		var settings = SettingsService.Settings;
+		var l = settings.TournamentLayoutForWrite(fontScaleScreenKey);
+		var c = layoutOptions.Charts;
+		switch (which)
+		{
+			case "eval": l.ShowEval = !c.ShowEval; break;
+			case "nps": l.ShowNps = !c.ShowNPS; break;
+			case "time": l.ShowTime = !c.ShowTime; break;
+			case "nodes": l.ShowNodes = !c.ShowNodes; break;
+			default: return;
+		}
+		SettingsService.Save(settings);
+		RefreshLayoutOptions();
+		_ = InvokeAsync(OnBoardSizeChanged);
+	}
+
+	// ── Chart height ─────────────────────────────────────────────────────────────
+	// The same three layers as the text: a height per screen (or the file's, or 200), a nudge
+	// on the corner control, and "save" folding the nudge into the height. Seven charts can
+	// share that column, so how much room each gets is a screen decision.
+
+	private int ChartHeightPx(bool live)
+	{
+		var saved = live ? ScreenLayout?.LiveChartHeight ?? 0 : ScreenLayout?.MoveChartHeight ?? 0;
+		if (saved > 0) return saved;
+		var file = live ? layoutOptions?.Sizes?.LiveChartHeight ?? 0 : layoutOptions?.Sizes?.MoveChartHeight ?? 0;
+		return file > 0 ? file : 200;
+	}
+
+	private string liveChartStyle => ChartHeightStyle(ChartHeightPx(live: true));
+	private string moveChartStyle => ChartHeightStyle(ChartHeightPx(live: false));
+
+	private string ChartHeightStyle(int px) =>
 		"height:"
-		+ Math.Round((configured > 0 ? configured : 200) * chartScalePct / 100.0)
-			.ToString(System.Globalization.CultureInfo.InvariantCulture)
+		+ Math.Round(px * chartScalePct / 100.0).ToString(System.Globalization.CultureInfo.InvariantCulture)
 		+ "px;";
 
+	/// A chart's height after the nudge, as the whole number the settings store.
+	private int ScaledChartHeight(int px) => (int)Math.Round(px * chartScalePct / 100.0);
+
+	private int chartScalePct = 100;
+
+	private void NudgeChartScale(int deltaPct) => SetChartScale(chartScalePct + deltaPct);
+
+	private void SetChartScale(int pct)
+	{
+		pct = Math.Clamp(pct, 50, 200);
+		if (pct == chartScalePct) return;
+		chartScalePct = pct;
+
+		var settings = SettingsService.Settings;
+		var scale = Math.Round(pct / 100.0, 2);
+		if (string.IsNullOrEmpty(fontScaleScreenKey))
+			settings.TournamentChartScale = scale;
+		else
+			settings.TournamentChartScaleByScreen[fontScaleScreenKey] = scale;   // see SetFontScale
+		SettingsService.Save(settings);
+
+		// A chart does not notice that its container changed height; Plotly has to be told, and
+		// the whole column below it has to be re-measured. OnBoardSizeChanged already does both.
+		_ = InvokeAsync(OnBoardSizeChanged);
+	}
+
 	// ── PV boards ────────────────────────────────────────────────────────────────
-	// tournament.json says whether the two PV boards are shown and how big. That is the right
-	// answer for a two-engine broadcast and the wrong one as soon as several games share the
-	// screen, where the row simply has nowhere to go - so this overrides the file for this
-	// installation, and "off" removes the row rather than collapsing it.
+	// Whether the two PV boards are shown and how big is a screen decision too: the right
+	// answer for a two-engine broadcast is the wrong one as soon as several games share the
+	// screen and the row has nowhere to go. "off" removes the row rather than collapsing it.
 	private static readonly (string Mode, string Label, string Tip)[] PvBoardChoices =
 	{
 		("off", "off", "No PV boards, and the row they sat in goes with them"),
@@ -48,18 +181,20 @@ public partial class Tournaments
 		("large", "L", "Large PV boards"),
 	};
 
-	/// The user's override, or "" while the file's answer stands.
-	private string pvBoardChoice = "";
-
-	/// What tournament.json asks for, as one of the four modes.
-	private string ConfiguredPvBoardMode =>
-		!layoutOptions.ShowPVBoard ? "off"
-		: validSizes.Contains(layoutOptions.Sizes.PVboardSize) ? layoutOptions.Sizes.PVboardSize
-		: "medium";
-
-	/// The mode actually in force.
-	private string PvBoardMode =>
-		PvBoardChoices.Any(c => c.Mode == pvBoardChoice) ? pvBoardChoice : ConfiguredPvBoardMode;
+	/// The mode in force: this screen's choice, else what tournament.json says, else medium.
+	private string PvBoardMode
+	{
+		get
+		{
+			var saved = ScreenLayout?.PvBoard;
+			if (!string.IsNullOrEmpty(saved) && PvBoardChoices.Any(c => c.Mode == saved)) return saved;
+			var fallback = LayoutOption.Default.Sizes.PVboardSize;
+			if (layoutOptions is null) return fallback;
+			if (!layoutOptions.ShowPVBoard) return "off";
+			var size = layoutOptions.Sizes?.PVboardSize;
+			return size is not null && validSizes.Contains(size) ? size : fallback;
+		}
+	}
 
 	/// Keeps the render flag in step with the mode. Called where the old code read
 	/// layoutOptions.ShowPVBoard directly, so the guards around those reads are untouched.
@@ -68,11 +203,11 @@ public partial class Tournaments
 	// ── How big the two PV boards actually are ───────────────────────────────────
 	// The share of the row each mode asks for. These used to be percentages in a global
 	// stylesheet, which meant the size lived somewhere no control on this page could reach:
-	// tournament.json, the S/M/L buttons above, ResetToConfiguredLayout and - the one that
-	// mattered - the main board's own size slider all changed the column and then had the
-	// result clipped by a CSS number none of them could see. The boards were the last in the app
-	// sized by a class rather than by a pixel value from here; every other one (LiveFeedGrid,
-	// PVtileBoard, StreamingChessboard, ModernChessboard) already took SizePx.
+	// the S/M/L buttons above, reset and - the one that mattered - the main board's own size
+	// slider all changed the column and then had the result clipped by a CSS number none of
+	// them could see. The boards were the last in the app sized by a class rather than by a
+	// pixel value from here; every other one (LiveFeedGrid, PVtileBoard, StreamingChessboard,
+	// ModernChessboard) already took SizePx.
 	//
 	// The share is of the ENGINE PANEL's width, which is the row the two boards are cells of -
 	// they are grid cells of the panel now, not a component below it, so each one is centred on
@@ -107,8 +242,7 @@ public partial class Tournaments
 	/// first layout pass. Null leaves the board filling its grid cell, which is its engine's
 	/// column: a sensible size rather than nothing, and slightly smaller than any of the three
 	/// modes, so the first paint settles UP to the measured size instead of jumping down from
-	/// something oversized. The percentages this used to fall back to are gone with the old
-	/// stylesheet row.
+	/// something oversized.
 	/// </summary>
 	private int? PvBoardSizePx
 	{
@@ -122,81 +256,25 @@ public partial class Tournaments
 
 	private void SetPvBoard(string mode)
 	{
-		if (mode == PvBoardMode && pvBoardChoice == mode) return;
-		pvBoardChoice = mode;
+		if (mode == PvBoardMode) return;
 
 		var settings = SettingsService.Settings;
-		settings.TournamentPvBoard = mode;
+		settings.TournamentLayoutForWrite(fontScaleScreenKey).PvBoard = mode;
 		SettingsService.Save(settings);
 
 		ApplyPvBoardMode();
 		_ = RefitAfterLayoutChange();
 	}
 
-	/// Gives both the text size and the PV boards back to tournament.json.
-	private void ResetToConfiguredLayout()
-	{
-		pvBoardChoice = "";
-		var settings = SettingsService.Settings;
-		settings.TournamentPvBoard = "";
-		// Directly, not through SetFontScale: that returns early when the control already reads
-		// 100%, which would leave a per-region nudge set in Appearance surviving a button whose
-		// tooltip says everything goes back to the file.
-		settings.TournamentFontScale = 1.0;
-		settings.TournamentFontScaleByScreen.Remove(fontScaleScreenKey);
-		settings.TournamentFontScaleByGroup.Clear();
-		settings.TournamentChartScale = 1.0;
-		settings.TournamentChartScaleByScreen.Remove(fontScaleScreenKey);
-		SettingsService.Save(settings);
-
-		var chartsMoved = chartScalePct != 100;
-		fontScalePct = 100;
-		chartScalePct = 100;
-		ApplyPvBoardMode();
-		ReleaseWidthFitsForNewContent();   // measured ceilings are not "what the file says"
-
-		// Chart containers that changed height need Plotly told, exactly as SetChartScale does;
-		// a plain refit only re-measures and would leave the plots at their old size.
-		if (chartsMoved) _ = InvokeAsync(OnBoardSizeChanged);
-		else _ = RefitAfterLayoutChange();
-	}
-
-	// ── Table text scale ─────────────────────────────────────────────────────────
-	// One nudge, multiplied into the ceiling every table takes from tournament.json
-	// (docs/FontScalingPlan.md). It is kept per screen: the number that makes a 24-engine
-	// standings readable on a 4K monitor is not the number that suits the laptop panel it
-	// docks to, and being asked to redo it on every dock is the fiddling this replaces.
+	// ── Text nudge ───────────────────────────────────────────────────────────────
+	// One nudge, multiplied into the ceiling of every region (docs/FontScalingPlan.md). Kept
+	// per screen: the number that makes a 24-engine standings readable on a 4K monitor is not
+	// the number that suits the laptop panel it docks to, and being asked to redo it on every
+	// dock is the fiddling this replaces.
 	private int fontScalePct = 100;
 	private string fontScaleScreenKey = "";
 
 	private void NudgeFontScale(int deltaPct) => SetFontScale(fontScalePct + deltaPct);
-
-	// ── Chart height ─────────────────────────────────────────────────────────────
-	// The same arrangement as the text nudge, one level up: tournament.json says how tall a
-	// chart should be and this says how much of that to use. Seven charts can be on screen at
-	// once, so this is the difference between seeing three of them and seeing all of them.
-	private int chartScalePct = 100;
-
-	private void NudgeChartScale(int deltaPct) => SetChartScale(chartScalePct + deltaPct);
-
-	private void SetChartScale(int pct)
-	{
-		pct = Math.Clamp(pct, 50, 200);
-		if (pct == chartScalePct) return;
-		chartScalePct = pct;
-
-		var settings = SettingsService.Settings;
-		var scale = Math.Round(pct / 100.0, 2);
-		if (string.IsNullOrEmpty(fontScaleScreenKey))
-			settings.TournamentChartScale = scale;
-		else
-			settings.TournamentChartScaleByScreen[fontScaleScreenKey] = scale;   // see SetFontScale
-		SettingsService.Save(settings);
-
-		// A chart does not notice that its container changed height; Plotly has to be told, and
-		// the whole column below it has to be re-measured. OnBoardSizeChanged already does both.
-		_ = InvokeAsync(OnBoardSizeChanged);
-	}
 
 	private void SetFontScale(int pct)
 	{
@@ -241,44 +319,55 @@ public partial class Tournaments
 		}
 	}
 
+	// ── Reset and save ───────────────────────────────────────────────────────────
+
 	/// <summary>
-	/// Makes the sizes on screen the file's own sizes.
-	///
-	/// The point of the nudge is to find a set of sizes by looking rather than by editing JSON;
-	/// this is how that answer gets back into the file, so it survives a reinstall, travels to
-	/// another machine, and keeps working for anyone who prefers the text editor. What is
-	/// written is what is on screen: the ceiling, the nudge and the clamp have all been applied
-	/// already, which is why the tables are MEASURED rather than recomputed here.
-	///
-	/// Only the twelve font numbers change. The file is parsed as a document rather than as a
-	/// Tournament record, so everything else - ordering, fields this build does not know about,
-	/// the user's own layout of the file - comes back out exactly as it went in. A copy is kept
-	/// beside it regardless.
+	/// Forgets everything this screen chose - sizes, PV boards, chart heights, both nudges -
+	/// so the page shows what tournament.json says, or the built-in defaults. Only THIS
+	/// screen's entries go: another screen's choices were made looking at that screen.
 	/// </summary>
-	private async Task SaveSizesToTournamentJson()
+	private void ResetToConfiguredLayout()
 	{
-		// The markup hides the button in these cases, but a click can land as a run starts, and
-		// the reload afterwards reads a cached tournament while one is running.
-		if (FeedMode || TournamentSvc.IsRunning)
-		{
-			Snackbar.Add("Sizes can only be saved between runs", Severity.Warning);
-			return;
-		}
+		var settings = SettingsService.Settings;
+		settings.TournamentLayoutByScreen.Remove(GlobalSettings.ScreenBucket(fontScaleScreenKey));
+		// Directly, not through SetFontScale: that returns early when the control already reads
+		// 100%, which would leave a stored nudge surviving a button whose tooltip promises
+		// everything goes back.
+		settings.TournamentFontScale = 1.0;
+		settings.TournamentFontScaleByScreen.Remove(fontScaleScreenKey);
+		settings.TournamentChartScale = 1.0;
+		settings.TournamentChartScaleByScreen.Remove(fontScaleScreenKey);
+		SettingsService.Save(settings);
 
-		var path = System.IO.Path.Combine(System.Environment.CurrentDirectory, "wwwroot", "tournament.json");
-		if (!System.IO.File.Exists(path))
-		{
-			Snackbar.Add($"No tournament.json at {path}", Severity.Warning);
-			return;
-		}
+		fontScalePct = 100;
+		chartScalePct = 100;
+		RefreshLayoutOptions();   // charts and panels back to the file, or the defaults
+		ApplyPvBoardMode();
+		SetPVStyle();   // the PV label ceiling is a stored style, not a computed one
+		ReleaseWidthFitsForNewContent();   // measured ceilings are not "what the defaults say"
+		foreach (var fit in WidthFits) fit.Reset();
 
-		var confirmed = await DialogService.ShowMessageBox(
-			"Save these sizes to tournament.json?",
-			$"The twelve font sizes in the file are replaced by the sizes on screen right now. "
-			+ "Nothing else in the file changes, and a copy is kept as tournament.json.bak.",
-			yesText: "Save", cancelText: "Cancel");
-		if (confirmed != true) return;
+		// Always the full re-measure with Plotly told: a chart may have appeared or gone, or
+		// changed height, and a plain refit would leave the plots at their old size.
+		_ = InvokeAsync(OnBoardSizeChanged);
+	}
 
+	/// <summary>
+	/// Makes the sizes on screen this screen's own sizes.
+	///
+	/// The point of the nudge is to find a set of sizes by looking rather than by typing
+	/// numbers; this is how that answer becomes the baseline, so the sliders in Appearance show
+	/// the sizes on the page and the nudge is free for the next adjustment. What is written is
+	/// what is on screen: the ceiling, the nudge and the clamp have all been applied already,
+	/// which is why the tables are MEASURED rather than recomputed here. A table the clamp had
+	/// to shrink is saved shrunk - that IS what is on screen - and "reset" is the way back.
+	///
+	/// Only this screen's entry changes, and it can be pressed at any time: it touches nothing
+	/// but the settings, so a live run and a feed view - someone sizing someone else's
+	/// tournament for their own screen - are exactly the cases it is for.
+	/// </summary>
+	private async Task SaveAsBaseline()
+	{
 		try
 		{
 			var sizes = await EffectiveFontSizes();
@@ -288,57 +377,34 @@ public partial class Tournaments
 				return;
 			}
 
-			var root = System.Text.Json.Nodes.JsonNode.Parse(await System.IO.File.ReadAllTextAsync(path));
-			if (root?["LayoutOption"]?["Fonts"] is not System.Text.Json.Nodes.JsonObject fonts)
-			{
-				Snackbar.Add("tournament.json has no LayoutOption.Fonts to write to", Severity.Error);
-				return;
-			}
-
+			var settings = SettingsService.Settings;
+			var layout = settings.TournamentLayoutForWrite(fontScaleScreenKey);
 			var written = 0;
-			var baked = new List<string>();
-			foreach (var group in GlobalSettings.FontGroups)
+			foreach (var (group, px) in sizes)
 			{
-				if (group.JsonFields.Length == 0) continue;   // nudgeable, but nothing to write it to
-				if (!sizes.TryGetValue(group.Key, out var px) || px <= 0) continue;
-				foreach (var field in group.JsonFields) fonts[field] = px;
-				baked.Add(group.Key);
+				if (px <= 0) continue;
+				// Never the brackets: what is on screen under .eb-g-brackets is the cup or ladder
+				// progress table, and that is rendered at the STANDINGS ceiling. Saving its measured
+				// size here would overwrite the size of the swiss/cup/ladder overviews - which the
+				// user sets in Appearance - with the standings size. The old file write-back had
+				// this same rule; it belongs to the region, not to where it used to be written.
+				if (group == FontKey.Brackets) continue;
+				layout.FontPx[group] = px;
 				written++;
 			}
 
-			// The chart heights live in a different part of the file and are not measured: no
-			// clamp touches them, so what is on screen is exactly the configured number times
-			// the nudge, and arithmetic beats a round trip to the browser.
-			var chartsBaked = chartScalePct == 100;   // nothing to bake is the same as baked
-			if (!chartsBaked)
+			// The chart heights are not measured: no clamp touches them, so what is on screen is
+			// exactly the height times the nudge, and arithmetic beats a round trip to the browser.
+			if (chartScalePct != 100)
 			{
-				if (root?["LayoutOption"]?["Sizes"] is not System.Text.Json.Nodes.JsonObject chartSizes)
-				{
-					// Say so rather than clearing a setting that was never preserved anywhere.
-					Snackbar.Add("tournament.json has no LayoutOption.Sizes: chart heights not saved", Severity.Error);
-					return;
-				}
-				chartSizes["LiveChartHeight"] = ScaledChartHeight(layoutOptions.Sizes.LiveChartHeight);
-				chartSizes["MoveChartHeight"] = ScaledChartHeight(layoutOptions.Sizes.MoveChartHeight);
+				layout.LiveChartHeight = ScaledChartHeight(ChartHeightPx(live: true));
+				layout.MoveChartHeight = ScaledChartHeight(ChartHeightPx(live: false));
 				written += 2;
 			}
 
-			System.IO.File.Copy(path, path + ".bak", overwrite: true);
-			await System.IO.File.WriteAllTextAsync(path,
-				root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-
-			// The file now contains what the nudge produced, so keeping the nudge would apply it
-			// a second time. Only what was actually baked is cleared: a region that was not on
-			// screen kept its nudge because nothing was written for it, and clearing it would
-			// throw away a setting without having preserved it anywhere.
-			//
-			// Only THIS screen's entry goes. Another screen's nudge was never applied to these
-			// numbers, and on that screen it is still the right answer relative to them.
-			var settings = SettingsService.Settings;
-			// The shared default is what every screen WITHOUT an entry of its own uses, so it
-			// only belongs to this screen when this screen has no key. Clearing it otherwise
-			// would silently re-render every other screen, which is the opposite of what the
-			// comment above promises.
+			// The sizes now contain what the nudge produced, so keeping the nudge would apply it
+			// a second time. Only THIS screen's entry goes; the shared default belongs to this
+			// screen only when this screen has no key of its own.
 			if (string.IsNullOrEmpty(fontScaleScreenKey))
 			{
 				settings.TournamentFontScale = 1.0;
@@ -346,19 +412,21 @@ public partial class Tournaments
 			}
 			settings.TournamentFontScaleByScreen.Remove(fontScaleScreenKey);
 			settings.TournamentChartScaleByScreen.Remove(fontScaleScreenKey);
-			foreach (var key in baked) settings.TournamentFontScaleByGroup.Remove(key);
 			SettingsService.Save(settings);
 			fontScalePct = 100;
 			chartScalePct = 100;
 
-			ReloadLayoutFromConfig();
-			Snackbar.Add($"Saved {written} sizes to tournament.json", Severity.Success);
+			SetPVStyle();   // the PV label ceiling is a stored style, not a computed one
+			ReleaseWidthFitsForNewContent();
+			foreach (var fit in WidthFits) fit.Reset();   // the new ceilings have not been measured yet
+			Snackbar.Add($"{written} sizes saved for this screen", Severity.Success);
+			await InvokeAsync(StateHasChanged);
 			await OnBrowserResize();
 		}
 		catch (Exception ex)
 		{
-			logger.LogError(ex, "Failed to write font sizes to tournament.json");
-			Snackbar.Add($"Could not write tournament.json: {ex.Message}", Severity.Error);
+			logger.LogError(ex, "Failed to save the sizes on screen");
+			Snackbar.Add($"Could not save sizes: {ex.Message}", Severity.Error);
 		}
 	}
 
@@ -378,6 +446,7 @@ public partial class Tournaments
 			.ToDictionary(g => g.Key, g => g.Selector);
 		var measured = await chessModule.InvokeAsync<Dictionary<string, int>>("getComputedFontSizes", selectors);
 
+		var scale = SettingsService.Settings.FontScaleFor(fontScaleScreenKey);
 		foreach (var group in GlobalSettings.FontGroups)
 		{
 			if (measured is not null && measured.TryGetValue(group.Key, out var px) && px > 0)
@@ -385,57 +454,20 @@ public partial class Tournaments
 				sizes[group.Key] = px;
 				continue;
 			}
-			// Not on screen, or not a region the clamp touches: ceiling times this region's
-			// nudge - and times its width fit, for the two that have one. The banner and the
-			// description are measured for WIDTH even though nothing clamps their height, so
-			// leaving the fit out here would write a bigger number than what is on screen.
-			var configured = ConfiguredFontSize(group.Key);
-			if (configured <= 0) continue;
-			var scale = SettingsService.Settings.FontScaleFor(fontScaleScreenKey, group.Key);
-			sizes[group.Key] = (int)Math.Round(configured * scale * WidthFitFor(group.Key));
+			// Not on screen, or not a region the clamp touches: ceiling times the nudge - and
+			// times its width fit, for the two that have one. The banner and the description
+			// are measured for WIDTH even though nothing clamps their height, so leaving the fit
+			// out here would save a bigger number than what is on screen.
+			sizes[group.Key] = (int)Math.Round(FontCeiling(group.Key) * scale * WidthFitFor(group.Key));
 		}
 		return sizes;
 	}
 
-	/// A chart's configured height after the nudge, as the whole number the file stores.
-	private int ScaledChartHeight(int configured) =>
-		(int)Math.Round((configured > 0 ? configured : 200) * chartScalePct / 100.0);
-
 	/// The width fit in force for a region, or 1 for the regions that have none.
 	private double WidthFitFor(string group) => group switch
 	{
-		"banner" => bannerFit.Value,
-		"description" => descriptionFit.Value,
+		FontKey.Banner => bannerFit.Value,
+		FontKey.Description => descriptionFit.Value,
 		_ => 1.0
 	};
-
-	/// The size tournament.json currently asks for, per region.
-	private int ConfiguredFontSize(string group) => group switch
-	{
-		"standings" => layoutOptions.Fonts.StandingsFont,
-		"crosstable" => layoutOptions.Fonts.CrossTableFont,
-		"pairings" => layoutOptions.Fonts.PairingsFont,
-		"latest" => layoutOptions.Fonts.LatestGamesFont,
-		"brackets" => layoutOptions.Fonts.CupBracketFont,
-		"movelist" => layoutOptions.Fonts.MoveListFont,
-		"enginepanel" => layoutOptions.Fonts.EnginesPanelFont,
-		"banner" => layoutOptions.Fonts.InfoBannerFont,
-		"description" => layoutOptions.Fonts.TournamentDescFont,
-		"pv" => layoutOptions.Fonts.PVLabelFont,
-		_ => 0
-	};
-
-	/// Re-reads tournament.json and re-applies the parts of the page that are built from its
-	/// layout block. Safe only between runs, which is the only time the save button is offered.
-	private void ReloadLayoutFromConfig()
-	{
-		var fresh = TournamentSvc.GetConfigRunner(logger).Tournament();
-		if (fresh is null) return;
-		tournament = fresh;
-		ReleaseWidthFitsForNewContent();
-		layoutOptions = tournament.LayoutOption;
-		SetPVStyle(layoutOptions);
-		foreach (var fit in WidthFits) fit.Reset();   // the new ceilings have not been measured yet
-		StateHasChanged();
-	}
 }

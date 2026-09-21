@@ -47,7 +47,7 @@ public partial class Tournaments
 			{ "SwissCompleted", stateSummary == SwissStateSummary.Completed },
 			{ "SwissInvalid", stateSummary == SwissStateSummary.Invalid },
 			{ "ShowActions", true },
-			{ "FontSize", layoutOptions.Fonts.SwissOverviewFont }
+			{ "FontSize", FontCeiling(FontKey.Brackets) }
 		};
 		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.SwissOverviewDialog>("", parameters, options);
 		var result = await dialog.Result;
@@ -199,7 +199,7 @@ public partial class Tournaments
 			{ "ShowActions", true },
 			{ "LadderCompleted", stateSummary == LadderStateSummary.Completed },
 			{ "LadderInvalid", stateSummary == LadderStateSummary.Invalid },
-			{ "FontSize", layoutOptions.Fonts.LadderOverviewFont }
+			{ "FontSize", FontCeiling(FontKey.Brackets) }
 		};
 		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.LadderResumeDialog>("", parameters, options);
 		var result = await dialog.Result;
@@ -343,7 +343,7 @@ public partial class Tournaments
 			{ "BracketPath", bracketPath },
 			{ "CupCompleted", bracketState == CupBracketSummary.Completed },
 			{ "CupInvalid", bracketState == CupBracketSummary.Invalid },
-			{ "FontSize", layoutOptions.Fonts.CupBracketFont  }
+			{ "FontSize", FontCeiling(FontKey.Brackets)  }
 		};
 		var dialog = await DialogService.ShowAsync<Components.Layout.TournamentLayout.CupResumeDialog>("", parameters, options);
 		var result = await dialog.Result;

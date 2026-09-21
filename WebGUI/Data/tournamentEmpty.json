@@ -1,11 +1,11 @@
 ﻿{
   "Name": "Demo tournament",
-  "Description": "Testing features",
-  "OS": "Win11 x64",
-  "CPU": "i9-13900K CPU 32 Threads",
-  "RAM": "32 Gb RAM",
-  "GPU": "1x RTX 3080",
-  "MainLogoFileName": "MainLogoEB.png",
+  "Description": "",
+  "OS": "",
+  "CPU": "",
+  "RAM": "",
+  "GPU": "",
+  "MainLogoFileName": "",
   "VerboseLogging": false,
   "MoveAnnotation": "Standard",
   "MinMoveTimeInMS": 400,
@@ -20,30 +20,26 @@
   "Adjudication": {
     "DrawOption": {
       "DrawMoveLength": 5,
-      "MaxDrawScore": 0.30,
+      "MaxDrawScore": 0.3,
       "MinDrawMove": 20
     },
-
     "WinOption": {
       "MinWinScore": 5.0,
       "WinMoveLength": 5,
       "MinWinMove": 0
     },
-
     "TBAdj": {
       "TablebaseDirectory": "",
       "UseTBAdjudication": false,
       "TBMen": 6
     }
   },
-
   "TestOptions": {
     "PolicyTest": false,
     "ValueTest": false,
     "WriteToConsole": false,
     "NumberOfGamesInParallel": 1
   },
-
   "Opening": {
     "OpeningsPath": "",
     "OpeningsPly": 100,
@@ -71,56 +67,12 @@
     "RandomOpenings": false,
     "StatePath": "wwwroot/ladder_state.json"
   },
-
   "PgnOutPath": "",
   "ReferencePGNPath": "",
   "EngineSetup": {
     "EngineDefFolder": "",
-    "EngineDefList": [
-     
-    ]
+    "EngineDefList": []
   },
-
-  "LayoutOption": {
-    "Fonts": {
-      "InfoBannerFont": 18,
-      "TournamentDescFont": 16,
-      "EnginesPanelFont": 18,
-      "MoveListFont": 16,
-      "PVLabelFont": 17,
-      "StandingsFont": 18,
-      "CrossTableFont": 18,
-      "CupBracketFont": 18,
-      "SwissOverviewFont": 18,
-      "LadderOverviewFont": 18,
-      "PairingsFont": 16,
-      "LatestGamesFont": 16
-    },
-
-    "Sizes": {
-      "LiveChartHeight": 230,
-      "MoveChartHeight": 230,
-      "PVboardSize": "medium"
-    },
-
-    "Charts": {
-      "ShowEval": true,
-      "ShowNPS": true,
-      "ShowTime": false,
-      "ShowNodes": false,
-      "NumberOfLines": 5,
-      "Qdiff": 1.0
-    },
-
-    "ShowPVBoard": true,
-    "UseNPM": false,
-    "BestMoveWithPolicy": false,
-    "OnlyShowStandings": true,
-    "ShowCrosstableBetweenGames": true,
-    "ShowCrosstableBelowStandings": false,
-    "AutoCycleTimeInSec": 30
-  },
-
   "TimeControl": {
     "TimeConfigs": [
       {
@@ -148,5 +100,4 @@
     "WmovesToGo": 0,
     "BmovesToGo": 0
   }
-
 }

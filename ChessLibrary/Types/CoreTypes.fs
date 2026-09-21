@@ -691,7 +691,12 @@ module TypesDef =
         [<JsonIgnore>] mutable TotalGames: int
         [<JsonIgnore>] mutable CurrentGameNr: int  }
       with
-        member x.Hardware() = sprintf "%s : %s : %s" x.CPU x.RAM x.GPU
+        /// The banner's "Hardware" line. A field left empty is left out, so a file that says
+        /// nothing about the machine shows nothing rather than " :  : ".
+        member x.Hardware() =
+          [ x.CPU; x.RAM; x.GPU ]
+          |> List.filter (fun s -> not (String.IsNullOrWhiteSpace s))
+          |> String.concat " : "
         member x.IsGauntlet =
           x.TournamentMode.Equals("Gauntlet", StringComparison.OrdinalIgnoreCase)
         member x.IsLadder =
@@ -983,6 +988,7 @@ module TypesDef =
             { LayoutOption.Default with
                 ShowPVBoard = true
                 OnlyShowStandings = true
+                CrosstableWithStandings = LayoutTypes.CrosstableWithStandings.Hidden
                 // Broadcast-sized fonts (mirror the typical DFRC Test config, scaled down ~3pt) so the
                 // Ceres feed comes up readable rather than at the small UI defaults.
                 Fonts =
