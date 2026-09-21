@@ -1,0 +1,69 @@
+@inject NotifierService notify
+@implements IDisposable
+
+@* The engine panel's two clock rows - time left and move time for both sides - rendered as six
+   cells straight into the panel's 1fr auto 1fr grid.
+
+   A component of its own for one reason: the clock ticks two to ten times a second, and a tick
+   used to re-render the WHOLE engine panel to change two strings. This listens to the tick
+   itself and redraws only these cells; the panel above hears nothing.
+
+   Two sources write the four strings. The page hands them in as parameters when a move arrives
+   (a fresh clock from the engine, the move time reset), and the ticker writes the side to move
+   between moves. Parameters are applied whenever they arrive: the ticker writes the page's own
+   fields before it notifies this component, so what a parent re-render passes down is never
+   older than what the tick wrote. A first version applied a parameter only when it DIFFERED
+   from the last one, and that dropped every fresh clock that happened to read the same as the
+   previous move's - which under a fixed move time is every single one. *@
+<div class="stat-cell">@whiteLeft</div>
+<div class="label-cell">Time left</div>
+<div class="stat-cell">@blackLeft</div>
+
+<div class="stat-cell move-time @(WhiteToMove ? "active-time" : "")">@whiteMove</div>
+<div class="label-cell">Move time</div>
+<div class="stat-cell move-time @(WhiteToMove ? "" : "active-time")">@blackMove</div>
+
+@code {
+    [Parameter] public string WhiteTimeLeft { get; set; }
+    [Parameter] public string WhiteMoveTime { get; set; }
+    [Parameter] public string BlackTimeLeft { get; set; }
+    [Parameter] public string BlackMoveTime { get; set; }
+    [Parameter] public bool WhiteToMove { get; set; }
+
+    private string whiteLeft, whiteMove, blackLeft, blackMove;
+
+    // What was last drawn. The parent renders on every engine info line and Blazor re-renders a
+    // child whenever its parent does, parameters changed or not - so without this the clocks
+    // would redraw with the stats after all, just from the other direction.
+    private string rWhiteLeft, rWhiteMove, rBlackLeft, rBlackMove;
+    private bool rWhiteToMove, drawn;
+
+    protected override void OnInitialized() => notify.NextTick += OnNextTick;
+
+    protected override void OnParametersSet()
+    {
+        whiteLeft = WhiteTimeLeft; whiteMove = WhiteMoveTime;
+        blackLeft = BlackTimeLeft; blackMove = BlackMoveTime;
+    }
+
+    // Off the dispatcher: the ticker runs on its own loop.
+    private Task OnNextTick(bool whiteToMove, string timeLeft, string moveTime)
+    {
+        if (whiteToMove) { whiteLeft = timeLeft; whiteMove = moveTime; }
+        else { blackLeft = timeLeft; blackMove = moveTime; }
+        return InvokeAsync(StateHasChanged);
+    }
+
+    protected override bool ShouldRender()
+    {
+        if (drawn && whiteLeft == rWhiteLeft && whiteMove == rWhiteMove
+                  && blackLeft == rBlackLeft && blackMove == rBlackMove && WhiteToMove == rWhiteToMove)
+            return false;
+        drawn = true;
+        rWhiteLeft = whiteLeft; rWhiteMove = whiteMove; rBlackLeft = blackLeft; rBlackMove = blackMove;
+        rWhiteToMove = WhiteToMove;
+        return true;
+    }
+
+    public void Dispose() => notify.NextTick -= OnNextTick;
+}

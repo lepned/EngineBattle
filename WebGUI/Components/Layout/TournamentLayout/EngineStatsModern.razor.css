@@ -176,8 +176,13 @@
   50% { opacity: 0.85; }
 }
 
-/* Stat Row Cells */
-.stat-cell {
+/* Stat Row Cells.
+   ::deep on the four rules the clock cells use, because those six cells are rendered by
+   EngineClocks and a scoped stylesheet only matches its own component's elements - the trap
+   PvBoardRow fell into. ::deep compiles to "[scope] .stat-cell", which reaches every cell under
+   .engine-stats-container, this component's own included. Specificity goes up by one attribute
+   for exactly these rules; .stat-cell.wdl and .label-cell.header still win as they did. */
+::deep .stat-cell {
   color: #fff;
   text-align: center;
   padding: 0.15em 0.25em;
@@ -193,16 +198,16 @@
   font-size: 0.65em;
 }
 
-    .stat-cell.move-time {        
+    ::deep .stat-cell.move-time {        
         border: none;
     }
 
-.stat-cell.move-time.active-time {
+::deep .stat-cell.move-time.active-time {
         color: #81c784;
     }
 
 /* Center Label Cells */
-.label-cell {
+::deep .label-cell {
   font-size: 0.70em;  
   text-align: center;
   padding: 0.15em 0.25em;
@@ -223,7 +228,7 @@
 
 /* Shrink labels in narrow containers */
 @container engine-stats (max-width: 250px) {
-  .label-cell {
+  ::deep .label-cell {
     font-size: 0.65em;
     max-width: 4em;
   }

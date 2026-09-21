@@ -1,7 +1,4 @@
 ﻿@using WebGUI.Components.Layout.ChessboardLayout
-@inject NotifierService notify
-
-@implements IAsyncDisposable
 
 @* The size arrives as a token like everywhere else; the stylesheet spends it. Everything
    inside this box is sized in em, so this one value still drives the whole panel.
@@ -21,7 +18,7 @@
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
     <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
-      <img src="@Engine1Logo" alt="@Engine1Name" title="@GetEngineOptionsTooltip(Engine1Config, Engine1Name)" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
+      <img src="@Engine1Logo" alt="@Engine1Name" title="@engine1Tooltip" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
     <h3 class="engine-name" title="@Engine1Name">@Engine1Name</h3>
     <span class="engine-version">@Engine1Version</span>
@@ -40,7 +37,7 @@
   <div class="engine-header-cell @(Engine1ToMove ? "" : "active")">
     <span class="side-label">Black</span>
     <div class="engine-logo-wrapper" style="@(LogoWrapperStyle) overflow:hidden;">
-      <img src="@Engine2Logo" alt="@Engine2Name" title="@GetEngineOptionsTooltip(Engine2Config, Engine2Name)" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
+      <img src="@Engine2Logo" alt="@Engine2Name" title="@engine2Tooltip" class="engine-logo" style="max-width:100%;max-height:100%;object-fit:contain;" />
     </div>
     <h3 class="engine-name" title="@Engine2Name">@Engine2Name</h3>
     <span class="engine-version">@Engine2Version</span>
@@ -76,15 +73,12 @@
   <div class="label-cell">WDL</div>
   <div class="stat-cell wdl">@GetWDLString(Engine2.WDL)</div>
 
-  <!-- Row 8: Time left -->
-  <div class="stat-cell">@Engine1TimeLeft</div>
-  <div class="label-cell">Time left</div>
-  <div class="stat-cell">@Engine2TimeLeft</div>
-
-  <!-- Row 9: Move time -->
-  <div class="stat-cell move-time @(Engine1ToMove ? "active-time" : "")">@Engine1TimePerMove</div>
-  <div class="label-cell">Move time</div>
-  <div class="stat-cell move-time @(Engine1ToMove ? "" : "active-time")">@Engine2TimePerMove</div>
+  @* Rows 8-9: the clocks. EngineClocks renders these six cells straight into this grid and
+     listens to the clock tick ITSELF, so a tick redraws six cells and not this whole panel -
+     which is what happened before, ten times a second in time trouble, tooltips and all. *@
+  <EngineClocks WhiteTimeLeft="@Engine1TimeLeft" WhiteMoveTime="@Engine1TimePerMove"
+                BlackTimeLeft="@Engine2TimeLeft" BlackMoveTime="@Engine2TimePerMove"
+                WhiteToMove="@Engine1ToMove" />
 
   @* Row 10: each engine's PV board, in that engine's own column. PvBoardRow renders the three
      cells directly into this grid - see its own comment for why it is a component at all. *@
@@ -133,7 +127,9 @@
 
   /// <summary>
   /// Called during opening replay, which runs OFF the dispatcher thread - the render has to be
-  /// marshalled.
+  /// marshalled. The position is taken whether the boards are shown or not, so they are right
+  /// the moment they are switched on; the render is spent only when they are, because a render
+  /// here is the whole panel and with the boards off it would draw nothing new.
   /// </summary>
   public Task SetPVMoveWithAnnotation(MoveAndFen input, bool clear)
   {
@@ -143,13 +139,20 @@
       whiteFrom = blackFrom = input.Move.FromSq;
       whiteTo = blackTo = input.Move.ToSq;
       whiteMoveColor = blackMoveColor = input.Move.Color;
-      return InvokeAsync(StateHasChanged);
+      return ShowPV ? InvokeAsync(StateHasChanged) : Task.CompletedTask;
     }
     return Task.CompletedTask;
   }
 
+  // Built once per engine, not once per render: this panel renders on every engine info line,
+  // and the tooltip is a LINQ pass and a string.Join over the UCI options each time.
+  private string engine1Tooltip, engine2Tooltip;
+  private (EngineConfig, string) tooltipKey1, tooltipKey2;
+
   protected override void OnParametersSet()
   {
+    if (tooltipKey1 != (Engine1Config, Engine1Name)) { tooltipKey1 = (Engine1Config, Engine1Name); engine1Tooltip = GetEngineOptionsTooltip(Engine1Config, Engine1Name); }
+    if (tooltipKey2 != (Engine2Config, Engine2Name)) { tooltipKey2 = (Engine2Config, Engine2Name); engine2Tooltip = GetEngineOptionsTooltip(Engine2Config, Engine2Name); }
     if (WhiteMoveAndFen?.FenAfterMove is { Length: > 0 } wf && wf != lastWhiteParamFen)
     {
       lastWhiteParamFen = wf;
@@ -166,22 +169,6 @@
       blackTo = BlackMoveAndFen.Move.ToSq;
       blackMoveColor = BlackMoveAndFen.Move.Color;
     }
-  }
-
-  private async Task OnNextTick(bool whiteToMove, string timeLeft, string moveTime)
-  {
-    if (whiteToMove)
-    {
-      Engine1TimeLeft = timeLeft;
-      Engine1TimePerMove = moveTime;
-    }
-    else
-    {
-      Engine2TimeLeft = timeLeft;
-      Engine2TimePerMove = moveTime;
-    }
-
-    await InvokeAsync(StateHasChanged);
   }
 
   [Parameter]
@@ -343,15 +330,5 @@
   }
 
 
-  protected override void OnInitialized()
-  {
-    notify.NextTick += OnNextTick;
-  }
-
-  async ValueTask IAsyncDisposable.DisposeAsync()
-  {
-    notify.NextTick -= OnNextTick;
-    await ValueTask.CompletedTask;
-  }
 
 }

@@ -77,15 +77,12 @@ public partial class Tournaments
 					results.Insert(0, e.Result);
 					infoBannerInfo.ResultTxt = e.Result.Result;
 				}
+				// Before the delay, not after it: pooled engines start the next game inside these 200ms,
+				// and a StopClock that ran afterwards disposed the timer that game had just started on.
+				StopClock();
 				await Task.Delay(200);
 				await InvokeAsync(() => streamingBoard.UpdateMoveHistory(mh));
 				engineStatus.Clear();
-				if (timer != null)
-					timer.Dispose();
-				timer = null;
-				if (oneSecondTimer != null)
-					oneSecondTimer.Dispose();
-				oneSecondTimer = null;
 				if (FeedMode)
 					FeedStats.ensureFeedEngines(tournament, results);   // fill roster from result names (no local config)
 				var summary = PlayerResults(results);
@@ -164,6 +161,10 @@ public partial class Tournaments
 				timeUsageList.AddData(white, b.Info.MoveTime.TotalSeconds, false);
 				var pv = b.Info.PV;
 				var pvLong = b.Info.LongPV;
+				// First, before the clock and the side change below: this runs off the dispatcher and the
+				// ticker on it, so a tick can land between these writes. With the timestamp already new,
+				// whichever side and clock it sees, the elapsed time is ~0 and nothing jumps.
+				RestartMoveClock();
 				if (b.Info.Player == blackPlayer)
 				{
 					Engine2.Eval = b.Info.Eval;
@@ -171,8 +172,8 @@ public partial class Tournaments
 					blackLongPV = pvLong;
 					DrawP = b.Info.AdjDrawML;
 					blackClock = b.Info.TimeLeft;
-					blackTime = oneSecondTimer != null ? TimeLeftFormatted(b.Info.TimeLeft) : MoveTimeFormatted(b.Info.TimeLeft);
-					whiteMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeSpan.Zero) : MoveTimeFormatted(TimeSpan.Zero);
+					blackTime = ClockTextFor(b.Info.TimeLeft);
+					whiteMoveTime = ClockText(TimeSpan.Zero, tenths: InTimeTrouble(whiteClock));
 					BlackMoveAndFen = b.Info.MoveAndFen;
 				}
 				else
@@ -182,8 +183,8 @@ public partial class Tournaments
 					whiteLongPV = pvLong;
 					DrawP = b.Info.AdjDrawML;
 					whiteClock = b.Info.TimeLeft;
-					whiteTime = oneSecondTimer != null ? TimeLeftFormatted(b.Info.TimeLeft) : MoveTimeFormatted(b.Info.TimeLeft);
-					blackMoveTime = oneSecondTimer != null ? TimeLeftFormatted(TimeSpan.Zero) : MoveTimeFormatted(TimeSpan.Zero);
+					whiteTime = ClockTextFor(b.Info.TimeLeft);
+					blackMoveTime = ClockText(TimeSpan.Zero, tenths: InTimeTrouble(blackClock));
 					WhiteMoveAndFen = b.Info.MoveAndFen;
 				}
 
@@ -218,12 +219,12 @@ public partial class Tournaments
 				if (t.Player == blackPlayer)
 				{
 					blackClock = t.Time;
-					blackTime = TimeLeftFormatted(blackClock);
+					blackTime = ClockTextFor(blackClock);
 				}
 				else
 				{
 					whiteClock = t.Time;
-					whiteTime = TimeLeftFormatted(whiteClock);
+					whiteTime = ClockTextFor(whiteClock);
 				}
 				break;
 
@@ -624,8 +625,9 @@ public partial class Tournaments
 			whiteEngineLogo = "Img/chessLogo.jpg";
 		else
 			whiteEngineLogo = info.WhitePlayer.LogoPath;
+		RestartMoveClock();
 		whiteClock = info.WhiteTime;
-		whiteTime = TimeLeftFormatted(whiteClock);
+		whiteTime = ClockTextFor(whiteClock);
 		blackPlayer = info.BlackPlayer.Name;
 		blackDev = info.BlackPlayer.Dev;
 		if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
@@ -633,7 +635,7 @@ public partial class Tournaments
 		else
 			blackEngineLogo = info.BlackPlayer.LogoPath;
 		blackClock = info.BlackTime;
-		blackTime = TimeLeftFormatted(blackClock);
+		blackTime = ClockTextFor(blackClock);
 		whiteToMove = info.WhiteToMove;
 		WhiteEngineConfig = info.WhitePlayer;
 		BlackEngineConfig = info.BlackPlayer;
@@ -715,8 +717,14 @@ public partial class Tournaments
 			: $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
 	}
 
-	private string MoveTimeFormatted(TimeSpan time) => ClockText(time, tenths: true);
-	private string OneSecondMoveTimeFormatted(TimeSpan time) => ClockText(time);
+	/// Tenths on the face, and ten ticks a second, once a clock is inside its last 30 seconds.
+	/// One rule, read by the ticker and by the move-arrival paths alike; those used to infer the
+	/// format from which of two timer objects happened to exist.
+	private static bool InTimeTrouble(TimeSpan remaining) => remaining < TimeSpan.FromSeconds(30);
+
+	/// A remaining time, in the format that remaining time calls for.
+	private static string ClockTextFor(TimeSpan remaining) => ClockText(remaining, tenths: InTimeTrouble(remaining));
+
 	private string TimeLeftFormatted(TimeSpan time) => ClockText(time);
 
 	private void FinalStatusReceived(EngineStatus info)

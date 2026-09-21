@@ -116,7 +116,6 @@ public partial class Tournaments
 	private bool whiteToMove = true;
 	private TimeSpan whiteClock;
 	private TimeSpan blackClock;
-	private string moveTimer;
 	private List<Result> results = new();
 	private List<Pairing> pairings = new();
 	private List<PlayerResult> scoreTable = new();
@@ -182,8 +181,27 @@ public partial class Tournaments
 	private bool whiteHasEps = false;
 	private bool blackHasEps = false;
 	private DateTimeOffset nextSpeedChartToggleUtc = DateTimeOffset.MinValue;
-	private PeriodicTimer timer;
-	private PeriodicTimer oneSecondTimer;
+	/// The one clock ticker for the game on screen. Its PERIOD moves - 500ms normally, 100ms once
+	/// the side to move is inside the last 30 seconds - rather than there being two timers and two
+	/// loops, which is what this replaced: that pair never went back to 500ms once either side had
+	/// dipped under 30 seconds, and it put BOTH sides on ten ticks a second for the rest of the game.
+	private PeriodicTimer clockTimer;
+
+	/// Stopwatch timestamp of the moment the side to move changed. Written where the move ARRIVES
+	/// (Tournaments.LiveUpdates.cs), read by the ticker - so the move clock starts when the move
+	/// does, not up to one tick later when the loop happened to notice the side had flipped.
+	private long moveStartedAt;
+
+	private void StopClock()
+	{
+		clockTimer?.Dispose();
+		clockTimer = null;
+	}
+
+	/// The move clock starts now. Called where a move arrives and where a game starts, BEFORE the
+	/// side and its clock are written - see the comment at the BestMove site in LiveUpdates.
+	private void RestartMoveClock() =>
+		System.Threading.Volatile.Write(ref moveStartedAt, Stopwatch.GetTimestamp());
 	private string openingMoves;
 	private string whiteEngineLogo = "Img/EngineBattle.png";
 	private string blackEngineLogo = "Img/EngineBattle.png";
@@ -443,8 +461,7 @@ public partial class Tournaments
 		try
 		{
 			TournamentSvc.Cancel();
-			timer?.Dispose();
-			oneSecondTimer?.Dispose();
+			StopClock();
 			await Notifier.NotifyFullScreenRequested(false);
 			await Task.Delay(200);
 			await InvokeAsync(OnBrowserResize);
@@ -492,121 +509,59 @@ public partial class Tournaments
 		}
 	}
 
+	private static readonly TimeSpan CalmPeriod = TimeSpan.FromMilliseconds(500);
+	private static readonly TimeSpan HurryPeriod = TimeSpan.FromMilliseconds(100);
+
+	/// <summary>
+	/// The clock ticker, started once per game (GameStarted) and stopped by StopClock() when the
+	/// game ends or the page leaves. Each tick works out the remaining time and move time of the
+	/// side to move from the clock captured at the last move plus the stopwatch, and hands the two
+	/// strings to the clock cells - only when a string actually changed. At the 500ms period with
+	/// whole seconds on the face, every second tick used to produce the same text and render it
+	/// anyway. Only the side to move is ever notified: the other clock is frozen.
+	/// </summary>
 	private async void StartTimer()
 	{
-		moveTimer = string.Empty;
-		var elapsedFromStart = TimeSpan.Zero;
-		var start = Stopwatch.GetTimestamp();
-		if (oneSecondTimer != null)
-			return;
-		if (timer != null)
-			return;
-		timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
-		oneSecondTimer = new PeriodicTimer(TimeSpan.FromMilliseconds(500));
-		var limit = TimeSpan.FromSeconds(30);
-		TimeSpan tOnly;
-		var lastToPlay = whiteToMove;
+		if (clockTimer != null) return;
+		RestartMoveClock();
+		var t = new PeriodicTimer(CalmPeriod);
+		clockTimer = t;
+		var period = CalmPeriod;
+		string lastLeft = null, lastMove = null;
+		var lastSide = whiteToMove;
 
-		while (oneSecondTimer != null && await oneSecondTimer.WaitForNextTickAsync())
+		while (await t.WaitForNextTickAsync())
 		{
 			try
 			{
 				MaybeToggleSpeedChart();
-				if (whiteToMove != lastToPlay)
+
+				var side = whiteToMove;
+				var elapsed = Stopwatch.GetElapsedTime(System.Threading.Volatile.Read(ref moveStartedAt));
+				var remaining = (side ? whiteClock : blackClock) - elapsed;
+				if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+
+				// Tenths on the face and ten ticks a second come from the same rule, and both are
+				// released again when the side to move is not in trouble - a new game, or the other
+				// side with an hour left.
+				var hurry = InTimeTrouble(remaining);
+				var wanted = hurry ? HurryPeriod : CalmPeriod;
+				if (wanted != period) { t.Period = wanted; period = wanted; }
+
+				var left = ClockText(remaining, tenths: hurry);
+				var move = ClockText(elapsed, tenths: hurry);
+				if (side) { whiteTime = left; whiteMoveTime = move; }
+				else { blackTime = left; blackMoveTime = move; }
+
+				if (side != lastSide || left != lastLeft || move != lastMove)
 				{
-					start = Stopwatch.GetTimestamp();
-					moveTimer = string.Empty;
-					lastToPlay = whiteToMove;
-				}
-				else
-				{
-					var t = Stopwatch.GetElapsedTime(start);
-					var elapsed = t;
-					moveTimer = OneSecondMoveTimeFormatted(elapsed);
-
-					if (whiteToMove)
-					{
-						var ticks = whiteClock.Ticks - t.Ticks;
-						if (ticks < limit.Ticks)
-						{
-							//logger.LogInformation("White player is low on time");
-							oneSecondTimer?.Dispose();
-							oneSecondTimer = null;
-						}
-						whiteMoveTime = moveTimer;
-						tOnly = new TimeSpan(Math.Max(0, ticks));
-						whiteTime = TimeLeftFormatted(tOnly);
-						await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
-					}
-
-					else
-					{
-						var ticks = blackClock.Ticks - t.Ticks;
-						if (ticks < limit.Ticks)
-						{
-							//logger.LogInformation("Black player is low on time");
-							oneSecondTimer?.Dispose();
-							oneSecondTimer = null;
-						}
-						blackMoveTime = moveTimer;
-						tOnly = new TimeSpan(Math.Max(0, ticks));
-						blackTime = TimeLeftFormatted(tOnly);
-						await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
-					}
-
+					lastSide = side; lastLeft = left; lastMove = move;
+					await Notifier.OnNextTick(side, left, move);
 				}
 			}
-
 			catch (Exception e)
 			{
-				//silently ignoring the error here....
 				logger.LogError(e.Message);
-				Console.WriteLine(e.Message);
-			}
-		}
-
-		while (timer != null && await timer.WaitForNextTickAsync())
-		{
-			try
-			{
-				MaybeToggleSpeedChart();
-				if (whiteToMove != lastToPlay)
-				{
-					start = Stopwatch.GetTimestamp();
-					moveTimer = string.Empty;
-					lastToPlay = whiteToMove;
-				}
-				else
-				{
-					var t = Stopwatch.GetElapsedTime(start);
-					var elapsed = t;
-					moveTimer = MoveTimeFormatted(elapsed);
-
-					if (whiteToMove)
-					{
-						var ticks = whiteClock.Ticks - t.Ticks;
-						whiteMoveTime = moveTimer;
-						tOnly = new TimeSpan(Math.Max(0, ticks));
-						whiteTime = MoveTimeFormatted(tOnly);
-						await Notifier.OnNextTick(whiteToMove, whiteTime, whiteMoveTime);
-					}
-
-					else
-					{
-						var ticks = blackClock.Ticks - t.Ticks;
-						blackMoveTime = moveTimer;
-						tOnly = new TimeSpan(Math.Max(0, ticks));
-						blackTime = MoveTimeFormatted(tOnly);
-						await Notifier.OnNextTick(whiteToMove, blackTime, blackMoveTime);
-					}
-				}
-			}
-
-			catch (Exception e)
-			{
-				//silently ignoring the error here....
-				logger.LogError(e.Message);
-				Console.WriteLine(e.Message);
 			}
 		}
 	}
@@ -647,12 +602,10 @@ public partial class Tournaments
 				if (boardSyncGen != gen)
 					continue;
 				await streamingBoard.OnNotifyMoveAndFen(move);
-				// showPVBoard as well as the null check: the boards used to be their own component
-				// inside @if (showPVBoard), so a null ref WAS the "boards are off" test. They are
-				// part of the engine panel now, which is always there, and without this every
-				// opening-replay move would re-render the whole panel to update two boards that
-				// are not on screen.
-				if (engineStats != null && showPVBoard)
+				// Always, boards on or off: the panel keeps the position current either way and
+				// only RENDERS it when the boards are shown, so switching them on mid-opening shows
+				// the position the replay is at, not the start position.
+				if (engineStats != null)
 					await engineStats.SetPVMoveWithAnnotation(move, true);
 			}
 		}
@@ -725,10 +678,7 @@ public partial class Tournaments
 		npsList = new LivePlot(chessModule, npsChart, whitePlayer, blackPlayer, "Speed (NPS)", "Nodes per sec");
 		epsList = new LivePlot(chessModule, epsChart, whitePlayer, blackPlayer, "Speed (EPS)", "NN eval per sec");
 		timeUsageList = new LivePlot(chessModule, timeUsageChart, whitePlayer, blackPlayer, "Time in sec", "Time (sec)");
-		if (timer != null)
-			timer.Dispose();
-		if (oneSecondTimer != null)
-			oneSecondTimer.Dispose();
+		StopClock();
 
 		StateHasChanged();
 
@@ -1156,10 +1106,7 @@ public partial class Tournaments
         catch (ObjectDisposedException) { }
         if (keyContext != null) await keyContext.DisposeAsync();
         dotNetRef?.Dispose();
-		if (timer != null)
-			timer.Dispose();
-        if (oneSecondTimer != null)
-            oneSecondTimer.Dispose();
+		StopClock();
     }
 
     private sealed class CupBracketState

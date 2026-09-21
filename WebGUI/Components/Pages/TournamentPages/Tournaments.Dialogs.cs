@@ -51,8 +51,7 @@ public partial class Tournaments
 		reason = "White wins by user";
 		gameResult = "1-0";
 		runner?.AdjudicateGame(activeGameNr, "1-0");
-		timer?.Dispose();
-		oneSecondTimer?.Dispose();
+		StopClock();
 		await Task.CompletedTask;
 	}
 
@@ -62,8 +61,7 @@ public partial class Tournaments
 		reason = "Black wins by user";
 		gameResult = "0-1";
 		runner?.AdjudicateGame(activeGameNr, "0-1");
-		timer?.Dispose();
-		oneSecondTimer?.Dispose();
+		StopClock();
 		await Task.CompletedTask;
 	}
 	async Task DrawGame()
@@ -72,8 +70,7 @@ public partial class Tournaments
 		reason = "Draw by user";
 		gameResult = "1/2-1/2";
 		runner?.AdjudicateGame(activeGameNr, "1/2-1/2");
-		timer?.Dispose();
-		oneSecondTimer?.Dispose();
+		StopClock();
 		await Task.CompletedTask;
 	}
 
