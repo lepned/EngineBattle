@@ -1207,10 +1207,21 @@
         if (analyzer == null) return;
         appliedExtraSetOptions = ExtraSetOptions;
         if (ExtraSetOptions == null) return;
+        // Echoed to the console (the desktop app has one too), so what the engine got can be
+        // read off the screen: the exact lines, and the ucinewgame that follows them.
+        var name = Engine?.Name ?? Id;
+        var when = engineJustStarted ? "at start" : "before the next search";
+        ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, $"[{name}] setoptions {when}:");
         foreach (var option in ExtraSetOptions)
+        {
+            ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, $"  setoption name {option.Name} value {option.Value}");
             analyzer.AddSetoption(option);
+        }
         if (!engineJustStarted)
+        {
+            ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, "  ucinewgame");
             analyzer.NewGame();
+        }
     }
 
     private async Task StartAnalyzer()
@@ -2185,6 +2196,12 @@
                 // searchInProgress/StartSearchTimer left the panel looking like a
                 // search that never ends on mated/stalemated positions.
                 if (!ChessBoard.AnyLegalMove()) return;
+                // Same as a manual Start: a settings list that changed since the last search
+                // (contempt, for one) goes to the engine now, between searches, followed by
+                // ucinewgame. Without this, a knob turned and then a move played on the board
+                // searched on with the old values until the next click on Start.
+                if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
+                    ApplyExtraSetOptions();
                 searchInProgress = true;
                 StartSearchTimer();
                 var a = analyzer;

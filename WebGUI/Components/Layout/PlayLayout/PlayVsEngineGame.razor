@@ -340,10 +340,20 @@
         if (analyzer == null) return;
         appliedEngineOptions = EngineOptions;
         if (EngineOptions == null) return;
+        // Echoed to the console (the desktop app has one too): the exact lines the engine got.
+        var name = Engine?.Name ?? "engine";
+        var when = engineJustStarted ? "at start" : "before its next move";
+        ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, $"[{name}] setoptions {when}:");
         foreach (var option in EngineOptions)
+        {
+            ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, $"  setoption name {option.Name} value {option.Value}");
             analyzer.AddSetoption(option);
+        }
         if (!engineJustStarted)
+        {
+            ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor(ConsoleColor.Cyan, "  ucinewgame");
             analyzer.NewGame();
+        }
     }
 
     private async Task OnAnalyzerCreated()
