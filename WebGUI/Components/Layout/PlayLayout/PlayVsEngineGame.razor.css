@@ -247,4 +247,8 @@
     gap: 10px;
 }
 
-
+/* The queued premove, next to the status text */
+.play-vs-computer .pvc-premove {
+    color: #e6a1a1;
+    font-weight: 600;
+}

@@ -317,6 +317,9 @@ public class GlobalSettings
     public string BoardPieceSet { get; set; } = "wikipedia";
     public int BoardPieceScale { get; set; } = 100;              // piece size as % of the square (80–100)
     public bool BoardAnimateMoves { get; set; } = true;
+    // Dots on the legal destinations of a picked-up piece; premoves while the engine thinks.
+    public bool BoardShowLegalMoves { get; set; } = true;
+    public bool BoardPremoves { get; set; } = true;
     // Coordinates on tournament boards (streaming, PV duo, tile boards).
     public bool ShowTournamentBoardCoordinates { get; set; } = true;
     public string BoardCoordinateSize { get; set; } = "medium";  // small | medium | large | xlarge

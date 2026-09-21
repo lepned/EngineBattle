@@ -550,6 +550,20 @@
                     </label>
                     <small>Pieces glide to their destination square on interactive boards</small>
                 </div>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="showLegalMoves" @bind:after="Apply" />
+                        Show Legal Moves
+                    </label>
+                    <small>Dots on the squares a picked-up piece may go to, a ring on a capture - rules only, no evaluation</small>
+                </div>
+                <div class="field-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="premoves" @bind:after="Apply" />
+                        Premoves
+                    </label>
+                    <small>Queue your next move while the computer is thinking; it is played the moment your turn comes, if it is still legal</small>
+                </div>
             </div>
 
             <div class="appearance-actions">
@@ -659,6 +673,8 @@
     private string pieceSet = "wikipedia";
     private int pieceScale = 100;
     private bool animateMoves = true;
+    private bool showLegalMoves = true;
+    private bool premoves = true;
     private bool tournamentCoordinates = true;
     private string coordinateSize = "medium";
     private string coordinateColorMode = "auto";
@@ -794,6 +810,8 @@
         pieceSet = string.IsNullOrEmpty(s.BoardPieceSet) ? "wikipedia" : s.BoardPieceSet;
         pieceScale = s.BoardPieceScale is >= 80 and <= 100 ? s.BoardPieceScale : 100;
         animateMoves = s.BoardAnimateMoves;
+        showLegalMoves = s.BoardShowLegalMoves;
+        premoves = s.BoardPremoves;
         tournamentCoordinates = s.ShowTournamentBoardCoordinates;
         coordinateSize = string.IsNullOrEmpty(s.BoardCoordinateSize) ? "medium" : s.BoardCoordinateSize;
         coordinateColorMode = string.IsNullOrEmpty(s.BoardCoordinateColor) ? "auto" : "custom";
@@ -991,6 +1009,8 @@
         merged.BoardPieceSet = pieceSet;
         merged.BoardPieceScale = pieceScale;
         merged.BoardAnimateMoves = animateMoves;
+        merged.BoardShowLegalMoves = showLegalMoves;
+        merged.BoardPremoves = premoves;
         merged.ShowTournamentBoardCoordinates = tournamentCoordinates;
         merged.BoardCoordinateSize = coordinateSize;
         merged.BoardCoordinateColor = coordinateColorMode == "custom" ? coordinateColor : "";
@@ -1027,6 +1047,8 @@
         pieceSet = d.BoardPieceSet;
         pieceScale = d.BoardPieceScale;
         animateMoves = d.BoardAnimateMoves;
+        showLegalMoves = d.BoardShowLegalMoves;
+        premoves = d.BoardPremoves;
         tournamentCoordinates = d.ShowTournamentBoardCoordinates;
         coordinateSize = d.BoardCoordinateSize;
         coordinateColorMode = "auto";

@@ -106,6 +106,7 @@
                         <ModernChessboard @ref="chessboardRef" ShowFenField="true" FENposition="@fen" ShowChessNavButtons="true" ShowMoveList="true"
                                           MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Below"
                                           ShowSizeSlider="true" SizeKey="lc0-contempt"
+                                          ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
                                           OnMoveMadeOnBoard="OnBoardChanged" OnNewFENOnBoard="OnBoardChanged" ChessBoard="@board" />
                     </div>
                     <div class="lc-col">

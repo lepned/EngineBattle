@@ -181,6 +181,16 @@
     box-shadow: inset 0 0 0 3px var(--eb-highlight-b);
 }
 
+/* Premove squares: the queued move's origin and destination, in every highlight style the
+   same way - a tint under the piece - so the queue reads as one thing across themes. */
+.eb-sq.eb-pre::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--eb-premove, rgba(225, 80, 70, 0.5));
+    pointer-events: none;
+}
+
 /* Selected square (click-to-move source): inset ring, color themeable via --eb-sel-ring. */
 .eb-sq.eb-sel::before {
     content: "";

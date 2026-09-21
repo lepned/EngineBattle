@@ -133,12 +133,20 @@
                 </div>
                 <div class="pvc-status">
                     <span>@gameStatus</span>
+                    @if (premoveQueued != null)
+                    {
+                        <span class="pvc-premove" title="Played the moment your turn comes, if it is still legal. Click the board to cancel."> · premove @premoveQueued queued</span>
+                    }
                 </div>
                 <ModernChessboard @ref="chessboardRef" ShowFenField="false" FENposition="@fen" ShowChessNavButtons="true" ShowMoveList="true"
                             MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Right"
                             ShowSizeSlider="true" SizeKey="play-vs-computer"
                             OnMoveMadeOnBoard="OnHumanMove" OnNewFENOnBoard="OnBoardFenChanged" OnBoardFlipped="OnBoardFlipped"
                             ShowPositionStatus="false"
+                            ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
+                            AllowPremove="@(gameActive && SettingsService.Settings.BoardPremoves)"
+                            PremoveSide="@(humanIsWhite ? "w" : "b")"
+                            OnPremoveSet="OnPremoveSet" OnPremoveCleared="OnPremoveCleared"
                             ChessBoard="@board" />
             </div>
 
@@ -433,6 +441,7 @@
         board.ResetBoardState();
         fen = board.FEN();
         chessboardRef?.ResetGameState();
+        chessboardRef?.ClearPremove();
         var whiteToMove = board.Position.STM == 0;
         isWhiteTurn = whiteToMove;
         gameActive = true;
@@ -517,6 +526,7 @@
         {
             return;
         }
+        chessboardRef?.ClearPremove();
 
         var whiteToMove = board.Position.STM == 0;
         var humanTurn = humanIsWhite == whiteToMove;
@@ -621,6 +631,7 @@
     private void EndGame(string result, string reason, string statusMessage)
     {
         gameActive = false;
+        chessboardRef?.ClearPremove();
         gameStatus = statusMessage;
         StopClock();
         lastResultTag = ComputeResultTag(result);
@@ -979,7 +990,30 @@
 
         gameStatus = "Your move.";
         await InvokeAsync(StateHasChanged);
+
+        // A premove queued while the engine was thinking is played now, if the reply left it
+        // legal; the board raises it as an ordinary human move, so the clock and the next
+        // engine turn follow the usual path.
+        // Off this thread first: the bestmove callback can run inline on the engine's reader
+        // thread, and playing the premove asks the engine for its next move, which waits
+        // synchronously for readyok - a line only that reader can deliver. Doing it here
+        // deadlocked the whole circuit (no renders, engine never answered).
+        if (chessboardRef?.PendingPremove != null)
+        {
+            var boardRef = chessboardRef;
+            _ = Task.Run(() => InvokeAsync(async () =>
+            {
+                try { await boardRef.TryPlayQueuedMove(); }
+                catch (Exception ex) { logger.LogError(ex, "Playing the queued premove failed"); }
+            }));
+        }
     }
+
+    // The queued premove shows next to the status line, where the player is already looking.
+    // Its own field: the status text is rewritten by the clock and the turn changes.
+    private string premoveQueued;
+    private void OnPremoveSet(string uci) => premoveQueued = gameActive ? uci : null;
+    private void OnPremoveCleared() => premoveQueued = null;
 
     private async Task RequestEngineMove()
     {
@@ -994,14 +1028,18 @@
         var nodeLimitCommand = TimeControlTypes.TimeControlCommands.createNodes(numberOfNodes);
         if (IsCustomTimeControl && customLimitMode == "Nodes")
         {
-            analyzer.Play(nodeLimitCommand);
+            // Off the dispatcher: Play waits synchronously for the engine's readyok, and the
+            // engine's reader thread can be the one executing dispatcher work at that moment
+            // (Blazor runs the queue on whichever thread posts to an idle dispatcher) - waiting
+            // there deadlocked the page when a premove was played right after bestmove.
+            await Task.Run(() => analyzer.Play(nodeLimitCommand));
         }
         else if (IsCustomTimeControl && customLimitMode == "Infinite")
         {
             var big = TimeSpan.FromMinutes(300);
             var zero = TimeSpan.Zero;
             var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
-            analyzer.Play(incrCommand);
+            await Task.Run(() => analyzer.Play(incrCommand));
         }
         else
         {
@@ -1010,7 +1048,7 @@
             var incWhite = TimeSpan.FromSeconds(whiteIncrementSeconds);
             var incBlack = TimeSpan.FromSeconds(blackIncrementSeconds);
             var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(clockWhite, clockBlack, incWhite, incBlack);
-            analyzer.Play(incrCommand);
+            await Task.Run(() => analyzer.Play(incrCommand));
         }
 
         await InvokeAsync(StateHasChanged);

@@ -147,6 +147,7 @@
                 <ModernChessboard @ref="chessBoardRazor" ShowFenField=true FENposition="@fen" ShowChessNavButtons=true ShowMoveList=true
                             MakeMoveListClickable=true MoveListPosition="MoveListPosition.Below"
                             ShowSizeSlider="true" SizeKey="dual-analysis"
+                            ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
                             MoveEvals="@moveEvals"
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
                             OnBoardFlipped="f => boardFlipped = f"

@@ -53,7 +53,8 @@
                               FrameWidthPct="@BoardFramePct"
                               FrameColorCss="@BoardFrameColor"
                               LastMoveFrom="@lastMoveFrom" LastMoveTo="@lastMoveTo" LastMoveColor="@lastMoveColor"
-                              SelectedSquare="@selectedSquare"
+                              SelectedSquare="@(selectedSquare ?? premoveSelected)"
+                              PremoveFrom="@premoveFrom" PremoveTo="@premoveTo"
                               Arrows="@MergedArrows" Circles="@MergedCircles" Labels="@overlayLabels"
                               OnSquareClicked="OnBoardSquareClicked" />
                 @if (showPromotionDialog)
@@ -365,6 +366,21 @@
     /// material, red = the piece can be won there). Off by default — hosts opt in; assistance
     /// pages like PlayVsComputer must not enable it.</summary>
     [Parameter] public bool ShowSafeSquarePreview { get; set; }
+    /// <summary>Plain legal-move dots while a piece is selected or dragged: a dot on an empty
+    /// square, a ring on a capture. No evaluation in them - they say what the rules allow, which
+    /// is why they are fine on the play pages where the SEE preview is not. When the SEE preview
+    /// is on it draws these squares instead.</summary>
+    [Parameter] public bool ShowLegalDestinations { get; set; }
+    /// <summary>Premoves for the side named by <see cref="PremoveSide"/> ("w"/"b"): while the
+    /// other side is to move, one of that side's pieces can still be moved. The move is not
+    /// played - it is queued, drawn on its two squares, and the host plays it through
+    /// <see cref="TryPlayQueuedMove"/> once the turn has come round and it is legal. A click
+    /// anywhere on the board cancels it, like lichess and chess.com.</summary>
+    [Parameter] public bool AllowPremove { get; set; }
+    [Parameter] public string PremoveSide { get; set; }
+    /// <summary>The queued move as UCI (promotion always to queen), or after a cancel.</summary>
+    [Parameter] public EventCallback<string> OnPremoveSet { get; set; }
+    [Parameter] public EventCallback OnPremoveCleared { get; set; }
     /// <summary>Centered line under the board for terminal positions ("Checkmate — White
     /// wins", "Stalemate — draw", "Draw — insufficient material"). On by default; hosts with
     /// their own game-end display (PlayVsComputer) pass false to avoid double reporting.</summary>
@@ -437,12 +453,14 @@
         get
         {
             var preview = PreviewCircles;
+            var dots = LegalDots;
             var comment = CommentCircles;
             var haveExtra = ExtraCircles is { Count: > 0 };
-            if (!haveExtra && preview.Count == 0 && comment.Count == 0) return overlayCircles;
+            if (!haveExtra && preview.Count == 0 && dots.Count == 0 && comment.Count == 0) return overlayCircles;
             IEnumerable<EbCircle> merged = overlayCircles;
             if (haveExtra) merged = merged.Concat(ExtraCircles);
             if (preview.Count > 0) merged = merged.Concat(preview);
+            if (dots.Count > 0) merged = merged.Concat(dots);
             if (comment.Count > 0) merged = merged.Concat(comment);
             return merged.ToArray();
         }
@@ -523,6 +541,158 @@
             return previewCache;
         }
     }
+    // ── Legal-move dots and premoves ──────────────────────────────────────────────────────
+    private string premoveFrom, premoveTo, premovePromo, premoveSelected;
+    /// <summary>The queued premove as UCI, or null.</summary>
+    public string PendingPremove => premoveFrom is null ? null : premoveFrom + premoveTo + premovePromo;
+    private string SideToMove => ChessBoard.Position.STM == 0 ? "w" : "b";
+    private bool PremoveTurn => AllowPremove && !string.IsNullOrEmpty(PremoveSide) && SideToMove != PremoveSide && !showPromotionDialog;
+    private bool OwnPiece(string square)
+    {
+        var piece = BoardUtils.pieceAt(fen, square);
+        return piece != '\0' && (char.IsUpper(piece) ? "w" : "b") == PremoveSide;
+    }
+
+    // Where the piece could go, geometrically: its movement pattern to the edge of the board,
+    // through and onto anything. That is how lichess and chess.com define premove squares, and
+    // it is what a premove needs - the usual one is a recapture onto a square that still holds
+    // our own piece, and a pawn premove needs both diagonals whether or not an enemy stands
+    // there yet. The opponent's reply decides what is real; the queued move is checked for
+    // legality when it is played, not here.
+    private string premoveDestKey;
+    private HashSet<string> premoveDestCache = new();
+    private HashSet<string> PremoveDestinations(string square)
+    {
+        var key = fen + "|" + square;
+        if (key == premoveDestKey) return premoveDestCache;
+        premoveDestKey = key;
+        var set = new HashSet<string>();
+        var piece = BoardUtils.pieceAt(fen, square);
+        if (piece != ' ')
+        {
+            var white = char.IsUpper(piece);
+            var type = char.ToLowerInvariant(piece);
+            int sf = square[0] - 'a', sr = square[1] - '1';
+            int dir = white ? 1 : -1, home = white ? 1 : 6;
+            for (var tf = 0; tf < 8; tf++)
+                for (var tr = 0; tr < 8; tr++)
+                {
+                    if (tf == sf && tr == sr) continue;
+                    int dx = Math.Abs(tf - sf), dy = Math.Abs(tr - sr);
+                    var ok = type switch
+                    {
+                        'n' => dx * dy == 2,
+                        'b' => dx == dy,
+                        'r' => dx == 0 || dy == 0,
+                        'q' => dx == dy || dx == 0 || dy == 0,
+                        'k' => Math.Max(dx, dy) == 1 || (dy == 0 && dx == 2 && sr == (white ? 0 : 7)),
+                        'p' => (tf == sf && tr == sr + dir) || (tf == sf && sr == home && tr == sr + 2 * dir) || (dx == 1 && tr == sr + dir),
+                        _ => false
+                    };
+                    if (ok) set.Add($"{(char)('a' + tf)}{(char)('1' + tr)}");
+                }
+        }
+        premoveDestCache = set;
+        return set;
+    }
+
+    private string legalDotsKey;
+    private IReadOnlyList<EbCircle> legalDotsCache = Array.Empty<EbCircle>();
+    private IReadOnlyList<EbCircle> LegalDots
+    {
+        get
+        {
+            if (!ShowLegalDestinations) return Array.Empty<EbCircle>();
+            var square = selectedSquare ?? premoveSelected ?? dragFromSquare;
+            if (string.IsNullOrEmpty(square)) return Array.Empty<EbCircle>();
+            var premove = PremoveTurn;
+            if (ShowSafeSquarePreview && !premove) return Array.Empty<EbCircle>();
+            var key = fen + "|" + square + "|" + premove;
+            if (key != legalDotsKey)
+            {
+                legalDotsKey = key;
+                try
+                {
+                    IEnumerable<string> dests = premove
+                        ? PremoveDestinations(square)
+                        : ChessBoard.GetLegalMoves().Where(m => m.Item1.StartsWith(square)).Select(m => m.Item1.Substring(2, 2)).Distinct();
+                    legalDotsCache = dests
+                        .Select(d => BoardUtils.pieceAt(fen, d) != '\0'
+                            ? new EbCircle(d, "#000000", 0.28, 0.92, 0.11)   // a ring around a capture
+                            : new EbCircle(d, "#000000", 0.28, 0.3))         // a dot on an empty square
+                        .ToArray();
+                }
+                catch { legalDotsCache = Array.Empty<EbCircle>(); }
+            }
+            return legalDotsCache;
+        }
+    }
+
+    private async Task PremoveClick(string square)
+    {
+        if (premoveSelected is null)
+        {
+            // A click anywhere cancels a queued premove; on one of our pieces it also starts a new one.
+            if (premoveFrom != null) await ClearPremoveAsync();
+            if (OwnPiece(square)) premoveSelected = square;
+        }
+        else if (square == premoveSelected) premoveSelected = null;
+        else if (PremoveDestinations(premoveSelected).Contains(square)) await SetPremove(premoveSelected, square);
+        else premoveSelected = OwnPiece(square) ? square : null;
+    }
+
+    private async Task SetPremove(string from, string to)
+    {
+        var piece = BoardUtils.pieceAt(fen, from);
+        var lastRank = to[1] == '8' || to[1] == '1';
+        premovePromo = char.ToLowerInvariant(piece) == 'p' && lastRank ? "q" : "";
+        premoveFrom = from;
+        premoveTo = to;
+        premoveSelected = null;
+        if (OnPremoveSet.HasDelegate) await OnPremoveSet.InvokeAsync(PendingPremove);
+    }
+
+    private async Task ClearPremoveAsync()
+    {
+        if (premoveFrom is null && premoveSelected is null) return;
+        premoveFrom = premoveTo = premovePromo = null;
+        premoveSelected = null;
+        if (OnPremoveCleared.HasDelegate) await OnPremoveCleared.InvokeAsync();
+    }
+
+    /// <summary>Drops a queued premove - a new game, a takeback, the end of the game.</summary>
+    public void ClearPremove()
+    {
+        if (premoveFrom is null && premoveSelected is null) return;
+        _ = InvokeAsync(async () => { await ClearPremoveAsync(); StateHasChanged(); });
+    }
+
+    /// <summary>The host calls this once the turn has come round. Plays the queued move if it is
+    /// legal now, exactly as a click would have; drops it otherwise. True when it was played.</summary>
+    public async Task<bool> TryPlayQueuedMove()
+    {
+        var uci = PendingPremove;
+        if (uci is null) return false;
+        premoveFrom = premoveTo = premovePromo = null;
+        premoveSelected = null;
+        var from = uci.Substring(0, 2);
+        var to = uci.Substring(2, 2);
+        if (SideToMove != PremoveSide || showPromotionDialog || !isLegalMove(from + to))
+        {
+            if (OnPremoveCleared.HasDelegate) await OnPremoveCleared.InvokeAsync();
+            StateHasChanged();
+            return false;
+        }
+        var resolved = GetMoveStr(from + to);
+        if (resolved is null) { StateHasChanged(); return false; }
+        if (resolved.StartsWith("promotion:")) resolved = from + to + (uci.Length > 4 ? uci.Substring(4) : "q");
+        await UpdateNewMove(resolved, true);
+        // The host shows the queue; tell it the queue is gone now that the move is on the board.
+        if (OnPremoveCleared.HasDelegate) await OnPremoveCleared.InvokeAsync();
+        StateHasChanged();
+        return true;
+    }
+
     private int moveListFontSize = 8;
     private int moveListHeight = 80;
     private string openingStyle = $"font-size:15px";
@@ -869,6 +1039,13 @@
     {
         if (showPromotionDialog) return;
 
+        if (PremoveTurn)
+        {
+            await PremoveClick(square);
+            StateHasChanged();
+            return;
+        }
+
         if (selectedSquare is null)
         {
             if (isLegalPieceMove(square)) selectedSquare = square;
@@ -909,8 +1086,10 @@
     [JSInvokable]
     public bool CanDragFrom(string square)
     {
-        var ok = !showPromotionDialog && isLegalPieceMove(square);
-        if (ok && ShowSafeSquarePreview)
+        // During the other side's turn a premove drag starts from any of our pieces; the
+        // legality of what it becomes is judged when it is played.
+        var ok = PremoveTurn ? OwnPiece(square) : !showPromotionDialog && isLegalPieceMove(square);
+        if (ok && (ShowSafeSquarePreview || ShowLegalDestinations))
         {
             dragFromSquare = square;
             _ = InvokeAsync(StateHasChanged);
@@ -933,7 +1112,14 @@
     public Task OnBoardDragDrop(string fromSq, string toSq) =>
         InvokeAsync(async () =>
         {
-            await TryUserMove(fromSq, toSq, animate: false);
+            if (PremoveTurn)
+            {
+                // A drop on a square the piece could reach queues it; anywhere else is just a
+                // cancelled drag and leaves an earlier queue alone.
+                if (PremoveDestinations(fromSq).Contains(toSq)) await SetPremove(fromSq, toSq);
+            }
+            else
+                await TryUserMove(fromSq, toSq, animate: false);
             StateHasChanged();
         });
 

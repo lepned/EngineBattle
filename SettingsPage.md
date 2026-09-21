@@ -75,7 +75,7 @@ Everything visual has its own page, **Appearance** (`/appearance`), with a live 
 - **Text & menu** — the app's base text size and the navigation menu.
 - **Text per region** and **Charts & panels** — the tournament page: a text size for each region (standings, crosstable, pairings, engine panel, ...), chart heights, PV board size, which charts and panels to show, where the crosstable goes. Remembered **per screen**, so a laptop and the monitor it docks to each keep their own values; the corner control on the tournament page writes the same settings.
 - **Theme**, **Pieces**, **Coordinates**, **PV Arrows**, **Policy Overlay**, **Highlight**, **Eval Bar** — the board and what is drawn on it.
-- **Tournament header** and **Interaction & Effects**.
+- **Tournament header** and **Interaction & Effects** - the selection ring, move animation, **Show Legal Moves** (dots on the squares a picked-up piece may go to, a ring on a capture; rules only, no evaluation) and **Premoves** (queue your next move while the computer thinks on the play pages; it is played the moment your turn comes if it is still legal, shown on its two squares until then, and a click on the board cancels it).
 
 ## Persistence
 
