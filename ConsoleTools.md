@@ -545,3 +545,13 @@ dotnet run -c Release -- help
 - [CupMode.md](CupMode.md) - Knockout/Cup tournament mode details
 - [LadderMode.md](LadderMode.md) - Ladder tournament mode details
 - [Console/ConsoleTuner.md](Console/ConsoleTuner.md) - Bayesian tuner configuration
+
+## mkdef - an engine def from the engine itself
+
+```bash
+dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--base def.json] [--uci name value]... [--print] [--force] [--timeout seconds]
+```
+
+Starts the engine, reads its `uci` answer (name, author, every option with its default), and
+writes `<Name without spaces>.json` into `--out` (default: the current folder). Same code as
+Tools > Engine creator in the GUI. See EngineDefConfig.md for what each flag does.

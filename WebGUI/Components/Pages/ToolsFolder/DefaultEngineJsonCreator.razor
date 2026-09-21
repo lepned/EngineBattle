@@ -184,129 +184,29 @@
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            var result = await Task.Run(() =>
+            // The probe and the def are the shared EngineProbe module - the mkdef verb is the
+            // same code without a screen. What the page adds is the base def and the two
+            // folders from Settings.
+            var probed = await Task.Run(() => ChessLibrary.EngineProbe.probe(enginePath, 15000));
+            if (probed.IsError)
             {
-                var config = CoreTypes.EngineConfig.EmptyWithPath(enginePath);
-                var engine = EngineHelper.createEngine(config, null);
-                using var reg = cts.Token.Register(() =>
-                {
-                    try { engine.StopProcess(); } catch { }
-                });
-                try
-                {
-                    engine.StartProcess();
-                    cts.Token.ThrowIfCancellationRequested();
-                    engine.StopProcess();
-                }
-                catch
-                {
-                    try { engine.StopProcess(); } catch { }
-                    throw;
-                }
-                var defs = engine.GetDefaultOptions();
-                var uciCommands = engine.GetOptionsMap();
-                return (config, defs, uciCommands);
-            }, cts.Token);
-
-            var config = result.config;
-            var defs = result.defs;
-            var uciCommands = result.uciCommands;
-
-            // If a base config is loaded, overlay its option values onto probed defaults
-            if (baseConfig != null && baseConfig.Options != null)
-            {
-                foreach (var opt in baseConfig.Options)
-                {
-                    if (defs.ContainsKey(opt.Key))
-                        defs[opt.Key] = opt.Value;
-                }
+                statusMessage = probed.ErrorValue;
+                statusType = "error";
+                return;
             }
-
-            // Extract engine name and author from UCI id lines
-            string uciEngineName = null;
-            string uciAuthor = null;
-            if (uciCommands.TryGetValue("name", out var nameOpt) &&
-                nameOpt.OptionType.IsIdAndAuthor)
+            var built = ChessLibrary.EngineProbe.buildForGui(
+                probed.ResultValue, baseConfig,
+                SettingsService.Settings.NeuralNetFolder ?? "",
+                SettingsService.Settings.TablebaseFolder ?? "");
+            if (built.IsError)
             {
-                var idAndAuthor = (ChessLibrary.UciOption.UciOptionType.IdAndAuthor)nameOpt.OptionType;
-                uciEngineName = idAndAuthor.Item3;
-                config.Name = uciEngineName;
+                statusMessage = built.ErrorValue;
+                statusType = "error";
+                return;
             }
-            if (uciCommands.TryGetValue("author", out var authorOpt) &&
-                authorOpt.OptionType.IsIdAndAuthor)
-            {
-                var idAndAuthor = (ChessLibrary.UciOption.UciOptionType.IdAndAuthor)authorOpt.OptionType;
-                uciAuthor = idAndAuthor.Item3;
-            }
-
-            // Apply neural net folder: base config NetworkPath takes priority, then global settings
-            if (baseConfig != null && !string.IsNullOrWhiteSpace(baseConfig.NetworkPath))
-            {
-                config.NetworkPath = baseConfig.NetworkPath;
-            }
-            else
-            {
-                var nnFolder = SettingsService.Settings.NeuralNetFolder;
-                if (!string.IsNullOrWhiteSpace(nnFolder))
-                    config.NetworkPath = nnFolder;
-            }
-
-            // Apply tablebase path from global settings (base config options already applied above)
-            var syzygyVal = defs.ContainsKey("SyzygyPath") ? defs["SyzygyPath"]?.ToString() : null;
-            if (string.IsNullOrWhiteSpace(syzygyVal) || string.Equals(syzygyVal, "<empty>", StringComparison.OrdinalIgnoreCase))
-            {
-                var tbPath = SettingsService.Settings.TablebaseFolder;
-                if (defs.ContainsKey("SyzygyPath"))
-                {
-                    if (!string.IsNullOrWhiteSpace(tbPath))
-                        defs["SyzygyPath"] = tbPath;
-                    else
-                        defs.Remove("SyzygyPath");
-                }
-            }
-
-            // Auto-enable useful options (only if not already set by base config)
-            if (defs.ContainsKey("LogLiveStats"))
-                defs["LogLiveStats"] = true;
-            if (defs.ContainsKey("VerboseMoveStats"))
-                defs["VerboseMoveStats"] = true;
-            if (defs.ContainsKey("UCI_ShowWDL"))
-                defs["UCI_ShowWDL"] = true;
-
-            var defaultConfig = CoreTypes.EngineConfig.AddOptions(config, defs);
-            var jsonNode = JsonSerializer.SerializeToNode(defaultConfig);
-            var obj = jsonNode!.AsObject();
-
-            // Apply UCI id values to JSON
-            if (uciEngineName != null)
-            {
-                obj["Version"] = uciEngineName;
-                obj["Alias"] = StripVersion(uciEngineName);
-            }
-            if (uciAuthor != null)
-                obj["Dev"] = uciAuthor;
-
-            // Apply base config top-level fields (non-option settings)
-            if (baseConfig != null)
-            {
-                if (!string.IsNullOrWhiteSpace(baseConfig.Alias))
-                    obj["Alias"] = baseConfig.Alias;
-                if (!string.IsNullOrWhiteSpace(baseConfig.LogoPath))
-                    obj["LogoPath"] = baseConfig.LogoPath;
-                if (!string.IsNullOrWhiteSpace(baseConfig.Args))
-                    obj["Args"] = baseConfig.Args;
-                obj["Rating"] = baseConfig.Rating;
-                obj["ContemptEnabled"] = baseConfig.ContemptEnabled;
-                obj["NegativeContemptAllowed"] = baseConfig.NegativeContemptAllowed;
-            }
-
-            obj.Remove("IsChallenger");
-            obj.Remove("WinboardConfig");
-            obj.Remove("DeviceOption");
-            obj.Remove("DeviceTemplate");
-            jsonPreview = obj.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            probedEngineName = uciEngineName ?? Path.GetFileNameWithoutExtension(enginePath);
+            var defs = built.ResultValue.Options;
+            jsonPreview = ChessLibrary.EngineProbe.toJson(built.ResultValue);
+            probedEngineName = Path.GetFileNameWithoutExtension(ChessLibrary.EngineProbe.defFileName(built.ResultValue));
 
             var baseNote = baseConfig != null ? $" (with settings from {baseConfig.Name})" : "";
             statusMessage = $"Successfully probed {probedEngineName} — {defs.Count} UCI options detected.{baseNote}";
@@ -382,20 +282,6 @@
                 return path;
         }
         return path;
-    }
-
-    private static string StripVersion(string engineName)
-    {
-        // Strip trailing version-like tokens: "Stockfish 17" -> "Stockfish", "Lc0 v0.31.2" -> "Lc0"
-        var parts = engineName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var nameparts = new System.Collections.Generic.List<string>();
-        foreach (var part in parts)
-        {
-            if (System.Text.RegularExpressions.Regex.IsMatch(part, @"^v?\d"))
-                break;
-            nameparts.Add(part);
-        }
-        return nameparts.Count > 0 ? string.Join(" ", nameparts) : engineName;
     }
 
     private async Task BrowseFolder(Action<string> setter, string currentValue)

@@ -42,6 +42,7 @@
 		<Compile Include="PuzzlePipelineFixesTests.fs" />
 		<Compile Include="OutputFolderTests.fs" />
 		<Compile Include="EngineDefGenTests.fs" />
+		<Compile Include="EngineProbeTests.fs" />
 		<Compile Include="GameAccuracyAnalysisTests.fs" />
 		<Compile Include="LiveFeedWireTests.fs" />
 		<Compile Include="LiveFeedRecorderTests.fs" />

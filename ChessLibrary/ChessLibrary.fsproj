@@ -92,6 +92,7 @@
 
 		<!-- Engine (depends on protocol, configuration, LowLevelUtilities) -->
 		<Compile Include="Engine\Engine.fs" />
+		<Compile Include="Engine\EngineProbe.fs" />
 
 		<!-- Deviation analysis (depends on Board, GameAnalysis) -->
 		<Compile Include="Analysis\DeviationAnalysis.fs" />

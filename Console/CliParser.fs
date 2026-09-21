@@ -75,6 +75,7 @@ type VerbResult =
     // folder of puzzle result JSONs -> per-arm step curves; filters narrow the output
     | PuzzleTrend of folder:string * arm:string option * testType:string option * ratingGroup:int option * csvOut:string option * minSteps:int
     | GenDefs of template:string * netFolder:string option * outFolder:string option * dryRun:bool * force:bool
+    | MkDef of exe:string * out:string option * net:string option * tb:string option * baseDef:string option * overrides:(string * string) list * print:bool * force:bool * timeoutSec:int
     | Validate of configFile:string
     | Elo of path:string
     | Speed of path:string
@@ -650,6 +651,37 @@ module CustomParser =
                         | _ -> stop <- true
                     parseArgs args i (Verb (PuzzleTrend (folder, arm, testType, ratingGroup, csvOut, minSteps)) :: acc)
                 else failwith "Missing folder for puzzletrend"
+            | "mkdef" | "md" ->
+                // An engine def from a running engine: what `uci` answers is what the def gets.
+                if index + 1 < args.Length then
+                    let exe = args.[index + 1]
+                    let mutable i = index + 2
+                    let mutable out = None
+                    let mutable net = None
+                    let mutable tb = None
+                    let mutable baseDef = None
+                    let mutable overrides = []
+                    let mutable print = false
+                    let mutable force = false
+                    let mutable timeout = 15
+                    let mutable stop = false
+                    while not stop && i < args.Length do
+                        match args.[i].ToLower() with
+                        | "--out" -> out <- Some (valueOf args i); i <- i + 2
+                        | "--net" -> net <- Some (valueOf args i); i <- i + 2
+                        | "--tb" -> tb <- Some (valueOf args i); i <- i + 2
+                        | "--base" -> baseDef <- Some (valueOf args i); i <- i + 2
+                        | "--uci" ->
+                            let name = valueOf args i
+                            let value = valueOf args (i + 1)
+                            overrides <- overrides @ [ name, value ]
+                            i <- i + 3
+                        | "--print" -> print <- true; i <- i + 1
+                        | "--force" -> force <- true; i <- i + 1
+                        | "--timeout" -> timeout <- parseInt (valueOf args i); i <- i + 2
+                        | _ -> stop <- true
+                    parseArgs args i (Verb (MkDef (exe, out, net, tb, baseDef, overrides, print, force, timeout)) :: acc)
+                else failwith "Missing engine path for mkdef"
             | "gendefs" | "gd" ->
                 if index + 1 < args.Length then
                     let template = args.[index + 1]

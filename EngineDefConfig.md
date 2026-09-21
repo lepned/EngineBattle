@@ -2,6 +2,24 @@
 
 This document provides an overview of the `EngineDef.json` configuration file used in the EngineBattle application. This file defines the settings and parameters for configuring a chess engine.
 
+You rarely write one by hand. **Tools > Engine creator** in the GUI, and `mkdef` in the console,
+both ask the engine itself: they start it, read what it answers to `uci` (name, author, every
+option with its default) and write the def from that. The two share one implementation.
+
+```bash
+cd Console
+dotnet run -c release -- mkdef C:/Engines/stockfish.exe --out C:/Chess/EngineDefs --tb D:/syzygy --uci Threads 8 --uci Hash 4096
+dotnet run -c release -- mkdef C:/Engines/lc0.exe --net C:/Networks/BT4-332.pb.gz --out C:/Chess/EngineDefs
+```
+
+`--net` goes into the engine's own network option (Lc0's `WeightsFile`, Ceres' `Network` - found
+on the option, not the engine's name) and its folder into `NetworkPath`; an engine without a
+network option refuses it. `--tb` fills `SyzygyPath` when the engine has one and names no folder
+yet. `--uci name value` overrides a default and must name an option the engine reported. `--base
+def.json` carries the option values and the display fields of an existing def over onto a fresh
+probe. `--print` shows the def instead of writing it; an existing file is never overwritten
+without `--force`. The file is named after the engine without spaces (`Stockfish19.json`).
+
 ## Configuration Fields
 
 ### General Information

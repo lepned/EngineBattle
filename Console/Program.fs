@@ -2770,6 +2770,31 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                     File.WriteAllText(outPath, ChessLibrary.PuzzleTrend.toCsv filtered)
                                     printfn "CSV written: %s" outPath
                                 | None -> ()
+                | Verb (MkDef (exe, out, net, tb, baseDef, overrides, print, force, timeoutSec)) ->
+                    // The Engine creator page for a terminal: ask the engine, write the def.
+                    // Same module as the page (EngineProbe), so the two cannot drift.
+                    let wishes =
+                        { ChessLibrary.EngineProbe.Wishes.Empty with
+                            NetFile = net |> Option.map normalizePath
+                            Tablebases = tb |> Option.map normalizePath
+                            Base = baseDef |> Option.map (normalizePath >> JSON.readSingleEngineConfig)
+                            Overrides = overrides }
+                    match ChessLibrary.EngineProbe.probe (normalizePath exe) (timeoutSec * 1000) with
+                    | Result.Error msg -> printfn "%s" msg
+                    | Result.Ok probed ->
+                        match ChessLibrary.EngineProbe.build probed wishes with
+                        | Result.Error msg -> printfn "%s" msg
+                        | Result.Ok def ->
+                            let by = if String.IsNullOrWhiteSpace def.Dev then "" else sprintf " by %s" def.Dev
+                            printfn "%s%s: %d options" def.Name by def.Options.Count
+                            match ChessLibrary.EngineProbe.networkOptionKey probed.Options with
+                            | Some k -> printfn "  %s = %s" k (string def.Options.[k])
+                            | None -> ()
+                            if print then printfn "%s" (ChessLibrary.EngineProbe.toJson def)
+                            else
+                                match ChessLibrary.EngineProbe.write (out |> Option.map normalizePath |> Option.defaultValue "") def force with
+                                | Result.Ok path -> printfn "  Wrote %s" path
+                                | Result.Error msg -> printfn "  %s" msg
                 | Verb (GenDefs (template, netFolder, outFolder, dryRun, force)) ->
                     // A training run drops a checkpoint every few hours and each needs a def
                     // that differs from the last only in the step number. Typing that by hand
@@ -2910,6 +2935,10 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     printfn "                                          Run puzzle evaluation from JSON config"
                     printfn "                                          --json <path>: write structured results JSON for tooling"
                     printfn "  eretjson, eret <config>                 Run ERET evaluation from JSON config"
+                    printfn "  mkdef, md <engine.exe> [options]        Write an engine def from what the engine answers to 'uci'"
+                    printfn "                                          --out <folder> (default: current), --net <file> (into the engine's"
+                    printfn "                                          network option + NetworkPath), --tb <folder>, --base <def.json>,"
+                    printfn "                                          --uci <name> <value> (repeatable), --print, --force, --timeout <s>"
                     printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
                     printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
                     printfn "  piecevalues, pv, values <engine> [fen] [options]"
