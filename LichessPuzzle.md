@@ -113,7 +113,7 @@ Engines/
 
 Open a terminal and navigate to the `Console` folder inside your EngineBattle project. Then run:
 
-`dotnet run -c release puzzlejson c:/Dev/Chess/EB/puzzleconfig.json `
+`dotnet run -c release -- puzzlejson c:/Dev/Chess/EB/puzzleconfig.json`
 
 Replace `c:/Dev/Chess/EB/puzzleconfig.json` with the path to your `PuzzleConfig.json`.
 
@@ -166,7 +166,7 @@ thematic move) and, when enabled, `positionAccuracy` (every position). The theme
 - **Progress and results** will be shown in the console and summarized as shown above.
 - **Failed puzzles** (where engines did not find the correct move) are saved in the folder specified by `FailedPuzzlesOutputFolder`.
 - You can analyze these failed positions to identify engine weaknesses or compare performance across engines.
-- To visualize the results, open the EPD file generated during the puzzle run in the EngineBattle GUI. Navigate to the Tools menu, select Test Canvas, and load your output file (EPD-file).
+- To visualize the results, open the EPD file generated during the puzzle run in the EngineBattle GUI. Navigate to **Tools → EPD visualizer**, and load your output file (EPD-file).
 - The visualization displays each failed puzzle on a small chessboard, highlighting both the correct move and the move actually played by the engine using colored arrows. 
   Additionally, the policy values for both the correct move and the move played are shown, allowing you to see not only what the engine chose, but also how strongly it preferred each option. This makes it easy to spot tactical oversights, policy head weaknesses, or cases where the engine was uncertain between candidate moves.
 
@@ -193,7 +193,7 @@ thematic move) and, when enabled, `positionAccuracy` (every position). The theme
 ## Summary
 
 EngineBattle’s console mode makes it easy to benchmark chess engines on thousands of Lichess puzzles with just a single command. By customizing your `PuzzleConfig.json`, you can tailor tests to your needs—whether you’re evaluating tactical strength, policy head accuracy, or overall puzzle-solving ability. 
-> **Note:** Puzzles can also be run in the GUI mode (in a very similar way), but this is not covered in this post.
+> **Note:** Puzzles can also be run in the GUI (**Puzzles → Lichess puzzles**, with **Tools → Lichess puzzle creator** for the config), and every run's summary can be opened later on **Puzzles → Run report**; several runs of one training arm are consolidated on **Puzzles → Puzzle trend**.
 
 **Ready to get started?**  
 Clone EngineBattle, set up your engines and puzzles, and run your first test today! 

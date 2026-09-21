@@ -6,6 +6,7 @@ position) and globally (the net's implied piece values). Two console commands:
 - `piecevalues` / `pv` — **contextual** values in a single position (leave-one-out).
 - `piecevaluefit` / `pvfit` — **global** values via regression over many positions.
 - `pvbatch` — **batch** the global fit over a whole folder of nets (self-play + regress each).
+- `pvcombo` — a **material-imbalance report** from a PGN, grouped by absolute material signature.
 
 There are three distinct notions of "a net's piece value", each with its own tool:
 
@@ -241,6 +242,22 @@ regressions. Pawn ≡ 1.
   to AZ's 9.5; B > N preserved). That the scale and ordering match the Ceres family suggests
   the compression is driven by the **method** (searchless + endgame) far more than by net
   architecture or playing strength.
+
+---
+
+## 4. Imbalance report — `pvcombo`
+
+```
+pvcombo <games.pgn>
+```
+
+The contextual counterpart of the global fit: for six classic matchups - `B vs N`,
+`BN vs BB` (the bishop pair), `BB vs NN`, `BR vs BN`, `RN vs RB`, `QN vs QB` - it collects
+every position past ply 16 whose material is exactly that imbalance (either colour on the
+A side) and prints the count, the mean game outcome and the mean in-game eval in pawns,
+both from the A side's view. Rows with too few positions are marked `(few)`. It answers
+"does this net (and do the results) favour the bishop - and does that change with rooks or
+queens on the board?", which a single global number cannot.
 
 ---
 

@@ -45,6 +45,14 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `validate` | `v` | Validate a tournament config without running |
 | `perft` | | Run perft move generation test |
 | `gui` | | Launch WebGUI |
+| `query` | `q` | Position query as JSON: status, legal moves, attackers, pins, insights, SEE (validator use) |
+| `mkdef` | `md` | Write an engine def from what the engine answers to `uci` |
+| `gendefs` | `gd` | Defs for training checkpoints, from an existing def as template |
+| `puzzletrend` | `pt` | Per-arm step curves from many puzzle runs |
+| `piecevalues` | `pv`, `values` | Piece values from a network's evaluations (see PieceValues.md) |
+| `piecevaluefit` | `pvfit` | Piece-value regression over a PGN/EPD |
+| `pvbatch` | | Piece values for a folder of nets |
+| `pvcombo` | | Material-imbalance report by material signature |
 | `help` | `h` | Show help message |
 
 ---
@@ -470,6 +478,69 @@ dotnet run -c Release -- help
 
 ---
 
+### query
+
+```bash
+dotnet run -c release -- query <fen|startpos> [square] [--pv "<san|uci>"] [--setpiece sq=P] [--remove sq] [--stm w|b] [--castling s] [--ep sq] [--emit-epd [--op name=value]...] [--svg out.svg]
+dotnet run -c release -- query --epd <file.epd>
+```
+
+Machine-readable JSON on stdout (diagnostics on stderr) for validators and tooling: the
+position's `status`, `insufficientMaterial`, every legal move as UCI + SAN with predicates
+(capture, castling, en passant, gives check), and both sides' insights - checkers, pins,
+king danger, hanging pieces by static exchange evaluation, forks, skewers, overloaded and
+removable defenders, discovered attacks. A square argument adds that square's attackers,
+attack set, pin ray and safe destinations. The edit flags transform the FEN first (piece
+edits prune castling and en passant rights), `--pv` renders a move sequence as numbered SAN,
+`--emit-epd` prints an EPD line instead of JSON, `--svg` draws the position with the
+insight shapes, and `--epd <file>` streams one JSON object per position. The worked
+description with field names is in the README. Aliases: `q`.
+
+### mkdef
+
+```bash
+dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--base def.json] [--uci name value]... [--print] [--force] [--timeout seconds]
+```
+
+An engine def from the engine itself: starts it, reads its `uci` answer (name, author, every
+option with its default) and writes `<Name without spaces>.json` into `--out` (default: the
+current folder). Same code as Tools > Engine creator in the GUI. `--net` goes into the
+engine's own network option (Lc0's `WeightsFile`, Ceres' `Network`) and its folder into
+`NetworkPath`; `--tb` fills `SyzygyPath`; `--uci` overrides a default; `--base` carries an
+existing def's values over; nothing is overwritten without `--force`. Aliases: `md`. Details
+in [EngineDefConfig.md](EngineDefConfig.md).
+
+### gendefs
+
+```bash
+dotnet run -c release -- gendefs <fullPathTo/templateDef.json> [--net <one.onnx>|--nets <folder>] [--out folder] [--dry-run] [--force]
+```
+
+Defs for training checkpoints that have none yet. An existing def is the template: its file
+name carries the naming convention (`<prefix>_<step>M[_ema].json`) and its content
+everything else. The net folder is scanned for `.onnx` files of the same arm and variant,
+nets already referenced by a def are skipped, and the step label is substituted wherever it
+occurs. `--dry-run` lists what would be written. Aliases: `gd`.
+
+### puzzletrend
+
+```bash
+dotnet run -c release -- puzzletrend <folder> [--arm S] [--type S] [--rg N] [--min-steps N] [--csv out.csv]
+```
+
+Consolidates many puzzle runs into per-training-arm step curves, from the
+`LichessSummary_<stamp>.json` files every puzzle run writes. Net names are split into arm +
+step; repeated measurements of one checkpoint collapse to the largest sample. Series with
+fewer than `--min-steps` (default 3) steps are hidden. The GUI equivalent is
+`/puzzles/trend`. Aliases: `pt`.
+
+### piecevalues, piecevaluefit, pvbatch, pvcombo
+
+What a network thinks a piece is worth, from its evaluations of material imbalances:
+`piecevalues` (`pv`) for one engine and position, `piecevaluefit` (`pvfit`) as a regression
+over a PGN or EPD, `pvbatch` over a folder of nets, and `pvcombo <games.pgn>` for a report
+by absolute material signature. Method and options in [PieceValues.md](PieceValues.md).
+
 ## Configuration File Examples
 
 ### Minimal Tournament Configuration
@@ -546,12 +617,3 @@ dotnet run -c Release -- help
 - [LadderMode.md](LadderMode.md) - Ladder tournament mode details
 - [Console/ConsoleTuner.md](Console/ConsoleTuner.md) - Bayesian tuner configuration
 
-## mkdef - an engine def from the engine itself
-
-```bash
-dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--base def.json] [--uci name value]... [--print] [--force] [--timeout seconds]
-```
-
-Starts the engine, reads its `uci` answer (name, author, every option with its default), and
-writes `<Name without spaces>.json` into `--out` (default: the current folder). Same code as
-Tools > Engine creator in the GUI. See EngineDefConfig.md for what each flag does.

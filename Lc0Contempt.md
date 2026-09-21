@@ -52,7 +52,7 @@ A preset never shows a contempt the two ratings do not explain: contempt is alwa
 
 ## Sent to Lc0
 
-The box at the bottom of the panel is the complete list of `setoption` lines the page sends, in order, with a Copy button - paste them into any UCI console to get the same engine. They are sent when the engine starts and, after a change, right before the next search or engine move, followed by `ucinewgame`: Lc0 keeps its search tree between moves and for a repeated position, and nodes searched under the old settings would otherwise keep the old contempt.
+The box at the bottom of the panel is the complete list of `setoption` lines the page sends, in order, with a Copy button - paste them into any UCI console to get the same engine. They are sent when the engine starts and, after a change, right before the next search or engine move, followed by `ucinewgame`: Lc0 keeps its search tree between moves and for a repeated position, and nodes searched under the old settings would otherwise keep the old contempt. Every batch sent is also echoed to the console (the Log window in the desktop app), line by line, so what Lc0 actually received can be read off the screen.
 
 ## Example
 

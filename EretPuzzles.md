@@ -91,7 +91,7 @@ Engines/
 
 Open a terminal and navigate to the `Console` folder inside your EngineBattle project. Then run:
 
-`dotnet run -c release eretjson c:/Dev/Chess/EB/eretconfig.json`
+`dotnet run -c release -- eretjson c:/Dev/Chess/EB/eretconfig.json`
 
 Replace `c:/Dev/Chess/EB/eretconfig.json` with the path to your `EretConfig.json`.
 
@@ -119,7 +119,7 @@ Ceres C1-640-25   80.0%       20         5
 
 - **Progress and results** will be shown in the console and summarized as shown above.
 - **Failed puzzles** (where engines did not find the correct move) are saved in the folder specified by `FailedPuzzlesOutputFolder`. You can analyze these failed positions to identify engine weaknesses or compare performance across engines.
-- To visualize the results, open the EPD file generated during the puzzle run in the EngineBattle GUI. Navigate to the Tools menu, select Test Canvas, and load your output file (EPD-file).
+- To visualize the results, open the EPD file generated during the puzzle run in the EngineBattle GUI. Navigate to **Tools → EPD visualizer**, and load your output file (EPD-file).
 - The visualization displays each failed puzzle on a small chessboard, highlighting both the correct move and the move actually played by the engine using colored arrows. 
 
 ---

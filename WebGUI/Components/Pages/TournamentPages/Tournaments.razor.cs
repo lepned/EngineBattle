@@ -854,7 +854,7 @@ public partial class Tournaments
 			.Add(ModCode.Ctrl | ModCode.Alt, Code.D, (Func<Task>)(async () => { await DrawGame(); }), "Draw")
 			.Add(ModCode.Ctrl | ModCode.Alt, Code.Minus, (() => NudgeFontScale(-5)), "Smaller table text")
 			.Add(ModCode.Ctrl | ModCode.Alt, Code.Equal, (() => NudgeFontScale(5)), "Larger table text")
-			.Add(ModCode.Ctrl | ModCode.Alt, Code.Num0, (() => ResetToConfiguredLayout()), "Text and PV boards back to tournament.json");
+			.Add(ModCode.Ctrl | ModCode.Alt, Code.Num0, (() => ResetToConfiguredLayout()), "Text and PV boards back to the file or the defaults");
 			//.Add(ModKey.Ctrl, Key.s, (() => SwapBothTables()), "Swap tables")
 			//.Add(ModKey.Ctrl, Key.b, (() => BenchmarkConfig()), "Create benchmark config")
 			//.Add(ModKey.Ctrl, Key.l, (() => OpenResultDialog()), "Show result");

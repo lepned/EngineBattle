@@ -171,6 +171,20 @@ Where:
 
 ## Configuration Examples
 
+### The WinboardConfig fields
+
+Everything the `WinboardConfig` block of an engine def can hold; the examples below show
+the ones that matter for each engine. Full descriptions in [EngineDefConfig.md](EngineDefConfig.md).
+
+- **TimeControlStrategy**: `AutoDetect` (default), `LevelWithTime`, `TimeOtimOnly`, `StWithTime`, `StOnly` - see *Time Control Strategies* above.
+- **SideToMovePOV**: `true` when the engine reports scores from the side to move rather than from White (default `false`).
+- **RequiresLevelForThinkingOutput**: `true` for engines that print no thinking lines until a `level` command has been sent (default `false`).
+- **Use4FieldFen**: `true` for engines whose `setboard` rejects the half-move and full-move fields (default `false`).
+- **ForceV1Mode**: skip `protover 2` negotiation for engines that predate it (default `false`).
+- **StartupCommands**: extra commands sent once after `post` and `easy`, e.g. `["level 16"]` (default `[]`).
+- **PreGoDelayMs**: pause between the time commands and `go` for engines without `ping` support (default `100`; `0` = none).
+
+
 ### Standard Engine (Crafty)
 ```json
 {

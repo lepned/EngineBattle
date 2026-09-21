@@ -32,6 +32,8 @@ without `--force`. The file is named after the engine without spaces (`Stockfish
 - **Dev**: Information about the engine's developer(s).
 - **LogoPath**: The file path for the engine's logo image.
 - **Protocol**: The communication protocol (e.g., UCI, Winboard, XBoard) used by the engine.
+- **DeviceOption** / **DeviceTemplate** (optional): for tournaments that run games in parallel on several GPUs. `DeviceOption` names the UCI option that selects the device and `DeviceTemplate` is its value with `{0}` standing for the GPU index - e.g. `"DeviceOption": "Device", "DeviceTemplate": "GPU:{0}#TensorRTNative"` for Ceres, or `"DeviceOption": "BackendOptions", "DeviceTemplate": "gpu={0}"` for Lc0. Each parallel worker gets the next id from `TestOptions.GPUs` in tournament.json; a value already present in `Options` has its numbers replaced in place. Left empty (the default), every game sends the option exactly as written.
+- **IsChallenger** is not written in the file: EngineBattle sets it at run time for the challengers of a gauntlet.
 
 ### Winboard-Specific Configuration
 
@@ -46,6 +48,7 @@ For engines using the Winboard/XBoard protocol, you can optionally specify `Winb
     - `"StOnly"`: Legacy mode (send `st` only, may cause poor time management)
     - `"AutoDetect"`: Probe `level` command at runtime, fallback to `TimeOtimOnly` on error
   - **StartupCommands** (array of strings): Commands to send to the engine after initialization (after `post` and `easy`). Useful for engines requiring specific setup commands. Default: `[]`
+  - **PreGoDelayMs** (int): pause between the time commands (`time`/`otim`, or `st`) and `go`, so an engine without `ping` support has read its clock before it starts thinking. Default: `100`; `0` sends `go` at once.
   - **ForceV1Mode** (bool): If `true`, forces Winboard V1 protocol mode (skips protover 2 negotiation, uses conservative defaults). Use this for very old engines that don't understand protover 2 at all. Default: `false`
   - **RequiresLevelForThinkingOutput** (bool): If `true`, sends a dummy `level 40 5 0` command at startup to enable standard thinking output format. Use this for engines that need `level` to enable output but have broken level-based time management (like Comet). **Note:** This is compatible with `TimeOtimOnly` strategy - the dummy level is sent only at startup, while time/otim are used during games. Default: `false`
   - **Use4FieldFen** (bool): If `true`, sends 4-field FEN format (position, side, castling, en passant) instead of full 6-field FEN (which includes halfmove clock and fullmove number) in `setboard` commands. Use this for very old engines that crash or hang on 6-field FEN (like TheTurk). Default: `false`
