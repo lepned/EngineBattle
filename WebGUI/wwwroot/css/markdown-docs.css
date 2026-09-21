@@ -147,3 +147,14 @@
   margin: 40px 0;
   box-shadow: 0 0 10px rgba(66, 153, 225, 0.3);
 }
+
+/* Screenshots are captured at 1920px and would otherwise render at that width, wider than
+   the text column. Capped and centred; small inline images are unaffected by the cap. */
+.markdown-content img {
+  max-width: min(100%, 880px);
+  height: auto;
+  display: block;
+  margin: 0.8rem auto 1.2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}

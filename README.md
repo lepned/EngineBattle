@@ -165,9 +165,9 @@ A console application should now run with a link to the localhost URL. Ctrl + cl
 git pull origin main
 ```
 
-### Console Commands (source builds only)
+### Console Commands (from a source clone)
 
-The Console project provides CLI commands not included in the release binaries:
+The Console project is developer and server tooling - batch runs, engine probing, PGN and position queries - and is not part of the release zip. Clone the repo and run it with `dotnet run` from the `Console` folder:
 
 ```bash
 cd Console
