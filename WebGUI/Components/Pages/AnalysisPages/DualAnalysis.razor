@@ -104,7 +104,6 @@
             <EnginePanel @ref="analysisWithEngine1" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
                          OnEngineMoveMade="OnEngineMoveMade" Id="nnInput1" Engine="Engine1"
                          OnNewEngineLoaded="OnNewEngineLoaded"
-                         IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)"
                          CompactChartLegend="true" StatsPanelKey="dual-analysis"
                          OnSearchCompleted="OnSearchCompleted" OnEvalUpdated="OnEval1Updated" />
         </div>
@@ -245,7 +244,6 @@
             <EnginePanel @ref="analysisWithEngine2" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
                          OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2"
                          OnNewEngineLoaded="OnNewEngineLoaded"
-                         IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)"
                          CompactChartLegend="true" StatsPanelKey="dual-analysis"
                          OnSearchCompleted="OnSearchCompleted" OnEvalUpdated="OnEval2Updated" />
         </div>
@@ -327,7 +325,6 @@
     private List<PGNTypes.PgnGame> games = new();
     private List<EPDTypes.EPDEntry> epdGames = new();
     private Chess.Board board = new();
-    private HashSet<ulong> analyzedPositions = new();
     private Dictionary<int, string> moveEvals = new();
 
     // Dual eval bars (white perspective): engine 1 left of the board, engine 2 right —
@@ -593,7 +590,6 @@
         board.LoadPGNGameWithVariations(game);
         fen = board.FEN();
         moveEvals = PGNHelper.evalsByPly(game);
-        analyzedPositions.Clear();
         UpdateFrcId(board.StartPosition);
         UpdateDetectedOpening();
         moveHistory = board.GetMoveHistoryWithVariations();
@@ -971,7 +967,6 @@
 
     private void OnSearchCompleted(string eval)
     {
-        analyzedPositions.Add(board.CurrentNodeHash);
         var ply = board.PlyCount - 1;
         if (ply >= 0 && !string.IsNullOrEmpty(eval))
         {

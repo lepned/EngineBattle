@@ -344,7 +344,6 @@
     /// the AB counterpart of <see cref="OnLiveStats"/>. Raised once per new depth, not per
     /// info line, so hosts re-render at a sane rate.</summary>
     [Parameter] public EventCallback<(IReadOnlyList<IterationRow> Rows, string Fen)> OnIterations { get; set; }
-    [Parameter] public Func<bool> IsPositionAnalyzed { get; set; }
     /// <summary>SAN-only legend on the N/Q charts — for hosts that show the numbers in a
     /// candidate-move panel instead (SingleAnalysis). Full values remain on hover.</summary>
     [Parameter] public bool CompactChartLegend { get; set; }
@@ -1417,7 +1416,8 @@
                             if (newDepth && OnIterations.HasDelegate)
                             {
                                 var rowsCopy = iterationCollector.Rows;
-                                var rowsFen = fen;
+                                // The search's position, not the board's (see NNSeq).
+                                var rowsFen = lastStartedSearchFen ?? fen;
                                 await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen)));
                             }
                         }
@@ -1483,6 +1483,15 @@
 
                 case EngineUpdate.Status s:
                     var status = s.Item;
+                    // A stopped search keeps reporting for a moment after `stop`, and by
+                    // then a move may have been played: those lines are about the previous
+                    // position and would fill the PV table just cleared for the new one.
+                    // Same attribution as bestmove and the live stats.
+                    var statusSearchFen = lastStartedSearchFen;
+                    if (ChessBoard != null
+                        && !string.IsNullOrEmpty(statusSearchFen)
+                        && !string.Equals(statusSearchFen, ChessBoard.FEN(), StringComparison.Ordinal))
+                        break;
                     // Assigned before the first await so it is in place when the raw Info
                     // for this same line arrives and builds the iteration row.
                     if (status.MultiPV <= 1) pendingIterationStatus = status;
@@ -1502,23 +1511,37 @@
                     if (n.NNSeq.Count > 0)
                     {
                         n.NNSeq.Reverse();
-                        currentPosition = n.NNSeq.FirstOrDefault();
-                        // Swap in a fresh list instead of mutating in place — renders may
-                        // be enumerating the old one on the dispatcher right now.
-                        NNInfoList = n.NNSeq.ToList();
-                        var skipTopNode = NNInfoList.Skip(1).ToList();
-                        searchInfoPlot?.AddData(skipTopNode);
-                        if (NNInfoList.Count > 0)
-                            await Notifier.MovesWithId(NNInfoList, Id);
-                        var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
-                        if (searchInfoPlot != null)
-                            await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff, includeConvergence: chartView == ChartView.Convergence);
+                        // These root stats belong to the search that produced them, not to
+                        // whatever the board shows now: Lc0 prints its final block after
+                        // `stop`, and a move played meanwhile had it stamped with the new
+                        // position - the previous side's candidate moves under the new FEN.
+                        // Same attribution the bestmove case does with pendingSearchFens.
+                        var statsFen = lastStartedSearchFen ?? fen;
+                        var staleStats = ChessBoard != null
+                            && !string.IsNullOrEmpty(statsFen)
+                            && !string.Equals(statsFen, ChessBoard.FEN(), StringComparison.Ordinal);
+                        var fresh = n.NNSeq.ToList();
+                        if (!staleStats)
+                        {
+                            currentPosition = fresh.FirstOrDefault();
+                            // Swap in a fresh list instead of mutating in place — renders may
+                            // be enumerating the old one on the dispatcher right now.
+                            NNInfoList = fresh;
+                            var skipTopNode = NNInfoList.Skip(1).ToList();
+                            searchInfoPlot?.AddData(skipTopNode);
+                            if (NNInfoList.Count > 0)
+                                await Notifier.MovesWithId(NNInfoList, Id);
+                            var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
+                            if (searchInfoPlot != null)
+                                await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff, includeConvergence: chartView == ChartView.Convergence);
+                        }
+                        // The host still gets stale stats, under their own FEN: it caches
+                        // per position, so they are there when the user steps back.
                         if (OnLiveStats.HasDelegate)
                         {
                             // Engine updates arrive on the reader thread; EventCallback
                             // renders the host page, so marshal to the dispatcher.
-                            var statsCopy = NNInfoList.ToList();
-                            var statsFen = fen;
+                            var statsCopy = fresh.ToList();
                             await InvokeAsync(() => OnLiveStats.InvokeAsync((statsCopy, statsFen)));
                         }
                     }
@@ -2136,8 +2159,13 @@
     // auto-search skipped it forever) and attached the old eval to the new edge/ply.
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> pendingSearchFens = new();
 
+    // The position of the search started last: what live stats arriving now belong to. The
+    // engine's final root stats come after `stop`, by which time the board may have moved on.
+    private volatile string lastStartedSearchFen;
+
     private void NoteSearchStarted(string searchFen)
     {
+        lastStartedSearchFen = searchFen ?? "";
         // Bound the queue: a bestmove can be lost on abnormal engine output
         while (pendingSearchFens.Count > 4) pendingSearchFens.TryDequeue(out _);
         pendingSearchFens.Enqueue(searchFen ?? "");
@@ -2161,6 +2189,11 @@
         ClearIterations();
         lastMainInfoLine = "";
         lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
+        // The PV-lines table too: its rows are the previous position's lines until the
+        // next search writes new ones, and with auto-search off nothing ever did.
+        data.Clear();
+        dataList.Clear();
+        tableHeader = "";
         if (focusedMoves.Count > 0)
         {
             focusedMoves.Clear();
@@ -2168,19 +2201,10 @@
         }
         if (autoSearchSwitch)
         {
-            if (IsPositionAnalyzed?.Invoke() == true)
-            {
-                // Skipping this position — but a search started for a PREVIOUS position
-                // may still be running; left alone it keeps the panel stuck "searching"
-                // (Stop enabled) with stats that no longer match the board.
-                if (searchInProgress)
-                {
-                    analyzer?.Stop();
-                    StopSearchTimer();
-                    searchInProgress = false;
-                }
-                return;
-            }
+            // A position seen before is searched again like any other: the host keeps its
+            // last result per position for the instant before the new search reports, but
+            // skipping the search made the panel look frozen - old numbers, no clock, Stop
+            // greyed out - which the user read as a hang.
             if (searchInProgress)
             {
                 analyzer?.Stop();

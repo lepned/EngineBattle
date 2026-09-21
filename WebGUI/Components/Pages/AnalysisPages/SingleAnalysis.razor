@@ -94,8 +94,7 @@
                          OnEvalUpdated="OnEvalUpdated" OnLiveStats="OnLiveStatsUpdated"
                          OnIterations="OnIterationsUpdated"
                          CompactChartLegend="true" StatsPanelKey="single-analysis"
-                         SuppressAutoOverlay="() => AnyInsightsOn"
-                         IsPositionAnalyzed="() => analyzedPositions.Contains(board.CurrentNodeHash)" />
+                         SuppressAutoOverlay="() => AnyInsightsOn" />
         </div>
 
         <!-- Center Panel: Chessboard + Save -->
@@ -403,7 +402,6 @@
     }
 
     private void ResetEvalBar() => (evalBarCp, evalBarMate) = (null, null);
-    private HashSet<ulong> analyzedPositions = new();
     HotKeysContext keyContext;
     private string searchString = "";
     private string detectedOpeningName = "";
@@ -919,32 +917,47 @@
 
     private void OnIterationsUpdated((IReadOnlyList<IterationRow> Rows, string Fen) payload)
     {
-        iterationRows = payload.Rows;
-        iterationFen = payload.Fen;
-        iterationEngine = analysisWithEngine?.EngineIdLabel ?? "";
-        iterationInfoLine = analysisWithEngine?.MainInfoLine ?? "";
+        var engine = analysisWithEngine?.EngineIdLabel ?? "";
+        var infoLine = analysisWithEngine?.MainInfoLine ?? "";
         if (!string.IsNullOrEmpty(payload.Fen))
         {
             if (iterationsByFen.Count > 400)
                 iterationsByFen.Clear();
-            iterationsByFen[payload.Fen] = new(iterationRows, iterationEngine, iterationInfoLine);
+            iterationsByFen[payload.Fen] = new(payload.Rows, engine, infoLine);
         }
+        // Same rule as the candidate stats: cached for their own position, shown only for
+        // the one on the board.
+        var onBoard = string.IsNullOrEmpty(payload.Fen) || string.Equals(payload.Fen, board.FEN(), StringComparison.Ordinal);
+        if (!onBoard) return;
+        iterationRows = payload.Rows;
+        iterationFen = payload.Fen;
+        iterationEngine = engine;
+        iterationInfoLine = infoLine;
     }
 
     private void OnLiveStatsUpdated((IReadOnlyList<NNValues> Stats, string Fen) payload)
     {
-        candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
-        candidateFen = payload.Fen;
-        candidatePreferred = analysisWithEngine?.PreferredLanMove ?? "";
-        candidateSource = analysisWithEngine?.EngineDescription ?? "";
-        candidateInfoLine = analysisWithEngine?.MainInfoLine ?? "";
+        var stats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
+        var preferred = analysisWithEngine?.PreferredLanMove ?? "";
+        var source = analysisWithEngine?.EngineDescription ?? "";
+        var infoLine = analysisWithEngine?.MainInfoLine ?? "";
         if (!string.IsNullOrEmpty(payload.Fen))
         {
             // Crude bound so a very long session can't grow without limit.
             if (candidateStatsByFen.Count > 400)
                 candidateStatsByFen.Clear();
-            candidateStatsByFen[payload.Fen] = new(candidateStats, candidatePreferred, candidateSource, candidateInfoLine);
+            candidateStatsByFen[payload.Fen] = new(stats, preferred, source, infoLine);
         }
+        // Shown only when they are about the position on the board. The engine's final
+        // block for a stopped search arrives after a move has been played; cached above
+        // for when the user steps back, but the panel keeps the current position's list.
+        var onBoard = string.IsNullOrEmpty(payload.Fen) || string.Equals(payload.Fen, board.FEN(), StringComparison.Ordinal);
+        if (!onBoard) return;
+        candidateStats = stats;
+        candidateFen = payload.Fen;
+        candidatePreferred = preferred;
+        candidateSource = source;
+        candidateInfoLine = infoLine;
     }
 
     private void RestoreCandidateStatsForCurrentPosition()
@@ -963,11 +976,9 @@
         iterationInfoLine = cachedIterations?.InfoLine ?? "";
     }
 
-    // "Reset board state" = fresh analysis session: without this, positions analyzed
-    // before the reset stay in the skip set and auto-search silently ignores them.
+    // "Reset board state" = fresh analysis session: the per-position caches go too.
     private void OnBoardReset()
     {
-        analyzedPositions.Clear();
         moveEvals.Clear();
         candidateStatsByFen.Clear();
         iterationsByFen.Clear();
@@ -1049,7 +1060,6 @@
     private void OnSearchCompleted(string eval)
     {
         var ply = board.PlyCount - 1;
-        analyzedPositions.Add(board.CurrentNodeHash);
         if (ply >= 0 && !string.IsNullOrEmpty(eval))
         {
             moveEvals[ply] = eval;

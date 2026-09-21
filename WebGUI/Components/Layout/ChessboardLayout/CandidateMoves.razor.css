@@ -19,6 +19,10 @@
     grid-template-columns: 3.6rem minmax(0, 1fr) 4.6rem 3.6rem 7.6rem;
     gap: 0 0.8rem;
     align-items: center;
+    /* Rows pack at the top. A host that stretches the card (a grid or flex column with
+       room to spare) would otherwise have the grid share that room out between its
+       rows: two legal moves ended up a panel-height apart. */
+    align-content: start;
 }
 
 .cm-h {

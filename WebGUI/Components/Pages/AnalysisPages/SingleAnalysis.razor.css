@@ -2,6 +2,9 @@
 /* Self-contained CSS with CSS variables for theming */
 
 .single-analysis {
+    /* The wide layouts below ask this element, not the window, how wide they are: the
+       nav drawer takes 240px when open and the window cannot tell. */
+    container: sa / inline-size;
     --sa-bg: radial-gradient(circle at 10% 15%, #2f313b 0%, #2b2e38 40%, #23262e 100%);
     --sa-card: rgba(30, 33, 44, 0.92);
     --sa-card-strong: rgba(22, 24, 33, 0.98);
@@ -735,18 +738,18 @@
    games column is open: without it the content is engine panel + board + move list + card,
    with it there is a fourth column on top of that. Applied positively in both cases rather
    than applied-then-undone, so nothing has to be reset in between. */
-@media (min-width: 2200px) {
+@container sa (min-width: 1760px) {
     /* The board column's floor is the chosen board plus the move list, and the card's
        minimum is 0 — so when the window is tight it is the card that gives way, not the
        board. Without this the grid shares the shortfall evenly and the board, having no
        floor of its own, ends up the smallest thing on screen. */
     .single-analysis .sa-main.sa-two-col {
-        grid-template-columns: minmax(320px, 600px) minmax(calc(var(--sa-board, 700px) + 720px), auto);
+        grid-template-columns: minmax(320px, 600px) minmax(calc(var(--sa-board, 700px) + 700px), auto);
     }
 
     .single-analysis .sa-main.sa-two-col .sa-center {
         display: grid;
-        grid-template-columns: minmax(calc(var(--sa-board, 700px) + 296px), auto) minmax(420px, 700px);
+        grid-template-columns: minmax(calc(var(--sa-board, 700px) + 296px), auto) minmax(400px, 560px);
         /* The overlay bar covers the board column only. Spanning both centred it across
            board plus card, which reads as sitting to the right of the board. The empty
            cell beside it lets the card's top line up with the board's. */
@@ -789,14 +792,14 @@
    to fit. Below
    this the card would take its width out of the middle track, and since the board is
    max-width:100% it is the board that would shrink. */
-@media (min-width: 2560px) {
+@container sa (min-width: 2080px) {
     .single-analysis .sa-main {
-        grid-template-columns: minmax(320px, 600px) minmax(calc(var(--sa-board, 700px) + 720px), auto) minmax(320px, 420px);
+        grid-template-columns: minmax(320px, 600px) minmax(calc(var(--sa-board, 700px) + 700px), auto) minmax(320px, 420px);
     }
 
     .single-analysis .sa-main .sa-center {
         display: grid;
-        grid-template-columns: minmax(calc(var(--sa-board, 700px) + 296px), auto) minmax(420px, 700px);
+        grid-template-columns: minmax(calc(var(--sa-board, 700px) + 296px), auto) minmax(400px, 560px);
         grid-template-areas:
             "overlay ."
             "board   stats"

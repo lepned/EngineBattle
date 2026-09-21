@@ -546,6 +546,10 @@
             StateHasChanged();
             return;
         }
+        // The engine's final block for a stopped search lands after the game has moved on;
+        // it is about the previous position, and the panel shows the one on the board.
+        if (!string.IsNullOrEmpty(payload.Fen) && !string.Equals(payload.Fen, fen, StringComparison.Ordinal))
+            return;
         candidateStats = payload.Stats as List<NNValues> ?? payload.Stats.ToList();
         candidateFen = payload.Fen;
         statsSeen = true;
