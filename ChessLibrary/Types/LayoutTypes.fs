@@ -20,7 +20,10 @@ module LayoutTypes =
     { LiveChartHeight: int
       MoveChartHeight: int
       PVboardSize: string
-      LogoSize: string }
+      LogoSize: string
+      /// Ceiling for the main (tournament) logo in the middle of the engine panel - the image
+      /// MainLogoFileName points at. Same "WxH" / "N" format as LogoSize; empty means 240x130.
+      MainLogoSize: string }
 
   /// Parses LogoSize string. Returns Some (width, height) or None if empty/invalid.
   /// Formats: "WxH" (e.g., "150x100") or "N" for square (e.g., "150" -> 150x150)
@@ -82,7 +85,8 @@ module LayoutTypes =
             { LiveChartHeight = 200
               MoveChartHeight = 200
               PVboardSize = "medium"
-              LogoSize = "" }
+              LogoSize = ""
+              MainLogoSize = "" }
           Charts = Charts.Default
           ShowPVBoard = false
           UseNPM = false

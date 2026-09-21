@@ -16,7 +16,7 @@
    middle term of the clamp reaches the ceiling at exactly that width and falls away below it. *@
 <div class="engine-stats-fit">
 <div class="engine-stats-container eb-scale eb-g-enginepanel"
-     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem"); --eb-panel-k: @PanelWidthFactor;">
+     style="--eb-font-max: @(FontSize > 0 ? $"{FontSize}px" : "1rem"); --eb-panel-k: @PanelWidthFactor; @MainLogoVars">
   <!-- Row 1: Engine Headers & Main Logo -->
   <div class="engine-header-cell @(Engine1ToMove ? "active" : "")">
     <span class="side-label">White</span>
@@ -259,6 +259,29 @@
 
   [Parameter]
   public string LogoSize { get; set; } = "";
+
+  /// <summary>tournament.json's ceiling for the main logo, "WxH" or "N"; empty = 240x130.</summary>
+  [Parameter]
+  public string MainLogoSize { get; set; } = "";
+
+  /// <summary>
+  /// The main logo's ceiling, as two CSS variables the stylesheet spends. Not an inline size on
+  /// the image: an inline max-width beats every @container rule and would stop the logo
+  /// scaling down with the panel (that was the 300px-logo-in-a-360px-panel bug). The variables
+  /// only replace the PIXEL term of the stylesheet's min(), so the em and cqw terms still
+  /// shrink it on a narrow panel and this stays a ceiling, exactly as LogoSize is for the
+  /// engine logos. Nothing is emitted when the setting is empty, so the CSS defaults apply.
+  /// </summary>
+  private string MainLogoVars
+  {
+    get
+    {
+      var parsed = ChessLibrary.LayoutTypes.parseLogoSize(MainLogoSize);
+      if (parsed == null) return "";
+      var (w, h) = parsed.Value;
+      return $"--eb-mainlogo-w: {w}px; --eb-mainlogo-h: {h}px;";
+    }
+  }
 
   private string MainLogo => string.IsNullOrEmpty(MainLogoFileName) ? LogoBackup : $"Img/{MainLogoFileName}";
 

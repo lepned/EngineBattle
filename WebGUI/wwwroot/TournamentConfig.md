@@ -131,6 +131,7 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
   - **MoveChartHeight**: Height of the move chart, which is regular Eval, NPS, NPM and Time charts.
   - **PVboardSize**: Size of the PV board.
   - **LogoSize**: Maximum size for engine logos. Format: "WxH" (e.g., "150x100") for width x height, or "N" for square (e.g., "120" for 120x120). Empty string or omitted uses default sizing. These values act as upper bounds; logos still shrink on narrow screens.
+  - **MainLogoSize**: Maximum size for the main logo in the middle of the engine panel (the image `MainLogoFileName` points at). Same format as LogoSize. Empty string or omitted means 240x130. An upper bound, like LogoSize: the logo still shrinks with the panel on narrow screens, it just never grows past this.
 - **Charts**:
   - **ShowEval**: Show evaluation chart.
   - **ShowNPS**: Show nodes per second chart.
@@ -267,7 +268,8 @@ Ladder mode is an elimination-style climbing tournament. Engines are ranked by r
       "LiveChartHeight": 240,
       "MoveChartHeight": 250,
       "PVboardSize": "medium",
-      "LogoSize": ""
+      "LogoSize": "",
+      "MainLogoSize": ""
     },
 
     "Charts": {

@@ -247,7 +247,9 @@
    out of the two engine cells beside it. Below a third of the panel they have room for a name
    and a version; at 300px in a 360px panel they had room for two characters.
 
-   The pixel terms are the ceiling, and they are lower than they were. Every vertical dimension
+   The pixel terms are the ceiling, and they come from tournament.json: Sizes.MainLogoSize sets
+   --eb-mainlogo-w / --eb-mainlogo-h on the panel (EngineStatsModern.razor, MainLogoVars), and
+   240x130 is what applies when it is empty. Every vertical dimension
    in this column is a function of its WIDTH, so a wider window made the panel taller: measured
    at a fixed 1100px window height, this logo went 50px tall at a 1400px window to 117px at
    2560px. The cap sits just above that 4K figure (2560 CSS px at 150% scaling), so the logo is
@@ -267,8 +269,8 @@
    2560px it is that setting, 280x140, they stop at. The main logo has no such setting, which is
    why its ceiling is a number here. */
 .main-logo {
-  max-width: min(20em, 240px, 30cqw);
-  max-height: min(12em, 130px, 20cqw);
+  max-width: min(20em, var(--eb-mainlogo-w, 240px), 30cqw);
+  max-height: min(12em, var(--eb-mainlogo-h, 130px), 20cqw);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -278,44 +280,45 @@
 
 /* Shrink main logo progressively in narrow containers.
 
-   The pixel terms in all five of these blocks are unreachable and always have been: inside
-   (max-width: 600px) the 30cqw term is at most 180px and the 20cqw term at most 120px, both
-   below the pixel numbers beside them, and every narrower block is further below its own. Only
-   the BASE rule's pixel terms can ever bind, which is why the cap belongs there and nowhere
-   else. Left exactly as they were - a dead number lowered is still dead, and editing one
-   suggests to the next reader that it does something. */
+   The same two variables sit in the pixel slot of every one of these blocks, and that is
+   deliberate: with the default 240x130 they never bind here (inside (max-width: 600px) the
+   30cqw term is at most 180px and the 20cqw term at most 120px, and every narrower block is
+   further below), so at the default these blocks behave exactly as before. But a SMALL
+   MainLogoSize - say 80x40 - must hold at every panel width, not only on a wide one, and the
+   only way a ceiling from the file can do that is to be present in each rule the panel can be
+   in. The per-block pixel numbers that used to sit here were unreachable at any width. */
 @container engine-stats (max-width: 600px) {
   .main-logo {
-    max-width: min(16em, 240px, 30cqw);
-    max-height: min(10em, 150px, 20cqw);
+    max-width: min(16em, var(--eb-mainlogo-w, 240px), 30cqw);
+    max-height: min(10em, var(--eb-mainlogo-h, 130px), 20cqw);
   }
 }
 
 @container engine-stats (max-width: 450px) {
   .main-logo {
-    max-width: min(13em, 200px, 35cqw);
-    max-height: min(8em, 120px, 22cqw);
+    max-width: min(13em, var(--eb-mainlogo-w, 240px), 35cqw);
+    max-height: min(8em, var(--eb-mainlogo-h, 130px), 22cqw);
   }
 }
 
 @container engine-stats (max-width: 350px) {
   .main-logo {
-    max-width: min(10em, 150px, 35cqw);
-    max-height: min(6em, 90px, 22cqw);
+    max-width: min(10em, var(--eb-mainlogo-w, 240px), 35cqw);
+    max-height: min(6em, var(--eb-mainlogo-h, 130px), 22cqw);
   }
 }
 
 @container engine-stats (max-width: 250px) {
   .main-logo {
-    max-width: min(7em, 100px, 35cqw);
-    max-height: min(5em, 70px, 22cqw);
+    max-width: min(7em, var(--eb-mainlogo-w, 240px), 35cqw);
+    max-height: min(5em, var(--eb-mainlogo-h, 130px), 22cqw);
   }
 }
 
 @container engine-stats (max-width: 180px) {
   .main-logo {
-    max-width: min(5em, 70px, 35cqw);
-    max-height: min(3em, 50px, 22cqw);
+    max-width: min(5em, var(--eb-mainlogo-w, 240px), 35cqw);
+    max-height: min(3em, var(--eb-mainlogo-h, 130px), 22cqw);
   }
 }
 
