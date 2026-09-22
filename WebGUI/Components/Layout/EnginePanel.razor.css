@@ -665,6 +665,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.45rem 0.75rem 0.15rem;
+    /* The box has a fixed height and scrolls; the title and the PV lines / Move stats
+       toggle stay in view while the rows scroll underneath. Opaque, or the rows would
+       show through. */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--ep-card-strong);
 }
 
 .engine-panel .ep-cm-title {
