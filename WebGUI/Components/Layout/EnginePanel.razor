@@ -1307,8 +1307,16 @@
         cpChartDirty = false;
         searchInProgress = true;
         ResetSearchTimer();
-        if (selectedOverlaySetting != OverlaySettings.None)
-            await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
+        // The search that starts draws the board's overlay. Read the setting for this slot
+        // from the singleton, not from the panel's own copy: a host page sets the singleton
+        // (Dual analysis, the contempt page) and the copy only catches up on the panel's next
+        // parameter render, which may not have happened before the first Start.
+        var overlayForThisSlot = OverlaySetting.GetOverlaySetting(Id);
+        if (overlayForThisSlot != OverlaySettings.None)
+        {
+            selectedOverlaySetting = overlayForThisSlot;
+            await Notifier.UpdateDisplaySettings(overlayForThisSlot, Id);
+        }
         await InvokeAsync(StateHasChanged);
         try
         {

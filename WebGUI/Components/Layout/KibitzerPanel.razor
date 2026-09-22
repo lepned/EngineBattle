@@ -1,3 +1,4 @@
+@using WebGUI.Services
 @using System.Globalization
 @using System.IO
 @using ChessLibrary
@@ -91,7 +92,7 @@
 
 @code {
     [Parameter] public Chess.Board ChessBoard { get; set; }
-    [Parameter] public string Id { get; set; } = "nnInput1";
+    [Parameter] public string Id { get; set; } = EngineSlot.A;
     [Parameter] public EngineConfig InitialEngine { get; set; }
     [Parameter] public string InitialEnginePath { get; set; }
     /// <summary>White-perspective eval of the best line (pawns, or mate distance) plus the

@@ -361,6 +361,10 @@
     /// so ClearOverlayOnPositionChange never wipes them — the host re-derives them per position.</summary>
     [Parameter] public IReadOnlyList<EbArrow> ExtraArrows { get; set; }
     [Parameter] public IReadOnlyList<EbCircle> ExtraCircles { get; set; }
+    /// <summary>Which engine slot the overlay is drawn from, whenever that changes: the board
+    /// follows whichever engine reported last, and a host with an "Objective / Side view" or
+    /// "E1 / E2" switch keeps that switch showing the truth through this.</summary>
+    [Parameter] public EventCallback<string> OnOverlaySourceChanged { get; set; }
     /// <summary>Safe-square preview: while a piece is selected (click) or being dragged, its
     /// legal destinations get dots colored by static exchange outcome (green = safe or wins
     /// material, red = the piece can be won there). Off by default — hosts opt in; assistance
@@ -960,8 +964,8 @@
     // ── NN Overlay ──
     private List<NNValues> GetNNValues(string id)
     {
-        if (id == "nnInput1") return firstNNMoves;
-        else if (id == "nnInput2") return secondNNMoves;
+        if (id == EngineSlot.A) return firstNNMoves;
+        else if (id == EngineSlot.B) return secondNNMoves;
         return new List<NNValues>();
     }
 
@@ -1485,10 +1489,17 @@
         }
         else
         {
-            currentId = id;
+            await SetOverlaySource(id);
             var lastNNMoves = GetNNValues(id);
             await DisplayMoveAnnotation(lastNNMoves, id);
         }
+    }
+
+    private async Task SetOverlaySource(string id)
+    {
+        if (currentId == id) return;
+        currentId = id;
+        if (OnOverlaySourceChanged.HasDelegate) await OnOverlaySourceChanged.InvokeAsync(id);
     }
 
     public async Task OnNotifyMoves(IEnumerable<NNValues> moves, string id)
@@ -1499,7 +1510,7 @@
         lastNNMoves.AddRange(moves);
         if (genBefore != _positionGeneration) { lastNNMoves.Clear(); return; }
         if (OverlaySetting.GetOverlaySetting(id) == OverlaySettings.None) return;
-        if (string.IsNullOrEmpty(currentId)) currentId = id;
+        if (string.IsNullOrEmpty(currentId)) await SetOverlaySource(id);
         if (id == currentId) await DisplayMoveAnnotation(lastNNMoves, id);
     }
 

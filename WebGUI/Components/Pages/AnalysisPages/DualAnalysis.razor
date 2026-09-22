@@ -102,7 +102,7 @@
         <!-- Left Panel: Engine 1 + Chart -->
         <div class="da-left">
             <EnginePanel @ref="analysisWithEngine1" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
-                         OnEngineMoveMade="OnEngineMoveMade" Id="nnInput1" Engine="Engine1"
+                         OnEngineMoveMade="OnEngineMoveMade" Id="@EngineSlot.A" Engine="Engine1"
                          OnNewEngineLoaded="OnNewEngineLoaded"
                          CompactChartLegend="true" StatsPanelKey="dual-analysis"
                          OnSearchCompleted="OnSearchCompleted" OnEvalUpdated="OnEval1Updated" />
@@ -150,6 +150,7 @@
                             ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
                             MoveEvals="@moveEvals"
                             OnMoveMadeOnBoard="OnMoveMadeOnBoard" OnNewFENOnBoard="OnNewFENOnBoard" ChessBoard="@board"
+                            OnOverlaySourceChanged="OnBoardOverlaySource"
                             OnBoardFlipped="f => boardFlipped = f"
                             EvalBarContent="@(SettingsService.Settings.ShowEvalBar ? EvalBar1Left : null)"
                             EvalBarSecondContent="@(SettingsService.Settings.ShowEvalBar ? EvalBar2Right : null)"
@@ -243,7 +244,7 @@
         <!-- Right Panel: Engine 2 -->
         <div class="da-right">
             <EnginePanel @ref="analysisWithEngine2" FEN="@fen" OnUCIReceived="OnUCIReceived" ChessBoard="@board"
-                         OnEngineMoveMade="OnEngineMoveMade" Id="nnInput2" Engine="Engine2"
+                         OnEngineMoveMade="OnEngineMoveMade" Id="@EngineSlot.B" Engine="Engine2"
                          OnNewEngineLoaded="OnNewEngineLoaded"
                          CompactChartLegend="true" StatsPanelKey="dual-analysis"
                          OnSearchCompleted="OnSearchCompleted" OnEvalUpdated="OnEval2Updated" />
@@ -1001,24 +1002,34 @@
             if (selectedOverlay == OverlaySettings.None)
                 selectedOverlay = OverlaySettings.Policy;
             // Always re-evaluate both engines' overlay based on current support
-            overlaySettings.SetOverlaySetting("nnInput1", engine1SupportsOverlay ? selectedOverlay : OverlaySettings.None);
-            overlaySettings.SetOverlaySetting("nnInput2", engine2SupportsOverlay ? selectedOverlay : OverlaySettings.None);
+            overlaySettings.SetOverlaySetting(EngineSlot.A, engine1SupportsOverlay ? selectedOverlay : OverlaySettings.None);
+            overlaySettings.SetOverlaySetting(EngineSlot.B, engine2SupportsOverlay ? selectedOverlay : OverlaySettings.None);
             if (engine1SupportsOverlay)
                 overlayEngineSource = 1;
             else
                 overlayEngineSource = 2;
-            var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+            var activeId = overlayEngineSource == 1 ? EngineSlot.A : EngineSlot.B;
             await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
         }
         else if (!showOverlayControls)
         {
             selectedOverlay = OverlaySettings.None;
-            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
-            overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput2");
+            overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.None);
+            overlaySettings.SetOverlaySetting(EngineSlot.B, OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, EngineSlot.A);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, EngineSlot.B);
         }
         await InvokeAsync(StateHasChanged);
+    }
+
+
+    // The board draws the overlay from whichever engine reported last, and says so through
+    // OnOverlaySourceChanged; the source buttons show that, not the last button clicked.
+    private void OnBoardOverlaySource(string id)
+    {
+        var source = id == EngineSlot.A ? 1 : id == EngineSlot.B ? 2 : 0;
+        if (source == 0 || source == overlayEngineSource) return;
+        overlayEngineSource = source;
     }
 
     private async Task SetOverlaySource(int source)
@@ -1026,11 +1037,11 @@
         overlayEngineSource = source;
         // Both engines keep the selected overlay type
         if (engine1SupportsOverlay)
-            overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+            overlaySettings.SetOverlaySetting(EngineSlot.A, selectedOverlay);
         if (engine2SupportsOverlay)
-            overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
+            overlaySettings.SetOverlaySetting(EngineSlot.B, selectedOverlay);
         // Tell Chessboard which engine to display
-        var activeId = source == 1 ? "nnInput1" : "nnInput2";
+        var activeId = source == 1 ? EngineSlot.A : EngineSlot.B;
         await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
     }
 
@@ -1070,26 +1081,26 @@
     private async Task OnOverlayChanged()
     {
         if (engine1SupportsOverlay)
-            overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+            overlaySettings.SetOverlaySetting(EngineSlot.A, selectedOverlay);
         if (engine2SupportsOverlay)
-            overlaySettings.SetOverlaySetting("nnInput2", selectedOverlay);
+            overlaySettings.SetOverlaySetting(EngineSlot.B, selectedOverlay);
 
         if (selectedOverlay != OverlaySettings.None)
         {
-            var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+            var activeId = overlayEngineSource == 1 ? EngineSlot.A : EngineSlot.B;
             await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
         }
         else
         {
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput2");
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, EngineSlot.A);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, EngineSlot.B);
         }
     }
 
     private async Task OnMinPolicyChanged(double value)
     {
         overlaySettings.MinPolicyThreshold = value;
-        var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+        var activeId = overlayEngineSource == 1 ? EngineSlot.A : EngineSlot.B;
         await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
     }
 
@@ -1174,22 +1185,22 @@
                 if (engine1SupportsOverlay && engine2SupportsOverlay)
                 {
                     overlayEngineSource = 1;
-                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
-                    overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
+                    overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.Policy);
+                    overlaySettings.SetOverlaySetting(EngineSlot.B, OverlaySettings.Policy);
                 }
                 else if (engine1SupportsOverlay)
                 {
                     overlayEngineSource = 1;
-                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
-                    overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.None);
+                    overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.Policy);
+                    overlaySettings.SetOverlaySetting(EngineSlot.B, OverlaySettings.None);
                 }
                 else
                 {
                     overlayEngineSource = 2;
-                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
-                    overlaySettings.SetOverlaySetting("nnInput2", OverlaySettings.Policy);
+                    overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.None);
+                    overlaySettings.SetOverlaySetting(EngineSlot.B, OverlaySettings.Policy);
                 }
-                var activeId = overlayEngineSource == 1 ? "nnInput1" : "nnInput2";
+                var activeId = overlayEngineSource == 1 ? EngineSlot.A : EngineSlot.B;
                 await Notifier.UpdateDisplaySettings(selectedOverlay, activeId);
             }
             StateHasChanged();

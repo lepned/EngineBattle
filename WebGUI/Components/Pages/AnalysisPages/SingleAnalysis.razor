@@ -89,7 +89,7 @@
         <div class="sa-left">
             <EnginePanel @ref="analysisWithEngine" FEN="@fen" OnUCIReceived="OnUCIReceived"
                          ChessBoard="@board" OnEngineMoveMade="OnEngineMoveMade"
-                         Id="nnInput1" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
+                         Id="@EngineSlot.A" Engine="Engine" OnNewEngineLoaded="OnNewEngineLoaded"
                          PGNgames="games" Player=@searchString OnSearchCompleted="OnSearchCompleted"
                          OnEvalUpdated="OnEvalUpdated" OnLiveStats="OnLiveStatsUpdated"
                          OnIterations="OnIterationsUpdated"
@@ -1079,13 +1079,13 @@
             if (showOverlayControls && !AnyInsightsOn)
             {
                 selectedOverlay = OverlaySettings.Policy;
-                overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
+                overlaySettings.SetOverlaySetting(EngineSlot.A, selectedOverlay);
             }
             else
             {
                 selectedOverlay = OverlaySettings.None;
-                overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
-                await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+                overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.None);
+                await Notifier.UpdateDisplaySettings(OverlaySettings.None, EngineSlot.A);
             }
         }
         await InvokeAsync(StateHasChanged);
@@ -1114,8 +1114,8 @@
             showInsightTactics = showInsightDanger = false;
             SaveInsightsSetting();
         }
-        overlaySettings.SetOverlaySetting("nnInput1", selectedOverlay);
-        await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+        overlaySettings.SetOverlaySetting(EngineSlot.A, selectedOverlay);
+        await Notifier.UpdateDisplaySettings(selectedOverlay, EngineSlot.A);
     }
 
     private async Task OnInsightsToggled()
@@ -1124,8 +1124,8 @@
         if (AnyInsightsOn && selectedOverlay != OverlaySettings.None)
         {
             selectedOverlay = OverlaySettings.None;
-            overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.None);
-            await Notifier.UpdateDisplaySettings(OverlaySettings.None, "nnInput1");
+            overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.None);
+            await Notifier.UpdateDisplaySettings(OverlaySettings.None, EngineSlot.A);
         }
         SaveInsightsSetting();
     }
@@ -1159,7 +1159,7 @@
     private async Task OnMinPolicyChanged(double value)
     {
         overlaySettings.MinPolicyThreshold = value;
-        await Notifier.UpdateDisplaySettings(selectedOverlay, "nnInput1");
+        await Notifier.UpdateDisplaySettings(selectedOverlay, EngineSlot.A);
     }
 
     private void UpdateFrcId(string currentFen)
@@ -1230,7 +1230,7 @@
                 if (!AnyInsightsOn)
                 {
                     selectedOverlay = OverlaySettings.Policy;
-                    overlaySettings.SetOverlaySetting("nnInput1", OverlaySettings.Policy);
+                    overlaySettings.SetOverlaySetting(EngineSlot.A, OverlaySettings.Policy);
                 }
             }
 

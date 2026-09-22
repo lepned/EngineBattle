@@ -80,7 +80,7 @@
                 <div class="lc-analyse">
                     <div class="lc-col">
                         <div class="lc-col-head lc-col-objective">Objective · contempt off</div>
-                        <EnginePanel @key="@(selectedEnginePath + "|objective")" Id="nnInput1" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@objectiveOptions"
+                        <EnginePanel @key="@(selectedEnginePath + "|objective")" Id="@EngineSlot.A" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@objectiveOptions"
                                      OnEngineMoveMade="OnEngineMoveMade" OnEngineStarted="OnEngineReady" OnEvalUpdated="OnObjectiveEval"
                                      OnUCIReceived="ShowObjectiveUci"
                                      CompactChartLegend="true" StatsPanelKey="lc0-contempt-objective" InitialTimeMs="3000" HideCharts="@(!showCharts)" />
@@ -107,11 +107,12 @@
                                           MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Below"
                                           ShowSizeSlider="true" SizeKey="lc0-contempt"
                                           ShowLegalDestinations="@SettingsService.Settings.BoardShowLegalMoves"
-                                          OnMoveMadeOnBoard="OnBoardChanged" OnNewFENOnBoard="OnBoardChanged" ChessBoard="@board" />
+                                          OnMoveMadeOnBoard="OnBoardChanged" OnNewFENOnBoard="OnBoardChanged" ChessBoard="@board"
+                                          OnOverlaySourceChanged="OnBoardOverlaySource" />
                     </div>
                     <div class="lc-col">
                         <div class="lc-col-head lc-col-side">@SideViewLabel</div>
-                        <EnginePanel @key="@(selectedEnginePath + "|side")" Id="nnInput2" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@sideOptions"
+                        <EnginePanel @key="@(selectedEnginePath + "|side")" Id="@EngineSlot.B" FEN="@fen" ChessBoard="@board" Engine="@engine" ExtraSetOptions="@sideOptions"
                                      OnEngineMoveMade="OnEngineMoveMade" OnEvalUpdated="OnSideEval"
                                      OnUCIReceived="ShowSideUci"
                                      CompactChartLegend="true" StatsPanelKey="lc0-contempt-side" InitialTimeMs="3000" HideCharts="@(!showCharts)" />
@@ -259,6 +260,16 @@
         }
     }
 
+
+    // The board draws the overlay from whichever engine reported last, and says so through
+    // OnOverlaySourceChanged; the source buttons show that, not the last button clicked.
+    private void OnBoardOverlaySource(string id)
+    {
+        var source = id == EngineSlot.A ? 1 : id == EngineSlot.B ? 2 : 0;
+        if (source == 0 || source == overlayEngineSource) return;
+        overlayEngineSource = source;
+    }
+
     private async Task SetOverlaySource(int source)
     {
         overlayEngineSource = source;
@@ -269,9 +280,9 @@
     private async Task ApplyOverlay()
     {
         var setting = supportsOverlay ? selectedOverlay : OverlaySettings.None;
-        overlaySettings.SetOverlaySetting("nnInput1", setting);
-        overlaySettings.SetOverlaySetting("nnInput2", setting);
-        await Notifier.UpdateDisplaySettings(setting, overlayEngineSource == 1 ? "nnInput1" : "nnInput2");
+        overlaySettings.SetOverlaySetting(EngineSlot.A, setting);
+        overlaySettings.SetOverlaySetting(EngineSlot.B, setting);
+        await Notifier.UpdateDisplaySettings(setting, overlayEngineSource == 1 ? EngineSlot.A : EngineSlot.B);
     }
 
     private void OnSettingsChanged(ContemptSettings s)
