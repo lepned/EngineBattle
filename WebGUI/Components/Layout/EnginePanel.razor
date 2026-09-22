@@ -2351,10 +2351,20 @@
             lastMainInfoLine = "";
             lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
             neuralNet = string.Empty;
-            OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
+            // The old engine's arrows go; whether this slot keeps an overlay depends on the new
+            // engine. One without live stats cannot draw one, so the slot is switched off. One
+            // with them keeps what the host page set for the slot (Dual analysis and the
+            // contempt page set both slots when an engine is loaded) - wiping it here used to
+            // leave a Ceres loaded through the panel's Engine button with no overlay at all,
+            // because the auto-overlay below only steps in when NO slot has one.
             await Notifier.UpdateDisplaySettings(OverlaySettings.None, Id);
-            selectedOverlaySetting = OverlaySettings.None;
-            await Task.CompletedTask;
+            if (Engine.Options?.Keys.Contains("LogLiveStats") == true)
+                selectedOverlaySetting = OverlaySetting.GetOverlaySetting(Id);
+            else
+            {
+                OverlaySetting.SetOverlaySetting(Id, OverlaySettings.None);
+                selectedOverlaySetting = OverlaySettings.None;
+            }
         }
 
         var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
