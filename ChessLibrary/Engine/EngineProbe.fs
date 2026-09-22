@@ -161,7 +161,9 @@ module EngineProbe =
                 | _ -> fallback
             let networkPath =
                 match wishes.NetFile with
-                | Some f -> forward (Path.GetDirectoryName f)
+                // Separators first: on Linux a backslash is not one, and GetDirectoryName of a
+                // Windows-style path would come back empty.
+                | Some f -> forward (Path.GetDirectoryName (forward f))
                 | None ->
                     match b with
                     | Some b when not (String.IsNullOrWhiteSpace b.NetworkPath) -> b.NetworkPath
