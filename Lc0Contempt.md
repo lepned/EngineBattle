@@ -6,7 +6,7 @@ Contempt changes how Lc0 **plays**, not only what it reports. With contempt on, 
 
 Contempt reshapes the values in the search tree, not the policy. Lc0's own disclaimer: let the search run for at least 10k nodes to get the intended result - with fewer nodes the policy still picks the moves and contempt shows mostly in the eval.
 
-Only Lc0 has these options (v0.31 and later). The page checks the engine's option list when it starts and says so if the engine is not an Lc0, or an Lc0 too old for the WDL options.
+Only Lc0 has these options (v0.30 and later; the page has been checked against v0.31 to v0.33). The page checks the engine's option list when it starts and says so if the engine is not an Lc0, or an Lc0 too old for the WDL options.
 
 ![Lc0 Contempt](WebGUI/wwwroot/Img/Lc0Contempt.png)
 *Analyze mode: the same net on the same position, objective on the left and from White's view with +200 Elo contempt on the right.*
@@ -27,7 +27,7 @@ Only Lc0 has these options (v0.31 and later). The page checks the engine's optio
 | Contempt | `Contempt` | Lc0's assumed Elo advantage: positive plays for the win, negative plays to hold. Values above the cap are capped. |
 | Attenuation | `WDLContemptAttenuation` | How strongly the Elo gap is applied. Lc0's own advice: 1.0 for realistic analysis, 0.5-0.6 for the best match results. |
 | Eval shown | `WDLEvalObjectivity` | 0.0 reports the WDL Lc0 actually plays by, 1.0 an objective eval. With 1.0 the displayed eval barely moves even though the play does - set it to 0 to see what contempt does. |
-| Time control | `WDLCalibrationElo` (adjustment) | The ratings you type are blitz/rapid ratings. Lc0's rule: add 50 Elo to the calibration per doubling of thinking time, 10 minutes being the reference (3+2 sends −90, 15+10 +30, 30+0 +80). Train reads the game's clock; Analyze has a picker. |
+| Time control | `WDLCalibrationElo` (adjustment) | The ratings you type are blitz/rapid ratings. Lc0's rule: add 50 Elo to the calibration per doubling of the base time, increment not counted, 10 minutes being the reference (3+2 sends −90, 15+10 +30, 30+0 +80). Train reads the game's clock; Analyze has a picker. |
 | Analyze for | `ContemptMode` | `play` in a game; `white_side_analysis` / `black_side_analysis` in Analyze; `disable` for Objective / Nobody. |
 | Advanced: Contempt max | `ContemptMaxValue` | The cap, 420 by default. |
 | Advanced: WDL max S | `WDLMaxS` | Limits the sharpness contempt can produce; raise it for DFRC or piece odds. |
@@ -41,7 +41,7 @@ The four Advanced options are hidden in Lc0's `uci` list (they appear only with 
 - *Objective* - contempt off.
 - *Club sparring* - Lc0 plays like a player of the chosen strength who knows your rating. Attenuation 0.6.
 - *Play for the win* - Lc0 keeps its strength and prepares for an opponent a full cap (420) below it, whoever is at the board: the opponent that never takes a draw.
-- *Hold vs stronger* - Lc0 is the weaker player and plays solid; practise converting an edge. If Lc0's rating is the higher one the two ratings are swapped.
+- *Hold vs stronger* - Lc0 is the weaker player and plays solid; practise converting an edge. If Lc0's rating is the higher one the two ratings are swapped; if they are equal, Lc0 is put 100 below.
 
 **Presets (Analyze)** - both from Lc0's own suggested setups:
 
@@ -56,16 +56,16 @@ The box at the bottom of the panel is the complete list of `setoption` lines the
 
 ## Example
 
-Ruy Lopez after 3...a6, BT4-332, 400 nodes, calibration 2800 against a 2500 opponent (contempt 300), eval shown 0.0:
+Ruy Lopez after 3...a6, BT4-332, 20,000 nodes, calibration 2800 against a 2500 opponent (contempt 300), Kibitz preset (eval shown 0.0, attenuation 1.0), draw-rate reference 0.58:
 
 | View | Eval | W / D / L | First choice |
 |---|---|---|---|
-| Objective | +0.12 | 26 / 53 / 21 | 5. O-O Nxe4, the open variation |
-| White's | +1.54 | 65 / 30 / 5 | 5. d3, keeping the tension |
-| Black's (Black the stronger side) | -1.23 | 7 / 36 / 57 | |
+| Objective | +0.17 | 31 / 45 / 24 | 4. Ba4 Nf6 5. O-O Nxe4, the open variation |
+| White's | +2.43 | 78 / 17 / 5 | 4. Ba4 Nf6 5. d3, keeping the tension |
+| Black's (Black the stronger side) | -2.50 | 6 / 18 / 76 | 4. Ba4 f5, the sharp deferred Schliemann |
 
-Same net, same nodes; the difference is what contempt does to the search.
+Same net, same nodes; the difference is what contempt does to the search. Lc0's smart pruning stops a node-limited search early once the best move is settled, so a search set to 20,000 nodes normally ends around 10,000; the numbers above were measured with `SmartPruningFactor` 0 so every search used the full budget.
 
 ## Tournaments
 
-Tournament play has its own, older contempt path (`ContemptEnabled` and `NegativeContemptAllowed` on an engine def, see EngineDefConfig.md): the rating difference between the two engines is sent as `Contempt` before each game. It does not use this page's settings.
+Tournament play has its own, older contempt path (`ContemptEnabled` and `NegativeContemptAllowed` on an engine def, see EngineDefConfig.md): the rating difference between the two engines is sent as `Contempt` (or `DynamicContempt` if that is the option the engine has) before each game, only when the engine is the higher-rated one unless `NegativeContemptAllowed` is set. It does not use this page's settings.
