@@ -258,7 +258,11 @@
 
     @if (showNNdata)
     {
-        <div class="ep-table-container">
+        @* A fixed height, from the same PV-lines setting the PV table sizes itself by: the box
+           is the same size with 3 root moves as with 30, so a move (which empties it until
+           the next search reports) never changes the layout - on a one-column screen the
+           whole page used to shake. More rows than fit scroll inside. *@
+        <div class="ep-table-container" style="height:@($"{40 + Math.Min(numberOfLines, 10) * 32}px")">
             <div class="ep-cm-header">
                 <span class="ep-cm-title">@(runLogLiveStats ? "Live move stats" : "Iteration log")</span>
                 <div class="ep-seg" role="tablist">
