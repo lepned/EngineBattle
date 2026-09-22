@@ -137,6 +137,8 @@ Climb 2: C challenges B (new bottom after E eliminated is C)
 
 ## State File Format (ladder_state.json)
 
+Note that the state file's `GamePairsPerMatch` holds the number of **games** per match (the config's pairs x 2), so a config of 4 pairs is written as 8.
+
 ```json
 {
   "TournamentName": "My Ladder",

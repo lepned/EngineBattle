@@ -128,20 +128,25 @@ Replace `c:/Dev/Chess/EB/puzzleconfig.json` with the path to your `PuzzleConfig.
 Example of console output:
 
 ```
-Puzzle file: C:/Dev/Chess/Puzzles/lichess_db_April_2025.csv
+Puzzle file name: C:/Dev/Chess/Puzzles/lichess_db_puzzle_july2025.csv
 
 Policy Head Tests
 
-Engine          Neural net      Perf    Accuracy        Total   Avg rating      Theme   Nodes
-Ceres 640-34    C1-640-34       2771    60.1%           1000    2700            none    1
-LC0 BT4-332.pb  BT4-332.pb      2751    57.3%           1000    2700            none    1
+Neural net  Perf  Accuracy  Total  AvgR  Theme   Type    KLD     P95   P99  Max   ≤100 
+C1-640-34   2726  53.8 %    1000   2700  none    Policy  0.8858  16    630  3.0k  97.7%
+BT4-332.pb  2717  52.5 %    1000   2700  none    Policy  0.8928  14    229  1.9k  98.3%
+------------------------------------------------------
+C1-640-34   2657  71.2 %    1000   2500  none    Policy  0.9390  6.98  110  1.2k  98.9%
+BT4-332.pb  2635  68.6 %    1000   2500  none    Policy  0.7723  4.60  76   1.1k  99.2%
 
 Value Head Tests
 
-Engine          Neural net      Perf    Accuracy        Total   Avg rating      Theme   Nodes
-Ceres 640-34    C1-640-34       2909    76.9%           1000    2700            none    1
-LC0 BT4-332.pb  BT4-332.pb      2895    75.5%           1000    2700            none    1
-
+Neural net  Perf  Accuracy  Total  AvgR  Theme   Type  
+C1-640-34   2895  75.5 %    1000   2700  none    Value 
+BT4-332.pb  2874  73.2 %    1000   2700  none    Value 
+------------------------------------------------------
+C1-640-34   2819  86.3 %    1000   2500  none    Value 
+BT4-332.pb  2796  84.6 %    1000   2500  none    Value
 ```
 
 ### Three units, and which one a number is in

@@ -51,6 +51,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Game Review:** Lichess-style move-by-move accuracy analysis with win probability tracking, move classifications (Brilliant, Great, Best, Inaccuracy, Mistake, Blunder), critical moves panel, and annotated PGN export. Supports single-game and batch review.
 - **Focus Mode:** Restrict engine search to specific candidate moves for targeted position exploration.
 - **UCI Script Loading:** Load a text file of UCI commands to quickly configure engine parameters during analysis.
+- **Play vs Computer:** Play against any engine with clocks and takeback, lichess-style: legal-move dots on a picked-up piece and premoves while the engine thinks.
 - **Lc0 Contempt:** Lc0's contempt as settings rather than UCI options - analyze a position objectively and from one side's view at once, or train against Lc0 playing for the win. See [Lc0Contempt.md](Lc0Contempt.md).
 
 ### 📚 PGN and EPD Tools
@@ -104,13 +105,13 @@ Choose a variant:
 
 Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **osx-arm64**
 
-On Windows there is also **EngineBattle-Desktop** (`EngineBattle-Desktop-win-x64.zip` or `-win-arm64`): the same application in its own window, with a native menu, remembered zoom and F11 full screen - no browser involved. Pick it if you prefer an app to a browser tab; everything else is identical.
+On Windows there is also **EngineBattle-Desktop** (`EngineBattle-Desktop-win-x64.zip` or `-win-arm64`): the same application in its own window, with a native menu, remembered zoom and F11 full screen - no browser involved. Pick it if you prefer an app to a browser tab; everything else is identical. The desktop zip holds only the window: download the matching `EngineBattle-win-x64.zip` (or `-win-arm64`) as well and extract both into the same folder, so that `EngineBattleDesktop.exe` sits next to `EngineBattle.exe`.
 
 ### 2. Run
 
 Extract the zip and run:
 
-- **Windows:** `EngineBattle.exe` (or `EngineBattle.Desktop.exe` from the desktop zip)
+- **Windows:** `EngineBattle.exe` (or `EngineBattleDesktop.exe` for the desktop app)
 - **Linux / macOS:** `./EngineBattle`
 
 Your browser opens automatically. If not, navigate to the localhost URL shown in the console. To start the server without opening a browser, pass `--no-browser` or set `ENGINEBATTLE_NO_BROWSER=1`.
@@ -139,7 +140,7 @@ EngineBattle plays chess engines against each other, so the first thing it needs
 ![First run](WebGUI/wwwroot/Img/FirstRun.png)
 *The tournament page until the engines are in place: the three steps, each with its button.*
 
-Nothing has to be typed into a file. A `tournament.json` is created next to the executable on first startup and the creators write into it; the [Configuration](#configuration) section below is the reference for anyone who prefers a text editor.
+Nothing has to be typed into a file. A `tournament.json` is created in the `wwwroot` folder next to the executable on first startup and the creators write into it; the [Configuration](#configuration) section below is the reference for anyone who prefers a text editor.
 
 ---
 
@@ -222,7 +223,7 @@ The creators under **Tools** in the menu (Engine creator, Tournament creator) do
 Every engine needs an engine definition, and the tournament needs to know where they are. In `tournament.json`:
 
 1. Edit the `tournament.json` file - [Tournament Configuration Reference](TournamentConfig.md).
-    - **Release binaries:** `tournament.json` is auto-created next to the executable on first startup.
+    - **Release binaries:** `tournament.json` is auto-created in the `wwwroot` folder next to the executable on first startup.
     - **Source builds:** `tournament.json` is located in the `WebGUI/wwwroot` folder and is auto-created on first startup if it doesn't exist.
 2. Create and define the folder where all `engineDefs` are located. Set the path to this folder under the key: `EngineDefFolder`.
 3. Every engine needs an `EngineDef.json` file - [Engine Configuration Reference](EngineDefConfig.md) / [LC0 Configuration Reference](LC0Config.md). Make a copy, configure each engine as you wish, and save it with a proper name like `SFDef.json` for Stockfish.
@@ -286,7 +287,7 @@ Other useful keys are:
 - Update and refresh the tournament GUI: `ctrl + u`
 - Open the tournament view dialog: `ctrl + p`
 - Adjudicate the current game as a white win, black win or draw: `ctrl + alt + w` / `b` / `d`
-- Table text smaller / larger / back to the defaults: `ctrl + alt + -` / `+` / `0`
+- Table text smaller / larger / back to the defaults: `ctrl + alt + -` / `+` / numpad `0`
 
 It is strongly recommended to run validation before starting a tournament to ensure that all engine definitions are correct and that the tournament settings are valid.
 
@@ -309,7 +310,7 @@ Example of a time control that can be used to run policy tests:
 }
 ```
 
-It is recommended to run policy tests in Console Mode for optimal performance by running games in parallel, see below how to set that up. However, you can also run these tests using the GUI by setting a delay per move. To do this, configure the `MinMoveTime` parameter to i.e. 2000 milliseconds in the GUI settings. This allows you to watch every move play out during policy tests and can even be streamed.
+It is recommended to run policy tests in Console Mode for optimal performance by running games in parallel, see below how to set that up. However, you can also run these tests using the GUI by setting a delay per move. To do this, configure the `MinMoveTimeInMS` parameter to i.e. 2000 milliseconds in the GUI settings. This allows you to watch every move play out during policy tests and can even be streamed.
 
 ### Tournament Console Mode
 
@@ -454,9 +455,8 @@ This application uses the following libraries, which are licensed under their re
 - **Blazor** - [MIT License](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt)
 - **MudBlazor** - [MIT License](https://github.com/MudBlazor/MudBlazor/blob/dev/LICENSE)
 - **Serilog** - [Apache License 2.0](https://github.com/serilog/serilog/blob/dev/LICENSE)
-- **CommandLineParser** - [MIT License](https://github.com/commandlineparser/commandline/blob/master/License.md)
 - **Fathom** - [MIT License](https://github.com/jdart1/Fathom/blob/master/LICENSE) (the bundled macOS prober is a universal arm64 + x86_64 build of Jon Dart's fork; the licence notice names Ronald de Man, basil00 and Jon Dart)
 - **Toolbelt.Blazor.HotKeys2** - [Mozilla Public License 2.0](https://github.com/jsakamoto/Toolbelt.Blazor.HotKeys/blob/master/LICENSE)
 - **CliWrap** - [MIT License](https://github.com/Tyrrrz/CliWrap/blob/master/License.txt)
-- **Chess piece images** (cburnett/wikipedia set, from the chessboardjs project) - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
+- **Chess piece images** (cburnett/wikipedia set from the chessboardjs project, plus the kosal and merida sets; each folder under `wwwroot/pieces` carries its own licence) - [MIT License](https://github.com/oakmac/chessboardjs/blob/master/LICENSE.md)
 - **plotly.js** - [MIT License](https://github.com/plotly/plotly.js/blob/master/LICENSE)

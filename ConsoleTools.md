@@ -76,7 +76,7 @@ dotnet run -c Release -- tournamentjson C:/Dev/Chess/Tournaments/my_tournament.j
 **Description:**
 - Loads tournament configuration from the specified JSON file
 - Initializes engines from the `EngineDefFolder` using files listed in `EngineDefList`
-- Runs games according to the tournament mode (RR, Swiss, Cup, or Gauntlet)
+- Runs games according to the tournament mode (RR, Swiss, Cup, Gauntlet or Ladder)
 - Outputs PGN to the configured `PgnOutPath`
 - Displays live standings and results in the console
 
@@ -100,7 +100,7 @@ dotnet run -c Release -- puzzlejson C:/Dev/Chess/Puzzles/PuzzleConfig.json
 
 **Description:**
 - Tests engines against puzzles from the Lichess puzzle database (CSV format)
-- Supports three test types: `policy`, `value`, and `search`
+- Test types: `policy`, `policytop<N>`, `value`, `search` and `solve` (see PuzzleConfig.md)
 - Groups results by rating ranges and puzzle themes
 - Calculates performance ratings and accuracy percentages
 - Saves failed puzzles and summary to the configured output folder

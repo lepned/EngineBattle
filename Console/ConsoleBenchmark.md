@@ -15,6 +15,6 @@ The JSON file describes:
 - `optionSets`: a list of uci option dictionaries. Every unique combination is evaluated in sequence.
 - `positions`: named FEN/EPD strings that the benchmark will search through.
 
-For each combination, the runner gathers EPS/NPS from `Utilities.Regex.getEssentialDataWithEPS`, prints per-position stats, and writes a summary log to `logs/benchmark-summary-<timestamp>.txt` unless `summaryOutputPath` is configured. The console output highlights the best combination (EPS first, NPS second).
+For each combination, the runner gathers EPS/NPS from `EngineProtocol.Regex.getEssentialDataWithEPS`, prints per-position stats, and writes a summary log to `logs/benchmark-summary-<timestamp>.txt` unless `summaryOutputPath` is configured. The console output highlights the best combination (EPS first, NPS second).
 
 Use the log file to compare EPS/NPS trade-offs between combinations or to archive benchmark runs for future reference.

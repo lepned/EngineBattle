@@ -180,9 +180,9 @@ and `pgneval` regressions and appends a row to `summary.csv`
 has `rounds` games) and **fault-tolerant** (a failing net is logged and the batch continues).
 
 > **Memory caveat (big nets).** Self-play loads **two** copies of the net per concurrency
-> level, so the template's `NumberOfGamesInParallel` must be **1** for large nets —
-> at 2 you get 4 simultaneous TensorRT engines and the GPU OOMs. The batch sets
-> `PreventMoveDeviation` automatically when parallel ≤ 1.
+> level, so at 2 you would get 4 simultaneous TensorRT engines and the GPU OOMs. The batch
+> therefore forces `NumberOfGamesInParallel` to **1** whatever the template says, and
+> always sets `PreventMoveDeviation`.
 
 ### Cross-net results — 10 official Ceres nets
 
@@ -251,7 +251,7 @@ regressions. Pawn ≡ 1.
 pvcombo <games.pgn>
 ```
 
-The contextual counterpart of the global fit: for six classic matchups - `B vs N`,
+The contextual counterpart of the global fit: for eight classic matchups - `B vs N`, `R vs N`, `R vs B`,
 `BN vs BB` (the bishop pair), `BB vs NN`, `BR vs BN`, `RN vs RB`, `QN vs QB` - it collects
 every position past ply 16 whose material is exactly that imbalance (either colour on the
 A side) and prints the count, the mean game outcome and the mean in-game eval in pawns,

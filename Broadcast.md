@@ -27,8 +27,8 @@ If the engine process crashes, the panel shows *"engine exited — press ▶ to 
 ## Eval bar, candidate moves and eval chart
 
 - The **vertical bar** in the board frame tracks the engine's main line, using the same win-probability scaling lichess uses. It flips with the board, and takes its colours from the board theme. Board appearance lets you put it on either side.
-- Below the board, engines with `LogLiveStats` (Lc0/Ceres) get a **candidate-moves panel**: the top 5 root moves by visits, each with a visit-share bar, an amber tick marking the policy prior (so you see where search and net disagree), node count, Q and a win/draw/loss micro-bar — all white-perspective. A small **Moves / Eval history** toggle switches between this panel and the chart.
-- The **eval chart** plots eval per move: your engine (colored line and dots) against lichess's server evaluation (gray line, present when lichess has analyzed the game). The engine line fills in as positions get analyzed — the live tip while following, plus any position you browse to. Click anywhere in the chart to jump the board to that move. Engines without live stats always show the chart.
+- Below the board, engines with `LogLiveStats` (Lc0/Ceres) get a **candidate-moves panel**: every root move by visits (the first eight or so visible, the rest scroll), each with a visit-share bar, an amber tick marking the policy prior (so you see where search and net disagree), node count, Q and a win/draw/loss micro-bar — all white-perspective. A small **Moves / Eval history** toggle switches between this panel and the chart.
+- The **eval chart** plots eval per move: your engine (colored line and dots) against lichess's server evaluation (gray line, present when lichess has analyzed the game). The engine line fills in as positions get analyzed — the live tip while following, plus any position you browse to. Click anywhere in the chart to jump the board to that move. Engines without live stats (alpha-beta) get an **Iterations** tab in its place - the iteration log of the current search - with the same Eval history toggle.
 
 ## Following vs exploring
 
@@ -46,7 +46,7 @@ Finished games show the result as score chips in the player bars ("1" / "0" / "�
 
 ## How it works / endpoints
 
-- `GET https://lichess.org/api/broadcast` — official broadcast list (picker + round switcher).
+- `GET https://lichess.org/api/broadcast/top` — the broadcast lobby (picker); `GET https://lichess.org/api/broadcast/{tourId}` — one tour's rounds (round switcher).
 - `GET https://lichess.org/api/stream/broadcast/round/{id}.pgn` — streaming endpoint: on connect it replays every game's full PGN (mid-join works), then pushes a game's complete PGN again on every update, sub-second latency, no auth for public broadcasts.
 - Clocks come from `[%clk]` PGN comments, lichess server evals from `[%eval]` comments; both are stripped from the move list after extraction.
 - The PGN of each update is parsed with EngineBattle's own parser and diffed against known state, so reconnects are seamless.

@@ -83,7 +83,7 @@ where `C(s) = CPUCT + CPUCTFactor * log((N_parent + CPUCTBase + 1) / CPUCTBase)`
 **Tuning notes:**
 - **V1TEMP** (embedded in Network option) is a common tuning target. It adjusts value head calibration at the network level. In the tuner config, specify it as an embedded parameter:
   ```json
-  { "name": "V1TEMP", "optionKey": "Network", "embeddedKey": "V1TEMP", "min": 0.3, "max": 1.5, "step": 0.01, "scale": "linear" }
+  { "name": "V1TEMP", "option": "Network", "min": 0.3, "max": 1.5, "step": 0.01, "scale": "linear" }
   ```
 - V1TEMP and ValueTemperature both affect value scaling but at different stages. Don't tune both simultaneously without understanding the interaction.
 
@@ -143,7 +143,7 @@ These options are set in the engine config but are not meaningful tuning targets
 ### With Embedded Network Parameter
 ```json
 "parameters": [
-  { "name": "V1TEMP", "optionKey": "Network", "embeddedKey": "V1TEMP", "min": 0.3, "max": 1.2, "step": 0.01, "scale": "linear" },
+  { "name": "V1TEMP", "option": "Network", "min": 0.3, "max": 1.2, "step": 0.01, "scale": "linear" },
   { "name": "PolicyTemperature", "min": 0.4, "max": 2.2, "step": 0.01, "scale": "log" }
 ]
 ```

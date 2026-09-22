@@ -84,7 +84,7 @@ Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, 
 | `neuralNet` | string | Neural net name or path used for this result (empty for non-NN engines). |
 | `type` | string | Puzzle test type, e.g. `"Policy"`, `"Value"`, `"pTop3"`, `"Search"`, `"Solve"`. |
 | `nodes` | int | Node limit used for this result (relevant for `Search`/`Solve` types). |
-| `filter` | string | Theme filter for this result row. **The literal string `"none"` is the no-filter sentinel** (not the empty string) — this matches EngineBattle's internal `Score.Filter` default. Consumers wanting a "no theme" check should compare against `"none"`, not `""`. |
+| `filter` | string | Theme filter for this result row. **The literal string `"none"` is the no-filter sentinel** (not the empty string) — EngineBattle substitutes it for a blank theme filter when it writes the row. Consumers wanting a "no theme" check should compare against `"none"`, not `""`. |
 | `totalNumber` | int | Total puzzles evaluated in this row. |
 | `correct` | int | Number of correctly solved puzzles. |
 | `wrong` | int | `totalNumber - correct`. |

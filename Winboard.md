@@ -51,15 +51,15 @@ feature ping=1 setboard=1 playother=1 san=0 usermove=1 time=1 done=1
 | `san=1` | Engine uses SAN notation | Use coordinate notation |
 | `ping=1` | Supports `ping`/`pong` sync | Use timing-based sync |
 | `time=1` | Engine manages its own clock | Send time updates anyway |
-| `playother=1` | Supports `playother` command | Use `force` + move instead |
+| `playother=1` | Supports `playother` command | Parsed only; EngineBattle always uses `force` + move |
 | `analyze=1` | Supports analysis mode | Analysis may not work |
 | `myname="X"` | Engine's display name | Use config name |
-| `done=1` | Feature negotiation complete | Timeout triggers V1 fallback |
+| `done=1` | Feature negotiation complete | Timeout: V1 fallback if no features arrived, otherwise the partial features are accepted |
 
 ### V1 Fallback
 
-If no `done=1` is received within 2 seconds:
-1. Engine is assumed to be V1
+If no `done=1` is received within the timeout (2 seconds in tournaments, 30 seconds in analysis):
+1. If no `feature` line arrived at all, the engine is assumed to be V1; if some did, they are accepted as-is and the engine is treated as V2
 2. Conservative defaults are used
 3. `setboard` support is probed by sending a test position
 
@@ -176,7 +176,7 @@ Where:
 Everything the `WinboardConfig` block of an engine def can hold; the examples below show
 the ones that matter for each engine. Full descriptions in [EngineDefConfig.md](EngineDefConfig.md).
 
-- **TimeControlStrategy**: `AutoDetect` (default), `LevelWithTime`, `TimeOtimOnly`, `StWithTime`, `StOnly` - see *Time Control Strategies* above.
+- **TimeControlStrategy**: `LevelWithTime` (default), `AutoDetect`, `TimeOtimOnly`, `StWithTime`, `StOnly` - see *Time Control Strategies* above.
 - **SideToMovePOV**: `true` when the engine reports scores from the side to move rather than from White (default `false`).
 - **RequiresLevelForThinkingOutput**: `true` for engines that print no thinking lines until a `level` command has been sent (default `false`).
 - **Use4FieldFen**: `true` for engines whose `setboard` rejects the half-move and full-move fields (default `false`).
@@ -184,6 +184,8 @@ the ones that matter for each engine. Full descriptions in [EngineDefConfig.md](
 - **StartupCommands**: extra commands sent once after `post` and `easy`, e.g. `["level 16"]` (default `[]`).
 - **PreGoDelayMs**: pause between the time commands and `go` for engines without `ping` support (default `100`; `0` = none).
 
+
+The examples show only the fields that matter for each engine; a def that loads also needs the required fields of every engine def (`TimeControlID`, `Version`, `Rating`, `LogoPath`, `NetworkPath`, `Options`), see [EngineDefConfig.md](EngineDefConfig.md).
 
 ### Standard Engine (Crafty)
 ```json

@@ -7,7 +7,7 @@ This tool evaluates opening positions right after book exits using one or more e
 1. Load an opening book (PGN or EPD file)
 2. Each position is evaluated by the configured engines
 3. Positions are filtered by eval range and eval agreement between engines
-4. Passing positions are saved to a new file, sorted by eval balance
+4. Passing positions are saved to a new file, the most disputed first (largest eval difference between the engines; with one engine, the largest absolute eval)
 
 ## Page Location
 
@@ -28,17 +28,17 @@ For each engine you can configure:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | **Number of openings** | 500 | Maximum number of positions to evaluate from the source file |
-| **Min eval (cp)** | 80 | Minimum absolute eval in centipawns. Positions with all engine evals below this are filtered out (too drawish). |
+| **Min eval (cp)** | 80 | Minimum absolute eval in centipawns. Every engine's absolute eval must reach it, or the position is filtered out (too drawish). |
 | **Max eval (cp)** | 100 | Maximum absolute eval in centipawns. Positions with any engine eval above this are filtered out (too one-sided). |
 | **Max eval diff (cp)** | 40 | Maximum allowed eval difference between engines. Positions where engines disagree by more than this are filtered out. |
-| **Output folder** | From Global Settings | Folder where results are saved (inside a `BookEvals` subfolder) |
+| **Output folder** | The Openings folder from Global Settings | Folder where results are saved (inside a `BookEvals` subfolder) |
 
 ### Eval Filtering Logic
 
 A position passes if:
-- At least one engine's absolute eval is ≥ **Min eval**
+- Every engine's absolute eval is ≥ **Min eval**
 - No engine's absolute eval exceeds **Max eval**
-- The difference between the highest and lowest engine eval is ≤ **Max eval diff**
+- The difference between the highest and lowest engine eval is < **Max eval diff** (with a single engine there is no difference to check)
 
 This ensures the position is competitive (not dead drawn) but not busted (not clearly winning for one side), and that engines roughly agree on the assessment.
 

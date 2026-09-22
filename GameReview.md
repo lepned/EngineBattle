@@ -4,7 +4,7 @@ Lichess-style game review with move-by-move accuracy analysis. Analyze individua
 
 ## Page Location
 
-WebGUI: **Analysis → Game Review** (`/analysis/game-review`)
+WebGUI: **Play & Analysis → Game review** (`/analysis/game-review`)
 
 ## Setup
 
@@ -40,7 +40,7 @@ Click **Quick Review** to instantly classify moves using existing PGN annotation
 
 ### Accuracy Scores
 
-Each player gets an overall accuracy score (0–100) displayed as a ring chart. The score uses a Lichess-style formula: exponential decay based on win probability loss per move, with harmonic mean weighting.
+Each player gets an overall accuracy score (0–100) displayed as a ring chart. The score uses a Lichess-style formula: exponential decay based on win probability loss per move; the game score is the average of a volatility-weighted mean and the harmonic mean of the per-move accuracies (phase accuracies use the harmonic mean alone).
 
 Phase-by-phase accuracy is also shown:
 - **Opening** (moves 1–15)
@@ -55,7 +55,7 @@ Each move is classified based on MultiPV analysis:
 
 | Classification | Symbol | Meaning |
 |---------------|--------|---------|
-| **Brilliant** | !! | Played move matches PV1, large gap to PV2 |
+| **Brilliant** | !! | Played move matches PV1, large gap to PV2, and the move is a sacrifice |
 | **Great** | ! | Played move matches PV1, notable gap to PV2 |
 | **Best** | Best | Played move matches PV1 |
 | **Excellent** | Excellent | Very small win probability loss |

@@ -1,10 +1,10 @@
 # Live Feed Contract (External Tournament Runner → EngineBattle)
 
-**Status:** Draft v0.1 — wire-schema specification only. No implementation yet.
+**Status:** Implemented. The codec is `ChessLibrary/Tournament/LiveFeedWire.fs` (serialize + parse, shared by the EB console runner and the GUI), the consumer is `JsonFeedService` behind `POST /api/livefeed`, and the pages are `/tournament-feed` (the tournament page in feed mode) and `/tournament-grid`. This document is the wire contract; where it once said "future" or "open", the answer is recorded in place.
 
 This document specifies the JSON contract an **external (proprietary) tournament runner** must
 produce so EngineBattle (EB) can drive its live game visualization without running the engines
-itself. A future EB page (a feed-driven clone of `Tournaments.razor`) consumes this stream.
+itself. The tournament page (`/tournament-feed`) and the multi-board grid (`/tournament-grid`) consume this stream.
 
 > The contract is a JSON serialization of EB's internal `Update` event stream
 > (`ChessLibrary/Tournament/TournamentTypes.fs:14`). The internal runner is just one producer of
@@ -23,8 +23,8 @@ discriminator. EB applies events in the order received; ordering matters (a `Bes
 Transport is out of scope for this contract, but any of these can carry the stream unchanged:
 
 - **NDJSON** (newline-delimited JSON) — one event object per line. Recommended for file tail / replay.
-- **WebSocket / SignalR** — one event object per message. Recommended for live, low-latency.
-- **HTTP POST** — one event object (or a JSON array of events) per request.
+- **HTTP POST** — NDJSON body: one event object per line, any number of lines per request. A JSON array is not accepted (the line is dropped and not counted as ingested).
+- **WebSocket / SignalR** — not implemented; see §9.4.
 
 A reference implementation should accept NDJSON first (trivial to capture, replay, and diff against
 a real internal game — see §6).
@@ -42,7 +42,7 @@ belongs to, so a runner emitting many games in parallel can drive multiple indep
 §8 (Parallel games). For v0.1, producers may omit `gameId` or send `"0"`; EB treats a missing
 `gameId` as the single active game. **Per-game** events carry `gameId`; **tournament-level** events
 (`StartOfTournament`, `PairingList`, `TotalNumberOfPairs`, `RoundNr`, `PeriodicResults`,
-`EndOfTournament`) are global and omit it.
+`EndOfTournament`) are global and omit it. (EB's own runner stamps `"gameId": ""` on them; consumers treat an empty string as absent.)
 
 ---
 
@@ -71,7 +71,7 @@ null                                       // omit or null ⇒ NotFound (rendere
 
 ### 2.3 `time` fields (map to `TimeOnly`)
 
-String, format `"HH:mm:ss"` or `"HH:mm:ss.fff"`. Examples: `"00:05:00"`, `"00:00:14.250"`.
+String, format `"HH:mm:ss"` or `"HH:mm:ss.fff"`; the parser accepts both, EB itself always emits `"HH:mm:ss.fff"`. Examples: `"00:05:00"`, `"00:00:14.250"`. The two `...DurationSec` fields of `StartOfTournament` are plain .NET `TimeSpan` strings (`"c"` format, e.g. `"04:10:00"` or `"1.02:00:00"`), parsed with `TimeSpan.TryParse`.
 
 ### 2.4 `moveAndFen` (maps to `MoveAndFen` / `MoveDetail`) — for board animation
 
@@ -247,7 +247,7 @@ nothing breaks. Guidance:
 - **Do NOT emit one `Status` per UCI info line** — engines produce dozens per second; coalesce to the
   chosen cadence. The final search state is already carried in `BestMove.status`, so no separate
   "last Status" at move time is needed.
-- The internal EB runner throttles `Status` to ~500 ms for reference; ~2 s is calmer and ~4× cheaper.
+- EB's own runner forwards every engine info line as a `Status`; the page smooths the display with its own timer (500 ms, 100 ms in the last 30 s of a clock), so a producer may send at any cadence. ~2 s is calmer and ~4× cheaper over the network.
 
 `Status` cadence does **not** affect clock smoothness — EB's local display timer renders the clocks
 independently (see `Time`, §3.10).
@@ -397,11 +397,14 @@ Finalizes standings and opens the final results view.
 { "type": "EndOfTournament", "tournament": { /* Tournament config object */ } }
 ```
 
-### 3.16 Bracket events — **Out of scope (v0.1)**
+### 3.16 Bracket events — tags only
 
-`CupBracketUpdated`, `SwissStateUpdated`, `LadderStateUpdated` drive the cup/swiss/ladder dialogs and
-require richer state objects (`CupBracket`, `SwissState`, `LadderState`). Deferred to a later version;
-round-robin / gauntlet visualization is fully covered without them.
+`CupBracketUpdated`, `SwissStateUpdated`, `LadderStateUpdated` travel as bare `{"type": "..."}` tags with no state object, so they cannot drive the cup/swiss/ladder dialogs over the feed; round-robin / gauntlet visualization is fully covered without them.
+
+### 3.17 Other events the codec carries
+
+- `{"type": "Eval", "player": "<name>", "eval": <eval object or null>}` — one engine's eval outside a `Status`.
+- `{"type": "GameSummary", "summary": "<text>"}` — a finished game's one-line summary.
 
 ---
 
@@ -454,16 +457,16 @@ involved.
 
 ---
 
-## 7. Open questions (resolve during implementation)
+## 7. Open questions
 
 - **Eval sign orientation** — confirm whether EB's eval charts expect side-to-move or White-relative
   scores, and document the chosen convention here.
-- **Standings without a live runner** — `EndOfGame` currently calls `runner.GetPlayerResults` /
-  `runner.GenerateStatsCrosstable`. In feed mode these must be reachable without a live tournament
-  runner (expose as pure functions over `result[]` + tournament config).
 - **Tournament config minimality** — pin down the smallest `tournament` subset that yields correct
-  standings for each `TournamentMode`.
-- **Time format** — lock `"HH:mm:ss"` vs `"HH:mm:ss.fff"` (recommend accepting both).
+  standings for each `TournamentMode`. Known today: the crosstable needs `EngineSetup.Engines` (with
+  `IsChallenger` for a gauntlet).
+
+Resolved: standings in feed mode come from `ChessLibrary/Tournament/FeedStats.fs`, pure functions over
+the results, no runner needed; the time format accepts both `"HH:mm:ss"` and `"HH:mm:ss.fff"` (§2.3).
 
 ---
 
@@ -562,4 +565,6 @@ HTTP/WS are live streams with no history, so a grid opened mid-tournament misses
 fix is a **server-side state cache in `JsonFeedService`**: keep, per `gameId`, the last `StartOfGame`
 + latest `Status`/board + accumulated results + `StartOfTournament`, and replay that snapshot to a new
 subscriber before live events. This is the key robustness item for real multi-server monitoring (and
-makes the file-tail's "read from start" unnecessary). Not yet implemented.
+makes the file-tail's "read from start" unnecessary). Implemented: `JsonFeedService` keeps that
+snapshot (`StartOfTournament`, results, per-game `StartOfGame` / last `Status` / last `BestMove`,
+`EndOfTournament`) and replays it to every new subscriber before live events.

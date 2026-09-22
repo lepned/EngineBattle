@@ -17,7 +17,7 @@ Three evaluation modes are available via `"evalMode"`:
 SPRT match execution details:
 - Uses the in-process tournament runner (`Manager.Runner`) for each comparison.
 - Does not spawn `tournamentjson` subprocesses per candidate.
-- Writes match PGNs under `outputDir/matches`.
+- Writes match PGNs next to the base tournament's `PgnOutPath`, or as `<outputDir>/tuner_matches_*.pgn` when that is blank.
 - Computes SPRT decision after each bounded mini-match from final WDL.
 
 ## How the Optimizer Works
@@ -26,7 +26,7 @@ SPRT match execution details:
 
 The tuner uses **Gaussian Process (GP) regression** with **Expected Improvement (EI)** acquisition to select parameter candidates.
 
-1. **Initial design**: Latin Hypercube Sampling (LHS) generates space-filling initial points (default `2 × activeParams`, configurable via `"initialDesignSize"`). Each point is evaluated by running an SPRT match against the **fixed baseline** (initial parameters).
+1. **Initial design**: Latin Hypercube Sampling (LHS) generates space-filling initial points (default `max(3, 2 × activeParams)`, configurable via `"initialDesignSize"`). Each point is evaluated by running an SPRT match against the **fixed baseline** (initial parameters).
 
 2. **GP surrogate**: A GP with a Matern 5/2 ARD kernel is fitted to all observations `(x, scoreFraction)`. The pipeline applies logit transform then standardization before GP fitting. Hyperparameters (signal variance, length scales, noise) are optimized via grid search over log marginal likelihood every `"hypUpdateInterval"` iterations (default 5). Per-point heteroscedastic noise is computed from game counts via the delta method on logit.
 
@@ -154,10 +154,10 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
 ### Convergence and Output
 
 - **Checkpointing**: State is saved to `tune-state.json` after each iteration, allowing resume with `"resume": true`.
-- **History**: Each candidate evaluation is logged to `tune-history.jsonl` with parameters, SPRT results, GP predictions, and LLR traces.
+- **History**: Each candidate evaluation is logged to `tune-history.jsonl` with the match outcome (games, W/D/L, final LLR, Elo), the GP prediction (mean, std, acquisition value) and, in puzzle mode, the accuracy; the parameter values themselves are in `tune-progress.json`.
 - **Dashboard**: An HTML dashboard (`bo-dashboard.html`) with GP visualizations, convergence plots, and parameter importance is updated after each iteration.
 - **Final validation**: After all phases, a validation match compares **tuned** vs **initial** to measure total improvement.
-- **Output**: Best parameters written to `best-engine-options.json` in UCI setoption format.
+- **Output**: Best parameters written to `best-engine-options.json` as a plain JSON `{ "Option": value }` dictionary.
 
 ### Time and Resource Limits
 
@@ -236,7 +236,7 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
 - The Bayesian optimizer uses no external dependencies beyond MathNet.Numerics (already in ChessLibrary).
 - `opponentConfigPath` (optional) — path to a separate engine JSON to use as the baseline opponent during optimization. When set, BO candidates play against this fixed reference engine instead of the initial parameters of the tuned engine. Phase confirmations and final validation use self-play by default but can be switched to use the opponent via `useOpponentForValidation`. Omit or set to `""` to use the default behavior (candidate vs initial self-play).
 - `opponentTargetNodes` (optional, default `0`) — node limit for the opponent engine when `opponentConfigPath` is set. When `0`, uses the same `targetNodes` as the candidate engine. When set to a positive value, the opponent searches at `opponentTargetNodes` while the candidate searches at `targetNodes`.
-- `preventOpponentDeviation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, constrains the opponent engine to replay its previous moves via a cumulative reference PGN. Forces sequential play (`parallelGames` = 1) when active.
+- `preventOpponentDeviation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, constrains the opponent engine to replay its previous moves via a cumulative reference PGN. `parallelGames` is passed through unchanged.
 - `maxReferencePgnGames` (optional, default `0`) — maximum number of games stored in the cumulative reference PGN used by `preventOpponentDeviation`. Once the cap is reached, no more games are appended. This prevents the reference PGN from growing indefinitely during long tuning runs, avoiding increasing parse times per iteration. `0` means no cap.
 - `useOpponentForValidation` (optional, default `false`) — when `true` and `opponentConfigPath` is set, phase confirmations and final validation run each candidate against the opponent engine instead of self-play. Each comparison runs two matches (candidate A vs opponent, candidate B vs opponent) and compares score fractions. Only applies to SPRT eval mode; puzzle/ERET comparisons are unchanged. When `false` or when no opponent is configured, validation falls back to the default self-play SPRT match.
 - `gpus` (optional) — array of GPU indices to assign across parallel games (e.g., `[0, 1]`). Requires `deviceOption` and `deviceTemplate` to be set.

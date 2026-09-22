@@ -1,6 +1,6 @@
 ﻿# How to Run ERET Tests in EngineBattle (Console Mode)
 
-EngineBattle supports ERET (Engine Regression and Evaluation Testing) mode, allowing you to benchmark engine versions, networks, or settings across a suite of test positions. The `EretConfig.json` configuration file defines which engines to test, which ERET suite to use, and how the evaluation should be performed.
+EngineBattle supports ERET (Eigenmann Rapid Engine Test) mode, allowing you to benchmark engine versions, networks, or settings across a suite of test positions. The `EretConfig.json` configuration file defines which engines to test, which ERET suite to use, and how the evaluation should be performed.
 
 ---
 

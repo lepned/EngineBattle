@@ -14,7 +14,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **GPU**: The GPU specifications.
 - **MainLogoFileName**: The filename of the tournament logo.
 - **VerboseLogging**: Enable or disable verbose logging.
-- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, depth, move time), `"Standard"` (11 fields), `"Full"` (all 22 fields). Backward compatible: `true` → Full, `false` → Standard.
+- **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, nodes, speed, move time), `"Standard"` (11 fields), `"Full"` (18 fields). Backward compatible: `true` → Full, `false` → Standard.
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
 - **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet, Ladder).
 - **AllowPondering**: Allow engines to ponder during the opponent’s time.
@@ -22,7 +22,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **PreventMoveDeviation**: Prevent move deviation option.
 - **Challengers**: Number of challengers in the tournament.
 - **Rounds**: Number of rounds in the tournament.
-- **PauseAfterRound**: Pause duration after each round in seconds.
+- **PauseAfterRound**: A round number; the WebGUI stops the tournament once a round beyond it starts (0 = never). Console runs ignore it.
 - **DelayBetweenGames**: Delay between games, e.g. `00:00:20`.
 - **MoveOverhead**: Move overhead time, e.g. `00:00:00.100`.
 

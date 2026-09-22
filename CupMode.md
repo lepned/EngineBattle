@@ -62,9 +62,7 @@ Uses band-based seeding to create a fair bracket:
 2. Divide into seeding bands based on bracket size.
 3. Place seeds so that top seeds meet only in later rounds.
 
-For an 8-player bracket:
-- Seed 1 vs Seed 8, Seed 4 vs Seed 5 (one half)
-- Seed 2 vs Seed 7, Seed 3 vs Seed 6 (other half)
+Seeds are placed in bands - seed 1, seed 2, seeds 3-4, seeds 5-8, and so on - with the order inside each band shuffled. For an 8-player bracket seed 1 and seed 2 sit at opposite ends and meet at the earliest in the final, one of seeds 3-4 lands in each half, and each top seed meets a random one of seeds 5-8 in round 1.
 
 This ensures Seed 1 and Seed 2 can only meet in the final.
 
@@ -78,7 +76,7 @@ Engines are shuffled randomly. The shuffled order is persisted for resume consis
 
 - Each match consists of one or more pairs.
 - Each pair uses the same opening twice (colors swapped).
-- The higher-seeded player gets White in game 1 of each pair.
+- The player listed first in the match gets White in game 1 of each pair: the higher seed in round 1, and from round 2 the winner arriving from the upper of the two feeding matches.
 
 ### Early Termination
 

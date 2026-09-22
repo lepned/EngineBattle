@@ -105,18 +105,19 @@ Winner determination:
 - For two tied engines: play additional pairs until one wins a pair.
 - For three or more tied: use tie-break criteria.
 
-Tie-break order for non-winner placements:
+Tie-break order in the standings (every placement):
 1. Sonneborn-Berger score
 2. Number of wins
 3. Direct encounter result
-4. If still tied, share places (unless it affects promotion/relegation)
+4. Rating, then name - places are never shared
+
+A tie for first between three or more players at the end is broken by Sonneborn-Berger alone.
 
 ## State Persistence
 
 Swiss state is saved to `StatePath` (JSON) after each game, including:
 - Current round number and global opening index
 - All pairings per round with results
-- Standings snapshot per round
 - Opening order (for resume consistency)
 
 To resume a tournament, ensure the state file exists at the configured path.
