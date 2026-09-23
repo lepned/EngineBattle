@@ -45,25 +45,6 @@
                     </div>
                 </div>
                 <small>Text scales everywhere, boards keep their size. Widen the menu if larger text makes entries wrap.</small>
-
-                @* A second scale, because the first one cannot do this job: Ctrl+ and the setting
-                   above enlarge everything at once, while the tournament tables need to shrink to
-                   fit their boxes and grow when there is room. This number moves the ceiling those
-                   tables are allowed to reach. *@
-                <div class="field-group" style="margin-top:0.8rem; margin-bottom:0;">
-                    <label>Tournament table text</label>
-                    <div class="coord-color-row">
-                        <input type="range" min="60" max="160" step="5" value="@tournamentFontPct"
-                               @oninput="e => { tournamentFontPct = int.Parse((string)e.Value); fontScaleTouched = true; }" @onchange="Apply" />
-                        <span class="piece-scale-value">@tournamentFontPct%</span>
-                    </div>
-                    <small>
-                        Every region of the tournament page, relative to its own size below.
-                        Remembered for this screen@(string.IsNullOrEmpty(screenKey) ? "" : $" ({screenKey})"),
-                        so docking to another monitor recalls its own setting. The A-/A+ control
-                        in the corner of the tournament page is this same number.
-                    </small>
-                </div>
             </div>
 
             @* Collapsed by default, and it should stay that way: the corner control on the
@@ -80,6 +61,21 @@
                     <span class="section-title">Text per region <span class="scope-badge tournament">Tournament page</span></span>
                     <span class="collapse-indicator">@Indicator("fontgroups")</span>
                 </h4>
+                @* The A-/A+ nudge on the tournament page multiplies every number below until "save"
+                   there folds it in. It is set where its effect can be seen, so this page only says
+                   when one is pending - otherwise these px would not match the page - and can
+                   drop it. *@
+                @if (tournamentFontPct != 100)
+                {
+                    <div class="coord-color-row" style="margin-bottom:0.5rem;">
+                        <small style="flex:1;">
+                            The tournament page scales these by @tournamentFontPct% on this screen (A&minus;/A+).
+                            Press "save" there to make it the numbers here.
+                        </small>
+                        <button type="button" @onclick="ResetTournamentFontScale"
+                                title="Drop the A-/A+ nudge on this screen: the tournament page goes back to the numbers below">reset to 100%</button>
+                    </div>
+                }
                 @foreach (var g in GlobalSettings.FontGroups)
                 {
                     <div class="field-group" style="margin-bottom:0.35rem;">
@@ -98,9 +94,9 @@
                 }
                 <small>
                     The largest size each region may use on this screen; the tables still shrink
-                    to fit their boxes, and the tournament table text above scales all of them
-                    together. Easier than the sliders: press "save" in the corner of the
-                    tournament page and the sizes on screen become these numbers.
+                    to fit their boxes. Easier than the sliders: A&minus;/A+ in the corner of the
+                    tournament page scales all of them together, and "save" there makes the sizes
+                    on screen these numbers.
                 </small>
             </div>
 
@@ -637,7 +633,7 @@
     // with the tournament page, whose "save" may have written other regions since this page was
     // opened, and rewriting the whole dictionary from this page would put them back.
     private readonly HashSet<string> touchedGroups = new();
-    private bool fontScaleTouched;
+    private bool fontScaleReset;
 
     // The charts-and-panels choices, as the selects show them: "" (follow), "on", "off" for the
     // flags, and the number as text for the three numbers ("" = follow). Written back one key
@@ -863,20 +859,24 @@
     }
 
     /// <summary>
-    /// Writes the nudge where it will be found again: under this screen's key, or as the shared
-    /// default when the browser would not name a screen. 100% removes the entry rather than
-    /// storing a no-op, so the settings file only lists screens that actually wanted something.
+    /// Drops the A-/A+ nudge on this screen, so the tournament page renders the numbers shown
+    /// here. 100% is stored under the screen's key rather than the entry removed, as the
+    /// tournament page does: without an entry the screen falls back to the shared default,
+    /// which another screen may have set to something else. With no screen key the shared
+    /// default is the one in use, so that is the one reset.
     /// </summary>
-    private void SetTournamentFontScale(GlobalSettings merged)
+    private void ResetTournamentFontScale()
     {
-        var scale = Math.Round(tournamentFontPct / 100.0, 2);
-        if (string.IsNullOrEmpty(screenKey))
-        {
-            merged.TournamentFontScale = scale;
-            return;
-        }
-        if (scale == 1.0) merged.TournamentFontScaleByScreen.Remove(screenKey);
-        else merged.TournamentFontScaleByScreen[screenKey] = scale;
+        tournamentFontPct = 100;
+        fontScaleReset = true;
+        Apply();
+        fontScaleReset = false;
+    }
+
+    private void ResetTournamentFontScale(GlobalSettings merged)
+    {
+        if (string.IsNullOrEmpty(screenKey)) merged.TournamentFontScale = 1.0;
+        else merged.TournamentFontScaleByScreen[screenKey] = 1.0;
     }
 
     private Dictionary<string, string> LoadDisplayChoice(GlobalSettings s)
@@ -992,7 +992,7 @@
         var merged = JsonSerializer.Deserialize<GlobalSettings>(JsonSerializer.Serialize(current)) ?? new GlobalSettings();
         merged.UiFontScale = uiFontScale;
         merged.NavDrawerWidth = navDrawerWidth;
-        if (fontScaleTouched) SetTournamentFontScale(merged);
+        if (fontScaleReset) ResetTournamentFontScale(merged);
         if (touchedGroups.Count > 0)
         {
             var live = merged.TournamentLayoutForWrite(screenKey).FontPx;
