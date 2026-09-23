@@ -2689,6 +2689,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                             }
                         if tournament.TournamentMode.Equals("Ladder", StringComparison.OrdinalIgnoreCase) then
                           printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)
+                        for warning in Validation.duplicateOpeningWarnings tournament do
+                          ConsoleUtils.printInColor ConsoleColor.Yellow warning
                         printfn "Running tournament with config file: %s" configFile
                         use host = createHost()
                         host.Start()    

@@ -479,6 +479,80 @@ module Validation =
               validateChessEngineCmds config
       ] |> accumulateErrors
 
+  // The last book checked, and what was found: loading a tournament runs the validation again
+  // (the WebGUI reloads it on every visit to the page), and a large book should not be parsed
+  // each time only to say the same thing.
+  let private bookCheckCache = Dictionary<string, (int64 * DateTime * string list)>()
+
+  /// Openings in the book that start from the same position. EngineBattle identifies an opening
+  /// by that position (Hash.computeOpeningHashFromGame - the same hash the pairings, resume,
+  /// pentanomial pairs and deviation prevention use), so such entries are one opening to it:
+  /// with PreventMoveDeviation the later one repeats the earlier game, and cup and swiss skip
+  /// it as an opening already used. A TCEC book can hold several "1.d4" entries named after
+  /// where each game went. One warning per book, empty when there is nothing to say.
+  let duplicateOpeningWarnings (tourny: Tournament) : string list =
+      match tourny.Opening.OpeningsPath with
+      | Some path when not (String.IsNullOrWhiteSpace path) && File.Exists path ->
+          let info = FileInfo(path)
+          let key = info.FullName
+          match bookCheckCache.TryGetValue key with
+          | true, (len, stamp, warnings) when len = info.Length && stamp = info.LastWriteTimeUtc -> warnings
+          | _ ->
+              let warnings =
+                  try
+                      let openings =
+                          if path.ToLower().Contains ".epd" then EPDExtractor.parseEPDFile path |> Seq.toArray
+                          else FullPGNParser.parsePgnFile path |> Seq.toArray
+                      let tag (g: PGNTypes.PgnGame) (name: string) =
+                          g.GameMetaData.OtherTags
+                          |> List.tryFind (fun t -> t.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+                          |> Option.map (fun t -> t.Value)
+                          |> Option.filter (String.IsNullOrWhiteSpace >> not)
+                      let label (i: int) (g: PGNTypes.PgnGame) =
+                          match tag g "Opening", tag g "ECO" with
+                          | Some name, Some eco -> sprintf "#%d %s (%s)" (i + 1) name eco
+                          | Some name, None -> sprintf "#%d %s" (i + 1) name
+                          | None, Some eco -> sprintf "#%d (%s)" (i + 1) eco
+                          | None, None -> sprintf "#%d" (i + 1)
+                      let position (g: PGNTypes.PgnGame) =
+                          let moves = ChessUtilities.Opening.openingPrefix g
+                          if moves.IsEmpty then
+                              let fen = if String.IsNullOrWhiteSpace g.GameMetaData.Fen then g.Fen else g.GameMetaData.Fen
+                              if String.IsNullOrWhiteSpace fen then "the start position" else fen
+                          else
+                              let text =
+                                  moves
+                                  |> List.truncate 10
+                                  |> List.map (fun m -> if m.Color = "w" then sprintf "%d.%s" m.MoveNumber m.San else m.San)
+                                  |> String.concat " "
+                              if moves.Length > 10 then text + " ..." else text
+                      let groups =
+                          openings
+                          |> Array.mapi (fun i g -> i, g)
+                          |> Array.groupBy (fun (_, g) -> ChessUtilities.Hash.computeOpeningHashFromGame g)
+                          |> Array.map snd
+                          |> Array.filter (fun entries -> entries.Length > 1)
+                      if groups.Length = 0 then []
+                      else
+                          let shown = groups |> Array.truncate 3
+                          let lines =
+                              [ for entries in shown do
+                                  let names = entries |> Array.truncate 4 |> Array.map (fun (i, g) -> label i g)
+                                  let more = if entries.Length > 4 then sprintf " and %d more" (entries.Length - 4) else ""
+                                  yield sprintf "  %s%s - %s" (String.Join(", ", names)) more (position (snd entries.[0])) ]
+                          let entryCount = groups |> Array.sumBy (fun e -> e.Length)
+                          let header =
+                              sprintf "Warning: %s has %d openings that start from the same position as another and count as one (%d group%s):"
+                                  (Path.GetFileName path) entryCount groups.Length (if groups.Length = 1 then "" else "s")
+                          let tail =
+                              (if groups.Length > shown.Length then [ sprintf "  ... and %d more group%s" (groups.Length - shown.Length) (if groups.Length - shown.Length = 1 then "" else "s") ] else [])
+                              @ [ "With PreventMoveDeviation the later one repeats the earlier game, and cup and swiss skip it as an opening already used." ]
+                          [ String.Join("\n", header :: lines @ tail) ]
+                  with _ -> []   // a book that will not parse is reported where it is loaded
+              bookCheckCache.[key] <- (info.Length, info.LastWriteTimeUtc, warnings)
+              warnings
+      | _ -> []
+
   let validateTournamentInput (tourny: Tournament) =
       match validateTournament tourny with
       | Ok -> ConsoleUtils.printInColor ConsoleColor.Green "Tournament passed limited validation of key settings"
@@ -494,6 +568,8 @@ module Validation =
       if tourny.TestOptions.NumberOfGamesInParallel > 1 && not isRRorGauntlet then
           ConsoleUtils.printInColor ConsoleColor.Yellow
               $"Warning: NumberOfGamesInParallel = {tourny.TestOptions.NumberOfGamesInParallel} has no effect in {tourny.ModeLabel()} mode — Cup, Swiss and Ladder always run sequentially."
+      for warning in duplicateOpeningWarnings tourny do
+          ConsoleUtils.printInColor ConsoleColor.Yellow warning
 
 module JSON =
 

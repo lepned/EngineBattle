@@ -499,6 +499,8 @@ public partial class Tournaments
 			return;
 		}
 
+		ShowOpeningWarnings();
+
 		ChessLibrary.Tournament.Manager.loadTournament();
 		var ok = await ChessLibrary.Tournament.TournamentUtils.validateEnginesInTournament(tournament);
 		if (!ok)
@@ -690,11 +692,23 @@ public partial class Tournaments
 			Nav.NavigateTo("/tournament-grid");
 	}
 
+	/// Not a reason to stop: the tournament runs, but book entries that are one opening to
+	/// EngineBattle are worth knowing about before a run of hours, not after. The same text goes
+	/// to the server console, which a WebGUI user does not see. The snackbar outlives the move to
+	/// the grid page that a parallel run makes.
+	private void ShowOpeningWarnings()
+	{
+		foreach (var warning in ChessLibrary.Configuration.Validation.duplicateOpeningWarnings(tournament))
+			Snackbar.Add(new MarkupString(System.Net.WebUtility.HtmlEncode(warning).Replace("\n", "<br/>")), Severity.Warning,
+				o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+	}
+
 	private async Task StartTournamentFlow()
 	{
 		if (FeedMode)
 			return;   // feed mode is driven externally; never start a local engine tournament
 		await PrepareRun();
+		ShowOpeningWarnings();
 		if (!await ConfirmCupResumeOrNew())
 			return;
 		if (!await ConfirmSwissResumeOrNew())
