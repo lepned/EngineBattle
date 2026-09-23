@@ -247,6 +247,23 @@ module Pentanomial =
     | W15 -> { counts with W15 = counts.W15 + 1 }
     | W2 -> { counts with W2 = counts.W2 + 1 }
 
+  /// All pairs one (opening, matchup) group holds: the i-th game with e1 as White goes with the
+  /// i-th game with e2 as White, in file order. A group holds one game of each colour when an
+  /// opening is played once, but a book whose entries share a start position, a book shorter
+  /// than the rounds, or a ladder tiebreak put several pairs in one group - and each is a pair.
+  /// Both games of any such pair start from the same position with the colours reversed, so
+  /// which of them go together does not matter. Returns e1's score in each completed pair and
+  /// the number of games left without a partner.
+  let private pairsInGroup (e1: string) (e2: string) (group: PgnGame list) =
+    let asWhite w = group |> List.filter (fun g -> g.GameMetaData.White.Trim() = w)
+    let w1b2, w2b1 = asWhite e1, asWhite e2
+    let n = min w1b2.Length w2b1.Length
+    let sums =
+      List.zip (List.truncate n w1b2) (List.truncate n w2b1)
+      |> List.map (fun (g1, g2) ->
+          (scoreFor e1 g1 |> Option.defaultValue 0.0) + (scoreFor e1 g2 |> Option.defaultValue 0.0))
+    sums, abs (w1b2.Length - w2b1.Length)
+
   let calculateAllMatchups (games: seq<PgnGame>) : ((string * string) * Counts) list =
     let finishedGames =
       games
@@ -262,36 +279,20 @@ module Pentanomial =
           stableOpeningHash g, e1, e2)
       |> Seq.toList
 
-    let perMatchupCompletedPairs =
+    let pairsPerGroup =
       gamePairsByOpeningAndEngines
-      |> Seq.choose (fun ((_, e1, e2), group) ->
-          let group = group |> Seq.toList
-          let w1b2 =
-            group
-            |> List.rev
-            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e1 && g.GameMetaData.Black.Trim() = e2)
-          let w2b1 =
-            group
-            |> List.rev
-            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e2 && g.GameMetaData.Black.Trim() = e1)
+      |> List.map (fun ((_, e1, e2), group) -> (e1, e2), pairsInGroup e1 e2 (Seq.toList group))
 
-          match w1b2, w2b1 with
-          | Some g1, Some g2 ->
-              let s1 = scoreFor e1 g1 |> Option.defaultValue 0.0
-              let s2 = scoreFor e1 g2 |> Option.defaultValue 0.0
-              Some ((e1, e2), s1 + s2)
-          | _ -> None)
-      |> Seq.toList
+    let perMatchupCompletedPairs =
+      pairsPerGroup
+      |> List.collect (fun (matchup, (sums, _)) -> sums |> List.map (fun s -> matchup, s))
 
     let incompletePairsByMatchup =
-      gamePairsByOpeningAndEngines
-      |> Seq.choose (fun ((_, e1, e2), group) ->
-          let group = group |> Seq.toList
-          let hasW1b2 = group |> List.exists (fun g -> g.GameMetaData.White.Trim() = e1 && g.GameMetaData.Black.Trim() = e2)
-          let hasW2b1 = group |> List.exists (fun g -> g.GameMetaData.White.Trim() = e2 && g.GameMetaData.Black.Trim() = e1)
-          if hasW1b2 && hasW2b1 then None else Some (e1, e2))
-      |> Seq.countBy id
-      |> Map.ofSeq
+      pairsPerGroup
+      |> List.filter (fun (_, (_, leftover)) -> leftover > 0)
+      |> List.groupBy fst
+      |> List.map (fun (matchup, items) -> matchup, items |> List.sumBy (fun (_, (_, leftover)) -> leftover))
+      |> Map.ofList
 
     let completedPairsByMatchup =
       perMatchupCompletedPairs
@@ -363,31 +364,20 @@ module Pentanomial =
     let acc =
       groups
       |> Seq.fold (fun m ((_, e1, e2), group) ->
-          let group = group |> Seq.toList
-          let w1b2 =
-            group
-            |> List.rev
-            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e1 && g.GameMetaData.Black.Trim() = e2)
-          let w2b1 =
-            group
-            |> List.rev
-            |> List.tryFind (fun g -> g.GameMetaData.White.Trim() = e2 && g.GameMetaData.Black.Trim() = e1)
-
-          match w1b2, w2b1 with
-          | Some g1, Some g2 ->
-              let sum1 =
-                (scoreFor e1 g1 |> Option.defaultValue 0.0) +
-                (scoreFor e1 g2 |> Option.defaultValue 0.0)
-              let sum2 = 2.0 - sum1
-              let b1 = bucketFromSum sum1
-              let b2 = bucketFromSum sum2
-              m
-              |> updateEngine e1 (fun c -> c |> incBucketEngine b1 |> fun c2 -> { c2 with CompletedPairs = c2.CompletedPairs + 1 })
-              |> updateEngine e2 (fun c -> c |> incBucketEngine b2 |> fun c2 -> { c2 with CompletedPairs = c2.CompletedPairs + 1 })
-          | _ ->
-              m
-              |> updateEngine e1 (fun c -> { c with IncompletePairs = c.IncompletePairs + 1 })
-              |> updateEngine e2 (fun c -> { c with IncompletePairs = c.IncompletePairs + 1 })
+          let sums, leftover = pairsInGroup e1 e2 (Seq.toList group)
+          let m =
+            sums
+            |> List.fold (fun m sum1 ->
+                let b1 = bucketFromSum sum1
+                let b2 = bucketFromSum (2.0 - sum1)
+                m
+                |> updateEngine e1 (fun c -> c |> incBucketEngine b1 |> fun c2 -> { c2 with CompletedPairs = c2.CompletedPairs + 1 })
+                |> updateEngine e2 (fun c -> c |> incBucketEngine b2 |> fun c2 -> { c2 with CompletedPairs = c2.CompletedPairs + 1 })) m
+          if leftover = 0 then m
+          else
+            m
+            |> updateEngine e1 (fun c -> { c with IncompletePairs = c.IncompletePairs + leftover })
+            |> updateEngine e2 (fun c -> { c with IncompletePairs = c.IncompletePairs + leftover })
         ) init
 
     acc

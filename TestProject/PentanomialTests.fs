@@ -85,6 +85,53 @@ let ``calculateAllMatchups returns counts from alphabetically-first engine persp
     Assert.Equal(1, swapped.L2)
 
 [<Fact>]
+let ``Every pair counts when one opening is played more than once`` () =
+    // Two book entries with the same start position (Sufi17-26.pgn opens with two "1.d4")
+    // share an opening hash, so both rounds land in one group. The first pair used to be
+    // dropped: only the last game of each colour was paired.
+    let g1 = mkGame 1 "h1" "A" "B" "1-0"        // round 1: A 1.5
+    let g2 = mkGame 2 "h1" "B" "A" "1/2-1/2"
+    let g3 = mkGame 3 "h1" "A" "B" "1/2-1/2"    // round 2: A 1.0
+    let g4 = mkGame 4 "h1" "B" "A" "1/2-1/2"
+    let res = Pentanomial.calculateAllMatchups [ g1; g2; g3; g4 ]
+
+    let ((_, _), c) = res.Head
+    Assert.Equal(2, c.CompletedPairs)
+    Assert.Equal(0, c.IncompletePairs)
+    Assert.Equal(1, c.W15)
+    Assert.Equal(1, c.D)
+
+[<Fact>]
+let ``A game left over in a repeated opening is one incomplete pair`` () =
+    let g1 = mkGame 1 "h1" "A" "B" "1-0"
+    let g2 = mkGame 2 "h1" "B" "A" "0-1"        // A 2.0
+    let g3 = mkGame 3 "h1" "A" "B" "1/2-1/2"    // its partner not played yet
+    let res = Pentanomial.calculateAllMatchups [ g1; g2; g3 ]
+
+    let ((_, _), c) = res.Head
+    Assert.Equal(1, c.CompletedPairs)
+    Assert.Equal(1, c.IncompletePairs)
+    Assert.Equal(1, c.W2)
+
+[<Fact>]
+let ``Per-engine totals count every pair of a repeated opening`` () =
+    let g1 = mkGame 1 "h1" "A" "B" "1-0"
+    let g2 = mkGame 2 "h1" "B" "A" "1/2-1/2"
+    let g3 = mkGame 3 "h1" "A" "B" "1/2-1/2"
+    let g4 = mkGame 4 "h1" "B" "A" "1/2-1/2"
+    let res = Pentanomial.calculatePerEngine [ g1; g2; g3; g4 ]
+
+    let a = res |> List.find (fun e -> e.Engine = "A")
+    let b = res |> List.find (fun e -> e.Engine = "B")
+    Assert.Equal(2, a.CompletedPairs)
+    Assert.Equal(1, a.W15)
+    Assert.Equal(1, a.D)
+    Assert.Equal(2, b.CompletedPairs)
+    Assert.Equal(1, b.L15)
+    Assert.Equal(1, b.D)
+    Assert.Equal(0, b.IncompletePairs)
+
+[<Fact>]
 let ``Pentanomial Elo, error and LOS from OpenBench reference data`` () =
     // Reference: Elo 47.31 +-8.51 (95%), Games N:1330 W:423 L:243 D:664, Penta [0, 66, 353, 246, 0]
     let counts =
