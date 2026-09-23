@@ -1071,7 +1071,7 @@
 
     public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
     {
-        if (engineConf.Id.Contains("Input1"))
+        if (engineConf.Id == EngineSlot.A)
         {
             Engine = engineConf.EngineConfig;
             engineConfigPath = engineConf.SourceFilePath ?? "";

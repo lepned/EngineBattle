@@ -417,8 +417,6 @@
     private HashSet<PGNTypes.PgnGame> selectedItems = new();
     public bool QChartSelected { get; set; } = false;
     public CultureInfo currentCulture = CultureInfo.CurrentCulture;
-    private bool engine1 => Id.Contains("1") ? true : false;
-    private bool optimisticHead;
     private int numberOfLines = 3;
     private double numberOfNodes = 1;
     private bool showNNdata = false;
@@ -450,10 +448,6 @@
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
     private List<NNValues> NNInfoList = new();
     public List<string> InfoLineList = new();
-    string baseline0 = """backend=cuda-fp16,(gpu=0,value_head=winner)""";
-    string baseline1 = """backend=cuda-fp16,(gpu=1,value_head=winner)""";
-    string opt0 = """backend=cuda-fp16,(gpu=0,policy_head=optimistic,value_head=winner)""";
-    string opt1 = """backend=cuda-fp16,(gpu=1,policy_head=optimistic,value_head=winner)""";
     HotKeysContext keyContext;
     public List<KeyValuePair<int, EngineStatus>> dataList = new();
     Dictionary<int, EngineStatus> data = new();
@@ -1027,7 +1021,6 @@
             }
             await StartAnalyzer();
             searchInfoPlot.EngineName = analyzer.GetEngineName();
-            var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
             neuralNet = $"{analyzer.GetNetwork()}";
             backend = analyzer.BackendInfo();
             searchInfoPlot.NN = analyzer.GetNetwork();
@@ -1039,50 +1032,6 @@
         analyzer?.GoInfinite();
         StartSearchTimer();
         await InvokeAsync(StateHasChanged);
-    }
-
-    private void ToggleOptimisticAndBase()
-    {
-        if (analyzer == null)
-            return;
-
-        optimisticHead = !optimisticHead;
-        var opt = optimisticHead ? "Optimistic: " : "Baseline: ";
-        neuralNet = $"{analyzer.GetNetwork()}";
-
-        if (optimisticHead)
-        {
-            if (Id.Contains("1"))
-            {
-                var option1 = EngineOption.Create("BackendOptions", opt0);
-                analyzer?.AddSetoption(option1);
-                backend = opt0;
-            }
-
-            if (Id.Contains("2"))
-            {
-                var option2 = EngineOption.Create("BackendOptions", opt1);
-                analyzer?.AddSetoption(option2);
-                backend = opt1;
-            }
-        }
-        else
-        {
-            if (Id.Contains("1"))
-            {
-                var option1 = EngineOption.Create("BackendOptions", baseline0);
-                analyzer?.AddSetoption(option1);
-                backend = baseline0;
-            }
-
-            if (Id.Contains("2"))
-            {
-                var option2 = EngineOption.Create("BackendOptions", baseline1);
-                analyzer?.AddSetoption(option2);
-                backend = baseline1;
-            }
-        }
-        StateHasChanged();
     }
 
     private async Task BrowseNNFile()
@@ -2318,7 +2267,6 @@
 
         this.keyContext = this.HotKeys.CreateContext()
             .Add(Key.Escape, (Func<Task>)(async () => await ResetEngine()), "reset engine")
-            .Add(ModKey.Ctrl, Key.s, (() => ToggleOptimisticAndBase()), "toggle optimistic and baseline")
             .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await InvokeAsync(GoInfinite)), "go search")
             .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => { analyzer?.Stop(); await InvokeAsync(StateHasChanged); }), "stop search")
             .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
@@ -2397,7 +2345,6 @@
         if (firstRender)
         {
             chessModule = await JsInteropService.ImportModuleAsync(JS);
-            optimisticHead = engine1;
             var overlaySettings = OverlaySetting.GetOverlaySetting(Id);
             if (overlaySettings != OverlaySettings.None)
             {
