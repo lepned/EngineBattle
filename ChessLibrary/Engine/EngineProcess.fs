@@ -1,6 +1,7 @@
 namespace ChessLibrary
 
 open System
+open System.Diagnostics
 open System.IO
 open System.Text.RegularExpressions
 open System.Threading
@@ -8,9 +9,10 @@ open System.Threading.Channels
 open System.Threading.Tasks
 open TypesDef.CoreTypes
 
-/// The process plumbing both engine wrappers share (Engine.fs): what an engine's stderr is kept as,
-/// how its I/O is logged to a file, where it runs and how the diagnostics read. Nothing here knows
-/// UCI from Winboard - that is EngineWire's - or what a search is.
+/// The process plumbing both engine wrappers share (Engine.fs): the engine process itself
+/// (Transport), what its stderr is kept as, how its I/O is logged to a file and how the
+/// diagnostics read. Nothing here knows UCI from Winboard - that is EngineWire's - or what a
+/// search is.
 module internal EngineProcess =
 
   // ── Output text ───────────────────────────────────────────────────────────────────────────────
@@ -134,3 +136,91 @@ module internal EngineProcess =
         channel.Writer.TryComplete() |> ignore
         try drained.Wait(5000) |> ignore with _ -> ()
         try writer.Dispose() with _ -> ()
+
+  // ── The engine process ─────────────────────────────────────────────────────────────────────────
+
+  /// How the engine's stdout is read: pushed line by line to a handler on the process's reader
+  /// thread (the analysis wrapper), or pulled by the caller through StandardOutput (the
+  /// tournament wrapper).
+  type OutputMode =
+    | Push of onLine: (string -> unit)
+    | Pull
+
+  /// One engine process: started in the engine's own folder with its arguments, stdin written a
+  /// line at a time under a lock (LF on every platform, flushed at once), stderr kept in the
+  /// wrapper's StderrRing, and the exit code captured when it goes. The ring belongs to the
+  /// wrapper, not the process, so a restarted engine keeps the history of the one that died. What
+  /// the wrappers say about each of these differs, so they pass it in: `note` for the
+  /// working-directory line, `onStderr` for each stderr line, `onExited` when the process ends
+  /// (with its code when readable).
+  [<AllowNullLiteral>]
+  type Transport(config: EngineConfig, arguments: string, stderr: StderrRing, note: string -> unit, onStderr: string -> unit, onExited: int option -> unit) =
+    let proc = new Process()
+    let writeLock = obj ()
+    [<VolatileField>]
+    let mutable exitCode : int option = None
+
+    /// Starts the process; false when it could not be started.
+    member _.Start(mode: OutputMode) =
+      proc.StartInfo.FileName <- config.Path
+      proc.StartInfo.UseShellExecute <- false
+      proc.StartInfo.RedirectStandardInput <- true
+      proc.StartInfo.RedirectStandardOutput <- true
+      proc.StartInfo.RedirectStandardError <- true
+      // The engine's own folder, so it writes its logs and caches there rather than beside the app.
+      match workingDirectory config with
+      | Some dir ->
+          proc.StartInfo.WorkingDirectory <- dir
+          note $"Working directory set to: {dir}"
+      | None ->
+          note $"WARNING: Could not set working directory. Path: {config.Path}, Dir: {Path.GetDirectoryName(config.Path)}"
+      if not (String.IsNullOrEmpty arguments) then proc.StartInfo.Arguments <- arguments
+      proc.ErrorDataReceived.Add(fun args ->
+        try
+          if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
+            stderr.Add args.Data
+            onStderr args.Data
+        with _ -> ())
+      proc.Exited.Add(fun _ ->
+        let code = try Some proc.ExitCode with _ -> None
+        exitCode <- code
+        try onExited code with _ -> ())
+      proc.EnableRaisingEvents <- true
+      match mode with
+      | Push onLine ->
+          proc.OutputDataReceived.Add(fun args ->
+            if not (String.IsNullOrEmpty args.Data) then onLine args.Data)
+      | Pull -> ()
+      if proc.Start() then
+        proc.StandardInput.NewLine <- "\n"
+        proc.StandardInput.AutoFlush <- true
+        proc.BeginErrorReadLine()
+        match mode with
+        | Push _ -> proc.BeginOutputReadLine()
+        | Pull -> ()
+        true
+      else false
+
+    member _.Process = proc
+    /// The exit code once the Exited event has delivered it.
+    member _.ExitCode = exitCode
+    /// Throws when the process was never started or has been disposed, as Process.HasExited does.
+    member _.HasExited = proc.HasExited
+    member _.StandardOutput = proc.StandardOutput
+
+    member _.WriteLine(line: string) =
+      lock writeLock (fun () -> proc.StandardInput.WriteLine line)
+
+    /// The exit code, read from the process when the Exited event has not delivered it yet.
+    member _.ExitCodeText() =
+      match exitCode with
+      | Some c -> string c
+      | None ->
+          try if proc.HasExited then string proc.ExitCode else "?"
+          with _ -> "?"
+
+    /// After a read returned null: the engine closed its output, which it does as it exits. The
+    /// exit can lag the closed pipe by a moment; wait for it so a reason can name the exit.
+    member _.ExitedAfterEndOfOutput() =
+      try proc.HasExited || proc.WaitForExit 2000
+      with _ -> true

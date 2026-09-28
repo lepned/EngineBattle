@@ -28,7 +28,8 @@ open ChessLibrary.EngineWire
 /// console tools and the puzzle runner: the caller writes commands and pulls the replies itself.
 ///
 /// Both speak UCI-shaped commands; a Winboard engine gets them translated (EngineWire). The
-/// process plumbing they share - stderr, the I/O log, where the engine runs - is EngineProcess.
+/// process itself, its stderr and the I/O log are EngineProcess's: both run their engine through
+/// an EngineProcess.Transport, one reading its output pushed line by line, the other pulling it.
 ///
 /// The public surface is pinned by TestProject/EngineApiSurfaceTests.fs and the behaviour by
 /// TestProject/EngineCharacterizationTests.fs, which run a scripted fake engine as a real child
@@ -160,14 +161,30 @@ module Engine =
       let mutable initFailure : string option = None
       let readySignal = new ManualResetEventSlim(false)
 
-      let engineProcess = new Process()
       let stderr = EngineProcess.StderrRing()
       [<VolatileField>]
       let mutable lastExitCode : int option = None
       // Ceres and others exit non-zero on a clean quit; only warn when we didn't ask.
       [<VolatileField>]
       let mutable shutdownRequested = false
-      let writeLock = obj()
+      let transport =
+        let arguments =
+          if String.IsNullOrEmpty config.Args |> not then config.Args
+          elif isLc0 then "--show-hidden"
+          else ""
+        EngineProcess.Transport(config, arguments, stderr,
+          (fun msg -> logDebug $"[{name}] {msg}"),
+          (fun line -> if isEnabled LogLevel.Debug then logDebug $"[STDERR {name}]: {line}"),
+          (fun code ->
+              if code.IsSome then lastExitCode <- code
+              match code with
+              | Some c when c <> 0 ->
+                  if shutdownRequested then logDebug $"Engine {name} exited with code {c} after quit"
+                  else logInformation $"⚠️ Engine {name} exited unexpectedly with code {c}"
+              | _ -> ()
+              // A wait for uciok/readyok ends now rather than on its next check.
+              try readySignal.Set() with _ -> ()))
+      let engineProcess = transport.Process
 
       let ceresNetworkName =
         match config.Options |> Seq.tryFind (fun e -> e.Key = "Network") with
@@ -443,9 +460,9 @@ module Engine =
                 logIO ">>>" cmd
                 let delay = preGoDelayMs config protocol cmd
                 if delay > 0 then Thread.Sleep delay
-                lock writeLock (fun () -> engineProcess.StandardInput.WriteLine cmd)
+                transport.WriteLine cmd
           | Uci ->
-              lock writeLock (fun () -> engineProcess.StandardInput.WriteLine s)
+              transport.WriteLine s
               logIO ">>>" s
               if isEnabled LogLevel.Trace then logger.LogTrace(sprintf "Writing to %s: %s" name s)
 
@@ -472,73 +489,27 @@ module Engine =
       let setupProcess () =
           let mutable pos = moveBoard.Position
           moveBoard.IsFRC <- PositionOps.isFRC &pos
-          engineProcess.StartInfo.FileName <- config.Path
-          engineProcess.StartInfo.UseShellExecute <- false
-          engineProcess.StartInfo.RedirectStandardInput <- true
-          engineProcess.StartInfo.RedirectStandardOutput <- true
-          engineProcess.StartInfo.RedirectStandardError <- true
-          // The engine's own folder, so it does not clutter the application's.
-          match EngineProcess.workingDirectory config with
-          | Some dir ->
-              engineProcess.StartInfo.WorkingDirectory <- dir
-              logDebug $"[{name}] Working directory set to: {dir}"
-          | None ->
-              logDebug $"[{name}] WARNING: Could not set working directory. Path: {config.Path}, Dir: {Path.GetDirectoryName(config.Path)}"
-          if String.IsNullOrEmpty config.Args |> not then
-            logDebug $"Args passed: {config.Args}"
-            engineProcess.StartInfo.Arguments <- config.Args
-          elif isLc0 then
-            engineProcess.StartInfo.Arguments <- "--show-hidden"
-
-          engineProcess.ErrorDataReceived.Add(fun args ->
+          if String.IsNullOrEmpty config.Args |> not then logDebug $"Args passed: {config.Args}"
+          let onLine (line: string) =
               try
-                if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
-                  stderr.Add args.Data
-                  if isEnabled LogLevel.Debug then logDebug $"[STDERR {name}]: {args.Data}"
-              with _ -> ())
-
-          engineProcess.Exited.Add(fun _ ->
-              try
-                lastExitCode <- Some engineProcess.ExitCode
-                if engineProcess.ExitCode <> 0 then
-                  if shutdownRequested then
-                    logDebug $"Engine {name} exited with code {engineProcess.ExitCode} after quit"
-                  else
-                    logInformation $"⚠️ Engine {name} exited unexpectedly with code {engineProcess.ExitCode}"
-              with _ -> ()
-              // A wait for uciok/readyok ends now rather than on its next check.
-              try readySignal.Set() with _ -> ())
-          engineProcess.EnableRaisingEvents <- true
-
-          engineProcess.OutputDataReceived.Add(fun args ->
-              try
-                if not (String.IsNullOrEmpty args.Data) then
-                  logIO "<<<" args.Data
-                  match protocol with
-                  | Winboard handler ->
-                      if isEnabled LogLevel.Debug then logDebug $"[{name}] Received output: {args.Data}"
-                      match handler.ProcessOutput args.Data with
-                      | Some uciLine ->
-                          if isEnabled LogLevel.Debug then logDebug $"[{name}] Translated to UCI: {uciLine}"
-                          onEngineLine uciLine
-                      | None ->
-                          // Not translated - normal for some Winboard output.
-                          if isEnabled LogLevel.Debug then logDebug $"[{name}] Output not translated (normal for some Winboard output)"
-                  | Uci -> onEngineLine args.Data
+                logIO "<<<" line
+                match protocol with
+                | Winboard handler ->
+                    if isEnabled LogLevel.Debug then logDebug $"[{name}] Received output: {line}"
+                    match handler.ProcessOutput line with
+                    | Some uciLine ->
+                        if isEnabled LogLevel.Debug then logDebug $"[{name}] Translated to UCI: {uciLine}"
+                        onEngineLine uciLine
+                    | None ->
+                        // Not translated - normal for some Winboard output.
+                        if isEnabled LogLevel.Debug then logDebug $"[{name}] Output not translated (normal for some Winboard output)"
+                | Uci -> onEngineLine line
               with ex ->
                 // An exception escaping this handler is unhandled on a threadpool thread and ends
                 // the whole host process.
-                logError (sprintf "Error processing output line from %s: %s" name ex.Message))
-
-          if engineProcess.Start() then
-            // LF and an immediate flush, on every platform.
-            engineProcess.StandardInput.NewLine <- "\n"
-            engineProcess.StandardInput.AutoFlush <- true
-            engineProcess.BeginErrorReadLine()
-          else
+                logError (sprintf "Error processing output line from %s: %s" name ex.Message)
+          if not (transport.Start(EngineProcess.Push onLine)) then
             failwith (sprintf "Engine %s could not be started" name)
-
-          engineProcess.BeginOutputReadLine()
 
           match protocol with
           | Winboard handler ->
@@ -546,7 +517,7 @@ module Engine =
               // These are Winboard commands already: straight to the pipe.
               for cmd in handler.GetInitCommands() do
                 logDebug $"[{name}] Sending init command: {cmd}"
-                lock writeLock (fun () -> engineProcess.StandardInput.WriteLine cmd)
+                transport.WriteLine cmd
               logDebug $"[{name}] Waiting for Winboard initialization to complete..."
               let startWait = DateTime.UtcNow
               let initSuccess = initializeWinboardEventBased handler (Some logger) name 2000 (forceV1 config) |> Async.RunSynchronously
@@ -557,7 +528,7 @@ module Engine =
               inUciResponsMode <- false
               for cmd in handler.GetPostInitCommands() do
                 logDebug $"[{name}] Sending post-init command: {cmd}"
-                lock writeLock (fun () -> engineProcess.StandardInput.WriteLine cmd)
+                transport.WriteLine cmd
           | Uci ->
               write "uci"
               let ok = waitForInitialization (int (TimeSpan.FromHours(2).TotalMilliseconds)) "uci"
@@ -800,7 +771,9 @@ module Engine =
       // The process and value SetMoveOverhead last sent; a restarted engine is sent it again.
       let mutable moveOverheadSentTo : Process = null
       let mutable moveOverheadSent = -1L
-      let writeLock = obj()
+      // The running process. Replaced on every StartProcess; the stderr history and the exit code
+      // above outlive it.
+      let mutable transport : EngineProcess.Transport = null
 
       let assignNetworkName (option: string) =
         if isCeres && not (String.IsNullOrEmpty config.Args) then
@@ -851,52 +824,28 @@ module Engine =
       /// Starts the process. On a pool thread, as it always has been.
       let assignThread () =
         let started = Task.Factory.StartNew(fun () ->
-          let engine = new Process()
-          proc <- engine
-          engine.StartInfo.FileName <- config.Path
-          engine.StartInfo.UseShellExecute <- false
-          engine.StartInfo.RedirectStandardInput <- true
-          engine.StartInfo.RedirectStandardOutput <- true
-          engine.StartInfo.RedirectStandardError <- true
-          match EngineProcess.workingDirectory config with
-          | Some dir ->
-              engine.StartInfo.WorkingDirectory <- dir
-              printfn $"[{name}] Working directory set to: {dir}"
-          | None ->
-              printfn $"[{name}] WARNING: Could not set working directory. Path: {config.Path}, Dir: {Path.GetDirectoryName(config.Path)}"
-          if not (String.IsNullOrEmpty config.Args) then
-            engine.StartInfo.Arguments <-
+          let arguments =
+            if not (String.IsNullOrEmpty config.Args) then
               if isLc0 && not (config.Args.Contains("--show-hidden")) then config.Args + " --show-hidden"
               else config.Args
-          elif isLc0 then
-            engine.StartInfo.Arguments <- "--show-hidden"
-
-          engine.ErrorDataReceived.Add(fun args ->
-            try
-              if not (isNull args) && not (String.IsNullOrEmpty args.Data) then
-                stderr.Add args.Data
-                printfn "[STDERR %s]: %s" name args.Data
-            with _ -> ())
-          engine.Exited.Add(fun _ ->
-            try
-              lastExitCode <- Some engine.ExitCode
-              if engine.ExitCode <> 0 then
-                if shutdownRequested then
-                  logDebug (sprintf "Engine %s exited with code %d after quit" name engine.ExitCode)
-                else
-                  // printfn: visible even where logging is filtered.
-                  printfn "⚠️ Engine %s exited unexpectedly with code %d" name engine.ExitCode
-            with _ -> ())
-          engine.EnableRaisingEvents <- true
-
-          if engine.Start() then
-            // LF and an immediate flush, on every platform. Output is read by the caller
-            // (ReadLine*), not by events.
-            engine.StandardInput.NewLine <- "\n"
-            engine.StandardInput.AutoFlush <- true
-            engine.BeginErrorReadLine()
-          else
-            printfn "\n❌ %s could not be started" name)
+            elif isLc0 then "--show-hidden"
+            else ""
+          let t =
+            EngineProcess.Transport(config, arguments, stderr,
+              (fun msg -> printfn "[%s] %s" name msg),
+              (fun line -> printfn "[STDERR %s]: %s" name line),
+              (fun code ->
+                  if code.IsSome then lastExitCode <- code
+                  match code with
+                  | Some c when c <> 0 ->
+                      if shutdownRequested then logDebug (sprintf "Engine %s exited with code %d after quit" name c)
+                      // printfn: visible even where logging is filtered.
+                      else printfn "⚠️ Engine %s exited unexpectedly with code %d" name c
+                  | _ -> ()))
+          transport <- t
+          proc <- t.Process
+          // Output is read by the caller (ReadLine*), not by events.
+          if not (t.Start EngineProcess.Pull) then printfn "\n❌ %s could not be started" name)
         started.Wait()
 
       let hasExited () =
@@ -907,17 +856,12 @@ module Engine =
       let exitCodeText () =
         match lastExitCode with
         | Some c -> string c
-        | None ->
-            try
-              if not (isNull proc) && proc.HasExited then string proc.ExitCode else "?"
-            with _ -> "?"
+        | None -> if isNull transport then "?" else transport.ExitCodeText()
 
       /// After a read returned null: the engine closed its output, which it does as it exits. The
       /// exit can lag the closed pipe by a moment; wait for it so the reason names the exit
       /// instead of guessing (this used to report "output closed" or nothing at all on Linux).
-      let exitedAfterEndOfOutput () =
-        try (not (isNull proc)) && (proc.HasExited || proc.WaitForExit 2000)
-        with _ -> true
+      let exitedAfterEndOfOutput () = not (isNull transport) && transport.ExitedAfterEndOfOutput()
 
       let write (s: string) =
         try
@@ -929,10 +873,10 @@ module Engine =
                   if isEnabled LogLevel.Debug then logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
                   let delay = preGoDelayMs config protocol cmd
                   if delay > 0 then Thread.Sleep delay
-                  lock writeLock (fun () -> proc.StandardInput.WriteLine cmd)
+                  transport.WriteLine cmd
             | Uci ->
                 if isEnabled LogLevel.Trace then logger.Value.LogTrace(sprintf "Writing to %s: %s" name s)
-                lock writeLock (fun () -> proc.StandardInput.WriteLine s)
+                transport.WriteLine s
           else
             printfn "Warning: Attempted to write to disposed engine %s" name
         with ex ->
