@@ -22,6 +22,7 @@ let main args =
         printfn "  movegen       Run movegen/legality benchmarks with BenchmarkDotNet"
         printfn "  movegenquick  Run quick movegen baseline (no BenchmarkDotNet, instant results)"
         printfn "  engine [--json FILE]  End-to-end Engine.fs scenarios against FakeUciEngine (no BenchmarkDotNet)"
+        printfn "  board [--json FILE]   Board scenarios: tournament game, GUI, PGN replays, variations (no BenchmarkDotNet)"
         printfn "  all         Run all BenchmarkDotNet benchmarks"
         printfn "  help        Show this help message"
         printfn ""
@@ -78,6 +79,9 @@ let main args =
     // The original args, not the lower-cased list: --json takes a file path.
     | "engine" :: _ ->
         EngineBenchmarks.run args
+
+    | "board" :: _ ->
+        BoardBenchmarks.run args
 
     | ["all"] ->
         printfn "Running All Benchmarks..."
