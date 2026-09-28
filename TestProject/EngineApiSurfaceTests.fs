@@ -26,8 +26,14 @@ let rec private typeName (t: Type) : string =
 let private flags =
     BindingFlags.Public ||| BindingFlags.Instance ||| BindingFlags.Static ||| BindingFlags.DeclaredOnly
 
+/// Members the compiler generates are not API: a Debug build emits public helpers for task code
+/// (`<Bind>__debug@1121`, `<sumBy>__debug@72`) that a Release build inlines, so without this the
+/// pinned surface only matched in Release.
+let private isCompilerGenerated (m: MemberInfo) = m.Name.Contains '<' || m.Name.Contains '@'
+
 let private describeMember (m: MemberInfo) =
     match m with
+    | _ when isCompilerGenerated m -> None
     | :? ConstructorInfo as c ->
         Some (sprintf "  new(%s)" (c.GetParameters() |> Array.map (fun p -> typeName p.ParameterType) |> String.concat ", "))
     | :? MethodInfo as mi when not mi.IsSpecialName ->
