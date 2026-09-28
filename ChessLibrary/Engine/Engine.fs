@@ -121,22 +121,14 @@ module Engine =
       let recordCommand (cmd: string) =
           if cmd.Contains "UCI_Chess960" then chess960Sent <- cmd.Contains "true"
 
-      // Search output state, owned by the reader thread (the PV fields are also cleared by the
-      // thread that sends a position; plain reference writes).
-      let mutable state = EngineState.Start
-      let mutable numberOfNodes = 0L
-      let mutable evalList : MiscTypes.EvalType list = []
-      let mutable fullEvalList : MiscTypes.EvalType list = []
-      let mutable depth = 0
-      let mutable player1PV = String.Empty
-      // Long/UCI form of the same line, kept so a fail-high/low line can reuse it instead of
-      // publishing its own truncated PV (see isBound in parseInfo).
-      let mutable player1PVLong = String.Empty
-      // Last (UCI PV, SAN PV) per MultiPV index. Reader thread only: a new position sets the flag
-      // and the reader clears the cache itself on its next line.
-      let sanPvCache = Dictionary<int, struct (string * string)>()
+      // What the output so far amounts to (AnalysisOutput.State). The reader thread owns it; a
+      // thread that sends a new position only raises newPosition, and the reader drops the old
+      // variation and the SAN cache itself before its next line.
+      let mutable output = AnalysisOutput.State.Initial
       [<VolatileField>]
-      let mutable sanPvCacheStale = false
+      let mutable newPosition = false
+      // Last (UCI PV, SAN PV) per MultiPV index. Reader thread only.
+      let sanPvCache = Dictionary<int, struct (string * string)>()
 
       let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
       let mutable backend = ""
@@ -239,92 +231,11 @@ module Engine =
             result <- ValueSome true
         result.Value
 
-      let bestLine (engineName: string) (line: string) =
-        // Parse defensively: a bare "bestmove", short lines and "bestmove (none)" (Stockfish in
-        // terminal positions) must still fire Done so a waiting caller completes.
-        let tokens = line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
-        callback (Done engineName)
-        if tokens.Length < 2 || tokens.[1] = "(none)" then
-          if isEnabled LogLevel.Debug then logDebug (sprintf "%s: bestmove line carries no move: '%s'" engineName line)
-        else
-          let move = tokens.[1]
-          let ponder =
-            match tokens |> Array.tryFindIndex ((=) "ponder") with
-            | Some i when i + 1 < tokens.Length -> tokens.[i + 1]
-            | _ -> ""
-          // Snapshot everything board-derived under the lock, then build the record and invoke the
-          // callback outside it.
-          let snapshot =
-            lock moveBoardLock (fun () ->
-              match tryGetMoveAndSanFromUci &moveBoard move with
-              | Some (tmove, shortSan) ->
-                  let moveNum = moveBoard.MoveNumber()
-                  let whiteToMove = moveBoard.Position.STM = 0uy
-                  // QUIRK (pinned): the position BEFORE the move - the board is read without
-                  // playing it - although the fields are called FEN / FenAfterMove.
-                  let fen = BoardHelper.posToFen moveBoard.Position
-                  let mutable posToCheck = moveBoard.Position
-                  let piecesLeft = PositionOps.numberOfPieces &posToCheck
-                  let isCastling = tmove.MoveType &&& TPieceType.CASTLE <> TPieceType.EMPTY
-                  Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling)
-              | None -> None)
-          match snapshot with
-          | Some (shortSan, moveNum, whiteToMove, fen, piecesLeft, isCastling) ->
-            let eval =
-              if evalList.Length > 0 then evalList.[0]
-              elif fullEvalList.Length > 0 then fullEvalList.[0]
-              else MiscTypes.EvalType.CP 0.0
-            let pv =
-              if String.IsNullOrEmpty player1PV then
-                let prefix = if whiteToMove then sprintf "%d." moveNum else sprintf "%d..." moveNum
-                prefix + shortSan
-              else player1PV
-            let moveDetail =
-              { LongSan = move
-                FromSq = move.[0..1]
-                ToSq = move.[2..3]
-                Color = "w"
-                IsCastling = isCastling
-                Comments = String.Empty }
-            let moveAndFen = { Move = moveDetail; ShortSan = shortSan; FenAfterMove = fen }
-            let bestMove =
-              { Player = engineName
-                Move = move
-                Ponder = ponder
-                Eval = eval
-                TimeLeft = TimeSpan.Zero
-                MoveTime = TimeSpan.Zero
-                NPS = 0.0 // not tracked on the bestmove path; Status updates carry the live NPS
-                Nodes = numberOfNodes
-                FEN = fen
-                PV = pv
-                LongPV = pv
-                MoveAndFen = moveAndFen
-                MoveHistory = ""
-                Move50 = 0
-                R3 = 1
-                PiecesLeft = piecesLeft
-                AdjDrawML = 10 }
-            callback (BestMove bestMove)
-            fullEvalList <- eval :: fullEvalList
-            evalList <- []
-            depth <- 0
-          | None ->
-            let msg = $"{engineName} played an illegal move here: {line} "
-            let boardState =
-              lock moveBoardLock (fun () ->
-                $"Board state: {moveBoard.FEN()} {moveBoard.CurrentFEN} {moveBoard.Position.Ply} ")
-            printfn "%s" msg
-            printfn "%s" boardState
-
       /// SAN for one MultiPV line. SAN conversion is the hot cost on this thread (it regenerates the
       /// legal moves for every ply), and consecutive info lines usually repeat the same variation -
       /// once a mate is proven the engine repeats it for hundreds of iterations - so the last
       /// conversion per MultiPV index is kept.
       let convertPv (mpv: int) (lan: string) =
-        if sanPvCacheStale then
-          sanPvCache.Clear()
-          sanPvCacheStale <- false
         match sanPvCache.TryGetValue mpv with
         | true, struct (cachedLan, cachedSan) when cachedLan = lan -> cachedSan
         | _ ->
@@ -332,100 +243,29 @@ module Engine =
           sanPvCache.[mpv] <- struct (lan, san)
           san
 
-      let parseInfo (engineName: string) (line: string) =
-        match Regex.getEssentialDataWithEPS line whiteToMove with
-        | Some (d, eval, nodes, nps, eps, pvLine, tbHits, wdl, sd, mPv) ->
-          numberOfNodes <- nodes
-          if d > depth then depth <- d
-          evalList <- eval :: evalList
-          let mPv = if mPv = 0 then 1 else mPv
-          // A fail-high/low line carries a PV cut to the root move; let it through and the last
-          // complete variation is lost - permanently, if the search stops right there. Score,
-          // depth and node counts are real and flow on unchanged.
-          let isBound = Regex.isBoundLine line
-          if not (String.IsNullOrEmpty pvLine) && mPv = 1 && not isBound then
-            player1PV <- convertPv 1 pvLine
-            player1PVLong <- pvLine
-          let pvUpdate = if mPv = 1 then player1PV else convertPv mPv pvLine
-          let pvLineUpdate = if mPv = 1 && isBound then player1PVLong else pvLine
-          callback (Status
-            { PlayerName = engineName
-              Eval = eval
-              Depth = d
-              SD = sd
-              Nodes = nodes
-              NPS = float nps
-              EPS = float eps
-              TBhits = tbHits
-              WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound
-              PV = pvUpdate
-              PVLongSAN = pvLineUpdate
-              MultiPV = mPv })
-          // Raw line alongside the parsed status: engine-specific extras in info lines survive to
-          // GUI consumers (e.g. the CandidateMoves copy output).
-          callback (Info (engineName, line))
-        | None -> ()
+      /// The searched position, as AnalysisOutput asks about it.
+      let position = AnalysisOutput.boardPosition moveBoard moveBoardLock (fun () -> whiteToMove) convertPv
 
-      // The cached PV was converted against the board as it stood then; a new position invalidates
-      // it. Without this, a search that never emits a pv line - value head runs, instant tablebase
-      // or mate returns - publishes the previous position's variation, and the GUI's "fill an empty
-      // PV from bestmove" fallback never fires. Called from the sending thread, so it only flags
-      // the cache; the reader clears it.
-      let clearPvCache () =
-        player1PV <- String.Empty
-        player1PVLong <- String.Empty
-        sanPvCacheStale <- true
+      /// A new position was sent: its search must not inherit the previous one's variation.
+      let clearPvCache () = newPosition <- true
 
       /// One line of search output, after the handshake.
       let processLine (line: string) =
         try
           if writeToConsole then printfn "%s" line
-          if startsWith "readyok" line then
-            state <- RegularSearchMode
-          elif startsWith "option" line then
-            match state with
-            | UCIMode list -> list.Add line
-            | _ ->
-              let list = ResizeArray<string>()
-              list.Add line
-              state <- UCIMode list
-          elif startsWith "bestmove" line then
-            state <- InBestMoveMode
-          elif startsWith "info string" line && line.Contains "N:" then
-            match state with
-            | InMoveStatMode list ->
-              let nn = Regex.getInfoStringData name line
-              // One node in a policy test ("go nodes 1"): the top move carries the node's Q.
-              if startsWith "info string node" line && nn.Nodes = 1 then
-                let bp = list |> Seq.maxBy (fun e -> e.P)
-                bp.Q <- nn.Q
-              list.Add nn
-            | _ ->
-              let list = ResizeArray<NNValues>()
-              if not (startsWith "info string node" line) then
-                list.Add (Regex.getInfoStringData name line)
-              state <- InMoveStatMode list
-          elif startsWith "info" line then
-            state <- RegularSearchMode
-
-          match state with
-          | InMoveStatMode list ->
-            // QUIRK (pinned): the closing "node" line is in the sequence too, as a pseudo-move.
-            if startsWith "info string node" line then
-              lock moveBoardLock (fun () -> makeShortSan list &moveBoard)
-              callback (NNSeq list)
-              state <- Start
-          | RegularSearchMode -> parseInfo name line
-          | InBestMoveMode ->
-            bestLine name line
-            state <- Start
-          | UCIMode list ->
-            if startsWith "uciok" line then
-              callback (UCIInfo list)
-              state <- Start
-          | _ -> ()
+          if newPosition then
+            newPosition <- false
+            sanPvCache.Clear()
+            output <- AnalysisOutput.withoutPv output
+          let next, effects = AnalysisOutput.step name position output line
+          output <- next
+          for effect in effects do
+            match effect with
+            | AnalysisOutput.Update update -> callback update
+            | AnalysisOutput.Print text -> printfn "%s" text
+            | AnalysisOutput.Debug text -> if isEnabled LogLevel.Debug then logDebug text
         with ex ->
-          state <- Start
+          output <- { output with Mode = AnalysisOutput.Idle }
           printfn "Error processing line from engine %s: %s" name ex.Message
 
       /// One line the engine printed, in protocol terms: during the handshake it is an option or
