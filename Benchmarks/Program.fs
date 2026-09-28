@@ -21,6 +21,7 @@ let main args =
         printfn "  clock       Compare TimeOnly vs TimeSpan for the game clock"
         printfn "  movegen       Run movegen/legality benchmarks with BenchmarkDotNet"
         printfn "  movegenquick  Run quick movegen baseline (no BenchmarkDotNet, instant results)"
+        printfn "  engine [--json FILE]  End-to-end Engine.fs scenarios against FakeUciEngine (no BenchmarkDotNet)"
         printfn "  all         Run all BenchmarkDotNet benchmarks"
         printfn "  help        Show this help message"
         printfn ""
@@ -73,6 +74,10 @@ let main args =
     | ["movegenquick"] ->
         runMoveGenQuick()
         0
+
+    // The original args, not the lower-cased list: --json takes a file path.
+    | "engine" :: _ ->
+        EngineBenchmarks.run args
 
     | ["all"] ->
         printfn "Running All Benchmarks..."

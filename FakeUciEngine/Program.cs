@@ -62,7 +62,7 @@ static class FakeUciEngine
         ["FakeFatalOnReady"] = "false", ["FakeExitOnReady"] = "false", ["FakeCrashOnGo"] = "false",
         ["FakeBoundLine"] = "false", ["FakeBestMoveNone"] = "false", ["FakeIgnoreQuit"] = "false",
         ["FakeStderrOnReady"] = "0", ["FakeMoveStats"] = "false", ["FakeFirstGoDelayMs"] = "0",
-        ["FakeNoPv"] = "false",
+        ["FakeNoPv"] = "false", ["FakePvLength"] = "3", ["FakeMoveStatsRepeat"] = "1",
     };
 
     static bool _liveStats;
@@ -177,6 +177,8 @@ static class FakeUciEngine
         Out("option name FakeMoveStats type check default false");
         Out("option name FakeFirstGoDelayMs type spin default 0 min 0 max 600000");
         Out("option name FakeNoPv type check default false");
+        Out("option name FakePvLength type spin default 3 min 1 max 20");
+        Out("option name FakeMoveStatsRepeat type spin default 1 min 1 max 1000000");
         if (!noUciOk) Out("uciok");
     }
 
@@ -224,7 +226,7 @@ static class FakeUciEngine
         bool onLine = startpos && n < Line.Length && moves.SequenceEqual(Line.Take(n));
         if (!onLine) return ("0000", ["0000"]);
         var best = Line[n];
-        var pv = (san ? LineSan : Line).Skip(n).Take(3).ToArray();
+        var pv = (san ? LineSan : Line).Skip(n).Take(Math.Max(1, Int("FakePvLength"))).ToArray();
         return (best, pv);
     }
 
@@ -378,7 +380,7 @@ static class FakeUciEngine
         }
         if (Bool("FakeBoundLine") && !token.IsCancellationRequested)
             Out($"info depth {count + 1} seldepth {count + 3} score cp 99 upperbound nodes {count * 1000 + 1} nps 1 tbhits 0 time 1 pv {pv[0]}");
-        if (Bool("FakeMoveStats"))
+        for (int r = 0; r < Int("FakeMoveStatsRepeat") && Bool("FakeMoveStats"); r++)
         {
             Out($"info string {best}  (322 ) N:     900 (+ 0) (P: 61.00%) (WL:  0.10000) (D: 0.300) (M: 60.0) (Q:  0.10000) (U: 0.01000) (S:  0.11000) (V:  0.0900)");
             Out("info string d2d4  (293 ) N:     100 (+ 0) (P: 30.00%) (WL:  0.05000) (D: 0.300) (M: 60.0) (Q:  0.05000) (U: 0.02000) (S:  0.07000) (V:  0.0400)");

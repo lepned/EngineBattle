@@ -9,6 +9,7 @@
     <Compile Include="ParserBenchmarks.fs" />
     <Compile Include="ClockBenchmarks.fs" />
     <Compile Include="MoveGenBenchmarks.fs" />
+    <Compile Include="EngineBenchmarks.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
@@ -18,6 +19,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ChessLibrary\ChessLibrary.fsproj" />
+    <!-- Copied beside the benchmarks: the engine scenarios run it as a child process. -->
+    <ProjectReference Include="..\FakeUciEngine\FakeUciEngine.csproj" />
   </ItemGroup>
 
 </Project>
