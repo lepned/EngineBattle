@@ -702,6 +702,28 @@ let ``Tournament PrepareNewGameAsync sends what PrepareNewGame sends`` () =
             (synced log eng.Write) |> Array.skip before)
     finally stopTournament eng
 
+[<Fact>]
+let ``The async factories return at once and hand over a started engine when it is ready`` () =
+    // 1.5 s to readyok: the analysis constructor waits for it, so a caller that made the engine
+    // itself would be held that long.
+    let log = newLogPath ()
+    let cfg = config log "" [ "FakeReadyDelayMs", box 1500 ]
+    let updates = ConcurrentQueue<EngineUpdate>()
+    let sw = Stopwatch.StartNew()
+    let pending = EngineHelper.createAltEngineAsync(updates.Enqueue, cfg, NullLogger.Instance, false)
+    let returnedAfter = sw.ElapsedMilliseconds
+    Assert.True(returnedAfter < 500L, sprintf "the call held its caller for %d ms" returnedAfter)
+    Assert.False(pending.IsCompleted)
+    let eng = pending.GetAwaiter().GetResult()
+    try
+        Assert.True(sw.ElapsedMilliseconds >= 1400L)
+        Assert.True(eng.WaitForReadyOk(10000))
+    finally quitAnalysis eng
+    let log2 = newLogPath ()
+    let tournament = EngineHelper.createEngineAsync(config log2 "" [], Some (NullLogger.Instance :> ILogger)).GetAwaiter().GetResult()
+    try Assert.True(tournament.WaitForReadyOk())
+    finally stopTournament tournament
+
 // ── ChessEngine: options ────────────────────────────────────────────────────────────────────────
 
 [<Fact>]

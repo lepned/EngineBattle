@@ -67,6 +67,17 @@ module EngineHelper =
           let cmds = createInitialUCICommands config
           new ChessEngineWithUCIProcessing(callback, config, cmds, logger, writeToConsole, logToFile = true)
 
+  /// createEngine on a pool thread. The constructor starts the process and waits for uciok, which
+  /// blocks; a UI thread (a Blazor handler) must not be the one waiting.
+  let createEngineAsync (config: EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : Task<ChessEngine> =
+      Task.Run(fun () -> createEngine (config, logger))
+
+  /// createAltEngine on a pool thread. The analysis engine's constructor waits for uciok AND
+  /// readyok - the network load, about 5 s for Lc0 and 10 s for Ceres, minutes for a first
+  /// TensorRT build - so a UI thread that makes one itself freezes the page for that long.
+  let createAltEngineAsync (callback, config: EngineConfig, logger: ILogger, writeToConsole: bool) : Task<ChessEngineWithUCIProcessing> =
+      Task.Run(fun () -> createAltEngine (callback, config, logger, writeToConsole))
+
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {
         try
