@@ -60,10 +60,8 @@ type Board() =
     let lockObject = obj ()
 
     // ── The move lists ───────────────────────────────────────────────────────────────────────────
-    let moves = ResizeArray<TMove>()
     let uciMoves = ResizeArray<string>()
     let sanMoves = ResizeArray<string>()
-    let shortSanOpeningMoves = ResizeArray<string>()
     let openingMoves = ResizeArray<string>()
     let moveAndFens = ResizeArray<MoveAndFen>()
 
@@ -167,11 +165,9 @@ type Board() =
 
     let resetWithFen (fenOpt: string option) =
       iPosition <- 0
-      moves.Clear()
       uciMoves.Clear()
       sanMoves.Clear()
       openingMoves.Clear()
-      shortSanOpeningMoves.Clear()
       moveAndFens.Clear()
       hashKeys.Clear()
       position <- game.[0]
@@ -188,11 +184,9 @@ type Board() =
 
     let initBoard () =
       iPosition <- 0
-      moves.Clear()
       uciMoves.Clear()
       sanMoves.Clear()
       openingMoves.Clear()
-      shortSanOpeningMoves.Clear()
       moveAndFens.Clear()
       hashKeys.Clear()
       game <- Array.init MAX_PLY (fun _ -> Position.Default)
@@ -438,47 +432,16 @@ type Board() =
           followLine following
           Some (VariationGraph.MoveAndFenOf(chosen, fromNode))
 
-    member val MovesPlayed = moves with set, get
-
     member _.UciMovesPlayed = uciMoves
 
     member val SanMovesPlayed = sanMoves with get, set
-
-    member val ShortSANOpeningMovesPlayed = shortSanOpeningMoves with get, set
 
     member val OpeningMovesPlayed = openingMoves with get, set
 
     member val MovesAndFenPlayed = moveAndFens with get, set
 
-    member _.CurrentNodeHash = (graph.Node graph.Current).Hash
-
-    member _.CurrentGraphNodeId = graph.Current
     member _.MoveGraphRootId = graph.Root
-    member _.MoveGraphNode(nodeId: NodeId) = graph.Node nodeId
     member _.MoveGraphChildren(nodeId: NodeId) = graph.ChildEdges nodeId
-
-    /// Loads the position with this hash that is a child of the cursor, else the newest one.
-    member this.JumpToHash (hash: uint64) =
-      match graph.NodesWithHash hash with
-      | null -> false
-      | ids when ids.Count = 0 -> false
-      | ids ->
-          let preferred =
-            ids
-            |> Seq.tryFind (fun id ->
-                (graph.Node id).Parents
-                |> List.exists (fun eid ->
-                    match graph.TryEdge eid with
-                    | Some e -> e.From = graph.Current
-                    | None -> false))
-            |> Option.defaultWith (fun () -> ids |> Seq.max)
-          let node = graph.Node preferred
-          this.LoadFen(node.Fen)
-          let following = hashesFollowLine ()
-          graph.Current <- preferred
-          updatePathFromCurrent ()
-          followLine following
-          true
 
     /// The edge a variation operation names: by SAN (any when empty) into a node with this FEN.
     member private _.FindVariationEdge (san: string) (fen: string) =
@@ -755,18 +718,6 @@ type Board() =
         nr <- nr + 1
       sb.ToString().TrimStart()
 
-    member this.GetOpeningMoves() =
-      let sb = StringBuilder()
-      let mutable nr = 0
-      let mutable moveNr = 1
-      for moveStr in this.OpeningMovesPlayed do
-        if nr % 2 = 0 then sb.Append($" {moveNr}. {moveStr}") |> ignore
-        else
-          sb.Append($" {moveStr}") |> ignore
-          moveNr <- moveNr + 1
-        nr <- nr + 1
-      sb.ToString().TrimStart()
-
     member this.InlineTokensFromGraph () = VariationText.inlineTokens graph
 
     /// Generates LEGAL moves only (since the Phase 3 movegen rework; previously pseudo-legal)
@@ -786,24 +737,14 @@ type Board() =
       generateLegalQuiets buffer &index &position isFRC &ctx
       index
 
-    /// Thread-safe LEGAL move generation that allocates a fresh buffer per call
-    member this.GenerateMovesThreadSafe() =
-      let span = Span<TMove>(Array.zeroCreate<TMove> 256)
-      let mutable index = 0
-      let ctx = MoveGeneration.createLegalityContext &position
-      generateLegalCaptures span &index &position &ctx
-      generateLegalQuiets span &index &position this.IsFRC &ctx
-      span.Slice(0, index).ToArray()
-
-    /// Makes a move on the position: the undo stack, the hash keys and MovesPlayed. The other move
-    /// lists and the graph are the callers'.
+    /// Makes a move on the position: the undo stack and the hash keys. The move lists and the graph
+    /// are the callers'.
     member this.MakeMove (move: TMove inref) =
       ensureHistory iPosition
       game.[iPosition] <- PositionOps.copy &position
       iPosition <- iPosition + 1
       makeMove &move &position
       this.HashKeys.Add(this.PositionHash())
-      this.MovesPlayed.Add move
 
     /// MakeMove for search: the undo stack only.
     member this.MakeMoveNoHash (move: TMove inref) =
@@ -822,8 +763,8 @@ type Board() =
     /// 50-move rule instead.
     member this.InsufficientMaterial() = MaterialRules.isDeadPosition &position
 
-    /// Positional undo only: rewinds the position stack but does NOT pop hashKeys,
-    /// MovesPlayed, or the SAN/UCI/FEN lists. Pair with MakeMoveNoHash (perft-style
+    /// Positional undo only: rewinds the position stack but does NOT pop hashKeys or the
+    /// SAN/UCI/FEN lists. Pair with MakeMoveNoHash (perft-style
     /// search); after a full PlayXxxMove the side lists keep the phantom entry.
     member this.UndoMove () =
       iPosition <- iPosition - 1
@@ -832,9 +773,6 @@ type Board() =
     member this.PrintPosition (label: string) = PositionOpsToString(label, &position) |> printfn "%s"
 
     member this.GetPieceAndColorOnSquare (square: string) = MoveGeneration.getPieceAndColorOnSquare(&position, square)
-
-    /// Stores the repetition count in the position's Rep field.
-    member this.UpdateRepetition() = position.Rep <- this.RepetitionNr() |> byte
 
     /// How often the current position has occurred in the game, this time included.
     member this.RepetitionNr() =
@@ -966,20 +904,6 @@ type Board() =
           let fenAndMoves = MoveDetail.Create(moveStr, moveStr.[0..1], moveStr.[2..3], color, isCastling)
           moveAndFens.Add({ Move = fenAndMoves; ShortSan = shortSan; FenAfterMove = BoardHelper.posToFen position })
       | None -> failwith $"failed to parse opening move {fromSan}"
-
-    member this.PlayPgnToPly (pgn: PGNTypes.PgnGame, lastPly: int) =
-      this.ResetBoardState()
-      if not (String.IsNullOrEmpty pgn.Fen) then this.LoadFen(pgn.Fen)
-      for m in pgn.Mainline do
-        if m.Ply <= lastPly then this.PlaySanMove m.San
-      this.MovesAndFenPlayed |> Seq.last
-
-    member this.PlayPgn (pgn: PGNTypes.PgnGame, lastMove: int, color: string) =
-      this.ResetBoardState()
-      this.LoadFen(if String.IsNullOrEmpty pgn.Fen then startPosition else pgn.Fen)
-      for m in pgn.Mainline do
-        if m.Ply <= lastMove then this.PlaySanMove m.San
-      this.MovesAndFenPlayed |> Seq.last
 
     member this.PlaySanMove (san: string) = this.PlaySanMoveWithComments san String.Empty
 

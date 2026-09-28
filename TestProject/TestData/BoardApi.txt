@@ -10,14 +10,12 @@ type ChessLibrary.Chess.Board
   FEN() : System.String
   FindEpMove(move: System.String) : System.Boolean
   GenerateMoves() : ChessLibrary.MoveTypes.TMove[]
-  GenerateMovesThreadSafe() : ChessLibrary.MoveTypes.TMove[]
   GenerateMovesToBuffer(buffer: System.Span<ChessLibrary.MoveTypes.TMove>) : System.Int32
   GetCurrentEdgeComment() : System.String
   GetLegalMoves() : System.Collections.Generic.IEnumerable<System.Tuple<System.String, System.String>>
   GetMoveHistory() : System.String
   GetMoveHistoryToCurrentFen(fen: System.String) : System.String
   GetMoveHistoryWithVariations() : System.String
-  GetOpeningMoves() : System.String
   GetPieceAndColorOnSquare(square: System.String) : System.Tuple<System.Char, System.String>
   GetSanFromUci(move: System.String) : Microsoft.FSharp.Core.FSharpOption<System.String>
   GetSanMoveHistory() : System.String
@@ -26,14 +24,12 @@ type ChessLibrary.Chess.Board
   InlineTokensFromGraph() : Microsoft.FSharp.Collections.FSharpList<ChessLibrary.GameGraphTypes.InlineMoveToken>
   InsufficientMaterial() : System.Boolean
   IsMate() : System.Boolean
-  JumpToHash(hash: System.UInt64) : System.Boolean
   LoadFen(fen: Microsoft.FSharp.Core.FSharpOption<System.String>) : System.Void
   LoadMoveHistoryWithVariations(history: System.String) : System.Void
   LoadPGNGameWithVariations(pgn: ChessLibrary.PGNTypes.PgnGame) : System.Void
   MakeMove(move: ChessLibrary.MoveTypes.TMove&) : System.Void
   MakeMoveNoHash(move: ChessLibrary.MoveTypes.TMove&) : System.Void
   MoveGraphChildren(nodeId: System.Int32) : Microsoft.FSharp.Collections.FSharpList<ChessLibrary.GameGraphTypes.MoveEdge>
-  MoveGraphNode(nodeId: System.Int32) : ChessLibrary.GameGraphTypes.PositionNode
   MoveLinesFromGraph(asLAN: System.Boolean) : Microsoft.FSharp.Collections.FSharpList<Microsoft.FSharp.Collections.FSharpList<System.String>>
   MoveNumber() : System.Int32
   NextMoveNumber() : System.Int32
@@ -42,8 +38,6 @@ type ChessLibrary.Chess.Board
   PlayOpeningMove(fromSan: System.String) : System.Void
   PlayPVLine(moves: System.Collections.Generic.IEnumerable<System.String>, fen: System.String) : ChessLibrary.EngineTypes.MoveAndFen
   PlayPVLineThreadSafe(moves: System.Collections.Generic.IEnumerable<System.String>, fen: System.String) : ChessLibrary.EngineTypes.MoveAndFen
-  PlayPgn(pgn: ChessLibrary.PGNTypes.PgnGame, lastMove: System.Int32, color: System.String) : ChessLibrary.EngineTypes.MoveAndFen
-  PlayPgnToPly(pgn: ChessLibrary.PGNTypes.PgnGame, lastPly: System.Int32) : ChessLibrary.EngineTypes.MoveAndFen
   PlaySanMove(san: System.String) : System.Void
   PlaySanMoveWithComments(san: System.String, comments: System.String) : System.Void
   PlayUciMove(move: System.String) : System.Void
@@ -63,26 +57,21 @@ type ChessLibrary.Chess.Board
   TryGetNextMoveAndFen(fen: System.String) : Microsoft.FSharp.Core.FSharpOption<ChessLibrary.EngineTypes.MoveAndFen>
   TryGetPreviousMoveAndFen(fen: System.String) : Microsoft.FSharp.Core.FSharpOption<ChessLibrary.EngineTypes.MoveAndFen>
   UndoMove() : System.Void
-  UpdateRepetition() : System.Void
   WriteGraphLinesToPgn(path: System.String, opening: System.String, variation: System.String) : System.Void
   new()
   prop Captures : System.Int64 { get set }
   prop Castles : System.Int64 { get set }
   prop CurrentFEN : System.String { get set }
-  prop CurrentGraphNodeId : System.Int32 { get }
-  prop CurrentNodeHash : System.UInt64 { get }
   prop EP : System.Int64 { get set }
   prop Game : ChessLibrary.PositionTypes.Position[] { get set }
   prop HashKeys : System.Collections.Generic.List<System.UInt64> { get set }
   prop IsFRC : System.Boolean { get set }
   prop MoveGraphRootId : System.Int32 { get }
   prop MovesAndFenPlayed : System.Collections.Generic.List<ChessLibrary.EngineTypes.MoveAndFen> { get set }
-  prop MovesPlayed : System.Collections.Generic.List<ChessLibrary.MoveTypes.TMove> { get set }
   prop OpeningMovesPlayed : System.Collections.Generic.List<System.String> { get set }
   prop PlyCount : System.Int32 { get }
   prop Position : ChessLibrary.PositionTypes.Position { get set }
   prop SanMovesPlayed : System.Collections.Generic.List<System.String> { get set }
-  prop ShortSANOpeningMovesPlayed : System.Collections.Generic.List<System.String> { get set }
   prop StartPosition : System.String { get set }
   prop UciMovesPlayed : System.Collections.Generic.List<System.String> { get }
   prop inAnalysisMode : System.Boolean { get set }

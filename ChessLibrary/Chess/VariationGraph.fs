@@ -152,7 +152,6 @@ type internal VariationGraph() =
   member _.TryEdge(id: EdgeId) = match edges.TryGetValue id with | true, e -> Some e | _ -> None
   member _.EdgesOf(ids: EdgeId list) = edgesOf ids
   member _.ChildEdges(nodeId: NodeId) = childEdgesOf nodeId
-  member _.NodesWithHash(hash: uint64) = match byHash.TryGetValue hash with | true, ids -> ids | _ -> null
 
   /// The mainline child of a node, else its first child in display order.
   member _.MainChildEdgeId(nodeId: NodeId) =

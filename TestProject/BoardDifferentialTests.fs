@@ -77,22 +77,19 @@ let private describeResult = function
     | Error e -> "EXCEPTION " + e
 
 /// The move graph as the public graph members show it: from the root down, each node's children
-/// in their order, with every edge field (order, mainline flag, comments) and the node reached.
+/// in their order, with every edge field (order, mainline flag, comments, the node reached). The
+/// positions the edges reach are in the InlineTokensFromGraph view.
 let private describeGraph (board: obj) =
     let sb = StringBuilder()
     let root = match get board "MoveGraphRootId" with Ok r -> unbox<int> r | _ -> -1
     let rec walk (node: int) depth =
-        match call board "MoveGraphNode" [| box node |] with
-        | Ok (:? GameGraphTypes.PositionNode as n) ->
-            sb.Append(n.Id).Append(' ').Append(n.Hash).Append(' ').Append(n.Fen).Append(" <- ").Append(n.Parents.Length).AppendLine() |> ignore
-            if depth < 400 then
-                match call board "MoveGraphChildren" [| box node |] with
-                | Ok (:? IEnumerable as children) ->
-                    for e in children |> Seq.cast<GameGraphTypes.MoveEdge> do
-                        sb.Append(describe (box e)).AppendLine() |> ignore
-                        walk e.To (depth + 1)
-                | other -> sb.Append(describeResult other) |> ignore
-        | other -> sb.Append(describeResult other) |> ignore
+        if depth < 400 then
+            match call board "MoveGraphChildren" [| box node |] with
+            | Ok (:? IEnumerable as children) ->
+                for e in children |> Seq.cast<GameGraphTypes.MoveEdge> do
+                    sb.Append(describe (box e)).AppendLine() |> ignore
+                    walk e.To (depth + 1)
+            | other -> sb.Append(describeResult other) |> ignore
     walk root 0
     sb.ToString()
 
@@ -109,12 +106,12 @@ let private snapshot (board: obj) =
         | other -> describeResult other
     [ q "FEN"; p "Position"; p "PlyCount"; p "StartPosition"; p "CurrentFEN"; p "IsFRC"
       p "MovesAndFenPlayed"; p "UciMovesPlayed"; p "SanMovesPlayed"; p "OpeningMovesPlayed"
-      p "ShortSANOpeningMovesPlayed"; p "MovesPlayed"; p "HashKeys"; "Game", game
-      q "PositionWithMoves"; q "GetMoveHistory"; q "GetSanMoveHistory"; q "GetOpeningMoves"
+      p "HashKeys"; "Game", game
+      q "PositionWithMoves"; q "GetMoveHistory"; q "GetSanMoveHistory"
       q "GetMoveHistoryWithVariations"; q "InlineTokensFromGraph"; "Graph", describeGraph board
       "MoveLinesFromGraph(true)", describeResult (call board "MoveLinesFromGraph" [| box true |])
       "MoveLinesFromGraph(false)", describeResult (call board "MoveLinesFromGraph" [| box false |])
-      p "CurrentNodeHash"; p "CurrentGraphNodeId"; p "MoveGraphRootId"; q "GetCurrentEdgeComment"
+      p "MoveGraphRootId"; q "GetCurrentEdgeComment"
       q "RepetitionNr"; q "ClaimThreeFoldRep"; q "InsufficientMaterial"; q "IsMate"; q "AnyLegalMove"
       q "GetLegalMoves"; q "MoveNumber"; q "NextMoveNumber"; q "PositionHash"; q "DeviationHash" ]
 
@@ -150,23 +147,16 @@ let private pgnPool =
 /// board's state (its legal moves, its graph), so both boards get exactly the same call.
 type private Step = { Name: string; Run: obj -> Result<obj, string> }
 
+/// Every move of the graph as (SAN, FEN it leads to), from the inline token stream.
 let private graphEdges (board: obj) =
-    // Every edge of the move graph with the FEN it leads to, through the public graph members.
-    let root = match get board "MoveGraphRootId" with Ok r -> unbox<int> r | _ -> 0
-    let edges = ResizeArray<string * string>()
-    let rec walk (node: int) depth =
-        if depth < 400 then
-            match call board "MoveGraphChildren" [| box node |] with
-            | Ok (:? IEnumerable as children) ->
-                for e in children |> Seq.cast<GameGraphTypes.MoveEdge> do
-                    match call board "MoveGraphNode" [| box e.To |] with
-                    | Ok (:? GameGraphTypes.PositionNode as n) ->
-                        edges.Add(e.San, n.Fen)
-                        walk e.To (depth + 1)
-                    | _ -> ()
-            | _ -> ()
-    walk root 0
-    edges.ToArray()
+    match call board "InlineTokensFromGraph" [||] with
+    | Ok (:? IEnumerable as tokens) ->
+        tokens
+        |> Seq.cast<GameGraphTypes.InlineMoveToken>
+        |> Seq.filter (fun t -> not t.IsBracket)
+        |> Seq.map (fun t -> t.Text, t.Fen)
+        |> Seq.toArray
+    | _ -> [||]
 
 let private legalMoves (board: obj) =
     match call board "GetLegalMoves" [||] with
@@ -212,10 +202,6 @@ let private nextStep (rnd: Random) (reference: obj) (visited: ResizeArray<string
     elif roll < 74 then
         let arg = if rnd.Next 2 = 0 then fenNow else ""
         step (sprintf "TryGetNextMoveAndFen '%s'" arg) (fun b -> call b "TryGetNextMoveAndFen" [| box arg |])
-    elif roll < 76 && visited.Count > 0 then
-        let fen = pick (visited.ToArray())
-        let hash = Hash.hashBoard (BoardHelper.getPosFromFen (Some fen))
-        step (sprintf "JumpToHash of %s" fen) (fun b -> call b "JumpToHash" [| box hash |])
     elif roll < 81 then
         let edges = graphEdges reference
         if edges.Length = 0 then step "EndCurrentVariation" (fun b -> call b "EndCurrentVariation" [||])
@@ -282,7 +268,7 @@ let private resetsGame (step: string) =
 /// Steps that move the graph cursor to another position (the two loaders do it for every
 /// variation).
 let private movesCursor (step: string) =
-    [ "LoadFen"; "JumpToHash"; "TryGetPreviousMoveAndFen"; "TryGetNextMoveAndFen"; "RemoveVariation"
+    [ "LoadFen"; "TryGetPreviousMoveAndFen"; "TryGetNextMoveAndFen"; "RemoveVariation"
       "LoadPGNGameWithVariations"; "LoadMoveHistoryWithVariations" ]
     |> List.exists (fun p -> step.StartsWith(p, StringComparison.Ordinal))
 
