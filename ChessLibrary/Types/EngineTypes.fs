@@ -305,7 +305,10 @@ module EngineTypes =
         let floatParser line regex = parseRegex 0.0 float line regex
         let npsParser line regex = parseRegex 0L convertToNps line regex
 
-        let getEngineStatData player isBlack (line: string) =
+        /// The regex implementation. Kept for two jobs: every comment the fast parser below is not
+        /// sure it reads the same way goes here (and every format but EB's own), and it is the
+        /// reference the fast parser is tested against (AnnotationParserTests).
+        let legacyGetEngineStatData player isBlack (line: string) =
           if String.IsNullOrEmpty line then
             { EngineMoveStat.Empty with Player = player }
           else
@@ -364,3 +367,184 @@ module EngineTypes =
                     p1 = floatParser line p1Regex
                     pt = floatParser line ptRegex
                     pcs = intParser line pcsRegex}
+
+        // ── Fast parser for EB's own comments ──────────────────────────────────────────────────
+        // "d=29, sd=51, pd=Rc6, mt=3773, tl=8580, s=6335926, n=23905452, tb=14132, wv=1.61, ..."
+        // is nearly every comment in an EB PGN, and the regex version above spent up to 16
+        // matches and ~6 KB on each - more time than parsing the rest of the PGN (173k comments:
+        // 308 ms against 211 ms). This reads each field with IndexOf scans and reproduces the
+        // regexes exactly, quirks included: each field is the FIRST place its pattern matches, so
+        // `s=` can land inside `eps=` or `pcs=` and `d=` inside `pd=` when a digit follows; `mt=`
+        // prefers hh:mm:ss; `wv=` prefers a number to -M/M. What it is not sure of - a non-ASCII
+        // character or a line break, a number long enough to overflow, `s=` followed by a space or
+        // a unit - goes to the regex version, which then answers (or throws) as it always did.
+
+        exception private Decline
+
+        let inline private isDigit (c: char) = c >= '0' && c <= '9'
+
+        let private isPlainAscii (line: string) =
+          let mutable ok = true
+          let mutable i = 0
+          while ok && i < line.Length do
+            let c = line.[i]
+            if c > '\u007f' || c = '\n' then ok <- false
+            i <- i + 1
+          ok
+
+        /// The index after the first `key` that is followed by a digit (and, with `notAfter`, is
+        /// not preceded by that character); -1 when there is none.
+        let private findKey (line: string) (key: string) (notAfter: char voption) =
+          let mutable from = 0
+          let mutable result = -1
+          while result < 0 && from <= line.Length - key.Length do
+            let k = line.IndexOf(key, from, StringComparison.Ordinal)
+            if k < 0 then from <- line.Length
+            else
+              let i = k + key.Length
+              let excluded =
+                match notAfter with
+                | ValueSome c -> k > 0 && line.[k - 1] = c
+                | ValueNone -> false
+              if i < line.Length && isDigit line.[i] && not excluded then result <- i
+              else from <- k + 1
+          result
+
+        /// Digits at `i` as int64 and the index after them; Decline past `maxDigits`.
+        let private readDigits (line: string) (i: int) (maxDigits: int) =
+          let mutable j = i
+          let mutable v = 0L
+          while j < line.Length && isDigit line.[j] do
+            if j - i >= maxDigits then raise Decline
+            v <- v * 10L + int64 (int line.[j] - int '0')
+            j <- j + 1
+          v, j
+
+        /// `key=(\d+)` as int (intParser).
+        let private intField line key notAfter =
+          match findKey line key notAfter with
+          | -1 -> 0
+          | i -> int (fst (readDigits line i 9))
+
+        /// `key=(\d+)` as int64 (int64Parser).
+        let private int64Field line key =
+          match findKey line key ValueNone with
+          | -1 -> 0L
+          | i -> fst (readDigits line i 18)
+
+        /// `key=(\d+)` as float (floatParser over an integer pattern: p1, pt).
+        let private digitsAsFloat line key =
+          match findKey line key ValueNone with
+          | -1 -> 0.0
+          | i -> float (fst (readDigits line i 18))
+
+        /// `key=(-?\d+\.\d+)` as float: the first occurrence where the whole pattern fits.
+        let private decimalField (line: string) (key: string) =
+          let mutable from = 0
+          let mutable result = ValueNone
+          while result.IsNone && from <= line.Length - key.Length do
+            let k = line.IndexOf(key, from, StringComparison.Ordinal)
+            if k < 0 then from <- line.Length
+            else
+              let start = k + key.Length
+              let mutable i = start
+              if i < line.Length && line.[i] = '-' then i <- i + 1
+              let intStart = i
+              while i < line.Length && isDigit line.[i] do i <- i + 1
+              if i > intStart && i + 1 < line.Length && line.[i] = '.' && isDigit line.[i + 1] then
+                i <- i + 1
+                while i < line.Length && isDigit line.[i] do i <- i + 1
+                if i - start > 30 then raise Decline
+                result <- ValueSome (float (line.Substring(start, i - start)))
+              else from <- k + 1
+          match result with
+          | ValueSome v -> v
+          | ValueNone -> 0.0
+
+        /// `mt=((\d{2}:\d{2}:\d{2})|(\d+))` in milliseconds.
+        let private mtField (line: string) =
+          match findKey line "mt=" ValueNone with
+          | -1 -> 0L
+          | i ->
+              let two j = int64 (int line.[j] - int '0') * 10L + int64 (int line.[j + 1] - int '0')
+              let clock =
+                i + 7 < line.Length
+                && isDigit line.[i + 1] && line.[i + 2] = ':'
+                && isDigit line.[i + 3] && isDigit line.[i + 4] && line.[i + 5] = ':'
+                && isDigit line.[i + 6] && isDigit line.[i + 7]
+              if clock then (two i * 3600L + two (i + 3) * 60L + two (i + 6)) * 1000L
+              else fst (readDigits line i 18)
+
+        /// `s=(\d+\s*(kN/s|N/s)?)` for plain digits; a space or a unit after them goes to the regex.
+        let private sField (line: string) =
+          match findKey line "s=" ValueNone with
+          | -1 -> 0L
+          | i ->
+              let v, j = readDigits line i 18
+              if j < line.Length && (Char.IsWhiteSpace line.[j] || line.[j] = 'k' || line.[j] = 'N') then raise Decline
+              v
+
+        /// `wv=(-?\d+(\.\d*)?|-M\d*|M\d*)` through parseEvalToken; ValueNone when no occurrence
+        /// fits (then the comment is not in EB's format).
+        let private wvField (line: string) =
+          let at j = if j < line.Length then line.[j] else ' '
+          let mutable from = 0
+          let mutable result = ValueNone
+          while result.IsNone && from <= line.Length - 3 do
+            let k = line.IndexOf("wv=", from, StringComparison.Ordinal)
+            if k < 0 then from <- line.Length
+            else
+              let start = k + 3
+              let numberFrom =
+                if isDigit (at start) then start
+                elif at start = '-' && isDigit (at (start + 1)) then start + 1
+                else -1
+              if numberFrom >= 0 then
+                let mutable i = numberFrom
+                while isDigit (at i) do i <- i + 1
+                if at i = '.' then
+                  i <- i + 1
+                  while isDigit (at i) do i <- i + 1
+                if i - start > 30 then raise Decline
+                match Double.TryParse(line.AsSpan(start, i - start), Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+                | true, num -> result <- ValueSome num
+                | _ -> result <- ValueSome 0.0
+              elif at start = '-' && at (start + 1) = 'M' then result <- ValueSome -200.0
+              elif at start = 'M' then result <- ValueSome 200.0
+              else from <- k + 1
+          result
+
+        let private fastEngineStatData player (line: string) =
+          match wvField line with
+          | ValueNone -> ValueNone
+          | ValueSome wv ->
+              ValueSome
+                { Player = player
+                  d = intField line "d=" (ValueSome 's')
+                  sd = intField line "sd=" ValueNone
+                  mt = mtField line
+                  tl = int64Field line "tl="
+                  s = sField line
+                  eps = int64Field line "eps="
+                  n = int64Field line "n="
+                  wv = wv
+                  tb = int64Field line "tb="
+                  n1 = int64Field line "n1="
+                  n2 = int64Field line "n2="
+                  q1 = decimalField line "q1="
+                  q2 = decimalField line "q2="
+                  p1 = digitsAsFloat line "p1="
+                  pt = digitsAsFloat line "pt="
+                  pcs = intField line "pcs=" ValueNone }
+
+        /// The engine data in a move comment: EB's own "wv=... d=... n=..." (the fast parser), or
+        /// the Banksia, Ceres and "+0.28/12 1.2s" forms other GUIs write (the regexes). Same
+        /// answers as legacyGetEngineStatData.
+        let getEngineStatData player isBlack (line: string) =
+          if String.IsNullOrEmpty line || not (isPlainAscii line) then legacyGetEngineStatData player isBlack line
+          else
+            try
+              match fastEngineStatData player line with
+              | ValueSome stat -> stat
+              | ValueNone -> legacyGetEngineStatData player isBlack line
+            with Decline -> legacyGetEngineStatData player isBlack line

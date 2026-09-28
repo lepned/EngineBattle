@@ -60,6 +60,7 @@
 		<Compile Include="BoardApiSurfaceTests.fs" />
 		<Compile Include="BoardCharacterizationTests.fs" />
 		<Compile Include="EngineProtocolParserTests.fs" />
+		<Compile Include="AnnotationParserTests.fs" />
 		<Compile Include="WinboardThinkingCacheTests.fs" />
 		<Compile Include="AnalysisOutputTests.fs" />
 		<Compile Include="Program.fs" />
@@ -86,6 +87,7 @@
 		<None Include="TestData\EngineApi.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\BoardApi.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\InfoLinesCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\CommentCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\AnalysisOutput\*.txt" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>

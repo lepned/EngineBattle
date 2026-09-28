@@ -1,0 +1,250 @@
+book, mb=+0+0+0+0+0,
+d=32, sd=68, pd=Qb8, mt=18674, tl=286325, s=37039889, n=691534735, tb=6195, wv=1.05, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=23, sd=65, pd=Rd1, mt=13068, tl=67032, s=31736, n=761495, tb=76, wv=0.05, n1=47349, n2=40643, q1=-0.07841, q2=-0.05521, p1=24.69, pt=24.69 Both players agree on advantage of one side of sufficient magnitude, or sustained draw-like score
+TournamentOptions: playSameMove mode Boost/Optimism/Vanilla; Rounds=250; Book=sufi21-25.pgn; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=10 score=10.0 cp ; WhiteEngineOptions: Timecontrol: 300s + 5.0s; Protocol=UCI; MoveOverheadMS=1000; Threads=86; Skill Level=20; Move Overhead=1000; Slow Mover=100; nodestime=0; Hash=98304; SyzygyProbeDepth=1; Syzygy50MoveRule=True; SyzygyProbeLimit=7; SyzygyPath=D:/Syzygy; Ponder=false; UCI_ShowWDL=true; BlackEngineOptions: Timecontrol: 300s + 5.0s; Protocol=UCI; MoveOverheadMS=1000; Threads=2; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0,policy_head=vanilla, value_head=winner),(gpu=1,policy_head=vanilla, value_head=winner); WeightsFile=C:/LCZero/lczero_gpu_v10/CUDA/cutlass/BT4-1024x15x32h-swa-5000000.pb.gz; Cpuct=2.897; CpuctBase=45669; CpuctFactor=3.973; FpuValue=0.98416; PolicyTemperature=1.4; SmartPruningFactor=2; UsePolicyBoosting=False; UseUncertaintyWeighting=False; UseVarianceScaling=False; Contempt=0; WDLCalibrationElo=3392; WDLContemptAttenuation=0.6; WDLDrawRateReference=0.61; WDLEvalObjectivity=0; MoveOverheadMs=200; RamLimitMb=0; MinibatchSize=256; ReportedNodes=Legacy; ScoreType=WDL_mu; StrictTiming=true; TimeManager=legacy(book-ply-bonus=0.4); SyzygyPath=D:/Syzygy; Ponder=false; VerboseMoveStats=true; LogLiveStats=true; UCI_ShowWDL=true; book, mb=+0+0+0+0+0,
+book, mb=+0+0+0+0+0,
+d=37, sd=45, pd=Nd8, mt=3340, tl=22029, s=55178958, n=184242542, tb=0, wv=0.82, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=6, sd=19, pd=Nf2, mt=4970, tl=6023, s=24073, n=119749, tb=0, wv=-0.01, n1=11203, n2=10236, q1=-0.00168, q2=0.00355, p1=8.61, pt=8.61
+d=30, sd=71, pd=cxb4, mt=325, tl=205742, s=2358, n=1019360, tb=0, wv=0.54, n1=9535, n2=7885, q1=-0.00942, q2=0.09966, p1=15.97, pt=23.15
+d=21, sd=36, pd=Rxd6, mt=336, tl=229111, s=4031, n=269637, tb=0, wv=0.39, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=42, sd=60, pd=hxg3, mt=10113, tl=23918, s=34973777, n=353654841, tb=448366, wv=0.06, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=33, sd=64, pd=0-0-0, mt=6297, tl=224404, s=45861282, n=288742632, tb=32, wv=0.62, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=33, sd=67, pd=e5, mt=6638, tl=288797, s=54314187, n=360157380, tb=5, wv=0.62, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=17, sd=51, pd=Be2, mt=45347, tl=259652, s=20047, n=908552, tb=0, wv=0.65, n1=176396, n2=86155, q1=-0.30127, q2=-0.30127, p1=8.11, pt=25.65
+book, mb=+0+0+0+0+0,
+d=42, sd=64, pd=Ng6, mt=29988, tl=207154, s=40909088, n=1226413578, tb=1408, wv=0.71, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=28, sd=51, pd=Rb8, mt=1672, tl=20992, s=38882473, n=65011495, tb=9695, wv=0.18, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=25, sd=53, pd=Kf7, mt=3644, tl=8151, s=6470969, n=23580212, tb=55395, wv=0.67, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=27, sd=55, pd=Be4, mt=6958, tl=66031, s=26546870, n=184447659, tb=61992, wv=2.51, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=18, sd=50, pd=Nb3, mt=16697, tl=211949, s=21219, n=379799, tb=1, wv=1.73, n1=3281, n2=2500, q1=0.36495, q2=0.53309, p1=15, pt=18.12
+d=16, sd=28, pd=Rc7, mt=2388, tl=9584, s=1619217, n=3868311, tb=40881, wv=2.53, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=74, sd=39, pd=Kg1, mt=8135, tl=176144, s=26102527, n=212317961, tb=2969808, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=17, sd=34, pd=Rd1, mt=308, tl=60561, s=4527, n=98313, tb=24, wv=-5.81, n1=3534, n2=583, q1=-0.96609, q2=-0.96609, p1=16.58, pt=16.58
+d=30, sd=71, pd=Nxe4, mt=16223, tl=10681, s=26717517, n=433411576, tb=326506, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=19, sd=58, pd=Rc1, mt=10328, tl=7212, s=25200, n=495946, tb=6722, wv=0.25, n1=143874, n2=130675, q1=0.03046, q2=0.03046, p1=24.27, pt=34.83
+d=107, sd=33, pd=Kd3, mt=5083, tl=39170, s=63115111, n=319741154, tb=2802646, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=35, sd=50, pd=Qxe4, mt=5632, tl=15439, s=38428958, n=216355037, tb=4051, wv=0.24, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=25, sd=93, pd=Kxh4, mt=71179, tl=108976, s=58706, n=5127061, tb=76310, wv=0.18, n1=1787937, n2=174074, q1=0.04871, q2=0.04871, p1=18.36, pt=18.36 Both players agree on advantage of one side of sufficient magnitude, or sustained draw-like score
+d=5, sd=17, pd=, mt=4735, tl=6363, s=68898, n=325584, tb=25283, wv=-0, n1=123991, n2=112691, q1=-0.00074, q2=-0.00074, p1=32.84, pt=32.84 Adjudicate Tablebase known result
+d=33, sd=79, pd=Ncb5, mt=14266, tl=159872, s=21970705, n=313126500, tb=283535, wv=0.27, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=10, sd=42, pd=Ne3, mt=2600, tl=13833, s=34658, n=138239, tb=0, wv=0.33, n1=10699, n2=3743, q1=-0.10115, q2=-0.10115, p1=4.85, pt=10.92
+TournamentOptions: Various Settings; Rounds=10; Book=swiss.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=50 score=10.0 cp ; WhiteEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; SyzygyPath=D:/Syzygy; Network=Ceres:C:/Dev/Chess/Networks/CeresTrainNet/c5f8bf3f7678_S_768_15_FFN3_H24_NLA_B1_SP_9bn_fp16_8999979008_nc.onnx; Device=GPU:0,1#TensorRT16; BlackEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0),(gpu=1); WeightsFile=D:/LCZero/lczero_gpu_v10/CUDA/321205e_Update/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz; ScoreType=WDL_mu; CPuct=2.897; CPuctBase=45669; CPuctFactor=3.973; FpuValue=0.98416; MovesLeftSlope=0.0027; MovesLeftThreshold=0.8; PolicyTemperature=1.4; SmartPruningFactor=2; SmartPruningMinimumBatches=300; TimeManager=legacy(book-ply-bonus=0.4); SyzygyPath=D:/Syzygy; Ponder=false; RamLimitMb=94500; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; (Black commands: --backend=demux --backend-opts="backend=cuda-fp16,(gpu=0),(gpu=1)" --weights=D:/LCZero/lczero_gpu_v10/CUDA/321205e_Update/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz --score-type=WDL_mu --cpuct=2.897 --cpuct-base=45669 --cpuct-factor=3.973 --fpu-value=0.98416 --moves-left-slope=0.0027 --moves-left-threshold=0.8 --policy-softmax-temp=1.4 --smart-pruning-factor=2 --smart-pruning-minimum-batches=300 --time-manager=legacy(book-ply-bonus=0.4) --syzygy-paths=D:/Syzygy --ramlimit-mb=94500 --verbose-move-stats=true --show-wdl=true ) book, mb=+0+0+0+0+0,
+d=25, sd=46, pd=Kd5, mt=796, tl=12424, s=242165494, n=193005899, tb=26767, wv=2.62, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=6, sd=17, pd=, mt=11369, tl=86338, s=72722, n=2191478, tb=24574, wv=5.88, n1=1116, n2=443, q1=0.5678, q2=0.5678, p1=1.46, pt=1.46
+TournamentOptions: Various Settings; Rounds=10; Book=swiss.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=50 score=10.0 cp ; WhiteEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; SyzygyPath=D:/Syzygy; Network=Ceres:C:/Dev/Chess/Networks/CeresTrainNet/c5f8bf3f7678_S_768_15_FFN3_H24_NLA_B1_SP_9bn_fp16_8999979008_nc.onnx; Device=GPU:0,1#TensorRT16; BlackEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; Threads=124; Hash=98304; Move Overhead=200; SyzygyPath=D:/Syzygy; book, mb=+0+0+0+0+0,
+d=34, sd=0, pd=, mt=5907, tl=39687, s=95042290, n=561223888, tb=64, wv=1.27, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=40, sd=0, pd=, mt=2798, tl=14672, s=113536541, n=317560557, tb=23981, wv=1.22, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+TournamentOptions: Various Settings; Rounds=10; Book=swiss.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=50 score=10.0 cp ; WhiteEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0),(gpu=1); WeightsFile=D:/LCZero/lczero_gpu_v10/CUDA/321205e_Update/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz; ScoreType=WDL_mu; CPuct=2.897; CPuctBase=45669; CPuctFactor=3.973; FpuValue=0.98416; MovesLeftSlope=0.0027; MovesLeftThreshold=0.8; PolicyTemperature=1.4; SmartPruningFactor=2; SmartPruningMinimumBatches=300; TimeManager=legacy(book-ply-bonus=0.4); SyzygyPath=D:/Syzygy; Ponder=false; RamLimitMb=94500; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; BlackEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; SyzygyPath=D:/Syzygy; Network=Ceres:C:/Dev/Chess/Networks/CeresTrainNet/c5f8bf3f7678_S_768_15_FFN3_H24_NLA_B1_SP_9bn_fp16_8999979008_nc.onnx; Device=GPU:0,1#TensorRT16; (White commands: --backend=demux --backend-opts="backend=cuda-fp16,(gpu=0),(gpu=1)" --weights=D:/LCZero/lczero_gpu_v10/CUDA/321205e_Update/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz --score-type=WDL_mu --cpuct=2.897 --cpuct-base=45669 --cpuct-factor=3.973 --fpu-value=0.98416 --moves-left-slope=0.0027 --moves-left-threshold=0.8 --policy-softmax-temp=1.4 --smart-pruning-factor=2 --smart-pruning-minimum-batches=300 --time-manager=legacy(book-ply-bonus=0.4) --syzygy-paths=D:/Syzygy --ramlimit-mb=94500 --verbose-move-stats=true --show-wdl=true ) book, mb=+0+0+0+0+0,
+TournamentOptions: Various Settings; Rounds=10; Book=swiss.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=50 score=10.0 cp ; WhiteEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; Threads=124; Hash=98304; Move Overhead=200; SyzygyPath=D:/Syzygy; BlackEngineOptions: TimeControl: 5' + 5''; Protocol=UCI; MoveOverheadMS=2000; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; SyzygyPath=D:/Syzygy; Network=Ceres:C:/Dev/Chess/Networks/CeresTrainNet/c5f8bf3f7678_S_768_15_FFN3_H24_NLA_B1_SP_9bn_fp16_8999979008_nc.onnx; Device=GPU:0,1#TensorRT16; book, mb=+0+0+0+0+0,
+d=30, sd=72, pd=Kf6, mt=5190, tl=10185, s=163506116, n=721450373, tb=230384, wv=7.58, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=17, sd=30, pd=, mt=14298, tl=179444, s=21947, n=313011, tb=0, wv=0.84, n1=5125, n2=5059, q1=0.4071, q2=0.433, p1=6.67, pt=9.52
+d=13, sd=40, pd=, mt=2, tl=115567, s=230808664, n=470942, tb=29, wv=0.67, n1=12011, n2=6670, q1=0.2634, q2=0.3195, p1=22.33, pt=22.33
+d=5, sd=18, pd=, mt=2, tl=232124, s=491989226, n=1150812, tb=0, wv=0.97, n1=17397, n2=12137, q1=0.4973, q2=0.4973, p1=3.52, pt=10.02
+d=9, sd=31, pd=, mt=14423, tl=252996, s=21831, n=533529, tb=0, wv=0.96, n1=17864, n2=15767, q1=-0.579, q2=-0.5396, p1=11.56, pt=11.56
+d=10, sd=25, pd=, mt=6345, tl=37992, s=56824, n=586464, tb=4346, wv=11.11, n1=668, n2=604, q1=0.0152, q2=0.0152, p1=6.43, pt=6.43
+d=13, sd=20, pd=, mt=16306, tl=254090, s=17710, n=288246, tb=0, wv=0.77, n1=10865, n2=5941, q1=0.3691, q2=0.39, p1=17.76, pt=17.76
+d=50, sd=0, pd=, mt=8998, tl=10822, s=126945356, n=1141618173, tb=9952810, wv=0.31, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=7, sd=23, pd=, mt=8201, tl=20436, s=46386, n=841142, tb=1400, wv=5.60, n1=295509, n2=135116, q1=-0.9101, q2=-0.9101, p1=25.54, pt=31.4
+d=12, sd=31, pd=, mt=22647, tl=262952, s=24295, n=859099, tb=0, wv=1.06, n1=414887, n2=19775, q1=-0.5728, q2=-0.5728, p1=39.43, pt=39.43
+d=11, sd=13, pd=, mt=4726, tl=15109, s=55799, n=265620, tb=3079, wv=0.19, n1=38773, n2=18824, q1=0.0577, q2=0.1305, p1=59.08, pt=59.08
+d=13, sd=24, pd=exd5, mt=159, tl=67415, s=5114, n=1072, tb=0, wv=1.4, n1=1050, n2=7, q1=0.63408, q2=0.63408, p1=60.33, pt=60.33
+d=8, sd=18, pd=a5, mt=53, tl=66149, s=8756, n=1001, tb=0, wv=0.54, n1=584, n2=172, q1=0.24669, q2=0.24669, p1=15.45, pt=15.45
+d=12, sd=21, pd=Rd4, mt=54, tl=93552, s=6837, n=1009, tb=0, wv=1.04, n1=891, n2=48, q1=0.52338, q2=0.52338, p1=29.64, pt=29.64
+d=7, sd=14, pd=Ba4, mt=173, tl=67115, s=5447, n=1015, tb=0, wv=0.66, n1=527, n2=332, q1=-0.30529, q2=-0.28826, p1=13.43, pt=13.5
+d=9, sd=15, pd=b6, mt=41, tl=61755, s=19892, n=1082, tb=0, wv=1.61, n1=834, n2=77, q1=0.6812, q2=0.6812, p1=9.21, pt=21.63
+d=8, sd=14, pd=b5, mt=65, tl=65465, s=11860, n=1011, tb=0, wv=1.62, n1=788, n2=58, q1=0.68301, q2=0.68301, p1=30.68, pt=30.68
+d=9, sd=16, pd=Nf6, mt=99, tl=80029, s=9423, n=1044, tb=1, wv=7.53, n1=927, n2=42, q1=0.92798, q2=0.92798, p1=46.25, pt=46.25
+d=12, sd=20, pd=Bxf7, mt=13, tl=88051, s=73494, n=1001, tb=0, wv=0.12, n1=933, n2=56, q1=-0.04002, q2=-0.04002, p1=23.74, pt=49.93
+d=7, sd=15, pd=Nf2, mt=88, tl=85648, s=7292, n=1006, tb=0, wv=1.03, n1=380, n2=231, q1=-0.50747, q2=-0.47937, p1=12.93, pt=13.23
+d=8, sd=14, pd=Qe4, mt=17, tl=133486, s=42714, n=1005, tb=7, wv=0.16, n1=849, n2=65, q1=0.11772, q2=0.11772, p1=64.62, pt=64.62
+d=6, sd=14, pd=Rb5, mt=120, tl=88134, s=7281, n=1002, tb=0, wv=11.34, n1=369, n2=237, q1=0.95387, q2=0.95387, p1=18.09, pt=18.09
+d=5, sd=15, pd=Bb5, mt=187, tl=69623, s=4768, n=1000, tb=0, wv=0.78, n1=440, n2=123, q1=-0.34682, q2=-0.32585, p1=19.42, pt=19.42
+d=11, sd=21, pd=Nxd5, mt=63, tl=61781, s=10875, n=1003, tb=0, wv=1.28, n1=788, n2=102, q1=0.61299, q2=0.61299, p1=17.4, pt=17.4
+d=8, sd=20, pd=Nxd4, mt=123, tl=60876, s=8732, n=1013, tb=0, wv=0.88, n1=880, n2=85, q1=-0.41496, q2=-0.41496, p1=54.52, pt=54.52
+d=6, sd=11, pd=Re8, mt=49, tl=108413, s=10868, n=1020, tb=4, wv=0.13, n1=579, n2=120, q1=-0.09265, q2=-0.09265, p1=7.64, pt=27.21
+d=6, sd=14, pd=Bxb4, mt=40, tl=111045, s=25387, n=1027, tb=27, wv=237.26, n1=470, n2=155, q1=-0.99564, q2=-0.97142, p1=26.09, pt=26.09
+d=9, sd=17, pd=Bxa4, mt=82, tl=85598, s=10366, n=1030, tb=0, wv=1.77, n1=544, n2=445, q1=-0.70644, q2=-0.68723, p1=37.38, pt=37.38
+d=1, sd=1, pd=, mt=9, tl=79779, s=107, n=1, tb=0, wv=-0.77, n1=0, n2=0, q1=-0.3194, q2=-0.3194, p1=35.5, pt=35.5
+d=1, sd=1, pd=, mt=8, tl=76804, s=115, n=1, tb=0, wv=-10.21, n1=0, n2=0, q1=-0.94833, q2=-0.94833, p1=34.33, pt=34.33
+d=1, sd=1, pd=, mt=8, tl=68884, s=123, n=1, tb=0, wv=127.76, n1=0, n2=0, q1=-1, q2=-1, p1=41.14, pt=41.14
+d=1, sd=1, pd=, mt=14, tl=65937, s=66, n=1, tb=0, wv=0.57, n1=0, n2=0, q1=-0.20588, q2=-0.20588, p1=40.43, pt=40.43
+d=1, sd=1, pd=, mt=14, tl=67885, s=70, n=1, tb=0, wv=1.13, n1=0, n2=0, q1=-0.55256, q2=-0.55256, p1=61.62, pt=61.62
+d=1, sd=1, pd=, mt=8, tl=71872, s=117, n=1, tb=0, wv=-114.39, n1=0, n2=0, q1=0.99947, q2=0.99947, p1=42.41, pt=42.41
+d=1, sd=1, pd=, mt=12, tl=65937, s=79, n=1, tb=0, wv=3.34, n1=0, n2=0, q1=-0.83684, q2=-0.83684, p1=35.72, pt=35.72
+d=1, sd=1, pd=, mt=7, tl=87677, s=128, n=1, tb=0, wv=99.57, n1=0, n2=0, q1=-0.99872, q2=-0.99872, p1=25.99, pt=25.99
+d=1, sd=1, pd=, mt=8, tl=67917, s=122, n=1, tb=0, wv=18.9, n1=0, n2=0, q1=0.97408, q2=0.97408, p1=18.71, pt=18.71
+d=1, sd=1, pd=, mt=9, tl=66914, s=110, n=1, tb=0, wv=0.59, n1=0, n2=0, q1=0.20978, q2=0.20978, p1=32.65, pt=32.65
+d=1, sd=1, pd=, mt=11, tl=83751, s=89, n=1, tb=0, wv=-0, n1=0, n2=0, q1=0.00044, q2=0.00044, p1=59.3, pt=59.3
+d=1, sd=1, pd=, mt=14, tl=68875, s=66, n=1, tb=0, wv=-0.94, n1=0, n2=0, q1=-0.45441, q2=-0.45441, p1=71.22, pt=71.22
+d=1, sd=1, pd=, mt=8, tl=87710, s=117, n=1, tb=0, wv=-125.93, n1=0, n2=0, q1=-0.99993, q2=-0.99993, p1=65.84, pt=65.84
+d=1, sd=1, pd=, mt=13, tl=69899, s=75, n=1, tb=0, wv=-60.18, n1=0, n2=0, q1=0.99494, q2=0.99494, p1=44.63, pt=44.63
+d=1, sd=1, pd=, mt=8, tl=73842, s=120, n=1, tb=0, wv=0.01, n1=0, n2=0, q1=0.00392, q2=0.00392, p1=35.72, pt=35.72
+d=1, sd=1, pd=, mt=11, tl=71870, s=83, n=1, tb=0, wv=-114.37, n1=0, n2=0, q1=0.99947, q2=0.99947, p1=20.58, pt=20.58
+d=1, sd=1, pd=, mt=18, tl=91616, s=52, n=1, tb=0, wv=0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0 Both players agree on advantage of one side of sufficient magnitude, or sustained draw-like score
+d=1, sd=1, pd=, mt=9, tl=69873, s=103, n=1, tb=0, wv=-0.25, n1=0, n2=0, q1=-0.06914, q2=-0.06914, p1=31.34, pt=31.34
+d=1, sd=1, pd=, mt=8, tl=77795, s=112, n=1, tb=0, wv=-127.8, n1=0, n2=0, q1=1, q2=1, p1=12.94, pt=12.94
+d=1, sd=1, pd=, mt=13, tl=82734, s=76, n=1, tb=0, wv=-0.14, n1=0, n2=0, q1=0.00968, q2=0.00968, p1=37.15, pt=37.15
+d=1, sd=1, pd=, mt=8, tl=67913, s=111, n=1, tb=0, wv=1.03, n1=0, n2=0, q1=0.54825, q2=0.54825, p1=20.72, pt=20.72
+d=1, sd=1, pd=, mt=11, tl=68904, s=83, n=1, tb=0, wv=2.41, n1=0, n2=0, q1=0.77505, q2=0.77505, p1=51.39, pt=51.39
+d=1, sd=1, pd=, mt=11, tl=78797, s=88, n=1, tb=0, wv=30.24, n1=0, n2=0, q1=-0.98548, q2=-0.98548, p1=41.99, pt=41.99
+d=1, sd=1, pd=, mt=7, tl=79801, s=127, n=1, tb=0, wv=113.85, n1=0, n2=0, q1=-0.99945, q2=-0.99945, p1=47.97, pt=47.97
+d=1, sd=1, pd=, mt=8, tl=71867, s=113, n=1, tb=0, wv=1.44, n1=0, n2=0, q1=0.64712, q2=0.64712, p1=54.17, pt=54.17
+d=1, sd=1, pd=, mt=10, tl=97577, s=97, n=1, tb=0, wv=-2.27, n1=0, n2=0, q1=-0.76339, q2=-0.76339, p1=59.94, pt=59.94
+d=1, sd=1, pd=, mt=14, tl=79781, s=67, n=1, tb=0, wv=0.34, n1=0, n2=0, q1=0.23315, q2=0.23315, p1=17.7, pt=17.7
+d=1, sd=1, pd=, mt=10, tl=61979, s=93, n=1, tb=0, wv=6.5, n1=0, n2=0, q1=-0.91653, q2=-0.91653, p1=43.79, pt=43.79
+d=1, sd=1, pd=, mt=13, tl=71871, s=72, n=1, tb=0, wv=0.18, n1=0, n2=0, q1=0.13189, q2=0.13189, p1=16, pt=16
+d=1, sd=1, pd=, mt=9, tl=66924, s=108, n=1, tb=0, wv=107.15, n1=0, n2=0, q1=0.99913, q2=0.99913, p1=19.38, pt=19.38
+d=1, sd=1, pd=, mt=7, tl=74803, s=127, n=1, tb=0, wv=1.04, n1=0, n2=0, q1=0.5518, q2=0.5518, p1=61.04, pt=61.04
+d=1, sd=1, pd=, mt=9, tl=92645, s=106, n=1, tb=0, wv=1.21, n1=0, n2=0, q1=-0.59593, q2=-0.59593, p1=55.25, pt=55.25
+d=1, sd=1, pd=, mt=3, tl=63973, s=291, n=1, tb=0, wv=0.97, n1=0, n2=0, q1=0.47399, q2=0.47399, p1=33.28, pt=33.28
+d=1, sd=1, pd=, mt=9, tl=62968, s=105, n=1, tb=0, wv=1.58, n1=0, n2=0, q1=0.67472, q2=0.67472, p1=64.43, pt=64.43
+d=1, sd=1, pd=, mt=11, tl=84738, s=89, n=1, tb=0, wv=-0.12, n1=0, n2=0, q1=0.08847, q2=0.08847, p1=25.6, pt=25.6
+d=1, sd=1, pd=, mt=13, tl=69895, s=73, n=1, tb=0, wv=0.93, n1=0, n2=0, q1=-0.5142, q2=-0.5142, p1=24.35, pt=24.35
+d=1, sd=1, pd=, mt=10, tl=65936, s=91, n=1, tb=0, wv=0.69, n1=0, n2=0, q1=-0.30129, q2=-0.30129, p1=22.53, pt=22.53
+d=1, sd=1, pd=, mt=8, tl=64951, s=124, n=1, tb=0, wv=2.5, n1=0, n2=0, q1=-0.78252, q2=-0.78252, p1=67.92, pt=67.92
+d=1, sd=1, pd=, mt=15, tl=85718, s=64, n=1, tb=0, wv=112.24, n1=0, n2=0, q1=0.99938, q2=0.99938, p1=55.86, pt=55.86
+d=1, sd=1, pd=, mt=9, tl=69894, s=107, n=1, tb=0, wv=48.75, n1=0, n2=0, q1=0.9927, q2=0.9927, p1=31.97, pt=31.97
+d=1, sd=1, pd=, mt=9, tl=66928, s=110, n=1, tb=0, wv=1.21, n1=0, n2=0, q1=-0.59643, q2=-0.59643, p1=23.08, pt=23.08
+d=1, sd=1, pd=, mt=8, tl=66922, s=115, n=1, tb=0, wv=0.66, n1=0, n2=0, q1=0.40688, q2=0.40688, p1=33.07, pt=33.07
+d=1, sd=1, pd=, mt=14, tl=76800, s=69, n=1, tb=0, wv=30.3, n1=0, n2=0, q1=0.98552, q2=0.98552, p1=21.53, pt=21.53
+d=1, sd=1, pd=, mt=9, tl=77805, s=109, n=1, tb=0, wv=2.2, n1=0, n2=0, q1=0.7569, q2=0.7569, p1=70.07, pt=70.07
+d=1, sd=1, pd=, mt=17, tl=71848, s=56, n=1, tb=0, wv=0.41, n1=0, n2=0, q1=0.27772, q2=0.27772, p1=75.59, pt=75.59
+d=1, sd=1, pd=, mt=8, tl=81744, s=112, n=1, tb=0, wv=10.82, n1=0, n2=0, q1=0.95147, q2=0.95147, p1=24.16, pt=24.16
+d=1, sd=1, pd=, mt=19, tl=64928, s=50, n=1, tb=0, wv=0.55, n1=0, n2=0, q1=-0.19248, q2=-0.19248, p1=50.95, pt=50.95
+d=1, sd=1, pd=, mt=8, tl=63959, s=112, n=1, tb=0, wv=1.01, n1=0, n2=0, q1=0.50572, q2=0.50572, p1=58.03, pt=58.03
+d=1, sd=1, pd=, mt=10, tl=64935, s=99, n=1, tb=0, wv=0.6, n1=0, n2=0, q1=-0.38175, q2=-0.38175, p1=36.88, pt=36.88
+TournamentOptions: BT3 cuda; Rounds=2500; Timecontrol: Node limit=1; Book=UHO_4060_v2.epd; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=5 score=0.3 cp -resign movecount=6 score=5.0 cp ; FEN=rnb1k2r/pp3ppp/8/q7/1b6/2N5/PPPQ1PPP/R3KBNR w KQkq - 0 1; WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=100; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0,policy_head=optimistic),(gpu=1,policy_head=optimistic); Threads=2; WeightsFile=C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-1790000.pb.gz; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; VerboseMoveStats=true; LogLiveStats=true; UCI_ShowWDL=true; SmartPruningFactor=1.33; MinibatchSize=340; Cpuct=2.3097134464812408; CpuctBase=45669; CpuctFactor=3.973; FpuValue=0.5618692118482476; PolicyTemperature=1.4; WDLDrawRateReference=0.62; WDLCalibrationElo=3400; WDLContemptAttenuation=0.6; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=100; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0),(gpu=1); Threads=2; WeightsFile=C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-1790000.pb.gz; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; VerboseMoveStats=true; LogLiveStats=true; UCI_ShowWDL=true; SmartPruningFactor=1.33; MinibatchSize=340; Cpuct=2.3097134464812408; CpuctBase=45669; CpuctFactor=3.973; FpuValue=0.5618692118482476; PolicyTemperature=1.4; WDLDrawRateReference=0.62; WDLCalibrationElo=3400; WDLContemptAttenuation=0.6; d=1, sd=1, pd=, mt=11, tl=60988, s=88, n=1, tb=0, wv=0.74, n1=0, n2=0, q1=0.28503, q2=0.28503, p1=18.4, pt=18.4
+d=1, sd=1, pd=, mt=13, tl=79788, s=76, n=1, tb=0, wv=122.34, n1=0, n2=0, q1=0.9998, q2=0.9998, p1=36.62, pt=36.62
+d=1, sd=1, pd=, mt=9, tl=61980, s=101, n=1, tb=0, wv=0.87, n1=0, n2=0, q1=-0.39859, q2=-0.39859, p1=18.48, pt=18.48
+d=1, sd=1, pd=, mt=16, tl=68876, s=60, n=1, tb=0, wv=0.39, n1=0, n2=0, q1=-0.17399, q2=-0.17399, p1=37.79, pt=37.79
+TournamentOptions: BT3 cuda; Rounds=2500; Timecontrol: Node limit=1; Book=UHO_4060_v2.epd; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=5 score=0.3 cp -resign movecount=6 score=5.0 cp ; FEN=r1bq1rk1/ppppnppp/2n5/8/3PP3/2N4P/PPP3P1/R1BQ1BKR w - - 0 1; WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=100; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0),(gpu=1); Threads=2; WeightsFile=C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-1790000.pb.gz; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; VerboseMoveStats=true; LogLiveStats=true; UCI_ShowWDL=true; SmartPruningFactor=1.33; MinibatchSize=340; Cpuct=2.3097134464812408; CpuctBase=45669; CpuctFactor=3.973; FpuValue=0.5618692118482476; PolicyTemperature=1.4; WDLDrawRateReference=0.62; WDLCalibrationElo=3400; WDLContemptAttenuation=0.6; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=100; Backend=demux; BackendOptions=backend=cuda-fp16,(gpu=0,policy_head=optimistic),(gpu=1,policy_head=optimistic); Threads=2; WeightsFile=C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-1790000.pb.gz; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; VerboseMoveStats=true; LogLiveStats=true; UCI_ShowWDL=true; SmartPruningFactor=1.33; MinibatchSize=340; Cpuct=2.3097134464812408; CpuctBase=45669; CpuctFactor=3.973; FpuValue=0.5618692118482476; PolicyTemperature=1.4; WDLDrawRateReference=0.62; WDLCalibrationElo=3400; WDLContemptAttenuation=0.6; d=1, sd=1, pd=, mt=11, tl=60988, s=85, n=1, tb=0, wv=0.63, n1=0, n2=0, q1=0.23212, q2=0.23212, p1=27, pt=27
+d=1, sd=1, pd=, mt=14, tl=74825, s=67, n=1, tb=0, wv=-2.23, n1=0, n2=0, q1=-0.75882, q2=-0.75882, p1=39.48, pt=39.48
+d=1, sd=1, pd=, mt=9, tl=95614, s=110, n=1, tb=0, wv=4.45, n1=0, n2=0, q1=0.87698, q2=0.87698, p1=81.23, pt=81.23
+d=1, sd=1, pd=, mt=9, tl=62970, s=106, n=1, tb=0, wv=3.18, n1=0, n2=0, q1=-0.82916, q2=-0.82916, p1=69.34, pt=69.34
+d=1, sd=1, pd=, mt=8, tl=62965, s=115, n=1, tb=0, wv=0.2, n1=0, n2=0, q1=-0.04891, q2=-0.04891, p1=64.18, pt=64.18
+d=1, sd=1, pd=, mt=12, tl=81759, s=83, n=1, tb=0, wv=0.2, n1=0, n2=0, q1=-0.03354, q2=-0.03354, p1=27.2, pt=27.2
+d=1, sd=1, pd=, mt=8, tl=72864, s=114, n=1, tb=0, wv=4.16, n1=0, n2=0, q1=0.86758, q2=0.86758, p1=50.02, pt=50.02
+d=1, sd=1, pd=, mt=7, tl=79765, s=127, n=1, tb=0, wv=-0.12, n1=0, n2=0, q1=-0.0087, q2=-0.0087, p1=50.78, pt=50.78
+d=1, sd=1, pd=, mt=8, tl=63957, s=113, n=1, tb=0, wv=1.9, n1=0, n2=0, q1=0.72235, q2=0.72235, p1=18.46, pt=18.46
+d=4, sd=4, pd=, mt=5, tl=71885, s=7, n=7, tb=0, wv=0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=2000; Threads=6; Hash=2048; SyzygyPath=D:/Syzygy; Ponder=false; UCI_ShowWDL=true; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=2000; Threads=6; Hash=2048; SyzygyPath=D:/Syzygy; Ponder=false; UCI_ShowWDL=true; book, mb=+0+0+0+0+0,
+d=30, sd=46, pd=, mt=5321, tl=61154, s=2109711, n=4390299, tb=0, wv=2.12, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=30, sd=0, pd=Bc1, mt=18535, tl=189354, s=4962841, n=91965530, tb=0, wv=0.4, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0, Player forfeited due to exceeding time/node limit
+d=25, sd=43, pd=c4, mt=9379, tl=7661, s=11106337, n=103955323, tb=92916, wv=6.03, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=34, sd=0, pd=Be4, mt=6947, tl=7036, s=8420014, n=58451738, tb=696323, wv=-8.85, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=48, sd=39, pd=Kb1, mt=3663, tl=40706, s=10113577, n=36995468, tb=23608, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=26, sd=50, pd=, mt=3094, tl=70351, s=7676000, n=23750104, tb=12292, wv=0.85, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=65, sd=0, pd=Be2, mt=4296, tl=6584, s=9293751, n=39854942, tb=8733, wv=0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=29, sd=0, pd=Qd2, mt=16762, tl=180880, s=4707527, n=78858631, tb=34, wv=-0.67, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=28, sd=51, pd=, mt=11897, tl=36685, s=1919572, n=5188575, tb=0, wv=0.38, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+TournamentOptions: Round Robin; Rounds=4; Timecontrol: 300s + 5.0s; Book=Sufi24.pgn; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=20 score=0.2 cp -resign movecount=20 score=10.0 cp ; WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=2000; Threads=6; Hash=2048; SyzygyPath=D:/Syzygy; Ponder=false; UCI_ShowWDL=true; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=2000; Threads=6; Hash=2048; SyzygyPath=D:/Syzygy; Ponder=false; UCI_ShowWDL=true; book, mb=+0+0+0+0+0,
+book, mb=+0+0+0+0+0,
+d=66, sd=70, pd=Bb4, mt=7508, tl=88457, s=14134454, n=106036675, tb=554519, wv=0.13, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=23, sd=59, pd=, mt=10587, tl=43681, s=1830216, n=16848962, tb=0, wv=11.15, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=16, sd=31, pd=Nb2, mt=6444, tl=132501, s=429, n=12367, tb=0, wv=0.59, n1=10758, n2=738, q1=0.37574, q2=0.37574, p1=13.75, pt=18.37
+book, mb=+0+0+0+0+0,
+d=26, sd=43, pd=Ng3, mt=4494, tl=209081, s=9194691, n=41376113, tb=1, wv=2.67, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=24, sd=34, pd=c5, mt=4272, tl=178658, s=11268572, n=48060462, tb=41242, wv=-10.07, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=28, sd=0, pd=Ra1, mt=8740, tl=28672, s=6897519, n=60236035, tb=1492843, wv=0.42, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=23, sd=42, pd=, mt=12958, tl=322024, s=2684941, n=25131057, tb=0, wv=0.53, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=33, sd=51, pd=, mt=4967, tl=104524, s=7043554, n=30054846, tb=171081, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=33, sd=48, pd=Ba1, mt=4623, tl=46214, s=12428689, n=56413820, tb=0, wv=0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=31, sd=58, pd=Qxc1, mt=9854, tl=78407, s=12907287, n=126543042, tb=0, wv=-2.64, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=9, sd=17, pd=Rc1, mt=3947, tl=15383, s=369, n=3790, tb=0, wv=-1.13, n1=2924, n2=184, q1=0.57533, q2=0.57533, p1=24.44, pt=24.44
+d=37, sd=56, pd=Ne4, mt=6388, tl=100779, s=2749641, n=17572959, tb=1117, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=22, sd=45, pd=Bb7, mt=8554, tl=80017, s=6914276, n=59137807, tb=0, wv=-0.16, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=44, sd=0, pd=Kd3, mt=5558, tl=31858, s=5932462, n=32931098, tb=1084560, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=26, sd=46, pd=, mt=23313, tl=234002, s=2405221, n=53929887, tb=0, wv=0.88, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=29, sd=0, pd=b5, mt=4364, tl=81327, s=6133514, n=26754390, tb=62, wv=2.04, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=6, sd=14, pd=Ra1, mt=9072, tl=27585, s=168, n=1573, tb=0, wv=0.13, n1=636, n2=615, q1=-0.09495, q2=0, p1=17.14, pt=17.14
+book, mb=+0+0+0+0+0,
+d=19, sd=50, pd=Bxe5, mt=13129, tl=146922, s=10103140, n=132583519, tb=0, wv=3.57, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=14, sd=15, pd=Ra3, mt=2, tl=22220, s=512000, n=512, tb=0, wv=-18.8, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=37, sd=0, pd=Kf7, mt=5882, tl=21455, s=9258459, n=54402708, tb=41939, wv=10.59, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=25, sd=51, pd=Kg8, mt=6768, tl=182633, s=11726688, n=79319318, tb=498, wv=22.23, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=23, sd=51, pd=, mt=6993, tl=33915, s=3946253, n=27568524, tb=1080, wv=0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=35, sd=0, pd=Kxa6, mt=3628, tl=22751, s=7827452, n=28311896, tb=471044, wv=1.58, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=6, sd=11, pd=Kc4, mt=6959, tl=8192, s=93, n=774, tb=3, wv=0.8, n1=236, n2=223, q1=-0.46585, q2=0, p1=38.28, pt=38.28
+d=34, sd=0, pd=d5, mt=3022, tl=19465, s=9147381, n=27606796, tb=114122, wv=7.5, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=43, sd=0, pd=b4, mt=6715, tl=122275, s=10194577, n=68399719, tb=139650, wv=-0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=0, sd=0, pd=, mt=5, tl=378477, s=669624, n=1, tb=0, wv=-0.01, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=30, sd=58, pd=Qh2, mt=2926, tl=27623, s=11025549, n=32227681, tb=205102, wv=0.49, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=33, sd=54, pd=b4, mt=8677, tl=245011, s=3762933, n=32639685, tb=0, wv=-0.93, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=36, sd=70, pd=, mt=23181, tl=59952, s=7826000, n=181360815, tb=81705, wv=-1.04, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=27, sd=0, pd=Kc1, mt=9186, tl=129987, s=4810907, n=44176054, tb=3, wv=-2.55, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=36, sd=52, pd=Kb2, mt=6244, tl=57942, s=8111640, n=50592301, tb=36668, wv=0.31, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=38, sd=59, pd=Qe1, mt=13335, tl=230921, s=7467492, n=99526739, tb=153, wv=0.01, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=31, sd=45, pd=Bxf3, mt=11789, tl=251515, s=7211267, n=84977574, tb=0, wv=1.63, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=32, sd=47, pd=, mt=27017, tl=277982, s=5685223, n=153600598, tb=0, wv=2.04, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=32, sd=50, pd=, mt=12063, tl=263557, s=6950325, n=83813977, tb=0, wv=0.88, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=25, sd=43, pd=Bd7, mt=13206, tl=291793, s=7464932, n=94647876, tb=0, wv=0.55, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=29, sd=42, pd=gxf5, mt=6049, tl=51583, s=3939367, n=23793777, tb=9262, wv=5.71, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=16, sd=0, pd=Ng6, mt=9204, tl=93122, s=544353, n=5010227, tb=0, wv=2.25, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=13, sd=28, pd=Qxd5, mt=6548, tl=187724, s=93, n=2330, tb=0, wv=0.4, n1=2314, n2=10, q1=-0.27345, q2=-0.27345, p1=87.23, pt=87.23
+d=21, sd=0, pd=Qd4, mt=5137, tl=16719, s=808710, n=4145448, tb=0, wv=0, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=33, sd=50, pd=Rf2, mt=2169, tl=16551, s=13924000, n=30257132, tb=1440, wv=-0.11, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=34, sd=0, pd=, mt=5787, tl=87741, s=8616362, n=18714739, tb=0, wv=11, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=32, sd=0, pd=Qxb2, mt=5935, tl=68315, s=5267978, n=31218039, tb=10, wv=-2.57, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+TournamentOptions: Gauntlet; Rounds=4; Timecontrol: 300s + 5.0s; Book=sufi24.pgn; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=10 score=10.0 cp ; WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=1000; Threads=6; Hash=2048; SyzygyPath=D:/Syzygy; Ponder=false; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=1000; Book Positions=; Nalimov Tablebases=false; Book Status=; Hash=2048; Threads=6; Move Overhead=2000; Syzygy Tablebases=true; SyzygyPath=D:/Syzygy; Ponder=false; UCI_EngineAbout=HIARCS 15.1 Copyright (c) 1991-2022 Applied Computer Concepts Ltd.  All rights reserved. 1991, 1993, 2008, 2011-2015 World Chess Software Champion.; Licensed To=Steve Navra; book, mb=+0+0+0+0+0,
+TournamentOptions: Gauntlet; Rounds=4; Timecontrol: 300s + 5.0s; Book=sufi24.pgn; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=10 score=0.2 cp -resign movecount=10 score=10.0 cp ; WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=1000; Threads=6; Hash=2048; SyzygyPath=D:/Syzygy; Ponder=false; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=1000; Threads=6; Hash=2048; Ponder=false; SyzygyPath=D:/Syzygy; UCI_ShowWDL=true; book, mb=+0+0+0+0+0,
+book, mb=+0+0+0+0+0,
+d=50, sd=0, pd=Nc3, mt=2968, tl=12302, s=10238788, n=30306813, tb=530043, wv=-0.3, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=29, sd=66, pd=Kc2, mt=14430, tl=66166, s=9313527, n=134321288, tb=1475, wv=-1.81, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=27, sd=52, pd=Rd6, mt=4999, tl=5101, s=13607069, n=47061868, tb=3609, wv=-0.38, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+d=44, sd=55, pd=Kf6, mt=4999, tl=5101, s=11493650, n=27858860, tb=29598, wv=2.68, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+book, mb=+0+0+0+0+0,
+d=29, sd=0, pd=, mt=13424, tl=182031, s=5403608, n=72527238, tb=0, wv=0.52, n1=0, n2=0, q1=0, q2=0, p1=0, pt=0
+TournamentOptions: BT3 onnx-cuda; Rounds=50; Timecontrol: Node limit=1000; Book=sufi24.pgn; Tablebase=6-men; Adjudication: -draw movenumber=20 movecount=5 score=0.3 cp -resign movecount=6 score=5.0 cp ; WhiteEngineOptions: Protocol=UCI; MoveOverheadMS=100; Threads=2; Backend=onnx-cuda; Taskworkers=3; TimeManager=legacy(book-ply-bonus0.4); WeightsFile=C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-onnx-460000-optimistic.pb.gz; StrictTiming=true; VerboseMoveStats=true; MultiPV=1; LogLiveStats=true; SmartPruningMinimumBatches=300; MinibatchSize=340; RootHasOwnCpuctParams=false; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; BlackEngineOptions: Protocol=UCI; MoveOverheadMS=100; Threads=2; Backend=onnx-cuda; Taskworkers=3; TimeManager=legacy(book-ply-bonus0.4); WeightsFile=C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-onnx-460000-baseline.pb.gz; StrictTiming=true; VerboseMoveStats=true; MultiPV=1; LogLiveStats=true; SmartPruningMinimumBatches=300; MinibatchSize=340; RootHasOwnCpuctParams=false; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; book, mb=+0+0+0+0+0,
+d=9, sd=16, pd=Rcd8, mt=314, tl=53088, s=2307, n=1004, tb=0, wv=2.85, n1=954, n2=16, q1=0.77723, q2=0.77723, p1=28.94, pt=28.94
+d=9, sd=16, pd=Rxf7, mt=103, tl=53814, s=10201, n=1051, tb=0, wv=4.24, n1=880, n2=53, q1=0.8717, q2=0.8717, p1=16.93, pt=19.32
+Best by test. [%eval 0.28] [%clk 0:05:00]
+Symmetrical reply, and this one is deliberately long enough to wrap across more than a single line so the row height can be judged. [%eval 0.24]
+Develops with tempo.
+The main line.
+Only black has a note here.
+Only white has a note here.
+42.exd8=Q Rxd8 43.cxb8=Q Rxb8 44.axb8=Q and White wins the race.
+Also possible is 20.Rc8= but 21.Nf3= and 22.Bd2= keep the balance.
+2.5/9 was enough to win the event.
+The point: 34.e8=Q wins, since 34...f1=Q 35.Qxf1 g1=Q loses.
+Book line ends here, now the real fight begins.
+1/2-1/2 was agreed after 40 moves.
+wv=1.06, mt=12875, s=9282899, n=119508052, d=35
++0.54/32 35.500s, tl=148.500s
+The pawn takes the centre. [%cal Ge2e4]
+[%csl Gd4,Ge5,Gd5,Ge4]
+Attacks e5. [%cal Rf3e5] [%csl Re5]
+Defends. [%cal Gc6e5] [%csl Ge5]
+All four colours. [%csl Gd4,Rf6,Yc6,Bb5] [%cal Gb5c6,Rd1h5,Ye4e5,Bf1a6]
+Malformed tokens are skipped, the rest still draws. [%csl Gd4,Zz9,Rf6,Gx9,Yb2]
+No shapes on this move.
+[%eval -3.41] [%clk 0:30:00]
+[%eval -3.5] [%clk 0:30:00]
+(-2.59 → -1.20) Mistake. f6 was best. [%eval -1.2] [%clk 0:21:18]
+(-1.08 → 0.40) Mistake. Qg5 was best. [%eval 0.4] [%clk 0:15:35]
+[%eval 0.68] [%clk 0:29:39]
+(0.68 → 1.33) Inaccuracy. Qe8 was best. [%eval 1.33] [%clk 0:15:39]
+(1.42 → 2.18) Inaccuracy. Re8 was best. [%eval 2.18] [%clk 0:14:48]
+(2.06 → 4.42) Blunder. Rh7 was best. [%eval 4.42] [%clk 0:13:05]
+[%eval #6] [%clk 0:12:02]
+[%clk 0:30:00] White wins by checkmate.
+Attacks e5. [%csl Re5][%cal Rf3e5]
+Defends. [%csl Ge5][%cal Gc6e5]
+All four colours. [%csl Gd4,Rf6,Yc6,Bb5][%cal Gb5c6,Rd1h5,Ye4e5,Bf1a6]
+Malformed tokens are skipped, the rest still draws. [%csl Gd4,Rf6,Yb2]
+TournamentOptions: SF vs Ceres and Lc0; Rounds=300; Book=TCEC28_sufibook.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=20 movecount=5 score=0.3 cp -resign movecount=5 score=5.0 cp ; WhiteEngineOptions: TimeControl: 5' + 3''; Protocol=UCI; MoveOverheadMS=600; Threads=12; Hash=44096; Ponder=False; UCI_ShowWDL=True; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; UCI_Chess960=false;BlackEngineOptions: TimeControl: 5' + 3''; Protocol=UCI; MoveOverheadMS=600; Network=ONNX_TRT:C:/Dev/Chess/Networks/TRT/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz_fp16.onnx; Device=GPU:0,1#TensorRT16; SyzygyPath=C:/Dev/Chess/TableBases/sygyzy; VerboseMoveStats=True; LogLiveStats=True; UCI_ShowWDL=True; CPUCT=2.897; CPUCTFactor=3.973; CPUCTBase=45569; FPU=0.98416; PolicyTemperature=1.4; SmartPruningFactor=2; RamLimitMb=50000; UCI_Chess960=false; book, mb=+0+0+0+0+0,
+wv=0.66, mt=33674, s=22299, n=745069, d=17, sd=54, pd=, tl=269325, tb=0, pv=6.... f5 7.Bg5 Nf6 8.f3 h6 9.Be3 fxe4 10.fxe4 Ng4 11.Nf3 Nxe3 12.Qxe3 0-0 13.0-0-0 Nc6 14.Kb1 Ne7 15.Rhe1 Rb8 16.a3 c5 17.d5 exd5 18.exd5 Nf5 19.Qf4, n1=212951, n2=67318, q1=-0.42, q2=-0.41, p1=29.35, pt=29.35
+wv=1.43, mt=14284, s=10268632, n=146677143, d=36, sd=79, pd=Bd7, tl=6760, tb=4724, pv=47.Qe3, n1=0, n2=0, q1=0.00, q2=0.00, p1=0.00, pt=0.00
+wv=0.23, mt=453, s=2952366, eps=0, n=1337422, d=21, sd=29, pd=c4, tl=7646, tb=0, pv=1.... Nf6 2.c4 e6 3.Nf3 d5 4.g3 Bb4 5.Bd2 Be7 6.Bg2 0-0 7.0-0 c6 8.Qc2 b6 9.Bf4 Bb7 10.cxd5 Nxd5 11.Bd2 c5 12.dxc5 Bxc5
+TournamentOptions: v1.8.0 regression run; Rounds=1; Book=Sufi17-26.pgn; Tablebase adj=6-men; Adjudication: -draw movenumber=40 movecount=8 score=0.1 cp -resign movecount=5 score=6.0 cp ; WhiteEngineOptions: TimeControl: 8'' + 0.1''; Protocol=UCI; MoveOverheadMS=50; Threads=1; Hash=64; Ponder=False; UCI_ShowWDL=True; UCI_Chess960=false;BlackEngineOptions: TimeControl: 8'' + 0.1''; Protocol=UCI; MoveOverheadMS=50; Threads=1; Hash=64; Ponder=False; UCI_ShowWDL=True; UCI_Chess960=false; book, mb=+0+0+0+0+0,
+wv=0.00, mt=7, s=651875, eps=0, n=10430, d=22, sd=8, pd=Qf3, tl=600000, tb=0, pv=48.Kg1
+wv=0.00, mt=127, s=1466007, eps=0, n=186183, d=23, sd=27, pd=Nb5, tl=5139, tb=0, pv=24.... Nb6 25.Nb5 Rd7 26.Ne5 Re7 27.Nc6
+wv=0.27, mt=271, s=3155335, eps=0, n=836164, d=20, sd=30, pd=Bxc6, tl=3834, tb=0, pv=16.Nxc6 Bxc6 17.Be3 Qd7 18.Nd4 Bb7 19.Qf5 Qe8 20.Rac1 Bf6 21.Qd3 a5 22.Rxc8 Qxc8 23.Rc1 Qd7
