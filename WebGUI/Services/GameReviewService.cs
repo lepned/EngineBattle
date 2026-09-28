@@ -45,9 +45,13 @@ public class GameReviewService : IAsyncDisposable
                 engineUpdateListener?.Invoke(update);
             });
 
-            _engine = EngineHelper.createAltEngine(engineCallback, config, _logger, false);
+            // The constructor waits for the network to load (Ceres ~10 s). This method starts on the
+            // page's thread, so creating the engine here froze the page and its Cancel button.
+            _engine = await EngineHelper.createAltEngineAsync(engineCallback, config, _logger, false);
 
             var ct = _cts.Token;
+            // Cancelled while the engine loaded: stop here; finally shuts it down.
+            ct.ThrowIfCancellationRequested();
             var result = await Task.Run(() =>
             {
                 var progressCallback = FuncConvert.FromAction<int, int>((current, total) =>
