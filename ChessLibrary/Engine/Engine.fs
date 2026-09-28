@@ -6,6 +6,7 @@ open System.Diagnostics
 open System.IO
 open System.Threading
 open System.Threading.Tasks
+open System.Runtime.InteropServices
 open Microsoft.FSharp.Core.Operators.Unchecked
 open Microsoft.Extensions.Logging
 open Configuration
@@ -667,9 +668,10 @@ module Engine =
           p.Close()
           p.Dispose()
 
-      /// Starts the process. On a pool thread, as it always has been.
+      /// Starts the process. Process.Start does not block on the engine, so this runs on the
+      /// caller's thread; it used to be handed to a pool thread and waited for, which only cost a
+      /// thread.
       let assignThread () =
-        let started = Task.Factory.StartNew(fun () ->
           let arguments =
             if not (String.IsNullOrEmpty config.Args) then
               if isLc0 && not (config.Args.Contains("--show-hidden")) then config.Args + " --show-hidden"
@@ -690,8 +692,7 @@ module Engine =
                   | _ -> ()))
           running <- RunningEngine t
           // Output is read by the caller (ReadLine*), not by events.
-          if not (t.Start EngineProcess.Pull) then printfn "\n❌ %s could not be started" name)
-        started.Wait()
+          if not (t.Start EngineProcess.Pull) then printfn "\n❌ %s could not be started" name
 
       let hasExited () =
         try isNull running || running.Process.HasExited
@@ -732,10 +733,14 @@ module Engine =
 
       /// The next line (Winboard output translated), or null on cancellation, end of stream or a
       /// read error.
+      ///
+      /// Every await in this class is ConfigureAwait(false). The synchronous members block on
+      /// these tasks, and a continuation sent back to a blocked caller's context (the Blazor
+      /// dispatcher) would never run - the call would hang for good.
       let readAsyncWithTimeout (token: CancellationToken) =
         task {
           try
-            let! line = running.Process.StandardOutput.ReadLineAsync(token)
+            let! line = running.Process.StandardOutput.ReadLineAsync(token).ConfigureAwait(false)
             return inboundOrRaw protocol line
           with
           | :? OperationCanceledException -> return null
@@ -752,32 +757,107 @@ module Engine =
 
       let getDiagnostics () = stderr.Diagnostics(name, lastExitCode)
 
+      /// Reads to readyok, skipping anything else still queued (the tail of a search). False, with
+      /// the reason in ReadyFailure, on a timeout, an exit or a fatal init line; throws
+      /// OperationCanceledException when `cancel` fires.
+      let readUntilReady (timeoutMs: int) (cancel: CancellationToken) : Task<bool> =
+        task {
+          use cts = CancellationTokenSource.CreateLinkedTokenSource cancel
+          cts.CancelAfter timeoutMs
+          let fail (reason: string) =
+            readyFailure <- reason
+            logCritical (sprintf "Engine %s: %s" name reason)
+            false
+          let timedOut () =
+            cancel.ThrowIfCancellationRequested()
+            fail (sprintf "timeout after %d ms waiting for readyok" timeoutMs)
+          try
+            let mutable result = ValueNone
+            while result.IsNone do
+              if hasExited () then
+                result <- ValueSome (fail (sprintf "exited (code %s) while waiting for readyok" (exitCodeText ())))
+              elif cts.IsCancellationRequested then
+                result <- ValueSome (timedOut ())
+              else
+                let! line = (readAsyncWithTimeout cts.Token).ConfigureAwait(false)
+                if isNull line then
+                  result <-
+                    ValueSome (
+                      if cts.IsCancellationRequested then timedOut ()
+                      elif exitedAfterEndOfOutput () then
+                        fail (sprintf "exited (code %s) while waiting for readyok" (exitCodeText ()))
+                      else fail "output closed while waiting for readyok")
+                elif line = "readyok" then
+                  // Every caller lands here; GameInitialization logs the milestone.
+                  readyFailure <- ""
+                  logDebug (sprintf "Engine %s responded with readyok" name)
+                  result <- ValueSome true
+                elif EngineProcess.isFatalInitLine line then
+                  // Alive but given up (Ceres after a refused net): no readyok will ever come, so
+                  // do not sit out the timeout.
+                  result <- ValueSome (fail (sprintf "reported a fatal initialization error: %s" line))
+            return result.Value
+          with ex when not cancel.IsCancellationRequested ->
+            return fail (sprintf "error while waiting for readyok: %s" ex.Message)
+        }
+
+      /// Reads to a bestmove: Some (Ok line), Some (Error reason) when waiting longer is pointless
+      /// (exit, closed output, fatal line), None on timeout. Throws OperationCanceledException
+      /// when `cancel` fires.
+      let readUntilBestmove (timeoutMs: int) (cancel: CancellationToken) : Task<Result<string, string> option> =
+        task {
+          use cts = CancellationTokenSource.CreateLinkedTokenSource cancel
+          cts.CancelAfter timeoutMs
+          let mutable result = ValueNone
+          while result.IsNone do
+            let! line = (readAsyncWithTimeout cts.Token).ConfigureAwait(false)
+            if isNull line then
+              cancel.ThrowIfCancellationRequested()
+              result <-
+                ValueSome (
+                  if cts.IsCancellationRequested then None
+                  elif exitedAfterEndOfOutput () then
+                    Some (Error (sprintf "exited (code %s) during the warm-up search" (exitCodeText ())))
+                  else
+                    // Output closed (or unreadable) with the process still there: no bestmove
+                    // will come, and the reason must be on record.
+                    Some (Error "output closed during the warm-up search"))
+            elif line.StartsWith("bestmove", StringComparison.Ordinal) then result <- ValueSome (Some (Ok line))
+            // Same early exit as readUntilReady: Ceres after a refused net stays alive but will
+            // never search.
+            elif EngineProcess.isFatalInitLine line then
+              result <- ValueSome (Some (Error (sprintf "reported a fatal initialization error: %s" line)))
+          return result.Value
+        }
+
       /// The handshake: uci ... uciok for a UCI engine, feature negotiation for a Winboard one.
-      let readUciOptions () =
-        try
+      let readUciOptionsAsync () : Task<bool> =
+        task {
           match protocol with
           | Winboard handler ->
-              initializeWinboard running.Process handler logger name 30000 (forceV1 config) |> Async.RunSynchronously
+              return! Async.StartAsTask(initializeWinboard running.Process handler logger name 30000 (forceV1 config)).ConfigureAwait(false)
           | Uci ->
               use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
               write "uci"
-              let rec readUci () = async {
-                let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
-                if isNull line then
-                  logCritical (sprintf "Engine %s: read returned null while waiting for UCI options" name)
-                  return false
-                else
-                  printfn "%s" line
-                  let mutable ret = line
-                  while ret <> "uciok" && not (isNull ret) && not running.Process.HasExited do
-                    UciOption.addOptionToMap optionsMap ret
-                    let! resp = readAsyncWithTimeout cts.Token |> Async.AwaitTask
-                    ret <- resp
-                  let isOk = ret = "uciok"
-                  if not isOk then logCritical (sprintf "Engine %s did not respond with uciok" name)
-                  else logInformation (sprintf "Engine %s responded with uciok" name)
-                  return isOk }
-              readUci () |> Async.RunSynchronously
+              let! line = (readAsyncWithTimeout cts.Token).ConfigureAwait(false)
+              if isNull line then
+                logCritical (sprintf "Engine %s: read returned null while waiting for UCI options" name)
+                return false
+              else
+                printfn "%s" line
+                let mutable ret = line
+                while ret <> "uciok" && not (isNull ret) && not running.Process.HasExited do
+                  UciOption.addOptionToMap optionsMap ret
+                  let! resp = (readAsyncWithTimeout cts.Token).ConfigureAwait(false)
+                  ret <- resp
+                let isOk = ret = "uciok"
+                if not isOk then logCritical (sprintf "Engine %s did not respond with uciok" name)
+                else logInformation (sprintf "Engine %s responded with uciok" name)
+                return isOk
+        }
+
+      let readUciOptions () =
+        try readUciOptionsAsync().GetAwaiter().GetResult()
         with
         | :? OperationCanceledException ->
             logCritical (sprintf "|||||Timeout after %d ms in ReadUci |||||" 120000)
@@ -1020,70 +1100,38 @@ module Engine =
 
       member this.ReadUciOptions() = readUciOptions ()
 
-      member this.WaitForReadyOk(?timeoutMs: int) =
-        let timeoutInMs = defaultArg timeoutMs defaultTimeoutMs
-        // The high floor is intentional for UCI engines: neural-net engines can spend many minutes
-        // building a TRT profile on their first init.
-        let timeoutInMs = if timeoutInMs < 60000 then defaultTimeoutMs else timeoutInMs
-        let readUntilReady (cts: CancellationTokenSource) (timeoutForLog: int) =
-          let fail (reason: string) =
-            readyFailure <- reason
-            logCritical (sprintf "Engine %s: %s" name reason)
-            false
-          let rec loop () = async {
-            try
-              if this.HasExited() then
-                return fail (sprintf "exited (code %s) while waiting for readyok" (exitCodeText ()))
-              elif cts.Token.IsCancellationRequested then
-                return fail (sprintf "timeout after %d ms waiting for readyok" timeoutForLog)
-              else
-                let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
-                if isNull line then
-                  if cts.Token.IsCancellationRequested then
-                    return fail (sprintf "timeout after %d ms waiting for readyok" timeoutForLog)
-                  elif exitedAfterEndOfOutput () then
-                    return fail (sprintf "exited (code %s) while waiting for readyok" (exitCodeText ()))
-                  else
-                    return fail "output closed while waiting for readyok"
-                elif line = "readyok" then
-                  // Every caller lands here; GameInitialization logs the milestone.
-                  readyFailure <- ""
-                  logDebug (sprintf "Engine %s responded with readyok" name)
-                  return true
-                elif EngineProcess.isFatalInitLine line then
-                  // Alive but given up (Ceres after a refused net): no readyok will ever come, so
-                  // do not sit out the timeout.
-                  return fail (sprintf "reported a fatal initialization error: %s" line)
-                else
-                  // Anything else still queued (the tail of a search) is skipped straight away;
-                  // this used to sleep 100 ms per line.
-                  return! loop ()
-            with
-            | :? OperationCanceledException ->
-                return fail (sprintf "timeout after %d ms waiting for readyok" timeoutForLog)
-            | ex ->
-                return fail (sprintf "error while waiting for readyok: %s" ex.Message)
-          }
-          loop ()
+      /// The async forms take .NET optional parameters, so C# can leave them out too: a timeout
+      /// of 0 means the default, and the CancellationToken is optional. A cancelled wait throws
+      /// OperationCanceledException and records nothing in ReadyFailure; whatever the engine
+      /// still sends (its readyok, a bestmove) is skipped by the next WaitForReadyOk, which reads
+      /// up to its own readyok. The synchronous forms wait for the same task.
+      member this.WaitForReadyOkAsync([<Optional; DefaultParameterValue(0)>] timeoutMs: int,
+                                      [<Optional>] cancellationToken: CancellationToken) : Task<bool> =
+        let cancel = cancellationToken
         match protocol with
         | Winboard handler when not handler.Features.Ping ->
             logInformation (sprintf "Engine %s is using Winboard protocol without ping support, assuming ready" name)
-            true
+            Task.FromResult true
         | Winboard _ ->
             // Winboard v2 with ping: these engines answer promptly or not at all - the long
             // NN-engine timeout does not apply.
-            use cts = new CancellationTokenSource(TimeSpan.FromSeconds(1.0))
-            write "isready"
-            let res = readUntilReady cts 1000 |> Async.RunSynchronously
-            if res then res
-            else
-              // No pong: assume ready rather than block the game start.
-              logDebug (sprintf "Engine %s did not respond to ping/isready; assuming ready" name)
-              true
+            task {
+              write "isready"
+              let! ok = (readUntilReady 1000 cancel).ConfigureAwait(false)
+              if not ok then
+                // No pong: assume ready rather than block the game start.
+                logDebug (sprintf "Engine %s did not respond to ping/isready; assuming ready" name)
+              return true
+            }
         | Uci ->
-            use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutInMs))
+            // The high floor is intentional for UCI engines: neural-net engines can spend many
+            // minutes building a TRT profile on their first init.
+            let timeoutInMs = if timeoutMs < 60000 then defaultTimeoutMs else timeoutMs
             write "isready"
-            readUntilReady cts timeoutInMs |> Async.RunSynchronously
+            readUntilReady timeoutInMs cancel
+
+      member this.WaitForReadyOk(?timeoutMs: int) =
+        this.WaitForReadyOkAsync(defaultArg timeoutMs 0).GetAwaiter().GetResult()
 
       /// Why the last WaitForReadyOk or WarmUp failed; "" when it succeeded.
       member _.ReadyFailure = readyFailure
@@ -1094,57 +1142,51 @@ module Engine =
       /// the bestmove it sent afterwards was read as its reply in the next game. The result is
       /// discarded; false means no bestmove came within the timeout, or the engine failed (then
       /// ReadyFailure says why). Callers send ucinewgame + isready afterwards either way, unless
-      /// ReadyFailure is set.
-      member this.WarmUp(timeoutMs: int) =
-        if isWinboard protocol || this.HasExited() || running.WarmedUp then true
+      /// ReadyFailure is set. A cancelled warm-up stops the search before it throws.
+      member this.WarmUpAsync(timeoutMs: int, [<Optional>] cancellationToken: CancellationToken) : Task<bool> =
+        let cancel = cancellationToken
+        if isWinboard protocol || this.HasExited() || running.WarmedUp then Task.FromResult true
         else
           running.WarmedUp <- true
           readyFailure <- ""
-          let sw = Stopwatch.StartNew()
-          // Some (Ok bestmove), Some (Error reason) when waiting longer is pointless, None on timeout.
-          let readUntilBestmove (ms: int) =
-            use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float ms))
-            let rec loop () = async {
-              let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
-              if isNull line then
-                if cts.IsCancellationRequested then return None
-                elif exitedAfterEndOfOutput () then
-                  return Some (Error (sprintf "exited (code %s) during the warm-up search" (exitCodeText ())))
-                else
-                  // Output closed (or unreadable) with the process still there: no bestmove will
-                  // come, and the reason must be on record.
-                  return Some (Error "output closed during the warm-up search")
-              elif line.StartsWith("bestmove", StringComparison.Ordinal) then return Some (Ok line)
-              // Same early exit as WaitForReadyOk: Ceres after a refused net stays alive but
-              // will never search.
-              elif EngineProcess.isFatalInitLine line then
-                return Some (Error (sprintf "reported a fatal initialization error: %s" line))
-              else return! loop () }
-            loop () |> Async.RunSynchronously
-          let fail reason =
-            readyFailure <- reason
-            logCritical (sprintf "Engine %s: %s" name reason)
-          write "position startpos"
-          write "go nodes 1"
-          match readUntilBestmove timeoutMs with
-          | Some (Ok line) ->
-              printfn "Engine %s warm-up: %s after %d ms" name line sw.ElapsedMilliseconds
-              true
-          | Some (Error reason) ->
-              // No search is running, so there is nothing to stop or drain.
-              fail reason
-              false
-          | None ->
-              logCritical (sprintf "Engine %s: no bestmove within %d ms of the warm-up search" name timeoutMs)
-              // A search still running would answer into the first game: stop it and consume its
-              // bestmove here. An engine that has died has nothing left to drain.
-              if not (this.HasExited()) then
-                write "stop"
-                match readUntilBestmove 10000 with
-                | Some (Ok _) -> ()
-                | Some (Error reason) -> fail reason
-                | None -> logCritical (sprintf "Engine %s: no bestmove after stop of the warm-up search" name)
-              false
+          task {
+            let sw = Stopwatch.StartNew()
+            let fail reason =
+              readyFailure <- reason
+              logCritical (sprintf "Engine %s: %s" name reason)
+            write "position startpos"
+            write "go nodes 1"
+            let readFirst () =
+              task {
+                try return! (readUntilBestmove timeoutMs cancel).ConfigureAwait(false)
+                with :? OperationCanceledException as ex when cancel.IsCancellationRequested ->
+                  write "stop"
+                  return raise ex
+              }
+            let! first = readFirst().ConfigureAwait(false)
+            match first with
+            | Some (Ok line) ->
+                printfn "Engine %s warm-up: %s after %d ms" name line sw.ElapsedMilliseconds
+                return true
+            | Some (Error reason) ->
+                // No search is running, so there is nothing to stop or drain.
+                fail reason
+                return false
+            | None ->
+                logCritical (sprintf "Engine %s: no bestmove within %d ms of the warm-up search" name timeoutMs)
+                // A search still running would answer into the first game: stop it and consume its
+                // bestmove here. An engine that has died has nothing left to drain.
+                if not (this.HasExited()) then
+                  write "stop"
+                  let! drained = (readUntilBestmove 10000 cancel).ConfigureAwait(false)
+                  match drained with
+                  | Some (Ok _) -> ()
+                  | Some (Error reason) -> fail reason
+                  | None -> logCritical (sprintf "Engine %s: no bestmove after stop of the warm-up search" name)
+                return false
+          }
+
+      member this.WarmUp(timeoutMs: int) = this.WarmUpAsync(timeoutMs).GetAwaiter().GetResult()
 
       /// The UCI steps before a game, shared by the console pool (EngineHelper.initEngine) and the
       /// GUI (GameInitialization): the once-per-process warm-up, then ucinewgame + isready. The
@@ -1153,14 +1195,23 @@ module Engine =
       /// got its bestmove, unless it failed for good (exit, fatal line): then no readyok will come.
       /// False leaves the reason in ReadyFailure. Winboard engines are left alone; their init is
       /// the protocol handler's.
-      member this.PrepareNewGame(?readyTimeoutMs: int) =
-        if isWinboard protocol then true
+      member this.PrepareNewGameAsync([<Optional; DefaultParameterValue(0)>] readyTimeoutMs: int,
+                                      [<Optional>] cancellationToken: CancellationToken) : Task<bool> =
+        let cancel = cancellationToken
+        if isWinboard protocol then Task.FromResult true
         else
-          let readyTimeoutMs = defaultArg readyTimeoutMs defaultTimeoutMs
-          if not (this.WarmUp(max defaultTimeoutMs readyTimeoutMs)) && readyFailure <> "" then false
-          else
-            this.UciNewGame()
-            this.WaitForReadyOk(readyTimeoutMs)
+          let readyTimeoutMs = if readyTimeoutMs <= 0 then defaultTimeoutMs else readyTimeoutMs
+          task {
+            let! warmed = this.WarmUpAsync(max defaultTimeoutMs readyTimeoutMs, cancel).ConfigureAwait(false)
+            if not warmed && readyFailure <> "" then return false
+            else
+              this.UciNewGame()
+              let! ready = this.WaitForReadyOkAsync(readyTimeoutMs, cancel).ConfigureAwait(false)
+              return ready
+          }
+
+      member this.PrepareNewGame(?readyTimeoutMs: int) =
+        this.PrepareNewGameAsync(defaultArg readyTimeoutMs 0).GetAwaiter().GetResult()
 
       member this.IsRunning
         with get () = isRunning

@@ -630,6 +630,78 @@ let ``Tournament WarmUp on an engine that dies reports the exit`` () =
         Assert.False(eng.PrepareNewGame())
     finally stopTournament eng
 
+// ── ChessEngine: the async forms ────────────────────────────────────────────────────────────────
+
+/// A context that swallows whatever is posted to it: a continuation sent here never runs, as one
+/// sent to a Blazor dispatcher blocked in a synchronous call never would.
+type private SwallowingContext() =
+    inherit SynchronizationContext()
+    override _.Post(_, _) = ()
+    override _.Send(_, _) = ()
+
+[<Fact>]
+let ``Tournament sync readiness members do not need the caller's context to finish`` () =
+    let log = newLogPath ()
+    // The delay makes every readyok wait really asynchronous, so a continuation that wanted the
+    // caller's context would be posted to it and lost.
+    let eng = startTournament (config log "" [ "FakeReadyDelayMs", box 200 ])
+    try
+        let mutable results = [||]
+        let worker =
+            Thread(fun () ->
+                SynchronizationContext.SetSynchronizationContext(SwallowingContext())
+                results <- [| eng.PrepareNewGame(); eng.WaitForReadyOk(); eng.WarmUp 1000 |])
+        worker.IsBackground <- true
+        worker.Start()
+        Assert.True(worker.Join 20000, "a synchronous member hung waiting for its caller's context")
+        Assert.Equal<bool[]>([| true; true; true |], results)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament WaitForReadyOkAsync ends on cancellation, records no failure, and the engine is still usable`` () =
+    let log = newLogPath ()
+    // Silent after isready: only the token can end the wait.
+    let eng = startTournament (config log "" [ "FakeNoReadyOk", box true ])
+    try
+        use cts = new CancellationTokenSource(300)
+        let sw = Stopwatch.StartNew()
+        let wait = eng.WaitForReadyOkAsync(600000, cts.Token)
+        let ex = Record.Exception(fun () -> wait.GetAwaiter().GetResult() |> ignore)
+        Assert.IsAssignableFrom<OperationCanceledException>(ex) |> ignore
+        Assert.True(sw.ElapsedMilliseconds < 5000L, sprintf "took %d ms" sw.ElapsedMilliseconds)
+        Assert.Equal("", eng.ReadyFailure)
+        eng.AddSetOption(EngineOption.Create "FakeNoReadyOk" "false")
+        Assert.True(eng.WaitForReadyOk())
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament WarmUpAsync on cancellation stops the search, and the next isready drains it`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "FakeInfinite", box true ])
+    try
+        let before = (synced log eng.Write) |> Array.length
+        use cts = new CancellationTokenSource(300)
+        let ex = Record.Exception(fun () -> eng.WarmUpAsync(600000, cts.Token).GetAwaiter().GetResult() |> ignore)
+        Assert.IsAssignableFrom<OperationCanceledException>(ex) |> ignore
+        Assert.Equal<string[]>([| "position startpos"; "go nodes 1"; "stop" |], (synced log eng.Write) |> Array.skip before)
+        Assert.Equal("", eng.ReadyFailure)
+        // The stopped search's bestmove is skipped on the way to readyok.
+        Assert.True(eng.WaitForReadyOk())
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament PrepareNewGameAsync sends what PrepareNewGame sends`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = (synced log eng.Write) |> Array.length
+        Assert.True(eng.PrepareNewGameAsync().GetAwaiter().GetResult())
+        Assert.True(eng.PrepareNewGameAsync(60000, CancellationToken.None).GetAwaiter().GetResult())
+        Assert.Equal<string[]>(
+            [| "position startpos"; "go nodes 1"; "ucinewgame"; "isready"; "ucinewgame"; "isready" |],
+            (synced log eng.Write) |> Array.skip before)
+    finally stopTournament eng
+
 // ── ChessEngine: options ────────────────────────────────────────────────────────────────────────
 
 [<Fact>]

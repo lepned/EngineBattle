@@ -26,6 +26,7 @@ type ChessLibrary.Engine.ChessEngine
   Position(position: System.String) : System.Void
   PositionGoFen(fen: System.String) : System.Void
   PrepareNewGame(readyTimeoutMs: Microsoft.FSharp.Core.FSharpOption<System.Int32>) : System.Boolean
+  PrepareNewGameAsync(readyTimeoutMs: System.Int32, cancellationToken: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.Boolean>
   PrintUCI() : System.Void
   Quit() : System.Void
   ReadLine() : System.String
@@ -40,7 +41,9 @@ type ChessLibrary.Engine.ChessEngine
   Uci() : System.Void
   UciNewGame() : System.Void
   WaitForReadyOk(timeoutMs: Microsoft.FSharp.Core.FSharpOption<System.Int32>) : System.Boolean
+  WaitForReadyOkAsync(timeoutMs: System.Int32, cancellationToken: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.Boolean>
   WarmUp(timeoutMs: System.Int32) : System.Boolean
+  WarmUpAsync(timeoutMs: System.Int32, cancellationToken: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.Boolean>
   Write(s: System.String) : System.Void
   new(ChessLibrary.TypesDef.CoreTypes.EngineConfig, System.Collections.Generic.IEnumerable<System.String>, Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>)
   prop BenchmarkLC0Cmd : System.String { get }
@@ -100,6 +103,7 @@ type ChessLibrary.EngineHelper
   static createEngineWithoutValidation(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
   static createInitialUCICommands(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.Collections.Generic.IEnumerable<System.String>
   static initEngine(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : System.Void
+  static initEngineAsync(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : System.Threading.Tasks.Task
   static initEngines(delay: System.Int32, engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine) : System.Void
   static waitForEngineIsReady(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : Microsoft.FSharp.Control.FSharpAsync<System.String>
 type ChessLibrary.HardwareInfo

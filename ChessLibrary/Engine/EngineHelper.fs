@@ -74,7 +74,7 @@ module EngineHelper =
             do! Async.Sleep(delay*1000)
           if engine.HasExited() then
             engine.StartProcess()
-          let ready = engine.WaitForReadyOk()
+          let! ready = engine.WaitForReadyOkAsync() |> Async.AwaitTask
           if ready then
             return $"{engine.Name} isready"
           else
@@ -94,22 +94,27 @@ module EngineHelper =
             return $"{engine.Name} error"
     }
 
-  let initEngine delay (engine: ChessEngine)  =
-    async {
+  /// Starts the engine if it has exited, waits for readyok and prepares it for its first game
+  /// (warm-up, ucinewgame, readyok). Throws when the engine is not ready.
+  let initEngineAsync delay (engine: ChessEngine) : Task =
+    task {
       if engine.HasExited() |> not && (delay > 0) then
-        do! Async.Sleep(delay)
+        do! Task.Delay(delay).ConfigureAwait(false)
       if engine.HasExited() then
-        engine.StartProcess()      
-      let ok = engine.WaitForReadyOk() // wait for readyok
+        engine.StartProcess()
+      let! ok = engine.WaitForReadyOkAsync().ConfigureAwait(false) // wait for readyok
       if not ok then
           failwith "Engine did not respond to isready command."
       else
           printfn "Engine %s isready" engine.Name
           // Console tournaments init each pooled engine only here, so the network must be
           // loaded here too, before any clock runs (see ChessEngine.PrepareNewGame).
-          if not (engine.PrepareNewGame()) then
+          let! prepared = engine.PrepareNewGameAsync().ConfigureAwait(false)
+          if not prepared then
             failwithf "Engine %s not ready after the warm-up search: %s" engine.Name engine.ReadyFailure
-    } |> Async.RunSynchronously
+    }
+
+  let initEngine delay (engine: ChessEngine) = (initEngineAsync delay engine).GetAwaiter().GetResult()
 
   let initEngines delay (engine1: ChessEngine) (engine2: ChessEngine) =
     async {
@@ -120,9 +125,8 @@ module EngineHelper =
           engine1.StartProcess()
         if engine2.HasExited() then
           engine2.StartProcess()
-        let res =
+        let! res =
           [waitForEngineIsReady delay engine1; waitForEngineIsReady delay engine2]
-          |> Async.Parallel 
-          |> Async.RunSynchronously
+          |> Async.Parallel
         for e in res do
           printfn "%s" e } |> Async.RunSynchronously
