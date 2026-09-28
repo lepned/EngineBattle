@@ -58,6 +58,7 @@
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
 		<Compile Include="EngineProtocolParserTests.fs" />
+		<Compile Include="WinboardThinkingCacheTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
