@@ -198,6 +198,27 @@ let ``The hash keys follow the line when the GUI steps back and forth`` () =
     Assert.Equal(4, board.HashKeys.Count)
     Assert.Equal<uint64 list>(hashesOfLine (), List.ofSeq board.HashKeys)
 
+[<Fact>]
+let ``Stepping back and forth keeps a custom start position's first occurrence`` () =
+    // ResetBoardState + LoadFen(custom), as a pasted FEN in the analysis field does: stepping
+    // back used to move the repetition root to the graph's root, the standard start position.
+    let custom = "4k3/8/8/8/8/8/8/4K2R w - - 0 1"
+    let shuffle = [ "e1d1"; "e8d8"; "d1e1"; "d8e8" ]
+    let board = Board()
+    board.ResetBoardState()
+    board.LoadFen custom
+    for uci in shuffle do board.PlayUciMove uci
+    match board.TryGetPreviousMoveAndFen(board.FEN()) with
+    | Some m -> board.LoadFen m.FenAfterMove
+    | None -> ()
+    match board.TryGetNextMoveAndFen(board.FEN()) with
+    | Some m -> board.LoadFen m.FenAfterMove
+    | None -> ()
+    Assert.Equal(2, board.RepetitionNr())
+    for uci in shuffle do board.PlayUciMove uci
+    Assert.Equal(3, board.RepetitionNr())
+    Assert.True(board.ClaimThreeFoldRep())
+
 /// The analysis GUI writes the engine's eval onto the current move after every bestmove
 /// (EnginePanel -> SetCommentOnCurrentEdge), and ends a variation by showing the main line
 /// (EndCurrentVariation). Neither changes the line's positions, so the hash keys must go on

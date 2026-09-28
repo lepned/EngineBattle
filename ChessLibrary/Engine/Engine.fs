@@ -621,6 +621,9 @@ module Engine =
       let mutable readyFailure = ""
       // The running process and what has been done to it; null until the first start.
       let mutable running : RunningEngine = null
+      // Counts starts, so an exit event from a process already replaced is ignored.
+      [<VolatileField>]
+      let mutable startGeneration = 0
       let proc () = if isNull running then null else running.Process
       let assignNetworkName (option: string) =
         if isCeres && not (String.IsNullOrEmpty config.Args) then
@@ -678,11 +681,21 @@ module Engine =
               else config.Args
             elif isLc0 then "--show-hidden"
             else ""
+          // A restart is a new process: its exit is unexpected again, and it has no exit code yet
+          // (the old one's code used to be reported for it). A process that has already exited is
+          // let go here; one stopped through StopProcess was disposed there.
+          if not (isNull running) then
+            try if running.Process.HasExited then running.Process.Dispose() with _ -> ()
+          startGeneration <- startGeneration + 1
+          let generation = startGeneration
+          lastExitCode <- None
+          shutdownRequested <- false
           let t =
             EngineProcess.Transport(config, arguments, stderr,
               (fun msg -> printfn "[%s] %s" name msg),
               (fun line -> printfn "[STDERR %s]: %s" name line),
               (fun code ->
+                if generation = startGeneration then
                   if code.IsSome then lastExitCode <- code
                   match code with
                   | Some c when c <> 0 ->

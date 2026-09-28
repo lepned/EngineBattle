@@ -282,8 +282,10 @@ type Board() =
           let hash = Hash.hashBoard position
           let found = graph.MoveCursorToPosition(this.FEN(), hash)
           if found && following then
-            // A position of the game on the board: repetitions still count from its start.
-            rootPositionHash <- (graph.Node graph.Root).Hash
+            // A position of the game on the board: repetitions still count from its start, which
+            // rootPositionHash already holds. Not the graph's root: after ResetBoardState +
+            // LoadFen(custom) that is the standard start position, and the custom start's first
+            // occurrence was lost on the first step back.
             followLine true
           else
             // A new position: the game starts here for repetitions (tournaments reset the board

@@ -33,7 +33,11 @@ public class GameReviewService : IAsyncDisposable
             throw new InvalidOperationException("Analysis already in progress");
 
         IsAnalyzing = true;
+        _cts?.Dispose();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Taken before the engine load: DisposeAsync can dispose _cts meanwhile (the tab closed),
+        // and reading its Token then throws ObjectDisposedException instead of cancelling.
+        var ct = _cts.Token;
 
         try
         {
@@ -49,7 +53,6 @@ public class GameReviewService : IAsyncDisposable
             // page's thread, so creating the engine here froze the page and its Cancel button.
             _engine = await EngineHelper.createAltEngineAsync(engineCallback, config, _logger, false);
 
-            var ct = _cts.Token;
             // Cancelled while the engine loaded: stop here; finally shuts it down.
             ct.ThrowIfCancellationRequested();
             var result = await Task.Run(() =>

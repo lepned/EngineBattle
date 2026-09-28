@@ -1404,7 +1404,9 @@
                     var commentEval = data.ContainsKey(1) ? data[1].Eval : b.Item.Eval;
                     var commentNodes = data.ContainsKey(1) ? data[1].Nodes : b.Item.Nodes;
                     var evalComment = $"{{{commentEval}/{commentNodes.ToString("N0")}}}";
-                    if (!staleResult)
+                    // A host's search (Game Review) is not about ChessBoard's current move: the
+                    // board holds the reviewed game, and its last move got every review eval.
+                    if (!staleResult && !UpdatesFromHost)
                         ChessBoard.SetCommentOnCurrentEdge(evalComment);
                     StopSearchTimer();
                     // The timer that would have drawn it is gone now, so draw whatever the

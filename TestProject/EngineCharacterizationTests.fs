@@ -630,6 +630,21 @@ let ``Tournament WarmUp on an engine that dies reports the exit`` () =
         Assert.False(eng.PrepareNewGame())
     finally stopTournament eng
 
+[<Fact>]
+let ``Tournament engine restarted after a crash does not report the dead process's exit code`` () =
+    // The pool restarts a crashed engine with StartProcess; the old code stayed in LastExitCode
+    // and was named as the reason if the new process failed.
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "FakeCrashOnGo", box true ])
+    try
+        Assert.False(eng.WarmUp 5000)
+        Assert.True(waitUntil 5000 (fun () -> eng.LastExitCode = Some 3))
+        eng.StartProcess()
+        Assert.False(eng.HasExited())
+        Assert.Equal(None, eng.LastExitCode)
+        Assert.True(eng.WaitForReadyOk())
+    finally stopTournament eng
+
 // ── ChessEngine: the async forms ────────────────────────────────────────────────────────────────
 
 /// A context that swallows whatever is posted to it: a continuation sent here never runs, as one
