@@ -198,6 +198,34 @@ let ``The hash keys follow the line when the GUI steps back and forth`` () =
     Assert.Equal(4, board.HashKeys.Count)
     Assert.Equal<uint64 list>(hashesOfLine (), List.ofSeq board.HashKeys)
 
+/// The analysis GUI writes the engine's eval onto the current move after every bestmove
+/// (EnginePanel -> SetCommentOnCurrentEdge), and ends a variation by showing the main line
+/// (EndCurrentVariation). Neither changes the line's positions, so the hash keys must go on
+/// following it; they used to stop following for the rest of the session.
+[<Theory>]
+[<InlineData("comment")>]
+[<InlineData("endVariation")>]
+let ``The hash keys still follow the line after the GUI edits the move list`` (edit: string) =
+    let board = Board()
+    board.ResetBoardState()
+    for uci in [ "e2e4"; "e7e5"; "g1f3"; "b8c6" ] do board.PlayUciMove uci
+    let back () =
+        match board.TryGetPreviousMoveAndFen(board.FEN()) with
+        | Some m -> board.LoadFen m.FenAfterMove
+        | None -> ()
+    back ()
+    match edit with
+    | "comment" -> board.SetCommentOnCurrentEdge "{+0.35/12 1000}"
+    | _ -> board.EndCurrentVariation()
+    back ()
+    Assert.Equal(2, board.HashKeys.Count)
+    back ()
+    Assert.Equal(1, board.HashKeys.Count)
+    // Back at the start of a shuffle: the taken-back positions no longer count.
+    for uci in [ "g8f6"; "g1f3" ] do board.PlayUciMove uci
+    Assert.Equal(3, board.HashKeys.Count)
+    Assert.Equal(1, board.RepetitionNr())
+
 [<Fact>]
 let ``Hash keys added outside the graph are left alone`` () =
     // A tournament's moves (MakeMove) and a puzzle probe (UndoMove) are not in the graph; loading

@@ -802,8 +802,8 @@ module Engine =
         }
 
       /// Reads to a bestmove: Some (Ok line), Some (Error reason) when waiting longer is pointless
-      /// (exit, closed output, fatal line), None on timeout. Throws OperationCanceledException
-      /// when `cancel` fires.
+      /// (exit, fatal line), None on timeout or when the output could not be read from an engine
+      /// still running. Throws OperationCanceledException when `cancel` fires.
       let readUntilBestmove (timeoutMs: int) (cancel: CancellationToken) : Task<Result<string, string> option> =
         task {
           use cts = CancellationTokenSource.CreateLinkedTokenSource cancel
@@ -819,9 +819,11 @@ module Engine =
                   elif exitedAfterEndOfOutput () then
                     Some (Error (sprintf "exited (code %s) during the warm-up search" (exitCodeText ())))
                   else
-                    // Output closed (or unreadable) with the process still there: no bestmove
-                    // will come, and the reason must be on record.
-                    Some (Error "output closed during the warm-up search"))
+                    // A null from a live engine is not proof of failure: readAsyncWithTimeout also
+                    // returns null on a read error (logged there). Treated like a timeout, so the
+                    // search is stopped and drained and the isready that follows decides; a stdout
+                    // that is really closed fails there with its own reason.
+                    None)
             elif line.StartsWith("bestmove", StringComparison.Ordinal) then result <- ValueSome (Some (Ok line))
             // Same early exit as readUntilReady: Ceres after a refused net stays alive but will
             // never search.

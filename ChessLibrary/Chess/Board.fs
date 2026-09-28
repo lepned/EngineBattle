@@ -141,9 +141,11 @@ type Board() =
     /// The hash keys are the positions of the line to the cursor - true after moves played
     /// through the graph, false once positions were added outside it (tournament moves through
     /// MakeMove, book moves, a probe taken back with UndoMove). Only then may moving the cursor
-    /// take them along.
+    /// take them along. Compared against the line's own hashes, not the public lists: the GUI
+    /// edits those (a comment on the last move, EndCurrentVariation) without changing a position,
+    /// and the keys must not stop following for the rest of the session because of it.
     let hashesFollowLine () =
-      listsHoldLine ()
+      lineValid
       && lineEnd = graph.Current
       && hashKeys.Count = lineHashes.Count
       && (let mutable same = true
@@ -325,7 +327,12 @@ type Board() =
         if moveAndFens.Count > 0 then
           let lastIdx = moveAndFens.Count - 1
           let last = moveAndFens.[lastIdx]
-          moveAndFens.[lastIdx] <- { last with Move = { last.Move with Comments = comment } }
+          let commented = { last with Move = { last.Move with Comments = comment } }
+          moveAndFens.[lastIdx] <- commented
+          // Same entry in the line's copy, so the lists still hold the line and the next cursor
+          // move is not a full rebuild.
+          if lastIdx < lineMaf.Count && obj.ReferenceEquals(lineMaf.[lastIdx], last) then
+            lineMaf.[lastIdx] <- commented
         match currentIncomingEdge () with
         | Some edge -> graph.SetEdgeComment(edge.Id, comment)
         | None -> ()
