@@ -57,9 +57,7 @@
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
-		<Compile Include="Legacy\LegacyBoard.fs" />
 		<Compile Include="BoardApiSurfaceTests.fs" />
-		<Compile Include="BoardDifferentialTests.fs" />
 		<Compile Include="BoardCharacterizationTests.fs" />
 		<Compile Include="EngineProtocolParserTests.fs" />
 		<Compile Include="WinboardThinkingCacheTests.fs" />

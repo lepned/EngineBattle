@@ -39,7 +39,9 @@ let moveList = new ThreadLocal<TMove array> (fun () -> Array.zeroCreate<TMove>(M
 ///   used to be rebuilt in full after every move: 28 KB a move at move 60, 57 KB at move 150.)
 ///
 /// The public surface is pinned by TestProject/BoardApiSurfaceTests.fs and the behaviour by
-/// BoardDifferentialTests (against a frozen copy of the old board) and BoardCharacterizationTests.
+/// BoardCharacterizationTests. The rewrite (branch rewrite/board-fs, 2026-09) was held to the
+/// board it replaced by a differential test over random operation sequences, removed once it was
+/// merged (it ran against a frozen copy of the old board; see commit ea09382 to bring it back).
 /// QUIRK marks behaviour kept on purpose.
 type Board() =
     // ── The position ─────────────────────────────────────────────────────────────────────────────

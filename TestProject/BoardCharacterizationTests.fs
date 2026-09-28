@@ -1,9 +1,10 @@
 /// Characterisation tests for `type Board` (ChessLibrary/Chess/Board.fs), written against the board
-/// as it stood before the rewrite (branch rewrite/board-fs, 2026-09-28). BoardDifferentialTests
-/// holds the rewrite to the old board over random operation sequences; these pin, readably, the
+/// as it stood before the rewrite (branch rewrite/board-fs, 2026-09-28). They pin, readably, the
 /// flows other code is built on - how tournaments, deviation analysis and the GUI drive the board -
-/// and the known bugs. A test marked BUG pins what the old board does wrong; the rewrite fixes it and
-/// turns the test round in the same commit. QUIRK marks behaviour kept on purpose.
+/// and the three bugs the rewrite fixed, turned round in the commit that fixed them. QUIRK marks
+/// behaviour kept on purpose. (During the rewrite a differential test also ran the new board against
+/// a frozen copy of the old one over random operation sequences; it was removed after the merge -
+/// commit ea09382 has it.)
 module BoardCharacterizationTests
 
 open System

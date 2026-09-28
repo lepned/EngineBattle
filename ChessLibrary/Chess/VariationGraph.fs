@@ -13,7 +13,7 @@ open EngineTypes
 /// them is the mainline.
 ///
 /// This is the graph code that used to be ~25 closures inside `type Board`, unchanged in what it
-/// does (BoardDifferentialTests holds it to the old board), in one place with a name.
+/// does, in one place with a name.
 [<Sealed>]
 type internal VariationGraph() =
   let mutable nodeCounter = 0
