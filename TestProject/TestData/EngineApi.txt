@@ -1,0 +1,132 @@
+type ChessLibrary.Engine
+  static isFatalInitLine(line: System.String) : System.Boolean
+  static prop loggedVersions : System.Collections.Generic.HashSet<System.String> { get }
+  static prop printLock : System.Object { get }
+  static prop printedEngines : System.Collections.Generic.HashSet<System.String> { get }
+  static resetPrintedEngines() : System.Void
+type ChessLibrary.Engine.ChessEngine
+  AddSetOption(option: ChessLibrary.EngineTypes.EngineOption) : System.Void
+  AddSetOptions(config: ChessLibrary.EngineTypes.EngineOption[]) : System.Void
+  Analyse(fenPosition: System.String) : System.Void
+  DoNotValidate() : System.Void
+  GetDefaultOptions() : System.Collections.Generic.Dictionary<System.String, System.Object>
+  GetDiagnostics() : System.String
+  GetExitCode() : Microsoft.FSharp.Core.FSharpOption<System.Int32>
+  GetOptionsMap() : System.Collections.Generic.Dictionary<System.String, ChessLibrary.UciOption.UciOption>
+  GetUCICommands() : System.Void
+  GetVerifiedCommands() : Microsoft.FSharp.Collections.FSharpList<System.String>
+  Go(timeControl: ChessLibrary.TimeControlTypes.UnionType, wTime: System.TimeSpan, bTime: System.TimeSpan) : System.Void
+  Go(timeInMs: System.Int32) : System.Void
+  GoNodes(nodes: System.Int32) : System.Void
+  GoPonder(command: System.String) : System.Void
+  GoValue() : System.Void
+  HasExited() : System.Boolean
+  IsReady() : System.Void
+  PonderHit() : System.Void
+  Position(position: System.String) : System.Void
+  PositionGoFen(fen: System.String) : System.Void
+  PrepareNewGame(readyTimeoutMs: Microsoft.FSharp.Core.FSharpOption<System.Int32>) : System.Boolean
+  PrintUCI() : System.Void
+  Quit() : System.Void
+  ReadLine() : System.String
+  ReadLineAsync() : System.Threading.Tasks.Task<System.String>
+  ReadLineAsyncWithTimeout(token: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.String>
+  ReadUciOptions() : System.Boolean
+  SetMoveOverhead(optionName: System.String, milliSeconds: System.Int32) : System.Void
+  StartProcess() : System.Void
+  Stop() : System.Void
+  StopProcess() : System.Void
+  TryToUpdateOption(name: System.String, value: System.String) : System.Void
+  Uci() : System.Void
+  UciNewGame() : System.Void
+  WaitForReadyOk(timeoutMs: Microsoft.FSharp.Core.FSharpOption<System.Int32>) : System.Boolean
+  WarmUp(timeoutMs: System.Int32) : System.Boolean
+  Write(s: System.String) : System.Void
+  new(ChessLibrary.TypesDef.CoreTypes.EngineConfig, System.Collections.Generic.IEnumerable<System.String>, Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>)
+  prop BenchmarkLC0Cmd : System.String { get }
+  prop CanReuseWinboard : System.Boolean { get }
+  prop Commands : System.Collections.Generic.List<System.String> { get }
+  prop Config : ChessLibrary.TypesDef.CoreTypes.EngineConfig { get }
+  prop ErrorOutput : System.Collections.Generic.IEnumerable<System.String> { get }
+  prop FullName : System.String { get }
+  prop InitCommands : System.Collections.Generic.IEnumerable<System.String> { get }
+  prop IsLc0 : System.Boolean { get }
+  prop IsReference : System.Boolean { get set }
+  prop IsRunning : System.Boolean { get set }
+  prop LastExitCode : Microsoft.FSharp.Core.FSharpOption<System.Int32> { get }
+  prop Name : System.String { get set }
+  prop Network : System.String { get }
+  prop PassedValidation : System.Boolean { get }
+  prop Path : System.String { get }
+  prop PrintNonDefaultValues : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
+  prop Process : System.Diagnostics.Process { get }
+  prop ReadyFailure : System.String { get }
+  prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
+  prop UciIdName : System.String { get }
+type ChessLibrary.Engine.ChessEngineWithUCIProcessing
+  ClearSearchMoves() : System.Void
+  CurrentPositionCommand() : System.String
+  GetAllDefaultOptions() : System.Collections.Generic.Dictionary<System.String, System.Object>
+  GetBackEnd() : System.String
+  GetDiagnostics() : System.String
+  GetNoneDefaultSetOptions() : System.Collections.Generic.Dictionary<System.String, System.Tuple<System.String, System.String>>
+  GetUCICommands() : System.Collections.Generic.Dictionary<System.String, ChessLibrary.UciOption.UciOption>
+  PrintUCI() : System.Void
+  SendUCICommand(command: ChessLibrary.EngineTypes.UCICommand) : System.Void
+  SetAllOptions(allOptions: System.Collections.Generic.Dictionary<System.String, System.Object>) : System.Void
+  SetSearchMoves(moves: Microsoft.FSharp.Collections.FSharpList<System.String>) : System.Void
+  ShutDownEngine() : System.Void
+  WaitForReadyOk(timeoutMs: Microsoft.FSharp.Core.FSharpOption<System.Int32>) : System.Boolean
+  new(Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.EngineTypes.EngineUpdate, Microsoft.FSharp.Core.Unit>, ChessLibrary.TypesDef.CoreTypes.EngineConfig, System.Collections.Generic.IEnumerable<System.String>, Microsoft.Extensions.Logging.ILogger, System.Boolean, Microsoft.FSharp.Core.FSharpOption<System.Boolean>)
+  prop BenchmarkLC0Cmd : System.String { get }
+  prop Config : ChessLibrary.TypesDef.CoreTypes.EngineConfig { get }
+  prop ErrorOutput : System.Collections.Generic.IEnumerable<System.String> { get }
+  prop FullName : System.String { get }
+  prop HasExited : System.Boolean { get }
+  prop InPolicyDistributionMode : System.Boolean { get set }
+  prop IsFRC : System.Boolean { get set }
+  prop IsLc0 : System.Boolean { get }
+  prop IsReference : System.Boolean { get set }
+  prop LastExitCode : Microsoft.FSharp.Core.FSharpOption<System.Int32> { get }
+  prop Name : System.String { get }
+  prop Network : System.String { get }
+  prop Path : System.String { get }
+  prop SearchMoves : Microsoft.FSharp.Collections.FSharpList<System.String> { get }
+  prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
+  prop UciIdName : System.String { get }
+type ChessLibrary.EngineHelper
+  static analyzePosition(engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine, position: System.String, time: System.Int32) : System.Double
+  static createAltEngine(callback: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.EngineTypes.EngineUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : ChessLibrary.Engine.ChessEngineWithUCIProcessing
+  static createCeresEnginesFromFolder(folderName: System.String) : System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>
+  static createEngine(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
+  static createEngineWithoutValidation(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
+  static createEnginesFromFolder(folderName: System.String) : System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>
+  static createInitialUCICommands(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.Collections.Generic.IEnumerable<System.String>
+  static createLc0EnginesFromFolder(folderName: System.String) : System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>
+  static initEngine(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : System.Void
+  static initEngines(delay: System.Int32, engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine) : System.Void
+  static playMovesFromFen(engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine, fen: System.String, time: System.Int32, numberOfMoves: System.Int32) : System.Void
+  static prop valueHeadCommands : Microsoft.FSharp.Collections.FSharpList<System.String> { get }
+  static waitForEngineIsReady(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : Microsoft.FSharp.Control.FSharpAsync<System.String>
+type ChessLibrary.EngineHelper.EvalResult
+  CompareTo(obj: ChessLibrary.EngineHelper.EvalResult) : System.Int32
+  CompareTo(obj: System.Object) : System.Int32
+  CompareTo(obj: System.Object, comp: System.Collections.IComparer) : System.Int32
+  Equals(obj: ChessLibrary.EngineHelper.EvalResult) : System.Boolean
+  Equals(obj: ChessLibrary.EngineHelper.EvalResult, comp: System.Collections.IEqualityComparer) : System.Boolean
+  Equals(obj: System.Object) : System.Boolean
+  Equals(obj: System.Object, comp: System.Collections.IEqualityComparer) : System.Boolean
+  GetHashCode() : System.Int32
+  GetHashCode(comp: System.Collections.IEqualityComparer) : System.Int32
+  ToString() : System.String
+  new(System.String, System.Double)
+  prop EngineName : System.String { get }
+  prop Eval : System.Double { get }
+type ChessLibrary.HardwareInfo
+  static assessMaxCpuConcurrencyLevel(engines: System.Collections.Generic.IEnumerable<ChessLibrary.Engine.ChessEngine>) : System.Int32
+  static concurrencyLevel(configs: System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>, requested: System.Int32) : System.Int32
+  static estimateEngineRam(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.UInt64
+  static footPrints(configs: System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>) : System.Tuple<System.String, System.UInt64>[]
+  static getThreads(engine: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.Int32
+  static sumEngineThreads(engines: System.Collections.Generic.IEnumerable<ChessLibrary.Engine.ChessEngine>) : System.Int32
+  static sumFootprints(configs: System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>) : System.UInt64
