@@ -468,11 +468,25 @@ type Board() =
       with get() = mostCurrentFEN
       and set(v) = mostCurrentFEN <- v
 
-    member this.PositionWithMoves() =      
-      if uciMoves.Count = 0 then
-        sprintf $"position fen {startPos}"
+    /// An EPD book line is a 4-field FEN with no halfmove/fullmove counters. Lc0 rejects such a
+    /// FEN when its en-passant field is set ("Bad fen string (en passant square expected)") and
+    /// then searches the previous position, so the counters are added here, on the way to the
+    /// engine. startPos itself is left as read: the PGN [FEN] tag and OpeningHash come from it.
+    static member UciFen (fen: string) =
+      if isNull fen then fen
       else
-        let start = sprintf $"position fen {startPos} moves"
+        let fen = fen.Trim()
+        match fen.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length with
+        | 4 -> fen + " 0 1"
+        | 5 -> fen + " 1"   // halfmove clock present, fullmove number missing
+        | _ -> fen
+
+    member this.PositionWithMoves() =
+      let fen = Board.UciFen startPos
+      if uciMoves.Count = 0 then
+        sprintf $"position fen {fen}"
+      else
+        let start = sprintf $"position fen {fen} moves"
         uciMoves |> Seq.fold (fun state m -> sprintf "%s %s" state m) start
 
     member this.GetCurrentEdgeComment () =      
@@ -511,6 +525,7 @@ type Board() =
         this.PositionWithMoves()
 
     member this.PositionWithFenAndMoves (fen:string) =
+      let fen = Board.UciFen fen
       if uciMoves.Count = 0 then
         sprintf $"position fen {fen}"
       else

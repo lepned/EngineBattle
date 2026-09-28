@@ -43,7 +43,7 @@ let private notReady (engine: ChessEngine) =
     failwithf "Engine %s did not become ready: %s" engine.Name reason
 
 let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async {
-   let cmd = sprintf "position fen %s" fen
+   let cmd = sprintf "position fen %s" (Board.UciFen fen)
    engine.UciNewGame()
    engine.Position cmd
    engine.GoNodes nodes
@@ -70,7 +70,7 @@ let bestMoveByEvalAsync (nodes:int) (engine: ChessEngine) (fen: string) = async 
  }
 
 let bestMoveByEvalWithTimeAsync (timeInMs:int) (engine: ChessEngine) (fen: string) = async {
-   let cmd = sprintf "position fen %s" fen
+   let cmd = sprintf "position fen %s" (Board.UciFen fen)
    engine.UciNewGame()
    engine.SetMoveOverhead("overhead", 0)
    engine.Position cmd

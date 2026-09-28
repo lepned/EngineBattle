@@ -103,19 +103,16 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                         logger.LogError("Engine {Engine} timed out waiting for readyok (WinBoard)", engine.Name)
                         return false
             else
-                engine.UciNewGame()
-
-                //Wait for ready acknowledgment
                 let timeoutInSec = max 180 tourny.EngineStartupTimeoutInSec
                 let timeoutInMs = timeoutInSec * 1000
-                let readyOk = engine.WaitForReadyOk(timeoutInMs)
-
-                if readyOk then
+                // Warm-up (once per process, loads the network before the first clock starts),
+                // then ucinewgame + readyok.
+                if engine.PrepareNewGame timeoutInMs then
                     // The one readyok worth Information: the net is loaded.
                     logger.LogInformation("Engine {Engine} ready", engine.Name)
                     return true
                 else
-                    logger.LogError("Engine {Engine} timed out waiting for readyok", engine.Name)
+                    logger.LogError("Engine {Engine} not ready: {Reason}", engine.Name, engine.ReadyFailure)
                     return false
 
     with ex ->

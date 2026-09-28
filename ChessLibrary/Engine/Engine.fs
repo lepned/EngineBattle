@@ -855,7 +855,8 @@ module Engine =
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "true"))
               elif isChess960Set() && not isFrc then
                 this.SendUCICommand (SetOption (EngineOption.Create "UCI_Chess960" "false"))
-              let cmd = (sprintf "position fen %s" fen)
+              // An EPD with no counters is rejected by Lc0 when it has an en-passant square.
+              let cmd = (sprintf "position fen %s" (Chess.Board.UciFen fen))
               write cmd
               commands.Add cmd
           | GoNodes nodes ->
@@ -1127,7 +1128,13 @@ module Engine =
       // Why the last WaitForReadyOk returned false ("" after a successful one). Callers
       // (cmp, analyze) have no logger, so the reason must travel with the engine.
       let mutable readyFailure = ""
-    
+      // The process WarmUp last ran against. A restarted engine is a new Process object and warms
+      // up again; comparing the object, not the OS pid, because Windows can reuse a pid.
+      let mutable warmedProc : Process = null
+      // The process and value SetMoveOverhead last sent; a restarted engine is sent it again.
+      let mutable moveOverheadSentTo : Process = null
+      let mutable moveOverheadSent = -1L
+
       let write (s:string) = 
         try
             if proc <> null && not proc.HasExited then
@@ -1424,12 +1431,18 @@ module Engine =
                     if intValue >= min && intValue <= max then
                       match config.Options |> Seq.tryFind (fun e -> e.Key = optName) with
                       | Some _ -> ()
+                      | None when obj.ReferenceEquals(moveOverheadSentTo, proc) && moveOverheadSent = intValue ->
+                          // Already set on this process. The GUI calls this before every game, and
+                          // Ceres rebuilds its TensorRT engine on each MoveOverheadMs setoption.
+                          ()
                       | None ->
                           //create a setoption based on the option and the intValue
-                          let cmd = sprintf "setoption name %s value %d" option.Name intValue                
+                          let cmd = sprintf "setoption name %s value %d" option.Name intValue
                           write cmd
+                          moveOverheadSentTo <- proc
+                          moveOverheadSent <- intValue
                           addCommand initialCommands cmd
-                          addCommand commands cmd                  
+                          addCommand commands cmd
                 | _ -> ()
             | None -> logInformation (sprintf "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds)
         | None -> logInformation (sprintf "Option not found or value not valid for engine %s: %s value: %d" name optionName milliSeconds)
@@ -1483,13 +1496,13 @@ module Engine =
         commands.Add cmd
 
       member this.PositionGoFen (fen: string) =
-        let position = sprintf "position fen %s" fen        
+        let position = sprintf "position fen %s" (Chess.Board.UciFen fen)        
         write position
         commands.Add position
     
       member this.Analyse(fenPosition: string) =
         this.UciNewGame()
-        let pos = sprintf "position fen %s" fenPosition
+        let pos = sprintf "position fen %s" (Chess.Board.UciFen fenPosition)
         //position startpos moves e2e4 e7e5
         write pos
         commands.Add pos
@@ -1614,6 +1627,81 @@ module Engine =
       
       /// Why the last WaitForReadyOk returned false; "" when it succeeded.
       member _.ReadyFailure = readyFailure
+
+      /// One `go nodes 1` from the start position, once per process, before the first game.
+      /// Some engines answer readyok at once and only load their network on the first search:
+      /// Lc0 0.33 with onnx-trt spent 5.5 s on its first move of a 5s+0.3s game and lost it on
+      /// time, and the bestmove it sent afterwards was read as its reply in the next game. The
+      /// search result is discarded; false means no bestmove came within the timeout. Callers
+      /// send ucinewgame + isready afterwards either way, unless ReadyFailure is set: the
+      /// engine printed a fatal init line, and the isready wait would no longer see it.
+      member this.WarmUp(timeoutMs: int) =
+        if winboardHandler.IsSome || this.HasExited() || obj.ReferenceEquals(warmedProc, proc) then true
+        else
+          warmedProc <- proc
+          readyFailure <- ""
+          let sw = Stopwatch.StartNew()
+          // Some (Ok bestmove), Some (Error reason) when waiting longer is pointless, None on timeout.
+          let readUntilBestmove (ms: int) =
+            use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float ms))
+            let rec loop () = async {
+                let! line = readAsyncWithTimeout cts.Token |> Async.AwaitTask
+                if isNull line then
+                  // A null from a live engine is not proof of failure (the reader also returns
+                  // null on a read error), so only an exit ends the warm-up as fatal; the
+                  // isready wait that follows still catches a closed stdout on its own.
+                  if not (cts.IsCancellationRequested) && this.HasExited() then
+                    let code = match lastExitCode with Some c -> string c | None -> "?"
+                    return Some (Error (sprintf "exited (code %s) during the warm-up search" code))
+                  else return None
+                elif line.StartsWith "bestmove" then return Some (Ok line)
+                // Same early exit as WaitForReadyOk: Ceres after a refused net stays alive
+                // but will never search, so do not sit out the timeout.
+                elif isFatalInitLine line then
+                  return Some (Error (sprintf "reported a fatal initialization error: %s" line))
+                else return! loop () }
+            loop () |> Async.RunSynchronously
+          let fail reason =
+            readyFailure <- reason
+            logCritical (sprintf "Engine %s: %s" name reason)
+          write "position startpos"
+          write "go nodes 1"
+          match readUntilBestmove timeoutMs with
+          | Some (Ok line) ->
+              printfn "Engine %s warm-up: %s after %d ms" name line sw.ElapsedMilliseconds
+              true
+          | Some (Error reason) ->
+              // No search is running, so there is nothing to stop or drain.
+              fail reason
+              false
+          | None ->
+              logCritical (sprintf "Engine %s: no bestmove within %d ms of the warm-up search" name timeoutMs)
+              // A search that is still running would answer into the first game: stop it and
+              // consume its bestmove here. An engine that has died has nothing left to drain.
+              if not (this.HasExited()) then
+                write "stop"
+                match readUntilBestmove 10000 with
+                | Some (Ok _) -> ()
+                | Some (Error reason) -> fail reason
+                | None ->
+                    logCritical (sprintf "Engine %s: no bestmove after stop of the warm-up search" name)
+              false
+
+      /// The UCI steps before a game, shared by the console pool (EngineHelper.initEngine) and
+      /// the GUI (GameInitialization): the once-per-process warm-up, then ucinewgame + isready.
+      /// The warm-up gets at least the 12-minute default, since a first TensorRT build can take
+      /// longer and a timed-out warm-up is not retried. The isready wait runs whether or not the
+      /// warm-up got its bestmove, unless it failed fatally (exit, fatal init line): then no
+      /// readyok will come. False leaves the reason in ReadyFailure. Winboard engines are left
+      /// alone, their init is the protocol handler's.
+      member this.PrepareNewGame(?readyTimeoutMs: int) =
+        if winboardHandler.IsSome then true
+        else
+          let readyTimeoutMs = defaultArg readyTimeoutMs defaultTimeoutMs
+          if not (this.WarmUp(max defaultTimeoutMs readyTimeoutMs)) && readyFailure <> "" then false
+          else
+            this.UciNewGame()
+            this.WaitForReadyOk(readyTimeoutMs)
       member this.IsRunning
         with get () = isRunning
         and set (v) = isRunning <- v
@@ -1721,9 +1809,13 @@ module EngineHelper =
         engine.StartProcess()      
       let ok = engine.WaitForReadyOk() // wait for readyok
       if not ok then
-          failwith "Engine did not respond to isready command."            
+          failwith "Engine did not respond to isready command."
       else
           printfn "Engine %s isready" engine.Name
+          // Console tournaments init each pooled engine only here, so the network must be
+          // loaded here too, before any clock runs (see ChessEngine.PrepareNewGame).
+          if not (engine.PrepareNewGame()) then
+            failwithf "Engine %s not ready after the warm-up search: %s" engine.Name engine.ReadyFailure
     } |> Async.RunSynchronously
 
   let initEngines delay (engine1: ChessEngine) (engine2: ChessEngine) =

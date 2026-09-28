@@ -131,7 +131,9 @@ let playEPDEntryPositions (logger:ILogger) (tourny:Tournament) (positions:ChessL
         board.ResetBoardState()
         board.LoadFen(pos.FEN)
         logger.LogInformation("{position}", pos.FEN)
-        let fenPos = sprintf "position fen %s" pos.FEN
+        // pos.FEN is the EPD as read (4 fields when the counters are missing); the engine gets
+        // the UCI form, see Board.UciFen.
+        let fenPos = sprintf "position fen %s" (Board.UciFen pos.FEN)
         let engine1, _ =
           if i % 2 = 1 then
             engine1, engine2

@@ -524,14 +524,12 @@ let parallelTournamentRun
                   if engine.HasExited() then
                       logger.LogWarning($"Engine {engine.Name} has exited, attempting restart")
                       try
-                          engine.StartProcess()
-                          let ok = engine.WaitForReadyOk() // Wait for "readyok" response
-                          if ok then
-                              logger.LogCritical($"Successfully restarted engine {engine.Name}")
-                              return true
-                          else
-                              logger.LogCritical($"Not able to restart engine {engine.Name}")
-                              return false
+                          // The same init as the pool's first start, warm-up included: pooled
+                          // engines skip per-game init, so this is the only place the new
+                          // process can load its network before a clock runs. Throws on failure.
+                          EngineHelper.initEngine 0 engine
+                          logger.LogCritical($"Successfully restarted engine {engine.Name}")
+                          return true
                       with
                       | ex ->
                           logger.LogCritical(ex, $"Exception restarting engine {engine.Name}")
