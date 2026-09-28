@@ -579,9 +579,9 @@ let ``Tournament WaitForReadyOk is true for a ready engine and fails at once for
         let sw = Stopwatch.StartNew()
         Assert.False(eng2.WaitForReadyOk())
         Assert.True(sw.ElapsedMilliseconds < 5000L)
-        // The wording depends on a race: stdout can close before HasExited turns true.
-        Assert.True(eng2.ReadyFailure.StartsWith "exited" || eng2.ReadyFailure = "output closed while waiting for readyok",
-                    eng2.ReadyFailure)
+        // The exit is named, with its code, even when stdout closes before the process is seen to
+        // exit (the rewrite waits for the exit instead of reporting "output closed").
+        Assert.Equal("exited (code 2) while waiting for readyok", eng2.ReadyFailure)
     finally stopTournament eng2
 
 [<Fact>]
@@ -623,11 +623,9 @@ let ``Tournament WarmUp on an engine that dies reports the exit`` () =
     let eng = startTournament (config log "" [ "FakeCrashOnGo", box true ])
     try
         Assert.False(eng.WarmUp 5000)
-        // A race in the current code: if stdout closes before HasExited turns true, the read
-        // counts as a timeout, which sets no reason, so ReadyFailure can stay empty. Seen on
-        // Linux. The rewrite should wait for the exit on end-of-stream and always say why.
-        let r = eng.ReadyFailure
-        Assert.True(r = "" || (r.StartsWith "exited (code " && r.EndsWith ") during the warm-up search"), r)
+        // Always a reason, with the exit code. Before the rewrite, a closed stdout seen ahead of
+        // the exit counted as a timeout and left ReadyFailure empty (seen on Linux).
+        Assert.Equal("exited (code 3) during the warm-up search", eng.ReadyFailure)
         // Either way the next game cannot start.
         Assert.False(eng.PrepareNewGame())
     finally stopTournament eng
