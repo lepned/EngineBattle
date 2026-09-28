@@ -1449,7 +1449,8 @@
                     // position and would fill the PV table just cleared for the new one.
                     // Same attribution as bestmove and the live stats.
                     var statusSearchFen = lastStartedSearchFen;
-                    if (ChessBoard != null
+                    if (!UpdatesFromHost
+                        && ChessBoard != null
                         && !string.IsNullOrEmpty(statusSearchFen)
                         && !string.Equals(statusSearchFen, ChessBoard.FEN(), StringComparison.Ordinal))
                         break;
@@ -1478,7 +1479,8 @@
                         // position - the previous side's candidate moves under the new FEN.
                         // Same attribution the bestmove case does with pendingSearchFens.
                         var statsFen = lastStartedSearchFen ?? fen;
-                        var staleStats = ChessBoard != null
+                        var staleStats = !UpdatesFromHost
+                            && ChessBoard != null
                             && !string.IsNullOrEmpty(statsFen)
                             && !string.Equals(statsFen, ChessBoard.FEN(), StringComparison.Ordinal);
                         var fresh = n.NNSeq.ToList();
@@ -2123,6 +2125,14 @@
     // The position of the search started last: what live stats arriving now belong to. The
     // engine's final root stats come after `stop`, by which time the board may have moved on.
     private volatile string lastStartedSearchFen;
+
+    // The updates come from the host's own search, not the panel's: Game Review runs its engine
+    // through the panel while it reviews. It shows each searched position without moving
+    // ChessBoard (which holds the whole game, so its FEN is the final position), so comparing a
+    // search position with ChessBoard.FEN() would call every stats set stale - the live move
+    // stats table stayed empty through a review. The host searches one position at a time, so
+    // its updates are not dropped.
+    private bool UpdatesFromHost => IsReviewing;
 
     private void NoteSearchStarted(string searchFen)
     {
