@@ -84,6 +84,7 @@
 
 		<!-- Board (depends on types, MoveGeneration, LowLevelUtilities) -->
 		<Compile Include="Chess\MaterialRules.fs" />
+		<Compile Include="Chess\VariationGraph.fs" />
 		<Compile Include="Chess\Board.fs" />
 		<Compile Include="Chess\BoardUtils.fs" />
 		<Compile Include="Chess\SvgPieceDefs.fs" />

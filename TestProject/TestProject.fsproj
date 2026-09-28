@@ -57,6 +57,8 @@
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
+		<Compile Include="BoardApiSurfaceTests.fs" />
+		<Compile Include="BoardCharacterizationTests.fs" />
 		<Compile Include="EngineProtocolParserTests.fs" />
 		<Compile Include="WinboardThinkingCacheTests.fs" />
 		<Compile Include="AnalysisOutputTests.fs" />
@@ -82,6 +84,7 @@
 		<None Include="TestData\lichess_pgn_LeelaPieceOddsFRC.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\lichess_shapes_study.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\EngineApi.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\BoardApi.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\InfoLinesCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\AnalysisOutput\*.txt" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />

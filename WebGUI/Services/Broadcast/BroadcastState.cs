@@ -30,7 +30,7 @@ namespace WebGUI.Services.Broadcast
         public string WhiteClock { get; set; } = "";
         public string BlackClock { get; set; } = "";
         public string RawPgn { get; set; } = "";
-        /// <summary>Parsed PGN of the latest update (for board replay, e.g. PlayPgnToPly).</summary>
+        /// <summary>Parsed PGN of the latest update (for board replay, e.g. LoadPGNGameWithVariations).</summary>
         public PGNTypes.PgnGame? Parsed { get; set; }
         public DateTime LastUpdateUtc { get; set; }
         /// <summary>When the last new move arrived (unlike LastUpdateUtc, tag-only updates

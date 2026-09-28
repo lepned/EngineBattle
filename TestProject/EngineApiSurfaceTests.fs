@@ -39,7 +39,8 @@ let private describeMember (m: MemberInfo) =
         Some (sprintf "  %sprop %s : %s { %s }" static' p.Name (typeName p.PropertyType) (acc.Trim()))
     | _ -> None
 
-let rec private describeType (t: Type) : string list =
+/// Also used by the Board surface test.
+let rec describeType (t: Type) : string list =
     let header = sprintf "type %s" (typeName t)
     let members =
         t.GetMembers(flags)
