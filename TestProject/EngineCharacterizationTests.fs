@@ -1097,3 +1097,80 @@ let ``Winboard analysis: infinite search is analyze, stop is exit, a timed searc
         Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
         Assert.Equal("e2e4", (bestMoves updates).[0].Move)
     finally quitAnalysis eng
+
+// ── Pondering ───────────────────────────────────────────────────────────────────────────────────
+// GameExecution.playWithPondering drives these calls; the hit/miss decision is its own. What
+// Engine.fs owns is the traffic: the pondered position, "go ... ponder", then either "ponderhit"
+// (hit) or "stop" (miss), and the lines the caller reads back in between.
+
+let private ponderGo = "go wtime 60000 btime 60000 winc 1000 binc 1000 ponder"
+
+/// Lines readable within `ms` - the caller's view of what the engine sent meanwhile.
+let private readFor (eng: ChessEngine) (ms: int) =
+    let lines = ResizeArray<string>()
+    use cts = new CancellationTokenSource(ms)
+    let mutable fin = false
+    while not fin do
+        let l = eng.ReadLineAsyncWithTimeout(cts.Token).Result
+        if isNull l then fin <- true else lines.Add l
+    lines.ToArray()
+
+[<Fact>]
+let ``Ponder hit: no bestmove before ponderhit, then the search answers`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = synced log eng.Write |> Array.length
+        // White pondered on 1...e5 after its 1.e4: the position with the expected reply played.
+        eng.Position "position startpos moves e2e4 e7e5"
+        eng.GoPonder ponderGo
+        let whilePondering = readFor eng 400
+        Assert.Equal(3, whilePondering |> Array.filter (fun l -> l.StartsWith "info depth") |> Array.length)
+        Assert.DoesNotContain(whilePondering, fun l -> l.StartsWith "bestmove")
+        eng.PonderHit()
+        let after = readUntil eng "bestmove"
+        Assert.Equal("bestmove g1f3 ponder b8c6", Array.last after)
+        Assert.Equal<string[]>(
+            [| "position startpos moves e2e4 e7e5"; ponderGo; "ponderhit" |],
+            synced log eng.Write |> Array.skip before)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Ponder miss: stop brings one stale bestmove, which the caller reads before the real search`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = synced log eng.Write |> Array.length
+        eng.Position "position startpos moves e2e4 e7e5"
+        eng.GoPonder ponderGo
+        readFor eng 300 |> ignore
+        // The opponent played 1...c5 instead: stop pondering, then search the real position.
+        eng.Stop()
+        let stale = readUntil eng "bestmove"
+        Assert.Equal("bestmove g1f3 ponder b8c6", Array.last stale)
+        eng.Position "position startpos moves e2e4"
+        eng.Go(UnionType.WithIncrement (TimeSpan.FromSeconds 60.0, TimeSpan.FromSeconds 1.0), TimeSpan.FromSeconds 60.0, TimeSpan.FromSeconds 60.0)
+        let real = readUntil eng "bestmove"
+        Assert.Equal("bestmove e7e5 ponder g1f3", Array.last real)
+        Assert.Equal<string[]>(
+            [| "position startpos moves e2e4 e7e5"; ponderGo; "stop"
+               "position startpos moves e2e4"; "go wtime 60000 btime 60000 winc 1000 binc 1000" |],
+            synced log eng.Write |> Array.skip before)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard has no ponder: go ponder becomes a plain go and ponderhit is dropped`` () =
+    // A quirk worth knowing before anyone turns AllowPondering on with a Winboard engine: the
+    // "ponder" is lost, so the engine searches (and moves) for the side to move on its board,
+    // and ponderhit never reaches it.
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [ "FakeInfinite", box true ] None)
+    try
+        let before = syncedWb log eng.Write |> Array.length
+        eng.GoPonder ponderGo
+        eng.PonderHit()
+        eng.Stop()
+        Assert.Equal<string[]>(
+            [| "level 0 1 1"; "time 6000"; "otim 6000"; "go"; "?" |],
+            syncedWb log eng.Write |> Array.skip before)
+    finally stopTournament eng

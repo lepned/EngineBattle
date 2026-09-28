@@ -10,6 +10,7 @@
 // It plays no chess. Moves come from a fixed legal game (Line below): after "position startpos
 // moves <prefix of Line>" the reply is the next move of Line and the PV the few after it. For any
 // other position the reply is the FakeBestMove option, which the test sets to a move legal there.
+// "go ... ponder" searches until "ponderhit" (then answers FakeGoDelayMs later) or "stop".
 //
 // Arguments:
 //   --log PATH          append every received line to PATH (or set FAKEUCI_LOG); the first line
@@ -122,7 +123,12 @@ static class FakeUciEngine
                 case "position": Position(cmd); break;
                 case "go": Go(cmd); break;
                 case "stop": StopSearch(); break;
-                case "ponderhit": break;
+                case "ponderhit":
+                    // The pondered move was played: the search goes on as a normal one and
+                    // answers FakeGoDelayMs later.
+                    _ponderHitUntil = DateTime.UtcNow.AddMilliseconds(Int("FakeGoDelayMs"));
+                    _ponderHit = true;
+                    break;
                 case "quit":
                     if (Bool("FakeIgnoreQuit")) break;
                     StopSearch();
@@ -342,13 +348,18 @@ static class FakeUciEngine
         if (Bool("FakeCrashOnGo")) { Err("fake crash in search"); Environment.Exit(3); }
         var cts = new CancellationTokenSource();
         _searchCts = cts;
-        bool infinite = Bool("FakeInfinite") || cmd.Contains(" infinite") || cmd.Contains(" ponder");
+        bool infinite = Bool("FakeInfinite") || cmd.Contains(" infinite");
+        bool ponder = cmd.Contains(" ponder");
+        _ponderHit = false;
         int delay = Int("FakeGoDelayMs");
         if (!_firstGoDone) { delay += Int("FakeFirstGoDelayMs"); _firstGoDone = true; }
-        _search = Task.Run(() => Search(cts.Token, infinite, delay));
+        _search = Task.Run(() => Search(cts.Token, infinite, ponder, delay));
     }
 
-    static void Search(CancellationToken token, bool infinite, int delayMs)
+    static volatile bool _ponderHit;
+    static DateTime _ponderHitUntil;
+
+    static void Search(CancellationToken token, bool infinite, bool ponder, int delayMs)
     {
         var (best, pv) = Plan();
         int multiPv = Math.Max(1, Int("MultiPV"));
@@ -374,8 +385,12 @@ static class FakeUciEngine
             Out("info string node  (  20) N:    1000 (+ 0) (P: 100.0%) (WL:  0.09000) (D: 0.300) (M: 60.0) (Q:  0.09000) (V:  0.0800)");
         }
         // Wait out the delay, or for "stop" when searching infinitely; stop always ends the wait.
+        // A ponder search waits for ponderhit (then the delay) or stop.
         var until = DateTime.UtcNow.AddMilliseconds(delayMs);
-        while (!token.IsCancellationRequested && (infinite || DateTime.UtcNow < until)) Thread.Sleep(2);
+        bool Waiting() =>
+            ponder ? !_ponderHit || DateTime.UtcNow < _ponderHitUntil
+                   : infinite || DateTime.UtcNow < until;
+        while (!token.IsCancellationRequested && Waiting()) Thread.Sleep(2);
         if (Bool("FakeBestMoveNone")) { Out("bestmove (none)"); return; }
         Out(pv.Length > 1 ? $"bestmove {best} ponder {pv[1]}" : $"bestmove {best}");
     }
