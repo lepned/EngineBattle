@@ -57,6 +57,7 @@
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
+		<Compile Include="EngineProtocolParserTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
@@ -79,6 +80,7 @@
 		<None Include="TestData\lichess_pgn_LeelaPieceOddsFRC.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\lichess_shapes_study.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\EngineApi.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\InfoLinesCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
