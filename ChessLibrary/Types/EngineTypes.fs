@@ -475,14 +475,24 @@ module EngineTypes =
               if clock then (two i * 3600L + two (i + 3) * 60L + two (i + 6)) * 1000L
               else fst (readDigits line i 18)
 
-        /// `s=(\d+\s*(kN/s|N/s)?)` for plain digits; a space or a unit after them goes to the regex.
+        /// The regex's \s on ASCII (and the whitespace Int64.Parse allows at the end).
+        let inline private isRegexSpace (c: char) = c = ' ' || (c >= '\009' && c <= '\013')
+
+        /// `s=(\d+\s*(kN/s|N/s)?)` through convertToNps: digits, then spaces, then an optional
+        /// unit; "kN/s" multiplies by 1000. A bare "N/s" made the regex version throw
+        /// (int64 "123 N/s"), so that one still goes there. TCEC and CCC write "s=125680 kN/s" on
+        /// every move; sending those to the regex (as this did at first) made their comments
+        /// slower than before.
         let private sField (line: string) =
           match findKey line "s=" ValueNone with
           | -1 -> 0L
           | i ->
               let v, j = readDigits line i 18
-              if j < line.Length && (Char.IsWhiteSpace line.[j] || line.[j] = 'k' || line.[j] = 'N') then raise Decline
-              v
+              let mutable k = j
+              while k < line.Length && isRegexSpace line.[k] do k <- k + 1
+              if String.CompareOrdinal(line, k, "kN/s", 0, 4) = 0 then v * 1000L
+              elif String.CompareOrdinal(line, k, "N/s", 0, 3) = 0 then raise Decline
+              else v
 
         /// `wv=(-?\d+(\.\d*)?|-M\d*|M\d*)` through parseEvalToken; ValueNone when no occurrence
         /// fits (then the comment is not in EB's format).
@@ -546,5 +556,8 @@ module EngineTypes =
             try
               match fastEngineStatData player line with
               | ValueSome stat -> stat
+              // No eval in EB's form and not a single digit ("book", "Book exit"): every other
+              // format needs a digit, so the regex version would find nothing either.
+              | ValueNone when line.AsSpan().IndexOfAnyInRange('0', '9') < 0 -> { EngineMoveStat.Empty with Player = player }
               | ValueNone -> legacyGetEngineStatData player isBlack line
             with Decline -> legacyGetEngineStatData player isBlack line

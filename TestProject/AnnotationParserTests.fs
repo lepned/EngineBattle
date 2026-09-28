@@ -1,9 +1,10 @@
 /// The fast move-comment parser (EngineTypes.Annotation.getEngineStatData) must answer exactly as
 /// the regex version it replaced - kept as legacyGetEngineStatData for that reason. Both run over
-/// TestData/CommentCorpus.txt (250 real comments from EB, Ceres, Banksia and lichess PGNs: every
-/// comment shape in 711k collected, plus a fixed random spread) and over hand-made edge cases for
-/// the regexes' quirks. Where the old version threw, the new one must throw the same exception
-/// type. On the full 711k comments: 0 differences, 1.51 -> 0.28 us and 5.9 KB -> 0.4 KB a comment.
+/// TestData/CommentCorpus.txt (real comments: every shape in 711k from EB, Ceres, Banksia and
+/// lichess PGNs and in 2.8M from TCEC and CCC, plus a fixed random spread) and over hand-made
+/// edge cases for the regexes' quirks. Where the old version threw, the new one must throw the
+/// same exception type. On all 3.5M comments: 0 differences; EB comments 1.51 -> 0.28 us and
+/// 5.9 KB -> 0.4 KB, TCEC/CCC 1.09 -> 0.29 us.
 module AnnotationParserTests
 
 open System
@@ -25,7 +26,7 @@ let private assertSame (line: string) =
 let ``Fast comment parser matches the regex parser on real PGN comments`` () =
     let path = Path.Combine(AppContext.BaseDirectory, "TestData", "CommentCorpus.txt")
     let lines = File.ReadAllLines path |> Array.filter (fun l -> l <> "")
-    Assert.True(lines.Length >= 250)
+    Assert.True(lines.Length >= 260)
     for line in lines do assertSame line
 
 [<Theory>]
@@ -63,6 +64,14 @@ let ``Fast comment parser matches the regex parser on real PGN comments`` () =
 [<InlineData("wv=1, s=123kN/s")>]
 [<InlineData("wv=1, s=123 N/s")>]
 [<InlineData("wv=1, s=123 , n=5")>]
+[<InlineData("+1.17/27 3.0s, ev=1.17, d=27, pd=Bxf3, mt=00:00:02, tl=00:00:58, s=125680 kN/s, n=371384518, pv=h3 Bxf3, tb=0, R50=49, wv=1.17")>]  // TCEC/CCC
+[<InlineData("-M2/2 0.014s, ev=-M2, d=2, pd=Qa8#, mt=00:00:00, tl=00:00:13, s=27 kN/s, n=388, pv=Kg8 Qa8#, tb=0, R50=46, wv=M2")>]
+[<InlineData("wv=1, s=5 \t kN/s")>]
+[<InlineData("wv=1, s=5 kN/sec")>]
+[<InlineData("wv=1, s=99999999999999999 kN/s")>]   // the regex version's * 1000 wraps; so must this
+[<InlineData("book")>]
+[<InlineData("Book exit")>]
+[<InlineData("wv=M")>]                                // no digit, but EB's form
 // numbers too long for the fast path
 [<InlineData("wv=1, d=99999999999")>]
 [<InlineData("wv=1, d=2147483647")>]
