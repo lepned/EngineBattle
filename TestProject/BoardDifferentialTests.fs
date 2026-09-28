@@ -131,8 +131,9 @@ let private fenPool =
        "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"                                          // stalemate
        "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"      // Chess960
        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3"                // 4-field EPD
-       "r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 7"
-       "8/8/8/4k3/8/8/4K3/7R w - - 0 600" |]                                      // fullmove 600
+       "r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 7" |]
+// Not in the pool: a FEN with a high move number, which the old board could not load
+// (BoardCharacterizationTests covers it) - here it would only end sequences early.
 
 let private pgnPool =
     lazy (
@@ -245,7 +246,7 @@ let private nextStep (rnd: Random) (reference: obj) (visited: ResizeArray<string
         step (sprintf "PlayCommands from %s" fen) (fun b -> call b "PlayCommands" [| box (sprintf "position fen %s" fen) |])
     elif roll < 91 && legal.Length > 0 then
         let uci, _ = pick legal
-        step (sprintf "PlayFenWithMoves %s %s" fenNow uci) (fun b -> call b "PlayFenWithMoves" [| box (sprintf "position fen %s moves %s" fenNow uci) |])
+        step (sprintf "PlayFenWithMoves %s %s" fenNow uci) (fun b -> call b "PlayFenWithMoves" [| box (sprintf "%s moves %s" fenNow uci) |])
     elif roll < 92 && legal.Length > 0 then
         let uci, _ = pick legal
         step (sprintf "PlayPVLine %s from %s" uci fenNow) (fun b -> call b "PlayPVLine" [| box (Seq.singleton uci); box fenNow |])
@@ -262,13 +263,44 @@ let private nextStep (rnd: Random) (reference: obj) (visited: ResizeArray<string
         let fen = pick (visited.ToArray())
         step (sprintf "GetMoveHistoryToCurrentFen %s" fen) (fun b -> call b "GetMoveHistoryToCurrentFen" [| box fen |])
     else
-        step "UndoMove" (fun b -> call b "UndoMove" [||])
+        // No bare UndoMove: at the start it breaks the old board's history (see `run`), which
+        // ended a fifth of the sequences early; the probe above covers UndoMove.
+        step "EndCurrentVariation" (fun b -> call b "EndCurrentVariation" [||])
 
 // ── Deliberate differences ──────────────────────────────────────────────────────────────────────
 
-/// Views the rewrite is allowed to show differently after a given step history, and why. Empty
-/// until the rewrite fixes something on purpose.
-let private expectedDivergence (_history: string list) (_view: string) = false
+/// A step the reference board threw on is logged with this mark.
+let private threw = " [threw]"
+
+/// Steps that start the game afresh: hash keys and the repetition start are reset on both boards.
+/// Not when the step threw - a reset can fail halfway, the old repetition start still in place.
+let private resetsGame (step: string) =
+    not (step.EndsWith(threw, StringComparison.Ordinal))
+    && ([ "ResetBoardState"; "PlayCommands"; "PlayFenWithMoves"; "PlayPVLine"; "LoadPGNGameWithVariations"; "LoadMoveHistoryWithVariations" ]
+        |> List.exists (fun p -> step.StartsWith(p, StringComparison.Ordinal)))
+
+/// Steps that move the graph cursor to another position (the two loaders do it for every
+/// variation).
+let private movesCursor (step: string) =
+    [ "LoadFen"; "JumpToHash"; "TryGetPreviousMoveAndFen"; "TryGetNextMoveAndFen"; "RemoveVariation"
+      "LoadPGNGameWithVariations"; "LoadMoveHistoryWithVariations" ]
+    |> List.exists (fun p -> step.StartsWith(p, StringComparison.Ordinal))
+
+/// Views the rewrite is allowed to show differently after a given step history, and why.
+///
+/// The hash keys and what is counted from them. The old board kept the hash of every position
+/// ever reached, so a line taken back (the GUI loads the earlier position) still counted towards
+/// threefold. The new board's hash keys follow the line to the cursor when the cursor moves, as
+/// MovesAndFenPlayed always did - so after a cursor move since the game last started afresh they
+/// differ, by design. BoardCharacterizationTests pins the new behaviour.
+let private expectedDivergence (history: string list) (view: string) =
+    (view = "HashKeys" || view = "RepetitionNr" || view = "ClaimThreeFoldRep")
+    && (// From the last fresh start on (a loader is both: it starts afresh, then moves the cursor).
+        let sinceStart =
+            match List.tryFindIndexBack resetsGame history with
+            | Some i -> List.skip i history
+            | None -> history
+        sinceStart |> List.exists movesCursor)
 
 // ── The comparison ──────────────────────────────────────────────────────────────────────────────
 
@@ -289,12 +321,21 @@ let private run (makeReference: unit -> obj) (makeCandidate: unit -> obj) (seed:
         for (view, a), (_, b) in List.zip s1 s2 do
             if a <> b && not (expectedDivergence (List.ofSeq history) view) then fail view a b
     compare "start" "" ""
+    let mutable stopped = false
     for _ in 1 .. steps do
+      if not stopped then
         let step = nextStep rnd reference visited
         history.Add step.Name
         let r1 = describeResult (step.Run reference)
         let r2 = describeResult (step.Run candidate)
-        compare step.Name r1 r2
+        if r1.StartsWith("EXCEPTION", StringComparison.Ordinal) then history.[history.Count - 1] <- step.Name + threw
+        // An IndexOutOfRangeException from the old board is its position history broken: the
+        // fixed 1,000 entries overflowed (a FEN with a high move number, a long game with
+        // variations - the new board grows instead), or an UndoMove went past the start, after
+        // which every move throws on both boards, each leaving different half-made updates.
+        // Nothing after it is worth comparing, so the sequence ends there.
+        if r1 = "EXCEPTION IndexOutOfRangeException" then stopped <- true
+        else compare step.Name r1 r2
         match call reference "FEN" [||] with
         | Ok f -> visited.Add(string f)
         | _ -> ()

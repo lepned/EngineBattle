@@ -11,6 +11,8 @@ open Xunit
 open ChessLibrary
 open ChessLibrary.Chess
 open ChessLibrary.BoardUtils
+open ChessLibrary.ChessUtilities
+open ChessLibrary.RuntimeUtilities
 
 let private start = startPos
 
@@ -134,39 +136,72 @@ let ``QUIRK: PlayUciMove after PlayOpeningMove rebuilds the move lists from the 
     Assert.Equal(sprintf "position fen %s moves g1f3" start, board.PositionWithMoves())
     Assert.Equal(3, board.HashKeys.Count)
 
-// ── Bugs the rewrite fixes ──────────────────────────────────────────────────────────────────────
+// ── Bugs the rewrite fixed (pinned as they were in ea09382, turned round with the fix) ─────────
 
 [<Fact>]
-let ``BUG: plies across FEN reloads are counted into one 1,000-entry history`` () =
+let ``Plies across FEN reloads no longer overflow the history`` () =
     // Game Review rebuilds a reviewed game with LoadPGNGameWithVariations, which reloads a FEN
-    // before every variation; once mainline and variations passed 1,000 plies together it crashed.
+    // before every variation; once mainline and variations passed 1,000 plies together the old
+    // board threw IndexOutOfRangeException. The history now grows.
     let board = Board()
     board.ResetBoardState()
-    let mutable played = 0
-    let ex =
-        Record.Exception(fun () ->
-            while played < 1500 do
-                board.LoadFen start
-                board.PlayUciMove "e2e4"
-                played <- played + 1)
-    Assert.IsType<IndexOutOfRangeException>(ex) |> ignore
-    Assert.Equal(1000, played)
+    for _ in 1 .. 1500 do
+        board.LoadFen start
+        board.PlayUciMove "e2e4"
+    Assert.Equal("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", board.FEN())
 
 [<Fact>]
-let ``BUG: a FEN with a high move number does not load`` () =
+let ``A FEN with a high move number loads`` () =
     let board = Board()
-    let ex = Record.Exception(fun () -> board.LoadFen "8/8/8/4k3/8/8/4K3/7R w - - 0 600")
-    Assert.IsType<IndexOutOfRangeException>(ex) |> ignore
+    board.LoadFen "8/8/8/4k3/8/8/4K3/7R w - - 0 600"
+    Assert.Equal("8/8/8/4k3/8/8/4K3/7R w - - 0 600", board.FEN())
+    board.PlayUciMove "h1h5"
+    Assert.Equal("8/8/8/4k2R/8/8/4K3/8 b - - 1 600", board.FEN())
 
 [<Fact>]
-let ``BUG: a taken-back line still counts towards threefold`` () =
-    // Play vs Engine takes a move back by loading the earlier FEN. The positions of the line taken
-    // back stay in the repetition count, so a twofold can be claimed as threefold.
+let ``A taken-back line no longer counts towards threefold`` () =
+    // Play vs Engine takes a move back by loading the earlier FEN; the old board kept counting
+    // the positions of the line taken back (3 here, and a draw claimed on a twofold).
     let board = Board()
     board.ResetBoardState()
     for uci in [ "g1f3"; "g8f6" ] do board.PlayUciMove uci
     board.LoadFen start
     for uci in [ "g1f3"; "g8f6"; "f3g1"; "f6g8"; "g1f3"; "g8f6" ] do board.PlayUciMove uci
-    // The position after Nf3 Nf6 has occurred twice in the game on the board.
+    Assert.Equal(2, board.RepetitionNr())
+    Assert.False(board.ClaimThreeFoldRep())
+    // Played on to the third occurrence, it is claimed.
+    for uci in [ "f3g1"; "f6g8"; "g1f3"; "g8f6" ] do board.PlayUciMove uci
     Assert.Equal(3, board.RepetitionNr())
     Assert.True(board.ClaimThreeFoldRep())
+
+[<Fact>]
+let ``The hash keys follow the line when the GUI steps back and forth`` () =
+    // The GUI's back button: TryGetPreviousMoveAndFen, then LoadFen of the position it returns.
+    let board = Board()
+    board.ResetBoardState()
+    for uci in [ "e2e4"; "e7e5"; "g1f3"; "b8c6" ] do board.PlayUciMove uci
+    let hashesOfLine () = board.MovesAndFenPlayed |> Seq.map (fun m -> Hash.hashBoard (BoardHelper.getPosFromFen (Some m.FenAfterMove))) |> List.ofSeq
+    for _ in 1 .. 2 do
+        match board.TryGetPreviousMoveAndFen(board.FEN()) with
+        | Some m -> board.LoadFen m.FenAfterMove
+        | None -> ()
+    Assert.Equal(2, board.HashKeys.Count)
+    Assert.Equal<uint64 list>(hashesOfLine (), List.ofSeq board.HashKeys)
+    match board.TryGetNextMoveAndFen(board.FEN()) with
+    | Some m -> board.LoadFen m.FenAfterMove
+    | None -> ()
+    Assert.Equal(3, board.HashKeys.Count)
+    Assert.Equal<uint64 list>(hashesOfLine (), List.ofSeq board.HashKeys)
+    // A new move from here is a variation, and the keys follow it.
+    board.PlayUciMove "f8c5"
+    Assert.Equal(4, board.HashKeys.Count)
+    Assert.Equal<uint64 list>(hashesOfLine (), List.ofSeq board.HashKeys)
+
+[<Fact>]
+let ``Hash keys added outside the graph are left alone`` () =
+    // A tournament's moves (MakeMove) and a puzzle probe (UndoMove) are not in the graph; loading
+    // a position afterwards does not touch the keys, as before the rewrite.
+    let board = tournamentBoard [ "e4"; "e5" ] [ "g1f3"; "b8c6" ]
+    let keys = List.ofSeq board.HashKeys
+    board.LoadFen start
+    Assert.Equal<uint64 list>(keys, List.ofSeq board.HashKeys)
