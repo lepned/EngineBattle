@@ -76,7 +76,23 @@ module Engine =
     | Some { OptionType = UciOption.UciOptionType.IdAndAuthor(_, _, value) } -> value
     | _ -> ""
 
-  let private startsWith (prefix: string) (line: string) = line.StartsWith(prefix, StringComparison.Ordinal)
+  /// Where an analysis engine is in its start-up conversation. The reader thread moves it on as
+  /// uciok and readyok arrive; a caller waiting for one of them watches it.
+  type private Handshake =
+    | AwaitingUciOk
+    | AwaitingReadyOk
+    | Running
+
+  /// The process a ChessEngine is running now, and what has been done to it. A restart makes a new
+  /// one, so a warm-up or a MoveOverheadMs sent to the old process never counts for the new one.
+  [<AllowNullLiteral>]
+  type private RunningEngine(transport: EngineProcess.Transport) =
+    member _.Transport = transport
+    member _.Process = transport.Process
+    /// The once-per-process `go nodes 1` has run (ChessEngine.WarmUp).
+    member val WarmedUp = false with get, set
+    /// The MoveOverheadMs value this process has been sent.
+    member val MoveOverheadSent : int64 option = None with get, set
 
   // ════════════════════════════════════════════════════════════════════════════════════════════
   //  The analysis wrapper: parses on the reader thread and pushes EngineUpdates
@@ -145,9 +161,7 @@ module Engine =
       // the signal whenever one of them changes (or the engine exits), so a wait ends the moment
       // the answer arrives rather than on the next poll.
       [<VolatileField>]
-      let mutable inUciResponsMode = true
-      [<VolatileField>]
-      let mutable inIsreadyMode = false
+      let mutable handshake = AwaitingUciOk
       // A fatal init line seen while waiting for uciok/readyok; ends the wait as a failure at once.
       [<VolatileField>]
       let mutable initFailure : string option = None
@@ -210,7 +224,7 @@ module Engine =
         let sw = Stopwatch.StartNew()
         let mutable result = ValueNone
         while result.IsNone do
-          let inMode = if uciMode = "uci" then inUciResponsMode else inIsreadyMode
+          let inMode = handshake = (if uciMode = "uci" then AwaitingUciOk else AwaitingReadyOk)
           if sw.ElapsedMilliseconds >= int64 timeoutMs then
             printfn "Timeout for %s" uciMode
             result <- ValueSome false
@@ -272,21 +286,21 @@ module Engine =
       /// the end of the list, while waiting for readyok everything else is dropped, and after that
       /// it is search output.
       let onEngineLine (line: string) =
-        if inUciResponsMode then
-          if line = "uciok" then
-            inUciResponsMode <- false
-            readySignal.Set()
-          else
-            UciOption.addOptionToMap optionsMap line
-        elif inIsreadyMode then
-          if line = "readyok" then
-            inIsreadyMode <- false
-            readySignal.Set()
-          elif not (isWinboard protocol) && EngineProcess.isFatalInitLine line then
-            initFailure <- Some line
-            readySignal.Set()
-        else
-          processLine line
+        match handshake with
+        | AwaitingUciOk ->
+            if line = "uciok" then
+              handshake <- Running
+              readySignal.Set()
+            else
+              UciOption.addOptionToMap optionsMap line
+        | AwaitingReadyOk ->
+            if line = "readyok" then
+              handshake <- Running
+              readySignal.Set()
+            elif not (isWinboard protocol) && EngineProcess.isFatalInitLine line then
+              initFailure <- Some line
+              readySignal.Set()
+        | Running -> processLine line
 
       let write (s: string) =
         if engineProcess.HasExited then
@@ -365,7 +379,7 @@ module Engine =
               logInformation $"[{name}] Winboard init wait completed in {waitTime}ms, success={initSuccess}"
               if not initSuccess then failwith "Winboard engine did not initialize properly."
               // Winboard engines send no uciok.
-              inUciResponsMode <- false
+              handshake <- Running
               for cmd in handler.GetPostInitCommands() do
                 logDebug $"[{name}] Sending post-init command: {cmd}"
                 transport.WriteLine cmd
@@ -403,7 +417,7 @@ module Engine =
           // Winboard engines need no handshake after initialization.
           if not (isWinboard protocol) then
             readySignal.Reset()
-            inIsreadyMode <- true
+            handshake <- AwaitingReadyOk
             write "isready"
             let ok = waitForInitialization (int (TimeSpan.FromHours(2).TotalMilliseconds)) "readyok"
             if not ok then
@@ -469,7 +483,7 @@ module Engine =
             | Winboard _ -> true
             | Uci ->
                 readySignal.Reset()
-                inIsreadyMode <- true
+                handshake <- AwaitingReadyOk
                 write "isready"
                 waitForInitialization (defaultArg timeoutMs (int (TimeSpan.FromHours(2).TotalMilliseconds))) "readyok"
 
@@ -591,7 +605,6 @@ module Engine =
       let protocol = protocolFor config logger
       let optionsMap = Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)
       let benchMarkLC0Cmd = Engine.createLC0BenchmarkString config
-      let mutable proc = defaultof<Process>
       let commands = ResizeArray<string>()
       let nonDefaultValues = Dictionary<string, (string * string)>()
       let stderr = EngineProcess.StderrRing()
@@ -605,16 +618,9 @@ module Engine =
       // Why the last WaitForReadyOk or WarmUp failed ("" after a successful one). Callers (cmp,
       // analyze) have no logger, so the reason travels with the engine.
       let mutable readyFailure = ""
-      // The process WarmUp last ran against. A restarted engine is a new Process object and warms
-      // up again; the object, not the OS pid, because Windows can reuse a pid.
-      let mutable warmedProc : Process = null
-      // The process and value SetMoveOverhead last sent; a restarted engine is sent it again.
-      let mutable moveOverheadSentTo : Process = null
-      let mutable moveOverheadSent = -1L
-      // The running process. Replaced on every StartProcess; the stderr history and the exit code
-      // above outlive it.
-      let mutable transport : EngineProcess.Transport = null
-
+      // The running process and what has been done to it; null until the first start.
+      let mutable running : RunningEngine = null
+      let proc () = if isNull running then null else running.Process
       let assignNetworkName (option: string) =
         if isCeres && not (String.IsNullOrEmpty config.Args) then
           let ceresNet = config.Args.Split(':')
@@ -682,30 +688,29 @@ module Engine =
                       // printfn: visible even where logging is filtered.
                       else printfn "⚠️ Engine %s exited unexpectedly with code %d" name c
                   | _ -> ()))
-          transport <- t
-          proc <- t.Process
+          running <- RunningEngine t
           // Output is read by the caller (ReadLine*), not by events.
           if not (t.Start EngineProcess.Pull) then printfn "\n❌ %s could not be started" name)
         started.Wait()
 
       let hasExited () =
-        try (isNull proc) || proc.HasExited
+        try isNull running || running.Process.HasExited
         with _ -> true
 
       /// The exit code, read from the process when the Exited event has not delivered it yet.
       let exitCodeText () =
         match lastExitCode with
         | Some c -> string c
-        | None -> if isNull transport then "?" else transport.ExitCodeText()
+        | None -> if isNull running then "?" else running.Transport.ExitCodeText()
 
       /// After a read returned null: the engine closed its output, which it does as it exits. The
       /// exit can lag the closed pipe by a moment; wait for it so the reason names the exit
       /// instead of guessing (this used to report "output closed" or nothing at all on Linux).
-      let exitedAfterEndOfOutput () = not (isNull transport) && transport.ExitedAfterEndOfOutput()
+      let exitedAfterEndOfOutput () = not (isNull running) && running.Transport.ExitedAfterEndOfOutput()
 
       let write (s: string) =
         try
-          if not (isNull proc) && not proc.HasExited then
+          if not (hasExited ()) then
             match protocol with
             | Winboard _ ->
                 let logMsg = if isEnabled LogLevel.Debug then shortForLog s else ""
@@ -713,24 +718,24 @@ module Engine =
                   if isEnabled LogLevel.Debug then logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
                   let delay = preGoDelayMs config protocol cmd
                   if delay > 0 then Thread.Sleep delay
-                  transport.WriteLine cmd
+                  running.Transport.WriteLine cmd
             | Uci ->
                 if isEnabled LogLevel.Trace then logger.Value.LogTrace(sprintf "Writing to %s: %s" name s)
-                transport.WriteLine s
+                running.Transport.WriteLine s
           else
             printfn "Warning: Attempted to write to disposed engine %s" name
         with ex ->
           printfn "Error writing to engine %s: %s" name ex.Message
 
-      let read () = proc.StandardOutput.ReadLine()
-      let readAsync () = proc.StandardOutput.ReadLineAsync()
+      let read () = running.Process.StandardOutput.ReadLine()
+      let readAsync () = running.Process.StandardOutput.ReadLineAsync()
 
       /// The next line (Winboard output translated), or null on cancellation, end of stream or a
       /// read error.
       let readAsyncWithTimeout (token: CancellationToken) =
         task {
           try
-            let! line = proc.StandardOutput.ReadLineAsync(token)
+            let! line = running.Process.StandardOutput.ReadLineAsync(token)
             return inboundOrRaw protocol line
           with
           | :? OperationCanceledException -> return null
@@ -752,7 +757,7 @@ module Engine =
         try
           match protocol with
           | Winboard handler ->
-              initializeWinboard proc handler logger name 30000 (forceV1 config) |> Async.RunSynchronously
+              initializeWinboard running.Process handler logger name 30000 (forceV1 config) |> Async.RunSynchronously
           | Uci ->
               use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
               write "uci"
@@ -764,7 +769,7 @@ module Engine =
                 else
                   printfn "%s" line
                   let mutable ret = line
-                  while ret <> "uciok" && not (isNull ret) && not proc.HasExited do
+                  while ret <> "uciok" && not (isNull ret) && not running.Process.HasExited do
                     UciOption.addOptionToMap optionsMap ret
                     let! resp = readAsyncWithTimeout cts.Token |> Async.AwaitTask
                     ret <- resp
@@ -796,7 +801,7 @@ module Engine =
               | Uci -> sprintf "Engine %s did not respond to the uci command (path: %s)" name config.Path
             logCritical msg
             raise (CustomException.EngineStartupException msg)
-          if not (isNull proc) && not proc.HasExited then
+          if not (hasExited ()) then
             logDebug (sprintf "Engine %s is already running." name)
           else
             assignThread ()
@@ -853,7 +858,7 @@ module Engine =
             // mid-tournament. The started-but-mute process is killed so it does not leak, and every
             // creation path catches the exception. Option validation failures stay non-throwing.
             passed <- false
-            try if not (isNull proc) && not proc.HasExited then proc.Kill(true) with _ -> ()
+            try if not (hasExited ()) then running.Process.Kill(true) with _ -> ()
             reraise ()
         | :? OperationCanceledException ->
             passed <- false
@@ -874,7 +879,7 @@ module Engine =
       member _.GetDiagnostics() = getDiagnostics ()
       member _.GetVerifiedCommands() = createVerifiedOptions initCommands
       member _.InitCommands = initCommands
-      member _.Process = proc
+      member _.Process = proc ()
       member _.PrintNonDefaultValues = fun () -> printNonDefaultValues name config.Path nonDefaultValues
       member _.IsLc0 = isLc0
       member _.Write (s: string) = write s
@@ -926,15 +931,14 @@ module Engine =
                     if intValue >= min && intValue <= max then
                       match config.Options |> Seq.tryFind (fun e -> e.Key = optName) with
                       | Some _ -> ()   // the def sets it; leave it alone
-                      | None when obj.ReferenceEquals(moveOverheadSentTo, proc) && moveOverheadSent = intValue ->
+                      | None when running.MoveOverheadSent = Some intValue ->
                           // Already set on this process. The GUI calls this before every game, and
                           // Ceres rebuilds its TensorRT engine on each MoveOverheadMs setoption.
                           ()
                       | None ->
                           let cmd = sprintf "setoption name %s value %d" option.Name intValue
                           write cmd
-                          moveOverheadSentTo <- proc
-                          moveOverheadSent <- intValue
+                          running.MoveOverheadSent <- Some intValue
                           addCommand initialCommands cmd
                           addCommand commands cmd
                 | _ -> ()
@@ -949,8 +953,8 @@ module Engine =
       member this.StopProcess() =
         shutdownRequested <- true   // as deliberate as quit; the exit is not unexpected
         try
-          if proc.HasExited then logInformation (sprintf "Engine %s has already exited" name)
-          else terminateProcess proc 3000
+          if running.Process.HasExited then logInformation (sprintf "Engine %s has already exited" name)
+          else terminateProcess running.Process 3000
         with :? InvalidOperationException ->
           logCritical (sprintf "Engine %s: process was never started or is in a bad state — check engine path, permissions, and dependencies" name)
 
@@ -1092,9 +1096,9 @@ module Engine =
       /// ReadyFailure says why). Callers send ucinewgame + isready afterwards either way, unless
       /// ReadyFailure is set.
       member this.WarmUp(timeoutMs: int) =
-        if isWinboard protocol || this.HasExited() || obj.ReferenceEquals(warmedProc, proc) then true
+        if isWinboard protocol || this.HasExited() || running.WarmedUp then true
         else
-          warmedProc <- proc
+          running.WarmedUp <- true
           readyFailure <- ""
           let sw = Stopwatch.StartNew()
           // Some (Ok bestmove), Some (Error reason) when waiting longer is pointless, None on timeout.
