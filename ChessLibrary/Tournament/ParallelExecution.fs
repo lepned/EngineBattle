@@ -451,11 +451,10 @@ let parallelTournamentRun
       // and runs Ordo there, and the tuner's SPRT check hangs off it. GUI: every 2 games with
       // one board, what the sequential runner it replaces did, and every `concurrency` above.
       let periodicEvery = if tourny.ConsoleOnly then 10 else max 2 concurrency
-      // Per-game engine initialisation (ucinewgame + readyok, and the GUI's opening delay) is
-      // what the sequential runner this replaces did for the GUI. Pooled engines in the console
-      // and in multi-board runs skip it on purpose - Ceres and Lc0 spend ~10 s on readyok, see
-      // playGeneric - so the choice keeps every mode exactly as it was: only the GUI with one
-      // board initialises per game.
+      // Full per-game engine initialisation (MoveOverheadMs, restart checks, the GUI's opening
+      // delay) is what the sequential runner this replaces did for the GUI; only the GUI with
+      // one board gets it. Pooled engines in the console and in multi-board runs skip it but
+      // still get ucinewgame + readyok before every game, which is cheap - see playGeneric.
       let initPerGame = not tourny.ConsoleOnly && concurrency = 1
 
       if gamesLeftToPlay.Length = 0 then

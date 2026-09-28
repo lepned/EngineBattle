@@ -698,13 +698,19 @@ let playGeneric
   let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" board.IsFRC }
   player1.AddSetOption chess960Option
   player2.AddSetOption chess960Option
-  // Pooled engines (the parallel/console path) deliberately skip this. It is not an
-  // oversight that they never get `ucinewgame` between games: the command is cheap, but the
-  // `readyok` that has to follow it is not — Ceres and Lc0 spend around ten seconds
-  // rebuilding before they answer. A 500-round match at nodes=1 would spend far more time
-  // re-initialising than searching. The cost is that a pooled engine keeps its hash across
-  // games of a run; that is accepted, not overlooked.
-  if not skipEngineInit then
+  // Pooled engines (the parallel/console path) skip the full init below but still get
+  // ucinewgame + readyok before every game, so no game inherits the previous game's hash.
+  // Measured 2026-09-28 (Ceres C1-640-34 TensorRTNative, Lc0 0.33 onnx-trt): ucinewgame +
+  // isready answers in under 10 ms on both, also right after a setoption UCI_Chess960.
+  // What is expensive is a setoption MoveOverheadMs on Ceres (~20 s rebuild), which the
+  // pool never sends here, and the first search on Lc0 (network load), which the warm-up
+  // at pool init already paid.
+  if skipEngineInit then
+    for player in [ player1; player2 ] do
+      if not (player.PrepareNewGame()) then
+        raise (CustomException.EngineStartupException
+                 (sprintf "Engine %s not ready for the next game: %s" player.Name player.ReadyFailure))
+  else
     try
 
         if tourny.MoveOverhead.Ticks > 0 then
