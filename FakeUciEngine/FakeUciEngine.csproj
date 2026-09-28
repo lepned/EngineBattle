@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A scriptable UCI engine for the Engine.fs characterisation tests. No dependencies, so the
+       tests can copy it anywhere - including into a folder whose name makes EngineBattle treat it
+       as Lc0 - and run it as a real child process, the way Stockfish or Ceres run. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

@@ -55,6 +55,7 @@
 		<Compile Include="Lc0ContemptTests.fs" />
 		<Compile Include="LayoutOptionParseTests.fs" />
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
+		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
@@ -68,6 +69,8 @@
 	<ItemGroup>
 		<ProjectReference Include="..\ChessLibrary\ChessLibrary.fsproj" />
 		<ProjectReference Include="..\Console\Console.fsproj" />
+		<!-- Built and copied beside the tests: the Engine.fs characterisation tests run it as a child process. -->
+		<ProjectReference Include="..\FakeUciEngine\FakeUciEngine.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

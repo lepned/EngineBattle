@@ -1,0 +1,828 @@
+/// Characterisation tests for ChessLibrary/Engine/Engine.fs, written against the code as it stood
+/// before the rewrite (branch rewrite/engine-fs, 2026-09-28). They pin down what the two engine
+/// classes SEND to an engine and what they REPORT back, so the rewrite can be held to the same
+/// behaviour. Where a test pins a quirk rather than a design, the comment says so - those are the
+/// places to decide deliberately, not to change by accident.
+///
+/// Every test runs FakeUciEngine (a sibling project, copied beside this assembly) as a real child
+/// process: pipes, threads and timing are the real ones. The fake engine logs each line it
+/// receives, which is how the tests see what EngineBattle wrote.
+module EngineCharacterizationTests
+
+open System
+open System.Collections.Concurrent
+open System.Collections.Generic
+open System.Diagnostics
+open System.IO
+open System.Text.Json
+open System.Threading
+open Xunit
+open Microsoft.Extensions.Logging
+open Microsoft.Extensions.Logging.Abstractions
+open ChessLibrary
+open ChessLibrary.TypesDef.CoreTypes
+open ChessLibrary.EngineTypes
+open ChessLibrary.TimeControlTypes
+open ChessLibrary.Engine
+
+// ── Harness ─────────────────────────────────────────────────────────────────────────────────────
+
+let private fakeExeName = if OperatingSystem.IsWindows() then "FakeUciEngine.exe" else "FakeUciEngine"
+let private fakePath = Path.Combine(AppContext.BaseDirectory, fakeExeName)
+
+let private newLogPath () =
+    Path.Combine(Path.GetTempPath(), sprintf "fakeuci_%s.log" (Guid.NewGuid().ToString("N")))
+
+/// Everything the fake engine received, minus its "#args" header line.
+let private sent (logPath: string) =
+    if not (File.Exists logPath) then [||]
+    else
+        use fs = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite ||| FileShare.Delete)
+        use sr = new StreamReader(fs)
+        sr.ReadToEnd().Split([| '\n' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map (fun l -> l.TrimEnd('\r'))
+
+let private argsLine logPath = sent logPath |> Array.tryFind (fun l -> l.StartsWith "#args") |> Option.defaultValue ""
+let private commands logPath = sent logPath |> Array.filter (fun l -> not (l.StartsWith "#args"))
+
+let private waitUntil (timeoutMs: int) (cond: unit -> bool) =
+    let sw = Stopwatch.StartNew()
+    while not (cond ()) && sw.ElapsedMilliseconds < int64 timeoutMs do
+        Thread.Sleep 10
+    cond ()
+
+/// Waits until the fake engine has received `line` (or the timeout passes).
+let private waitForSent logPath (line: string) =
+    waitUntil 5000 (fun () -> commands logPath |> Array.contains line) |> ignore
+
+let private config (logPath: string) (extraArgs: string) (options: (string * obj) list) =
+    let opts = Dictionary<string, obj>()
+    for (k, v) in options do opts.[k] <- v
+    { EngineConfig.Empty with
+        Name = "Fake"
+        Path = fakePath
+        Args = (sprintf "--log \"%s\" %s" logPath extraArgs).Trim()
+        Options = opts }
+
+let private initCommands (cfg: EngineConfig) = EngineHelper.createInitialUCICommands cfg |> Seq.toList
+
+/// The analysis-page engine, with its updates collected.
+let private startAnalysis (cfg: EngineConfig) =
+    let updates = ConcurrentQueue<EngineUpdate>()
+    let eng = new ChessEngineWithUCIProcessing(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
+    eng, updates
+
+let private startTournament (cfg: EngineConfig) =
+    new ChessEngine(cfg, initCommands cfg, Some (NullLogger.Instance :> ILogger))
+
+let private quitAnalysis (eng: ChessEngineWithUCIProcessing) =
+    try eng.SendUCICommand UCICommand.Quit with _ -> ()
+
+/// Clean-up only: quit first so StopProcess does not sit out its three-second grace.
+let private stopTournament (eng: ChessEngine) =
+    try
+        if not (eng.HasExited()) then
+            eng.Quit()
+            eng.StopProcess()
+    with _ -> ()
+
+let private statuses (updates: ConcurrentQueue<EngineUpdate>) =
+    updates.ToArray() |> Array.choose (function Status s -> Some s | _ -> None)
+
+let private bestMoves (updates: ConcurrentQueue<EngineUpdate>) =
+    updates.ToArray() |> Array.choose (function BestMove b -> Some b | _ -> None)
+
+let private dones (updates: ConcurrentQueue<EngineUpdate>) =
+    updates.ToArray() |> Array.choose (function Done p -> Some p | _ -> None)
+
+let private hasDone updates = dones updates |> Array.isEmpty |> not
+
+let private startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+/// The form every real caller sends (Board.PositionWithMovesFromGraph): the start position
+/// spelled out as a FEN. See the startpos quirk test for why it matters.
+let private fromStart (moves: string) =
+    if moves = "" then "position fen " + startFen else sprintf "position fen %s moves %s" startFen moves
+
+// ── ChessEngineWithUCIProcessing: start-up ──────────────────────────────────────────────────────
+
+[<Fact>]
+let ``Analysis engine start-up sends uci, the config options, MoveOverheadMs 0, ucinewgame and isready`` () =
+    let log = newLogPath ()
+    let cfg = config log "" [ "Threads", box 2; "Ponder", box true ]
+    let eng, updates = startAnalysis cfg
+    try
+        Assert.Equal<string[]>(
+            [| "uci"
+               "setoption name Threads value 2"
+               "setoption name Ponder value true"
+               "setoption name MoveOverheadMs value 0"
+               "ucinewgame"
+               "isready" |],
+            commands log)
+        // Ready is reported once, at the end of start-up; the fake engine has no LogLiveStats.
+        let ready = updates.ToArray() |> Array.choose (function Ready (p, live) -> Some (p, live) | _ -> None)
+        Assert.Equal<(string * bool)[]>([| ("Fake", false) |], ready)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis engine reports HasLiveStat when the engine advertises LogLiveStats`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "--live-stats" [])
+    try
+        let ready = updates.ToArray() |> Array.choose (function Ready (_, live) -> Some live | _ -> None)
+        Assert.Equal<bool[]>([| true |], ready)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis engine writes an option the engine does not have, but keeps it out of its option dictionaries`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "NoSuchOption", box 5; "Threads", box 3 ])
+    try
+        Assert.Contains("setoption name NoSuchOption value 5", commands log)
+        Assert.False(eng.GetAllDefaultOptions().ContainsKey "NoSuchOption")
+        Assert.Equal("3", string (eng.GetAllDefaultOptions().["Threads"]))
+        Assert.True(eng.GetNoneDefaultSetOptions().ContainsKey "Threads")
+        // Options never set keep the engine's default.
+        Assert.Equal("16", string (eng.GetAllDefaultOptions().["Hash"]))
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis engine exposes the engine's options and its id name`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        let opts = eng.GetUCICommands()
+        Assert.True(opts.ContainsKey "hash")        // case-insensitive
+        Assert.True(opts.ContainsKey "Clear Hash")
+        Assert.Equal("FakeUciEngine 1.0", eng.UciIdName)
+        Assert.Equal("Fake", eng.Name)
+        Assert.False(eng.IsLc0)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis engine takes the network name from WeightsFile without its last extension`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "WeightsFile", box "C:/nets/my-net.pb.gz" ])
+    try
+        // A quirk worth knowing: only ".gz" goes, so a .pb.gz net is called "my-net.pb".
+        Assert.Equal("my-net.pb", eng.Network)
+        Assert.Equal("Fake with net: my-net.pb", eng.FullName)
+    finally quitAnalysis eng
+
+// ── ChessEngineWithUCIProcessing: search output ─────────────────────────────────────────────────
+
+[<Fact>]
+let ``Analysis search reports each info line as Status and Info, then Done before BestMove`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart "e2e4"))
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
+        let st = statuses updates
+        Assert.Equal<int[]>([| 1; 2; 3 |], st |> Array.map (fun s -> s.Depth))
+        // Black to move: the engine's cp is turned to White's point of view.
+        Assert.Equal<MiscTypes.EvalType[]>(
+            [| MiscTypes.EvalType.CP -0.20; MiscTypes.EvalType.CP -0.21; MiscTypes.EvalType.CP -0.22 |],
+            st |> Array.map (fun s -> s.Eval))
+        Assert.All(st, fun s -> Assert.Equal("Fake", s.PlayerName))
+        Assert.Equal(3000L, st.[2].Nodes)
+        Assert.Equal(150000.0, st.[2].NPS)
+        Assert.Equal(1, st.[2].MultiPV)
+        Assert.Equal("e7e5 g1f3 b8c6", st.[2].PVLongSAN)
+        Assert.Equal("1.... e5 2.Nf3 Nc6", st.[2].PV)
+        Assert.Equal(WDLType.HasValue { Win = 400.0; Draw = 450.0; Loss = 150.0 }, st.[2].WDL)
+        // The raw line travels alongside each parsed status.
+        let infos = updates.ToArray() |> Array.choose (function Info (_, l) -> Some l | _ -> None)
+        Assert.Equal(3, infos.Length)
+        Assert.StartsWith("info depth 3 seldepth 5 score cp 22", infos.[2])
+        // Done comes before BestMove.
+        let order = updates.ToArray() |> Array.choose (function Done _ -> Some "done" | BestMove _ -> Some "best" | _ -> None)
+        Assert.Equal<string[]>([| "done"; "best" |], order)
+        let bm = (bestMoves updates).[0]
+        Assert.Equal("e7e5", bm.Move)
+        Assert.Equal("g1f3", bm.Ponder)
+        Assert.Equal("e5", bm.MoveAndFen.ShortSan)
+        // A quirk: FEN and MoveAndFen.FenAfterMove hold the position BEFORE the move - the board is
+        // read without playing it - despite the field's name.
+        Assert.Equal("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", bm.FEN)
+        Assert.Equal(bm.FEN, bm.MoveAndFen.FenAfterMove)
+        Assert.Equal(MiscTypes.EvalType.CP -0.22, bm.Eval)
+        Assert.Equal(3000L, bm.Nodes)
+        Assert.Equal("1.... e5 2.Nf3 Nc6", bm.PV)
+        Assert.Equal(32, bm.PiecesLeft)
+        Assert.Contains("go nodes 100", commands log)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis PositionWithMoves ignores the moves of a startpos command internally`` () =
+    // A quirk: the wrapper's own board understands only "position fen ... moves ...". Given
+    // "position startpos moves e2e4" it stays at the start position, so the engine's reply to
+    // e2e4 is parsed from White's side and bestmove e7e5 is taken for an illegal move - no
+    // BestMove is reported. Every real caller sends the fen form, so this never shows today.
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves "position startpos moves e2e4")
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        Thread.Sleep 200
+        Assert.Contains("position startpos moves e2e4", commands log)
+        Assert.Equal(MiscTypes.EvalType.CP 0.20, (statuses updates).[0].Eval)
+        Assert.Equal("1.Nf3 Nc6", (statuses updates).[0].PV)
+        Assert.Empty(bestMoves updates)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis search keeps the last full PV when a bound line arrives`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "FakeBoundLine", box true ])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        let st = statuses updates
+        Assert.Equal(4, st.Length)
+        let bound = st.[3]
+        Assert.Equal(4, bound.Depth)
+        Assert.Equal(MiscTypes.EvalType.CP 0.99, bound.Eval)
+        // The bound line's own PV is cut to the root move; the published PV is the previous one.
+        Assert.Equal(st.[2].PV, bound.PV)
+        Assert.Equal("e2e4 e7e5 g1f3", bound.PVLongSAN)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis search with MultiPV reports a status per line`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "MultiPV", box 2; "FakeInfoCount", box 1 ])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        Assert.Equal<int[]>([| 1; 2 |], statuses updates |> Array.map (fun s -> s.MultiPV))
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis bestmove without any pv line falls back to the numbered move`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "FakeNoPv", box true ])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
+        Assert.Equal("1.e4", (bestMoves updates).[0].PV)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis bestmove (none) reports Done and no BestMove`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "FakeBestMoveNone", box true ])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        Thread.Sleep 200
+        Assert.Empty(bestMoves updates)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis move stats become one NNSeq when the node line arrives`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (config log "" [ "FakeMoveStats", box true; "FakeInfoCount", box 1 ])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand(UCICommand.GoNodes 100)
+        Assert.True(waitUntil 5000 (fun () -> hasDone updates))
+        let seqs = updates.ToArray() |> Array.choose (function NNSeq l -> Some (List.ofSeq l) | _ -> None)
+        Assert.Equal(1, seqs.Length)
+        let moves = seqs.[0]
+        // The closing "node" line is part of the sequence too, as a pseudo-move named "node".
+        Assert.Equal<string list>([ "e2e4"; "d2d4"; "node" ], moves |> List.map (fun n -> n.LANMove))
+        Assert.Equal<string list>([ "e4"; "d4" ], moves |> List.truncate 2 |> List.map (fun n -> n.SANMove))
+        Assert.Equal(900L, moves.[0].Nodes)
+        Assert.Equal(61.0, moves.[0].P)
+    finally quitAnalysis eng
+
+// ── ChessEngineWithUCIProcessing: commands ──────────────────────────────────────────────────────
+
+[<Fact>]
+let ``Analysis commands are written in UCI form`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "FakeInfinite", box true ])
+    try
+        let before = commands log |> Array.length
+        eng.SendUCICommand(UCICommand.PositionWithMoves "position startpos moves e2e4")
+        eng.SetSearchMoves [ "e7e5"; "c7c5" ]
+        eng.SendUCICommand(UCICommand.GoNodes 5)
+        eng.SendUCICommand UCICommand.Stop
+        eng.ClearSearchMoves()
+        eng.SendUCICommand(UCICommand.GoMoveTime 250)
+        eng.SendUCICommand UCICommand.Stop
+        eng.SendUCICommand UCICommand.GoInfinite
+        eng.SendUCICommand UCICommand.Stop
+        eng.SendUCICommand(UCICommand.GoTimeControl (UnionType.WithIncrement (TimeSpan.FromSeconds 60.0, TimeSpan.FromSeconds 1.0), TimeSpan.FromSeconds 30.0, TimeSpan.FromSeconds 20.0))
+        eng.SendUCICommand UCICommand.Stop
+        eng.SendUCICommand(UCICommand.GoTimeControl (UnionType.FixedTime (TimeSpan.FromSeconds 60.0), TimeSpan.FromSeconds 30.0, TimeSpan.FromSeconds 20.0))
+        eng.SendUCICommand UCICommand.Stop
+        eng.SendUCICommand UCICommand.UciNewGame
+        eng.SendUCICommand(UCICommand.RawCommand "debug off")
+        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "Hash" "32"))
+        eng.SendUCICommand(UCICommand.SetOptions [ EngineOption.Create "Threads" "2"; EngineOption.Create "Style" "Risky" ])
+        waitForSent log "setoption name Style value Risky"
+        Assert.Equal<string[]>(
+            [| "position startpos moves e2e4"
+               "go nodes 5 searchmoves e7e5 c7c5"
+               "stop"
+               "go movetime 250"
+               "stop"
+               "go infinite"
+               "stop"
+               "go wtime 30000 btime 20000 winc 1000 binc 1000"
+               "stop"
+               "go wtime 30000 btime 20000"
+               "stop"
+               "ucinewgame"
+               "debug off"
+               "setoption name Hash value 32"
+               "setoption name Threads value 2"
+               "setoption name Style value Risky" |],
+            commands log |> Array.skip before)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis position commands switch UCI_Chess960 on for an FRC position and off again`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        let before = commands log |> Array.length
+        let frc = "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"
+        eng.SendUCICommand(UCICommand.Position frc)
+        eng.SendUCICommand(UCICommand.Position "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+        // A 4-field FEN gets its counters on the way to the engine.
+        eng.SendUCICommand(UCICommand.Position "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3")
+        waitForSent log "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+        Assert.Equal<string[]>(
+            [| "setoption name UCI_Chess960 value true"
+               "position fen " + frc
+               "setoption name UCI_Chess960 value false"
+               "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+               "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1" |],
+            commands log |> Array.skip before)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis SetMoveOverhead sends only a value inside the option's range`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        let before = commands log |> Array.length
+        eng.SendUCICommand(UCICommand.SetMoveOverhead ("MoveOverheadMs", 50))
+        eng.SendUCICommand(UCICommand.SetMoveOverhead ("MoveOverheadMs", 99999))
+        eng.SendUCICommand(UCICommand.SetMoveOverhead ("NoSuchOption", 10))
+        eng.SendUCICommand(UCICommand.RawCommand "marker")
+        waitForSent log "marker"
+        Assert.Equal<string[]>([| "setoption name MoveOverheadMs value 50"; "marker" |], commands log |> Array.skip before)
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis SetAllOptions writes booleans in lower case`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        let before = commands log |> Array.length
+        let d = Dictionary<string, obj>()
+        d.["Ponder"] <- box true
+        d.["Hash"] <- box 32
+        eng.SetAllOptions d
+        waitForSent log "setoption name Hash value 32"
+        Assert.Equal<string[]>([| "setoption name Ponder value true"; "setoption name Hash value 32" |], commands log |> Array.skip before)
+        Assert.Equal("32", string (eng.GetAllDefaultOptions().["Hash"]))
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis CurrentPositionCommand reflects the last position sent`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart "e2e4 e7e5"))
+        Assert.Equal(fromStart "e2e4 e7e5", eng.CurrentPositionCommand())
+    finally quitAnalysis eng
+
+// ── ChessEngineWithUCIProcessing: readiness, stderr, exit ───────────────────────────────────────
+
+[<Fact>]
+let ``Analysis WaitForReadyOk is true for a ready engine and false at once for a fatal line or an exit`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    try
+        Assert.True(eng.WaitForReadyOk())
+        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "FakeFatalOnReady" "true"))
+        let sw = Stopwatch.StartNew()
+        Assert.False(eng.WaitForReadyOk())
+        Assert.True(sw.ElapsedMilliseconds < 5000L)
+        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "FakeFatalOnReady" "false"))
+        eng.SendUCICommand(UCICommand.SetOption (EngineOption.Create "FakeExitOnReady" "true"))
+        sw.Restart()
+        Assert.False(eng.WaitForReadyOk())
+        Assert.True(sw.ElapsedMilliseconds < 5000L)
+        Assert.True(waitUntil 5000 (fun () -> eng.HasExited))
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis keeps stderr without colour codes and reports it in the diagnostics`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "--ansi" [ "FakeStderrOnReady", box 3 ])
+    try
+        Assert.True(waitUntil 5000 (fun () -> Seq.length eng.ErrorOutput = 3))
+        Assert.Equal<string[]>([| "stderr line 1"; "stderr line 2"; "stderr line 3" |], eng.ErrorOutput |> Seq.toArray)
+        Assert.StartsWith("Engine: Fake | ExitCode: N/A | Stderr lines: 3", eng.GetDiagnostics())
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis stderr buffer keeps the newest lines and counts the dropped ones`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "FakeStderrOnReady", box 700 ])
+    try
+        // Trimmed in blocks: at 601 lines it drops back to 500, then grows again.
+        Assert.True(waitUntil 10000 (fun () -> eng.GetDiagnostics().Contains "stderr line 700"))
+        Assert.Equal(599, Seq.length eng.ErrorOutput)
+        Assert.Equal("stderr line 102", Seq.head eng.ErrorOutput)
+        Assert.Contains("(101 older lines dropped)", eng.GetDiagnostics())
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Analysis Quit ends the engine, and kills one that ignores quit`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [])
+    let quick = Stopwatch.StartNew()
+    eng.SendUCICommand UCICommand.Quit
+    Assert.Contains("quit", commands log)
+    // An engine that honours quit is gone well inside the one-second grace. The process object is
+    // disposed right after, so LastExitCode is usually never set (the Exited event is lost).
+    Assert.True(quick.ElapsedMilliseconds < 900L)
+
+    let log2 = newLogPath ()
+    let stubborn, _ = startAnalysis (config log2 "" [ "FakeIgnoreQuit", box true ])
+    let sw = Stopwatch.StartNew()
+    stubborn.SendUCICommand UCICommand.Quit
+    // Waits one second for the exit, then kills.
+    Assert.True(sw.ElapsedMilliseconds >= 900L)
+    Assert.Contains("quit", commands log2)
+
+[<Fact>]
+let ``Analysis records the exit code of an engine that dies`` () =
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "FakeCrashOnGo", box true ])
+    try
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand(UCICommand.GoNodes 1)
+        Assert.True(waitUntil 5000 (fun () -> eng.LastExitCode = Some 3))
+        Assert.True(eng.HasExited)
+        Assert.Contains("fake crash in search", eng.ErrorOutput)
+    finally quitAnalysis eng
+
+// ── ChessEngine (tournament): start-up ──────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``Tournament engine start-up sends uci and the options in the engine's own spelling, and nothing else`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "threads", box 2; "hash", box 64 ])
+    try
+        Assert.True(eng.PassedValidation)
+        Assert.Equal<string[]>([| "uci"; "setoption name Threads value 2"; "setoption name Hash value 64" |], commands log)
+        Assert.Equal<string[]>([| "setoption name Threads value 2"; "setoption name Hash value 64" |], eng.Commands.ToArray())
+        Assert.Equal<string list>([ "setoption name Threads value 2"; "setoption name Hash value 64" ], eng.GetVerifiedCommands())
+        Assert.Equal("FakeUciEngine 1.0", eng.UciIdName)
+        Assert.True(eng.CanReuseWinboard)
+        Assert.False(eng.HasExited())
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament engine fails validation for an out-of-range value or an unknown option, and still sends them`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "Threads", box 999 ])
+    try
+        Assert.False(eng.PassedValidation)
+        Assert.Contains("setoption name Threads value 999", commands log)
+    finally stopTournament eng
+    let log2 = newLogPath ()
+    let eng2 = startTournament (config log2 "" [ "NoSuchOption", box 1 ])
+    try
+        Assert.False(eng2.PassedValidation)
+        Assert.Contains("setoption name NoSuchOption value 1", commands log2)
+    finally stopTournament eng2
+
+[<Fact>]
+let ``Tournament engine created without validation still validates at creation`` () =
+    // A quirk: createEngineWithoutValidation turns validation off AFTER the constructor has run
+    // it, so an invalid option still fails. Pinned here so the rewrite decides it on purpose.
+    let log = newLogPath ()
+    let eng = EngineHelper.createEngineWithoutValidation (config log "" [ "Threads", box 999 ], None)
+    try Assert.False(eng.PassedValidation)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament engine that is not a UCI engine fails at creation and leaves no process`` () =
+    let log = newLogPath ()
+    let ex = Assert.ThrowsAny<exn>(fun () -> startTournament (config log "--exit-on-uci" []) |> ignore)
+    Assert.Contains("did not respond to the uci command", ex.Message)
+
+[<Fact>]
+let ``Tournament engine takes the network name from WeightsFile or Network`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "WeightsFile", box "C:/nets/bt4.pb.gz" ])
+    try
+        Assert.Equal("bt4.pb", eng.Network)
+        Assert.Equal("Fake with net: bt4.pb", eng.FullName)
+    finally stopTournament eng
+
+// ── ChessEngine: readiness, warm-up, new game ───────────────────────────────────────────────────
+
+[<Fact>]
+let ``Tournament WaitForReadyOk is true for a ready engine and fails at once for a fatal line or an exit`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        Assert.True(eng.WaitForReadyOk())
+        Assert.Equal("", eng.ReadyFailure)
+        eng.AddSetOption(EngineOption.Create "FakeFatalOnReady" "true")
+        let sw = Stopwatch.StartNew()
+        Assert.False(eng.WaitForReadyOk())
+        Assert.True(sw.ElapsedMilliseconds < 5000L)
+        Assert.Equal("reported a fatal initialization error: info string Cannot initialize engine: fake failure", eng.ReadyFailure)
+    finally stopTournament eng
+    let log2 = newLogPath ()
+    let eng2 = startTournament (config log2 "" [ "FakeExitOnReady", box true ])
+    try
+        let sw = Stopwatch.StartNew()
+        Assert.False(eng2.WaitForReadyOk())
+        Assert.True(sw.ElapsedMilliseconds < 5000L)
+        Assert.StartsWith("exited", eng2.ReadyFailure)
+    finally stopTournament eng2
+
+[<Fact>]
+let ``Tournament PrepareNewGame warms up once per process, then sends ucinewgame and isready`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = commands log |> Array.length
+        Assert.True(eng.PrepareNewGame())
+        Assert.True(eng.PrepareNewGame())
+        Assert.Equal<string[]>(
+            [| "position startpos"; "go nodes 1"; "ucinewgame"; "isready"; "ucinewgame"; "isready" |],
+            commands log |> Array.skip before)
+        // A restarted engine is a new process and warms up again.
+        eng.StopProcess()
+        eng.StartProcess()
+        let restartedAt = commands log |> Array.length
+        Assert.True(eng.PrepareNewGame())
+        let after = commands log |> Array.skip restartedAt
+        Assert.Equal<string[]>([| "position startpos"; "go nodes 1"; "ucinewgame"; "isready" |], after)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament WarmUp that gets no bestmove stops the search and drains its bestmove`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "FakeInfinite", box true ])
+    try
+        let before = commands log |> Array.length
+        Assert.False(eng.WarmUp 300)
+        Assert.Equal<string[]>([| "position startpos"; "go nodes 1"; "stop" |], commands log |> Array.skip before)
+        // A timeout is not a fatal failure: ReadyFailure stays empty and the next isready works.
+        Assert.Equal("", eng.ReadyFailure)
+        Assert.True(eng.WaitForReadyOk())
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament WarmUp on an engine that dies reports the exit`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "FakeCrashOnGo", box true ])
+    try
+        Assert.False(eng.WarmUp 5000)
+        Assert.StartsWith("exited (code 3) during the warm-up search", eng.ReadyFailure)
+        Assert.False(eng.PrepareNewGame())
+    finally stopTournament eng
+
+// ── ChessEngine: options ────────────────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``Tournament SetMoveOverhead is sent once per process and not at all when the def sets it`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = commands log |> Array.length
+        eng.SetMoveOverhead("MoveOverheadMs", 50)
+        eng.SetMoveOverhead("MoveOverheadMs", 50)
+        eng.SetMoveOverhead("MoveOverheadMs", 60)
+        eng.SetMoveOverhead("moveoverhead", 99999)   // out of range
+        eng.Write "marker"
+        waitForSent log "marker"
+        Assert.Equal<string[]>(
+            [| "setoption name MoveOverheadMs value 50"; "setoption name MoveOverheadMs value 60"; "marker" |],
+            commands log |> Array.skip before)
+        eng.StopProcess()
+        eng.StartProcess()
+        let restartedAt = commands log |> Array.length
+        eng.SetMoveOverhead("MoveOverheadMs", 60)
+        eng.Write "marker2"
+        waitForSent log "marker2"
+        Assert.Equal<string[]>([| "setoption name MoveOverheadMs value 60"; "marker2" |], commands log |> Array.skip restartedAt)
+    finally stopTournament eng
+    let log2 = newLogPath ()
+    let eng2 = startTournament (config log2 "" [ "MoveOverheadMs", box 30 ])
+    try
+        let before = commands log2 |> Array.length
+        eng2.SetMoveOverhead("MoveOverheadMs", 50)
+        eng2.Write "marker"
+        waitForSent log2 "marker"
+        Assert.Equal<string[]>([| "marker" |], commands log2 |> Array.skip before)
+    finally stopTournament eng2
+
+[<Fact>]
+let ``Tournament AddSetOption stops first, uses the engine's spelling and updates the config`` () =
+    let log = newLogPath ()
+    let cfg = config log "" []
+    let eng = startTournament cfg
+    try
+        let before = commands log |> Array.length
+        eng.AddSetOption(EngineOption.Create "hash" "32")
+        eng.AddSetOption(EngineOption.Create "hash" "32")
+        eng.AddSetOption(EngineOption.Create "NoSuchOption" "1")
+        eng.Write "marker"
+        waitForSent log "marker"
+        Assert.Equal<string[]>(
+            [| "stop"; "setoption name Hash value 32"; "stop"; "setoption name Hash value 32"; "marker" |],
+            commands log |> Array.skip before)
+        Assert.Equal(box "32", cfg.Options.["hash"])
+        // Commands keeps one copy of a repeated setoption.
+        Assert.Equal(1, eng.Commands |> Seq.filter ((=) "setoption name Hash value 32") |> Seq.length)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament TryToUpdateOption picks the last option whose name contains the text`` () =
+    // A quirk: "hash" matches both Hash and "Clear Hash", and the later one in the engine's list
+    // wins. Pinned so the rewrite changes it deliberately if at all.
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = commands log |> Array.length
+        eng.TryToUpdateOption "hash" "64"
+        eng.Write "marker"
+        waitForSent log "marker"
+        Assert.Equal<string[]>([| "stop"; "setoption name Clear Hash value 64"; "marker" |], commands log |> Array.skip before)
+    finally stopTournament eng
+
+// ── ChessEngine: commands and reading ───────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``Tournament commands are written in UCI form`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [ "FakeInfinite", box true ])
+    try
+        let before = commands log |> Array.length
+        eng.UciNewGame()
+        eng.Position "position startpos moves e2e4"
+        eng.PositionGoFen "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3"
+        eng.Go 100
+        eng.Stop()
+        eng.Go(UnionType.WithIncrement (TimeSpan.FromSeconds 60.0, TimeSpan.FromSeconds 2.0), TimeSpan.FromSeconds 50.0, TimeSpan.FromSeconds 40.0)
+        eng.Stop()
+        eng.GoNodes 1000
+        eng.Stop()
+        eng.GoValue()
+        eng.Stop()
+        eng.GoPonder "go ponder wtime 1000 btime 1000"
+        eng.PonderHit()
+        eng.Stop()
+        eng.IsReady()
+        eng.Uci()
+        waitForSent log "uci"
+        Assert.Equal<string[]>(
+            [| "ucinewgame"
+               "position startpos moves e2e4"
+               "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+               "go movetime 100"
+               "stop"
+               "go wtime 50000 btime 40000 winc 2000 binc 2000"
+               "stop"
+               "go nodes 1000"
+               "stop"
+               "go value"
+               "stop"
+               "go ponder wtime 1000 btime 1000"
+               "ponderhit"
+               "stop"
+               "isready"
+               "uci" |],
+            commands log |> Array.skip before)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament ReadLineAsyncWithTimeout returns lines and null when cancelled`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        eng.IsReady()
+        use cts = new CancellationTokenSource(5000)
+        let line = eng.ReadLineAsyncWithTimeout(cts.Token).Result
+        Assert.Equal("readyok", line)
+        use quick = new CancellationTokenSource(100)
+        Assert.Null(eng.ReadLineAsyncWithTimeout(quick.Token).Result)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Tournament StopProcess ends the engine and HasExited turns true`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    eng.StopProcess()
+    Assert.True(eng.HasExited())
+    // StopProcess waits for the engine to leave on its own (up to 3 s) and kills it after;
+    // it does not send quit.
+    Assert.DoesNotContain("quit", commands log)
+
+// ── Lc0 detection by path ───────────────────────────────────────────────────────────────────────
+
+/// A copy of the fake engine inside a folder whose path contains "lc0", which is how both
+/// classes decide they are talking to Lc0.
+let private lc0Copy () =
+    let dir = Path.Combine(Path.GetTempPath(), sprintf "lc0-fake-%s" (Guid.NewGuid().ToString("N")))
+    Directory.CreateDirectory dir |> ignore
+    for f in Directory.GetFiles(AppContext.BaseDirectory, "FakeUciEngine*") do
+        File.Copy(f, Path.Combine(dir, Path.GetFileName f))
+    Path.Combine(dir, fakeExeName)
+
+[<Fact>]
+let ``Lc0 by path gets --show-hidden: appended by the tournament engine, only without args by the analysis engine`` () =
+    let path = lc0Copy ()
+    let log = newLogPath ()
+    let tour = startTournament { config log "" [] with Path = path }
+    try
+        Assert.True(tour.IsLc0)
+        Assert.EndsWith("--show-hidden", argsLine log)
+    finally stopTournament tour
+
+    let log2 = newLogPath ()
+    let ana, _ = startAnalysis { config log2 "" [] with Path = path }
+    try
+        Assert.True(ana.IsLc0)
+        Assert.DoesNotContain("--show-hidden", argsLine log2)
+    finally quitAnalysis ana
+
+    // With no args at all the analysis engine adds it too. The log path goes by environment.
+    let log3 = newLogPath ()
+    Environment.SetEnvironmentVariable("FAKEUCI_LOG", log3)
+    try
+        let ana2, _ = startAnalysis { config log3 "" [] with Path = path; Args = "" }
+        try Assert.Equal("#args --show-hidden", argsLine log3)
+        finally quitAnalysis ana2
+    finally Environment.SetEnvironmentVariable("FAKEUCI_LOG", null)
+
+// ── EngineHelper ────────────────────────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``createInitialUCICommands lower-cases booleans and resolves a relative WeightsFile against NetworkPath`` () =
+    let opts = Dictionary<string, obj>()
+    opts.["Ponder"] <- box "True"
+    opts.["Threads"] <- box 4
+    opts.["WeightsFile"] <- box "net.pb.gz"
+    let cfg = { EngineConfig.Empty with Path = fakePath; NetworkPath = "C:/nets"; Options = opts }
+    Assert.Equal<string list>(
+        [ "setoption name Ponder value true"
+          "setoption name Threads value 4"
+          "setoption name WeightsFile value " + Path.Combine("C:/nets", "net.pb.gz") ],
+        EngineHelper.createInitialUCICommands cfg |> Seq.toList)
+
+[<Fact>]
+let ``createEngine refuses a config whose engine path does not exist`` () =
+    let cfg = { EngineConfig.Empty with Name = "Missing"; Path = Path.Combine(Path.GetTempPath(), "no-such-engine.exe") }
+    let ex = Assert.ThrowsAny<exn>(fun () -> EngineHelper.createEngine (cfg, None) |> ignore)
+    Assert.Equal("Engine could not be created", ex.Message)
+
+[<Fact>]
+let ``initEngine waits for readyok, then warms up and starts a new game`` () =
+    let log = newLogPath ()
+    let eng = startTournament (config log "" [])
+    try
+        let before = commands log |> Array.length
+        EngineHelper.initEngine 0 eng
+        Assert.Equal<string[]>(
+            [| "isready"; "position startpos"; "go nodes 1"; "ucinewgame"; "isready" |],
+            commands log |> Array.skip before)
+    finally stopTournament eng
+
+// ── HardwareInfo ────────────────────────────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``getThreads reads Threads as int, string or JSON, defaults to 1 and caps at the cores left`` () =
+    let cfgWith (v: obj option) =
+        let opts = Dictionary<string, obj>()
+        v |> Option.iter (fun v -> opts.["Threads"] <- v)
+        { EngineConfig.Empty with Options = opts }
+    let cap = Environment.ProcessorCount - 1
+    Assert.Equal(min 2 cap, HardwareInfo.getThreads (cfgWith (Some (box 2))))
+    Assert.Equal(min 3 cap, HardwareInfo.getThreads (cfgWith (Some (box "3"))))
+    Assert.Equal(1, HardwareInfo.getThreads (cfgWith (Some (box "x"))))
+    Assert.Equal(1, HardwareInfo.getThreads (cfgWith None))
+    Assert.Equal(min 4 cap, HardwareInfo.getThreads (cfgWith (Some (box (JsonDocument.Parse("4").RootElement)))))
+    Assert.Equal(min 5 cap, HardwareInfo.getThreads (cfgWith (Some (box (JsonDocument.Parse("\"5\"").RootElement)))))
+    Assert.Equal(cap, HardwareInfo.getThreads (cfgWith (Some (box 100000))))
