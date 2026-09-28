@@ -55,6 +55,11 @@
 		<Compile Include="Lc0ContemptTests.fs" />
 		<Compile Include="LayoutOptionParseTests.fs" />
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
+		<Compile Include="EngineCharacterizationTests.fs" />
+		<Compile Include="EngineApiSurfaceTests.fs" />
+		<Compile Include="EngineProtocolParserTests.fs" />
+		<Compile Include="WinboardThinkingCacheTests.fs" />
+		<Compile Include="AnalysisOutputTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
@@ -68,12 +73,17 @@
 	<ItemGroup>
 		<ProjectReference Include="..\ChessLibrary\ChessLibrary.fsproj" />
 		<ProjectReference Include="..\Console\Console.fsproj" />
+		<!-- Built and copied beside the tests: the Engine.fs characterisation tests run it as a child process. -->
+		<ProjectReference Include="..\FakeUciEngine\FakeUciEngine.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<None Include="TestData\SF_vs_Ceres_and_Lc0.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\lichess_pgn_LeelaPieceOddsFRC.pgn" CopyToOutputDirectory="PreserveNewest" />
 		<None Include="TestData\lichess_shapes_study.pgn" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\EngineApi.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\InfoLinesCorpus.txt" CopyToOutputDirectory="PreserveNewest" />
+		<None Include="TestData\AnalysisOutput\*.txt" CopyToOutputDirectory="PreserveNewest" />
 		<Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 

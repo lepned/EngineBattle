@@ -140,11 +140,29 @@ module WinboardProtocol =
                         commands.Add($"{prefix}{move.MoveCoord}")
         commands |> Seq.toList
 
-    /// Parse Winboard thinking output to UCI info format
+    /// The PV part of a thinking line - the tokens after depth, score, time and nodes - in
+    /// coordinate notation, played from `currentBoard`. Move numbers, "...", Jonny's tb= suffix and
+    /// the '-' of long algebraic go first; SAN and coordinates are both understood.
+    let thinkingPvToCoordinates (currentBoard: Chess.Board) (rawPv: string[]) =
+        let normalized =
+            rawPv
+            |> Array.map (fun t -> t.Trim())
+            |> Array.filter (fun t ->
+                t <> "" && t <> "..." && not (moveNumberPrefixRegex.IsMatch(t))
+                && not (t.StartsWith("tb=")) // Jonny tb suffix
+            )
+            |> Array.map (fun t -> if t.StartsWith("O") then t else t.Replace("-", ""))
+        let sanPVline = String.Join(" ", normalized).Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        let mutable board = currentBoard
+        getLongSanPVFromShortSanPV moveList.Value &board sanPVline
+
+    /// Parse Winboard thinking output to UCI info format, with the PV converted by `convertPv`
+    /// (given the raw PV tokens). The handler passes a cached conversion; parseThinkingOutput the
+    /// plain one.
     /// Winboard: "depth score time nodes pv..."
     /// Handles: standard, tab-indented SAN (Crafty), coordinate+tb (Jonny),
     ///          SAN prefix (EXchess), score*1000 (TheKing), kibitz (Comet)
-    let parseThinkingOutput (sideToMovePOV: bool) (currentBoard: Chess.Board) (engineName: string) (line: string) =
+    let parseThinkingOutputWith (convertPv: string[] -> string) (sideToMovePOV: bool) (currentBoard: Chess.Board) (engineName: string) (line: string) =
         // Handle tab-indented output (Crafty)
         let trimmedLine = line.TrimStart([|'\t'; ' '|])
         let parts = trimmedLine.Split([|' '; '\t'|], StringSplitOptions.RemoveEmptyEntries)
@@ -170,21 +188,7 @@ module WinboardProtocol =
                         score  // Already from White's perspective
 
                 // Convert PV from SAN to coordinate notation
-                let pv =
-                    if parts.Length > 4 then
-                        let rawPv = parts.[4..]
-                        let normalized =
-                            rawPv
-                            |> Array.map (fun t -> t.Trim())
-                            |> Array.filter (fun t ->
-                                t <> "" && t <> "..." && not (moveNumberPrefixRegex.IsMatch(t))
-                                && not (t.StartsWith("tb=")) // Jonny tb suffix
-                            )
-                            |> Array.map (fun t -> if t.StartsWith("O") then t else t.Replace("-", ""))
-                        let sanPVline = String.Join(" ", normalized).Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                        getLongSanPVFromShortSanPV moveList.Value &currentBoard sanPVline
-                    else
-                        ""
+                let pv = if parts.Length > 4 then convertPv parts.[4..] else ""
 
                 let nps = if time > 0 then int64 ((float nodes) / (float time / 100.0)) else 0L
 
@@ -193,6 +197,10 @@ module WinboardProtocol =
             | _ -> None
         else
             None
+
+    /// Parse Winboard thinking output to UCI info format (the PV converted afresh every time).
+    let parseThinkingOutput (sideToMovePOV: bool) (currentBoard: Chess.Board) (engineName: string) (line: string) =
+        parseThinkingOutputWith (thinkingPvToCoordinates currentBoard) sideToMovePOV currentBoard engineName line
 
     /// Parse Comet's tellics thinking output to UCI info format
     /// Format: "tellics  sc=+0.36 dp=10 nps=0K (h4h5 g6h7 b1c3 e7e6 g1e2)"
@@ -319,6 +327,23 @@ module WinboardProtocol =
         let mutable originalIncrementMs = 0  // Store original time control increment
         let mutable resolvedStrategy = None  // Resolved time control strategy (None = use configured)
         let mutable gameInitialized = false  // Track if we've sent "new" command to initialize game
+        // The last thinking-line PV converted to coordinates, and the board it was converted on.
+        // Engines repeat one PV over many thinking lines, and the SAN conversion was nearly all
+        // of this handler's cost per line; boardVersion moves whenever the board does, so a PV
+        // is never reused against a different position. Guarded by stateLock like the board.
+        let mutable boardVersion = 0
+        let mutable pvCacheVersion = -1
+        let mutable pvCacheRaw : string[] = [||]
+        let mutable pvCacheResult = ""
+        let cachedPv (rawPv: string[]) =
+            if pvCacheVersion = boardVersion && rawPv.Length = pvCacheRaw.Length && Array.forall2 (=) rawPv pvCacheRaw then
+                pvCacheResult
+            else
+                let converted = thinkingPvToCoordinates board rawPv
+                pvCacheVersion <- boardVersion
+                pvCacheRaw <- rawPv
+                pvCacheResult <- converted
+                converted
 
         member _.Features = lock stateLock (fun () -> features)
         member _.IsInitialized = lock stateLock (fun () -> isInitialized)
@@ -431,6 +456,7 @@ module WinboardProtocol =
                     ["new"]
                 elif cmd.StartsWith("position") then
                     // Parse and apply position to internal board
+                    boardVersion <- boardVersion + 1
                     let fen = board.FEN()
                     try
                         if cmd.Contains("fen") then
@@ -692,7 +718,7 @@ module WinboardProtocol =
                             None
 
                     elif thinkingOutputRegex.IsMatch(trimmedLine) then
-                        parseThinkingOutput winboardConfig.SideToMovePOV board configuredEngineName trimmedLine
+                        parseThinkingOutputWith cachedPv winboardConfig.SideToMovePOV board configuredEngineName trimmedLine
 
                     elif cometTellicsRegex.IsMatch(trimmedLine) then
                         parseCometTellics board trimmedLine
@@ -730,6 +756,7 @@ module WinboardProtocol =
         member _.Reset() =
             lock stateLock (fun () ->
                 board.ResetBoardState()
+                boardVersion <- boardVersion + 1
                 pendingPing <- None
                 inAnalyzeMode <- false
                 levelCommandSent <- false

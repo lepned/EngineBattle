@@ -6,6 +6,11 @@
   </PropertyGroup>
 
 	<ItemGroup>
+		<!-- AnalysisOutput and the other engine internals are tested directly. -->
+		<InternalsVisibleTo Include="TestProject" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<!-- Base utilities (no dependencies) -->
 		<Compile Include="Utilities\Exception.fs" />
 		<Compile Include="Engine\UciOption.fs" />
@@ -91,7 +96,12 @@
 		<Compile Include="Engine\WinboardIntegration.fs" />
 
 		<!-- Engine (depends on protocol, configuration, LowLevelUtilities) -->
+		<Compile Include="Engine\EngineProcess.fs" />
+		<Compile Include="Engine\EngineWire.fs" />
+		<Compile Include="Engine\AnalysisOutput.fs" />
 		<Compile Include="Engine\Engine.fs" />
+		<Compile Include="Engine\EngineHelper.fs" />
+		<Compile Include="Engine\HardwareInfo.fs" />
 		<Compile Include="Engine\EngineProbe.fs" />
 
 		<!-- Deviation analysis (depends on Board, GameAnalysis) -->

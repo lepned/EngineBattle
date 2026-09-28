@@ -526,7 +526,7 @@ let parallelTournamentRun
                           // The same init as the pool's first start, warm-up included: pooled
                           // engines skip per-game init, so this is the only place the new
                           // process can load its network before a clock runs. Throws on failure.
-                          EngineHelper.initEngine 0 engine
+                          do! EngineHelper.initEngineAsync 0 engine
                           logger.LogCritical($"Successfully restarted engine {engine.Name}")
                           return true
                       with

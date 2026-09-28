@@ -36,7 +36,7 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                 logger.LogDebug("Engine {Engine} has exited, starting fresh", engine.Name)
                 try
                     engine.StartProcess()
-                    let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                    let! ok = engine.WaitForReadyOkAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask // wait for readyok
                     if not ok then
                         failwith "Engine did not respond to isready command."
                     do! Async.Sleep engineStartDelay
@@ -54,7 +54,7 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                         // Graceful stop attempt
                         engine.Stop()
                         do! Async.Sleep engineStopDelay
-                        let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                        let! ok = engine.WaitForReadyOkAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask // wait for readyok
                         if not ok then
                             failwith "Engine did not respond to isready command."
                         return true
@@ -64,7 +64,7 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                     do! Async.Sleep engineRecoveryDelay
                     engine.StartProcess()
                     do! Async.Sleep engineStartDelay
-                    let ok = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000) // wait for readyok
+                    let! ok = engine.WaitForReadyOkAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask // wait for readyok
                     if not ok then
                         failwith "Engine did not respond to isready command."
                     return true
@@ -85,7 +85,7 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                     do! Async.Sleep engineRecoveryDelay
                     engine.StartProcess()
                     do! Async.Sleep engineStartDelay
-                    let readyOk = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000)
+                    let! readyOk = engine.WaitForReadyOkAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask
                     if readyOk then
                         logger.LogDebug("Engine {Engine} restarted and ready (WinBoard reuse=0)", engine.Name)
                         return true
@@ -95,7 +95,7 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                 else
                     // Winboard engines need 'new' to reset between games
                     engine.UciNewGame()
-                    let readyOk = engine.WaitForReadyOk(tourny.EngineStartupTimeoutInSec * 1000)
+                    let! readyOk = engine.WaitForReadyOkAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask
                     if readyOk then
                         logger.LogDebug("Engine {Engine} ready (WinBoard protocol)", engine.Name)
                         return true
@@ -107,7 +107,8 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                 let timeoutInMs = timeoutInSec * 1000
                 // Warm-up (once per process, loads the network before the first clock starts),
                 // then ucinewgame + readyok.
-                if engine.PrepareNewGame timeoutInMs then
+                let! prepared = engine.PrepareNewGameAsync(timeoutInMs) |> Async.AwaitTask
+                if prepared then
                     // The one readyok worth Information: the net is loaded.
                     logger.LogInformation("Engine {Engine} ready", engine.Name)
                     return true
