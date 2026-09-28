@@ -43,7 +43,8 @@ let private sent (logPath: string) =
         |> Array.map (fun l -> l.TrimEnd('\r'))
 
 let private argsLine logPath = sent logPath |> Array.tryFind (fun l -> l.StartsWith "#args") |> Option.defaultValue ""
-let private commands logPath = sent logPath |> Array.filter (fun l -> not (l.StartsWith "#"))
+let private commands logPath =
+    sent logPath |> Array.filter (fun l -> not (l.StartsWith "#") && not (l.StartsWith "option Sync="))
 
 let private waitUntil (timeoutMs: int) (cond: unit -> bool) =
     let sw = Stopwatch.StartNew()
@@ -62,6 +63,16 @@ let private waitForSent logPath (line: string) =
 let private synced logPath (write: string -> unit) =
     let marker = "#sync " + Guid.NewGuid().ToString("N")
     write marker
+    if not (waitUntil 5000 (fun () -> sent logPath |> Array.contains marker)) then
+        failwithf "the fake engine never received %s" marker
+    commands logPath
+
+/// The Winboard form of `synced`: "#sync" has no xboard translation and would never be sent, so
+/// the marker travels as a setoption, which the handler turns into "option Sync=<id>".
+let private syncedWb logPath (write: string -> unit) =
+    let id = Guid.NewGuid().ToString("N")
+    write (sprintf "setoption name Sync value %s" id)
+    let marker = "option Sync=" + id
     if not (waitUntil 5000 (fun () -> sent logPath |> Array.contains marker)) then
         failwithf "the fake engine never received %s" marker
     commands logPath
@@ -843,3 +854,246 @@ let ``getThreads reads Threads as int, string or JSON, defaults to 1 and caps at
     Assert.Equal(min 4 cap, HardwareInfo.getThreads (cfgWith (Some (box (JsonDocument.Parse("4").RootElement)))))
     Assert.Equal(min 5 cap, HardwareInfo.getThreads (cfgWith (Some (box (JsonDocument.Parse("\"5\"").RootElement)))))
     Assert.Equal(cap, HardwareInfo.getThreads (cfgWith (Some (box 100000))))
+
+// ── Winboard / xboard ───────────────────────────────────────────────────────────────────────────
+// Both classes speak Winboard through WinboardHandler: UCI-shaped commands go out translated to
+// CECP, and the engine's replies come back translated to UCI-shaped lines. These tests pin what
+// reaches a Winboard engine and what the caller reads back.
+
+let private wbConfig (logPath: string) (extraArgs: string) (options: (string * obj) list) (wbc: WinboardConfig option) =
+    { config logPath (("--xboard " + extraArgs).Trim()) options with Protocol = "Winboard"; WinboardConfig = wbc }
+
+let private wbDefaults = WinboardConfig.Default
+
+/// Reads translated lines from the tournament engine until one starts with `until` (or 5 s pass).
+let private readUntil (eng: ChessEngine) (until: string) =
+    let lines = ResizeArray<string>()
+    use cts = new CancellationTokenSource(5000)
+    let mutable fin = false
+    while not fin do
+        let l = eng.ReadLineAsyncWithTimeout(cts.Token).Result
+        if isNull l then fin <- true
+        else
+            lines.Add l
+            if l.StartsWith until then fin <- true
+    lines.ToArray()
+
+[<Fact>]
+let ``Winboard tournament start-up negotiates features, then sends post and easy`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] None)
+    try
+        Assert.Equal<string[]>([| "xboard"; "protover 2"; "post"; "easy" |], syncedWb log eng.Write)
+        Assert.True(eng.PassedValidation)
+        Assert.True(eng.CanReuseWinboard)
+        Assert.Equal("", eng.UciIdName)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard options are sent as option commands but fail validation`` () =
+    // A quirk: a Winboard engine has no UCI option list, so every configured option fails the
+    // UCI validation (PassedValidation false) although it is sent, translated.
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [ "Hash", box 64 ] None)
+    try
+        Assert.Contains("option Hash=64", syncedWb log eng.Write)
+        Assert.False(eng.PassedValidation)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard v1 engine that rejects protover is probed for setboard`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "--wb-v1-error" [] None)
+    try
+        Assert.Equal<string[]>(
+            [| "xboard"; "protover 2"
+               "new"; "force"; "setboard rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+               "post"; "easy" |],
+            syncedWb log eng.Write)
+        // No setboard: positions go as moves after new.
+        eng.Position "position startpos moves e2e4"
+        Assert.Equal<string[]>([| "new"; "force"; "e2e4" |], syncedWb log eng.Write |> Array.skip 7)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard ForceV1Mode skips protover`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] (Some { wbDefaults with ForceV1Mode = true }))
+    try Assert.Equal<string[]>([| "xboard"; "post"; "easy" |], syncedWb log eng.Write)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard AutoDetect probes the level command at start-up`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] (Some { wbDefaults with TimeControlStrategy = AutoDetect }))
+    try
+        Assert.Equal<string[]>(
+            [| "xboard"; "protover 2"; "new"; "force"; "level 0 1 0"; "post"; "easy" |],
+            syncedWb log eng.Write)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard reuse=0 is reported by CanReuseWinboard`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "--wb-features \"ping=1 reuse=0 done=1\"" [] None)
+    try Assert.False(eng.CanReuseWinboard)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard WaitForReadyOk pings when it can, and assumes ready when it cannot`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] None)
+    try
+        Assert.True(eng.WaitForReadyOk())
+        let pings = syncedWb log eng.Write |> Array.filter (fun l -> l.StartsWith "ping ")
+        Assert.Equal(1, pings.Length)
+    finally stopTournament eng
+    // A ping that never gets its pong: one second, then ready anyway.
+    let log2 = newLogPath ()
+    let eng2 = startTournament (wbConfig log2 "--wb-no-pong" [] None)
+    try
+        let sw = Stopwatch.StartNew()
+        Assert.True(eng2.WaitForReadyOk())
+        Assert.InRange(sw.ElapsedMilliseconds, 800L, 5000L)
+    finally stopTournament eng2
+    // No ping feature: ready at once, nothing sent.
+    let log3 = newLogPath ()
+    let eng3 = startTournament (wbConfig log3 "--wb-features \"setboard=1 done=1\"" [] None)
+    try
+        let before = syncedWb log3 eng3.Write |> Array.length
+        Assert.True(eng3.WaitForReadyOk())
+        Assert.Equal(before, syncedWb log3 eng3.Write |> Array.length)
+    finally stopTournament eng3
+
+[<Fact>]
+let ``Winboard PrepareNewGame, WarmUp and option updates send nothing`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] None)
+    try
+        let before = syncedWb log eng.Write |> Array.length
+        Assert.True(eng.WarmUp 1000)
+        Assert.True(eng.PrepareNewGame())
+        eng.AddSetOption(EngineOption.Create "Hash" "32")      // no UCI option list: not found
+        eng.SetMoveOverhead("MoveOverheadMs", 50)
+        Assert.Equal(before, syncedWb log eng.Write |> Array.length)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard game: new, force + setboard, level + time/otim + go, and move read back as bestmove`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [ "FakeBestMove", box "e7e5" ] None)
+    try
+        let before = syncedWb log eng.Write |> Array.length
+        eng.UciNewGame()
+        eng.Position "position startpos moves e2e4"
+        eng.Go(UnionType.WithIncrement (TimeSpan.FromSeconds 60.0, TimeSpan.FromSeconds 2.0), TimeSpan.FromSeconds 50.0, TimeSpan.FromSeconds 40.0)
+        let replies = readUntil eng "bestmove"
+        Assert.Equal<string[]>(
+            [| "new"
+               "force"
+               "setboard rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+               "level 0 0:50 2"
+               "time 4000"
+               "otim 5000"
+               "go" |],
+            syncedWb log eng.Write |> Array.skip before)
+        Assert.Equal("bestmove e7e5", Array.last replies)
+        // The next position in the same game: no second "new".
+        let mid = syncedWb log eng.Write |> Array.length
+        eng.Position "position startpos moves e2e4 e7e5"
+        eng.Stop()
+        Assert.Equal<string[]>(
+            [| "force"; "setboard rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"; "?" |],
+            syncedWb log eng.Write |> Array.skip mid)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard thinking output comes back as UCI info with the PV in coordinates`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] None)
+    try
+        eng.UciNewGame()
+        eng.Position "position startpos"
+        eng.Go 100
+        let replies = readUntil eng "bestmove"
+        Assert.Equal<string[]>(
+            [| "info depth 1 score cp 21 time 10 nodes 1000 nps 100000 pv e2e4 e7e5 g1f3"
+               "info depth 2 score cp 22 time 20 nodes 2000 nps 100000 pv e2e4 e7e5 g1f3"
+               "info depth 3 score cp 23 time 30 nodes 3000 nps 100000 pv e2e4 e7e5 g1f3"
+               "bestmove e2e4" |],
+            replies)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard go commands: movetime becomes st, nodes has no equivalent`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [ "FakeInfinite", box true ] None)
+    try
+        let before = syncedWb log eng.Write |> Array.length
+        eng.Go 100
+        eng.Stop()
+        eng.GoNodes 1000
+        eng.Stop()
+        Assert.Equal<string[]>([| "st 1"; "go"; "?"; "go"; "?" |], syncedWb log eng.Write |> Array.skip before)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard engine without setboard gets moves, with usermove when it asked for it`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "--wb-features \"ping=1 usermove=1 done=1\"" [] None)
+    try
+        let before = syncedWb log eng.Write |> Array.length
+        eng.Position "position startpos moves e2e4 e7e5"
+        Assert.Equal<string[]>([| "new"; "force"; "usermove e2e4"; "usermove e7e5" |], syncedWb log eng.Write |> Array.skip before)
+    finally stopTournament eng
+
+[<Fact>]
+let ``Winboard Use4FieldFen sends setboard without the counters`` () =
+    let log = newLogPath ()
+    let eng = startTournament (wbConfig log "" [] (Some { wbDefaults with Use4FieldFen = true }))
+    try
+        let before = syncedWb log eng.Write |> Array.length
+        eng.Position "position startpos moves e2e4"
+        Assert.Equal<string[]>(
+            [| "new"; "force"; "setboard rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -" |],
+            syncedWb log eng.Write |> Array.skip before)
+    finally stopTournament eng
+
+// Winboard through the analysis engine.
+
+[<Fact>]
+let ``Winboard analysis start-up: features, post and easy, the options, then new`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (wbConfig log "" [] None)
+    try
+        Assert.Equal<string[]>(
+            [| "xboard"; "protover 2"; "post"; "easy"; "option MoveOverheadMs=0"; "new" |],
+            syncedWb log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m)))
+        let ready = updates.ToArray() |> Array.choose (function Ready (p, live) -> Some (p, live) | _ -> None)
+        Assert.Equal<(string * bool)[]>([| ("Fake", false) |], ready)
+        Assert.True(eng.WaitForReadyOk())
+    finally quitAnalysis eng
+
+[<Fact>]
+let ``Winboard analysis: infinite search is analyze, stop is exit, a timed search reports its move`` () =
+    let log = newLogPath ()
+    let eng, updates = startAnalysis (wbConfig log "" [] None)
+    let sync () = syncedWb log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m))
+    try
+        let before = sync () |> Array.length
+        eng.SendUCICommand(UCICommand.PositionWithMoves (fromStart ""))
+        eng.SendUCICommand UCICommand.GoInfinite
+        Assert.True(waitUntil 5000 (fun () -> statuses updates |> Array.length >= 3))
+        eng.SendUCICommand UCICommand.Stop
+        Assert.Equal<string[]>(
+            [| "force"; "setboard " + startFen; "easy"; "analyze"; "exit" |],
+            sync () |> Array.skip before)
+        let st = statuses updates
+        Assert.Equal<int[]>([| 1; 2; 3 |], st |> Array.map (fun s -> s.Depth))
+        Assert.Equal("1.e4 e5 2.Nf3", st.[2].PV)
+        Assert.Empty(bestMoves updates)
+        // A timed search: easy + go, and the move comes back as BestMove.
+        eng.SendUCICommand(UCICommand.GoNodes 5)
+        Assert.True(waitUntil 5000 (fun () -> bestMoves updates |> Array.isEmpty |> not))
+        Assert.Equal("e2e4", (bestMoves updates).[0].Move)
+    finally quitAnalysis eng
