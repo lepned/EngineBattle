@@ -95,33 +95,13 @@ type ChessLibrary.Engine.ChessEngineWithUCIProcessing
   prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
   prop UciIdName : System.String { get }
 type ChessLibrary.EngineHelper
-  static analyzePosition(engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine, position: System.String, time: System.Int32) : System.Double
   static createAltEngine(callback: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.EngineTypes.EngineUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : ChessLibrary.Engine.ChessEngineWithUCIProcessing
-  static createCeresEnginesFromFolder(folderName: System.String) : System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>
   static createEngine(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
   static createEngineWithoutValidation(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
-  static createEnginesFromFolder(folderName: System.String) : System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>
   static createInitialUCICommands(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig) : System.Collections.Generic.IEnumerable<System.String>
-  static createLc0EnginesFromFolder(folderName: System.String) : System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>
   static initEngine(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : System.Void
   static initEngines(delay: System.Int32, engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine) : System.Void
-  static playMovesFromFen(engine1: ChessLibrary.Engine.ChessEngine, engine2: ChessLibrary.Engine.ChessEngine, fen: System.String, time: System.Int32, numberOfMoves: System.Int32) : System.Void
-  static prop valueHeadCommands : Microsoft.FSharp.Collections.FSharpList<System.String> { get }
   static waitForEngineIsReady(delay: System.Int32, engine: ChessLibrary.Engine.ChessEngine) : Microsoft.FSharp.Control.FSharpAsync<System.String>
-type ChessLibrary.EngineHelper.EvalResult
-  CompareTo(obj: ChessLibrary.EngineHelper.EvalResult) : System.Int32
-  CompareTo(obj: System.Object) : System.Int32
-  CompareTo(obj: System.Object, comp: System.Collections.IComparer) : System.Int32
-  Equals(obj: ChessLibrary.EngineHelper.EvalResult) : System.Boolean
-  Equals(obj: ChessLibrary.EngineHelper.EvalResult, comp: System.Collections.IEqualityComparer) : System.Boolean
-  Equals(obj: System.Object) : System.Boolean
-  Equals(obj: System.Object, comp: System.Collections.IEqualityComparer) : System.Boolean
-  GetHashCode() : System.Int32
-  GetHashCode(comp: System.Collections.IEqualityComparer) : System.Int32
-  ToString() : System.String
-  new(System.String, System.Double)
-  prop EngineName : System.String { get }
-  prop Eval : System.Double { get }
 type ChessLibrary.HardwareInfo
   static assessMaxCpuConcurrencyLevel(engines: System.Collections.Generic.IEnumerable<ChessLibrary.Engine.ChessEngine>) : System.Int32
   static concurrencyLevel(configs: System.Collections.Generic.IEnumerable<ChessLibrary.TypesDef.CoreTypes.EngineConfig>, requested: System.Int32) : System.Int32
