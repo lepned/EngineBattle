@@ -180,6 +180,8 @@ var app = builder.Build();
 // Use ContentRootPath — correct in both dev (project dir) and published (exe dir) modes
 AppPaths.BaseDir = app.Environment.ContentRootPath;
 
+Console.WriteLine("EngineBattle " + ChessLibrary.BuildInfo.describe());
+
 // Get the .NET runtime version
 Console.WriteLine("Runtime version: " + Environment.Version);
 

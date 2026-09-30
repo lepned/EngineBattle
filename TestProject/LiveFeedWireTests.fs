@@ -86,7 +86,8 @@ let private result =
       Result = "1-0"
       Reason = ResultReason.Checkmate
       GameTime = 450000L
-      OutOfOpeningEvals = [ CP 0.1; Mate 3; NA ] }
+      OutOfOpeningEvals = [ CP 0.1; Mate 3; NA ]
+      TimeOverrunMs = 0L }
 
 let private nn =
     { NNValues.Empty with
@@ -142,7 +143,11 @@ let private coreSamples: Update list =
       Update.CupBracketUpdated
       Update.SwissStateUpdated
       Update.LadderStateUpdated
-      Update.GameSummary "summary text" ]
+      Update.GameSummary "summary text"
+      Update.GameFinished { GameNr = 7; RoundNr = "4.1"; White = "A"; Black = "B"; OpeningHash = "abc"; Result = result }
+      Update.EndOfGame { result with Reason = ResultReason.ForfeitLimits; TimeOverrunMs = 37L }
+      Update.EngineStartFailed("A", "Engine could not be created")
+      Update.EngineStarted("A", Map.ofList [ "Threads", "1"; "Hash", "16"; "SyzygyPath", "" ]) ]
 
 // ---------------------------------------------------------------------------------------------
 // Tests

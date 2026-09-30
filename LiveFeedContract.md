@@ -119,7 +119,8 @@ Only the fields EB renders are required; everything else falls back to `EngineCo
   "reason": "CM",            // ResultReason code, see §2.7
   "moves": 42,               // full-move count
   "gameTime": 450000,        // total game time, milliseconds (int64)
-  "outOfOpeningEvals": []    // optional: eval[] captured leaving book
+  "outOfOpeningEvals": [],   // optional: eval[] captured leaving book
+  "timeOverrunMs": 37        // optional, time losses only: how far below zero the loser's clock went, ms
 }
 ```
 
@@ -405,6 +406,8 @@ Finalizes standings and opens the final results view.
 
 - `{"type": "Eval", "player": "<name>", "eval": <eval object or null>}` — one engine's eval outside a `Status`.
 - `{"type": "GameSummary", "summary": "<text>"}` — a finished game's one-line summary.
+- `{"type": "EngineStartFailed", "engine": "<name>", "reason": "<text>"}` - an engine could not be started, which stops the run. Not put on the feed today; the codec carries it.
+- `{"type": "GameFinished", "gameNr": <int>, "round": "<pair label>", "white": "<name>", "black": "<name>", "openingHash": "<hash>", "result": <result object>}` — a game played to its end and written, with its place in the plan. The runner does not put it on the feed today; the codec carries it for completeness.
 
 ---
 

@@ -425,9 +425,25 @@ internal partial class MainWindow : Window
         return sameHost && u.Port == b.Port;
     }
 
+    /// "1.8.2 (abc1234)" or "dev build (abc1234)", as ChessLibrary's BuildInfo reads it (the shell
+    /// has no reference to ChessLibrary): the version release.yml stamps from the tag, and the
+    /// commit the SDK adds to the informational version. A local build carries the SDK's 1.0.0.
+    private static string ShellVersion()
+    {
+        var info = System.Reflection.CustomAttributeExtensions
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                System.Reflection.Assembly.GetExecutingAssembly())?.InformationalVersion ?? "";
+        var plus = info.IndexOf('+');
+        var version = plus < 0 ? info : info.Substring(0, plus);
+        var sha = plus < 0 ? "" : info.Substring(plus + 1);
+        if (sha.Length > 7) sha = sha.Substring(0, 7);
+        if (version == "" || version == "1.0.0") version = "dev build";
+        return sha == "" ? version : $"{version} ({sha})";
+    }
+
     private void OnMenuAbout(object sender, RoutedEventArgs e)
     {
-        var shell = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown";
+        var shell = ShellVersion();
         var runtime = "not found";
         try { runtime = CoreWebView2Environment.GetAvailableBrowserVersionString(); }
         catch { /* leave the default */ }

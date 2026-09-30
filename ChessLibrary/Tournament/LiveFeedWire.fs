@@ -289,13 +289,15 @@ let private nodeToEvalList (n: JsonNode) =
     | _ -> []
 
 let private resultToNode (r: Result) =
-    jobj [ "player1", js r.Player1
-           "player2", js r.Player2
-           "result", js r.Result
-           "reason", js (r.Reason.ToString())
-           "moves", ji r.Moves
-           "gameTime", jl r.GameTime
-           "outOfOpeningEvals", evalListToNode r.OutOfOpeningEvals ]
+    jobj ([ "player1", js r.Player1
+            "player2", js r.Player2
+            "result", js r.Result
+            "reason", js (r.Reason.ToString())
+            "moves", ji r.Moves
+            "gameTime", jl r.GameTime
+            "outOfOpeningEvals", evalListToNode r.OutOfOpeningEvals ]
+          // only on a time loss, so every other result reads as it always has
+          @ (if r.TimeOverrunMs > 0L then [ "timeOverrunMs", jl r.TimeOverrunMs ] else []))
 
 let private nodeToResult (o: JsonObject) : Result =
     { Player1 = getStr o "player1" ""
@@ -304,7 +306,8 @@ let private nodeToResult (o: JsonObject) : Result =
       Result = getStr o "result" "1/2-1/2"
       Reason = (try stringToResultReason (getStr o "reason" "NS") with _ -> ResultReason.NotStarted)
       GameTime = getI64 o "gameTime" 0L
-      OutOfOpeningEvals = (match o["outOfOpeningEvals"] with null -> [] | n -> nodeToEvalList n) }
+      OutOfOpeningEvals = (match o["outOfOpeningEvals"] with null -> [] | n -> nodeToEvalList n)
+      TimeOverrunMs = getI64 o "timeOverrunMs" 0L }
 
 let private nnToNode (v: NNValues) =
     jobj [ "player", js v.Player
@@ -453,6 +456,15 @@ let serializeUpdate (u: Update) : string =
         | Update.SwissStateUpdated -> jobj [ "type", js "SwissStateUpdated" ]
         | Update.LadderStateUpdated -> jobj [ "type", js "LadderStateUpdated" ]
         | Update.GameSummary s -> jobj [ "type", js "GameSummary"; "summary", js s ]
+        | Update.EngineStartFailed(e, r) -> jobj [ "type", js "EngineStartFailed"; "engine", js e; "reason", js r ]
+        | Update.EngineStarted(e, d) ->
+            let o = JsonObject()
+            for kv in d do
+                o[kv.Key] <- js kv.Value
+            jobj [ "type", js "EngineStarted"; "engine", js e; "defaults", (o :> JsonNode) ]
+        | Update.GameFinished g ->
+            jobj [ "type", js "GameFinished"; "gameNr", ji g.GameNr; "round", js g.RoundNr; "white", js g.White
+                   "black", js g.Black; "openingHash", js g.OpeningHash; "result", resultToNode g.Result ]
     o.ToJsonString()
 
 /// Parse a JSON wire event back to an `Update`. Returns None on malformed input or unknown type.
@@ -518,6 +530,20 @@ let tryParseUpdate (json: string) : Update option =
             | "SwissStateUpdated" -> Some Update.SwissStateUpdated
             | "LadderStateUpdated" -> Some Update.LadderStateUpdated
             | "GameSummary" -> Some(Update.GameSummary(getStr o "summary" ""))
+            | "EngineStartFailed" -> Some(Update.EngineStartFailed(getStr o "engine" "", getStr o "reason" ""))
+            | "EngineStarted" ->
+                let d =
+                    match o["defaults"] with
+                    | :? JsonObject as d -> d |> Seq.map (fun kv -> kv.Key, (if isNull kv.Value then "" else kv.Value.GetValue<string>())) |> Map.ofSeq
+                    | _ -> Map.empty
+                Some(Update.EngineStarted(getStr o "engine" "", d))
+            | "GameFinished" ->
+                match o["result"] with
+                | :? JsonObject as r ->
+                    Some(Update.GameFinished
+                        { GameNr = getInt o "gameNr" 0; RoundNr = getStr o "round" ""; White = getStr o "white" ""
+                          Black = getStr o "black" ""; OpeningHash = getStr o "openingHash" ""; Result = nodeToResult r })
+                | _ -> None
             | _ -> None
         | _ -> None
     with _ -> None

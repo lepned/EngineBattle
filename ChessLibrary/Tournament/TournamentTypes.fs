@@ -10,6 +10,16 @@ open ChessLibrary.CupTypes
 open ChessLibrary.SwissTypes
 open ChessLibrary.LadderTypes
 
+/// A game that was played to its end and written, with what identifies it in the plan: its
+/// number, its pair label and its opening hash (the key two games of a pair share).
+type FinishedGame =
+    { GameNr: int
+      RoundNr: string
+      White: string
+      Black: string
+      OpeningHash: string
+      Result: Result }
+
 /// Update messages sent during tournament execution for UI callbacks
 type Update =
     | GameStarted of White:string
@@ -33,6 +43,16 @@ type Update =
     | SwissStateUpdated
     | LadderStateUpdated
     | GameSummary of summary: string
+    /// Sent once per game written to the PGN, after the write is queued (round robin and
+    /// gauntlet, ParallelExecution); not for cancelled or unplayed games, not on the live feed.
+    /// Arrives on the worker threads, so games that end together arrive concurrently.
+    | GameFinished of Game: FinishedGame
+    /// An engine could not be started, which stops the run (ParallelExecution's borrow).
+    | EngineStartFailed of Engine: string * Reason: string
+    /// An engine instance answered `uciok` (ParallelExecution's spawn): every option it reported,
+    /// with its default as text (buttons have none and are left out). Sent per instance, so an
+    /// engine played on several boards sends it more than once.
+    | EngineStarted of Engine: string * Defaults: Map<string, string>
 
 /// Messages for the cup bracket state MailboxProcessor
 type CupBracketMessage =

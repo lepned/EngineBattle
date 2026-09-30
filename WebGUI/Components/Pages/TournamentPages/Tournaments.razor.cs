@@ -548,11 +548,11 @@ public partial class Tournaments
 				// Tenths on the face and ten ticks a second come from the same rule, and both are
 				// released again when the side to move is not in trouble - a new game, or the other
 				// side with an hour left.
-				var hurry = InTimeTrouble(remaining);
+				var hurry = InTimeTroubleFor(side, remaining);
 				var wanted = hurry ? HurryPeriod : CalmPeriod;
 				if (wanted != period) { t.Period = wanted; period = wanted; }
 
-				var left = ClockText(remaining, tenths: hurry);
+				var left = NodeLimitText(side) ?? ClockText(remaining, tenths: hurry);
 				var move = ClockText(elapsed, tenths: hurry);
 				if (side) { whiteTime = left; whiteMoveTime = move; }
 				else { blackTime = left; blackMoveTime = move; }

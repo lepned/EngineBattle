@@ -84,6 +84,8 @@ let private planned
 ///     (twice with OpeningsTwice, for the two colors)
 ///   * Under `Spread`, opponents play disjoint opening slices
 ///   * Under `Shared`, every opponent plays every opening
+///   * Without `OpeningsTwice` the colors swap every other round, so the
+///     challenger is White in half the games (it used to be White in all)
 ///
 /// Games are emitted in **pair-consecutive** order: each (challenger, opp,
 /// opening) pair yields its direct game immediately followed by its reversed
@@ -100,6 +102,9 @@ let generate (config: ScheduleConfig) : PlannedGame list =
             let opening = openingsFor.[oppOriginalIdx].[roundIdx]
             let openingHash = Hash.computeOpeningHashFromGame opening
             for challenger in challengers do
-                yield planned challenger opp opening openingHash Challenger Opponent
-                if config.OpeningsTwice then
-                    yield planned opp challenger opening openingHash Opponent Challenger ]
+                if not config.OpeningsTwice && roundIdx % 2 = 1 then
+                    yield planned opp challenger opening openingHash Opponent Challenger
+                else
+                    yield planned challenger opp opening openingHash Challenger Opponent
+                    if config.OpeningsTwice then
+                        yield planned opp challenger opening openingHash Opponent Challenger ]

@@ -664,6 +664,77 @@ module JSON =
           | _ -> ()
       | _ -> ()
 
+  /// The short forms of a time setting, written the way match takes them:
+  ///   { "Id": 1, "Tc": "60+1" }        base+increment in seconds; also "1:30+1" and "40/300+2"
+  ///                                    (40 moves per period: this setting's MovesToGo)
+  ///   { "Id": 3, "St": 1 }             seconds per move (a number, or text such as "0.5")
+  ///   { "Id": 4, "Nodes": 150000 }     a node limit, when no time is given and no NodeLimit
+  /// They are written out to the long fields (Fixed, Increment, MoveTime, NodeLimit) before the
+  /// file is read, so everything past this sees the TimeConfig it always did, and a file in the
+  /// long form reads as before. Returns what is wrong, one line per setting.
+  let timeConfigShortForms (root: JsonNode) (options: JsonSerializerOptions) : string list =
+      let errors = ResizeArray<string>()
+      let duration (ms: int64) = JsonSerializer.SerializeToNode(TimeSpan.FromMilliseconds(float ms), options)
+      match root with
+      | :? JsonObject as file ->
+          match file.["TimeControl"] with
+          | :? JsonObject as timeControl ->
+              match timeControl.["TimeConfigs"] with
+              | :? JsonArray as configs ->
+                  for item in configs do
+                      match item with
+                      | :? JsonObject as c ->
+                          let id = match c.["Id"] with null -> "?" | n -> n.ToJsonString()
+                          let fail (msg: string) = errors.Add $"TimeConfigs Id {id}: {msg}"
+                          let has (key: string) = c.ContainsKey key
+                          let text (key: string) =
+                              match c.[key] with
+                              | :? JsonValue as v ->
+                                  match v.TryGetValue<string>() with
+                                  | true, t -> Some t
+                                  | _ ->
+                                      match v.TryGetValue<double>() with
+                                      | true, d -> Some(d.ToString("R", Globalization.CultureInfo.InvariantCulture))
+                                      | _ -> None
+                              | _ -> None
+                          let given = [ "Tc"; "St"; "Fixed"; "Increment"; "MoveTime"; "MovesToGo" ] |> List.filter has
+                          if (has "Tc" || has "St") && given.Length > 1 then
+                              fail ("give the time one way, not " + String.Join(" and ", given))
+                          elif has "Tc" then
+                              match text "Tc" with
+                              | None -> fail "Tc is a text such as \"60+1\""
+                              | Some tc ->
+                                  match ChessLibrary.Match.MatchArgs.tryParseTc tc with
+                                  | Error e -> fail $"Tc \"{tc}\": {e}"
+                                  | Ok l when l.Time + l.Increment = 0L -> fail $"Tc \"{tc}\" gives no time"
+                                  | Ok l when l.Moves > int64 Int32.MaxValue -> fail $"Tc \"{tc}\": too many moves per period"
+                                  | Ok l ->
+                                      c.Remove "Tc" |> ignore
+                                      c.["Fixed"] <- duration l.Time
+                                      c.["Increment"] <- duration l.Increment
+                                      if not (has "NodeLimit") then c.["NodeLimit"] <- JsonValue.Create false
+                                      if l.Moves > 0L then c.["MovesToGo"] <- JsonValue.Create(int l.Moves)
+                          elif has "St" then
+                              let seconds =
+                                  text "St"
+                                  |> Option.map (fun t -> if t.EndsWith "s" then t.Substring(0, t.Length - 1) else t)
+                                  |> Option.bind (fun t ->
+                                      match Double.TryParse(t, Globalization.NumberStyles.Float, Globalization.CultureInfo.InvariantCulture) with
+                                      | true, v when Double.IsFinite v -> Some v
+                                      | _ -> None)
+                              match seconds with
+                              | Some v when v > 0.0 && v < 86400.0 && Math.Round(v * 1000.0) >= 1.0 ->
+                                  c.Remove "St" |> ignore
+                                  c.["MoveTime"] <- duration (int64 (Math.Round(v * 1000.0)))
+                              | _ -> fail "St is the seconds per move, more than 0 (such as 1 or 0.5)"
+                          elif has "Nodes" && not (has "NodeLimit") && given.IsEmpty then
+                              c.["NodeLimit"] <- JsonValue.Create true
+                      | _ -> ()
+              | _ -> ()
+          | _ -> ()
+      | _ -> ()
+      List.ofSeq errors
+
   /// A file that is missing and a file that will not parse are different problems for the
   /// person who has to fix them, and the second used to be reported as the first: the parse
   /// error went to a console nobody was watching and the caller got None, which loadTournament
@@ -679,6 +750,10 @@ module JSON =
               let options = createJsonOptions()
               let node = JsonNode.Parse(json, Nullable(), JsonDocumentOptions(AllowTrailingCommas = true))
               layoutOverDefault node options
+              match timeConfigShortForms node options with
+              | (_ :: _) as problems ->
+                  Error (sprintf "tournament.json (%s): %s" path (String.Join("; ", problems)))
+              | [] ->
               let tournament = node.Deserialize<Tournament>(options)
               let tournament =
                   if obj.ReferenceEquals(box tournament.MoveAnnotation, null) then

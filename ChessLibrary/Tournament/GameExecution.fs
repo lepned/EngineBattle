@@ -30,6 +30,12 @@ open Microsoft.FSharp.Core.Operators.Unchecked
 
 let private adjudicationReason = ResultReason.AdjudicatedByUser
 
+/// A time per move (st) is never allowed less margin than this, whatever MoveOverhead says: an
+/// engine answers a few milliseconds after its movetime (Stockfish on Windows: 1-3 ms), and a
+/// loss on time over that is the operating system's, not the engine's. The margin is
+/// EngineBattle's only; the engine is not told.
+let private minMoveTimeMargin = TimeSpan.FromMilliseconds 50.0
+
 /// Start a game with pondering enabled
 let playWithPondering
   (sb : StringBuilder)
@@ -109,6 +115,28 @@ let playWithPondering
   // engine poll runs four times a second and the per-line check far more often than that.
   let wIncr = tourny.TimeControl.GetIncrementTime(player1.Config.TimeControlID)
   let bIncr = tourny.TimeControl.GetIncrementTime(player2.Config.TimeControlID)
+  // A time per move (st) has no clock: a move is measured against its own limit, in whole
+  // milliseconds as the reference measures it - an engine that stops 0.9 ms after its movetime
+  // is on time (measured to the tick, Stockfish at st=0.1 lost most games on time). It loses
+  // past the limit plus its margin (marginFor); the overrun counts from the limit, as the
+  // reference's does.
+  let runsClock (player: ChessEngine) =
+    let tc = findTimeSetting player
+    not tc.NodeLimit && not tc.IsMoveTime
+  let remainingAfter (player: ChessEngine) isWhite (duration: TimeSpan) =
+    let tc = findTimeSetting player
+    if tc.IsMoveTime then tc.MoveTime - TimeSpan.FromMilliseconds(Math.Floor duration.TotalMilliseconds)
+    elif isWhite then GameHelpers.clockAfterMove duration wTime wIncr
+    else GameHelpers.clockAfterMove duration bTime bIncr
+  // How far past zero a move may go: MoveOverhead, and at least minMoveTimeMargin on st.
+  let marginFor (player: ChessEngine) =
+    if (findTimeSetting player).IsMoveTime then max tourny.MoveOverhead minMoveTimeMargin
+    else tourny.MoveOverhead
+  // A time per move has no clock to run down, so its clock shows what each move has: the move
+  // time plus the margin, where 0 is a loss on time. It is never charged (runsClock), so it
+  // reads the same at every move - to the GUI, the PGN's time left and the opponent's go.
+  if wPlayer.IsMoveTime then wTime <- wPlayer.MoveTime + marginFor player1
+  if bPlayer.IsMoveTime then bTime <- bPlayer.MoveTime + marginFor player2
 
   let msg = $"Initializing players: {player1.Name} vs {player2.Name} with pondering enabled"
   logger.LogInformation msg
@@ -138,10 +166,11 @@ let playWithPondering
   let chess960Option : EngineOption = {Name = "UCI_Chess960"; Value = sprintf "%b" board.IsFRC }
   player1.AddSetOption chess960Option
   player2.AddSetOption chess960Option
+  // Not to an engine on a time per move: there MoveOverhead is EngineBattle's margin only.
   if tourny.MoveOverhead.Ticks > 0 then
       let ms = tourny.MoveOverhead.TotalMilliseconds |> int
-      player1.SetMoveOverhead("overhead", ms)
-      player2.SetMoveOverhead("overhead", ms)
+      if not (findTimeSetting player1).IsMoveTime then player1.SetMoveOverhead("overhead", ms)
+      if not (findTimeSetting player2).IsMoveTime then player2.SetMoveOverhead("overhead", ms)
   if not tourny.ConsoleOnly then
     let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
     let timeCalc = float board.OpeningMovesPlayed.Count * moveTimeInSeconds
@@ -188,10 +217,8 @@ let playWithPondering
   let processBestMove (currentPlaying: ChessEngine) (currentOpponent: ChessEngine) isWhite (line:string)  = async {
     let duration = moveTimer.Elapsed
     let useNodes = isNodeLimit currentPlaying
-    let remaining =
-      if isWhite then GameHelpers.clockAfterMove duration wTime wIncr
-      else GameHelpers.clockAfterMove duration bTime bIncr
-    let lostOnTime = (not useNodes) && remaining + tourny.MoveOverhead < TimeSpan.Zero
+    let remaining = remainingAfter currentPlaying isWhite duration
+    let lostOnTime = (not useNodes) && remaining + marginFor currentPlaying < TimeSpan.Zero
     let mutable posToCheck = board.Position
     let piecesLeft = PositionOps.numberOfPieces &posToCheck
 
@@ -200,7 +227,7 @@ let playWithPondering
       if currentPlaying.HasExited() then
          logger.LogCritical($"Engine {currentPlaying.Name} has exited while lost on time")
       logger.LogCritical("Engine {Engine} lost on time. Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}", currentPlaying.Name, (if isWhite then wTime.TotalMilliseconds else bTime.TotalMilliseconds), duration.TotalMilliseconds)
-      let res = lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo
+      let res = lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer remaining firstTwo
       result <- res
       continueGame <- false
     else
@@ -211,15 +238,15 @@ let playWithPondering
       // Update clocks
       // Clamped here, where it is stored: a clock is never shown or sent below zero, while
       // `remaining` above keeps the sign the adjudication needed.
-      if not useNodes then
+      if runsClock currentPlaying then
         if isWhite then wTime <- max remaining TimeSpan.Zero
         else bTime <- max remaining TimeSpan.Zero
       let currentTime = if isWhite then wTime else bTime
       // Repeating moves-to-go: top up the mover's base time when it completes a period.
       // board is pre-move here (MakeMove happens below), so NextMoveNumber() is the move just made.
-      let mtgPeriod = tourny.TimeControl.MovesToGoPeriod
-      if mtgPeriod > 0 && not useNodes && board.NextMoveNumber() % mtgPeriod = 0 then
-          let cfg = tourny.TimeControl.GetTimeConfig(currentPlaying.Config.TimeControlID)
+      let cfg = tourny.TimeControl.GetTimeConfig(currentPlaying.Config.TimeControlID)
+      let mtgPeriod = tourny.TimeControl.PeriodFor cfg
+      if mtgPeriod > 0 && runsClock currentPlaying && board.NextMoveNumber() % mtgPeriod = 0 then
           if isWhite then wTime <- wTime + cfg.Fixed
           else bTime <- bTime + cfg.Fixed
       moveInfoData.tl <- int64 ((if isWhite then wTime else bTime).TotalMilliseconds)
@@ -341,7 +368,8 @@ let playWithPondering
 
               | _ -> ponderHit <- false
 
-              if not (String.IsNullOrEmpty ponderSan) then
+              // no pondering on a time per move: its go has no clock to ponder with
+              if not (String.IsNullOrEmpty ponderSan) && not (findTimeSetting currentPlaying).IsMoveTime then
                 if currentPlaying.Name = player1.Name then
                   player1inPonderMode <- true
                   player2inPonderMode <- false
@@ -522,17 +550,15 @@ let playWithPondering
               if continueGame && currentPos = board.Position then
                   let duration = moveTimer.Elapsed
                   let useNodes = isNodeLimit currentPlaying
-                  let remaining =
-                    if isWhite then GameHelpers.clockAfterMove duration wTime wIncr
-                    else GameHelpers.clockAfterMove duration bTime bIncr
-                  if (not useNodes) && remaining + tourny.MoveOverhead < TimeSpan.Zero then
+                  let remaining = remainingAfter currentPlaying isWhite duration
+                  if (not useNodes) && remaining + marginFor currentPlaying < TimeSpan.Zero then
                       let firstTwo = firstTwoEvals fullEvalList
                       logger.LogCritical("Engine {Engine} lost on time while sending no output (exited: {Exited}). Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}",
                                          currentPlaying.Name, currentPlaying.HasExited(),
                                          (if isWhite then wTime.TotalMilliseconds else bTime.TotalMilliseconds),
                                          duration.TotalMilliseconds)
                       logger.LogCritical(currentPlaying.GetDiagnostics())
-                      result <- lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer firstTwo
+                      result <- lostOnTimeResult currentPlaying.Name currentOpponent.Name isWhite gameMoveList gametimer remaining firstTwo
                       continueGame <- false
 
               if currentPos <> board.Position then
@@ -552,6 +578,8 @@ let playWithPondering
                       currentPlaying.Position fenAndMoves
                       if timeConfig.NodeLimit then
                           currentPlaying.GoNodes timeConfig.Nodes
+                      elif timeConfig.IsMoveTime then
+                          currentPlaying.Go(int timeConfig.MoveTime.TotalMilliseconds)
                       else
                           // moves-to-go control sends a counting-down movestogo; harmless (GetTime) otherwise
                           let movesDone = board.NextMoveNumber() - 1
@@ -666,6 +694,28 @@ let playGeneric
   let mutable bTime = bPlayer.Fixed
   let wIncr = tourny.TimeControl.GetIncrementTime(player1.Config.TimeControlID)
   let bIncr = tourny.TimeControl.GetIncrementTime(player2.Config.TimeControlID)
+  // A time per move (st) has no clock: a move is measured against its own limit, in whole
+  // milliseconds as the reference measures it - an engine that stops 0.9 ms after its movetime
+  // is on time (measured to the tick, Stockfish at st=0.1 lost most games on time). It loses
+  // past the limit plus its margin (marginFor); the overrun counts from the limit, as the
+  // reference's does.
+  let runsClock (player: ChessEngine) =
+    let tc = findTimeSetting player
+    not tc.NodeLimit && not tc.IsMoveTime
+  let remainingAfter (player: ChessEngine) isWhite (duration: TimeSpan) =
+    let tc = findTimeSetting player
+    if tc.IsMoveTime then tc.MoveTime - TimeSpan.FromMilliseconds(Math.Floor duration.TotalMilliseconds)
+    elif isWhite then GameHelpers.clockAfterMove duration wTime wIncr
+    else GameHelpers.clockAfterMove duration bTime bIncr
+  // How far past zero a move may go: MoveOverhead, and at least minMoveTimeMargin on st.
+  let marginFor (player: ChessEngine) =
+    if (findTimeSetting player).IsMoveTime then max tourny.MoveOverhead minMoveTimeMargin
+    else tourny.MoveOverhead
+  // A time per move has no clock to run down, so its clock shows what each move has: the move
+  // time plus the margin, where 0 is a loss on time. It is never charged (runsClock), so it
+  // reads the same at every move - to the GUI, the PGN's time left and the opponent's go.
+  if wPlayer.IsMoveTime then wTime <- wPlayer.MoveTime + marginFor player1
+  if bPlayer.IsMoveTime then bTime <- bPlayer.MoveTime + marginFor player2
   let delaySeconds = tourny.DelayBetweenGames.TotalSeconds
   let delayMilliseconds = tourny.DelayBetweenGames.TotalMilliseconds
   let msg = sprintf "Initializing players: %s vs %s with delay: %.2f seconds (%.0f ms)" player1.Name player2.Name delaySeconds delayMilliseconds
@@ -713,10 +763,11 @@ let playGeneric
   else
     try
 
+        // Not to an engine on a time per move: there MoveOverhead is EngineBattle's margin only.
         if tourny.MoveOverhead.Ticks > 0 then
             let ms = tourny.MoveOverhead.TotalMilliseconds |> int
-            player1.SetMoveOverhead("overhead", ms)
-            player2.SetMoveOverhead("overhead", ms)
+            if not (findTimeSetting player1).IsMoveTime then player1.SetMoveOverhead("overhead", ms)
+            if not (findTimeSetting player2).IsMoveTime then player2.SetMoveOverhead("overhead", ms)
 
         if not tourny.ConsoleOnly then
           let moveTimeInSeconds = float tourny.MinMoveTimeInMS / 1000.0
@@ -807,11 +858,20 @@ let playGeneric
     else
       if position <> pos then
         let isWhite = playing.Name = player1.Name
-        let timeLeftTicks = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
-        let timeOutInMs = (TimeSpan(timeLeftTicks).TotalMilliseconds |> int32) + 2000
+        // How long the read may wait before the silent-engine check takes over: the time the
+        // move has, plus 2 s. After it fires every read returns at once, so it must not fire
+        // while the engine may still be searching: a node limit has no time and no timeout (it
+        // was the clock's, 2 s in a match - a longer node search was never read and the game
+        // hung), a time per move has its own limit.
+        let tc = findTimeSetting playing
+        let timeOutInMs =
+          if tc.NodeLimit then Timeout.Infinite
+          elif tc.IsMoveTime then int ((tc.MoveTime + marginFor playing).TotalMilliseconds) + 2000
+          else
+            let timeLeftTicks = if isWhite then wTime.Ticks + wIncr.Ticks else bTime.Ticks + bIncr.Ticks
+            (TimeSpan(timeLeftTicks).TotalMilliseconds |> int32) + 2000
         ct <- (new CancellationTokenSource(timeOutInMs)).Token
 
-        moveTimer <- Stopwatch.GetTimestamp()
         pos <- position
         evalList <- []
         npsList.Clear()
@@ -835,9 +895,15 @@ let playGeneric
           playing.GoNodes 1
         elif timeConfig.NodeLimit then
           playing.GoNodes timeConfig.Nodes
+        elif timeConfig.IsMoveTime then
+          playing.Go(int timeConfig.MoveTime.TotalMilliseconds)
         else
           let movesDone = board.NextMoveNumber() - 1
           playing.Go(tourny.TimeControl.GetTimeForMove timeConfig movesDone, wTime, bTime)
+        // The move's time runs from the go, as the reference measures it (and as the pondering
+        // loop always did): the position line written before it is not the engine's time, and
+        // at st=0.1 a millisecond or two decides a loss on time.
+        moveTimer <- Stopwatch.GetTimestamp()
 
       let! lineOrAdj = readLineOrAdjudication playing ct
       match lineOrAdj with
@@ -880,16 +946,14 @@ let playGeneric
           let duration = Stopwatch.GetElapsedTime(moveTimer)
           let useNodes = isNodeLimit playing
           let isWhite = playing.Name = player1.Name
-          let remaining =
-            if isWhite then GameHelpers.clockAfterMove duration wTime wIncr
-            else GameHelpers.clockAfterMove duration bTime bIncr
-          if (not useNodes) && remaining + tourny.MoveOverhead < TimeSpan.Zero then
+          let remaining = remainingAfter playing isWhite duration
+          if (not useNodes) && remaining + marginFor playing < TimeSpan.Zero then
             let firstTwoEvals = firstTwoEvals fullEvalList
             logger.LogCritical("Engine {Engine} lost on time while sending no output (exited: {Exited}). Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}",
                                playing.Name, playing.HasExited(),
                                (if isWhite then wTime.TotalMilliseconds else bTime.TotalMilliseconds),
                                duration.TotalMilliseconds)
-            let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
+            let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer remaining firstTwoEvals
             logger.LogCritical(playing.GetDiagnostics())
             callback(EndOfGame res)
             return res
@@ -937,16 +1001,14 @@ let playGeneric
         let duration = Stopwatch.GetElapsedTime(moveTimer)
         let useNodes = isNodeLimit playing
         let isWhite = playing.Name = player1.Name
-        let remaining =
-          if isWhite then GameHelpers.clockAfterMove duration wTime wIncr
-          else GameHelpers.clockAfterMove duration bTime bIncr
-        let lostOnTime = (not useNodes) && remaining + tourny.MoveOverhead < TimeSpan.Zero
+        let remaining = remainingAfter playing isWhite duration
+        let lostOnTime = (not useNodes) && remaining + marginFor playing < TimeSpan.Zero
         if lostOnTime then
           let firstTwoEvals = firstTwoEvals fullEvalList
           if playing.HasExited() then
               logger.LogCritical($"Engine {playing.Name} has exited while lost on time")
           logger.LogCritical("Engine {Engine} lost on time. Time left (ms): {TimeLeftMs}, Move time (ms): {MoveTimeMs}", playing.Name, (if isWhite then wTime.TotalMilliseconds else bTime.TotalMilliseconds), duration.TotalMilliseconds)
-          let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer firstTwoEvals
+          let res = lostOnTimeResult playing.Name opponent.Name isWhite gameMoveList gametimer remaining firstTwoEvals
           let diagnosis = playing.GetDiagnostics()
           logger.LogCritical diagnosis
           // Every other terminal path in this function raises EndOfGame; this one did not,
@@ -964,15 +1026,15 @@ let playGeneric
                 // make move mutable so "do not deviate" can substitute an old move if needed
                 let mutable move = line.Split().[1]
                 let ponderMove = if line.Contains "ponder" then (line.Split().[3]) else ""
-                if not useNodes then
+                if runsClock playing then
                   if isWhite then wTime <- max remaining TimeSpan.Zero
                   else bTime <- max remaining TimeSpan.Zero
                 let currentTime = if isWhite then wTime else bTime
                 // Repeating moves-to-go: top up the mover's base time when it completes a period
                 // (board is pre-move here; MakeMove happens below).
-                let mtgPeriod = tourny.TimeControl.MovesToGoPeriod
-                if mtgPeriod > 0 && not useNodes && board.NextMoveNumber() % mtgPeriod = 0 then
-                    let cfg = tourny.TimeControl.GetTimeConfig(playing.Config.TimeControlID)
+                let cfg = tourny.TimeControl.GetTimeConfig(playing.Config.TimeControlID)
+                let mtgPeriod = tourny.TimeControl.PeriodFor cfg
+                if mtgPeriod > 0 && runsClock playing && board.NextMoveNumber() % mtgPeriod = 0 then
                     if isWhite then wTime <- wTime + cfg.Fixed
                     else bTime <- bTime + cfg.Fixed
                 let mutable posToCheck = board.Position

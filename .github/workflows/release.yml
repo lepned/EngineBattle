@@ -47,12 +47,22 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Publish
+        # The tag without its "v" (v1.8.2 -> 1.8.2) is every assembly's version; BuildInfo reads it.
+        # The console goes into the same folder as eb-cli, as cutechess ships cutechess-cli beside
+        # its GUI: one download per platform, and the two share the Tools folder (Fathom).
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           if [ "${{ matrix.selfcontained }}" = "true" ]; then
-            dotnet publish WebGUI -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/${{ matrix.rid }}
+            OUT=publish/${{ matrix.rid }}; SC=--self-contained
           else
-            dotnet publish WebGUI -c Release -r ${{ matrix.rid }} --no-self-contained -p:PublishSingleFile=true -p:DebugType=none -o publish/${{ matrix.rid }}-fd
+            OUT=publish/${{ matrix.rid }}-fd; SC=--no-self-contained
           fi
+          dotnet publish WebGUI -c Release -r ${{ matrix.rid }} $SC -p:PublishSingleFile=true -p:DebugType=none -p:Version=$VERSION -o $OUT
+          dotnet publish Console -c Release -r ${{ matrix.rid }} $SC -p:PublishSingleFile=true -p:DebugType=none -p:Version=$VERSION -o $OUT
+          case "${{ matrix.rid }}" in
+            win-*) mv $OUT/EngineBattle.Console.exe $OUT/eb-cli.exe ;;
+            *)     mv $OUT/EngineBattle.Console $OUT/eb-cli ;;
+          esac
       - name: Set artifact name
         id: names
         run: |
@@ -98,7 +108,8 @@ jobs:
           # No PublishSingleFile: WebView2 ships native libraries beside the exe.
           # Not named $args -- that is a PowerShell automatic variable.
           $publishArgs = @('publish', 'Desktop/EngineBattle.Desktop', '-c', 'Release',
-                           '-r', '${{ matrix.rid }}', '-p:DebugType=none', '-o', 'publish/shell')
+                           '-r', '${{ matrix.rid }}', '-p:DebugType=none', '-o', 'publish/shell',
+                           "-p:Version=$($env:GITHUB_REF_NAME.TrimStart('v'))")
           $publishArgs += $(if ($sc) { '--self-contained' } else { '--no-self-contained' })
           dotnet @publishArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

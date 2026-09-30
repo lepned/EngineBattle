@@ -433,18 +433,20 @@ module TypesDef =
         Result: string
         Reason: ResultReason
         GameTime: int64
-        OutOfOpeningEvals: EvalType list }
+        OutOfOpeningEvals: EvalType list
+        /// A time loss: how far below zero the loser's clock went, in ms; 0 otherwise.
+        TimeOverrunMs: int64 }
         override x.ToString() =
           let time = float x.GameTime / 1000.0
           sprintf "%s vs %s: %s (%s), %d moves, %.1f seconds" x.Player1 x.Player2 x.Result (x.Reason.Explanation) x.Moves time
         static member Empty =
-          { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = [] }
+          { Player1 = "White"; Player2 = "Black"; Moves = 0; Result = "1/2-1/2"; Reason = ResultReason.NotStarted; GameTime = 0L; OutOfOpeningEvals = []; TimeOverrunMs = 0L }
     let createResult p1 p2 (moves: ResizeArray<string>) result reason gameTime =
       let moveCount = if moves.Count % 2 = 0 then moves.Count / 2 else (moves.Count / 2) + 1
-      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []}
+      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = []; TimeOverrunMs = 0L }
     let createResultWithEval p1 p2 (moves: ResizeArray<string>) result reason gameTime evals =
       let moveCount = if moves.Count % 2 = 0 then moves.Count / 2 else (moves.Count / 2) + 1
-      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals}
+      { Player1 = p1; Player2 = p2; Moves = moveCount; Result = result; Reason = reason; GameTime = gameTime; OutOfOpeningEvals = evals; TimeOverrunMs = 0L }
 
 
     type PlayerResult =

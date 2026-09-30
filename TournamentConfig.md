@@ -21,10 +21,10 @@ This document provides an overview of the `tournament.json` configuration file u
 - **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
 - **Challengers**: Number of challengers in the tournament.
-- **Rounds**: Number of rounds in the tournament.
+- **Rounds**: Number of rounds in the tournament. In round robin and gauntlet each round uses the next opening of the book, and a book shorter than `Rounds` starts over from its first opening.
 - **PauseAfterRound**: A round number; the WebGUI stops the tournament once a round beyond it starts (0 = never). Console runs ignore it.
 - **DelayBetweenGames**: Delay between games, e.g. `00:00:20`.
-- **MoveOverhead**: Move overhead time, e.g. `00:00:00.100`.
+- **MoveOverhead**: Move overhead time, e.g. `00:00:00.100`. Sent to the engines as their move overhead and allowed as a margin before a loss on time. For an engine on a time per move (`MoveTime`) it is a margin only - not sent - and never less than 50 ms.
 
 > **Time format**: `hh:mm:ss` with an optional `.fff` for milliseconds. No field has an upper
 > limit, so `00:00:90` is ninety seconds, `00:60:00` is an hour and `30:00:00` is thirty hours.
@@ -71,7 +71,9 @@ See `LiveFeedContract.md` for the wire protocol and the README section *Watching
 
 - **OpeningsPath**: Path to the openings file, either a PGN-file or an EPD-file.
 - **OpeningsPly**: Number of plies for openings.
-- **OpeningsTwice**: Use openings twice.
+- **OpeningsTwice**: Use openings twice. With `true` every pair plays each opening with both colours. With `false` each opening is played once, and the colours swap from one opening (round robin) or round (gauntlet) to the next, so every engine gets White about as often as Black.
+
+> **Changed in version 1.9 - read before resuming an older tournament.** Before 1.9, a round robin with `OpeningsTwice: false` gave every pair the same colours in every round (with two engines the same one was White in every game), and a gauntlet gave the challenger White in every game. A round robin also stopped at the end of the book when `Rounds` was larger. A tournament of either kind started with an older version and resumed with 1.9 is planned the new way, and the games already played are matched against that plan: expect some openings to be played again with the colours swapped, and a finished round robin with `Rounds` larger than its book to show games left. Start such a tournament over, with a new `PgnOutPath`, rather than resuming it. Tournaments with `OpeningsTwice: true` and a book at least as long as `Rounds` are not affected.
 - **RandomOpenings**: True to randomize opening order for Round Robin and Gauntlet modes. Cup and Swiss modes have their own RandomOpenings in CupOptions/SwissOptions.
 - **Seed**: Integer seed for the opening shuffle. Has effect only when `RandomOpenings = true`. **Default: 0** (what you get if you omit the field). The seed does not depend on engine names or the PGN path, so the shuffle is stable across engine-list changes and reproducible across machines for the same book. Set `Seed` to any integer you like to pick a different shuffle for a particular tournament. The effective seed is logged at tournament start.
 
@@ -159,14 +161,85 @@ charts 200 px; PV boards on, small.
 
 ### Time Control
 
-- **TimeConfigs**: List of time control configurations, which can be used in engineDef.json.
-  - **Id**: Time control ID.
-  - **Fixed**: Fixed time for the whole game, e.g. `00:03:00`.
-  - **Increment**: Added after each move, e.g. `00:00:02`.
-  - **NodeLimit**: Enable or disable node limit.
-  - **Nodes**: Number of nodes for the time control.
-- **WmovesToGo** / **BmovesToGo**: Moves per repeating time-control period (e.g. `40` = "40 moves, then more time"). `0` (default) = sudden-death/increment with no `movestogo`. When `> 0`, EB sends a counting-down UCI `movestogo` each move and tops up the base time (`Fixed`) at every period boundary, with the **same base repeating** each period. Symmetric only (both sides use `max(W,B)`); multi-stage controls such as `40/90 + 30/30` are not supported.
+`TimeControl.TimeConfigs` lists the time settings of the tournament. Each engine plays the
+setting whose `Id` its engine def names in `TimeControlID`, so two engines in one tournament
+can play different time controls (a handicap match, a node-limited net against a timed one).
 
+Write a setting in the short form - the same notation as `match`'s `tc=` and `st=`:
+
+```json
+"TimeControl": {
+  "TimeConfigs": [
+    { "Id": 1, "Tc": "60+1" },
+    { "Id": 2, "Tc": "2:30+2" },
+    { "Id": 3, "Tc": "40/5:00+2" },
+    { "Id": 4, "St": 1 },
+    { "Id": 5, "Nodes": 800 }
+  ]
+}
+```
+
+| Setting | Means | Examples |
+|---|---|---|
+| `"Tc": "base+inc"` | a clock: base time, and an increment added after every move | `"60+1"` 60 s + 1 s, `"10+0.1"`, `"5:00"` 5 min, no increment |
+| base as `m:ss` | minutes and seconds | `"2:30+2"` 2 min 30 s + 2 s, `"90:00+30"` 90 min + 30 s |
+| `"Tc": "moves/base+inc"` | a repeating period: after that many moves the base is added again | `"40/5:00+2"` 5 min per 40 moves + 2 s, `"40/300"` |
+| `"St": seconds` | a fixed time per move, no clock (`go movetime`) | `1`, `0.5`, `"0.5"` |
+| `"Nodes": n` | a node limit per move, no clock (`go nodes`) | `800`, `150000` |
+
+- Seconds are the unit everywhere: the base (or `m:ss`), the increment and `St`. Decimals are fine
+  (`"10+0.1"`, `"St": 0.25`); a trailing `s` is allowed (`"60s+1"`). There is no `m` unit - write
+  minutes as `m:ss`.
+- A setting gives its time one way. `Tc` or `St` together with `Fixed`, `Increment`, `MoveTime`
+  or `MovesToGo` is an error, and so is a `Tc` that cannot be read - the file is refused with a
+  message naming the setting, rather than a guess.
+- Each setting has its own period: one engine can play `"40/5:00"` while another plays
+  `"60/10:00"`.
+
+How each kind plays:
+
+- **Clock (`Tc`)**: the engine gets `go wtime .. btime .. winc .. binc ..` (and `movestogo` with a
+  period). It loses on time when its clock goes below zero by more than `MoveOverhead`.
+- **Time per move (`St`)**: the engine gets `go movetime`. It loses on time when a move takes
+  longer than `St` plus a margin: `MoveOverhead`, and at least 50 ms. The margin is EngineBattle's
+  own and is not sent to the engine (an engine answers a millisecond or three after its movetime;
+  a loss over that says nothing about the engine). The clock in the GUI shows `St` plus the margin
+  at every move and counts down while the engine thinks.
+- **Node limit (`Nodes`)**: the engine gets `go nodes`. There is no clock and no loss on time; the
+  GUI shows the limit (`800 nodes`) where a clock would be.
+
+The time settings in the GUI's banner and the PGN are written the same way: `1' + 1''`,
+`40/5' + 2''`, `1'' / move`, `800 nodes`.
+
+#### The long form
+
+The fields the short form stands for. A file in this form reads as it always did, and the
+Tournament creator writes it:
+
+```json
+{ "Id": 1, "Fixed": "00:01:00", "Increment": "00:00:01", "NodeLimit": false, "Nodes": 0 }
+```
+
+- **Id**: the time setting's ID, named by `TimeControlID` in an engine def.
+- **Fixed**: the base time, `hh:mm:ss` with optional `.fff`.
+- **Increment**: added after every move, same format.
+- **MovesToGo**: moves per repeating period, `0` or left out = none.
+- **MoveTime**: a fixed time per move instead of a clock (`"00:00:01"`); left out = off.
+- **NodeLimit** / **Nodes**: `true` and a node count for a node limit. `Nodes` alone, with no time
+  and no `NodeLimit`, is a node limit too.
+
+A field a setting leaves out is zero or off, so `{ "Id": 3, "MoveTime": "00:00:02" }` is a whole
+setting.
+
+- **WmovesToGo** / **BmovesToGo** (next to `TimeConfigs`, optional): a period for every setting
+  without its own `MovesToGo`, as older files set it for the whole tournament. Left out = none.
+  When a period is set, EB sends a counting-down UCI `movestogo` each move and adds the base time
+  (`Fixed`) again at every period boundary, the **same base** each period; multi-stage controls
+  such as `40/90 + 30/30` are not supported.
+
+> **Tournament creator**: the GUI's creator writes its own time settings in the long form and does
+> not read a file's settings first - saving a tournament from it replaces settings written by hand
+> (`St`, a period, sub-second increments). Keep a copy of a hand-written file.
 
 ## Tournament.json example - copy this as template
 
@@ -278,30 +351,10 @@ charts 200 px; PV boards on, small.
 
   "TimeControl": {
     "TimeConfigs": [
-      {
-        "Id": 1,
-        "Fixed": "00:01:00.000",
-        "Increment": "00:00:01.000",
-        "NodeLimit": false,
-        "Nodes": 1
-      },
-      {
-        "Id": 2,
-        "Fixed": "00:03:00.000",
-        "Increment": "00:00:02.000",
-        "NodeLimit": false,
-        "Nodes": 1
-      },
-      {
-        "Id": 3,
-        "Fixed": "00:05:00.000",
-        "Increment": "00:00:03.000",
-        "NodeLimit": false,
-        "Nodes": 100
-      }
-    ],
-    "WmovesToGo": 0,
-    "BmovesToGo": 0
+      { "Id": 1, "Tc": "60+1" },
+      { "Id": 2, "Tc": "3:00+2" },
+      { "Id": 3, "Tc": "5:00+3" }
+    ]
   }
 
 }

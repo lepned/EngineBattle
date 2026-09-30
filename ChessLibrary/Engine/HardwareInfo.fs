@@ -50,7 +50,10 @@ module HardwareInfo =
                 // snapshot working‐set
                 uint64 engine.Process.WorkingSet64
             finally
-                // initEngine can throw (WaitForReadyOk failure) — never leak the process
+                // initEngine can throw (WaitForReadyOk failure) — never leak the process.
+                // quit first: StopProcess gives the engine three seconds to leave on its own, and
+                // a UCI engine does not without it - every run with concurrency > 1 waited them out
+                (try engine.Quit() with _ -> ())
                 try engine.StopProcess() with _ -> ())
 
   /// Sequentially walk your configs, measuring memory usage one at a time, after each measurement we GC to reclaim EVERYTHING.
@@ -77,13 +80,16 @@ module HardwareInfo =
         1
     else            
         let totalAvail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes |> uint64
-        let headroomBytes = totalAvail / 2UL
+        // 70 %: the rest is for the OS and the GUI, and for Lc0 and Ceres growing after they are
+        // measured (their cache and search tree fill during the games)
+        let headroomBytes = totalAvail / 10UL * 7UL
         let footprints = 
             let sum = sumFootprints configs
             printfn "Sum of one copy each ≈ %d MB" (sum/1_048_576UL)
             sum
         
-        let maxSets = int (headroomBytes / footprints)
+        // nothing measured (every engine failed to start - the run reports that itself): no limit
+        let maxSets = if footprints = 0UL then requested else int (min (uint64 Int32.MaxValue) (headroomBytes / footprints))
         let concurrencyNum = min requested maxSets
         //printfn "Max sets of engines = %d" maxSets
         printfn "Using concurrency = %d" concurrencyNum

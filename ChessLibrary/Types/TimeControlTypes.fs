@@ -30,6 +30,14 @@ module TimeControlTypes =
 
     sprintf "%s + %s''" fixedPart (secondsText incrementTime.TotalSeconds)
 
+  /// A fixed time per move: "5'' / move", "0.5'' / move".
+  let formatMoveTime (moveTime: TimeSpan) : string =
+    let rounded = Math.Round(moveTime.TotalSeconds, 3)
+    let text =
+      if rounded = Math.Floor rounded then string (int64 rounded)
+      else rounded.ToString("0.###", CultureInfo.InvariantCulture)
+    sprintf "%s'' / move" text
+
   /// The other half of a time control: "1 node", "800 nodes", "10.0K nodes", "1.5M nodes".
   let formatNodes (nodes: int) : string =
     if nodes = 1 then "1 node"   // 1-node searches are routine in puzzle testing
@@ -61,17 +69,33 @@ module TimeControlTypes =
         | WithMoves (_, incr, _, _) -> incr
         | Nodes _ -> TimeSpan.Zero
 
-  type TimeConfig = { Id: int; Fixed: TimeSpan; Increment: TimeSpan; NodeLimit: bool; Nodes: int }
+  /// MoveTime: a fixed time per move (`go movetime`, the match's st=); Zero = off, and a config
+  /// file without it reads as Zero. No clock runs: a move loses on time when it takes longer than
+  /// MoveTime + the tournament's MoveOverhead, which is then a margin only and not sent to the
+  /// engine (the match's timemargin=).
+  /// MovesToGo: moves per repeating period of this setting's clock ("40/" in 40/300+2), Fixed
+  /// added again after each; 0 = none, and then the tournament's WmovesToGo/BmovesToGo apply as
+  /// they always did (TimeControl.PeriodFor).
+  type TimeConfig =
+    { Id: int; Fixed: TimeSpan; Increment: TimeSpan; NodeLimit: bool; Nodes: int
+      MoveTime: TimeSpan; MovesToGo: int }
     with
+      /// A time per move rather than a clock (and not a node limit, which takes precedence).
+      /// Derived, so not written to a config file.
+      [<System.Text.Json.Serialization.JsonIgnore>]
+      member x.IsMoveTime = not x.NodeLimit && x.MoveTime > TimeSpan.Zero
       member x.Times (fraction: double) =
         let fixedTicks = float x.Fixed.Ticks
         let newFixedTicks = fixedTicks * fraction |> int64
         let incrTicks = float x.Increment.Ticks
         let newIncrTicks = incrTicks * fraction |> int64
         let newNodes = float x.Nodes * fraction |> int32
-        { x with Fixed = TimeSpan(newFixedTicks); Increment = TimeSpan(newIncrTicks); Nodes = newNodes }
+        let newMoveTicks = float x.MoveTime.Ticks * fraction |> int64
+        { x with Fixed = TimeSpan(newFixedTicks); Increment = TimeSpan(newIncrTicks); Nodes = newNodes; MoveTime = TimeSpan(newMoveTicks) }
       override x.ToString() =
         if x.NodeLimit then formatNodes x.Nodes
+        elif x.IsMoveTime then formatMoveTime x.MoveTime
+        elif x.MovesToGo > 0 then sprintf "%d/%s" x.MovesToGo (formatTimeControl x.Fixed x.Increment)
         else formatTimeControl x.Fixed x.Increment
 
   type TimeControl =
@@ -83,11 +107,15 @@ module TimeControlTypes =
         | None -> x.TimeConfigs |> Seq.head
       member x.GetFixedtime(idx: int) =
         (x.GetTimeConfig idx).Fixed
+      /// Moves per period for a setting: its own MovesToGo, else the tournament's (0 = none).
+      member x.PeriodFor (config: TimeConfig) =
+        if config.MovesToGo > 0 then config.MovesToGo else x.MovesToGoPeriod
       member x.GetTime (config: TimeConfig) =
         // moves-to-go checked FIRST so a repeating control isn't shadowed by the increment cases
-        match (config.Increment, config.Increment, x.WmovesToGo, x.BmovesToGo) with
+        let period = x.PeriodFor config
+        match (config.Increment, config.Increment, period, period) with
         | (_, _, w, b) when w > 0 || b > 0 ->
-            UnionType.WithMoves (config.Fixed, config.Increment, x.WmovesToGo, x.BmovesToGo)
+            UnionType.WithMoves (config.Fixed, config.Increment, period, period)
         | (w, b, _, _) when w.Ticks = 0 && b.Ticks = 0 ->
             UnionType.FixedTime(config.Fixed)
         | (w, b, _, _) when w.Ticks > 0 || b.Ticks > 0 ->
@@ -95,9 +123,10 @@ module TimeControlTypes =
         | _ -> UnionType.Nodes(config.Nodes)
       member x.GetUnion(idx: int) =
         let config = x.GetTimeConfig idx
-        match (config.Increment, config.Increment, x.WmovesToGo, x.BmovesToGo) with
+        let period = x.PeriodFor config
+        match (config.Increment, config.Increment, period, period) with
         | (_, _, w, b) when w > 0 || b > 0 ->
-            UnionType.WithMoves (config.Fixed, config.Increment, x.WmovesToGo, x.BmovesToGo)
+            UnionType.WithMoves (config.Fixed, config.Increment, period, period)
         | (w, b, _, _) when w.Ticks = 0 && b.Ticks = 0 ->
             UnionType.FixedTime(config.Fixed)
         | (w, b, _, _) when w.Ticks > 0 || b.Ticks > 0 ->
@@ -113,14 +142,14 @@ module TimeControlTypes =
         let fixedMs = int config.Fixed.TotalMilliseconds
         let incrMs = int config.Increment.TotalMilliseconds
         (fixedMs + incrMs)
-      /// Moves per (repeating) time-control period; 0 = not a moves-to-go control.
-      /// Symmetric for now: both sides use max(W,B).
+      /// The tournament's moves per (repeating) period, for a setting without its own; 0 = none.
+      /// Symmetric: both sides use max(W,B).
       member x.MovesToGoPeriod = max x.WmovesToGo x.BmovesToGo
       /// Like GetTime, but for a repeating moves-to-go control it bakes the COUNTDOWN
       /// (moves left in the current period) into the WithMoves union, given how many
       /// moves the side to move has already completed (e.g. board.NextMoveNumber() - 1).
       member x.GetTimeForMove (config: TimeConfig) (movesDoneBySideToMove: int) =
-        let period = x.MovesToGoPeriod
+        let period = x.PeriodFor config
         if not config.NodeLimit && period > 0 && config.Fixed.Ticks > 0L then
           let rem = period - (movesDoneBySideToMove % period)
           let mtg = if rem <= 0 then period else rem

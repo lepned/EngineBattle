@@ -54,6 +54,7 @@
 		<Compile Include="LazyPoolTests.fs" />
 		<Compile Include="Lc0ContemptTests.fs" />
 		<Compile Include="LayoutOptionParseTests.fs" />
+		<Compile Include="TimeConfigShortFormTests.fs" />
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
@@ -63,6 +64,13 @@
 		<Compile Include="AnnotationParserTests.fs" />
 		<Compile Include="WinboardThinkingCacheTests.fs" />
 		<Compile Include="AnalysisOutputTests.fs" />
+		<Compile Include="MatchStatsTests.fs" />
+		<Compile Include="MatchArgsTests.fs" />
+		<Compile Include="MatchMappingTests.fs" />
+		<Compile Include="MatchScoreboardTests.fs" />
+		<Compile Include="MatchOutputTests.fs" />
+		<Compile Include="MatchConfigTests.fs" />
+		<Compile Include="BuildInfoTests.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

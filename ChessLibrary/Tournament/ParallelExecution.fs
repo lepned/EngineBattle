@@ -45,6 +45,22 @@ let assignDeviceToConfig (config: EngineConfig) (gpu: int) =
         newOptions.[config.DeviceOption] <- box value
         { config with Options = newOptions }
 
+/// How many games the runner plays at once: the games asked for, fewer when one copy of each
+/// engine times that number does not fit in 70% of the memory (measured once per engine setup and
+/// cached, so asking again - as match does to report it - starts no engine), at least one per GPU.
+let concurrencyFor (tourny: Tournament) =
+    let gpus = tourny.TestOptions.GPUs
+    let memBased =
+        HardwareInfo.concurrencyLevel
+            tourny.EngineSetup.Engines
+            tourny.TestOptions.NumberOfGamesInParallel
+    let gpuBased =
+        if gpus <> null && gpus.Length > 1 then
+            max memBased gpus.Length
+        else
+            memBased
+    max 1 gpuBased
+
 /// Quit politely, then make sure the process is gone. Never throws: teardown must go on.
 let private stopEngine (eng: ChessEngine) =
     try eng.Quit() with _ -> ()
@@ -432,17 +448,7 @@ let parallelTournamentRun
           tourny.DeviationCounter <- seededDeviations
 
       let gpus = tourny.TestOptions.GPUs
-      let concurrency =
-          let memBased =
-              HardwareInfo.concurrencyLevel
-                  tourny.EngineSetup.Engines
-                  tourny.TestOptions.NumberOfGamesInParallel
-          let gpuBased =
-              if gpus <> null && gpus.Length > 1 then
-                  max memBased gpus.Length
-              else
-                  memBased
-          max 1 gpuBased
+      let concurrency = concurrencyFor tourny
 
       // A user can adjudicate "the" running game only when there is exactly one; with several
       // boards the request has no single target, so it is answered with None.
@@ -488,6 +494,7 @@ let parallelTournamentRun
                   else e
               let eng = EngineHelper.createEngine (cfg, Some logger)
               lock allEngines (fun () -> allEngines.Add(eng))
+              callback (Update.EngineStarted(e.Name, eng.GetDefaultOptions() |> Seq.map (fun kv -> kv.Key, string kv.Value) |> Map.ofSeq))
               // Pooled engines that skip per-game init must be initialised here. When the game
               // initialises its own engines (GUI, one board) it must NOT happen here: the game
               // sends StartOfGame before it initialises, so the board shows the pairing while
@@ -577,6 +584,7 @@ let parallelTournamentRun
                   giveBack ()
                   ChessLibrary.RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red
                       (sprintf "Engine %s failed to start: %s - stopping the tournament" name ex.Message)
+                  callback (Update.EngineStartFailed(name, ex.Message))
                   cts.Cancel()
                   System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
                   return Unchecked.defaultof<ChessEngine> }
@@ -641,6 +649,9 @@ let parallelTournamentRun
                               mergeReplay pair localWhiteDict localBlackDict result gameData (ResizeArray(currentBoard.UciMovesPlayed))
                           if not (notPlayed result) && not cts.IsCancellationRequested && String.IsNullOrWhiteSpace tourny.PgnOutPath |> not then
                               pgnAgent.Post (ChessLibrary.FullPGNParser.WriteGame(tourny.PgnOutPath, gameData, sb.ToString(), result))
+                              callback (Update.GameFinished
+                                  { GameNr = pair.GameNr; RoundNr = pair.RoundNr; White = pair.White.Name; Black = pair.Black.Name
+                                    OpeningHash = pair.OpeningHash; Result = result })
                           if tourny.VerboseLogging then
                               logger.LogInformation(gameMetadataSummary gameData)
                           return result

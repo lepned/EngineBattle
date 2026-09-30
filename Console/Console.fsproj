@@ -17,6 +17,7 @@
 		<Compile Include="BenchmarkRunner.fs" />
 		<Compile Include="TunerRunner.fs" />
 		<Compile Include="BayesianOptimizer.fs" />
+		<Compile Include="MatchMode.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 
@@ -29,7 +30,9 @@
 	</ItemGroup>
 	
 	<Target Name="CopyContentAfterPublish" AfterTargets="Publish">
-		<Copy SourceFiles="tournament.json" DestinationFolder="$(PublishDir)" />
+		<!-- Only when there is one: the repository has no Console/tournament.json (the console reads
+		     the file named on its command line), and copying a missing file failed every publish. -->
+		<Copy SourceFiles="tournament.json" DestinationFolder="$(PublishDir)" Condition="Exists('tournament.json')" />
 	</Target>
 
 

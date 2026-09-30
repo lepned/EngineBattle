@@ -77,6 +77,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 ### 💻 Console Mode
 
 - **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
+- **Engine matches from the command line:** `match` plays a match from one command line - rating reports, an SPRT that stops it, resume, exit codes - takes the fastchess command line (cutechess-cli style) and writes fastchess or cutechess output, so testing tools written for those can run EngineBattle. See [MatchMode.md](MatchMode.md).
 - **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (Tools > EPD visualizer in the GUI menu).
 
 ### ⚙️ Global Settings
@@ -100,10 +101,14 @@ Choose a variant:
 
 | Variant | Size | .NET Runtime Required? |
 |---------|------|----------------------|
-| **Self-contained** | ~58 MB | No — everything is bundled |
-| **Framework-dependent** | ~16 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
+| **Self-contained** | ~95 MB | No — everything is bundled |
+| **Framework-dependent** | ~21 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
 
 Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **osx-arm64**
+
+Each zip has the WebGUI (`EngineBattle`) and the console (`eb-cli`) side by side, the way cutechess
+ships `cutechess-cli` with its GUI. The console runs engine matches from one command line
+([MatchMode.md](MatchMode.md)) and the other console tools ([ConsoleTools.md](ConsoleTools.md)).
 
 On Windows there is also **EngineBattle-Desktop** (`EngineBattle-Desktop-win-x64.zip` or `-win-arm64`): the same application in its own window, with a native menu, remembered zoom and F11 full screen - no browser involved. Pick it if you prefer an app to a browser tab; everything else is identical. The desktop zip holds only the window: download the matching `EngineBattle-win-x64.zip` (or `-win-arm64`) as well and extract both into the same folder, so that `EngineBattleDesktop.exe` sits next to `EngineBattle.exe`.
 
@@ -121,13 +126,13 @@ Your browser opens automatically. If not, navigate to the localhost URL shown in
 > **macOS note:** the release builds are not signed or notarised, so macOS quarantines them on download and refuses to start them ("cannot be opened because the developer cannot be verified"). Clear the quarantine flag after extracting:
 >
 > ```bash
-> xattr -dr com.apple.quarantine EngineBattle
+> xattr -dr com.apple.quarantine EngineBattle eb-cli
 > ./EngineBattle
 > ```
 >
 > Alternatively, right-click `EngineBattle` in Finder → **Open** → **Open** confirms it once for that file.
 
-> **Linux note:** the release zip keeps the executable bit, so `./EngineBattle` should just work. If your extraction tool dropped permissions, restore it with `chmod +x EngineBattle`.
+> **Linux note:** the release zip keeps the executable bit, so `./EngineBattle` should just work. If your extraction tool dropped permissions, restore it with `chmod +x EngineBattle eb-cli`.
 
 ### 3. First Run
 
@@ -166,9 +171,9 @@ A console application should now run with a link to the localhost URL. Ctrl + cl
 git pull origin main
 ```
 
-### Console Commands (from a source clone)
+### Console Commands
 
-The Console project is developer and server tooling - batch runs, engine probing, PGN and position queries - and is not part of the release zip. Clone the repo and run it with `dotnet run` from the `Console` folder:
+The Console project is developer and server tooling - matches, batch runs, engine probing, PGN and position queries. In the release zip it is `eb-cli` (`eb-cli <command> [arguments]`); from a source clone, run it with `dotnet run` from the `Console` folder:
 
 ```bash
 cd Console
@@ -295,20 +300,20 @@ When the tournament is running, you can use the GUI to follow the games, check t
 The console window will display additional tournament progress, including pairings, game results, standings, and other relevant information that can be useful for monitoring the tournament.
 
 ### Time Controls
-Time control settings are specified as `hh:mm:ss` or `hh:mm:ss.fff`, where `hh` is hours, `mm` minutes, `ss` seconds and `fff` milliseconds after a dot; the hour field may exceed 23 for long controls. For example, a fixed time control of `00:01:00.000` with an increment of `00:00:01.000` is 1 minute plus 1 second per move.
-Each time control listed in the `tournament.json` file needs to have an Id and each engine.json file needs to have a corresponding time control Id that references on of the time controls in the `tournament.json` file.
-You can use node limits instead of time limits by setting the `NodesLimit` value to true, and the number of `nodes` you want to use in your test, in the `tournament.json` file.
-Example of a time control that can be used to run policy tests:
+Each time control in `tournament.json` has an `Id`, and each engine's def names the one it plays with `TimeControlID` - so two engines can play different time controls. Write them the way `match` takes them:
 
-```
-{
-  "Id": 1,
-  "Fixed": "00:01:00.000",
-  "Increment": "00:00:01.000",
-  "NodeLimit": true,
-  "Nodes": 1
+```json
+"TimeControl": {
+  "TimeConfigs": [
+    { "Id": 1, "Tc": "60+1" },
+    { "Id": 2, "Tc": "40/5:00+2" },
+    { "Id": 3, "St": 1 },
+    { "Id": 4, "Nodes": 1 }
+  ]
 }
 ```
+
+`"Tc": "60+1"` is 60 seconds plus 1 second per move (`"2:30+2"` for minutes and seconds, `"40/5:00+2"` for 5 minutes per 40 moves), `"St": 1` is 1 second per move, and `"Nodes": 1` is a node limit - the one to use for policy tests. The older long form (`"Fixed": "00:01:00", "Increment": "00:00:01"`) still reads as before. All forms and rules: [TournamentConfig.md](TournamentConfig.md#time-control).
 
 It is recommended to run policy tests in Console Mode for optimal performance by running games in parallel, see below how to set that up. However, you can also run these tests using the GUI by setting a delay per move. To do this, configure the `MinMoveTimeInMS` parameter to i.e. 2000 milliseconds in the GUI settings. This allows you to watch every move play out during policy tests and can even be streamed.
 

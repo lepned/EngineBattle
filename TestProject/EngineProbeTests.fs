@@ -139,3 +139,37 @@ let ``the file is named after the engine without spaces and is never overwritten
         ok (write dir def true) |> ignore
     finally
         Directory.Delete(dir, true)
+
+// ---- the probe's process ----
+
+/// The fake engine under a name of its own (the apphost finds its dll by the dll's name, so only
+/// the executable is renamed): other tests start FakeUciEngine in parallel, so its processes are
+/// counted by a name nobody else uses.
+let private fakeCopy () =
+    let src = AppContext.BaseDirectory
+    let dir = Path.Combine(Path.GetTempPath(), "ebprobe_" + Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory dir |> ignore
+    for f in [ "FakeUciEngine.dll"; "FakeUciEngine.runtimeconfig.json"; "FakeUciEngine.deps.json" ] do
+        let p = Path.Combine(src, f)
+        if File.Exists p then File.Copy(p, Path.Combine(dir, f))
+    let name = "fkp" + Guid.NewGuid().ToString("N").Substring(0, 6)   // short: Linux sees 15 characters
+    let exe = if OperatingSystem.IsWindows() then ".exe" else ""
+    File.Copy(Path.Combine(src, "FakeUciEngine" + exe), Path.Combine(dir, name + exe))
+    dir, name, Path.Combine(dir, name + exe)
+
+let private running (name: string) = System.Diagnostics.Process.GetProcessesByName(name).Length
+
+[<Fact>]
+let ``a probe leaves no engine process behind`` () =
+    let dir, name, exe = fakeCopy ()
+    try
+        match probe exe 10000 with
+        | Ok p -> Assert.NotEmpty p.Options
+        | Error e -> failwithf "probe failed: %s" e
+        // StopProcess gives the engine up to 3 s before it kills it
+        let sw = System.Diagnostics.Stopwatch.StartNew()
+        while running name > 0 && sw.ElapsedMilliseconds < 8000L do Threading.Thread.Sleep 100
+        Assert.Equal(0, running name)
+    finally
+        for p in System.Diagnostics.Process.GetProcessesByName name do (try p.Kill() with _ -> ())
+        try Directory.Delete(dir, true) with _ -> ()

@@ -430,7 +430,7 @@ let private mkTc periodW periodB fixedSec incSec : TimeControl =
                 Fixed = TimeSpan.FromSeconds(float fixedSec)
                 Increment = TimeSpan.FromSeconds(float incSec)
                 NodeLimit = false
-                Nodes = 0 }
+                Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     { TimeConfigs = [cfg]; WmovesToGo = periodW; BmovesToGo = periodB }
 
 [<Fact>]
@@ -450,6 +450,24 @@ let ``GetTimeForMove counts moves-to-go down within a period`` () =
     Assert.Equal(12, mtgOf 8)    // 8 completed -> 12 to go
     Assert.Equal(1, mtgOf 19)    // last move of the period
     Assert.Equal(20, mtgOf 20)   // wraps to a fresh period
+
+[<Fact>]
+let ``a setting's own period wins over the tournament's, which is the default`` () =
+    let own = { (mkTc 0 0 300 0).GetTimeConfig 1 with Id = 2; MovesToGo = 40 }
+    let tc = { mkTc 20 20 30 0 with TimeConfigs = [ (mkTc 0 0 30 0).GetTimeConfig 1; own ] }
+    Assert.Equal(20, tc.PeriodFor(tc.GetTimeConfig 1))   // none of its own: the tournament's
+    Assert.Equal(40, tc.PeriodFor(tc.GetTimeConfig 2))
+    let mtgOf id movesDone =
+        match tc.GetTimeForMove (tc.GetTimeConfig id) movesDone with
+        | UnionType.WithMoves(_, _, w, _) -> w
+        | other -> failwithf "expected WithMoves, got %A" other
+    Assert.Equal(12, mtgOf 1 8)
+    Assert.Equal(32, mtgOf 2 8)
+    Assert.Equal(40, mtgOf 2 40)
+    // and in a tournament without one, a setting with a period still has it
+    let alone = { mkTc 0 0 30 0 with TimeConfigs = [ own ] }
+    Assert.Equal(40, alone.PeriodFor own)
+    Assert.Equal("40/5' + 0''", own.ToString())
 
 [<Fact>]
 let ``moves-to-go go-command emits a single valid movestogo`` () =
@@ -480,7 +498,7 @@ let ``a time control past 24 hours survives into the UCI go command`` () =
                 Fixed = TimeSpan.FromHours 30.0
                 Increment = TimeSpan.FromSeconds 30.0
                 NodeLimit = false
-                Nodes = 0 }
+                Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
     let union = tc.GetTime cfg
     let cmd = TimeControlCommands.uciTimeCommand union cfg.Fixed cfg.Fixed
@@ -494,7 +512,7 @@ let ``GetFullTimeInMS adds fixed and increment past a day`` () =
                 Fixed = TimeSpan.FromHours 30.0
                 Increment = TimeSpan.FromSeconds 30.0
                 NodeLimit = false
-                Nodes = 0 }
+                Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
     Assert.Equal(108_030_000, tc.GetFullTimeInMS 1)
 

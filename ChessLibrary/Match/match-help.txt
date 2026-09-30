@@ -1,0 +1,80 @@
+EngineBattle match - play a match between UCI engines from the command line
+
+USAGE
+    eb-cli match [OPTIONS]
+    eb-cli [OPTIONS]                        (a first argument starting with '-' is a match)
+
+    Games are played by EngineBattle's tournament runner, with its scheduling, clock and
+    adjudication. stdout carries only the match's report lines; everything else goes to the
+    -log file. The command line is fastchess's, written in cutechess-cli's style. See
+    MatchMode.md for the full guide.
+
+ENGINES
+    -engine KEY=VALUE ...     one engine; repeat for each
+        cmd=PATH              the engine executable (required)
+        name=NAME             its name (default: the file name without extension)
+        dir=DIR               folder the command is in
+        args="..."            command-line arguments for the engine
+        tc=[MOVES/]TIME[+INC] time control, seconds; TIME may be MIN:SEC; "inf" for none
+        st=SECONDS            fixed time per move (not supported yet)
+        nodes=N               node limit per move
+        depth=N, plies=N      depth limit (not applied yet; an error when it is the only limit)
+        timemargin=MS         accepted, not applied
+        restart=on|off        accepted, not applied
+        proto=uci             the only protocol
+        option.NAME=VALUE     a UCI option (Threads is sent first)
+    -each KEY=VALUE ...       applied to every engine, after all -engine options
+
+MATCH
+    -rounds N                 rounds (default 2)
+    -games N                  games per round and pair: 1 or 2 (default 2, colours swapped)
+    -repeat                   the same as -games 2
+    -concurrency N            games played at the same time (default 1; N <= 0 counts back from
+                              the number of hardware threads)
+    -force-concurrency        allow more than the number of hardware threads
+    -tournament roundrobin|gauntlet
+    -seeds N                  gauntlet challengers: the first N engines (default 1)
+    -openings file=F [format=epd|pgn] [order=sequential|random] [plies=N] [start=N]
+                              the opening book; a book shorter than the rounds starts over
+    -srand N                  seed for order=random
+    -variant standard|fischerandom
+    -wait MS                  pause after each game
+
+ADJUDICATION
+    -draw movenumber=N movecount=N score=CP
+    -resign movecount=N score=CP [twosided=true|false]
+    -maxmoves N               accepted, not applied yet
+    -tb DIR                   Syzygy tablebases (one folder)
+    -tbpieces N               largest position probed (default: all)
+    -tbignore50, -tbadjudicate WIN_LOSS|DRAW|BOTH   accepted, not applied
+
+SPRT
+    -sprt elo0=E0 elo1=E1 alpha=A beta=B [model=normalized|logistic|bayesian]
+                              stops the match when H0 or H1 is accepted
+
+OUTPUT
+    -output format=fastchess|cutechess   report format (default fastchess)
+    -report penta=true|false  pentanomial statistics (default true, with -games 2)
+    -ratinginterval N         a report every N games or pairs (default 10; 0 = only at the end)
+    -scoreinterval N          a score line every N games (cutechess format; default 1)
+    -pgnout file=F [append=true|false]
+                              EngineBattle's PGN (resumes from the games already in it)
+    -epdout file=F            accepted, not written yet
+    -event NAME, -site NAME   PGN headers
+    -log file=F [level=trace|info|warn|err|fatal] [append=true|false]
+                              everything that is not a report line goes here
+
+RESUME
+    -config file=config.json  the settings of an earlier run; flags after it still apply.
+                              config.json is written at the end, on CTRL-C and every
+                              -autosaveinterval games (default 20); the statistics are rebuilt
+                              from the games in the PGN.
+    -config outname=F         write the file under another name
+
+OTHER
+    -quick cmd=A cmd=B book=F   a quick head-to-head: 25000 rounds, 10+0.1, draw adjudication,
+                                cutechess output
+    -version, -help
+
+EXIT
+    0 when the match completes or the SPRT decides, 1 on an error or CTRL-C.

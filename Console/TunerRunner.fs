@@ -589,7 +589,7 @@ module TunerRunner =
   let private buildNodeTimeControl targetNodes (tc: TimeControl) =
     let configs =
       if tc.TimeConfigs |> List.isEmpty then
-        [ { Id = 1; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = targetNodes } ]
+        [ { Id = 1; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = targetNodes; MoveTime = TimeSpan.Zero; MovesToGo = 0 } ]
       else
         tc.TimeConfigs
         |> List.map (fun c -> { c with NodeLimit = true; Nodes = targetNodes; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero })
@@ -603,8 +603,8 @@ module TunerRunner =
         let tcId = tc.TimeConfigs |> List.head |> fun t -> t.Id
         tc, tcId, tcId
       else
-        let baseConf = { Id = 1; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = cfg.TargetNodes }
-        let oppConf  = { Id = 2; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = oppNodes }
+        let baseConf = { Id = 1; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = cfg.TargetNodes; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
+        let oppConf  = { Id = 2; Fixed = TimeSpan(0,0,1); Increment = TimeSpan.Zero; NodeLimit = true; Nodes = oppNodes; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
         let tc = { baseTournament.TimeControl with TimeConfigs = [ baseConf; oppConf ]; WmovesToGo = 0; BmovesToGo = 0 }
         tc, 1, 2
     let roundsNeeded =

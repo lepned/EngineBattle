@@ -141,7 +141,7 @@ let ``WDLType Value returns correct WDL`` () =
 // Test for TimeControl
 [<Fact>]
 let ``TimeControl GetTimeConfig returns correct config`` () =
-    let timeControl = { TimeConfigs = [{ Id = 1; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero; NodeLimit = false; Nodes = 0 }]; WmovesToGo = 0; BmovesToGo = 0 }
+    let timeControl = { TimeConfigs = [{ Id = 1; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero; NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }]; WmovesToGo = 0; BmovesToGo = 0 }
     let config = timeControl.GetTimeConfig 1
     Assert.Equal(1, config.Id)
 
@@ -149,11 +149,11 @@ let ``TimeControl GetTimeConfig returns correct config`` () =
 // minute in the banner ("2'"). Both now render m:ss. TimeControlFormatTests is the spec.
 [<Fact>]
 let ``TimeControl ToString formats correctly`` () =
-    let config1 = { Id = 1; Fixed = TimeSpan.FromSeconds(60.0); Increment = TimeSpan.FromSeconds(1.0); NodeLimit = false; Nodes = 0 }
+    let config1 = { Id = 1; Fixed = TimeSpan.FromSeconds(60.0); Increment = TimeSpan.FromSeconds(1.0); NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     Assert.Equal("1' + 1''", config1.ToString())
-    let config2 = { Id = 2; Fixed = TimeSpan.FromSeconds(90.0); Increment = TimeSpan.FromSeconds(10.0); NodeLimit = false; Nodes = 0 }
+    let config2 = { Id = 2; Fixed = TimeSpan.FromSeconds(90.0); Increment = TimeSpan.FromSeconds(10.0); NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     Assert.Equal("1:30' + 10''", config2.ToString())
-    let config3 = { Id = 2; Fixed = TimeSpan.FromMinutes(90.0); Increment = TimeSpan.FromSeconds(30.0); NodeLimit = false; Nodes = 0 }
+    let config3 = { Id = 2; Fixed = TimeSpan.FromMinutes(90.0); Increment = TimeSpan.FromSeconds(30.0); NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     Assert.Equal("90' + 30''", config3.ToString())
 
 [<Fact>]

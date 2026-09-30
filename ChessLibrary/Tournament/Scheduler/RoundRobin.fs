@@ -67,20 +67,31 @@ let private makePlanned (white: EngineConfig) (black: EngineConfig) (opening: Pg
 /// Generate the full plan for a round-robin tournament. Invariants:
 ///
 ///   * Under `OpeningsTwice = false`: each (unordered) player pair plays each
-///     opening once, with colors alternating across pairs per Berger.
+///     opening once, with colors alternating across pairs per Berger - and every
+///     other opening with the colors swapped. The Berger rotation starts over with
+///     each opening, so without the swap every pair had the same colors in every
+///     round (two players: the same one White in every game).
 ///   * Under `OpeningsTwice = true`: each ordered pair plays each opening;
 ///     the two colored games for a pair are emitted **back-to-back** so the
 ///     downstream pair-label pass can number them as `{pairIdx}.1`/`{pairIdx}.2`.
 ///
 /// Player order and opening order drive game order deterministically.
+///
+/// One opening per round, `Rounds` rounds. A book shorter than that starts over from its first
+/// opening, as the gauntlet does (Gauntlet.buildOpeningsPerOpponent); a longer one is cut by the
+/// caller.
 let generate (config: ScheduleConfig) : PlannedGame list =
     let players = config.Challengers @ config.Opponents   // RR ignores the gauntlet split
     let padded = padEven players
     let rotations = berger padded
-    [ for opening in config.Openings do
+    let book = config.Openings |> List.toArray
+    let openings = if book.Length = 0 then [||] else Array.init (max 0 config.Rounds) (fun r -> book.[r % book.Length])
+    [ for openingIdx, opening in Array.indexed openings do
         let openingHash = Hash.computeOpeningHashFromGame opening
+        let swap = not config.OpeningsTwice && openingIdx % 2 = 1
         for (rotationIdx, rotated) in List.indexed rotations do
-            for (white, black) in pairsForRotation rotated (rotationIdx + 1) do
+            for (first, second) in pairsForRotation rotated (rotationIdx + 1) do
+                let white, black = if swap then second, first else first, second
                 yield makePlanned white black opening openingHash
                 if config.OpeningsTwice then
                     yield makePlanned black white opening openingHash ]

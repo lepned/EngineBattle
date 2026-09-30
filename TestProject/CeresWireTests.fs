@@ -244,8 +244,8 @@ let ``toTimeControl maps nodesPerMove to a node limit`` () =
 [<Fact>]
 let ``toTimeControl maps movesToGo`` () =
     let tc = parseTC (tcLine """{"kind":"secondsForAllMoves","valueMs":120000,"incrementMs":0,"movesToGo":40}""")
-    Assert.Equal(40, tc.WmovesToGo)
-    Assert.Equal(40, tc.BmovesToGo)
+    Assert.Equal(40, (tc.GetTimeConfig 1).MovesToGo)
+    Assert.Equal((0, 0), (tc.WmovesToGo, tc.BmovesToGo))
 
 [<Fact>]
 let ``celtType reads discriminator and mappers reject wrong type`` () =

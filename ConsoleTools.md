@@ -6,6 +6,13 @@ This document provides a comprehensive guide to using the EngineBattle Console C
 
 The Console project is the command-line interface for EngineBattle. It provides tools for running tournaments, testing engines against puzzles, benchmarking UCI options, verifying move generation, and launching the WebGUI.
 
+### In the download
+
+Every EngineBattle download has the console next to the WebGUI, as `eb-cli` (`eb-cli.exe` on
+Windows): `eb-cli <command> [arguments]` is the same as `dotnet run -c Release -- <command>
+[arguments]` below. Run without arguments, it lists the commands. `gui` needs a source checkout;
+in the download, start `EngineBattle` instead.
+
 ### Building and Running
 
 ```bash
@@ -29,6 +36,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
+| `match` | (any first argument starting with `-`) | An engine match from one command line, with rating reports, SPRT and resume - see [MatchMode.md](MatchMode.md) |
 | `tournamentjson` | `tournament`, `t` | Run a tournament from JSON config |
 | `puzzlejson` | `puzzle`, `p` | Run puzzle evaluation from JSON config |
 | `eretjson` | `eret` | Run ERET evaluation from JSON config |
@@ -58,6 +66,19 @@ dotnet run -c Release -- <command> <path-or-arguments>
 ---
 
 ## Commands
+
+### match
+
+An engine match from a single command line, reported as it runs: a line per game, rating
+reports, an SPRT that can stop it, a final summary and an exit code. It accepts the fastchess and
+cutechess command line and writes their output, so tools written for those can run EngineBattle.
+
+```bash
+dotnet run -c Release -- match -engine cmd=sf-dev name=dev -engine cmd=sf-base name=base     -each tc=10+0.1 option.Threads=1 -rounds 1000 -concurrency 4 -openings file=UHO.epd     -pgnout file=dev-vs-base.pgn -sprt elo0=0 elo1=5 alpha=0.05 beta=0.05
+dotnet run -c Release -- match -help
+```
+
+The full guide - output, resume, what EngineBattle does its own way - is [MatchMode.md](MatchMode.md).
 
 ### tournamentjson
 
@@ -561,11 +582,7 @@ by absolute material signature. Method and options in [PieceValues.md](PieceValu
     "EngineDefList": ["SFDef.json", "Lc0Def.json"]
   },
   "TimeControl": {
-    "TimeConfigs": [{
-      "Id": 1,
-      "Fixed": "00:01:00.000",
-      "Increment": "00:00:01.000"
-    }]
+    "TimeConfigs": [ { "Id": 1, "Tc": "60+1" } ]
   }
 }
 ```

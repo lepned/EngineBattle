@@ -67,19 +67,33 @@ module EngineProbe =
 
     /// Starts the engine, reads its `uci` answer, stops it. An engine that never says `uciok`
     /// (not a UCI engine, or one waiting for input) is stopped when the timeout runs out.
+    ///
+    /// The engine's constructor starts the process and waits for `uciok`, so it runs inside the
+    /// timeout, and it is the only start: a second StartProcess used to start another process,
+    /// and StopProcess ended only that one - every probe left the first running until the program
+    /// exited (a match kept one per engine for its whole length; the GUI's Engine creator one per
+    /// def).
     let probe (exePath: string) (timeoutMs: int) : Result<Probed, string> =
         let path = forward exePath
         if not (File.Exists path) then Error (sprintf "Engine not found: %s" path)
         else
-            let engine = EngineHelper.createEngine (EngineConfig.EmptyWithPath path, None)
-            let started = System.Threading.Tasks.Task.Run(fun () -> engine.StartProcess())
-            let answered = try started.Wait timeoutMs with _ -> false
-            (try engine.StopProcess() with _ -> ())
+            let created = System.Threading.Tasks.Task.Run(fun () -> EngineHelper.createEngine (EngineConfig.EmptyWithPath path, None))
+            let answered = try created.Wait timeoutMs with _ -> false
             if not answered then
+                // still waiting for uciok: stop it whenever the constructor gives up or finishes
+                created.ContinueWith(Action<System.Threading.Tasks.Task<Engine.ChessEngine>>(fun t ->
+                    if t.Status = System.Threading.Tasks.TaskStatus.RanToCompletion then
+                        (try t.Result.Quit() with _ -> ())
+                        try t.Result.StopProcess() with _ -> ())) |> ignore
                 Error (sprintf "%s did not answer 'uci' within %d s: not a UCI engine, or it is waiting for something (a missing network, a console prompt)" path (timeoutMs / 1000))
-            elif started.IsFaulted then
-                Error (sprintf "%s failed to start: %s" path started.Exception.InnerException.Message)
+            elif created.IsFaulted then
+                Error (sprintf "%s failed to start: %s" path created.Exception.InnerException.Message)
             else
+                let engine = created.Result
+                // quit first: StopProcess gives the engine three seconds to leave on its own, and a
+                // UCI engine does not without it - every probe cost three seconds
+                (try engine.Quit() with _ -> ())
+                (try engine.StopProcess() with _ -> ())
                 let options = engine.GetOptionsMap()
                 let idValue key =
                     match options.TryGetValue key with

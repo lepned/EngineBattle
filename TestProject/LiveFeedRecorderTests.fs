@@ -28,7 +28,7 @@ let private sampleEvents: Update list =
       Update.TotalNumberOfPairs 2
       Update.EndOfGame
           { Player1 = "A"; Player2 = "B"; Moves = 30; Result = "1-0"
-            Reason = ResultReason.Checkmate; GameTime = 60000L; OutOfOpeningEvals = [] }
+            Reason = ResultReason.Checkmate; GameTime = 60000L; OutOfOpeningEvals = []; TimeOverrunMs = 0L }
       Update.GameSummary "done"
       Update.EndOfTournament Tournament.Empty ]
 

@@ -102,8 +102,18 @@ let ``an increment given in minutes still prints seconds`` () =
 [<Fact>]
 let ``TimeConfig ToString matches the shared formatter`` () =
     let tc = { Id = 1; Fixed = TimeSpan.FromSeconds 90.0; Increment = TimeSpan.FromSeconds 1.0
-               NodeLimit = false; Nodes = 0 }
+               NodeLimit = false; Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     Assert.Equal("1:30' + 1''", tc.ToString())
+
+[<Fact>]
+let ``a time per move reports the move time, not a clock`` () =
+    let tc = { Id = 1; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero; NodeLimit = false; Nodes = 0
+               MoveTime = TimeSpan.FromSeconds 5.0; MovesToGo = 0 }
+    Assert.Equal("5'' / move", tc.ToString())
+    Assert.Equal("0.25'' / move", formatMoveTime (TimeSpan.FromMilliseconds 250.0))
+    // a node limit takes precedence over a time per move
+    let nodes = { tc with NodeLimit = true; Nodes = 800 }
+    Assert.Equal("800 nodes", nodes.ToString())
 
 // ── Node limits ──
 // Had three renderings in adjacent members — "10.0K nodes", "10.0K n" and "10000N" — plus
@@ -112,7 +122,7 @@ let ``TimeConfig ToString matches the shared formatter`` () =
 [<Fact>]
 let ``node limited configs report nodes, not a clock`` () =
     let tc = { Id = 1; Fixed = TimeSpan.Zero; Increment = TimeSpan.Zero
-               NodeLimit = true; Nodes = 10000 }
+               NodeLimit = true; Nodes = 10000; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     Assert.Equal("10.0K nodes", tc.ToString())
 
 [<Theory>]

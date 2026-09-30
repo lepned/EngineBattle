@@ -25,12 +25,14 @@ module Formatting = ChessLibrary.TypesDef.CoreTypes
 /// The adjudication reason constant for user-initiated adjudication
 let adjudicationReason = ResultReason.AdjudicatedByUser
 
-/// Creates a result for a player who lost on time
-let lostOnTimeResult (playing: string) (opponent: string) (isWhite: bool) (gameMoveList: ResizeArray<string>) (gametimer: int64) evals : Result =
+/// Creates a result for a player who lost on time. `remaining` is the loser's clock after the
+/// move (clockAfterMove), below zero; how far below is the result's TimeOverrunMs.
+let lostOnTimeResult (playing: string) (opponent: string) (isWhite: bool) (gameMoveList: ResizeArray<string>) (gametimer: int64) (remaining: TimeSpan) evals : Result =
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let resStr = if isWhite then "0-1" else "1-0"
     let player1, player2 = if isWhite then playing, opponent else opponent, playing
-    Formatting.createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals
+    let overrun = int64 (Math.Round(max 0.0 (-remaining.TotalMilliseconds)))
+    { Formatting.createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals with TimeOverrunMs = overrun }
 
 /// The clock after a completed move: what was left, plus the increment earned by completing
 /// it, minus the time actually spent.

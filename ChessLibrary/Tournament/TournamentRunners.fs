@@ -34,9 +34,10 @@ let private maxPairingRetries = 3
 module TournamentUtils =
   let estimateGameDuration (white: TimeConfig) (black:TimeConfig) (movesEst : int) =
     let wFixedTicks = if white.NodeLimit then 0L else white.Fixed.Ticks
-    let wIncrTicks = if white.NodeLimit then 0L else white.Increment.Ticks
+    // a time per move counts as an increment with no base
+    let wIncrTicks = if white.NodeLimit then 0L elif white.IsMoveTime then white.MoveTime.Ticks else white.Increment.Ticks
     let bFixedTicks = if black.NodeLimit then 0L else black.Fixed.Ticks
-    let bIncrTicks = if black.NodeLimit then 0L else black.Increment.Ticks
+    let bIncrTicks = if black.NodeLimit then 0L elif black.IsMoveTime then black.MoveTime.Ticks else black.Increment.Ticks
     let fixedTs = TimeSpan.FromTicks (wFixedTicks + bFixedTicks)
     let incrTs = TimeSpan.FromTicks (wIncrTicks + bIncrTicks)
     let fixedTime = fixedTs.TotalSeconds

@@ -172,8 +172,8 @@ public partial class Tournaments
 					blackLongPV = pvLong;
 					DrawP = b.Info.AdjDrawML;
 					blackClock = b.Info.TimeLeft;
-					blackTime = ClockTextFor(b.Info.TimeLeft);
-					whiteMoveTime = ClockText(TimeSpan.Zero, tenths: InTimeTrouble(whiteClock));
+					blackTime = ClockTextForSide(false, b.Info.TimeLeft);
+					whiteMoveTime = ClockText(TimeSpan.Zero, tenths: InTimeTroubleFor(true, whiteClock));
 					BlackMoveAndFen = b.Info.MoveAndFen;
 				}
 				else
@@ -183,8 +183,8 @@ public partial class Tournaments
 					whiteLongPV = pvLong;
 					DrawP = b.Info.AdjDrawML;
 					whiteClock = b.Info.TimeLeft;
-					whiteTime = ClockTextFor(b.Info.TimeLeft);
-					blackMoveTime = ClockText(TimeSpan.Zero, tenths: InTimeTrouble(blackClock));
+					whiteTime = ClockTextForSide(true, b.Info.TimeLeft);
+					blackMoveTime = ClockText(TimeSpan.Zero, tenths: InTimeTroubleFor(false, blackClock));
 					WhiteMoveAndFen = b.Info.MoveAndFen;
 				}
 
@@ -219,12 +219,12 @@ public partial class Tournaments
 				if (t.Player == blackPlayer)
 				{
 					blackClock = t.Time;
-					blackTime = ClockTextFor(blackClock);
+					blackTime = ClockTextForSide(false, blackClock);
 				}
 				else
 				{
 					whiteClock = t.Time;
-					whiteTime = ClockTextFor(whiteClock);
+					whiteTime = ClockTextForSide(true, whiteClock);
 				}
 				break;
 
@@ -625,9 +625,11 @@ public partial class Tournaments
 			whiteEngineLogo = "Img/chessLogo.jpg";
 		else
 			whiteEngineLogo = info.WhitePlayer.LogoPath;
+		WhiteEngineConfig = info.WhitePlayer;
+		BlackEngineConfig = info.BlackPlayer;
 		RestartMoveClock();
 		whiteClock = info.WhiteTime;
-		whiteTime = ClockTextFor(whiteClock);
+		whiteTime = ClockTextForSide(true, whiteClock);
 		blackPlayer = info.BlackPlayer.Name;
 		blackDev = info.BlackPlayer.Dev;
 		if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
@@ -635,10 +637,8 @@ public partial class Tournaments
 		else
 			blackEngineLogo = info.BlackPlayer.LogoPath;
 		blackClock = info.BlackTime;
-		blackTime = ClockTextFor(blackClock);
+		blackTime = ClockTextForSide(false, blackClock);
 		whiteToMove = info.WhiteToMove;
-		WhiteEngineConfig = info.WhitePlayer;
-		BlackEngineConfig = info.BlackPlayer;
 		Engine1 = EngineStatus.Empty;
 		Engine1.PlayerName = whitePlayer;
 		Engine2 = EngineStatus.Empty;
@@ -724,6 +724,23 @@ public partial class Tournaments
 
 	/// A remaining time, in the format that remaining time calls for.
 	private static string ClockTextFor(TimeSpan remaining) => ClockText(remaining, tenths: InTimeTrouble(remaining));
+
+	/// A node-limited engine has no clock: its time-left cell shows the limit ("150.0K nodes"),
+	/// the same text as the banner, instead of a clock standing at 0:00. Null for a clock.
+	private string NodeLimitText(bool white)
+	{
+		var cfg = white ? WhiteEngineConfig : BlackEngineConfig;
+		if (cfg == null || tournament == null || tournament.TimeControl.TimeConfigs.IsEmpty) return null;
+		var tc = tournament.FindTimeControl(cfg.TimeControlID);
+		return tc.NodeLimit ? tc.ToString() : null;
+	}
+
+	/// Time trouble is a clock's; a node-limited side is never in it.
+	private bool InTimeTroubleFor(bool white, TimeSpan remaining) => NodeLimitText(white) == null && InTimeTrouble(remaining);
+
+	/// The time-left cell of one side: its node limit, or its clock in the format it calls for.
+	private string ClockTextForSide(bool white, TimeSpan remaining) =>
+		NodeLimitText(white) ?? ClockText(remaining, tenths: InTimeTroubleFor(white, remaining));
 
 	private string TimeLeftFormatted(TimeSpan time) => ClockText(time);
 

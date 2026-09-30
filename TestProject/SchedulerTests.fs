@@ -943,3 +943,90 @@ let ``countPlayedWithOpening counts under either hash rule`` () =
     legacy.GameMetaData.OpeningHash <- "a-hash-from-an-older-EngineBattle"
     let other = playedGameOf (pairingOf (withMoves [ "d4"; "Nf6" ] "" (mkOpening 2)) "Hero" "A")
     Assert.Equal(2, Diff.countPlayedWithOpening [| tagged; legacy; other |] h)
+
+// ============================================================================
+// A book shorter than Rounds starts over, in both modes
+// ============================================================================
+
+[<Fact>]
+let ``RR with a book shorter than Rounds starts over from the first opening`` () =
+    let players = [ mkEngine "A"; mkEngine "B"; mkEngine "C" ]
+    let games = RoundRobin.generate { rrConfig players (List.init 3 (fun i -> mkOpening (i + 1))) with Rounds = 7 }
+    // 3 pairs per round (the bye dropped), one opening per round: 1 2 3 1 2 3 1
+    Assert.Equal(21, games.Length)
+    let perRound = games |> List.chunkBySize 3 |> List.map (fun r -> r |> List.map (fun g -> g.Opening.Raw) |> List.distinct)
+    Assert.Equal<string list list>(
+        [ for o in [ 1; 2; 3; 1; 2; 3; 1 ] -> [ $"opening-{o}" ] ], perRound)
+
+[<Fact>]
+let ``RR with no rounds plans nothing, as before`` () =
+    let players = [ mkEngine "A"; mkEngine "B" ]
+    for rounds in [ 0; -1 ] do
+        Assert.Empty(RoundRobin.generate { rrConfig players [ mkOpening 1 ] with Rounds = rounds })
+
+[<Fact>]
+let ``RR with Rounds equal to the book is unchanged`` () =
+    let players = [ mkEngine "A"; mkEngine "B" ]
+    let openings = List.init 4 (fun i -> mkOpening (i + 1))
+    let games = RoundRobin.generate { rrConfig players openings with OpeningsTwice = true }
+    Assert.Equal<string list>(
+        [ for o in 1 .. 4 do for _ in 1 .. 2 -> $"opening-{o}" ], games |> List.map (fun g -> g.Opening.Raw))
+
+[<Fact>]
+let ``gauntlet and RR head-to-head plan the same games from a short book`` () =
+    let a, b = mkEngine "A", mkEngine "B"
+    let book = List.init 3 (fun i -> mkOpening (i + 1))
+    let rr = RoundRobin.generate { rrConfig [ a; b ] book with Rounds = 7; OpeningsTwice = true }
+    let g = Gauntlet.generate { gauntletConfig [ a ] [ b ] book 7 with Distribution = Shared }
+    let key (p: PlannedGame) = p.Opening.Raw, p.White.Name, p.Black.Name
+    Assert.Equal(14, rr.Length)
+    Assert.Equal<string list>(rr |> List.map (fun p -> p.Opening.Raw) |> List.distinct |> List.sort, [ "opening-1"; "opening-2"; "opening-3" ])
+    Assert.Equal<(string * string * string) list>(g |> List.map key |> List.sort, rr |> List.map key |> List.sort)
+
+[<Fact>]
+let ``RR resume over a wrapped book counts each played game once`` () =
+    let book = List.init 3 (fun i -> mkOpening (i + 1))
+    let plan = RoundRobin.generate { rrConfig [ mkEngine "A"; mkEngine "B" ] book with Rounds = 7; OpeningsTwice = true }
+    // 8 of 14 played: the whole book once, then opening 1 again
+    let played = plan |> List.take 8 |> List.map playedPgnOf |> Array.ofList
+    let left = Diff.diff plan played
+    Assert.Equal(6, left.Length)
+    Assert.Equal<string list>(
+        [ "opening-2"; "opening-2"; "opening-3"; "opening-3"; "opening-1"; "opening-1" ],
+        left |> List.map (fun p -> p.Opening.Raw))
+
+// ============================================================================
+// Colours with one game per opening (OpeningsTwice = false): balanced, both modes
+// ============================================================================
+
+let private whiteCounts (games: PlannedGame list) = games |> List.countBy (fun g -> g.White.Name) |> Map.ofList
+
+[<Fact>]
+let ``RR one game per opening: two players alternate White`` () =
+    let games = RoundRobin.generate (rrConfig [ mkEngine "A"; mkEngine "B" ] (List.init 4 (fun i -> mkOpening (i + 1))))
+    Assert.Equal<string list>([ "A"; "B"; "A"; "B" ], games |> List.map (fun g -> g.White.Name))
+
+[<Theory>]
+[<InlineData(3)>]
+[<InlineData(4)>]
+[<InlineData(5)>]
+let ``RR one game per opening: every pair and every player gets White equally over an even number of openings`` (n: int) =
+    let players = [ for i in 0 .. n - 1 -> mkEngine (string (char (int 'A' + i))) ]
+    let games = RoundRobin.generate (rrConfig players (List.init 4 (fun i -> mkOpening (i + 1))))
+    // each unordered pair: two Whites each over four openings
+    for (a, b), gs in games |> List.groupBy (fun g -> min g.White.Name g.Black.Name, max g.White.Name g.Black.Name) do
+        Assert.Equal(4, gs.Length)
+        Assert.Equal(2, gs |> List.filter (fun g -> g.White.Name = a) |> List.length)
+    // each player: White in half its games
+    let whites = whiteCounts games
+    for p in players do Assert.Equal(2 * (n - 1), whites.[p.Name])
+
+[<Fact>]
+let ``gauntlet one game per opening: the challenger is White every other round`` () =
+    let games = Gauntlet.generate { gauntletConfig [ mkEngine "A" ] [ mkEngine "B"; mkEngine "C" ] (List.init 8 (fun i -> mkOpening (i + 1))) 4 with OpeningsTwice = false; Distribution = Shared }
+    Assert.Equal<string list>(
+        [ "A-B"; "A-C"; "B-A"; "C-A"; "A-B"; "A-C"; "B-A"; "C-A" ],
+        games |> List.map (fun g -> $"{g.White.Name}-{g.Black.Name}"))
+    // the swapped games keep their roles: the challenger is still the challenger
+    let swapped = games.[2]
+    Assert.Equal((Opponent, Challenger), (swapped.RoleWhite, swapped.RoleBlack))

@@ -13,6 +13,7 @@
 	<ItemGroup>
 		<!-- Base utilities (no dependencies) -->
 		<Compile Include="Utilities\Exception.fs" />
+		<Compile Include="Utilities\BuildInfo.fs" />
 		<Compile Include="Engine\UciOption.fs" />
 
 		<!-- Chess bitboard operations (no type dependencies) -->
@@ -55,6 +56,16 @@
 
 		<!-- Chess utilities (depends on types, LowLevelUtilities) -->
 		<Compile Include="Utilities\ChessUtilities.fs" />
+
+		<!-- match (MatchMode.md): the command line, statistics, SPRT and config.json -->
+		<Compile Include="Match\MatchFormat.fs" />
+		<Compile Include="Match\MatchStats.fs" />
+		<Compile Include="Match\MatchSprt.fs" />
+		<Compile Include="Match\MatchScoreboard.fs" />
+		<Compile Include="Match\MatchArgs.fs" />
+		<Compile Include="Match\MatchConfigJson.fs" />
+		<Compile Include="Match\MatchMapping.fs" />
+		<EmbeddedResource Include="Match\match-help.txt" LogicalName="ChessLibrary.Match.match-help.txt" />
 
 		<!-- Analysis - Statistics (depends on types) -->
 		<Compile Include="Analysis\Statistics.fs" />
@@ -133,6 +144,8 @@
 
 		<!-- Tournament support modules (depend on engine, parser, etc.) -->
 		<Compile Include="Tournament\TournamentTypes.fs" />
+		<!-- match: its report, on the tournament updates -->
+		<Compile Include="Match\MatchOutput.fs" />
 		<Compile Include="Tournament\LiveFeedWire.fs" />
 		<Compile Include="Tournament\CeresWire.fs" />
 		<Compile Include="Tournament\FeedStats.fs" />

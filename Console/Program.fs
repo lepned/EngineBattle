@@ -24,6 +24,22 @@ module BlazorInterop =
     let mutable blazorProcess: Process option = None
     let mutable private targetPage = "/tournament"
 
+    /// The WebGUI project `gui` runs with `dotnet run`: found from the Console folder or its build
+    /// output in a source checkout. None in a published package, which has no project to run.
+    let tryWebGuiProject () =
+        let currentDir = DirectoryInfo(Environment.CurrentDirectory)
+        let parent =
+            if currentDir.FullName.EndsWith("Console") then currentDir.Parent
+            else
+                let mutable dir = currentDir
+                for _ in 1 .. 4 do
+                    if dir <> null && dir.Parent <> null then dir <- dir.Parent
+                dir
+        if isNull parent then None
+        else
+            let path = Path.Combine(parent.FullName, "WebGUI")
+            if File.Exists(Path.Combine(path, "WebGUI.csproj")) then Some path else None
+
     let startBlazorAppAsync (page: string) (port: int option) =
         async {
             // Store the page route for use when server starts
@@ -325,6 +341,16 @@ module Eret =
         RuntimeUtilities.ConsoleUtils.redConsole $"\nERET Error: {msg}"
 
  
+/// The processes attached to this console: 1 when the program has a console of its own (started
+/// from Explorer rather than from a shell).
+module ConsoleWindow =
+  [<System.Runtime.InteropServices.DllImport("kernel32.dll")>]
+  extern uint32 GetConsoleProcessList(uint32[] processList, uint32 processCount)
+  [<System.Runtime.InteropServices.DllImport("kernel32.dll")>]
+  extern nativeint GetConsoleWindow()
+  [<System.Runtime.InteropServices.DllImport("user32.dll")>]
+  extern bool IsWindowVisible(nativeint hWnd)
+
 module Program =
   open Configuration.JSONParser
   open System.Globalization
@@ -2541,6 +2567,109 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     | ex ->
         printfn "Error during pvbatch: %s" ex.Message
 
+  /// The console's command list: `help`, and what a run without arguments prints.
+  let printConsoleHelp () =
+    printfn ""
+    printfn "EngineBattle - Chess engine tournament, analysis, and puzzle testing"
+    printfn ""
+    printfn "Usage: eb-cli <command> [arguments]"
+    printfn ""
+    printfn "Commands:"
+    printfn "  match [options]                          An engine match from one command line (match -help)"
+    printfn "  tournamentjson, tournament, t <config>  Run a tournament from JSON config"
+    printfn "  puzzlejson, puzzle, p <config> [--json <path>]"
+    printfn "                                          Run puzzle evaluation from JSON config"
+    printfn "                                          --json <path>: write structured results JSON for tooling"
+    printfn "  eretjson, eret <config>                 Run ERET evaluation from JSON config"
+    printfn "  mkdef, md <engine.exe> [options]        Write an engine def from what the engine answers to 'uci'"
+    printfn "                                          --out <folder> (default: current), --net <file> (into the engine's"
+    printfn "                                          network option + NetworkPath), --tb <folder>, --base <def.json>,"
+    printfn "                                          --uci <name> <value> (repeatable), --print, --force, --timeout <s>"
+    printfn "  gendefs, gd <template.json> [--net F|--nets D] [--out D] [--dry-run] [--force]"
+    printfn "                                          Defs for training checkpoints, an existing def as the template"
+    printfn "  puzzletrend, pt <folder> [--arm S] [--type S] [--rg N] [--min-steps N] [--csv F]"
+    printfn "                                          Per-arm step curves from many puzzle runs"
+    printfn "  pvcombo <games.pgn>                     Material-imbalance report by material signature"
+    printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
+    printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
+    printfn "  piecevalues, pv, values <engine> [fen] [options]"
+    printfn "                                          Contextual piece values via leave-one-out net eval"
+    printfn "                                          (shares --fen/--moves/--nodes/--uci; defaults to nodes=1)"
+    printfn "  piecevaluefit, pvfit <engine> <positions.epd|.pgn> [options]"
+    printfn "                                          Net's implied piece values via regression over many"
+    printfn "                                          positions (--sample N, --nodes N, --by-phase, --uci K V)"
+    printfn "                                          --outcome: DeepMind-style fit on PGN game results"
+    printfn "                                                     (tanh model, no engine eval)"
+    printfn "                                          --pgneval: fit on PGN embedded eval (wv=, pawns,"
+    printfn "                                                     no engine; coefficients in pawns)"
+    printfn "  pvbatch <templateTournament.json> <netFolder> [--rounds N] [--out DIR]"
+    printfn "                                          Per net in the folder: nodes=1 self-play +"
+    printfn "                                          outcome/pgneval regressions -> summary.csv"
+    printfn "  benchmark, bench, b <config>            Run engine benchmark"
+    printfn "  tune <config>                           Run Bayesian parameter tuner"
+    printfn "  redash <config>                         Regenerate BO dashboard from saved state"
+    printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
+    printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
+    printfn "  deviations, dev <pgnFile>               Self-consistency and position deviations from PGN"
+    printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
+    printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
+    printfn "  validate, v <config>                    Validate a tournament config without running"
+    printfn "  perft <depth> [sampleSize]              Run perft move generation test"
+    printfn "  gui [page] [port]                       Launch WebGUI (default: tournament, port 5018)"
+    printfn "  help, h                                 Show this help message"
+    printfn ""
+    printfn "Analyze options:"
+    printfn "  --fen S        Set position (quoted FEN string)"
+    printfn "  --moves M...   Append moves to position (e.g. --moves d2d4 d7d5 c2c4)"
+    printfn "  --nodes N      Search N nodes (default: 1000000)"
+    printfn "  --movetime N   Search for N milliseconds"
+    printfn "  --depth N      Search to depth N"
+    printfn "  --args S       Override engine command-line arguments (e.g. dag-preview)"
+    printfn "  --uci K V      Set any UCI option (repeatable, e.g. --uci Backend onnx-trt)"
+    printfn "  --options       Show all UCI options supported by the engine and exit"
+    printfn ""
+    printfn "Compare options:"
+    printfn "  --fen S         Set position (quoted FEN string)"
+    printfn "  --positions F   EPD file with multiple positions"
+    printfn "  --nodes N       Search N nodes (default: 1000000)"
+    printfn "  --movetime N    Search for N milliseconds"
+    printfn "  --depth N       Search to depth N"
+    printfn "  --threshold CP  Only show positions with eval diff >= CP"
+    printfn "  --uci1 K V      Set UCI option for engine 1 (repeatable)"
+    printfn "  --uci2 K V      Set UCI option for engine 2 (repeatable)"
+    printfn ""
+    printfn "Examples:"
+    printfn "  t C:/path/to/tournament.json"
+    printfn "  v C:/path/to/tournament.json"
+    printfn "  p C:/path/to/puzzle.json"
+    printfn "  pgn C:/path/to/games.pgn"
+    printfn "  elo C:/path/to/games.pgn"
+    printfn "  sp C:/path/to/games.pgn"
+    printfn "  a engine.json startpos --nodes 100000"
+    printfn "  a C:/path/to/engine.exe startpos --depth 15"
+    printfn "  a engine.json \"fen string\" --movetime 5000 --uci Threads 2"
+    printfn "  cmp engine1.json engine2.json --nodes 100000"
+    printfn "  cmp engine1.json engine2.json --positions test.epd --depth 20"
+    printfn "  cmp engine1.exe engine2.exe --positions test.epd --threshold 0.5"
+    printfn "  gui"
+    printfn "  gui singleEngineAnalysis"
+    printfn "  gui 5020"
+    printfn ""
+
+  /// Started from Explorer (a double-click): the console window is the program's own and closes
+  /// with it, so wait for Enter - otherwise the text is gone before it can be read.
+  /// Only a window someone can see: a program that starts this one with a hidden console
+  /// (CreateNoWindow) also leaves it alone on its console, and nobody could press Enter there.
+  let waitIfOwnConsole () =
+    if OperatingSystem.IsWindows() && not Console.IsInputRedirected then
+      try
+        let window = ConsoleWindow.GetConsoleWindow()
+        if ConsoleWindow.GetConsoleProcessList(Array.zeroCreate 4, 4u) <= 1u
+           && window <> 0n && ConsoleWindow.IsWindowVisible window then
+          printfn "Press Enter to close."
+          Console.ReadLine() |> ignore
+      with _ -> ()
+
   /// <summary>
   /// The main entry point for the application.
   /// </summary>
@@ -2553,6 +2682,16 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     Globalization.CultureInfo.DefaultThreadCurrentUICulture <- Globalization.CultureInfo.InvariantCulture
     Threading.Thread.CurrentThread.CurrentCulture <- Globalization.CultureInfo.InvariantCulture
     Threading.Thread.CurrentThread.CurrentUICulture <- Globalization.CultureInfo.InvariantCulture
+
+    // `match`, or a command line that starts with an option (so a tool that runs matches can run
+    // this program; no other verb starts with '-', and a mistyped option then gets match's error
+    // and suggestion): MatchMode owns stdout, so it goes before anything prints.
+    match List.ofArray argv with
+    | first :: rest when first = "match" || first.StartsWith "-" ->
+        Console.OutputEncoding <- System.Text.Encoding.UTF8
+        let viaVerb = first = "match"
+        exit (MatchMode.run (if viaVerb then rest else List.ofArray argv) viaVerb)
+    | _ -> ()
 
     ConsoleUtils.originalColor <- Console.ForegroundColor
     
@@ -2639,8 +2778,9 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
         let cliArgs = CustomParser.parse (System.Environment.GetCommandLineArgs())
         let mutable tournament = Tournament.Tournament.Empty
         match cliArgs with
-        | [] -> 
-            printfn "No arguments provided to console app"
+        | [] ->
+            printConsoleHelp ()
+            waitIfOwnConsole ()
         | _ -> 
             // stderr, not stdout: scriptable verbs (query) must own stdout for their JSON
             eprintfn "\nArguments provided to console app: %A" cliArgs
@@ -2911,6 +3051,11 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                             printfn "Error processing PGN file: %s" ex.Message
                 | Verb (Redash path) ->
                     BayesianOptimizer.regenerateDashboard path
+                | Verb (GUI (_, _)) when (BlazorInterop.tryWebGuiProject ()).IsNone ->
+                    // A published console has no WebGUI project to `dotnet run`; say so rather
+                    // than announce a server that never starts.
+                    printfn "gui runs the WebGUI of a source checkout, and there is none here."
+                    printfn "The WebGUI is EngineBattle, next to eb-cli in the EngineBattle download."
                 | Verb (GUI (page, port)) ->
                     let portStr = match port with Some p -> $" on port {p}" | None -> ""
                     printfn "Starting WebGUI%s with page: /%s" portStr page
@@ -2926,91 +3071,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     Console.ReadLine() |> ignore
                     BlazorInterop.stopBlazorApp()
                 | Help ->
-                    printfn ""
-                    printfn "EngineBattle - Chess engine tournament, analysis, and puzzle testing"
-                    printfn ""
-                    printfn "Usage: EngineBattle <command> [arguments]"
-                    printfn ""
-                    printfn "Commands:"
-                    printfn "  tournamentjson, tournament, t <config>  Run a tournament from JSON config"
-                    printfn "  puzzlejson, puzzle, p <config> [--json <path>]"
-                    printfn "                                          Run puzzle evaluation from JSON config"
-                    printfn "                                          --json <path>: write structured results JSON for tooling"
-                    printfn "  eretjson, eret <config>                 Run ERET evaluation from JSON config"
-                    printfn "  mkdef, md <engine.exe> [options]        Write an engine def from what the engine answers to 'uci'"
-                    printfn "  gendefs, gd <template.json> [--net F|--nets D] [--out D] [--dry-run] [--force]"
-                    printfn "                                          Defs for training checkpoints, an existing def as the template"
-                    printfn "  puzzletrend, pt <folder> [--arm S] [--type S] [--rg N] [--min-steps N] [--csv F]"
-                    printfn "                                          Per-arm step curves from many puzzle runs"
-                    printfn "  pvcombo <games.pgn>                     Material-imbalance report by material signature"
-                    printfn "                                          --out <folder> (default: current), --net <file> (into the engine's"
-                    printfn "                                          network option + NetworkPath), --tb <folder>, --base <def.json>,"
-                    printfn "                                          --uci <name> <value> (repeatable), --print, --force, --timeout <s>"
-                    printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
-                    printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
-                    printfn "  piecevalues, pv, values <engine> [fen] [options]"
-                    printfn "                                          Contextual piece values via leave-one-out net eval"
-                    printfn "                                          (shares --fen/--moves/--nodes/--uci; defaults to nodes=1)"
-                    printfn "  piecevaluefit, pvfit <engine> <positions.epd|.pgn> [options]"
-                    printfn "                                          Net's implied piece values via regression over many"
-                    printfn "                                          positions (--sample N, --nodes N, --by-phase, --uci K V)"
-                    printfn "                                          --outcome: DeepMind-style fit on PGN game results"
-                    printfn "                                                     (tanh model, no engine eval)"
-                    printfn "                                          --pgneval: fit on PGN embedded eval (wv=, pawns,"
-                    printfn "                                                     no engine; coefficients in pawns)"
-                    printfn "  pvbatch <templateTournament.json> <netFolder> [--rounds N] [--out DIR]"
-                    printfn "                                          Per net in the folder: nodes=1 self-play +"
-                    printfn "                                          outcome/pgneval regressions -> summary.csv"
-                    printfn "  benchmark, bench, b <config>            Run engine benchmark"
-                    printfn "  tune <config>                           Run Bayesian parameter tuner"
-                    printfn "  redash <config>                         Regenerate BO dashboard from saved state"
-                    printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
-                    printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
-                    printfn "  deviations, dev <pgnFile>               Self-consistency and position deviations from PGN"
-                    printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
-                    printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
-                    printfn "  validate, v <config>                    Validate a tournament config without running"
-                    printfn "  perft <depth> [sampleSize]              Run perft move generation test"
-                    printfn "  gui [page] [port]                       Launch WebGUI (default: tournament, port 5018)"
-                    printfn "  help, h                                 Show this help message"
-                    printfn ""
-                    printfn "Analyze options:"
-                    printfn "  --fen S        Set position (quoted FEN string)"
-                    printfn "  --moves M...   Append moves to position (e.g. --moves d2d4 d7d5 c2c4)"
-                    printfn "  --nodes N      Search N nodes (default: 1000000)"
-                    printfn "  --movetime N   Search for N milliseconds"
-                    printfn "  --depth N      Search to depth N"
-                    printfn "  --args S       Override engine command-line arguments (e.g. dag-preview)"
-                    printfn "  --uci K V      Set any UCI option (repeatable, e.g. --uci Backend onnx-trt)"
-                    printfn "  --options       Show all UCI options supported by the engine and exit"
-                    printfn ""
-                    printfn "Compare options:"
-                    printfn "  --fen S         Set position (quoted FEN string)"
-                    printfn "  --positions F   EPD file with multiple positions"
-                    printfn "  --nodes N       Search N nodes (default: 1000000)"
-                    printfn "  --movetime N    Search for N milliseconds"
-                    printfn "  --depth N       Search to depth N"
-                    printfn "  --threshold CP  Only show positions with eval diff >= CP"
-                    printfn "  --uci1 K V      Set UCI option for engine 1 (repeatable)"
-                    printfn "  --uci2 K V      Set UCI option for engine 2 (repeatable)"
-                    printfn ""
-                    printfn "Examples:"
-                    printfn "  t C:/path/to/tournament.json"
-                    printfn "  v C:/path/to/tournament.json"
-                    printfn "  p C:/path/to/puzzle.json"
-                    printfn "  pgn C:/path/to/games.pgn"
-                    printfn "  elo C:/path/to/games.pgn"
-                    printfn "  sp C:/path/to/games.pgn"
-                    printfn "  a engine.json startpos --nodes 100000"
-                    printfn "  a C:/path/to/engine.exe startpos --depth 15"
-                    printfn "  a engine.json \"fen string\" --movetime 5000 --uci Threads 2"
-                    printfn "  cmp engine1.json engine2.json --nodes 100000"
-                    printfn "  cmp engine1.json engine2.json --positions test.epd --depth 20"
-                    printfn "  cmp engine1.exe engine2.exe --positions test.epd --threshold 0.5"
-                    printfn "  gui"
-                    printfn "  gui singleEngineAnalysis"
-                    printfn "  gui 5020"
-                    printfn ""
+                    printConsoleHelp ()
                 | _ ->
                     printfn "Unhandled argument: %A" arg
         0
