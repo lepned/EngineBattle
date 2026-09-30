@@ -144,7 +144,9 @@ let private sanPvOfLine (beforeFen: string) (pv: string) : string =
     with _ -> ""
 
 // EngineBattle shows evals from White's perspective; CELT eval is the mover's perspective, so
-// negate when Black moved. WDL win/loss swap likewise so it stays consistent with the eval.
+// negate when Black moved. WDL is left as CELT sends it, the mover's: EB's own runner passes an
+// engine's WDL through as the engine reports it, and the engine panel shows each engine's own
+// chances in its column - swapped here too, Black's column showed White's.
 let private flipEval (side: string) (e: EvalType) =
     if side = "b" then
         match e with
@@ -152,13 +154,6 @@ let private flipEval (side: string) (e: EvalType) =
         | EvalType.Mate m -> EvalType.Mate(-m)
         | EvalType.NA -> EvalType.NA
     else e
-
-let private flipWdl (side: string) (w: WDLType) =
-    if side = "b" then
-        match w with
-        | WDLType.HasValue x -> WDLType.HasValue { x with Win = x.Loss; Loss = x.Win }
-        | WDLType.NotFound -> WDLType.NotFound
-    else w
 
 /// Map the CELT tournament-meta time control (kind/valueMs/incrementMs/nodes/movesToGo) to an EB
 /// TimeControl, so the feed tournament carries a real time control instead of a null one.
@@ -262,7 +257,7 @@ let mapMove (source: string) (gameId: string) (white: string) (black: string) (b
         let lan = getStr o "lan" ""
         let fen = getStr o "fen" startPosition
         let ev = flipEval side (evalCp o)
-        let wdl = flipWdl side (wdlOf o)
+        let wdl = wdlOf o
         let san = sanOfMove beforeFen lan
         // Running SAN move list: a "N. " number token before each White move, then the SAN.
         // StreamingChessboard re-parses this string (number tokens vs SAN tokens) into the move list.
@@ -327,7 +322,7 @@ let mapInterim (source: string) (gameId: string) (white: string) (black: string)
               Depth = getInt o "depth" 0
               SD = getInt o "selDepth" 0
               TBhits = 0L
-              WDL = flipWdl side (wdlOf o)
+              WDL = wdlOf o
               PV = sanPvOfLine beforeFen pvUci
               PVLongSAN = pvUci
               MultiPV = 1 }

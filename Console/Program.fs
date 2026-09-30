@@ -2454,7 +2454,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     |ex -> printfn "Caught an exception: %s" ex.Message
 
   // ---------- Batch piece-value analysis over a folder of nets ----------
-  // For each net: nodes=1 self-play (RR), then outcome + pgneval endgame regressions.
+  // For each net: self-play (RR) at the template's time control - nodes=1 in the usual template -
+  // then outcome + pgneval endgame regressions.
   // Reuses runTournament and the pvfit helpers. Resumable (skips a net whose PGN is
   // already complete) and fault-tolerant (a failing net is logged and skipped).
 
@@ -2540,7 +2541,8 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                                     // regardless of the template; this also enables PreventMoveDeviation.
                                     TestOptions = { templateTourny.TestOptions with NumberOfGamesInParallel = 1 }
                                     PreventMoveDeviation = true }
-                            printfn "  running %d-game nodes=1 self-play..." rounds
+                            // the template's time control, which the batch does not override
+                            printfn "  running %d-game self-play at %s..." rounds (tourny.TimeControlTextForPlayer engA.TimeControlID)
                             runTournament tourny logger
 
                         match pvOutcomeEndgame pgn with
@@ -2603,14 +2605,16 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "                                          --pgneval: fit on PGN embedded eval (wv=, pawns,"
     printfn "                                                     no engine; coefficients in pawns)"
     printfn "  pvbatch <templateTournament.json> <netFolder> [--rounds N] [--out DIR]"
-    printfn "                                          Per net in the folder: nodes=1 self-play +"
-    printfn "                                          outcome/pgneval regressions -> summary.csv"
+    printfn "                                          Per net in the folder: self-play at the template's"
+    printfn "                                          time control + outcome/pgneval regressions -> summary.csv"
     printfn "  benchmark, bench, b <config>            Run engine benchmark"
     printfn "  tune <config>                           Run Bayesian parameter tuner"
     printfn "  redash <config>                         Regenerate BO dashboard from saved state"
     printfn "  pgnsummary, pgn, ps <pgnFile>           Analyze PGN game terminations"
     printfn "  pgncheck, pc <pgnFile>                  Parser health check: games, plies, throughput"
     printfn "  deviations, dev <pgnFile>               Self-consistency and position deviations from PGN"
+    printfn "  query, q <fen|startpos> [options]       Position query as JSON (status, legal moves, attackers,"
+    printfn "                                          pins, insights, SEE); --epd <file> for a batch"
     printfn "  elo, e <pgnFile>                        Show ELO ratings and results from PGN"
     printfn "  speed, sp <pgnFile>                     Show speed statistics from PGN"
     printfn "  validate, v <config>                    Validate a tournament config without running"

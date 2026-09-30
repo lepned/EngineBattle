@@ -70,8 +70,9 @@ These objects appear inside multiple events.
 - Orientation: **White's perspective** — positive = good for White, whichever engine searched. EB's
   runner converts the engine's side-to-move score when it parses the info line (negated for the
   Black engine), and the Ceres CELT bridge (`CeresWire.fs`) negates the mover's eval when Black moved.
-  The `wdl` of EB's own runner is passed through as the engine reported it (the searching side's view);
-  the Ceres bridge swaps win/loss for Black.
+  The `wdl` is **not** turned: it is the searching side's view, as the engine reported it, from EB's
+  runner and from the Ceres bridge alike - the engine panel shows each engine's own chances in its
+  column.
 
 ### 2.2 `wdl` — win/draw/loss (maps to `WDLType`)
 
@@ -418,7 +419,7 @@ Finalizes standings and opens the final results view.
 - `{"type": "Eval", "player": "<name>", "eval": <eval object or null>}` — one engine's eval outside a `Status`.
 - `{"type": "GameSummary", "summary": "<text>"}` — a finished game's one-line summary.
 - `{"type": "EngineStartFailed", "engine": "<name>", "reason": "<text>"}` - an engine could not be started, which stops the run. Not put on the feed today; the codec carries it.
-- `{"type": "EngineStarted", "engine": "<name>", "defaults": {"<option>": "<default>", ...}}` - an engine instance answered `uciok`: every option it reported with its default. Every `defaults` value is a JSON string (numbers and booleans as text; buttons have no default and are left out). Sent once per engine instance, so an engine played on several boards sends it more than once. EB's runner delivers it to the in-process callback only, not onto the feed today; the codec carries it.
+- `{"type": "EngineStarted", "engine": "<name>", "defaults": {"<option>": "<default>", ...}}` - an engine instance answered `uciok`: every option it reported with its default. EB writes every `defaults` value as a JSON string (numbers and booleans as text; buttons have no default and are left out); a reader also takes a JSON number or boolean and keeps it as its text. Sent once per engine instance, so an engine played on several boards sends it more than once. EB's runner delivers it to the in-process callback only, not onto the feed today; the codec carries it.
 - `{"type": "GameFinished", "gameNr": <int>, "round": "<pair label>", "white": "<name>", "black": "<name>", "openingHash": "<hash>", "result": <result object>}` — a game played to its end and written, with its place in the plan. The runner does not put it on the feed today; the codec carries it for completeness.
 
 ---

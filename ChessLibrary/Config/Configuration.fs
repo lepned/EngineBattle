@@ -577,7 +577,46 @@ module JSON =
   /// place cannot be forgotten by a call site that constructs its own options — which is
   /// exactly how the tournament file, the one holding the durations, ended up bypassing the
   /// registration it needed.
+  /// An engine def's WinboardConfig block, laid over WinboardConfig.Default: a field the block
+  /// leaves out keeps its default (PreGoDelayMs 100, TimeControlStrategy LevelWithTime, no startup
+  /// commands). Read as a plain record, a missing field got the type's zero instead - a block of
+  /// just { "SideToMovePOV": true } gave PreGoDelayMs 0 and a null strategy and command list,
+  /// which the Winboard handler then used. Written whole, so a written def states every field.
+  type WinboardConfigConverter() =
+      inherit JsonConverter<WinboardConfig>()
+
+      override _.Read(reader: byref<Utf8JsonReader>, _typeToConvert: Type, options: JsonSerializerOptions) =
+          use doc = JsonDocument.ParseValue(&reader)
+          let comparison = if options.PropertyNameCaseInsensitive then StringComparison.OrdinalIgnoreCase else StringComparison.Ordinal
+          let mutable c = WinboardConfig.Default
+          for p in doc.RootElement.EnumerateObject() do
+              if p.Value.ValueKind <> JsonValueKind.Null then
+                  let is (name: string) = String.Equals(p.Name, name, comparison)
+                  if is "SideToMovePOV" then c <- { c with SideToMovePOV = p.Value.GetBoolean() }
+                  elif is "TimeControlStrategy" then c <- { c with TimeControlStrategy = p.Value.Deserialize<TimeControlStrategy>(options) }
+                  elif is "StartupCommands" then c <- { c with StartupCommands = [ for e in p.Value.EnumerateArray() -> e.GetString() ] }
+                  elif is "ForceV1Mode" then c <- { c with ForceV1Mode = p.Value.GetBoolean() }
+                  elif is "RequiresLevelForThinkingOutput" then c <- { c with RequiresLevelForThinkingOutput = p.Value.GetBoolean() }
+                  elif is "Use4FieldFen" then c <- { c with Use4FieldFen = p.Value.GetBoolean() }
+                  elif is "PreGoDelayMs" then c <- { c with PreGoDelayMs = p.Value.GetInt32() }
+          c
+
+      override _.Write(writer: Utf8JsonWriter, value: WinboardConfig, options: JsonSerializerOptions) =
+          writer.WriteStartObject()
+          writer.WriteBoolean("SideToMovePOV", value.SideToMovePOV)
+          writer.WritePropertyName("TimeControlStrategy")
+          JsonSerializer.Serialize(writer, value.TimeControlStrategy, options)
+          writer.WriteStartArray("StartupCommands")
+          for cmd in value.StartupCommands do writer.WriteStringValue(cmd)
+          writer.WriteEndArray()
+          writer.WriteBoolean("ForceV1Mode", value.ForceV1Mode)
+          writer.WriteBoolean("RequiresLevelForThinkingOutput", value.RequiresLevelForThinkingOutput)
+          writer.WriteBoolean("Use4FieldFen", value.Use4FieldFen)
+          writer.WriteNumber("PreGoDelayMs", value.PreGoDelayMs)
+          writer.WriteEndObject()
+
   let private addConverters (options: JsonSerializerOptions) =
+      options.Converters.Add(WinboardConfigConverter())
       options.Converters.Add(TypesDef.CoreTypes.TimeControlStrategyConverter())
       options.Converters.Add(TypesDef.CoreTypes.DurationConverter())
       options.Converters.Add(TypesDef.Tournament.TestOptionsConverter())

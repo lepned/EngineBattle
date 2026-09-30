@@ -98,7 +98,7 @@ let ``black move eval is flipped to White perspective`` () =
             | CP v -> Assert.Equal(-0.20, v, 3)              // +20cp (black) -> -0.20 (white perspective)
             | other -> failwithf "expected CP, got %A" other
             match status.WDL with
-            | HasValue w -> Assert.Equal(200.0, w.Win, 1)    // black win 0.20 -> white win 200 per-mille
+            | HasValue w -> Assert.Equal(300.0, w.Win, 1)    // the mover's own chances, as EB's runner shows them: black win 0.30 -> 300 per-mille
             | NotFound -> failwith "expected WDL"
         | other -> failwithf "expected BestMove, got %A" other
     | None -> failwith "mapMove returned None"

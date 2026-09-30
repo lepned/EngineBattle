@@ -437,6 +437,20 @@ let onlyUniqueOpenings (pgns:seq<PgnGame>) =
       processedGames
 
 
+/// The spread of the engines' evals, sign included (see bookPositionPasses).
+let bookEvalSpread (evals: float[]) =
+  if evals.Length = 0 then 0.0 else Array.max evals - Array.min evals
+
+/// Whether a book position passes the Book Evaluation filter. The evals are each engine's, from
+/// the side to move, in centipawns (all engines search the same FEN, so the signs compare).
+/// Every eval must lie within [minEval, maxEval] in size - either side may be the one that is
+/// better - and the engines must agree: the spread of the evals, sign included, below
+/// maxEvalDiff. The spread was taken of the sizes once, so +90 against -90 passed as agreeing
+/// although the engines disagree on who is better.
+let bookPositionPasses (minEval: float) (maxEval: float) (maxEvalDiff: float) (evals: float[]) =
+  let inRange = evals |> Array.forall (fun e -> abs e >= minEval && abs e <= maxEval)
+  inRange && bookEvalSpread evals < maxEvalDiff
+
 let performPositionEvalTestOnEpdPositions (limits : ResizeArray<TimeControlTypes.TimeControlCommands.SearchLimit>) (engineList : ResizeArray<EngineConfig>) (epds:ResizeArray<EPDEntry>) (minEvalScore: string) (maxEvalScore : string) (maxEvalDiff : string) (progress: System.Action<int, int>) (ct: System.Threading.CancellationToken) =
   try
       let minEvalScore = if String.IsNullOrWhiteSpace(minEvalScore) then None else Some minEvalScore
@@ -480,17 +494,17 @@ let performPositionEvalTestOnEpdPositions (limits : ResizeArray<TimeControlTypes
                       })
                   |> fun comps -> Async.Parallel(comps, maxDegreeOfParallelism = chunkSize)
                   |> Async.RunSynchronously
-                  |> Array.map(fun ((eval, move), limit, name) -> abs eval, move, limit, name)
+                  |> Array.map(fun ((eval, move), limit, name) -> eval, move, limit, name)
 
               if progress <> null then progress.Invoke(id + 1, epds.Count)
-              let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
-              let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min
-              let evalDiff = maxEval - minEval
+              let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> abs eval,m, n) |> Array.max
+              let signed = evals |> Array.map(fun (eval,_,_,_) -> float eval)
+              let evalDiff = bookEvalSpread signed
               let maxEvalDiff =
                   match maxEvalDiff with
                   |Some maxEvalDiff -> maxEvalDiff
                   |None -> 10000
-              let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= min && eval <= max) && evalDiff < maxEvalDiff
+              let passes = bookPositionPasses (float min) (float max) (float maxEvalDiff) signed
 
               if passes then
                 let evalAndMoveSummary =
@@ -558,17 +572,17 @@ let performPositionEvalTestOnPgnGames (limits : ResizeArray<TimeControlTypes.Tim
                      })
                   |> fun comps -> Async.Parallel(comps, maxDegreeOfParallelism = chunkSize)
                   |> Async.RunSynchronously
-                  |> Array.map(fun ((eval, move), limit, name) -> abs eval, move, limit, name)
+                  |> Array.map(fun ((eval, move), limit, name) -> eval, move, limit, name)
 
               if progress <> null then progress.Invoke(pgnIdx + 1, openings.Count)
-              let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> eval,m, n) |> Array.max
-              let minEval, minMove, minEng = evals |> Array.map(fun (eval,m,_,n) -> eval, m, n) |> Array.min
-              let evalDiff = maxEval - minEval
+              let maxEval, maxMove, maxEng = evals |> Array.map(fun (eval,m,_,n) -> abs eval,m, n) |> Array.max
+              let signed = evals |> Array.map(fun (eval,_,_,_) -> float eval)
+              let evalDiff = bookEvalSpread signed
               let maxEvalDiff =
                   match maxEvalDiff with
                   |Some maxEvalDiff -> maxEvalDiff
                   |None -> 10000
-              let passes = evals |> Array.forall(fun (eval,_,_,_) -> eval >= minEv && eval <= maxEv) && evalDiff < maxEvalDiff
+              let passes = bookPositionPasses (float minEv) (float maxEv) (float maxEvalDiff) signed
               if passes then
                   let evalAndMoveSummary =
                       evals

@@ -534,7 +534,18 @@ let tryParseUpdate (json: string) : Update option =
             | "EngineStarted" ->
                 let d =
                     match o["defaults"] with
-                    | :? JsonObject as d -> d |> Seq.map (fun kv -> kv.Key, (if isNull kv.Value then "" else kv.Value.GetValue<string>())) |> Map.ofSeq
+                    // EB writes every default as a string; a producer that writes a number or a bool
+                    // keeps its event - GetValue<string> threw on those, and the catch-all dropped it
+                    | :? JsonObject as d ->
+                        let text (v: JsonNode) =
+                            match v with
+                            | null -> ""
+                            | :? JsonValue as jv ->
+                                match jv.TryGetValue<string>() with
+                                | true, s -> s
+                                | _ -> jv.ToJsonString()
+                            | other -> other.ToJsonString()
+                        d |> Seq.map (fun kv -> kv.Key, text kv.Value) |> Map.ofSeq
                     | _ -> Map.empty
                 Some(Update.EngineStarted(getStr o "engine" "", d))
             | "GameFinished" ->

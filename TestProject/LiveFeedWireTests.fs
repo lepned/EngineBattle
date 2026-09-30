@@ -279,3 +279,15 @@ let ``withGameId preserves the event payload`` () =
     match tryParseUpdate stamped with
     | Some (Update.BestMove (i, _)) -> Assert.Equal("e2e4", i.Move)
     | _ -> Assert.True(false, "stamped line should still parse as BestMove")
+
+[<Fact>]
+let ``EngineStarted keeps its event when a producer writes a default as a number or a bool`` () =
+    let json = """{"type":"EngineStarted","engine":"A","defaults":{"Threads":1,"Hash":16,"Ponder":false,"SyzygyPath":""}}"""
+    match tryParseUpdate json with
+    | Some (Update.EngineStarted (name, d)) ->
+        Assert.Equal("A", name)
+        Assert.Equal(Some "1", Map.tryFind "Threads" d)
+        Assert.Equal(Some "16", Map.tryFind "Hash" d)
+        Assert.Equal(Some "false", Map.tryFind "Ponder" d)
+        Assert.Equal(Some "", Map.tryFind "SyzygyPath" d)
+    | other -> Assert.True(false, sprintf "expected EngineStarted, got %A" other)

@@ -30,7 +30,7 @@ For each engine you can configure:
 | **Number of openings** | 500 | Maximum number of positions to evaluate from the source file |
 | **Min eval (cp)** | 80 | Minimum absolute eval in centipawns. Every engine's absolute eval must reach it, or the position is filtered out (too drawish). |
 | **Max eval (cp)** | 100 | Maximum absolute eval in centipawns. Positions with any engine eval above this are filtered out (too one-sided). |
-| **Max eval diff (cp)** | 40 | Maximum allowed eval difference between engines. Positions where engines disagree by more than this are filtered out. |
+| **Max eval diff (cp)** | 40 | Maximum allowed eval difference between engines, signs included. Positions where engines disagree by more than this - or on which side is better - are filtered out. |
 | **Output folder** | The Openings folder from Global Settings | Folder where results are saved (inside a `BookEvals` subfolder) |
 
 ### Eval Filtering Logic
@@ -38,7 +38,7 @@ For each engine you can configure:
 A position passes if:
 - Every engine's absolute eval is ≥ **Min eval**
 - No engine's absolute eval exceeds **Max eval**
-- The difference between the highest and lowest engine eval is < **Max eval diff** (with a single engine there is no difference to check)
+- The difference between the highest and lowest engine eval, with their signs, is < **Max eval diff** (with a single engine there is no difference to check). The evals are from the side to move, the same for every engine, so +90 from one engine and -90 from another is a difference of 180: the engines disagree on who is better, and the position is filtered out.
 
 This ensures the position is competitive (not dead drawn) but not busted (not clearly winning for one side), and that engines roughly agree on the assessment.
 

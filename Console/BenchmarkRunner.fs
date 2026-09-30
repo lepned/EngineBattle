@@ -257,7 +257,10 @@ module BenchmarkRunner =
         printfn "    PV: %s" pv
 
   let private runPosition (engine: ChessEngine) (position: BenchmarkPosition) durationSeconds comboDesc index totalPositions =
-    let fen = if String.IsNullOrWhiteSpace position.Fen then startPosition else position.Fen.Trim()
+    // "startpos" is the start position too: the board below reads only FENs, and it threw on
+    // "startpos" before the engine was ever asked
+    let isStartpos = String.IsNullOrWhiteSpace position.Fen || position.Fen.Trim().Equals("startpos", StringComparison.OrdinalIgnoreCase)
+    let fen = if isStartpos then startPosition else position.Fen.Trim()
     let board = ChessLibrary.Chess.Board()
     board.LoadFen fen
     let positionName = if String.IsNullOrWhiteSpace position.Name then sprintf "Position %d" (index + 1) else position.Name.Trim()
@@ -271,7 +274,7 @@ module BenchmarkRunner =
     let ok = engine.WaitForReadyOk(6000000)
     if not ok then
        failwith "Engine did not respond to readyok during benchmark"
-    if fen.Equals("startpos", StringComparison.OrdinalIgnoreCase) then
+    if isStartpos then
       engine.Position("position startpos")
     else
       engine.PositionGoFen fen

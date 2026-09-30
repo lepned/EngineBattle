@@ -13,7 +13,7 @@ The JSON file describes:
 - `engineConfigPath`: path to the `EngineDef.json` describing the engine binary and UCI tuning.
 - `durationSeconds`: how long each engine+position search should run (seconds). Default 20 when omitted or 0.
 - `optionSets`: a list of `{ "optionKey": "<UCI option>", "values": [ ... ] }` entries. The values of all entries are combined as a Cartesian product (two options with 3 and 2 values give 6 combinations), and every combination is evaluated in sequence. With no option sets the engine's own configuration runs once as the baseline.
-- `positions`: a list of `{ "name": "...", "fen": "..." }` entries that the benchmark searches in turn. An empty `fen` means the start position, and with no positions at all the start position alone is used.
+- `positions`: a list of `{ "name": "...", "fen": "..." }` entries that the benchmark searches in turn. An empty `fen`, or `"startpos"`, means the start position, and with no positions at all the start position alone is used.
 - `summaryOutputPath` (optional): where to write the summary log.
 
 Example:
