@@ -9,7 +9,7 @@ EngineBattle supports ERET (Eigenmann Rapid Engine Test) mode, allowing you to b
 - **.NET 10.0 or later** installed ([Download here](https://dotnet.microsoft.com/download/dotnet/10.0))
 - **EngineBattle** cloned from [GitHub](https://github.com/lepned/EngineBattle)
 - One or more UCI-compatible chess engines (e.g., Stockfish, Lc0, Ceres)
-- An ERET test suite file (e.g., EPD or FEN list)
+- An ERET test suite as an EPD file with a `bm` or `am` opcode on each position
 - Engine definition files (see below)
 
 ---
@@ -59,8 +59,8 @@ Here’s a sample `EretConfig.json`:
 - `Engines`: List of engines to test. Each can be:
   - `Engine`: Uses a single engine config file.
   - `EngineWithNets`: Uses a config file and a list of neural network files.
-- `PuzzleFile`: Path to your ERET test suite (EPD or FEN file).
-- `SampleSize`: Number of positions to sample from the ERET suite.
+- `PuzzleFile`: Path to your ERET test suite (EPD file). Each position needs a `bm` or `am` opcode; a plain FEN line has no solution to check and always counts as failed.
+- `SampleSize`: Number of positions to run, taken from the start of the file in order (the first N, not a random sample).
 - `TimeInSeconds`: Time limit for each engine to evaluate a position.
 - `Nodes`: Node limit per position (max nodes each engine will search).
 - `RunWithNodeLimit`: true/false to run with node limit or time limit.

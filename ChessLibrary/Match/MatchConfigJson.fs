@@ -12,7 +12,7 @@ open ChessLibrary.Match.MatchStats
 /// types/*.hpp at 60d7a7a): the settings, the engines and the stats so far, written as the reference
 /// writes them - nlohmann's ordered_json with four-space indents, enums as integers - so the
 /// resume command a run prints (`-config file=config.json`) works, and a tool reading the file
-/// finds what it expects. See MatchModeSpec.md §1.6.
+/// finds what it expects.
 ///
 /// On resume EngineBattle rebuilds the stats from the games in the PGN, the file it resumes
 /// from anyway; the stats in this file are read (the reference's `-config` rules for them apply) but

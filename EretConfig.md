@@ -9,12 +9,12 @@ This document provides an overview of the `EretConfig.json` configuration file u
 - **EngineFolder**: The file system path to the folder containing engine definition JSON files.
 - **Engines**: A list of engines to use for the test. Each entry can be:
   - **Engine**: Uses a single engine definition file (`ConfigName`).
-  - **EngineWithNets**: Uses an engine definition file with a list of neural network files (`ListOfNetsWithPaths`). Each path replaces only the network path portion of the engine's `Network` (or `WeightsFile`) option — any backend prefix (e.g., `ONNX_TRT:`) and embedded parameters (e.g., `|cudagraphs=true;V1TEMP=0.55`) from the engine definition are preserved automatically.
-- **PuzzleFile**: The file path to the EPD or puzzle file to be used for testing.
+  - **EngineWithNets**: Uses an engine definition file with a list of neural network files (`ListOfNetsWithPaths`). If the engine definition has a `WeightsFile` option, the path replaces it whole. Otherwise it goes into `Network`, where it replaces only the network path portion — any backend prefix (e.g., `ONNX_TRT:`) and embedded parameters (e.g., `|cudagraphs=true;V1TEMP=0.55`) from the engine definition are preserved automatically.
+- **PuzzleFile**: The file path to the EPD file to be used for testing. Each position needs a `bm` (best move) or `am` (avoid move) opcode; a line without either is still run but always counts as failed. Lines starting with `##` are skipped.
 
 ### Test Parameters
 
-- **SampleSize**: The number of puzzles to sample from the puzzle file.
+- **SampleSize**: The number of positions to run: the first N positions of the file, in file order (no random sampling).
 - **TimeInSeconds**: The time limit per puzzle (used if `RunWithNodeLimit` is `false`).
 - **Nodes**: The node limit per puzzle (used if `RunWithNodeLimit` is `true`).
 - **RunWithNodeLimit**: If `true`, engines are limited by node count; if `false`, by time.

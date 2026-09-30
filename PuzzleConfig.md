@@ -40,13 +40,18 @@ This document provides an overview of the `PuzzleConfig.json` configuration file
   - **EngineWithNets**: Uses an engine definition file with multiple neural networks
     - `ConfigName`: Name of the engine definition file (e.g., "CeresDef.json")
     - `Nodes`: Number of nodes to search per puzzle position (optional, 0 means this engine will use the global settings only) and can be specified differently for each engine.
-    - `ListOfNetsWithPaths`: Array of full paths to different neural network files to test. Each path replaces only the network path portion of the engine's `Network` (or `WeightsFile`) option — any backend prefix (e.g., `ONNX_TRT:`) and embedded parameters (e.g., `|cudagraphs=true;V1TEMP=0.55`) from the engine definition are preserved automatically.
+    - `ListOfNetsWithPaths`: Array of full paths to different neural network files to test. If the engine definition has a `WeightsFile` option, the path replaces it whole. Otherwise it goes into `Network`, where it replaces only the network path portion — any backend prefix (e.g., `ONNX_TRT:`) and embedded parameters (e.g., `|cudagraphs=true;V1TEMP=0.55`) from the engine definition are preserved automatically.
 
 ### Test Parameters
 
 - **SampleSize**: The number of puzzles to sample from the puzzle file.
 - **Nodes**: Global comma-separated node limit per puzzle (eg., "10, 100" will run 10 and 100 nodes search). This applies to all engines in addition to individual engine `Nodes` settings. Default empty.
 - **Concurrency**: The number of concurrent engine instances to use for testing.
+- **IncludeFailedPuzzles**: `true` averages `avgKLD` and the rank-weighted KLD (`RankWtKLD`,
+  `avgRankWeightedKld` in the result JSON) over all puzzles, solved and failed. Default `false`:
+  both use solved puzzles only. Applies to the policy tests (`policy`, `policyN` and the policy
+  half of `policyvalue`); nothing else reads it — accuracy, the frontier KLD, margin loss and
+  the estimated-nodes columns always cover all puzzles.
 - **ScoreAllPositions**: `true` also scores every position of a multi-move puzzle, not only
   up to the first mistake. Default `false`. Additive: the per-puzzle numbers are the same
   whether the flag is on or off — this only adds `positionsCorrect`/`positionsScored`/

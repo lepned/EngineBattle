@@ -7,7 +7,7 @@ produce so EngineBattle (EB) can drive its live game visualization without runni
 itself. The tournament page (`/tournament-feed`) and the multi-board grid (`/tournament-grid`) consume this stream.
 
 > The contract is a JSON serialization of EB's internal `Update` event stream
-> (`ChessLibrary/Tournament/TournamentTypes.fs:14`). The internal runner is just one producer of
+> (`type Update` in `ChessLibrary/Tournament/TournamentTypes.fs`). The internal runner is just one producer of
 > that stream; an external runner becomes a second producer. The wire format below is deliberately
 > **decoupled** from the internal F# types (explicit `type` tags, camelCase, no F# DU
 > auto-serialization) so internal refactors don't break external producers.
@@ -44,6 +44,14 @@ belongs to, so a runner emitting many games in parallel can drive multiple indep
 (`StartOfTournament`, `PairingList`, `TotalNumberOfPairs`, `RoundNr`, `PeriodicResults`,
 `EndOfTournament`) are global and omit it. (EB's own runner stamps `"gameId": ""` on them; consumers treat an empty string as absent.)
 
+**What EB's own runner puts on the feed** (`ParallelExecution`, round robin and gauntlet): the
+tournament-level `StartOfTournament`, `RoundNr` (before each game) and `EndOfTournament`, all with
+`"gameId": ""`; and, stamped with the worker slot as `gameId`, every per-game event the game sends:
+`StartOfGame`, `GameStarted`, `Status`, `BestMove`, `NNSeq`, `EndOfGame`, and `MessagesFromEngine`
+(Ceres `info engine` lines). `PairingList`, `TotalNumberOfPairs` and `PeriodicResults` go only to the
+in-process callback, not onto the feed. Other producers (e.g. the Ceres CELT bridge) may send more;
+every event in §3 is allowed on the wire.
+
 ---
 
 ## 2. Shared value types
@@ -59,8 +67,11 @@ These objects appear inside multiple events.
 ```
 
 - `value` for `cp` is in **pawns** (e.g. `0.35`, not `35`), matching `EvalType.CP of float`.
-- Orientation: score for the side that just searched (UCI side-to-move convention), positive = good
-  for that side. *(Confirm against EB's chart sign convention during implementation.)*
+- Orientation: **White's perspective** — positive = good for White, whichever engine searched. EB's
+  runner converts the engine's side-to-move score when it parses the info line (negated for the
+  Black engine), and the Ceres CELT bridge (`CeresWire.fs`) negates the mover's eval when Black moved.
+  The `wdl` of EB's own runner is passed through as the engine reported it (the searching side's view);
+  the Ceres bridge swaps win/loss for Black.
 
 ### 2.2 `wdl` — win/draw/loss (maps to `WDLType`)
 
@@ -407,6 +418,7 @@ Finalizes standings and opens the final results view.
 - `{"type": "Eval", "player": "<name>", "eval": <eval object or null>}` — one engine's eval outside a `Status`.
 - `{"type": "GameSummary", "summary": "<text>"}` — a finished game's one-line summary.
 - `{"type": "EngineStartFailed", "engine": "<name>", "reason": "<text>"}` - an engine could not be started, which stops the run. Not put on the feed today; the codec carries it.
+- `{"type": "EngineStarted", "engine": "<name>", "defaults": {"<option>": "<default>", ...}}` - an engine instance answered `uciok`: every option it reported with its default. Every `defaults` value is a JSON string (numbers and booleans as text; buttons have no default and are left out). Sent once per engine instance, so an engine played on several boards sends it more than once. EB's runner delivers it to the in-process callback only, not onto the feed today; the codec carries it.
 - `{"type": "GameFinished", "gameNr": <int>, "round": "<pair label>", "white": "<name>", "black": "<name>", "openingHash": "<hash>", "result": <result object>}` — a game played to its end and written, with its place in the plan. The runner does not put it on the feed today; the codec carries it for completeness.
 
 ---
@@ -462,14 +474,12 @@ involved.
 
 ## 7. Open questions
 
-- **Eval sign orientation** — confirm whether EB's eval charts expect side-to-move or White-relative
-  scores, and document the chosen convention here.
 - **Tournament config minimality** — pin down the smallest `tournament` subset that yields correct
   standings for each `TournamentMode`. Known today: the crosstable needs `EngineSetup.Engines` (with
   `IsChallenger` for a gauntlet).
 
 Resolved: standings in feed mode come from `ChessLibrary/Tournament/FeedStats.fs`, pure functions over
-the results, no runner needed; the time format accepts both `"HH:mm:ss"` and `"HH:mm:ss.fff"` (§2.3).
+the results, no runner needed; evals are White-relative (§2.1); the time format accepts both `"HH:mm:ss"` and `"HH:mm:ss.fff"` (§2.3).
 
 ---
 
@@ -487,7 +497,8 @@ stay global. v0.1 producers may omit `gameId`; EB treats absence as one active g
   completion (`StartOfGame … EndOfGame`), then may be **reused** for the next game on that board.
   Treat `StartOfGame` as "(re)initialize the view for this `gameId`."
 - Per-game events: `StartOfGame`, `GameStarted`, `Status`, `PonderStatus`, `BestMove`, `Time`,
-  `NNSeq`, `EndOfGame`.
+  `NNSeq`, `Eval`, `Info`, `MessagesFromEngine`, `GameSummary`, `EndOfGame`. (EB's own runner sends
+  the subset listed in §1.)
 
 **Consumer model (v0.2):**
 

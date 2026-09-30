@@ -5,7 +5,7 @@ open ChessLibrary.Match.MatchStats
 
 /// The reference's scoreboard (matchmaking/scoreboard.hpp at 60d7a7a) over EngineBattle's games: W/L/D
 /// and pentanomial counts per pair of engines, from the view of the engine that comes first in
-/// the command line, as the reference keeps them. See MatchModeSpec.md §4.
+/// the command line, as the reference keeps them.
 ///
 /// Where the reference pairs two games by its scheduler's pairing id, this pairs them by
 /// EngineBattle's rule: the same two engines, the same opening hash, opposite colours. That holds

@@ -36,7 +36,7 @@ where `C(s) = CPUCT + CPUCTFactor * log((N_parent + CPUCTBase + 1) / CPUCTBase)`
 
 **Tuning notes:**
 - PolicyTemperature > 1 compensates for overconfident policies. With large nets that have strong policy heads, values above 1.0 are common.
-- ValueTemperature is often left at 1.0 but can help if the value head is miscalibrated. Suggested range [0.5, 2.0] with linear scale.
+- ValueTemperature is often left at 1.0 but can help if the value head is miscalibrated. Suggested range [0.5, 2.0] with log scale (1.0 sits at the centre of the normalized range).
 
 ## First Play Urgency (FPU)
 

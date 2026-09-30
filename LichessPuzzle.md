@@ -192,6 +192,9 @@ thematic move) and, when enabled, `positionAccuracy` (every position). The theme
   each of those positions costs a full search. Does not apply to `solve`, which runs a single
   search from the puzzle's start position and so has no per-position verdicts. See
   `PuzzleConfig.md` for the full description.
+- **Average KLD over failed puzzles too** with `"IncludeFailedPuzzles": true` (default
+  `false`). By default the policy tests average `KLD` and the rank-weighted KLD over solved
+  puzzles only; with the option on, they cover every puzzle. No other number changes.
 
 ---
 

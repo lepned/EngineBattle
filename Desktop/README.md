@@ -51,23 +51,33 @@ One thing, in `WebGUI/Program.cs`:
 
 ## Window behaviour
 
-The window is borderless (`WindowStyle="None"`), and EngineBattle's own MudBlazor app bar acts
-as the title bar. The window buttons are injected by `TitleBarScript.cs` rather than added to
-`MainLayout.razor`, so the web app stays unaware of the shell and a browser session never
-renders window buttons that do nothing.
+The window has the ordinary Windows title bar and border (`WindowStyle="SingleBorderWindow"`),
+so it drags, snaps and resizes like any other app. `DarkTitleBar.cs` asks the desktop window
+manager for a dark frame. Below the title bar is a native WPF menu with the shell's own
+commands; the app's navigation stays in its drawer:
+
+| Menu | Items |
+|---|---|
+| ☰ | Show or hide the navigation drawer |
+| File | Exit |
+| View | Zoom In, Zoom Out, Reset Zoom (shows the current level), Reload, Full Screen |
+| Tools | Server Output, Developer Tools |
+| Help | About EngineBattle (shell version, WebView2 runtime, server URL) |
+
+Reload drops the Blazor circuit and starts the page over; tournaments and analysis keep running
+in the server. The zoom level is remembered between runs.
+
+`TitleBarScript.cs` is injected into every page, but draws nothing of its own. It routes the
+shortcuts (keys pressed inside the WebView never reach WPF), clicks the drawer toggle when the
+menu asks for it, and hides the page's own toggle while the menu carries one. Being in the
+shell rather than in `MainLayout.razor`, it leaves the web app unaware of the shell, and a
+browser session unaffected.
 
 Several things here look odd without the reason:
 
-- **Dragging goes through WebView2 web messages**, not `WindowChrome`'s caption area. The
-  WebView2 control is an `HwndHost`; it takes mouse input first, so the host window never
-  hit-tests a caption region. The page reports the gesture and the shell starts a native move
-  loop, which keeps snapping and restore-on-drag working.
-- **`BorderlessWindow.cs` handles `WM_GETMINMAXINFO`.** A borderless window maximises to the
-  full monitor rectangle instead of the work area, putting the bottom of the page behind the
-  taskbar — and still inside the viewport, so page code measuring `innerHeight` believes that
-  hidden strip is usable.
-- **The 6px margin on `RootHost` is the resize gutter** (0 when maximised or fullscreen). The
-  WebView2's HWND would otherwise cover every window edge, leaving nothing to grab.
+- **`BorderlessWindow.cs` handles `WM_GETMINMAXINFO`** only while the window is borderless, in
+  fullscreen. A borderless window maximises to the full monitor rectangle instead of the work
+  area; a framed one is maximised correctly by Windows.
 - **WPF cannot draw over an `HwndHost`**, which is why the loading and error overlay only works
   while the WebView is collapsed.
 - **`Window.Icon` is deliberately not set.** A `BitmapImage` built from a multi-size `.ico`
@@ -80,24 +90,30 @@ Several things here look odd without the reason:
 |---|---|
 | `F11` | Fullscreen, covering the taskbar — as the browser does |
 | `Esc` | Leave fullscreen |
+| `Ctrl++` / `Ctrl+=` | Zoom in |
+| `Ctrl+-` | Zoom out |
+| `Ctrl+0` | Reset zoom |
+| `F5` | Reload |
 | `Ctrl+Shift+L` | Server output window |
 | `F12` / `Ctrl+Shift+I` | DevTools |
+| `Alt+F4` | Exit |
 
 Browser accelerator keys are disabled so they cannot swallow EngineBattle's own shortcuts,
-which is why F11 and F12 are routed explicitly from the injected script.
+which is why these keys are routed explicitly from the injected script.
 
 DevTools is enabled in Release on purpose: EngineBattle is a developer-facing tool, and without
 an address bar this is the only way to inspect a layout problem that only reproduces here.
 
 ### Fullscreen and the navigation drawer
 
-Entering fullscreen closes the MudBlazor drawer and leaving reopens it — but only if the shell
-was the one that closed it, so a drawer you had already collapsed is not forced back open.
+Fullscreen drops the frame and the menu (`WindowStyle` None, `ResizeMode` NoResize, restored on
+the way out) and leaves the drawer exactly as the user set it; F11 or Esc brings the frame and
+menu back.
 
-**This is the only part of the shell coupled to EngineBattle's DOM**, via the MudBlazor class
-names `.mud-drawer--open` and the app bar's first button. If those change in a MudBlazor
-upgrade, the drawer sync silently stops working — no errors, no broken layout, but no warning
-either. Everything else is window management or positioned against the viewport.
+**The drawer toggle is the only part of the shell coupled to EngineBattle's DOM**, via the
+classes `.eb-drawer-toggle` and `.eb-drawer-close` in `MainLayout.razor`. If those change, the
+menu's ☰ item silently stops working — no errors, no broken layout, but no warning either.
+Everything else is window management.
 
 ## Files it writes
 
@@ -108,6 +124,7 @@ from a read-only install directory:
 |---|---|
 | `desktop-server.log` | The server's stdout/stderr — a WinExe has no console. Truncated per run |
 | `desktop-window.json` | Window size, position, maximised state |
+| `desktop-preferences.json` | The remembered zoom level |
 | `WebView2/` | Browser profile and cache |
 
 The server's own Serilog file stays where it always was, under its working directory.
@@ -129,9 +146,6 @@ server start is ~0.67s, so there is little to gain.
 
 ## Known limitations
 
-- **Snap Layouts** (hovering the maximise button) do not appear: the button is in the page, not
-  the non-client area. It needs `WM_NCHITTEST` returning `HTMAXBUTTON` for the button's
-  rectangle, which means the page reporting its bounds to the shell.
 - **Auto-hide taskbar** is untested. A maximised borderless window can stop it un-hiding; the
   usual workaround is a 1px inset.
 - **Multi-monitor with mixed DPI** is untested for moving a maximised window between screens.

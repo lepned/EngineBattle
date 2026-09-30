@@ -13,8 +13,8 @@ module ChessLibrary.CeresWire
 //   wdl {w,d,l} (0..1)   -> WDL per-mille (*1000), matching EB's own producer
 //   *Ms (milliseconds)   -> TimeSpan (hh:mm:ss.fff)
 // Known gaps (MVP): CELT carries top-moves but no PV string -> PV = played move only; moves are
-// UCI (no SAN); opening moves are not expanded (board starts at startFEN). Eval is mover's
-// perspective (matches EB's own feed).
+// UCI (no SAN); opening moves are not expanded (board starts at startFEN). CELT's eval is the
+// mover's; it is turned to White's view here (flipEval), as EB's own feed carries it.
 
 open System
 open System.Text.Json.Nodes

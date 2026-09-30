@@ -24,7 +24,7 @@ Cup mode is a single-elimination knockout tournament where players advance by wi
 
 | Field | Description |
 |-------|-------------|
-| `RoundPairIncrements` | Pairs per round. Each pair = 2 games. Example: `[1,2,3]` means Round 1 has 2 games, Round 2 has 4, Round 3 has 6. Defaults to `[1]` if empty. |
+| `RoundPairIncrements` | Pairs per round. Each pair = 2 games. Example: `[1,2,3]` means Round 1 has 2 games, Round 2 has 4, Round 3 has 6. Rounds beyond the list reuse its last value, and an entry below 1 counts as 1. Defaults to `[1]` if empty. |
 | `SeedingStrategy` | `ByRating` (seeded bracket) or `Random` (shuffled bracket). |
 | `UniquePerMatchOnly` | When true, openings can repeat across matches but not within a match. |
 | `BracketPath` | JSON file for bracket state persistence and GUI updates. |

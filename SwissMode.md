@@ -1,6 +1,6 @@
 # Swiss Mode
 
-Swiss mode runs a fixed number of rounds where players with similar scores are paired together. Each pairing is played as a two-game match (same opening, colors swapped).
+Swiss mode runs a fixed number of rounds where players with similar scores are paired together. Each pairing is played as a match of `GamesPerMatch` games (default 2), in pairs of two games with the same opening and colors swapped.
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ Swiss mode runs a fixed number of rounds where players with similar scores are p
 
 | Field | Description |
 |-------|-------------|
-| `GamesPerMatch` | Games per pairing (must be even; each pair is two games with colors swapped). |
+| `GamesPerMatch` | Games per pairing (even; each pair is two games with colors swapped). An odd value is rounded up, and a value below 2 becomes 2. |
 | `Rounds` | Total Swiss rounds. Uses global `Rounds` when set to 0. Must be less than player count to avoid forced rematches. |
 | `SeedGroupCount` | Number of seeding groups for TCEC-style interleaving (see below). |
 | `UniquePerMatchOnly` | When true, openings can repeat across matches but not within a match. |
@@ -94,7 +94,7 @@ Each round executes pairings from weakest to strongest score groups. This follow
 
 ## Opening Selection
 
-- Each match uses one opening played twice (colors swapped for the second game).
+- Each pair of games in a match uses one opening played twice (colors swapped for the second game), so a match of `GamesPerMatch` games uses `GamesPerMatch / 2` openings.
 - When `RandomOpenings` is true, the opening order is shuffled once and persisted.
 - When `UniquePerMatchOnly` is true, openings can repeat across different matches but not within a single match.
 

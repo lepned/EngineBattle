@@ -102,9 +102,9 @@ When resuming:
 
 ## Tournament Length
 
-For N engines, the tournament plays exactly **N - 1** mini-matches (each match eliminates one engine). The minimum games per match is `GamePairsPerMatch x 2`, though tiebreaks can extend individual matches. Early termination typically reduces total games played.
+For N engines, the tournament plays exactly **N - 1** mini-matches (each match eliminates one engine). Each match is scheduled for `GamePairsPerMatch x 2` games; tiebreaks can extend individual matches, and early termination typically reduces total games played.
 
-| Engines | Mini-Matches | Max Games (4 pairs) |
+| Engines | Mini-Matches | Scheduled Games (4 pairs) |
 |---------|-------------|---------------------|
 | 4 | 3 | 24 |
 | 8 | 7 | 56 |
@@ -125,9 +125,7 @@ Climb 1: E challenges D
   → E challenges C
     → C wins → E eliminated (4th place)
 
-Climb 2: C challenges B (new bottom after E eliminated is C)
-  Wait — after E is eliminated, surviving = [A, B, C]
-  New climber = C (bottom)
+Climb 2: surviving = [A, B, C], new climber = C (bottom)
   → C challenges B
     → C wins → B eliminated (3rd place)
     → C challenges A

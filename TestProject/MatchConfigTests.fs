@@ -10,7 +10,7 @@ open Xunit
 open ChessLibrary.Match
 open ChessLibrary.Match.MatchStats
 
-let private referenceFile = """{
+let private referenceFileText = """{
     "resign": {
         "move_count": 1,
         "score": 0,
@@ -174,6 +174,9 @@ let private referenceFile = """{
     }
 }
 """
+// The writer's line ends are LF, as the reference's; a checkout with core.autocrlf gives this
+// literal CRLF, so it is compared with LF line ends whatever the working tree has.
+let private referenceFile = referenceFileText.Replace("\r\n", "\n")
 
 let private env =
     { MatchArgs.defaultEnv () with

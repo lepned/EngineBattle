@@ -34,8 +34,9 @@ eb-cli match -engine cmd=a.exe -engine cmd=b.exe -engine cmd=c.exe \
 `match` can be left out: a command line whose first argument starts with `-` is a match
 (`eb-cli -engine ... -each ...`), since no other console command starts with one.
 
-`eb-cli match -help` lists every option; `-version` prints EngineBattle's version
-and the commit it was built from.
+`eb-cli match -help` lists the options (a few rarely used ones are accepted but not listed);
+`-version` prints EngineBattle's version and the commit it was built from (`EngineBattle dev
+build (abc1234)` from a source build).
 
 ## What you see
 
@@ -93,7 +94,8 @@ The command line is taken as written; the match is EngineBattle's:
   converted from centipawns to pawns); its counting rules are its own. `-tb` uses one tablebase
   folder through Fathom.
 - **Clock.** EngineBattle's clock decides time losses. A time loss reports how far the clock went
-  below zero: `{White loses on time (37ms overrun)}`.
+  below zero: `{White loses on time (37ms overrun)}`. Moves per period (`tc=40/60+0.6`) are each
+  engine's own, as in the reference.
 - **Time per move.** `st=` sends `go movetime` and runs no clock; a move loses on time when it
   takes longer than `st` plus `timemargin=`, in whole milliseconds from the `go`, as the reference
   counts it. The margin is at least 50 ms, which the reference's is not (its default is 0): an
@@ -102,9 +104,12 @@ The command line is taken as written; the match is EngineBattle's:
   sent to an engine playing `st=`): a larger `timemargin=` applies when every engine plays `st=`,
   and the largest wins.
 - **PGN.** EngineBattle's format, with its move comments (eval, depth, time, nodes and more); the
-  PGN options of `-pgnout` other than `file=` are accepted and not needed.
+  PGN options of `-pgnout` other than `file=` are accepted and not needed. Without `-pgnout` the
+  games go to `EngineBattle/match_<yyyyMMdd_HHmmss>.pgn` in the temp folder (`%TEMP%` on
+  Windows), and the `-log` file says where.
 - **Gauntlet.** `-seeds` N engines are the challengers; they do not play each other.
-- **Engines** start in their own folder and are reused from game to game.
+- **Engines** start in their own folder and are reused from game to game. `-startup-ms` is how
+  long an engine has to start (default 10000, rounded up to whole seconds).
 - **Concurrency.** Fewer games run at once when one copy of each engine, times `-concurrency`,
   does not fit in 70% of the memory (measured on one copy before the match - Lc0 and Ceres grow
   with their network): `Info: Adjusted concurrency to N, as many as fit in 70% of the memory.` More
@@ -162,5 +167,3 @@ cutechess's report lines. cutechess-cli's own forms are errors there and here:
 - `Console/MatchMode.fs` - the console command: stdout, the log, CTRL-C, resume.
 - The runner sends `GameFinished` (number, pair label, opening hash, result) and
   `EngineStartFailed` updates for it.
-- [MatchModeSpec.md](MatchModeSpec.md) - the reference's behaviour, section by section, with
-  source references.

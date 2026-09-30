@@ -6,7 +6,7 @@ open System
 /// operation for operation so the numbers it prints come out the same: W/L/D and pentanomial
 /// counts, and the WDL and pentanomial Elo, error, nElo and LOS built from them. Nothing here is
 /// guarded against empty counts, as nothing there is: an empty or one-sided result gives the same
-/// "nan"/"inf" the reference prints (MatchFormat). See MatchModeSpec.md §4.
+/// "nan"/"inf" the reference prints (MatchFormat).
 module MatchStats =
 
   /// W/L/D from the first engine's side, plus pentanomial pair counts (WW = both games won, ...).

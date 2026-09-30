@@ -7,7 +7,7 @@ open System.IO
 
 /// The reference's command line (cli/cli.hpp, cli/cli.cpp, cli/sanitize.cpp at 60d7a7a), ported so the
 /// same arguments give the same settings and the same error texts: its tokeniser, option table,
-/// defaults, `-each`, `-quick`, and the sanitising that runs after parsing. See MatchModeSpec.md §1.
+/// defaults, `-each`, `-quick`, and the sanitising that runs after parsing.
 /// The reference is MIT-licensed; its notice is in THIRD-PARTY-NOTICE.txt next to this file. The
 /// -help text is match-help.txt.
 ///

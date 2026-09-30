@@ -16,10 +16,11 @@ ENGINES
         dir=DIR               folder the command is in
         args="..."            command-line arguments for the engine
         tc=[MOVES/]TIME[+INC] time control, seconds; TIME may be MIN:SEC; "inf" for none
-        st=SECONDS            fixed time per move (not supported yet)
+        st=SECONDS            time per move (go movetime); not together with tc=
         nodes=N               node limit per move
         depth=N, plies=N      depth limit (not applied yet; an error when it is the only limit)
-        timemargin=MS         accepted, not applied
+        timemargin=MS         margin for st= (at least 50 ms); applied only when every engine
+                              plays st=, the largest for all
         restart=on|off        accepted, not applied
         proto=uci             the only protocol
         option.NAME=VALUE     a UCI option (Threads is sent first)
@@ -39,6 +40,7 @@ MATCH
     -srand N                  seed for order=random
     -variant standard|fischerandom
     -wait MS                  pause after each game
+    -startup-ms MS            engine startup timeout (default 10000, rounded up to seconds)
 
 ADJUDICATION
     -draw movenumber=N movecount=N score=CP

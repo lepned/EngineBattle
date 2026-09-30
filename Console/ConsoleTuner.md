@@ -6,6 +6,8 @@ Run from the `Console` folder:
 dotnet run -c Release -- tune tuner-config.json
 ```
 
+`dotnet run -c Release -- redash tuner-config.json` regenerates `bo-dashboard.html` from the saved `tune-state.json` without running anything.
+
 The tuner optimizes UCI `setoption` values at a fixed node budget using a **Bayesian Optimizer** — Gaussian Process surrogate with Expected Improvement acquisition, more sample-efficient for typical parameter counts (5-10 parameters).
 
 Three evaluation modes are available via `"evalMode"`:
@@ -26,7 +28,7 @@ SPRT match execution details:
 
 The tuner uses **Gaussian Process (GP) regression** with **Expected Improvement (EI)** acquisition to select parameter candidates.
 
-1. **Initial design**: Latin Hypercube Sampling (LHS) generates space-filling initial points (default `max(3, 2 × activeParams)`, configurable via `"initialDesignSize"`). Each point is evaluated by running an SPRT match against the **fixed baseline** (initial parameters).
+1. **Initial design**: Latin Hypercube Sampling (LHS) generates space-filling initial points (default `max(3, 2 × activeParams)`, configurable via `"initialDesignSize"`). The first phase samples the full range; later phases sample a centered LHS around the current best point with radius `"initialDesignRadius"` (normalized units, default 0.5). The design runs size + 1 evaluations: the LHS points plus the current best. Each point is evaluated by running an SPRT match against the **fixed baseline** (initial parameters).
 
 2. **GP surrogate**: A GP with a Matern 5/2 ARD kernel is fitted to all observations `(x, scoreFraction)`. The pipeline applies logit transform then standardization before GP fitting. Hyperparameters (signal variance, length scales, noise) are optimized via grid search over log marginal likelihood every `"hypUpdateInterval"` iterations (default 5). Per-point heteroscedastic noise is computed from game counts via the delta method on logit.
 
@@ -154,7 +156,7 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
 ### Convergence and Output
 
 - **Checkpointing**: State is saved to `tune-state.json` after each iteration, allowing resume with `"resume": true`.
-- **History**: Each candidate evaluation is logged to `tune-history.jsonl` with the match outcome (games, W/D/L, final LLR, Elo), the GP prediction (mean, std, acquisition value) and, in puzzle mode, the accuracy; the parameter values themselves are in `tune-progress.json`.
+- **History**: Each candidate evaluation is logged to `tune-history.jsonl` with the match outcome (games, W/D/L, final LLR, Elo), the GP prediction (mean, std, acquisition value) and, in puzzle and ERET mode, the accuracy; the parameter values themselves are in `tune-state.json` (`ObservationsX`, in normalized [-1, 1] units, for the current phase).
 - **Dashboard**: An HTML dashboard (`bo-dashboard.html`) with GP visualizations, convergence plots, and parameter importance is updated after each iteration.
 - **Final validation**: After all phases, a validation match compares **tuned** vs **initial** to measure total improvement.
 - **Output**: Best parameters written to `best-engine-options.json` as a plain JSON `{ "Option": value }` dictionary.
@@ -184,6 +186,7 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
   "maxWallHours": 24,
   "maxCandidates": 1000,
   "initialDesignSize": 0,
+  "initialDesignRadius": 0.5,
   "hypUpdateInterval": 5,
   "preventOpponentDeviation": false,
   "maxReferencePgnGames": 0,
@@ -228,10 +231,11 @@ Tuning is organized into **phases**, each focusing on a subset of parameters:
 
 ## Notes
 
-- Tuning assumes all configured parameters are present as numeric UCI options in `engineConfigPath`.
+- A direct parameter (no `option`) need not be in `engineConfigPath`'s options: its `setoption` is always sent, and it starts at the midpoint `(min + max) / 2` when absent (from the engine config's value, which must be numeric, when present). Embedded parameters must exist: the `option` must be in the engine config and contain the `KEY=` sub-value.
 - All matches run with node-limit time controls set to `targetNodes`.
 - If SPRT does not reach a boundary by `sprt.maxGames`, fallback is Elo-sign decision.
-- `initialDesignSize` (optional, default `2 × activeParams`) — number of Latin Hypercube Sampling points per phase before BO iterations begin. Set to 0 for auto.
+- `initialDesignSize` (optional, default `max(3, 2 × activeParams)`) — number of Latin Hypercube Sampling points per phase before BO iterations begin (plus one evaluation of the current best). Set to 0 for auto.
+- `initialDesignRadius` (optional, default `0.5`) — half-width, in normalized [-1, 1] units, of the centered LHS that phases after the first sample around the current best point. The first phase always samples the full range; 0 means the default.
 - `hypUpdateInterval` (optional, default `5`) — refit GP hyperparameters every N iterations.
 - The Bayesian optimizer uses no external dependencies beyond MathNet.Numerics (already in ChessLibrary).
 - `opponentConfigPath` (optional) — path to a separate engine JSON to use as the baseline opponent during optimization. When set, BO candidates play against this fixed reference engine instead of the initial parameters of the tuned engine. Phase confirmations and final validation use self-play by default but can be switched to use the opponent via `useOpponentForValidation`. Omit or set to `""` to use the default behavior (candidate vs initial self-play).

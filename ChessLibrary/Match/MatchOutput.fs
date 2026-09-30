@@ -9,8 +9,7 @@ open ChessLibrary.Match.MatchStats
 
 /// What the reference prints while a match runs and when it ends (matchmaking/output/*.hpp,
 /// tournament/roundrobin/roundrobin.cpp, tournament/base/tournament.cpp and main.cpp at 60d7a7a),
-/// in both its own and the cutechess format, driven by EngineBattle's games. See MatchModeSpec.md
-/// §2, §3 and §9. Text is produced with "\n" line ends, as the reference writes them; the console
+/// in both its own and the cutechess format, driven by EngineBattle's games. Text is produced with "\n" line ends, as the reference writes them; the console
 /// turns them into the platform's (the reference's stdout is in text mode on Windows).
 module MatchOutput =
 

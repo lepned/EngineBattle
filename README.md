@@ -76,7 +76,7 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 
 ### 💻 Console Mode
 
-- **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. Console mode requires building from source (see [Build from Source](#-build-from-source) section).
+- **Basic Console Mode:** Minimalist console mode designed for quicker time controls and node-testing, supporting parallel execution of multiple games for quick benchmarking. The console ships as `eb-cli` in every download, next to the WebGUI (or build it from source, see [Build from Source](#-build-from-source)).
 - **Engine matches from the command line:** `match` plays a match from one command line - rating reports, an SPRT that stops it, resume, exit codes - takes the fastchess command line (cutechess-cli style) and writes fastchess or cutechess output, so testing tools written for those can run EngineBattle. See [MatchMode.md](MatchMode.md).
 - **Puzzle Testing in Console Mode:** Easily run automated engine tests on chess puzzles directly from the console. Configure puzzle sources, formats, and test parameters using the [PuzzleConfig.md](PuzzleConfig.md) file for flexible and reproducible puzzle-based benchmarking. Results can later be viewed and analyzed in the GUI by loading the generated .epd file for puzzle visualization (Tools > EPD visualizer in the GUI menu).
 
@@ -151,7 +151,7 @@ Nothing has to be typed into a file. A `tournament.json` is created in the `wwwr
 
 ## 🛠 Build from Source
 
-For developers who want to modify the code, use the CLI console commands, or run the latest unreleased changes.
+For developers who want to modify the code or run the latest unreleased changes. The CLI console commands are also in every release download, as `eb-cli`.
 
 ### Prerequisites
 
@@ -182,6 +182,7 @@ dotnet run -c release -- puzzlejson <fullPathToPuzzleConfig.json>
 dotnet run -c release -- eretjson <fullPathToEretConfig.json>
 dotnet run -c release -- analyze <engine> [fen] [options]
 dotnet run -c release -- compare <engine1> <engine2> [options]
+dotnet run -c release -- match -engine cmd=A -engine cmd=B -each tc=10+0.1 -rounds 100
 dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb folder] [--uci name value]...
 dotnet run -c release -- tune <fullPathToTunerConfig.json>
 dotnet run -c release -- query <fen|startpos> [square] [--pv "<uci moves>"]
@@ -320,11 +321,13 @@ It is recommended to run policy tests in Console Mode for optimal performance by
 ### Tournament Console Mode
 
 The console mode is designed for quick and efficient testing, allowing users to run multiple games in parallel for benchmarking purposes. This mode is ideal for policy matches and very quick time controls, such as 20 + 0.3 seconds or less.
-In order to use the console mode you need to start the application from the Console folder and run the following command:
+In order to use the console mode, run `eb-cli` from the release folder (or, from a source clone, start the application from the Console folder) with the following command:
+
+` eb-cli tournamentjson <fullPathToYourTournament.json> `
 
 ` dotnet run -c release tournamentjson <fullPathToYourTournament.json> `
 
-There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This setting is called `NumberOfGamesInParallel` (the old name `NumberOfGamesInParallelConsoleOnly` is still accepted) and can be set to any number you like. Values up to 4 games can be recommended for a strong GPU.
+There is a setting in the `tournament.json` file that allows you to set the number of games that can be run in parallel. This setting is called `NumberOfGamesInParallel` (the old name `NumberOfGamesInParallelConsoleOnly` is still accepted) and can be set to any number you like; it is lowered automatically when one copy of each engine times that number does not fit in 70% of the available memory. Values up to 4 games can be recommended for a strong GPU.
 
 Note that parallel play applies to Round Robin and Gauntlet tournaments; Cup, Swiss and Ladder modes manage their pairings round by round and always run sequentially.
 

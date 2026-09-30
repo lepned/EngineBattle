@@ -70,8 +70,9 @@ dotnet run -c Release -- <command> <path-or-arguments>
 ### match
 
 An engine match from a single command line, reported as it runs: a line per game, rating
-reports, an SPRT that can stop it, a final summary and an exit code. It accepts the fastchess and
-cutechess command line and writes their output, so tools written for those can run EngineBattle.
+reports, an SPRT that can stop it, a final summary and an exit code. It takes the fastchess
+command line (written in cutechess-cli's style) and writes fastchess or cutechess output, so tools
+written for those can run EngineBattle.
 
 ```bash
 dotnet run -c Release -- match -engine cmd=sf-dev name=dev -engine cmd=sf-base name=base     -each tc=10+0.1 option.Threads=1 -rounds 1000 -concurrency 4 -openings file=UHO.epd     -pgnout file=dev-vs-base.pgn -sprt elo0=0 elo1=5 alpha=0.05 beta=0.05

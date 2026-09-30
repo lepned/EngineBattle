@@ -8,7 +8,9 @@ This document describes the JSON file written by EngineBattle's `puzzlejson` CLI
 dotnet run --project Console -c Release -- puzzlejson <config.json> --json <output.json>
 ```
 
-The `--json` flag is **optional** and **does not change** the existing stdout/file output. If omitted, behavior is byte-identical to previous EngineBattle releases.
+The `--json` flag is **optional** and **does not change** the existing stdout/file output. It writes one more copy of the document to the path you name.
+
+Every run also writes the same document on its own, with or without `--json`: `LichessSummary_<stamp>.json` beside the text summary `LichessSummary_<stamp>.txt` and the failed-puzzles CSVs, in the config's `FailedPuzzlesOutputFolder` (`<stamp>` is the local time the results are written, as `yyyy-MM-dd_HH-mm`; nothing is written when the folder is empty). Runs started from the WebGUI puzzle page write the same file. These files are what `puzzletrend` and the `/puzzles/report` and `/puzzles/trend` pages read.
 
 ## File format
 
@@ -20,7 +22,7 @@ A single top-level JSON object, UTF-8 encoded, indented with 2 spaces, camelCase
 - New optional fields can be added at any time without bumping the version. **Consumers MUST ignore unknown fields.**
 - The current value is `1`. Consumers should accept `schemaVersion >= 1` and reject lower values.
 - Numeric fields are JSON numbers, never quoted. Non-finite floats (NaN, ±Infinity) are clamped to `0.0` before serialization to keep the file parseable by every standard JSON library.
-- String fields are never `null`; missing values are emitted as the empty string `""` **except** for `filter` on score rows — see the row schema below.
+- String fields are never `null`; missing values are emitted as the empty string `""` **except** for `filter` on score rows and on the `paired[]` rows copied from them — see the row schemas below.
 
 ## Numeric type representation
 
@@ -28,7 +30,7 @@ JSON has no distinction between integer and floating-point numbers — they are 
 
 **Recommendation for consumers:** treat all `*Rating`, `accuracy`, `elapsedSeconds`, `avgKLD`, `playerVolatility`, and `ratingAvg` fields as **numeric** (`int OR float`), and coerce to `float` if your downstream math depends on it. Python's stdlib `json` will yield `int` for integer-valued numbers and `float` otherwise; `float(value)` works for both.
 
-The fields **always** emitted as integers (no float ambiguity) are: `schemaVersion`, `totalPuzzlesLoaded`, `sampleSize`, `minRating`, `maxRating`, `nodes`, `totalNumber`, `correct`, `wrong`.
+The fields **always** emitted as integers (no float ambiguity) are: `schemaVersion`, `totalPuzzlesLoaded`, `sampleSize`, `minRating`, `maxRating`, `nodes`, `totalNumber`, `correct`, `wrong`, `firstMoveCorrect`, `firstMoveScored`, `positionsCorrect`, `positionsScored`, and in `paired[]` `ratingGroup`, `n`, `onlyA`, `onlyB`, `discordant`.
 
 ## Top-level fields
 
@@ -73,7 +75,7 @@ The problem it creates is attribution. A puzzle's THEMES describe the move it ex
 
 **An empty `paired[]` is normal.** Measuring one net at a time and comparing it against nets measured in earlier runs is a routine workflow, and such a run has nothing to pair. Do **not** treat empty as an error: check `pairedFailed` first. It is `true` only when the computation threw, which is the one case where `paired` is empty for a bad reason.
 
-Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, nodes, filter)` can find a score row with no paired counterpart. That is expected. The reverse never happens.
+Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, nodes, filter)` can find a score row with no paired counterpart. `scores[]` has no `ratingGroup` field: derive it from the row's `ratingAvg` rounded to the nearest 100 (`round(ratingAvg / 100) * 100`, the rule EngineBattle uses to build the slices). That is expected. The reverse never happens.
 
 
 ## `scores[]` entry fields
@@ -90,11 +92,11 @@ Practical consequence: joining `paired[]` to `scores[]` on `(type, ratingGroup, 
 | `wrong` | int | `totalNumber - correct`. |
 | `accuracy` | float | `correct / totalNumber`, in `[0, 1]`. Defined as `0.0` when `totalNumber == 0`. |
 | `ratingAvg` | float | Average rating of the puzzles attempted in this row. |
-| `playerRating` | float | Glicko-derived rating of the engine on this row's puzzles. |
-| `playerDeviation` | float | Glicko rating deviation. |
-| `playerVolatility` | float | Glicko volatility. |
-| `avgKLD` | float | Cross-entropy of the engine's policy distribution against the puzzle's one-hot correct-move target, averaged over solved puzzles only. The per-puzzle metric is `-log(P_engine(correct_move))` (despite the historical "KLD" name, it's a cross-entropy on a one-hot target — the information content comes from the engine's distribution being shaped by softmax over all legal moves). **Lower is better.** Only meaningful for policy-type rows (`Policy`, `pTopN`); `0.0` otherwise. |
-| `avgRankWeightedKld` | float | Rank-weighted aggregate of per-puzzle cross-entropy using `1/rank` weights. Respects the `IncludeFailedPuzzles` config flag (solved-only by default, all puzzles when true). **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
+| `playerRating` | float | Performance rating of the engine on this row's puzzles (not Glicko): `ratingAvg` plus the Elo difference implied by the score `correct / totalNumber`, each puzzle counting as a win (solved) or a loss (failed). |
+| `playerDeviation` | float | Elo error of that performance: half the width of the Elo confidence interval around the score (multiplier 1.72), capped at 699. Written as `0.0` when the interval has no width (every puzzle solved or every puzzle failed). |
+| `playerVolatility` | float | Always `0.0`. Kept for compatibility; no Glicko computation is behind it. |
+| `avgKLD` | float | Cross-entropy of the engine's policy distribution against the puzzle's one-hot correct-move target, averaged over solved puzzles only, or over all puzzles when the config sets `IncludeFailedPuzzles`. The per-puzzle metric is `-log(P_engine(correct_move))` (despite the historical "KLD" name, it's a cross-entropy on a one-hot target — the information content comes from the engine's distribution being shaped by softmax over all legal moves). **Lower is better.** Only meaningful for policy-type rows (`Policy`, `pTopN`); `0.0` otherwise. |
+| `avgRankWeightedKld` | float | Rank-weighted aggregate of per-puzzle cross-entropy using `1/rank` weights, over the same puzzles as `avgKLD`: solved puzzles only unless the config sets `IncludeFailedPuzzles`. **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
 | `avgFrontierKld` | float | Frontier-weighted cross-entropy: peaks where the correct move sits at rank 2-3 and falls away at rank 1 and rank 6+, so it emphasises the moves a search is most likely to flip. **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
 | `avgMarginLoss` | float | Pairwise margin between the correct move's probability and the best competing move's. **Lower is better.** Only meaningful for policy-type rows; `0.0` otherwise. |
 | `avgValueLoss` | float | Value-head loss, `|Q - expected_Q|` derived from the puzzle's themes, over solved puzzles only. **Lower is better.** `0.0` when not measured. |
@@ -131,7 +133,7 @@ A comparison that reads as marginal unpaired is often clearly significant paired
 | `type` | string | Test type of the slice: `"Policy"`, `"pTop3"`, `"Value"`, … |
 | `ratingGroup` | int | Rating group, bucketed to the nearest 100 from the slice's average puzzle rating. |
 | `nodes` | int | Node count the slice was run at. |
-| `filter` | string | Theme filter of the slice (may be empty). |
+| `filter` | string | Theme filter of the slice, copied from the score rows: `"none"` for a run without a theme filter, like `scores[].filter`. |
 | `engineA` / `engineB` | string | Engine (def) names. A is the net listed **first in the config**, matching the theme tables. |
 | `netA` / `netB` | string | Network names for A and B. |
 | `n` | int | Puzzles **both** nets scored. Normally the full sample; smaller if one net's slice was cut short. |
@@ -151,8 +153,8 @@ For black-box optimization (SPSA, BO, etc.) using policy-type results, **prefer 
 
 Choosing between `avgKLD` and `avgRankWeightedKld`:
 
-- **`avgKLD`** is the historical metric. Averages the per-puzzle cross-entropy over solved puzzles only, with no rank weighting. Treats all solved puzzles equally regardless of how confidently the engine ranked the correct move.
-- **`avgRankWeightedKld`** is the search-relevance-aware variant. Includes all puzzles, weights by `1/rank`. Prioritizes optimization on puzzles where the engine already places the correct move at high rank (the moves search will actually visit). Improvements on these puzzles translate more directly to play strength than improvements on puzzles where the correct move is buried at rank 15+ (which search would never visit anyway). Recommended for policy SPSA when the goal is Elo gain rather than overall puzzle accuracy.
+- **`avgKLD`** is the historical metric. Averages the per-puzzle cross-entropy over solved puzzles only (all puzzles with `IncludeFailedPuzzles`), with no rank weighting. Treats all included puzzles equally regardless of how confidently the engine ranked the correct move.
+- **`avgRankWeightedKld`** is the search-relevance-aware variant. Uses the same puzzles as `avgKLD` (solved only unless `IncludeFailedPuzzles` is set), weights by `1/rank`. Prioritizes optimization on puzzles where the engine already places the correct move at high rank (the moves search will actually visit). Improvements on these puzzles translate more directly to play strength than improvements on puzzles where the correct move is buried at rank 15+ (which search would never visit anyway). Puzzles with a low-ranked correct move are mostly failed ones, so the weighting has the most to act on with `IncludeFailedPuzzles` set. Recommended for policy SPSA when the goal is Elo gain rather than overall puzzle accuracy.
 
 ## Example output
 
@@ -181,9 +183,9 @@ Choosing between `avgKLD` and `avgRankWeightedKld`:
       "wrong": 128,
       "accuracy": 0.744,
       "ratingAvg": 1923.4,
-      "playerRating": 2104.2,
-      "playerDeviation": 51.7,
-      "playerVolatility": 0.06,
+      "playerRating": 2108.7,
+      "playerDeviation": 30.8,
+      "playerVolatility": 0,
       "avgKLD": 0.4127,
       "avgRankWeightedKld": 0.3415,
       "avgFrontierKld": 0.5218,
@@ -194,6 +196,12 @@ Choosing between `avgKLD` and `avgRankWeightedKld`:
       "estNodesP99": 227.0,
       "estNodesMax": 6200.0,
       "estNodesCdf100": 0.983,
+      "positionsCorrect": 0,
+      "positionsScored": 0,
+      "positionAccuracy": 0,
+      "firstMoveCorrect": 398,
+      "firstMoveScored": 500,
+      "firstMoveAccuracy": 0.796,
       "withHistory": false
     }
   ],
@@ -202,7 +210,7 @@ Choosing between `avgKLD` and `avgRankWeightedKld`:
       "type": "Policy",
       "ratingGroup": 1900,
       "nodes": 1,
-      "filter": "",
+      "filter": "none",
       "engineA": "Ceres net A",
       "engineB": "Ceres net B",
       "netA": "netA.onnx",
@@ -217,7 +225,8 @@ Choosing between `avgKLD` and `avgRankWeightedKld`:
       "z": 2.0692,
       "p": 0.0385
     }
-  ]
+  ],
+  "pairedFailed": false
 }
 ```
 
@@ -267,7 +276,7 @@ If a future need requires per-puzzle detail in the JSON, it will go behind a sep
 
 ## Compatibility notes
 
-- The `puzzlejson` command without `--json` is unchanged from prior EngineBattle releases. The flag is purely additive.
+- The `puzzlejson` command without `--json` still writes this document as `LichessSummary_<stamp>.json` in `FailedPuzzlesOutputFolder` (see Invocation). The flag is purely additive: it adds a copy at the path you give.
 - The flag is recognized in any position after the config arg (e.g. `puzzlejson cfg.json --json out.json` works; future flags can also appear).
 - Aliases `puzzle` and `p` accept the flag identically.
 - `paired` was added without a `schemaVersion` bump, per the stability rules: it is a new optional field, and a consumer that does not know it ignores it. Files written before it exist simply have no `paired` key — read it defensively.

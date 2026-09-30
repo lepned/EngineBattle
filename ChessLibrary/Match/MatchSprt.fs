@@ -6,7 +6,7 @@ open System
 /// bounds from alpha/beta, the log-likelihood ratio for the normalized, logistic and bayesian
 /// models over trinomial or pentanomial counts, and the ITP root finder the models solve with.
 /// The reference credits Michel Van den Bergh's notes on the generalized LLR and normalized Elo, and
-/// Oliveira & Takahashi (2020) for ITP. See MatchModeSpec.md §5.
+/// Oliveira & Takahashi (2020) for ITP.
 module MatchSprt =
 
   type SprtResult =

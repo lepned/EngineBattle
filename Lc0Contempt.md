@@ -34,7 +34,7 @@ Only Lc0 has these options (v0.30 and later; the page has been checked against v
 | Advanced: Draw-rate target | `WDLDrawRateTarget` | An alternative way to set accuracy; 0 is off and it is ignored while a calibration Elo is set. |
 | Advanced: Draw-rate reference | `WDLDrawRateReference` | The draw rate the net predicts at default settings. The page starts at 0.58, Lc0's advice for recent strong nets (its own default is 0.5). |
 
-The four Advanced options are hidden in Lc0's `uci` list (they appear only with `--show-hidden`) but Lc0 accepts them from `setoption` regardless.
+Four of these options are hidden in Lc0's `uci` list (they appear only with `--show-hidden`) but Lc0 accepts them from `setoption` regardless: `ContemptMaxValue`, `WDLContemptAttenuation`, `WDLMaxS` and `WDLDrawRateTarget`. That is Attenuation and three of the Advanced controls; `WDLDrawRateReference` (Advanced: Draw-rate reference) is listed normally.
 
 **Presets (Train)**
 

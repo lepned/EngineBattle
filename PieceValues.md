@@ -1,7 +1,7 @@
 # Piece Values from a Neural Net
 
 Tools for asking *"what is each piece worth to this network?"* — both contextually (one
-position) and globally (the net's implied piece values). Two console commands:
+position) and globally (the net's implied piece values). Four console commands:
 
 - `piecevalues` / `pv` — **contextual** values in a single position (leave-one-out).
 - `piecevaluefit` / `pvfit` — **global** values via regression over many positions.
@@ -21,7 +21,7 @@ There are three distinct notions of "a net's piece value", each with its own too
 ## 1. Contextual values — `piecevalues`
 
 ```
-piecevalues <engine> [fen] [--fen S] [--moves m1 m2 …] [--nodes N] [--uci K V]
+piecevalues <engine> [fen] [--fen S] [--moves m1 m2 …] [--nodes N] [--movetime MS] [--depth N] [--uci K V]
 ```
 
 For every non-king piece: evaluate the position, remove that piece, re-evaluate, and
@@ -173,11 +173,17 @@ pvbatch <templateTournament.json> <netFolder> [--rounds N] [--out DIR]
 ```
 
 Runs the global fit end-to-end for **every `*.onnx` in `<netFolder>`**, in one process. For
-each net it: clones the template engine def (overriding `Network`), plays an `nodes=1`
+each net it: clones the template tournament's first engine def (overriding `Network`), plays a
 self-play RR (`--rounds`, default 1000), then computes the **endgame (≤16 pieces)** `outcome`
 and `pgneval` regressions and appends a row to `summary.csv`
 (`net,mode,knight,bishop,rook,queen`). It is **resumable** (skips any net whose PGN already
 has `rounds` games) and **fault-tolerant** (a failing net is logged and the batch continues).
+
+`pvbatch` does not set the search limit itself: the self-play uses the template tournament's
+time control. Only the engines, mode (RR), rounds, PGN path, parallelism and deviation
+prevention are overridden (plus console-only output, no minimum move time and no delay
+between games). For the `nodes=1` self-play described above, give the template a node limit
+of 1 (`NodeLimit=true, Nodes=1`).
 
 > **Memory caveat (big nets).** Self-play loads **two** copies of the net per concurrency
 > level, so at 2 you would get 4 simultaneous TensorRT engines and the GPU OOMs. The batch

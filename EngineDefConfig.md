@@ -22,17 +22,19 @@ without `--force`. The file is named after the engine without spaces (`Stockfish
 
 ## Configuration Fields
 
+A def is refused when any of the required fields - `Name`, `TimeControlID`, `Version`, `Rating`, `LogoPath`, `Protocol`, `Path`, `NetworkPath` and `Options` - is missing, or when `TimeControlID` is not a JSON number. The check is on presence: an engine without a network still writes `"NetworkPath": ""`, and one without options `"Options": {}`. Every other field is optional.
+
 ### General Information
 
-- **Name**: The full name of the chess engine.
-- **Alias**: A short name or nickname for the engine.
-- **Version**: The engine's version or additional descriptive information.
-- **TimeControlID**: Identifier for the associated time control configuration defined in tournament.json.
-- **Rating**: The engine's rating, typically represented by an Elo value.
-- **Dev**: Information about the engine's developer(s).
-- **LogoPath**: The file path for the engine's logo image.
-- **Protocol**: The communication protocol (e.g., UCI, Winboard, XBoard) used by the engine.
-- **DeviceOption** / **DeviceTemplate** (optional): for tournaments that run games in parallel on several GPUs. `DeviceOption` names the UCI option that selects the device and `DeviceTemplate` is its value with `{0}` standing for the GPU index - e.g. `"DeviceOption": "Device", "DeviceTemplate": "GPU:{0}#TensorRTNative"` for Ceres, or `"DeviceOption": "BackendOptions", "DeviceTemplate": "gpu={0}"` for Lc0. Each parallel worker gets the next id from `TestOptions.GPUs` in tournament.json; a value already present in `Options` has its numbers replaced in place. Left empty (the default), every game sends the option exactly as written.
+- **Name** (required): The full name of the chess engine.
+- **Alias** (optional): A short name or nickname for the engine.
+- **Version** (required): The engine's version or additional descriptive information.
+- **TimeControlID** (required, a number): Identifier for the associated time control configuration defined in tournament.json.
+- **Rating** (required): The engine's rating, typically represented by an Elo value.
+- **Dev** (optional): Information about the engine's developer(s).
+- **LogoPath** (required): The file path for the engine's logo image.
+- **Protocol** (required): The communication protocol (e.g., UCI, Winboard, XBoard) used by the engine.
+- **DeviceOption** / **DeviceTemplate** (optional): for tournaments that run games in parallel on several GPUs. `DeviceOption` names the UCI option that selects the device and `DeviceTemplate` is its value with `{0}` standing for the GPU index - e.g. `"DeviceOption": "Device", "DeviceTemplate": "GPU:{0}#TensorRTNative"` for Ceres, or `"DeviceOption": "BackendOptions", "DeviceTemplate": "gpu={0}"` for Lc0. Each running instance of the engine (one per game played at once) gets its id from `TestOptions.GPUs` in tournament.json, instance *i* taking `GPUs[i % GPUs.Length]`; a value already present in `Options` has its numbers replaced in place. Left empty (the default), every game sends the option exactly as written.
 - **IsChallenger** is not written in the file: EngineBattle sets it at run time for the challengers of a gauntlet.
 
 ### Winboard-Specific Configuration
@@ -55,16 +57,18 @@ For engines using the Winboard/XBoard protocol, you can optionally specify `Winb
 
 ### Contempt Settings
 
-- **ContemptEnabled**: Option to enable or disable contempt settings for the engine.
-- **NegativeContemptAllowed**: Option to allow negative contempt values.
+- **ContemptEnabled** (optional): Option to enable or disable contempt settings for the engine.
+- **NegativeContemptAllowed** (optional): Option to allow negative contempt values.
 
 ### Paths and Execution
 
-- **Path**: The file system path to the engine's executable.
-- **NetworkPath**: The directory where the engine neural network files reside.
-- **Args**: Additional command-line arguments for the engine (optional).
+- **Path** (required): The file system path to the engine's executable.
+- **NetworkPath** (required, may be empty): The directory where the engine neural network files reside.
+- **Args** (optional): Additional command-line arguments for the engine.
 
 ### Options
+
+`Options` is required; `{}` when the engine gets no options.
 
 - **Threads**: Number of threads the engine should use.
 - **Hash**: Size of the hash memory in megabytes.
