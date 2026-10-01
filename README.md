@@ -102,7 +102,7 @@ Choose a variant:
 | Variant | Size | .NET Runtime Required? |
 |---------|------|----------------------|
 | **Self-contained** | ~95 MB | No — everything is bundled |
-| **Framework-dependent** | ~21 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
+| **Framework-dependent** | ~22 MB | Yes — install [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) first |
 
 Available platforms: **win-x64**, **win-arm64**, **linux-x64**, **osx-x64**, **osx-arm64**
 
