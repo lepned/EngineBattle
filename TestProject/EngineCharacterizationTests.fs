@@ -990,7 +990,7 @@ let ``Winboard tournament start-up negotiates features, then sends post and easy
     let log = newLogPath ()
     let eng = startTournament (wbConfig log "" [] None)
     try
-        Assert.Equal<string[]>([| "xboard"; "protover 2"; "post"; "easy" |], syncedWb log eng.Write)
+        Assert.Equal<string[]>([| "xboard"; "protover 2"; "accepted ping"; "accepted setboard"; "accepted analyze"; "accepted myname"; "accepted done"; "post"; "easy" |], syncedWb log eng.Write)
         Assert.True(eng.PassedValidation)
         Assert.True(eng.CanReuseWinboard)
         Assert.Equal("", eng.UciIdName)
@@ -1035,7 +1035,7 @@ let ``Winboard AutoDetect probes the level command at start-up`` () =
     let eng = startTournament (wbConfig log "" [] (Some { wbDefaults with TimeControlStrategy = AutoDetect }))
     try
         Assert.Equal<string[]>(
-            [| "xboard"; "protover 2"; "new"; "force"; "level 0 1 0"; "post"; "easy" |],
+            [| "xboard"; "protover 2"; "accepted ping"; "accepted setboard"; "accepted analyze"; "accepted myname"; "accepted done"; "new"; "force"; "level 0 1 0"; "post"; "easy" |],
             syncedWb log eng.Write)
     finally stopTournament eng
 
@@ -1073,16 +1073,22 @@ let ``Winboard WaitForReadyOk pings when it can, and assumes ready when it canno
     finally stopTournament eng3
 
 [<Fact>]
-let ``Winboard PrepareNewGame, WarmUp and option updates send nothing`` () =
+let ``Winboard WarmUp and option updates send nothing; PrepareNewGame sends new`` () =
     let log = newLogPath ()
     let eng = startTournament (wbConfig log "" [] None)
     try
         let before = syncedWb log eng.Write |> Array.length
         Assert.True(eng.WarmUp 1000)
-        Assert.True(eng.PrepareNewGame())
         eng.AddSetOption(EngineOption.Create "Hash" "32")      // no UCI option list: not found
         eng.SetMoveOverhead("MoveOverheadMs", 50)
         Assert.Equal(before, syncedWb log eng.Write |> Array.length)
+        // A new game starts in step: `new`, and with ping a ping whose pong ends the old output
+        // (it sent nothing once, and a move left from the last game was read as this game's)
+        Assert.True(eng.PrepareNewGame())
+        let sent = syncedWb log eng.Write |> Array.skip before
+        Assert.Equal("new", sent.[0])
+        Assert.True(sent.Length >= 2, sprintf "no ping after new: %A" sent)
+        Assert.True(sent |> Array.skip 1 |> Array.forall (fun c -> c.StartsWith "ping"), sprintf "%A" sent)
     finally stopTournament eng
 
 [<Fact>]
@@ -1174,7 +1180,7 @@ let ``Winboard analysis start-up: features, post and easy, the options, then new
     let eng, updates = startAnalysis (wbConfig log "" [] None)
     try
         Assert.Equal<string[]>(
-            [| "xboard"; "protover 2"; "post"; "easy"; "option MoveOverheadMs=0"; "new" |],
+            [| "xboard"; "protover 2"; "accepted ping"; "accepted setboard"; "accepted analyze"; "accepted myname"; "accepted done"; "post"; "easy"; "option MoveOverheadMs=0"; "new" |],
             syncedWb log (fun m -> eng.SendUCICommand(UCICommand.RawCommand m)))
         let ready = updates.ToArray() |> Array.choose (function Ready (p, live) -> Some (p, live) | _ -> None)
         Assert.Equal<(string * bool)[]>([| ("Fake", false) |], ready)

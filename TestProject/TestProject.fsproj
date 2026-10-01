@@ -57,6 +57,8 @@
 		<Compile Include="TimeConfigShortFormTests.fs" />
 		<Compile Include="BookEvaluationFilterTests.fs" />
 		<Compile Include="WinboardConfigReadTests.fs" />
+		<Compile Include="WinboardTimeAndMoveTests.fs" />
+		<Compile Include="WinboardHandshakeAndOutputTests.fs" />
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />

@@ -31,13 +31,24 @@ module internal EngineWire =
     | Uci -> [ command ]
     | Winboard handler -> handler.UciToWinboard(command, analysisMode = analysisMode)
 
-  /// Winboard engines without ping support get time to take in time/otim before "go". Zero for
-  /// UCI engines.
+  /// Winboard engines without ping support get time to take in time/otim before "go". An engine
+  /// with ping gets "go" at once, as cutechess sends it (the pipe keeps the order; its ping is
+  /// used where EngineBattle has to know it is idle, before a game). Zero for UCI engines.
   let preGoDelayMs (config: EngineConfig) (protocol: Protocol) (line: string) =
     match protocol with
-    | Winboard _ when line.StartsWith("go", StringComparison.Ordinal) ->
+    | Winboard handler when not handler.Features.Ping && line.StartsWith("go", StringComparison.Ordinal) ->
         config.WinboardConfig |> Option.map (fun wbc -> wbc.PreGoDelayMs) |> Option.defaultValue 100
     | _ -> 0
+
+  /// The pause before the line at `index` of one command's Winboard lines: the pre-go delay before
+  /// go, and the engine's CommandDelayMs before any other line but the first. Zero for UCI engines.
+  let lineDelayMs (config: EngineConfig) (protocol: Protocol) (index: int) (line: string) =
+    let commandDelay =
+      match protocol with
+      | Winboard _ when index > 0 ->
+          config.WinboardConfig |> Option.map (fun wbc -> wbc.CommandDelayMs) |> Option.defaultValue 0
+      | _ -> 0
+    max (preGoDelayMs config protocol line) commandDelay
 
   /// A line read from the engine as the tournament wrapper sees it: a Winboard line translated to
   /// UCI where the handler knows how, otherwise the line as it came.

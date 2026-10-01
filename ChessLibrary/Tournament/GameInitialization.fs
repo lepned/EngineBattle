@@ -93,9 +93,9 @@ let waitForEngineIsReady (tourny:Tournament) (engine: ChessEngine) (logger: ILog
                         logger.LogError("Engine {Engine} timed out after restart (WinBoard reuse=0)", engine.Name)
                         return false
                 else
-                    // Winboard engines need 'new' to reset between games
-                    engine.UciNewGame()
-                    let! readyOk = engine.WaitForReadyOkAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask
+                    // 'new', and whatever the engine still says from the last game thrown away
+                    // (ChessEngine.PrepareNewGameAsync)
+                    let! readyOk = engine.PrepareNewGameAsync(tourny.EngineStartupTimeoutInSec * 1000) |> Async.AwaitTask
                     if readyOk then
                         logger.LogDebug("Engine {Engine} ready (WinBoard protocol)", engine.Name)
                         return true

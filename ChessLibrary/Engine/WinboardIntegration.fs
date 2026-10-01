@@ -32,8 +32,13 @@ module WinboardIntegration =
     // Constants
     [<Literal>]
     let private MaxInitAttempts = 20
+    /// How long an engine has to finish its feature list (done=1) after protover 2, as cutechess
+    /// gives it. An engine that says nothing to protover is taken for a V1 engine when it runs out.
     [<Literal>]
-    let private FeatureTimeoutMs = 2000
+    let FeatureTimeoutMs = 8000
+    /// done=0 asks not to be timed out while the engine starts; it gets this long to send done=1.
+    [<Literal>]
+    let DoneZeroTimeoutMs = 600000
 
     /// Check if engine config specifies Winboard protocol
     let isWinboardEngine (config: TypesDef.CoreTypes.EngineConfig) =
@@ -91,6 +96,7 @@ module WinboardIntegration =
                     // Step 2: Wait for feature negotiation (done=1) or timeout
                     // Read directly with cancellable ReadLineAsync — no background task needed
                     use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float timeoutMs))
+                    let extended = ref false
                     let rec waitForInit attempts =
                         async {
                             if handler.IsInitialized then
@@ -114,6 +120,14 @@ module WinboardIntegration =
                                     if not (isNull line) && not (String.IsNullOrWhiteSpace line) then
                                         logDebug $"[WB init {engineName}] {line}"
                                         handler.ProcessOutput(line) |> ignore
+                                        // accepted/rejected for each feature, as the protocol expects
+                                        for reply in handler.TakeFeatureReplies() do
+                                            if handler.CommandDelayMs > 0 then do! Async.Sleep handler.CommandDelayMs
+                                            proc.StandardInput.WriteLine(reply)
+                                        if handler.AwaitingDone && not extended.Value then
+                                            extended.Value <- true
+                                            log $"Winboard engine {engineName} asked for time to start (done=0)"
+                                            cts.CancelAfter(DoneZeroTimeoutMs)
                                     return! waitForInit (attempts + 1)
                                 with
                                 | :? OperationCanceledException ->
@@ -253,7 +267,9 @@ module WinboardIntegration =
                     let mutable elapsed = 0
                     let pollInterval = 10
 
-                    while not handler.IsInitialized && elapsed < timeoutMs do
+                    // done=0 asks for more time. The feature replies go out from the analysis
+                    // wrapper once this returns, before post and easy; this loop only waits.
+                    while not handler.IsInitialized && elapsed < (if handler.AwaitingDone then DoneZeroTimeoutMs else timeoutMs) do
                         do! Async.Sleep pollInterval
                         elapsed <- int (System.DateTime.UtcNow - startTime).TotalMilliseconds
                         if elapsed % 500 = 0 then

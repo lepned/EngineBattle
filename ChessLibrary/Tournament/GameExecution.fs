@@ -392,16 +392,18 @@ let playWithPondering
                 player1inPonderMode <- false
                 player2inPonderMode <- false
       | _ ->
-          // Illegal move
+          // Illegal move, or a resignation ("bestmove resign", from a Winboard engine)
           let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
           let firstTwo = firstTwoEvals fullEvalList
+          let reason = if move = "resign" then ResultReason.Resignation else ResultReason.Illegal
           let res =
               if currentPlaying.Name = player1.Name then
-                  createResultWithEval player1.Name player2.Name gameMoveList "0-1" ResultReason.Illegal dur firstTwo
+                  createResultWithEval player1.Name player2.Name gameMoveList "0-1" reason dur firstTwo
               else
-                  createResultWithEval player1.Name player2.Name gameMoveList "1-0" ResultReason.Illegal dur firstTwo
+                  createResultWithEval player1.Name player2.Name gameMoveList "1-0" reason dur firstTwo
           //log error, send end of game
-          logger.LogCritical($"Illegal move from {currentPlaying.Name}: {move} FEN={board.FEN()}")
+          if reason = ResultReason.Resignation then logger.LogInformation($"{currentPlaying.Name} resigns. FEN={board.FEN()}")
+          else logger.LogCritical($"Illegal move from {currentPlaying.Name}: {move} FEN={board.FEN()}")
           result <- res
           continueGame <- false
   }
@@ -1235,14 +1237,17 @@ let playGeneric
                       logger.LogInformation($"Stalemate: {res.Reason}")
                       return res
                   else
+                    // An illegal move, or a resignation ("bestmove resign", from a Winboard engine)
+                    let reason = if move = "resign" then ResultReason.Resignation else ResultReason.Illegal
                     let res =
                       if playing.Name = player1.Name then
-                        createResultWithEval player1.Name player2.Name gameMoveList "0-1" ResultReason.Illegal dur firstTwoEvals
+                        createResultWithEval player1.Name player2.Name gameMoveList "0-1" reason dur firstTwoEvals
                       else
-                        createResultWithEval player1.Name player2.Name gameMoveList "1-0" ResultReason.Illegal dur firstTwoEvals
+                        createResultWithEval player1.Name player2.Name gameMoveList "1-0" reason dur firstTwoEvals
                     callback(EndOfGame res)
                     let fenAndMoves = board.PositionWithMoves()
-                    logger.LogCritical($"{playing.Name} failed in bestmove logic with the following response {line} after these moves: \n{fenAndMoves}")
+                    if reason = ResultReason.Resignation then logger.LogInformation($"{playing.Name} resigns after these moves: \n{fenAndMoves}")
+                    else logger.LogCritical($"{playing.Name} failed in bestmove logic with the following response {line} after these moves: \n{fenAndMoves}")
                     return res
 
             else

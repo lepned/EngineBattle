@@ -599,6 +599,8 @@ module JSON =
                   elif is "RequiresLevelForThinkingOutput" then c <- { c with RequiresLevelForThinkingOutput = p.Value.GetBoolean() }
                   elif is "Use4FieldFen" then c <- { c with Use4FieldFen = p.Value.GetBoolean() }
                   elif is "PreGoDelayMs" then c <- { c with PreGoDelayMs = p.Value.GetInt32() }
+                  elif is "MinLevelIncrement" then c <- { c with MinLevelIncrement = p.Value.GetInt32() }
+                  elif is "CommandDelayMs" then c <- { c with CommandDelayMs = p.Value.GetInt32() }
           c
 
       override _.Write(writer: Utf8JsonWriter, value: WinboardConfig, options: JsonSerializerOptions) =
@@ -613,6 +615,8 @@ module JSON =
           writer.WriteBoolean("RequiresLevelForThinkingOutput", value.RequiresLevelForThinkingOutput)
           writer.WriteBoolean("Use4FieldFen", value.Use4FieldFen)
           writer.WriteNumber("PreGoDelayMs", value.PreGoDelayMs)
+          writer.WriteNumber("MinLevelIncrement", value.MinLevelIncrement)
+          writer.WriteNumber("CommandDelayMs", value.CommandDelayMs)
           writer.WriteEndObject()
 
   let private addConverters (options: JsonSerializerOptions) =

@@ -184,9 +184,18 @@ module TypesDef =
         RequiresLevelForThinkingOutput: bool
         /// If true, send 4-field FEN (omit halfmove clock and fullmove number) for old engines that crash/hang on 6-field FEN
         Use4FieldFen: bool
-        /// Delay in milliseconds before sending 'go' command (workaround for time control race conditions)
+        /// Delay in milliseconds before sending 'go' to an engine without ping support, so it has
+        /// read its clock first (an engine with ping gets 'go' at once, as cutechess sends it).
         /// Default is 100ms. Set to 0 for engines that don't need it.
         PreGoDelayMs: int
+        /// The least increment, in whole seconds, the `level` command states. `level` takes whole
+        /// seconds and the increment is rounded down, so 0.1 s is sent as 0; an engine that only
+        /// searches with an increment of at least 1 (Jonny) is given 1 here. Default 0.
+        MinLevelIncrement: int
+        /// Pause in milliseconds before each command after the first of a burst (force, setboard,
+        /// time, otim, ...). For an engine that fails when several commands arrive at once
+        /// (TheTurk crashed at about 3 in 100 game starts). Default 0.
+        CommandDelayMs: int
     }
     with
         static member Default = {
@@ -197,6 +206,8 @@ module TypesDef =
             RequiresLevelForThinkingOutput = false
             Use4FieldFen = false
             PreGoDelayMs = 100
+            MinLevelIncrement = 0
+            CommandDelayMs = 0
         }
 
     type EngineConfig =

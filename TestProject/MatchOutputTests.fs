@@ -271,6 +271,7 @@ let ``EngineBattle reasons in the reference's words`` () =
     Assert.Equal("White loses on time (0ms overrun)", a "0-1" ForfeitLimits)
     Assert.Equal("Black loses on time (37ms overrun)", MatchOutput.annotation "W" { result "W" "B" "1-0" ForfeitLimits with TimeOverrunMs = 37L })
     Assert.Equal("Black makes an illegal move", a "1-0" Illegal)
+    Assert.Equal("White resigns", a "0-1" Resignation)
     Assert.Equal("Black disconnects", a "1-0" (Disconnected "B"))
     Assert.Equal("White disconnects", a "0-1" (Disconnected "W"))
 

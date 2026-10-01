@@ -153,6 +153,7 @@ Only the fields EB renders are required; everything else falls back to `EngineCo
 | `DC`   | Disconnected |
 | `NS`   | Not started |
 | `AU`   | Adjudicated by user |
+| `RS`   | Resignation (a Winboard engine's `resign`) |
 
 ---
 

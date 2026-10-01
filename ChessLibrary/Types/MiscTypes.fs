@@ -53,6 +53,8 @@ module MiscTypes =
         | Disconnected of string
         | NotStarted
         | AdjudicatedByUser
+        /// The engine gave the game up (a Winboard engine's `resign`)
+        | Resignation
 
         override this.ToString() =
             match this with
@@ -69,6 +71,7 @@ module MiscTypes =
             | Disconnected p -> "DC"
             | NotStarted -> "NS"
             | AdjudicatedByUser -> "AU"
+            | Resignation -> "RS"
 
         member this.Explanation =
             match this with
@@ -85,6 +88,7 @@ module MiscTypes =
             | Disconnected p -> sprintf "%s Disconnected" p
             | NotStarted -> "Not started"
             | AdjudicatedByUser -> "Adjudicated by user"
+            | Resignation -> "Resignation"
 
     let stringToResultReason (str: string): ResultReason =
         match str with
@@ -101,4 +105,5 @@ module MiscTypes =
         | "DC" -> Disconnected ""
         | "NS" -> NotStarted
         | "AU" -> AdjudicatedByUser
+        | "RS" -> Resignation
         | _ -> failwith "Invalid ResultReason string"

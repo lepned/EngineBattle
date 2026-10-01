@@ -62,7 +62,13 @@ let getLongSanPVFromShortSanPV moveList (board: Board inref) (sanMoves: string s
     // caller strips the '-' from LAN so "g1-f3" arrives as "g1f3"). SAN must not get the
     // first attempt here: it used to read "g1f3" as a pawn move to f3 and silently return
     // the wrong move, so this fallback was unreachable for anything but pawn moves.
-    let moveResult = TMoveOps.tryFindMoveBySanOrUci moves position.STM islegal m
+    let moveResult =
+      match TMoveOps.tryFindMoveBySanOrUci moves position.STM islegal m with
+      | None when m.Length = 4 && (m.[3] = '8' || m.[3] = '1') ->
+          // A pawn promoting without the piece ("a7a8", Comet's PV): a queen. A piece moving
+          // to the last rank matched above and never gets here.
+          TMoveOps.tryFindMoveBySanOrUci moves position.STM islegal (m + "q")
+      | found -> found
 
     match moveResult with
     | Some tmove ->

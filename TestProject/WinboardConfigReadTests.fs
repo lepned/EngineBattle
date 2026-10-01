@@ -40,3 +40,15 @@ let ``fields that are given win over the defaults`` () =
 [<Fact>]
 let ``an empty block is the default`` () =
     Assert.Equal(WinboardConfig.Default, readDef "{}")
+
+[<Fact>]
+let ``the per-engine workarounds are read, and written whole so they read back the same`` () =
+    // Jonny's and TheTurk's settings (Winboard.md)
+    let w = readDef """{ "MinLevelIncrement": 1, "CommandDelayMs": 20 }"""
+    Assert.Equal({ WinboardConfig.Default with MinLevelIncrement = 1; CommandDelayMs = 20 }, w)
+    let options = System.Text.Json.JsonSerializerOptions()
+    options.Converters.Add(Configuration.JSON.WinboardConfigConverter())
+    options.Converters.Add(TimeControlStrategyConverter())
+    let written = System.Text.Json.JsonSerializer.Serialize(w, options)
+    Assert.Contains("\"CommandDelayMs\":20", written)
+    Assert.Equal(w, readDef written)

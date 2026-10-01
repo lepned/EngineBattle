@@ -36,6 +36,7 @@ module MatchOutput =
     | AdjudicatedByUser -> if decisive then $"{winner} wins by adjudication" else "Draw by adjudication"
     | ForfeitLimits -> $"{loser} loses on time ({r.TimeOverrunMs}ms overrun)"
     | Illegal -> $"{loser} makes an illegal move"
+    | Resignation -> $"{loser} resigns"
     | Disconnected name -> $"{colour (name = white)} disconnects"
     | Cancel
     | NotStarted -> "Game interrupted"

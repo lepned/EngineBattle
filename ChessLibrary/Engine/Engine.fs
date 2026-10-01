@@ -310,12 +310,12 @@ module Engine =
           match protocol with
           | Winboard _ ->
               // Winboard in analysis mode: the full position is set up for every search.
-              for cmd in outbound protocol true s do
+              outbound protocol true s |> List.iteri (fun i cmd ->
                 if isEnabled LogLevel.Debug then logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" s cmd name)
                 logIO ">>>" cmd
-                let delay = preGoDelayMs config protocol cmd
+                let delay = lineDelayMs config protocol i cmd
                 if delay > 0 then Thread.Sleep delay
-                transport.WriteLine cmd
+                transport.WriteLine cmd)
           | Uci ->
               transport.WriteLine s
               logIO ">>>" s
@@ -375,12 +375,18 @@ module Engine =
                 transport.WriteLine cmd
               logDebug $"[{name}] Waiting for Winboard initialization to complete..."
               let startWait = DateTime.UtcNow
-              let initSuccess = initializeWinboardEventBased handler (Some logger) name 2000 (forceV1 config) |> Async.RunSynchronously
+              let initSuccess = initializeWinboardEventBased handler (Some logger) name FeatureTimeoutMs (forceV1 config) |> Async.RunSynchronously
               let waitTime = (DateTime.UtcNow - startWait).TotalMilliseconds
               logInformation $"[{name}] Winboard init wait completed in {waitTime}ms, success={initSuccess}"
               if not initSuccess then failwith "Winboard engine did not initialize properly."
               // Winboard engines send no uciok.
               handshake <- Running
+              // accepted/rejected for each feature, as the protocol expects - written here, by the
+              // thread that writes post and easy next, so the two cannot interleave (the reader
+              // thread wrote them before, and with CommandDelayMs post landed between the replies)
+              for reply in handler.TakeFeatureReplies() do
+                if handler.CommandDelayMs > 0 then Thread.Sleep handler.CommandDelayMs
+                transport.WriteLine reply
               for cmd in handler.GetPostInitCommands() do
                 logDebug $"[{name}] Sending post-init command: {cmd}"
                 transport.WriteLine cmd
@@ -728,11 +734,11 @@ module Engine =
             match protocol with
             | Winboard _ ->
                 let logMsg = if isEnabled LogLevel.Debug then shortForLog s else ""
-                for cmd in outbound protocol false s do
+                outbound protocol false s |> List.iteri (fun i cmd ->
                   if isEnabled LogLevel.Debug then logDebug (sprintf "[UCI→Winboard] '%s' → '%s' for %s" logMsg cmd name)
-                  let delay = preGoDelayMs config protocol cmd
+                  let delay = lineDelayMs config protocol i cmd
                   if delay > 0 then Thread.Sleep delay
-                  running.Transport.WriteLine cmd
+                  running.Transport.WriteLine cmd)
             | Uci ->
                 if isEnabled LogLevel.Trace then logger.Value.LogTrace(sprintf "Writing to %s: %s" name s)
                 running.Transport.WriteLine s
@@ -769,6 +775,22 @@ module Engine =
         }
 
       let getDiagnostics () = stderr.Diagnostics(name, lastExitCode)
+
+      /// Reads and throws away output until the engine has said nothing for quietMs, or capMs has
+      /// passed: for a Winboard engine without ping, the only way to know its last search is over.
+      /// Returns how many lines it dropped.
+      let drainQuiet (quietMs: int) (capMs: int) (cancel: CancellationToken) : Task<int> =
+        task {
+          let sw = Stopwatch.StartNew()
+          let mutable dropped = 0
+          let mutable quiet = false
+          while not quiet && sw.ElapsedMilliseconds < int64 capMs && not (hasExited ()) && not cancel.IsCancellationRequested do
+            use cts = CancellationTokenSource.CreateLinkedTokenSource cancel
+            cts.CancelAfter quietMs
+            let! line = (readAsyncWithTimeout cts.Token).ConfigureAwait(false)
+            if isNull line then quiet <- true else dropped <- dropped + 1
+          return dropped
+        }
 
       /// Reads to readyok, skipping anything else still queued (the tail of a search). False, with
       /// the reason in ReadyFailure, on a timeout, an exit or a fatal init line; throws
@@ -850,7 +872,7 @@ module Engine =
         task {
           match protocol with
           | Winboard handler ->
-              return! Async.StartAsTask(initializeWinboard running.Process handler logger name 30000 (forceV1 config)).ConfigureAwait(false)
+              return! Async.StartAsTask(initializeWinboard running.Process handler logger name FeatureTimeoutMs (forceV1 config)).ConfigureAwait(false)
           | Uci ->
               use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
               write "uci"
@@ -1208,12 +1230,31 @@ module Engine =
       /// warm-up gets at least the 12-minute default, since a first TensorRT build can take longer
       /// and a timed-out warm-up is not retried. The isready wait runs whether or not the warm-up
       /// got its bestmove, unless it failed for good (exit, fatal line): then no readyok will come.
-      /// False leaves the reason in ReadyFailure. Winboard engines are left alone; their init is
-      /// the protocol handler's.
+      /// False leaves the reason in ReadyFailure.
+      ///
+      /// A Winboard engine is brought in step instead. The last game may have ended on its turn (a
+      /// loss on time, an adjudication) with the engine still searching; the move it then sends
+      /// stayed in the pipe and was read as the first move of the next game - an illegal move,
+      /// and a lost game (Comet at 10+0.1 lost two that way after each loss on time). `new` stops
+      /// and resets it, and what it says before this game is thrown away: up to the pong of a
+      /// ping, or, for an engine without ping, until it has been quiet for 300 ms (at most 3 s).
       member this.PrepareNewGameAsync([<Optional; DefaultParameterValue(0)>] readyTimeoutMs: int,
                                       [<Optional>] cancellationToken: CancellationToken) : Task<bool> =
         let cancel = cancellationToken
-        if isWinboard protocol then Task.FromResult true
+        if isWinboard protocol then
+          task {
+            this.UciNewGame()
+            match protocol with
+            | Winboard handler when handler.Features.Ping ->
+                // up to the pong; a second at most, and no pong is taken as ready (WaitForReadyOkAsync)
+                return! this.WaitForReadyOkAsync(readyTimeoutMs, cancel).ConfigureAwait(false)
+            | _ ->
+                let! dropped = (drainQuiet 300 3000 cancel).ConfigureAwait(false)
+                // drainQuiet stops quietly on cancellation; the other paths throw, so this does too
+                cancel.ThrowIfCancellationRequested()
+                if dropped > 0 then logDebug (sprintf "Engine %s: %d line(s) from before this game dropped" name dropped)
+                return true
+          }
         else
           let readyTimeoutMs = if readyTimeoutMs <= 0 then defaultTimeoutMs else readyTimeoutMs
           task {
