@@ -97,17 +97,18 @@ Configure via `WinboardConfig.TimeControlStrategy` in engine config:
 
 ## What EngineBattle Reads From the Engine
 
-**Its move**, in one of these forms and no other:
-- `move e2e4` - the protocol's form
-- `1. ... e2e4` or `12. e4` - older engines (Comet)
-- `My move is: e2e4`
-- a line holding nothing but a coordinate move, `e2e4` or `e2-e4`
+**Its move**, in the two forms the protocol defines and no other:
+- `move e2e4`
+- `1. ... e2e4` (or `1...e2e4`) - the older form (Comet). The `...` is required even when the
+  engine plays White; `12. e4` without it is not a move.
 
 The move may be in coordinates (`e2e4`, `e7e8q`, `e7e8=q`; a pawn's `e7e8` without the piece is
-a queen) or SAN (`Nf3`, `O-O`, `0-0`). A move
-that is not legal in the position the engine was given is ignored with a warning - it is left over
-from an earlier search, and the engine's real move follows. Other lines are not taken for moves,
-even with a move in them (`Hint: e7e5`, a printed variation).
+a queen) or SAN (`Nf3`, `O-O`, `0-0`). A move that is not legal in the position the engine was
+given is ignored with a warning - it is left over from an earlier search, and the engine's real
+move follows. Other lines are not taken for moves, even with a move in them (`Hint: e7e5`, a
+printed variation). A line that looks like a move in another form (`12. e4`, `My move is: e2e4`,
+a move alone on its line) gets one warning in the log, so an engine that announces its moves that
+way is seen for what it is.
 
 **Its thinking lines** (`depth score time nodes pv`): the PV may be in SAN or coordinates, with
 move numbers. Marks on the moves are dropped - Comet's `g1f3?` and `b1c3!`, check signs, Crafty's
@@ -119,7 +120,8 @@ from White). The game ends as a resignation (reason `RS`). Before, EngineBattle 
 engine lost on time once its clock ran out. A win or a draw the engine claims (`1-0 {White
 mates}`) is ignored: EngineBattle judges the position itself.
 
-**An error**: `Illegal move ...` or `Error ...` during a game goes to the log as a warning naming
+**An error**: `Illegal move ...` (however it is spelled - `illegal move`, with or without the
+colon) or `Error ...` during a game goes to the log as a warning naming
 the position sent last, once per message. An engine that refuses its position or a time command
 then usually sits silent until it loses on time, and this line says why.
 
@@ -142,8 +144,8 @@ then usually sits silent until it loses on time, and this line says why.
 
 **Possible causes:**
 1. The engine announces its move in a form EngineBattle does not read (see
-   [What EngineBattle Reads From the Engine](#what-enginebattle-reads-from-the-engine)); such lines
-   are logged at Debug level as `Winboard output (ignored)`
+   [What EngineBattle Reads From the Engine](#what-enginebattle-reads-from-the-engine)) - look in
+   the log for `looks like a move but is not in a form the Winboard protocol defines`
 
 ### Engine crashes on position setup
 

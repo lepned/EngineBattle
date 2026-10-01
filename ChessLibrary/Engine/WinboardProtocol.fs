@@ -26,15 +26,17 @@ module WinboardProtocol =
     let private setOptionRegex = Regex(@"^setoption\s+name\s+(.+?)(?:\s+value\s+(.+))?$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
     let private coordinateNotationRegex = Regex(@"^[a-h][1-8][a-h][1-8][qrbn]?$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
     let private pvMoveNumberRegex = Regex(@"^\d+\.+", RegexOptions.Compiled)
-    // The ways an engine announces its move, and nothing else: "move e2e4" (the protocol),
-    // "1. ... e2e4" or "12. e4" (Comet and other old engines), "My move is: e2e4" (old spec) and a
-    // line holding just a coordinate move. Group 1 is the move.
+    // The two ways the protocol (CECP, engine-intf section 9) lets an engine announce its move:
+    // "move e2e4", and the older "NUMBER ... MOVE" ("1. ... e2e4", "1...e2e4" - Comet), where the
+    // "..." is required even for White and "NUMBER MOVE" is ignored. Group 1 is the move.
     let private moveLineRegexes =
         [| Regex(@"^move\s+(\S+)\s*$", RegexOptions.Compiled)
-           // the move starts with a letter or is castling, so "0.25" (a bare number) is no move
-           Regex(@"^\d+\s*\.+\s*(?:\.\.\.\s*)?([A-Za-z]\S*|0-0\S*)\s*$", RegexOptions.Compiled)
-           Regex(@"^my\s+move\s+is\s*:?\s*(\S+)\s*$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
-           Regex(@"^([a-h][1-8]-?[a-h][1-8][qrbn]?)\s*$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase) |]
+           Regex(@"^\d+\.?\s*\.\.\.\s*(\S+)\s*$", RegexOptions.Compiled) |]
+    // Lines that look like a move in a form the protocol does not define: "12. e4" (no "..."),
+    // "My move is: e2e4", a move alone on its line. Not taken; logged once, so an engine that
+    // announces its move this way is seen losing on time for a reason.
+    let private nonProtocolMoveRegex =
+        Regex(@"^(?:\d+\.\s*[A-Za-z]\S*|my\s+move\s+is\b.*|[a-h][1-8]-?[a-h][1-8](?:=?[qrbn])?)\s*$", RegexOptions.Compiled ||| RegexOptions.IgnoreCase)
     // A result claim: "1-0 {White mates}", "0-1 {White resigns}", "1/2-1/2 {Draw by repetition}"
     let private resultClaimRegex = Regex(@"^(1-0|0-1|1/2-1/2)(\s|$)", RegexOptions.Compiled)
 
@@ -349,6 +351,8 @@ module WinboardProtocol =
         let mutable awaitingDone = false
         // What the last position command became, named when the engine rejects a command
         let mutable lastPositionCommands : string list = []
+        // A move-like line outside the protocol's forms has been reported (once is enough)
+        let mutable nonProtocolMoveReported = false
         // The rejections already logged in full: EXchess answers every 6-field setboard with
         // "Error (unknown command): 0" and plays on, which is no news after the first time
         let reportedRejections = System.Collections.Generic.HashSet<string>()
@@ -820,11 +824,11 @@ module WinboardProtocol =
                             None
 
                     elif isMoveNotation trimmedLine then
-                        match this.LegalOrDropped(tryParseMoveOutput board trimmedLine, trimmedLine) with
-                        | Some uciMove -> Some uciMove
+                        match tryParseMoveOutput board trimmedLine with
                         | None ->
-                            logger.LogWarning($"Winboard move not understood: {trimmedLine}")
+                            logger.LogWarning($"[{configuredEngineName}] Winboard move not understood: {trimmedLine}")
                             None
+                        | parsed -> this.LegalOrDropped(parsed, trimmedLine)  // it warns itself
 
                     elif thinkingOutputRegex.IsMatch(trimmedLine) then
                         parseThinkingOutputWith cachedPv winboardConfig.SideToMovePOV board configuredEngineName trimmedLine
@@ -832,7 +836,8 @@ module WinboardProtocol =
                     elif cometTellicsRegex.IsMatch(trimmedLine) then
                         parseCometTellics board trimmedLine
 
-                    elif trimmedLine.StartsWith("Error") || trimmedLine.StartsWith("Illegal") then
+                    // "Illegal move" also as "illegal move", with or without the colon (the protocol)
+                    elif trimmedLine.StartsWith("Error") || trimmedLine.StartsWith("Illegal", StringComparison.OrdinalIgnoreCase) then
                         // Fast-fail V1 detection: if engine doesn't understand protover, it's V1
                         if trimmedLine.Contains("protover") && not isInitialized then
                             logger.LogWarning($"Winboard engine error: {trimmedLine}")
@@ -855,6 +860,14 @@ module WinboardProtocol =
                         None
 
                     elif trimmedLine = "++" || trimmedLine = "--" then
+                        None
+
+                    elif nonProtocolMoveRegex.IsMatch(trimmedLine) then
+                        if not nonProtocolMoveReported then
+                            nonProtocolMoveReported <- true
+                            logger.LogWarning($"[{configuredEngineName}] '{trimmedLine}' looks like a move but is not in a form the Winboard protocol defines ('move e2e4' or '1. ... e2e4'); ignored. An engine that announces its moves this way will not be heard.")
+                        else
+                            logger.LogDebug($"Winboard output (ignored, not a protocol move): {trimmedLine}")
                         None
 
                     else

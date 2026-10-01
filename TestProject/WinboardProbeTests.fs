@@ -277,10 +277,10 @@ let ``Winboard move output formats parse`` () =
         Assert.Equal(Some expected, parsed)
 
     assertBestmove "bestmove e2e4" "move e2e4" startBoard
-    assertBestmove "bestmove e2e4" "e2e4" startBoard
+    assertBestmove "bestmove e2e4" "1...e2e4" startBoard
     assertBestmove "bestmove g6h7" "1. ... g6h7" startBoard
-    assertBestmove "bestmove e2e4" "e2-e4" startBoard
-    assertBestmove "bestmove g6h7" "g6-h7" startBoard
+    assertBestmove "bestmove e2e4" "move e2-e4" startBoard
+    assertBestmove "bestmove g6h7" "move g6-h7" startBoard
 
     // SAN without move number
     let bishopBoard = withFen "8/8/8/8/8/8/2B5/4K3 w - - 0 1"

@@ -83,6 +83,7 @@ module WinboardIntegration =
                     proc.StandardInput.WriteLine("xboard")
                     handler.ForceV1Init()
                     for cmd in handler.GetPostInitCommands() do
+                        if handler.CommandDelayMs > 0 then do! Async.Sleep handler.CommandDelayMs
                         proc.StandardInput.WriteLine(cmd)
                         logDebug $"Sent '{cmd}' to {engineName}"
                     return true
@@ -215,6 +216,7 @@ module WinboardIntegration =
                     // Step 5: Send post + easy
                     if initResult then
                         for cmd in handler.GetPostInitCommands() do
+                            if handler.CommandDelayMs > 0 then do! Async.Sleep handler.CommandDelayMs
                             proc.StandardInput.WriteLine(cmd)
                             logDebug $"Sent '{cmd}' to {engineName}"
 
@@ -247,7 +249,7 @@ module WinboardIntegration =
     ///
     /// **Thread safety:** This method only polls the handler state, doesn't read from stdout directly.
     /// Safe to use concurrently with BeginOutputReadLine().
-    let initializeWinboardEventBased (handler: WinboardHandler) (logger: ILogger option) (engineName: string) (timeoutMs: int) (forceV1: bool) =
+    let initializeWinboardEventBased (handler: WinboardHandler) (logger: ILogger option) (engineName: string) (timeoutMs: int) (forceV1: bool) (writeLine: string -> unit) =
         async {
             try
                 let log msg = logger |> Option.iter (fun l -> l.LogInformation(msg))
@@ -267,9 +269,14 @@ module WinboardIntegration =
                     let mutable elapsed = 0
                     let pollInterval = 10
 
-                    // done=0 asks for more time. The feature replies go out from the analysis
-                    // wrapper once this returns, before post and easy; this loop only waits.
+                    // done=0 asks for more time. The feature replies go out from here, while the
+                    // engine still negotiates (one may wait for them before its done=1), and from
+                    // the caller for the last line - both on this thread, which writes post and
+                    // easy next, so the two never interleave.
                     while not handler.IsInitialized && elapsed < (if handler.AwaitingDone then DoneZeroTimeoutMs else timeoutMs) do
+                        for reply in handler.TakeFeatureReplies() do
+                            if handler.CommandDelayMs > 0 then do! Async.Sleep handler.CommandDelayMs
+                            writeLine reply
                         do! Async.Sleep pollInterval
                         elapsed <- int (System.DateTime.UtcNow - startTime).TotalMilliseconds
                         if elapsed % 500 = 0 then

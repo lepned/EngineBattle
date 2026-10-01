@@ -54,11 +54,10 @@ let ``the replies follow the feature line, and done=0 waits for done=1`` () =
 let ``the move formats engines use are taken`` () =
     let at line = (handlerAt startFen).ProcessOutput line
     Assert.Equal(Some "bestmove e2e4", at "move e2e4")
-    Assert.Equal(Some "bestmove e2e4", at "1. e2e4")
+    // the protocol's older form: NUMBER ... MOVE, the "..." even for White (Comet)
     Assert.Equal(Some "bestmove e2e4", at "1. ... e2e4")
-    Assert.Equal(Some "bestmove e2e4", at "My move is: e2e4")
-    Assert.Equal(Some "bestmove e2e4", at "e2e4")
-    Assert.Equal(Some "bestmove e2e4", at "e2-e4")
+    Assert.Equal(Some "bestmove e2e4", at "1...e2e4")
+    Assert.Equal(Some "bestmove e2e4", at "move e2-e4")
     Assert.Equal(Some "bestmove g1f3", at "move Nf3")
     let castle = (handlerAt "4k3/8/8/8/8/8/8/4K2R w K - 0 1").ProcessOutput
     Assert.Equal(Some "bestmove e1g1", castle "move O-O")
@@ -83,6 +82,44 @@ let ``engine chatter with a move in it is not taken for a move`` () =
     Assert.Equal(None, at "offer draw")
     Assert.Equal(None, at "0.25")
     Assert.Equal(None, at "12. 345")
+
+[<Fact>]
+let ``a move in a form the protocol does not define is not taken, and said so once`` () =
+    let logged = System.Collections.Generic.List<LogLevel * string>()
+    let capture =
+        { new ILogger with
+            member _.BeginScope(_) = { new IDisposable with member _.Dispose() = () }
+            member _.IsEnabled(_) = true
+            member _.Log(level, _, state, ex, formatter) = logged.Add((level, formatter.Invoke(state, ex))) }
+    let handler = WinboardHandler(capture, "Test", WinboardConfig.Default)
+    handler.ProcessFeatureLine("feature setboard=1 done=1") |> ignore
+    handler.UciToWinboard(sprintf "position fen %s" startFen) |> ignore
+    logged.Clear()
+    // "NUMBER MOVE" without the "..." is ignored by the protocol; "My move is" and a bare move
+    // are not in it
+    for line in [ "1. e2e4"; "My move is: e2e4"; "e2e4"; "e2-e4"; "e7e8=Q" ] do
+        Assert.Equal(None, handler.ProcessOutput line)
+    let warnings = logged |> Seq.filter (fun (level, _) -> level = LogLevel.Warning) |> List.ofSeq
+    Assert.Single(warnings) |> ignore
+    Assert.Contains("not in a form the Winboard protocol defines", snd warnings.Head)
+
+[<Fact>]
+let ``illegal move is recognised however it is spelled`` () =
+    // "Illegal move" also as "illegal move" and without the colon (the protocol): a rejection,
+    // reported with the position - it used to pass unseen
+    let logged = System.Collections.Generic.List<string>()
+    let capture =
+        { new ILogger with
+            member _.BeginScope(_) = { new IDisposable with member _.Dispose() = () }
+            member _.IsEnabled(_) = true
+            member _.Log(level, _, state, ex, formatter) =
+                if level = LogLevel.Warning then logged.Add(formatter.Invoke(state, ex)) }
+    let handler = WinboardHandler(capture, "Test", WinboardConfig.Default)
+    handler.ProcessFeatureLine("feature setboard=1 done=1") |> ignore
+    handler.UciToWinboard(sprintf "position fen %s" startFen) |> ignore
+    Assert.Equal(None, handler.ProcessOutput "illegal move e2e5")
+    Assert.Single(logged) |> ignore
+    Assert.Contains("rejected a command: 'illegal move e2e5'", logged.[0])
 
 // ---- resignation ----
 

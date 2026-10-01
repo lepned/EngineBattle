@@ -78,7 +78,9 @@ module EngineProbe =
         if not (File.Exists path) then Error (sprintf "Engine not found: %s" path)
         else
             let created = System.Threading.Tasks.Task.Run(fun () -> EngineHelper.createEngine (EngineConfig.EmptyWithPath path, None))
-            let answered = try created.Wait timeoutMs with _ -> false
+            // WaitAny does not throw: Wait did when the start failed, and the catch turned "failed
+            // to start: <reason>" into "did not answer 'uci'" (IsFaulted below was never reached)
+            let answered = System.Threading.Tasks.Task.WaitAny([| created :> System.Threading.Tasks.Task |], timeoutMs) >= 0
             if not answered then
                 // still waiting for uciok: stop it whenever the constructor gives up or finishes
                 created.ContinueWith(Action<System.Threading.Tasks.Task<Engine.ChessEngine>>(fun t ->

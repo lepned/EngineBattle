@@ -375,20 +375,20 @@ module Engine =
                 transport.WriteLine cmd
               logDebug $"[{name}] Waiting for Winboard initialization to complete..."
               let startWait = DateTime.UtcNow
-              let initSuccess = initializeWinboardEventBased handler (Some logger) name FeatureTimeoutMs (forceV1 config) |> Async.RunSynchronously
+              let initSuccess = initializeWinboardEventBased handler (Some logger) name FeatureTimeoutMs (forceV1 config) transport.WriteLine |> Async.RunSynchronously
               let waitTime = (DateTime.UtcNow - startWait).TotalMilliseconds
               logInformation $"[{name}] Winboard init wait completed in {waitTime}ms, success={initSuccess}"
               if not initSuccess then failwith "Winboard engine did not initialize properly."
               // Winboard engines send no uciok.
               handshake <- Running
-              // accepted/rejected for each feature, as the protocol expects - written here, by the
-              // thread that writes post and easy next, so the two cannot interleave (the reader
-              // thread wrote them before, and with CommandDelayMs post landed between the replies)
+              // the replies to the last feature line (initializeWinboardEventBased wrote the
+              // earlier ones), on the thread that writes post and easy next
               for reply in handler.TakeFeatureReplies() do
                 if handler.CommandDelayMs > 0 then Thread.Sleep handler.CommandDelayMs
                 transport.WriteLine reply
               for cmd in handler.GetPostInitCommands() do
                 logDebug $"[{name}] Sending post-init command: {cmd}"
+                if handler.CommandDelayMs > 0 then Thread.Sleep handler.CommandDelayMs
                 transport.WriteLine cmd
           | Uci ->
               write "uci"
