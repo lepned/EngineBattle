@@ -45,17 +45,17 @@ For engines using the Winboard/XBoard protocol, you can optionally specify `Winb
   - **SideToMovePOV** (bool): If `true`, the engine reports its scores from White's point of view (Crafty does), and EngineBattle turns them to the side to move. If `false` (default), the engine reports from the side to move, as the protocol expects. The name says the opposite of what it does; it is kept so existing defs keep working. Default: `false`
   - **TimeControlStrategy** (string): Time control strategy for this engine. Default: `"LevelWithTime"`
     - `"LevelWithTime"`: Standard V2 approach (send `level` once per game + `time`/`otim` every move)
-    - `"TimeOtimOnly"`: For V1 engines or engines with broken `level` command (send `time`/`otim` only) - Use for Comet
-    - `"StWithTime"`: Safety mode (send `st` + `time`/`otim` for better time management) - the one that works for TheTurk, which ignores `time`/`otim`. The `st` is the time left over the moves to go plus the increment, rounded down to whole seconds and never more than half the time left
+    - `"TimeOtimOnly"`: For V1 engines or engines with broken `level` command (send `time`/`otim` only)
+    - `"StWithTime"`: Safety mode (send `st` + `time`/`otim` for better time management) - for engines that ignore `time`/`otim`. The `st` is the time left over the moves to go plus the increment, rounded down to whole seconds and never more than half the time left
     - `"StOnly"`: Legacy mode (send `st` only, may cause poor time management)
     - `"AutoDetect"`: Probe `level` command at runtime, fallback to `TimeOtimOnly` on error
   - **StartupCommands** (array of strings): Commands to send to the engine after initialization (after `post` and `easy`). Useful for engines requiring specific setup commands. Default: `[]`
   - **PreGoDelayMs** (int): pause between the time commands (`time`/`otim`, or `st`) and `go`, so an engine without `ping` support has read its clock before it starts thinking. An engine with `ping` gets `go` at once (`CommandDelayMs` still pauses before it). Default: `100`; `0` sends `go` at once.
-  - **MinLevelIncrement** (int): the least increment, in whole seconds, the `level` command states. `level` takes whole seconds and the increment is rounded down (0.1 s is sent as 0, 0.5 s as 0), so the engine is never told more than it gets; an engine that only searches with an increment of at least 1 gets `1` here (Jonny). A game without any increment (10+0) is sent as it is. Default: `0`
-  - **CommandDelayMs** (int): pause in milliseconds before each line after the first when several are sent at once (`force`, `setboard`, `st`, `time`, `otim`). For an engine that fails when commands arrive together (TheTurk: `20`). The clock starts after `go`, so the pause costs the engine no time. Default: `0`
+  - **MinLevelIncrement** (int): the least increment, in whole seconds, the `level` command states. `level` takes whole seconds and the increment is rounded down (0.1 s is sent as 0, 0.5 s as 0), so the engine is never told more than it gets; an engine that only searches with an increment of at least 1 gets `1` here. A game without any increment (10+0) is sent as it is. Default: `0`
+  - **CommandDelayMs** (int): pause in milliseconds before each line after the first when several are sent at once (`force`, `setboard`, `st`, `time`, `otim`, and at start-up `post`, `easy`, `level`, the feature replies and the `StartupCommands`). For an engine that fails when commands arrive together (for example `20`). The clock starts after `go`, so the pause costs the engine no time. Default: `0`
   - **ForceV1Mode** (bool): If `true`, forces Winboard V1 protocol mode (skips protover 2 negotiation, uses conservative defaults). Use this for very old engines that don't understand protover 2 at all. Default: `false`
-  - **RequiresLevelForThinkingOutput** (bool): If `true`, sends a dummy `level 0 5 0` command at startup to enable standard thinking output format. It is sudden death, so an engine that keeps it never budgets for a clock it thinks comes back at move 40. Use this for engines that need `level` to enable output but have broken level-based time management (like Comet). **Note:** This is compatible with `TimeOtimOnly` strategy - the dummy level is sent only at startup, while time/otim are used during games. Default: `false`
-  - **Use4FieldFen** (bool): If `true`, sends 4-field FEN format (position, side, castling, en passant) instead of full 6-field FEN (which includes halfmove clock and fullmove number) in `setboard` commands. Use this for very old engines that crash or hang on 6-field FEN (like TheTurk). Default: `false`
+  - **RequiresLevelForThinkingOutput** (bool): If `true`, sends a dummy `level 0 5 0` command at startup to enable standard thinking output format. It is sudden death, so an engine that keeps it never budgets for a clock it thinks comes back at move 40. Use this for engines that need `level` to enable output but have broken level-based time management. **Note:** This is compatible with `TimeOtimOnly` strategy - the dummy level is sent only at startup, while time/otim are used during games. Default: `false`
+  - **Use4FieldFen** (bool): If `true`, sends 4-field FEN format (position, side, castling, en passant) instead of full 6-field FEN (which includes halfmove clock and fullmove number) in `setboard` commands. Use this for very old engines that crash or hang on 6-field FEN. Default: `false`
 
 ### Contempt Settings
 
@@ -131,23 +131,23 @@ For engines using the Winboard/XBoard protocol, you can optionally specify `Winb
 }
 ```
 
-#### Winboard Engine with Broken Level Support (Comet)
+#### Winboard Engine with a Broken `level` Command
 
-Comet has broken `level` command for time management but requires it to enable standard thinking output. Use `TimeOtimOnly` strategy for time control + `RequiresLevelForThinkingOutput` flag.
+For an engine whose `level` command breaks its time management but which needs a `level` to print thinking output: `TimeOtimOnly` for the clock, and `RequiresLevelForThinkingOutput` for the output.
 
 ```json
 {
-  "Name": "Comet",
-  "Alias": "Comet",
-  "Version": "B.68",
+  "Name": "OldEngine",
+  "Alias": "OldEngine",
+  "Version": "1.0",
   "TimeControlID": 1,
   "Rating": 2200,
   "Dev": "N/A",
-  "LogoPath": "Img/imgEB/Comet.png",
+  "LogoPath": "Img/engine.png",
   "Protocol": "Winboard",
   "ContemptEnabled": false,
   "NegativeContemptAllowed": false,
-  "Path": "C:/Dev/Chess/Engines/Comet_B68.exe",
+  "Path": "C:/Engines/OldEngine.exe",
   "NetworkPath": "",
   "Args": "",
   "Options": {},

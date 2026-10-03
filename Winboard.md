@@ -79,8 +79,8 @@ Configure via `WinboardConfig.TimeControlStrategy` in engine config:
 | Strategy | Commands Sent | When to Use |
 |----------|---------------|-------------|
 | `LevelWithTime` | `level` once + `time`/`otim` per move | Modern engines (default) |
-| `TimeOtimOnly` | `time`/`otim` only | Engines with broken `level` (Comet) |
-| `StWithTime` | `st` + `time`/`otim` | Engines that ignore `time`/`otim` (TheTurk) |
+| `TimeOtimOnly` | `time`/`otim` only | Engines with a broken `level` command |
+| `StWithTime` | `st` + `time`/`otim` | Engines that ignore `time`/`otim` |
 | `StOnly` | `st` only | Very old engines (may cause poor time use) |
 | `AutoDetect` | Probe `level`, fallback if error | Unknown engines |
 
@@ -95,12 +95,17 @@ Configure via `WinboardConfig.TimeControlStrategy` in engine config:
 **`otim N`** - Opponent's remaining time in centiseconds
 **`st N`** - Think for exactly N seconds
 
+With `StWithTime` and `StOnly` the `st` is worked out from the time left and the increment: the
+time left over the moves still to play (about 40, at least 10) plus the increment, rounded down to
+whole seconds, and never more than half the time left. Under a second a move it is `st 0`, the
+engine's fastest move, so such engines need a time control that leaves at least a second a move.
+
 ## What EngineBattle Reads From the Engine
 
 **Its move**, in the two forms the protocol defines and no other:
 - `move e2e4`
-- `1. ... e2e4` (or `1...e2e4`) - the older form (Comet). The `...` is required even when the
-  engine plays White; `12. e4` without it is not a move.
+- `1. ... e2e4` (or `1...e2e4`) - the older form. The `...` is required even when the engine
+  plays White; `12. e4` without it is not a move.
 
 The move may be in coordinates (`e2e4`, `e7e8q`, `e7e8=q`; a pawn's `e7e8` without the piece is
 a queen) or SAN (`Nf3`, `O-O`, `0-0`). A move that is not legal in the position the engine was
@@ -111,9 +116,9 @@ a move alone on its line) gets one warning in the log, so an engine that announc
 way is seen for what it is.
 
 **Its thinking lines** (`depth score time nodes pv`): the PV may be in SAN or coordinates, with
-move numbers. Marks on the moves are dropped - Comet's `g1f3?` and `b1c3!`, check signs, Crafty's
-`<HT>`, `ep` - castling with zeros (`0-0`, TheTurk) is read as `O-O`, and a promotion without its
-piece (`a7a8`, Comet) as a queen. The PV ends at the first move that does not fit the position.
+move numbers. Marks engines put on the moves are dropped (`?`, `!`, check signs, `<HT>`, `ep`),
+castling written with zeros (`0-0`) is read as `O-O`, and a promotion without its piece (`a7a8`)
+as a queen. The PV ends at the first move that does not fit the position.
 
 **A resignation**: `resign`, or a claim of its own loss made on its move (`0-1 {White resigns}`
 from White). The game ends as a resignation (reason `RS`). Before, EngineBattle ignored it and the
@@ -178,6 +183,21 @@ then usually sits silent until it loses on time, and this line says why.
 their own `time` (Comet). EngineBattle sends both clocks as they are. Give such an engine a
 longer time control.
 
+### Engine loses on time at fast time controls
+
+**Symptoms:** The engine loses on time at blitz, whatever strategy is used.
+
+**Cause:** Some engines never move faster than a fraction of a second, whatever their clock says.
+EngineBattle cannot make them faster; give them a longer time control.
+
+### Engine crashes or hangs now and then at the start of a game
+
+**Symptoms:** The engine disconnects or sits silent at a game start, not every time.
+
+**Cause:** Some engines fail when several commands arrive at once. Set `CommandDelayMs` (for
+example `20`) to put a short pause between them; the clock starts after `go`, so it costs the
+engine no time.
+
 ## Diagnostic Tools
 
 ### Manual Testing
@@ -220,7 +240,7 @@ Where:
 ### The WinboardConfig fields
 
 Everything the `WinboardConfig` block of an engine def can hold; the examples below show
-the ones that matter for each engine. Full descriptions in [EngineDefConfig.md](EngineDefConfig.md).
+typical combinations. Full descriptions in [EngineDefConfig.md](EngineDefConfig.md).
 
 - **TimeControlStrategy**: `LevelWithTime` (default), `AutoDetect`, `TimeOtimOnly`, `StWithTime`, `StOnly` - see *Time Control Strategies* above.
 - **SideToMovePOV**: `true` when the engine reports its scores from White's point of view, as Crafty does, instead of the side to move that the protocol expects (default `false`). The name says the opposite of what it does; it is kept so existing defs keep working.
@@ -229,27 +249,29 @@ the ones that matter for each engine. Full descriptions in [EngineDefConfig.md](
 - **ForceV1Mode**: skip `protover 2` negotiation for engines that predate it (default `false`).
 - **StartupCommands**: extra commands sent once after `post` and `easy`, e.g. `["level 16"]` (default `[]`).
 - **PreGoDelayMs**: pause between the time commands and `go` for engines without `ping` support (default `100`; `0` = none). An engine with `ping` gets `go` at once; one that still needs a pause gets it from `CommandDelayMs`.
-- **MinLevelIncrement**: the least increment, in whole seconds, the `level` command states (default `0`). `level` takes whole seconds and the increment is rounded down - 0.1 s becomes 0 - so an engine that only searches with an increment of at least 1 gets `1` here (Jonny plays instantly otherwise). A game without any increment (10+0) is sent as it is.
-- **CommandDelayMs**: pause in milliseconds before each line after the first when EngineBattle sends several at once - `force`, `setboard`, `st`, `time`, `otim` (default `0`). For an engine that fails when commands arrive together (TheTurk). The clock starts after `go`, so the pause costs the engine no time.
+- **MinLevelIncrement**: the least increment, in whole seconds, the `level` command states (default `0`). `level` takes whole seconds and the increment is rounded down - 0.1 s becomes 0 - so an engine that only searches with an increment of at least 1 gets `1` here (some play instantly otherwise). A game without any increment (10+0) is sent as it is.
+- **CommandDelayMs**: pause in milliseconds before each line after the first when EngineBattle sends several at once - `force`, `setboard`, `st`, `time`, `otim`, and at start-up `post`, `easy`, `level`, the feature replies and the `StartupCommands` (default `0`). For an engine that fails when commands arrive together. The clock starts after `go`, so the pause costs the engine no time.
 
 
-The examples show only the fields that matter for each engine; a def that loads also needs the required fields of every engine def (`TimeControlID`, `Version`, `Rating`, `LogoPath`, `NetworkPath`, `Options`), see [EngineDefConfig.md](EngineDefConfig.md).
+The examples show only the fields that matter for each case; a def that loads also needs the required fields of every engine def (`TimeControlID`, `Version`, `Rating`, `LogoPath`, `NetworkPath`, `Options`), see [EngineDefConfig.md](EngineDefConfig.md).
 
-### Standard Engine (Crafty)
+### Standard engine
+Most engines need nothing beyond the protocol:
 ```json
 {
-  "Name": "Crafty",
+  "Name": "MyEngine",
   "Protocol": "Winboard",
-  "Path": "C:/Engines/Crafty.exe"
+  "Path": "C:/Engines/MyEngine.exe"
 }
 ```
 
-### Engine with Broken Level (Comet)
+### Engine with a broken `level` command
+Sent only `time`/`otim`; the dummy `level` is for an engine that prints no thinking lines without one:
 ```json
 {
-  "Name": "Comet",
+  "Name": "OldEngine",
   "Protocol": "Winboard",
-  "Path": "C:/Engines/Comet.exe",
+  "Path": "C:/Engines/OldEngine.exe",
   "WinboardConfig": {
     "TimeControlStrategy": "TimeOtimOnly",
     "RequiresLevelForThinkingOutput": true
@@ -257,18 +279,14 @@ The examples show only the fields that matter for each engine; a def that loads 
 }
 ```
 
-Comet (B.68) never answers in under about a quarter of a second, whatever its clock says: told it
-has 0.1 s left, it still searches for 0.26 s (in the middlegame up to a second). At blitz it loses
-on time - at 20+0.2 about half its games, the same with `LevelWithTime` and with no pause before
-`go`; at 60+1 none. Give it 60+1 or longer. It announces its move as `1. ... e2e4` rather than
-`move e2e4`, which EngineBattle reads.
-
-### Very Old Engine (TheTurk)
+### Very old engine
+One that ignores `time`/`otim` and keeps only `st`, reads only 4-field FENs, predates `protover 2`
+and wants a pause between commands:
 ```json
 {
-  "Name": "TheTurk",
+  "Name": "VeryOldEngine",
   "Protocol": "Winboard",
-  "Path": "C:/Engines/TheTurk.exe",
+  "Path": "C:/Engines/VeryOldEngine.exe",
   "WinboardConfig": {
     "TimeControlStrategy": "StWithTime",
     "Use4FieldFen": true,
@@ -277,18 +295,6 @@ on time - at 20+0.2 about half its games, the same with `LevelWithTime` and with
   }
 }
 ```
-
-TheTurk ignores `time`/`otim` and misreads `level` with minutes and seconds, so `st` (whole
-seconds a move) is the only control it keeps; with `TimeOtimOnly` it thinks 10 s a move whatever
-the clock. EngineBattle works the `st` out from the time left and the increment, rounded down so
-the engine never gets more than it has, and never more than half the time left: 30+0.5 gives
-`st 1`, 60+1 `st 2`. Under a second a move -
-10+0.1, or a short clock late in a game - it is `st 0`, a depth-1 move, so give it 30+0.5 or
-longer.
-
-TheTurk also crashes now and then (a `NullReferenceException` in its own command queue) when the
-position and time commands arrive in one burst - about 3 to 7 game starts in 100. `CommandDelayMs:
-20` spaces them out; with it, none crashed in 400 starts.
 
 ### Engine that reports from White's point of view
 ```json
@@ -302,23 +308,17 @@ position and time commands arrive in one burst - about 3 to 7 game starts in 100
 }
 ```
 
-### Engine that needs a whole-second increment (Jonny)
+### Engine that needs a whole-second increment
 ```json
 {
-  "Name": "Jonny",
+  "Name": "IncrementEngine",
   "Protocol": "Winboard",
-  "Path": "C:/Engines/Jonny.exe",
+  "Path": "C:/Engines/IncrementEngine.exe",
   "WinboardConfig": {
     "MinLevelIncrement": 1
   }
 }
 ```
-
-### Engines too slow for blitz
-
-Some engines have a floor under their move time, whatever the clock says, and lose on time at
-fast controls: Comet (about 0.25 s, see above) and TheKing (about 0.43 s; it lost 4 of 4 at
-10+0.1 and none at 30+0.5). Give them 30+0.5 or longer.
 
 ## See Also
 
