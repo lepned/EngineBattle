@@ -354,6 +354,63 @@ internal partial class MainWindow : Window
     private static readonly double[] ZoomSteps = { 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0 };
 
     private void OnMenuExit(object sender, RoutedEventArgs e) => Close();
+    private void OnMenuNewTournament(object sender, RoutedEventArgs e) => NewTournament();
+    private void OnMenuOpenTournament(object sender, RoutedEventArgs e) => _ = OpenTournamentAsync();
+
+    private static readonly System.Net.Http.HttpClient ServerClient = new() { Timeout = TimeSpan.FromSeconds(30) };
+    private string? _lastTournamentFolder;
+
+    /// Opens a page of the app's own server in the window.
+    private void ShowServerPage(string path)
+    {
+        var baseUrl = _server?.BaseUrl;
+        if (string.IsNullOrEmpty(baseUrl) || WebView.CoreWebView2 is null) return;
+        WebView.CoreWebView2.Navigate(new Uri(new Uri(baseUrl), path).ToString());
+    }
+
+    /// File > New Tournament: the Tournament creator.
+    private void NewTournament() => ShowServerPage("/tools/tournament-creator");
+
+    /// File > Open Tournament: Windows' own file dialog, here in the shell - the tournament page is
+    /// streamed and shows no picker. The server copies the file in as the current tournament.json
+    /// (backing up the old one) and the tournament page is shown with it.
+    private async Task OpenTournamentAsync()
+    {
+        try
+        {
+            var baseUrl = _server?.BaseUrl;
+            if (string.IsNullOrEmpty(baseUrl)) return;
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Open Tournament",
+                Filter = "Tournament files (*.json)|*.json|All files (*.*)|*.*",
+                CheckFileExists = true,
+            };
+            if (_lastTournamentFolder is not null && Directory.Exists(_lastTournamentFolder))
+                dialog.InitialDirectory = _lastTournamentFolder;
+            if (dialog.ShowDialog(this) != true) return;
+            _lastTournamentFolder = Path.GetDirectoryName(dialog.FileName);
+
+            var body = new System.Net.Http.StringContent(JsonSerializer.Serialize(new { path = dialog.FileName }), System.Text.Encoding.UTF8, "application/json");
+            using var response = await ServerClient.PostAsync(new Uri(new Uri(baseUrl), "/api/tournament/open"), body);
+            var text = await response.Content.ReadAsStringAsync();
+            var ok = false;
+            var message = $"The server answered {(int)response.StatusCode}.";
+            try
+            {
+                using var doc = JsonDocument.Parse(text);
+                ok = doc.RootElement.TryGetProperty("ok", out var o) && o.GetBoolean();
+                if (doc.RootElement.TryGetProperty("message", out var m)) message = m.GetString() ?? message;
+            }
+            catch (JsonException) { }
+            if (ok) ShowServerPage("/tournament");
+            else MessageBox.Show(this, message, "Open Tournament", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Open Tournament", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
 
     /// The drawer belongs to the web app, so the shell asks rather than reaches in.
     private void OnMenuToggleDrawer(object sender, RoutedEventArgs e)

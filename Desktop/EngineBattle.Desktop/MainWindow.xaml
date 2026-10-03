@@ -119,6 +119,9 @@
                 </MenuItem.Header>
             </MenuItem>
             <MenuItem Header="_File">
+                <MenuItem Header="_New Tournament..." Click="OnMenuNewTournament" />
+                <MenuItem Header="_Open Tournament..." Click="OnMenuOpenTournament" />
+                <Separator />
                 <MenuItem Header="E_xit" InputGestureText="Alt+F4" Click="OnMenuExit" />
             </MenuItem>
             <MenuItem Header="_View">

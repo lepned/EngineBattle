@@ -138,9 +138,11 @@ Your browser opens automatically. If not, navigate to the localhost URL shown in
 
 EngineBattle plays chess engines against each other, so the first thing it needs is at least two engine definitions - a small JSON file each, pointing at an engine you already have on this machine (Stockfish, Lc0, Ceres, ...). The tournament page shows these three steps until they are done, with a button for each:
 
-1. **Engine definitions** - Tools > Engine creator writes one for each engine (pick the executable, set its options).
-2. **Tournament setup** - Tools > Tournament creator picks the engines, the time control, the openings, where the games are written, and the branding on the tournament page (description, main logo, logo sizes, and the machine shown in the banner - filled in from what the computer reports).
+1. **Engine definitions** - Setup & Settings > Engine creator writes one for each engine (pick the executable, set its options).
+2. **Tournament setup** - Tournament > New tournament (the Tournament creator) picks the engines, the time control, the openings, where the games are written, and the branding on the tournament page (description, main logo, logo sizes, and the machine shown in the banner - filled in from what the computer reports).
 3. **Run** - back on the tournament page, press Ctrl+R.
+
+Another tournament file is opened from **Tournament > Open tournament** in the menu (in the desktop app, **File > Open Tournament**): it becomes the current `tournament.json`, and the old one is kept beside it as `tournament_<date_time>.json`. Not while a tournament is running.
 
 ![First run](WebGUI/wwwroot/Img/FirstRun.png)
 *The tournament page until the engines are in place: the three steps, each with its button.*
@@ -224,7 +226,7 @@ absolute names like `e4`; field names are camelCase.
 
 ## Configuration
 
-The creators under **Tools** in the menu (Engine creator, Tournament creator) do all of this from the GUI, and the settings that decide how the tournament page looks - text sizes, chart heights, PV boards - are set on the page itself and remembered per screen (see [Running a Tournament](#running-a-tournament)). What follows is the reference for the two files they write, for anyone who prefers a text editor.
+The creators in the menu (Setup & Settings > Engine creator, Tournament > New tournament) do all of this from the GUI, and the settings that decide how the tournament page looks - text sizes, chart heights, PV boards - are set on the page itself and remembered per screen (see [Running a Tournament](#running-a-tournament)). What follows is the reference for the two files they write, for anyone who prefers a text editor.
 
 Every engine needs an engine definition, and the tournament needs to know where they are. In `tournament.json`:
 

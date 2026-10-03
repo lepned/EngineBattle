@@ -707,6 +707,13 @@ public partial class Tournaments
 	{
 		if (FeedMode)
 			return;   // feed mode is driven externally; never start a local engine tournament
+		// Ctrl+R during a tournament starts nothing: it went on to the fullscreen, the warnings, the
+		// resume questions and the engine check, and ended in CreateRunner's "already running" throw
+		if (TournamentSvc.IsRunning)
+		{
+			Snackbar.Add("A tournament is already running.", Severity.Info);
+			return;
+		}
 		await PrepareRun();
 		ShowOpeningWarnings();
 		if (!await ConfirmCupResumeOrNew())

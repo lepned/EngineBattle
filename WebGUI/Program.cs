@@ -166,6 +166,7 @@ builder.Services.AddSingleton<OpeningExplorerService>();
 // Register the shutdown token provider so UI/services can link the tournament
 builder.Services.AddSingleton<ShutdownTokenProvider>();
 builder.Services.AddSingleton<TournamentService>();
+builder.Services.AddSingleton<TournamentFileService>();
 builder.Services.AddSingleton<JsonFeedService>();
 builder.Services.AddSingleton<WebGUI.Services.Ceres.CeresFeedBridge>();
 builder.Services.AddSingleton<LiveFeedReplayer>();
@@ -247,6 +248,32 @@ app.MapPost("/api/livefeed", async (HttpContext ctx, JsonFeedService feed) =>
         if (feed.Ingest(stamped)) n++;
     }
     return Results.Ok(new { ingested = n });
+});
+
+// Open a tournament file (the desktop shell's File > Open Tournament): copies it in as the current
+// tournament.json (TournamentFileService). Only from this machine - the file lands in wwwroot,
+// which the server serves - and only a file that reads as a tournament.
+app.MapPost("/api/tournament/open", async (HttpContext ctx, TournamentFileService files) =>
+{
+    var remote = ctx.Connection.RemoteIpAddress;
+    if (remote == null || !System.Net.IPAddress.IsLoopback(remote))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    // JSON only: a web page in the local browser cannot send that cross-site without a CORS
+    // preflight, which this server does not grant - a plain form or text post is refused
+    if (!ctx.Request.HasJsonContentType())
+        return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+    string path;
+    try
+    {
+        using var doc = await System.Text.Json.JsonDocument.ParseAsync(ctx.Request.Body);
+        path = doc.RootElement.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "";
+    }
+    catch (System.Text.Json.JsonException)
+    {
+        return Results.BadRequest(new { ok = false, message = "Expected {\"path\": \"...\"}." });
+    }
+    var (ok, message) = files.Open(path);
+    return Results.Json(new { ok, message });
 });
 
 EnsureTournamentJsonIsLoaded();

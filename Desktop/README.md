@@ -59,7 +59,7 @@ commands; the app's navigation stays in its drawer:
 | Menu | Items |
 |---|---|
 | ☰ | Show or hide the navigation drawer |
-| File | Exit |
+| File | New Tournament (the Tournament creator), Open Tournament (makes another tournament.json the current one; the old one is kept as `tournament_<date_time>.json`), Exit |
 | View | Zoom In, Zoom Out, Reset Zoom (shows the current level), Reload, Full Screen |
 | Tools | Server Output, Developer Tools |
 | Help | About EngineBattle (shell version, WebView2 runtime, server URL) |

@@ -2,7 +2,7 @@
 
 This document provides an overview of the `EngineDef.json` configuration file used in the EngineBattle application. This file defines the settings and parameters for configuring a chess engine.
 
-You rarely write one by hand. **Tools > Engine creator** in the GUI, and `mkdef` in the console,
+You rarely write one by hand. **Setup & Settings > Engine creator** in the GUI, and `mkdef` in the console,
 both ask the engine itself: they start it, read what it answers to `uci` (name, author, every
 option with its default) and write the def from that. The two share one implementation.
 

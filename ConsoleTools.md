@@ -526,7 +526,7 @@ dotnet run -c release -- mkdef <engine.exe> [--out folder] [--net file] [--tb fo
 
 An engine def from the engine itself: starts it, reads its `uci` answer (name, author, every
 option with its default) and writes `<Name without spaces>.json` into `--out` (default: the
-current folder). Same code as Tools > Engine creator in the GUI. `--net` goes into the
+current folder). Same code as Setup & Settings > Engine creator in the GUI. `--net` goes into the
 engine's own network option (Lc0's `WeightsFile`, Ceres' `Network`) and its folder into
 `NetworkPath`; `--tb` fills `SyzygyPath`; `--uci` overrides a default; `--base` carries an
 existing def's values over; nothing is overwritten without `--force`. Aliases: `md`. Details

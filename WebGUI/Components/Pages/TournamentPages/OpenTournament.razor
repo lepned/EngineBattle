@@ -1,0 +1,65 @@
+@page "/tournament/open"
+@inject GlobalSettingsService SettingsService
+@inject IDialogService DialogService
+@inject TournamentFileService TournamentFiles
+@inject NavigationManager Nav
+@using WebGUI.Services
+@using static WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog
+
+@* Open another tournament.json. Its own page, not a picker on the tournament page, which is
+   streamed. The desktop shell has the same under File > Open Tournament. *@
+
+<PageTitle>Open Tournament</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
+	<MudPaper Class="pa-5" Elevation="2">
+		<MudText Typo="Typo.h5" GutterBottom="true">Open Tournament</MudText>
+		<MudText Typo="Typo.body2" Class="mb-2">
+			Make another tournament file the current one. It is copied in as <code>wwwroot/tournament.json</code>,
+			the file EngineBattle runs, and the current one is kept beside it as <code>tournament_&lt;date_time&gt;.json</code>.
+		</MudText>
+		<MudText Typo="Typo.caption" Class="mb-4" Style="display:block; opacity:0.8">Not while a tournament is running.</MudText>
+
+		<MudButton Variant="Variant.Filled" Color="Color.Primary"
+				   StartIcon="@Icons.Material.Filled.FolderOpen" OnClick="Browse" Disabled="@busy">
+			Pick tournament file
+		</MudButton>
+
+		@if (!string.IsNullOrEmpty(message))
+		{
+			<MudAlert Class="mt-4" Severity="@(ok ? Severity.Success : Severity.Error)" Variant="Variant.Outlined">@message</MudAlert>
+		}
+	</MudPaper>
+</MudContainer>
+
+@code {
+	private string message = "";
+	private bool ok;
+	private bool busy;
+
+	private async Task Browse()
+	{
+		var parameters = new DialogParameters<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>
+		{
+			{ x => x.InitialPath, SettingsService.Settings.TournamentConfigFolder },
+			{ x => x.FileFilter, "*.json" },
+			{ x => x.Mode, FileBrowserMode.File }
+		};
+		var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true };
+		var dialog = await DialogService.ShowAsync<WebGUI.Components.Layout.ExperimentalLayout.FileBrowserDialog>("Open tournament", parameters, options);
+		var result = await dialog.Result;
+		if (result == null || result.Canceled || result.Data is not string path)
+			return;
+		busy = true;
+		try
+		{
+			(ok, message) = TournamentFiles.Open(path);
+		}
+		finally
+		{
+			busy = false;
+		}
+		if (ok)
+			Nav.NavigateTo("/tournament");
+	}
+}
