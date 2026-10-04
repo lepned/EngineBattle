@@ -247,8 +247,12 @@ let tryGetMovePolicyAndTop (move:string) (engine: ChessEngine) (pos:string)  =
               Some (-1, rankForMovePlayed, movePolicy, topPolicy)
           |_ -> None
 
-let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float)   =
+/// The ranks of the moves played on the board, by `probe` (policy or Q): each played move's and the
+/// best move's, for one side ("w", "b") or "all", book moves skipped. A move counts only when the best
+/// move's |Q| lies in qMin..qMax; the third value is how many did not.
+let private rankSequence probe (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float) =
       let policies = ResizeArray<PolicyRankInfo>()
+      let mutable outsideFilter = 0
       let startFen = board.StartPosition
       let playoutBoard = Board()
       let checkWhite = player.ToLower() = "w"
@@ -269,48 +273,22 @@ let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player
               else
                   false
           if checkMove && move.Move.Comments.ToLower().Contains "book" |> not then
-              match tryGetMoveWithQAndTop move.Move.LongSan engine pos with
+              match probe move.Move.LongSan engine pos with
               |Some (qRank, pRank, move, topMove) ->
                   let topQEval = abs topMove.Q
                   if topQEval <= qMax  && topQEval >= qMin then
                       makeShortSan [move;topMove] &playoutBoard
                       let moveNr = playoutBoard.NextMoveNumber()
-                      let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite, moveNr)
+                      // Create takes the best move first, then the one played
+                      let policy = PolicyRankInfo.Create(qRank, pRank, topMove, move, isWhite, moveNr)
                       policies.Add (policy)
+                  else outsideFilter <- outsideFilter + 1
               |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
           playoutBoard.PlayUciMove move.Move.LongSan
-      engine.Network, policies
+      engine.Network, policies, outsideFilter
 
-let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float)   =
-      let policies = ResizeArray<PolicyRankInfo>()
-      let startFen = board.StartPosition
-      let playoutBoard = Board()
-      let checkWhite = player.ToLower() = "w"
-      let checkBlack = player.ToLower() = "b"
-      let checkAll = player.ToLower() = "all"
-      playoutBoard.LoadFen startFen
-      playoutBoard.StartPosition <- startFen
-      for move in board.MovesAndFenPlayed do
-          let pos = playoutBoard.PositionWithMoves()
-          let isWhite = playoutBoard.Position.STM = 0uy
-          let checkMove =
-              if checkAll then
-                  true
-              elif checkWhite then
-                  isWhite
-              elif checkBlack then
-                  not isWhite
-              else
-                  false
-          if checkMove && move.Move.Comments.ToLower().Contains "book" |> not then
-              match tryGetMovePolicyAndTop move.Move.LongSan engine pos with
-              |Some (qRank, pRank, move, topMove) ->
-                  let topQEval = abs topMove.Q
-                  if topQEval <= qMax  && topQEval >= qMin then
-                      makeShortSan [move;topMove] &playoutBoard
-                      let moveNr = playoutBoard.NextMoveNumber()
-                      let policy = PolicyRankInfo.Create(qRank, pRank, move, topMove, isWhite, moveNr)
-                      policies.Add (policy)
-              |None -> printfn $"Could not find policy for move {move.Move.LongSan}({move.ShortSan}) in position {pos}"
-          playoutBoard.PlayUciMove move.Move.LongSan
-      engine.Network, policies
+let tryGetMoveQAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float) =
+      rankSequence tryGetMoveWithQAndTop engine board player qMin qMax
+
+let tryGetMovePolicyAndTopForPosSequence (engine: ChessEngine) (board: Board) (player:string) (qMin:float) (qMax:float) =
+      rankSequence tryGetMovePolicyAndTop engine board player qMin qMax

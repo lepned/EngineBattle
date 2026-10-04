@@ -1514,11 +1514,12 @@
             }
             if (analyzer == null) return;
             var (min, max) = PolicyFilter();
-            Tuple<string, List<PolicyRankInfo>> Ranks(string player) =>
+            Tuple<string, List<PolicyRankInfo>, int> Ranks(string player) =>
                 q ? analyzer.TryGetMoveQAndTopForPosSequence(player, min, max)
                   : analyzer.TryGetMovePolicyAndTopForPosSequence(player, min, max);
 
             var results = new List<PolicyRankInfo>();
+            var outsideFilter = 0;
             string net;
             if (allGames)
             {
@@ -1530,8 +1531,9 @@
                     LoadAndOpenPGNGame(game);
                     var player = game.GameMetaData.White.Trim() == playerInSearch ? "w"
                                : game.GameMetaData.Black.Trim() == playerInSearch ? "b" : "all";
-                    var (used, res) = Ranks(player);
+                    var (used, res, outside) = Ranks(player);
                     results.AddRange(res);
+                    outsideFilter += outside;
                     neuralNet = used;
                 }
                 net = neuralNet;
@@ -1539,8 +1541,9 @@
             else
             {
                 logger.LogInformation("Starting analysis with {Fen} and moves {History}", ChessBoard.FEN(), ChessBoard.GetMoveHistory());
-                var (used, res) = Ranks("all");
+                var (used, res, outside) = Ranks("all");
                 results.AddRange(res);
+                outsideFilter = outside;
                 net = used;
                 foreach (var item in res)
                     logger.LogInformation("{Player} {Rank} Move played {MovePlayed} Policy {Policy:F2}% Top move {Top} policy {TopPolicy:F2}%",
@@ -1548,6 +1551,8 @@
                 _ = searchInfoPlot?.SetRankSequence(res, net, rankType: rankType, isVisible: !showNPlot);
             }
             analyzer.StopDistributionEngine();
+            logger.LogInformation("{RankType} rank: {Analysed} moves analysed, {Ranked} ranked, {Outside} outside the |Q| filter {Min:F2}-{Max:F2} (Settings)",
+                rankType, results.Count + outsideFilter, results.Count, outsideFilter, min, max);
             ShowRankDistribution(results, net, rankType);
         }
         catch (Exception ex)
@@ -1573,7 +1578,7 @@
     // Rank-1 shares per side, the rank distribution in the log, and its chart.
     private void ShowRankDistribution(List<PolicyRankInfo> results, string net, string rankType)
     {
-        if (results.Count == 0) { logger.LogInformation("{RankType} rank analysis: no moves to rank", rankType); return; }
+        if (results.Count == 0) return;
         foreach (var white in new[] { true, false })
         {
             var rank1 = results.Count(t => t.PolicyRank == 1 && t.IsWhite == white);
