@@ -442,7 +442,6 @@
     public List<string> InfoLineList = new();
     HotKeysContext keyContext;
     public List<KeyValuePair<int, EngineStatus>> dataList = new();
-    Dictionary<int, EngineStatus> data = new();
 
     public async Task ResetChartData()
     {
@@ -1068,7 +1067,7 @@
             var newAnalyzer = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, onUpdate, false));
             if (disposeCts.IsCancellationRequested || generation != engineGeneration)
             {
-                QuitOffThread(newAnalyzer);
+                EngineQuit.OffThread(newAnalyzer, logger);
                 return;
             }
             analyzer = newAnalyzer;
@@ -1096,15 +1095,9 @@
         engineGeneration++;
         startingAnalyzer = null;
         engineNameInUse = null;
-        QuitOffThread(analyzer);
+        EngineQuit.OffThread(analyzer, logger);
         analyzer = null;
         await Send(PanelModel.Event.EngineGone);
-    }
-
-    // Quit waits for the process (seconds): never on the page's thread
-    private static void QuitOffThread(AnalysisManager.SimpleEngineAnalyzer old)
-    {
-        if (old != null) _ = Task.Run(() => { try { old.Quit(); } catch { } });
     }
 
     // Whichever "Chart lines" slider is currently visible. showCharts is set for
@@ -1335,8 +1328,7 @@
 
     private void ShowRows()
     {
-        data = model.Rows.ToDictionary(kv => kv.Key, kv => kv.Value);
-        dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
+        dataList = model.Rows.Select(kv => new KeyValuePair<int, EngineStatus>(kv.Key, kv.Value)).OrderBy(e => e.Value.MultiPV).ToList();
         if (dataList.Count > 0) whitePV = dataList[0].Value.PV;
         UpdatePVState();
         StateHasChanged();
@@ -1480,7 +1472,8 @@
         {
             var evalStr = commentEval switch
             {
-                EvalType.CP cp => $"{cp.Info:+0.0;-0.0}",
+                // three sections: a near-zero negative would print "-+0.0" with two
+                EvalType.CP cp => $"{cp.Info:+0.0;-0.0;0.0}",
                 EvalType.Mate m => $"M{m.Info}",
                 _ => ""
             };
@@ -2065,6 +2058,7 @@
             logger.LogInformation("Engine {Old} replaced by {New}", engineNameInUse, Engine.Name);
             await ReplaceAnalyzer();
         }
+        // any new engine (the host's or the Engine button's): the views reset; the process is only replaced above
         if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
         {
             logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
@@ -2171,13 +2165,12 @@
     {
         Notifier.NotifyFen -= OnNotifyFen;
         disposeCts.Cancel();
-        // Disposed mid-search the 100ms uiTimer would otherwise stay alive forever:
-        // HandleUpdate early-returns after disposeCts, so the final BestMove can no
-        // longer stop it.
+        // Disposed mid-search the 100ms uiTimer would otherwise stay alive forever: updates are
+        // dropped after disposeCts, so the final BestMove can no longer stop it.
         StopSearchTimer();
         try { analyzer?.Stop(); } catch { }
         engineGeneration++;
-        QuitOffThread(analyzer);
+        EngineQuit.OffThread(analyzer, logger);
         logger.LogInformation("Disposing {page}", "EnginePanel");
         try
         {

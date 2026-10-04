@@ -4,6 +4,7 @@ open System
 open Xunit
 open ChessLibrary.EngineTypes
 open ChessLibrary.PlayModel
+open ChessLibrary.PageEngine
 
 let private s n = TimeSpan.FromSeconds(float n)
 let private blitz = Clocked (s 60, s 60, s 2, s 2)

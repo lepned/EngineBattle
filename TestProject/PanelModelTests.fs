@@ -4,6 +4,7 @@ open Xunit
 open ChessLibrary.EngineTypes
 open ChessLibrary.MiscTypes
 open ChessLibrary.PanelModel
+open ChessLibrary.PageEngine
 
 let private nodes n = { Limit = Nodes n; HasMove = true }
 let private run state events = events |> List.fold (fun (s, _) e -> step s e) (state, [])

@@ -47,7 +47,7 @@
             </select>
         </label>
         <label title="Number of engine lines">
-            <select class="kib-select" value="@pvLines" @onchange="OnPvLinesChanged">
+            <select class="kib-select" value="@model.Lines" @onchange="OnPvLinesChanged">
                 <option value="1">1 line</option>
                 <option value="3">3 lines</option>
                 <option value="5">5 lines</option>
@@ -142,7 +142,6 @@
 
     private bool overlayOn = true;
     private int limitSeconds = 5;
-    private int pvLines = 3;
     private string engineNote = "";
     private readonly CancellationTokenSource disposeCts = new();
 
@@ -320,12 +319,12 @@
         }
         if (Stale())
         {
-            QuitOffThread(created);
+            EngineQuit.OffThread(created, logger);
             return;
         }
         try
         {
-            created.AddSetoption(EngineOption.Create("MultiPV", pvLines.ToString()));
+            created.AddSetoption(EngineOption.Create("MultiPV", model.Lines.ToString()));
             analyzer = created;
             await Send(PanelModel.Event.EngineReady);
             StateHasChanged();
@@ -337,16 +336,9 @@
     private async Task ReplaceEngine()
     {
         engineGeneration++;
-        QuitOffThread(analyzer);
+        EngineQuit.OffThread(analyzer, logger);
         analyzer = null;
         await Send(PanelModel.Event.EngineGone);
-    }
-
-    // Quit waits for the process (seconds): never on the page's thread
-    private void QuitOffThread(AnalysisManager.SimpleEngineAnalyzer old)
-    {
-        if (old != null)
-            _ = Task.Run(() => { try { old.Quit(); } catch (Exception ex) { logger.LogWarning("Engine quit failed: {Msg}", ex.Message); } });
     }
 
     private async Task OnEngineSelected(ChangeEventArgs e)
@@ -563,7 +555,6 @@
     private async Task OnPvLinesChanged(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out var n)) return;
-        pvLines = n;
         await Send(PanelModel.Event.NewLinesChanged(n));
         if (running) await Send(PanelModel.Event.NewStart(CurrentRequest()));
     }
@@ -581,7 +572,7 @@
         disposeCts.Cancel();
         Notifier.NotifyFen -= OnNotifyFen;
         engineGeneration++;
-        QuitOffThread(analyzer);
+        EngineQuit.OffThread(analyzer, logger);
         analyzer = null;
         disposeCts.Dispose();
         return ValueTask.CompletedTask;

@@ -124,6 +124,7 @@
 
 		<!-- Analysis support modules (depend on engine, parser, configuration, GameAnalysis) -->
 		<Compile Include="Analysis\AnalysisHelper.fs" />
+		<Compile Include="Analysis\PageEngine.fs" />
 		<Compile Include="Analysis\PanelModel.fs" />
 		<Compile Include="Analysis\PlayModel.fs" />
 		<Compile Include="Analysis\AnalysisManager.fs" />

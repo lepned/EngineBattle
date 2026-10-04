@@ -6,6 +6,7 @@ module ChessLibrary.PanelModel
 open System
 open ChessLibrary.EngineTypes
 open ChessLibrary.MiscTypes
+open ChessLibrary.PageEngine
 
 type Limit =
   | Nodes of int
@@ -14,8 +15,6 @@ type Limit =
 
 /// What a start asks for, and whether the board's position has a move to search.
 type Request = { Limit: Limit; HasMove: bool }
-
-type EngineState = NotStarted | Starting | Ready
 
 type State =
   { Engine: EngineState

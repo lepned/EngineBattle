@@ -6,8 +6,7 @@ module ChessLibrary.ReviewModel
 open ChessLibrary.MiscTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.GameAccuracyAnalysis
-
-type EngineState = NotStarted | Starting | Ready
+open ChessLibrary.PageEngine
 
 type Review =
   { Positions: ReviewPosition array

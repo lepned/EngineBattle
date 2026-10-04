@@ -5,6 +5,7 @@ module ChessLibrary.PlayModel
 
 open System
 open ChessLibrary.EngineTypes
+open ChessLibrary.PageEngine
 
 type TimeControl =
   | Clocked of whiteBase: TimeSpan * blackBase: TimeSpan * whiteInc: TimeSpan * blackInc: TimeSpan
@@ -23,8 +24,6 @@ type BoardEnd =
 
 /// The board after a move (or at the start), as the page sees it.
 type Facts = { WhiteToMove: bool; Ply: int; End: BoardEnd option }
-
-type EngineState = NotStarted | Starting | Ready
 
 type Phase = Idle | Playing | Over
 

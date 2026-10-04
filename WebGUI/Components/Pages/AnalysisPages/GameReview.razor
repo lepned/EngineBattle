@@ -869,7 +869,7 @@
                 if (effect.IsStartEngine) _ = StartReviewEngine();
                 else if (effect.IsNewGame) reviewEngine?.NewGame();
                 else if (effect.IsStopEngine) reviewEngine?.Stop();
-                else if (effect.IsQuitEngine) { QuitOffThread(reviewEngine); reviewEngine = null; engineGeneration++; }
+                else if (effect.IsQuitEngine) { EngineQuit.OffThread(reviewEngine, logger); reviewEngine = null; engineGeneration++; }
                 else if (effect.IsCancelled) { reviewingAll = false; await RestoreGameView(); }
                 break;
         }
@@ -903,7 +903,7 @@
         }
         if (Stale())
         {
-            QuitOffThread(created);
+            EngineQuit.OffThread(created, logger);
             return;
         }
         try
@@ -916,17 +916,11 @@
         catch (Exception ex) { logger.LogError(ex, "Starting the review failed"); }
     }
 
-    // Quit waits for the process (seconds): never on the page's thread
-    private static void QuitOffThread(ChessLibrary.AnalysisEngine old)
-    {
-        if (old != null) _ = Task.Run(() => { try { old.Quit(); } catch { } });
-    }
-
     /// The review engine is dropped (a new config); a running review fails with the reason.
     private async Task ReplaceReviewEngine(string reason)
     {
         if (reviewEngine == null && model.Engine.IsNotStarted) return;
-        QuitOffThread(reviewEngine);
+        EngineQuit.OffThread(reviewEngine, logger);
         reviewEngine = null;
         engineGeneration++;
         await Send(ReviewModel.Event.NewEngineGone(reason));
@@ -1283,7 +1277,7 @@
     {
         disposeCts.Cancel();
         engineGeneration++;
-        QuitOffThread(reviewEngine);
+        EngineQuit.OffThread(reviewEngine, logger);
         reviewEngine = null;
         disposeCts.Dispose();
         return ValueTask.CompletedTask;

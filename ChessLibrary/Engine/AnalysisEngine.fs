@@ -490,7 +490,7 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     recordCommand command
     agent.Post (Ev (AnalysisMachine.Raw command))
 
-  /// A UCI script line (scriptLine): true when it was sent, false when refused.
+  /// A UCI script line (ScriptLine.Of): true when it was sent, false when refused.
   member this.Script(line: string) : bool =
     match ScriptLine.Of line with
     | AsOption command ->

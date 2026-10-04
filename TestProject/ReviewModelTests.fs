@@ -5,6 +5,7 @@ open ChessLibrary.EngineTypes
 open ChessLibrary.MiscTypes
 open ChessLibrary.GameAccuracyAnalysis
 open ChessLibrary.ReviewModel
+open ChessLibrary.PageEngine
 
 let private game (moves: string) =
   ChessLibrary.FullPGNParser.parsePgnString ("[White \"A\"]\n[Black \"B\"]\n[Result \"*\"]\n\n" + moves + " *\n") |> Seq.head

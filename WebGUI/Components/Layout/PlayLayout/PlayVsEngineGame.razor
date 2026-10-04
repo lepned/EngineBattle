@@ -342,17 +342,11 @@
     /// The old engine quits; a game with it is aborted.
     private async Task ReplaceEngine()
     {
-        QuitOffThread(analyzer);
+        EngineQuit.OffThread(analyzer, logger);
         analyzer = null;
         engineNameStarted = null;
         engineGeneration++;
         await Send(PlayModel.Event.NewEngineGone("the engine was changed", Now));
-    }
-
-    // Quit waits for the process (seconds): never on the page's thread
-    private static void QuitOffThread(AnalysisManager.SimpleEngineAnalyzer old)
-    {
-        if (old != null) _ = Task.Run(() => { try { old.Quit(); } catch { } });
     }
 
     private async Task Send(PlayModel.Event e)
@@ -388,7 +382,7 @@
             default:
                 // the load runs on; the model hears EngineReady or EngineGone when it is done
                 if (effect.IsStartEngine) _ = StartEngineNow();
-                else if (effect.IsQuitEngine) { QuitOffThread(analyzer); analyzer = null; engineGeneration++; }
+                else if (effect.IsQuitEngine) { EngineQuit.OffThread(analyzer, logger); analyzer = null; engineGeneration++; }
                 else if (effect.IsNewGame) analyzer?.NewGame();
                 else if (effect.IsStopEngine) analyzer?.Stop();
                 else if (effect.IsPlayPremove) _ = PlayPremoveLater();
@@ -454,7 +448,7 @@
         }
         if (Stale())
         {
-            QuitOffThread(created);
+            EngineQuit.OffThread(created, logger);
             return;
         }
         try
@@ -1019,7 +1013,7 @@
     {
         disposeCts.Cancel();
         StopClock();
-        QuitOffThread(analyzer);
+        EngineQuit.OffThread(analyzer, logger);
         logger.LogInformation("Disposing engines in {component}", "play-vs-engine game");
         disposeCts.Dispose();
         await Task.CompletedTask;
