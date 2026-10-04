@@ -88,3 +88,44 @@ let ``a return still wakes a waiter`` () =
     Assert.True(waiter.Wait(1000))
     Assert.Equal(a, waiter.Result)
     Assert.Equal(1, pool.Spawned)
+
+// ---------------------------------------------------------------------------
+// PoolMachine, the pure step behind it.
+// ---------------------------------------------------------------------------
+
+open ChessLibrary.PoolMachine
+
+let private run state events = events |> List.fold (fun (s, _) e -> step s e) (state, [])
+
+[<Fact>]
+let ``a respawn after an eviction takes the free slot, never a live instance's`` () =
+  // slots 0, 1, 2 live; 1 is evicted: the next spawn is slot 1, so its GPU is no one else's
+  let s, _ = run (initial 3) [ Borrow 1; Spawned (0, "a"); Borrow 2; Spawned (1, "b"); Borrow 3; Spawned (2, "c"); Evict 1 ]
+  let _, e = step s (Borrow 4)
+  Assert.Equal<Effect<string> list>([ Spawn 1 ], e)
+
+[<Fact>]
+let ``a waiter gets the next return, then the next freed slot`` () =
+  let s, _ = run (initial 1) [ Borrow 1; Spawned (0, "a"); Borrow 2; Borrow 3 ]
+  let s, e = step s (Return (0, "a"))
+  Assert.Equal<Effect<string> list>([ Give (2, 0, "a") ], e)
+  let _, e = step s (Evict 0)
+  Assert.Equal<Effect<string> list>([ Spawn 0 ], e)
+
+[<Fact>]
+let ``a failed spawn refuses its borrower and serves the next waiter`` () =
+  let ex = exn "no binary"
+  let s, _ = run (initial 1) [ Borrow 1; Borrow 2 ]
+  let s, e = step s (SpawnFailed (0, ex))
+  Assert.Equal<Effect<string> list>([ Refuse (1, ex); Spawn 0 ], e)
+  Assert.Equal<int list>([], s.Waiting)
+
+[<Fact>]
+let ``drain releases the idle instances and refuses waiters and later borrows`` () =
+  let s, _ = run (initial 1) [ Borrow 1; Spawned (0, "a"); Return (0, "a") ]
+  let s, e = step s Drain
+  Assert.Equal<Effect<string> list>([ Release [ "a" ] ], e)
+  let _, e = step s (Borrow 2)
+  match e with
+  | [ Refuse (2, _) ] -> ()
+  | other -> failwithf "%A" other

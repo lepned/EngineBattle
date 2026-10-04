@@ -27,6 +27,8 @@ module PairingHelper =
     let shuffleOpenings = Scheduler.Shared.shuffleOpenings
     let shuffleOpeningsWithSeed = Scheduler.Shared.shuffleOpeningsWithSeed
     let shuffleOpeningsForTournament = Scheduler.Shared.shuffleOpeningsForTournament
+    let seededRandom = Scheduler.Shared.seededRandom
+    let seededOrder = Scheduler.Shared.seededOrder
     let rotateListByOne = Scheduler.Shared.rotateListByOne
     let rotateOnce = Scheduler.Shared.rotateOnce
 
@@ -36,6 +38,7 @@ module PairingHelper =
     let seedOrder = Scheduler.Cup.seedOrder
     let autoSeedBands = Scheduler.Cup.autoSeedBands
     let seedByBands = Scheduler.Cup.seedByBands
+    let seedByBandsWith = Scheduler.Cup.seedByBandsWith
     let gamesPerMatchForRound = Scheduler.Cup.gamesPerMatchForRound
     let nextUnusedOpeningIndex = Scheduler.Cup.nextUnusedOpeningIndex
     let buildRemainingCupPairings = Scheduler.Cup.buildRemainingCupPairings

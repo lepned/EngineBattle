@@ -25,7 +25,7 @@ Cup mode is a single-elimination knockout tournament where players advance by wi
 | Field | Description |
 |-------|-------------|
 | `RoundPairIncrements` | Pairs per round. Each pair = 2 games. Example: `[1,2,3]` means Round 1 has 2 games, Round 2 has 4, Round 3 has 6. Rounds beyond the list reuse its last value, and an entry below 1 counts as 1. Defaults to `[1]` if empty. |
-| `SeedingStrategy` | `ByRating` (seeded bracket) or `Random` (shuffled bracket). |
+| `SeedingStrategy` | `ByRating` (seeded bracket) or `Random` (shuffled bracket). The shuffle comes from `Opening.Seed`, so the same config gives the same draw. |
 | `UniquePerMatchOnly` | When true, openings can repeat across matches but not within a match. |
 | `BracketPath` | JSON file for bracket state persistence and GUI updates. |
 | `RandomOpenings` | Randomize opening order; the shuffled order is persisted for resume. |
@@ -62,7 +62,7 @@ Uses band-based seeding to create a fair bracket:
 2. Divide into seeding bands based on bracket size.
 3. Place seeds so that top seeds meet only in later rounds.
 
-Seeds are placed in bands - seed 1, seed 2, seeds 3-4, seeds 5-8, and so on - with the order inside each band shuffled. For an 8-player bracket seed 1 and seed 2 sit at opposite ends and meet at the earliest in the final, one of seeds 3-4 lands in each half, and each top seed meets a random one of seeds 5-8 in round 1.
+Seeds are placed in bands - seed 1, seed 2, seeds 3-4, seeds 5-8, and so on - with the order inside each band shuffled (from `Opening.Seed`, so it repeats for the same config). For an 8-player bracket seed 1 and seed 2 sit at opposite ends and meet at the earliest in the final, one of seeds 3-4 lands in each half, and each top seed meets a random one of seeds 5-8 in round 1.
 
 This ensures Seed 1 and Seed 2 can only meet in the final.
 

@@ -79,6 +79,8 @@ let private pgnAgentGuard (ownsAgent: bool) (agent: MailboxProcessor<ChessLibrar
       agent.Dispose())
 
 let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) (resumeRequested: bool) (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
+  // what makes the draw and the opening orders, so a run can be repeated
+  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Cyan (sprintf "Opening.Seed = %d (draw and opening orders)" tourny.Opening.Seed)
   let isPowerOfTwo (n: int) = n > 0 && (n &&& (n - 1) = 0)
   let resolveCupBracketPath () =
     let configuredPath =
@@ -217,10 +219,11 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
     match strategy with
     | PairingHelper.CupSeedingStrategy.Random ->
         let shuffled = players |> List.toArray
-        Random.Shuffle(shuffled)
+        (Scheduler.Shared.seededRandom tourny.Opening.Seed "cup-draw").Shuffle(shuffled)
         shuffled |> Array.toList
       | PairingHelper.CupSeedingStrategy.ByRating ->
-          PairingHelper.seedByBands players seedBands true
+          let rng = Scheduler.Shared.seededRandom tourny.Opening.Seed "cup-draw"
+          Scheduler.Cup.seedByBandsWith (Some (fun a -> rng.Shuffle(a))) players seedBands
 
   let seedPairs (players: EngineConfig list) =
     players
@@ -328,9 +331,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
   let ensureGlobalOpeningOrderFn () =
     if randomOpenings && openings.Length > 1 && not uniquePerMatchOnly then
       if bracket.GlobalOpeningOrder.Count = 0 || bracket.GlobalOpeningOrder.Count < openings.Length then
-        let order = [0 .. openings.Length - 1]
-        let shuffled = order |> List.toArray
-        Random.Shuffle(shuffled)
+        let shuffled = Scheduler.Shared.seededOrder tourny.Opening.Seed "cup-openings" openings.Length
         bracket.GlobalOpeningOrder <- ResizeArray<int>(shuffled)
         writeCupBracket cupBracketAgent bracket
 
@@ -490,28 +491,24 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
       // bracket write that persists the decision. A crash between "winner persisted"
       // and "slot propagated" used to leave a TBD slot on disk, and the resume path
       // silently dropped that match. Idempotent: re-applying sets the same slot.
-      let propagateWinnerIfDecided () =
-        if matchInfo.IsDecided && roundNumber < totalRounds then
-          let winnerPlayer =
-            match matchInfo.Winner with
-            | Some name when name = playerA.Name -> Some playerA
-            | Some name when name = playerB.Name -> Some playerB
-            | _ -> None
-          match winnerPlayer with
-          | Some player ->
-              ensureRound (roundNumber + 1)
-              match bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1) with
-              | Some next ->
-                  let nextIndex = matchIndex / 2
-                  let nextMatch = next.Matches.[nextIndex]
-                  let updated =
-                    if matchIndex % 2 = 0 then
-                      { nextMatch with PlayerA = player.Name; PlayerARating = player.Rating }
-                    else
-                      { nextMatch with PlayerB = player.Name; PlayerBRating = player.Rating }
-                  next.Matches.[nextIndex] <- updated
-              | None -> ()
+      let placeInNextRound (player: EngineConfig) =
+        if roundNumber < totalRounds then
+          ensureRound (roundNumber + 1)
+          match bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1) with
+          | Some next ->
+              let nextIndex, asA = MatchScore.nextSlot matchIndex
+              let nextMatch = next.Matches.[nextIndex]
+              next.Matches.[nextIndex] <-
+                if asA then { nextMatch with PlayerA = player.Name; PlayerARating = player.Rating }
+                else { nextMatch with PlayerB = player.Name; PlayerBRating = player.Rating }
           | None -> ()
+      let winnerPlayer () =
+        match matchInfo.Winner with
+        | Some name when name = playerA.Name -> Some playerA
+        | Some name when name = playerB.Name -> Some playerB
+        | _ -> None
+      let propagateWinnerIfDecided () =
+        if matchInfo.IsDecided then winnerPlayer () |> Option.iter placeInNextRound
       if matchInfo.IsDecided then
         ()
       else
@@ -523,9 +520,8 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
           if uniquePerMatchOnly then
             if randomOpenings && openings.Length > 1 then
               if matchInfo.OpeningOrder.Count = 0 || matchInfo.OpeningOrder.Count < openings.Length then
-                let order = [0 .. openings.Length - 1]
-                let shuffled = order |> List.toArray
-                Random.Shuffle(shuffled)
+                let shuffled =
+                  Scheduler.Shared.seededOrder tourny.Opening.Seed $"cup-match|{matchInfo.RoundNumber}|{matchInfo.MatchId}" openings.Length
                 matchInfo.OpeningOrder <- ResizeArray<int>(shuffled)
                 writeCupBracket cupBracketAgent bracket
               matchInfo.OpeningOrder
@@ -544,27 +540,13 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
               getNextOpening matchOpenings localOpeningIndex
 
         if not matchInfo.IsDecided then
-          if matchInfo.ScoreA > matchInfo.ScoreB + float gamesRemaining then
-            matchInfo.IsDecided <- true
-            matchInfo.Winner <- Some matchInfo.PlayerA
-            propagateWinnerIfDecided ()
-            writeCupBracket cupBracketAgent bracket
-          elif matchInfo.ScoreB > matchInfo.ScoreA + float gamesRemaining then
-            matchInfo.IsDecided <- true
-            matchInfo.Winner <- Some matchInfo.PlayerB
-            propagateWinnerIfDecided ()
-            writeCupBracket cupBracketAgent bracket
-          elif gamesRemaining = 0 then
-            if matchInfo.ScoreA > matchInfo.ScoreB then
+          match MatchScore.decide matchInfo.ScoreA matchInfo.ScoreB gamesRemaining with
+          | Some side ->
               matchInfo.IsDecided <- true
-              matchInfo.Winner <- Some matchInfo.PlayerA
+              matchInfo.Winner <- Some (if side = MatchScore.SideA then matchInfo.PlayerA else matchInfo.PlayerB)
               propagateWinnerIfDecided ()
               writeCupBracket cupBracketAgent bracket
-            elif matchInfo.ScoreB > matchInfo.ScoreA then
-              matchInfo.IsDecided <- true
-              matchInfo.Winner <- Some matchInfo.PlayerB
-              propagateWinnerIfDecided ()
-              writeCupBracket cupBracketAgent bracket
+          | None -> ()
 
         // Same bound as Swiss: an unplayable pairing decides nothing, so without a cap a
         // reproducibly crashing engine keeps this match alive indefinitely.
@@ -637,38 +619,15 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
                     OpeningHash = openingHash
                     Result = result.Result }
                 matchInfo.Games.Add game
-                let scoreWhite =
-                  match result.Result with
-                  | "1-0" -> 1.0
-                  | "0-1" -> 0.0
-                  | "1/2-1/2" -> 0.5
-                  | _ -> 0.0
-                let scoreBlack =
-                  match result.Result with
-                  | "1-0" -> 0.0
-                  | "0-1" -> 1.0
-                  | "1/2-1/2" -> 0.5
-                  | _ -> 0.0
-                if white.Name = matchInfo.PlayerA then
-                  matchInfo.ScoreA <- matchInfo.ScoreA + scoreWhite
-                  matchInfo.ScoreB <- matchInfo.ScoreB + scoreBlack
-                else
-                  matchInfo.ScoreA <- matchInfo.ScoreA + scoreBlack
-                  matchInfo.ScoreB <- matchInfo.ScoreB + scoreWhite
+                let a, b = MatchScore.addGame (matchInfo.ScoreA, matchInfo.ScoreB) (white.Name = matchInfo.PlayerA) result.Result
+                matchInfo.ScoreA <- a
+                matchInfo.ScoreB <- b
                 gamesRemaining <- gamesRemaining - 1
-                if matchInfo.ScoreA > matchInfo.ScoreB + float gamesRemaining then
-                  matchInfo.IsDecided <- true
-                  matchInfo.Winner <- Some matchInfo.PlayerA
-                elif matchInfo.ScoreB > matchInfo.ScoreA + float gamesRemaining then
-                  matchInfo.IsDecided <- true
-                  matchInfo.Winner <- Some matchInfo.PlayerB
-                elif gamesRemaining = 0 then
-                  if matchInfo.ScoreA > matchInfo.ScoreB then
+                match MatchScore.decide a b gamesRemaining with
+                | Some side ->
                     matchInfo.IsDecided <- true
-                    matchInfo.Winner <- Some matchInfo.PlayerA
-                  elif matchInfo.ScoreB > matchInfo.ScoreA then
-                    matchInfo.IsDecided <- true
-                    matchInfo.Winner <- Some matchInfo.PlayerB
+                    matchInfo.Winner <- Some (if side = MatchScore.SideA then matchInfo.PlayerA else matchInfo.PlayerB)
+                | None -> ()
                 // Adjust total for unplayed games when match decided early
                 if matchInfo.IsDecided && gamesRemaining > 0 then
                   tourny.TotalGames <- tourny.TotalGames - gamesRemaining
@@ -686,42 +645,13 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
                     "Abandoning cup match {White} vs {Black} after {Count} consecutive unplayable games — stopping the tournament",
                     white.Name, black.Name, consecutiveFailures)
                   cts.Cancel()
-      match matchInfo.Winner with
-      | Some name when name = playerA.Name ->
-          winners.Add playerA
+      match winnerPlayer () with
+      | Some player ->
+          winners.Add player
           if roundNumber < totalRounds then
-            ensureRound (roundNumber + 1)
-            let nextRound = bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1)
-            match nextRound with
-            | Some next ->
-                let nextIndex = matchIndex / 2
-                let nextMatch = next.Matches.[nextIndex]
-                let updated =
-                  if matchIndex % 2 = 0 then
-                    { nextMatch with PlayerA = playerA.Name; PlayerARating = playerA.Rating }
-                  else
-                    { nextMatch with PlayerB = playerA.Name; PlayerBRating = playerA.Rating }
-                next.Matches.[nextIndex] <- updated
-                writeCupBracket cupBracketAgent bracket
-            | None -> ()
-      | Some name when name = playerB.Name ->
-          winners.Add playerB
-          if roundNumber < totalRounds then
-            ensureRound (roundNumber + 1)
-            let nextRound = bracket.Rounds |> Seq.tryFind (fun r -> r.RoundNumber = roundNumber + 1)
-            match nextRound with
-            | Some next ->
-                let nextIndex = matchIndex / 2
-                let nextMatch = next.Matches.[nextIndex]
-                let updated =
-                  if matchIndex % 2 = 0 then
-                    { nextMatch with PlayerA = playerB.Name; PlayerARating = playerB.Rating }
-                  else
-                    { nextMatch with PlayerB = playerB.Name; PlayerBRating = playerB.Rating }
-                next.Matches.[nextIndex] <- updated
-                writeCupBracket cupBracketAgent bracket
-            | None -> ()
-      | _ -> ()
+            placeInNextRound player
+            writeCupBracket cupBracketAgent bracket
+      | None -> ()
 
     currentPlayers <- winners |> Seq.toList
     roundNumber <- roundNumber + 1
@@ -735,6 +665,8 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
 }
 
 let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
+  // what makes the draw and the opening orders, so a run can be repeated
+  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Cyan (sprintf "Opening.Seed = %d (draw and opening orders)" tourny.Opening.Seed)
   let resolveSwissPath () =
     let configuredPath =
       if obj.ReferenceEquals(tourny.SwissOptions, null) then "" else tourny.SwissOptions.StatePath
@@ -872,41 +804,14 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
     |> List.mapi (fun idx p -> p.Name, idx + 1)
     |> Map.ofList
 
-  let buildScores () =
-    let scores = Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
-    for p in tourny.EngineSetup.Engines do
-      scores.[p.Name] <- 0.0
-    for round in state.Rounds do
-      for pairing in round.Pairings do
-        if scores.ContainsKey pairing.PlayerA then
-          scores.[pairing.PlayerA] <- scores.[pairing.PlayerA] + pairing.ScoreA
-        if scores.ContainsKey pairing.PlayerB then
-          scores.[pairing.PlayerB] <- scores.[pairing.PlayerB] + pairing.ScoreB
-    scores |> Seq.map (fun kvp -> kvp.Key, kvp.Value) |> Map.ofSeq
-
-  let buildPriorPairs () =
-    let pairs = ResizeArray<string>()
-    for round in state.Rounds do
-      for pairing in round.Pairings do
-        if String.IsNullOrWhiteSpace pairing.PlayerA |> not
-           && String.IsNullOrWhiteSpace pairing.PlayerB |> not
-           && pairing.PlayerB <> "BYE" then
-          pairs.Add(PairingHelper.swissPairKey pairing.PlayerA pairing.PlayerB)
-    pairs |> Set.ofSeq
-
-  let buildByeSet () =
-    state.Rounds
-    |> Seq.collect (fun r -> r.Pairings)
-    |> Seq.filter (fun p -> p.PlayerB = "BYE")
-    |> Seq.map (fun p -> p.PlayerA)
-    |> Set.ofSeq
+  let buildScores () = SwissProgress.standings (tourny.EngineSetup.Engines |> List.map (fun e -> e.Name)) state.Rounds
+  let buildPriorPairs () = SwissProgress.priorPairs state.Rounds
+  let buildByeSet () = SwissProgress.byes state.Rounds
 
   let ensureGlobalOrder () =
     if tourny.SwissOptions.RandomOpenings && openings.Length > 1 && not tourny.SwissOptions.UniquePerMatchOnly then
       if state.GlobalOpeningOrder.Count = 0 || state.GlobalOpeningOrder.Count < openings.Length then
-        let order = [0 .. openings.Length - 1]
-        let shuffled = order |> List.toArray
-        Random.Shuffle(shuffled)
+        let shuffled = Scheduler.Shared.seededOrder tourny.Opening.Seed "swiss-openings" openings.Length
         state.GlobalOpeningOrder <- ResizeArray<int>(shuffled)
         writeSwissState swissAgent state
 
@@ -1021,9 +926,8 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
         if tourny.SwissOptions.UniquePerMatchOnly then
           if tourny.SwissOptions.RandomOpenings && openings.Length > 1 then
             if pairing.OpeningOrder.Count = 0 || pairing.OpeningOrder.Count < openings.Length then
-              let order = [0 .. openings.Length - 1]
-              let shuffled = order |> List.toArray
-              Random.Shuffle(shuffled)
+              let shuffled =
+                Scheduler.Shared.seededOrder tourny.Opening.Seed $"swiss-pair|{pairing.RoundNumber}|{pairing.PairId}" openings.Length
               pairing.OpeningOrder <- ResizeArray<int>(shuffled)
               writeSwissState swissAgent state
             pairing.OpeningOrder
@@ -1081,9 +985,8 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
           if tourny.SwissOptions.UniquePerMatchOnly then
             if tourny.SwissOptions.RandomOpenings && openings.Length > 1 then
               if pairing.OpeningOrder.Count = 0 then
-                let order = [0 .. openings.Length - 1]
-                let shuffled = order |> List.toArray
-                Random.Shuffle(shuffled)
+                let shuffled =
+                  Scheduler.Shared.seededOrder tourny.Opening.Seed $"swiss-pair|{pairing.RoundNumber}|{pairing.PairId}" openings.Length
                 pairing.OpeningOrder <- ResizeArray<int>(shuffled)
                 writeSwissState swissAgent state
               pairing.OpeningOrder
@@ -1172,24 +1075,9 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
                     OpeningHash = openingHash
                     Result = result.Result }
                 pairing.Games.Add game
-                let scoreWhite =
-                  match result.Result with
-                  | "1-0" -> 1.0
-                  | "0-1" -> 0.0
-                  | "1/2-1/2" -> 0.5
-                  | _ -> 0.0
-                let scoreBlack =
-                  match result.Result with
-                  | "1-0" -> 0.0
-                  | "0-1" -> 1.0
-                  | "1/2-1/2" -> 0.5
-                  | _ -> 0.0
-                if white.Name = pairing.PlayerA then
-                  pairing.ScoreA <- pairing.ScoreA + scoreWhite
-                  pairing.ScoreB <- pairing.ScoreB + scoreBlack
-                else
-                  pairing.ScoreA <- pairing.ScoreA + scoreBlack
-                  pairing.ScoreB <- pairing.ScoreB + scoreWhite
+                let a, b = MatchScore.addGame (pairing.ScoreA, pairing.ScoreB) (white.Name = pairing.PlayerA) result.Result
+                pairing.ScoreA <- a
+                pairing.ScoreB <- b
                 gamesRemaining <- gamesRemaining - 1
                 if pairing.Games.Count >= gamesPerMatch then
                   pairing.IsDecided <- true
@@ -1289,6 +1177,8 @@ let swiss (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenS
 }
 
 let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationTokenSource) (tryGetUserAdjudication: unit -> UserAdjudication option) (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) = async {
+  // what makes the draw and the opening orders, so a run can be repeated
+  RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Cyan (sprintf "Opening.Seed = %d (draw and opening orders)" tourny.Opening.Seed)
   let resolveLadderPath () =
     let configuredPath =
       if obj.ReferenceEquals(tourny.LadderOptions, null) then "" else tourny.LadderOptions.StatePath
@@ -1381,6 +1271,29 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
           GlobalOpeningOrder = ResizeArray<int>()
           UpdatedUtc = DateTime.UtcNow }
 
+  let applyLadder (ladder: LadderProgress.Ladder) =
+    state.SurvivingEngines <- ResizeArray<string>(ladder.Surviving)
+    state.EliminatedEngines <- ResizeArray<string>(ladder.Eliminated)
+    state.CurrentClimbNumber <- ladder.Climb
+    state.CurrentClimberIndex <- ladder.Climber
+  let currentLadder () : LadderProgress.Ladder =
+    { Surviving = List.ofSeq state.SurvivingEngines; Eliminated = List.ofSeq state.EliminatedEngines
+      Climb = state.CurrentClimbNumber; Climber = state.CurrentClimberIndex }
+  let decidedMatches () =
+    state.Matches
+    |> Seq.filter (fun m -> m.IsDecided)
+    |> Seq.sortBy (fun m -> m.MatchId)
+    |> Seq.map (fun m -> m.Challenger, m.Defender, m.Winner |> Option.defaultValue m.Defender)
+
+  // A resume replays the decided matches: a crash between saving a result and advancing the
+  // ladder cannot leave it behind (and the same match played again).
+  if state.Matches.Count > 0 then
+    let replayed = LadderProgress.replay (List.ofSeq state.InitialRankings) (decidedMatches ())
+    if replayed <> currentLadder () then
+      logger.LogWarning("Ladder: the saved standing did not match its decided matches - replayed them")
+      applyLadder replayed
+      writeLadderState ladderAgent state
+
   let totalMatches = numberOfPlayers - 1
   tourny.TotalGames <- totalMatches * gamesPerMatch
 
@@ -1401,9 +1314,7 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
   // Initialize global opening order for random openings
   if randomOpenings && openings.Length > 1 then
     if state.GlobalOpeningOrder.Count = 0 || state.GlobalOpeningOrder.Count < openings.Length then
-      let order = [0 .. openings.Length - 1]
-      let shuffled = order |> List.toArray
-      Random.Shuffle(shuffled)
+      let shuffled = Scheduler.Shared.seededOrder tourny.Opening.Seed "ladder-openings" openings.Length
       state.GlobalOpeningOrder <- ResizeArray<int>(shuffled)
       writeLadderState ladderAgent state
 
@@ -1564,34 +1475,16 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
                 OpeningHash = openingHash
                 Result = result.Result }
             matchInfo.Games.Add game
-            let scoreWhite =
-              match result.Result with
-              | "1-0" -> 1.0 | "0-1" -> 0.0 | "1/2-1/2" -> 0.5 | _ -> 0.0
-            let scoreBlack =
-              match result.Result with
-              | "1-0" -> 0.0 | "0-1" -> 1.0 | "1/2-1/2" -> 0.5 | _ -> 0.0
-            if white.Name = matchInfo.Challenger then
-              matchInfo.ScoreChallenger <- matchInfo.ScoreChallenger + scoreWhite
-              matchInfo.ScoreDefender <- matchInfo.ScoreDefender + scoreBlack
-            else
-              matchInfo.ScoreChallenger <- matchInfo.ScoreChallenger + scoreBlack
-              matchInfo.ScoreDefender <- matchInfo.ScoreDefender + scoreWhite
+            let c, d = MatchScore.addGame (matchInfo.ScoreChallenger, matchInfo.ScoreDefender) (white.Name = matchInfo.Challenger) result.Result
+            matchInfo.ScoreChallenger <- c
+            matchInfo.ScoreDefender <- d
             gamesRemaining <- gamesRemaining - 1
-            // Early termination check
-            if matchInfo.ScoreChallenger > matchInfo.ScoreDefender + float gamesRemaining then
-              matchInfo.IsDecided <- true
-              matchInfo.Winner <- Some matchInfo.Challenger
-            elif matchInfo.ScoreDefender > matchInfo.ScoreChallenger + float gamesRemaining then
-              matchInfo.IsDecided <- true
-              matchInfo.Winner <- Some matchInfo.Defender
-            elif gamesRemaining = 0 then
-              if matchInfo.ScoreChallenger > matchInfo.ScoreDefender then
+            // decided early once the leader cannot be caught; a tie at the end gets two more games
+            match MatchScore.decide matchInfo.ScoreChallenger matchInfo.ScoreDefender gamesRemaining with
+            | Some side ->
                 matchInfo.IsDecided <- true
-                matchInfo.Winner <- Some matchInfo.Challenger
-              elif matchInfo.ScoreDefender > matchInfo.ScoreChallenger then
-                matchInfo.IsDecided <- true
-                matchInfo.Winner <- Some matchInfo.Defender
-              // else: still tied, outer loop will add tiebreak pair
+                matchInfo.Winner <- Some (if side = MatchScore.SideA then matchInfo.Challenger else matchInfo.Defender)
+            | None -> ()
             // Adjust total for unplayed games when match decided early
             if matchInfo.IsDecided && gamesRemaining > 0 then
               tourny.TotalGames <- tourny.TotalGames - gamesRemaining
@@ -1616,27 +1509,9 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
     if matchInfo.IsDecided then
       let winnerName = matchInfo.Winner |> Option.defaultValue matchInfo.Defender
       let loserName = if winnerName = matchInfo.Challenger then matchInfo.Defender else matchInfo.Challenger
-      state.EliminatedEngines.Add loserName
-      state.SurvivingEngines.Remove loserName |> ignore
       let climbInfo = sprintf "=== Ladder Match %d (Climb %d) === [Challenger] %s vs [Defender] %s: %s wins %.1f-%.1f. %s eliminated."
                         matchInfo.MatchId state.CurrentClimbNumber matchInfo.Challenger matchInfo.Defender winnerName matchInfo.ScoreChallenger matchInfo.ScoreDefender loserName
-      if winnerName = matchInfo.Challenger then
-        // Challenger continues climbing — index shifts because defender was removed
-        let idx = state.SurvivingEngines.IndexOf(winnerName)
-        if idx < 0 then
-          logger.LogWarning("Ladder: winner {Winner} not found in SurvivingEngines — restarting climb", winnerName)
-          state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
-          state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
-        elif idx = 0 then
-          // Climber beat the #1 engine — start new climb from bottom
-          state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
-          state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
-        else
-          state.CurrentClimberIndex <- idx
-      else
-        // Challenger eliminated, start new climb from bottom
-        state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
-        state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
+      applyLadder (LadderProgress.advance (currentLadder ()) (matchInfo.Challenger, matchInfo.Defender, winnerName))
       writeLadderState ladderAgent state
       printLadderStandings climbInfo
       let res = ResizeArray<Result>(results)
@@ -1665,16 +1540,10 @@ let ladder (logger:ILogger) (tourny:Tournament) callback (cts: CancellationToken
 
   // Main ladder loop
   while state.SurvivingEngines.Count > 1 && not cts.IsCancellationRequested do
-    let climberIdx = state.CurrentClimberIndex
-    let defenderIdx = climberIdx - 1
-    if defenderIdx < 0 then
-      // Climber is at the top — shouldn't happen, but handle gracefully
-      state.CurrentClimbNumber <- state.CurrentClimbNumber + 1
-      state.CurrentClimberIndex <- state.SurvivingEngines.Count - 1
-      writeLadderState ladderAgent state
-    else
-      let challengerName = state.SurvivingEngines.[climberIdx]
-      let defenderName = state.SurvivingEngines.[defenderIdx]
+    match LadderProgress.next (currentLadder ()) with
+    | None -> ()
+    | Some (ladder, (challengerName, defenderName)) ->
+      applyLadder ladder
       let challengerConfig = findEngine challengerName
       let defenderConfig = findEngine defenderName
 

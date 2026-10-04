@@ -33,6 +33,18 @@ let shuffleOpeningsWithSeed (seed: int) (openings: PgnGame list) =
     rng.Shuffle(arr)
     arr |> Array.toList
 
+/// A random source fixed by `Opening.Seed` and what it is for, so each use (the cup draw, one
+/// match's openings) gets its own sequence and a run is reproducible from its config.
+let seededRandom (seed: int) (purpose: string) =
+    let hashBytes = System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes($"{seed}|{purpose}"))
+    Random(BitConverter.ToInt32(hashBytes, 0) &&& Int32.MaxValue)
+
+/// 0 .. n-1 in an order fixed by the seed and the purpose.
+let seededOrder (seed: int) (purpose: string) (n: int) =
+    let order = Array.init n id
+    (seededRandom seed purpose).Shuffle(order)
+    order
+
 /// Apply the tournament's opening shuffle using `Opening.Seed`. Logs the
 /// effective seed so resume behavior is transparent.
 let shuffleOpeningsForTournament (opening: Opening) (openings: PgnGame list) =

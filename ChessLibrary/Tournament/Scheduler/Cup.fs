@@ -86,10 +86,20 @@ let autoSeedBands (total: int) : int list list =
 /// Assign players to bracket slots via seed bands. Top seeds are placed at
 /// their canonical bracket slots; within each band, players can optionally
 /// be shuffled. Any unplaced players fill the remaining slots in seed order.
-let seedByBands
+let rec seedByBands
     (players: EngineConfig list)
     (seedBands: int list list)
     (randomizeWithinBands: bool)
+    : EngineConfig list
+    =
+    seedByBandsWith (if randomizeWithinBands then Some ChessUtilities.Random.Shuffle else None) players seedBands
+
+/// seedByBands with the shuffle within bands given (a seeded one makes the draw reproducible),
+/// or None for no shuffle.
+and seedByBandsWith
+    (shuffle: (EngineConfig array -> unit) option)
+    (players: EngineConfig list)
+    (seedBands: int list list)
     : EngineConfig list
     =
     let sorted = players |> List.sortByDescending (fun p -> p.Rating)
@@ -110,14 +120,14 @@ let seedByBands
                 band
                 |> List.filter (fun s -> s >= 1 && s <= total && not (used.Contains s))
             if seeds.IsEmpty then ()
-            elif seeds.Length = 1 || not randomizeWithinBands then
+            elif seeds.Length = 1 || shuffle.IsNone then
                 for s in seeds do tryPlace s
             else
                 let slotIndices =
                     seeds |> List.map (fun s -> order |> List.findIndex (fun o -> o = s))
                 let seedPlayers = seeds |> List.map (fun s -> sorted.[s - 1])
                 let shuffled = seedPlayers |> List.toArray
-                ChessUtilities.Random.Shuffle shuffled
+                shuffle.Value shuffled
                 for i in 0 .. slotIndices.Length - 1 do
                     slots.[slotIndices.[i]] <- Some shuffled.[i]
                 for s in seeds do used.Add s |> ignore

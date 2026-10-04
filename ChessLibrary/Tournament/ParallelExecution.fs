@@ -73,73 +73,76 @@ let private notPlayed (r: Result) =
     r.Reason = MiscTypes.ResultReason.Cancel || r.Reason = MiscTypes.ResultReason.NotStarted
 
 /// A pool of up to `capacity` instances created on demand by `spawn` (given the instance
-/// index). Returned instances are handed out again before any new one is spawned. Generic so
-/// the slot accounting can be tested without a process behind it; the runner uses it with
-/// ChessEngine.
-type LazyPool<'T>(capacity: int, spawn: int -> 'T) =
-    let available = Channel.CreateUnbounded<'T>()
-    let mutable spawned = 0
-    let sync = obj()
-    // Replaced whenever a slot is freed. A borrower captures it BEFORE it looks at the pool,
-    // so a slot freed between its decision to wait and the wait itself still wakes it - the
-    // same no-gap pattern as ReplayGate.released.
-    let mutable slotFreed = TaskCompletionSource<unit>(TaskCreationOptions.RunContinuationsAsynchronously)
+/// index, which is never one a live instance holds). Returned instances are handed out again
+/// before any new one is spawned. An agent runs PoolMachine; generic so it is tested with ints.
+type LazyPool<'T when 'T: equality>(capacity: int, spawn: int -> 'T) =
+    let replies = Dictionary<int, TaskCompletionSource<'T>>()
+    // the slot of each instance handed out, for Return and Evict
+    let slots = Dictionary<'T, int>(HashIdentity.Structural)
+    let mutable taken = 0
+    let mutable nextId = 0
+    let take id =
+        lock replies (fun () ->
+            match replies.TryGetValue id with
+            | true, tcs -> replies.Remove id |> ignore; Some tcs
+            | _ -> None)
 
-    let freeSlot () =
-        Interlocked.Decrement(&spawned) |> ignore
-        let toWake =
-            lock sync (fun () ->
-                let t = slotFreed
-                slotFreed <- TaskCompletionSource<unit>(TaskCreationOptions.RunContinuationsAsynchronously)
-                t)
-        toWake.TrySetResult() |> ignore
+    let agent = MailboxProcessor<PoolMachine.Event<'T> * AsyncReplyChannel<'T list> option>.Start(fun inbox ->
+        let rec loop state = async {
+            let! event, reply = inbox.Receive()
+            let state, effects =
+                // a dead agent would hang every borrower; drop the event instead
+                try PoolMachine.step state event
+                with ex ->
+                    eprintfn "Engine pool: %A not handled: %s" event ex.Message
+                    state, []
+            // published before anyone is answered, so a caller sees it settled
+            taken <- state.Taken.Count
+            let mutable released = []
+            for effect in effects do
+                match effect with
+                | PoolMachine.Spawn slot ->
+                    Task.Run(fun () ->
+                        let outcome = try PoolMachine.Spawned (slot, spawn slot) with ex -> PoolMachine.SpawnFailed (slot, ex)
+                        inbox.Post (outcome, None)) |> ignore
+                | PoolMachine.Give (id, slot, item) ->
+                    lock slots (fun () -> slots.[item] <- slot)
+                    take id |> Option.iter (fun tcs -> tcs.TrySetResult item |> ignore)
+                | PoolMachine.Refuse (id, ex) ->
+                    take id |> Option.iter (fun tcs -> tcs.TrySetException ex |> ignore)
+                | PoolMachine.Release items -> released <- items
+            reply |> Option.iter (fun r -> r.Reply released)
+            return! loop state }
+        loop (PoolMachine.initial capacity))
 
-    // A failed spawn must not keep its slot, or at capacity 1 every later borrow of this
-    // pool waits forever for a return that never comes. Plain try/with: inside the task
-    // builder a handler cannot re-raise.
-    let spawnSlot (slot: int) =
-        try spawn (slot - 1)
-        with _ ->
-            freeSlot ()
-            reraise ()
+    let slotOf (item: 'T) =
+        lock slots (fun () ->
+            match slots.TryGetValue item with
+            | true, slot -> Some slot
+            | _ -> None)
 
-    /// A returned instance if there is one, else a fresh one while the pool is under capacity,
-    /// else the next instance to be returned - or the next slot to be freed by an eviction,
-    /// after which a fresh one is spawned into it.
-    member this.Borrow() : Task<'T> = task {
-        let freed = lock sync (fun () -> slotFreed.Task)
-        match available.Reader.TryRead() with
-        | true, item -> return item
-        | _ ->
-            // Claim a slot first; if that overshoots, give it back and wait.
-            let slot = Interlocked.Increment(&spawned)
-            if slot <= capacity then
-                return spawnSlot slot
-            else
-                Interlocked.Decrement(&spawned) |> ignore
-                let! _ = Task.WhenAny(available.Reader.WaitToReadAsync().AsTask(), freed)
-                // Drain closes the channel; a borrow after that would otherwise spin here.
-                if available.Reader.Completion.IsCompleted then invalidOp "LazyPool: borrow after Drain"
-                return! this.Borrow()
-    }
+    member _.Borrow() : Task<'T> =
+        let tcs = TaskCompletionSource<'T>(TaskCreationOptions.RunContinuationsAsynchronously)
+        let id = Interlocked.Increment &nextId
+        lock replies (fun () -> replies.[id] <- tcs)
+        agent.Post (PoolMachine.Borrow id, None)
+        tcs.Task
 
-    member _.Return(item: 'T) = available.Writer.TryWrite item |> ignore
+    member _.Return(item: 'T) =
+        slotOf item |> Option.iter (fun slot -> agent.PostAndReply(fun r -> PoolMachine.Return (slot, item), Some r) |> ignore)
 
     /// The borrower is not returning this instance: it has been stopped. Frees its slot so a
     /// later borrow spawns a fresh one, and wakes a borrower waiting on the full pool.
-    member _.Evict(_item: 'T) = freeSlot ()
+    member _.Evict(item: 'T) =
+        slotOf item |> Option.iter (fun slot ->
+            lock slots (fun () -> slots.Remove item |> ignore)
+            agent.PostAndReply(fun r -> PoolMachine.Evict slot, Some r) |> ignore)
 
     /// How many instances exist right now (spawned, whether out on loan or returned).
-    member _.Spawned = spawned
+    member _.Spawned = taken
 
     /// Every instance that was returned, for teardown. Never called while borrows are live.
-    member _.Drain() : 'T[] =
-        available.Writer.Complete()
-        [| let mutable go = true
-           while go do
-               match available.Reader.TryRead() with
-               | true, item -> yield item
-               | _ -> go <- false |]
+    member _.Drain() : 'T[] = agent.PostAndReply(fun r -> PoolMachine.Drain, Some r) |> List.toArray
 
 /// What a run plays, worked out once before any engine starts: the book sized for the mode,
 /// the plan, and the plan diffed against the games already in the output PGN (a resume plays
