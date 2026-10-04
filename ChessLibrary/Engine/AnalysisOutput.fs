@@ -39,6 +39,8 @@ module internal AnalysisOutput =
     abstract AddShortSan : moves: ResizeArray<NNValues> -> unit
     /// The board, for the illegal-move message.
     abstract Describe : unit -> string
+    /// False in checkmate and stalemate.
+    abstract HasLegalMove : unit -> bool
 
   /// The IPosition of a board, every read under `sync` (the lock the board's writer holds too).
   /// `whiteToMove` is the side to move as cached outside the lock; `sanPv` converts a UCI PV for a
@@ -62,7 +64,8 @@ module internal AnalysisOutput =
             | None -> None)
         member _.AddShortSan moves = lock sync (fun () -> makeShortSan moves &board)
         member _.Describe () =
-          lock sync (fun () -> $"Board state: {board.FEN()} {board.CurrentFEN} {board.Position.Ply} ") }
+          lock sync (fun () -> $"Board state: {board.FEN()} {board.CurrentFEN} {board.Position.Ply} ")
+        member _.HasLegalMove () = lock sync (fun () -> board.AnyLegalMove()) }
 
   /// Which kind of output the lines are part of.
   type Mode =
@@ -103,14 +106,16 @@ module internal AnalysisOutput =
   let private startsWith (prefix: string) (line: string) = line.StartsWith(prefix, StringComparison.Ordinal)
 
   let private bestMove (name: string) (pos: IPosition) (state: State) (line: string) =
-    // Parse defensively: a bare "bestmove", short lines and "bestmove (none)" (Stockfish in
-    // terminal positions) still produce Done, so a waiting caller completes.
+    // Every bestmove line produces Done, so a waiting caller completes. No move ("(none)", the
+    // UCI null move "0000", a bare "bestmove") is right only where there is none; elsewhere it
+    // is an illegal move.
     let tokens = line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
     let doneFirst = Update (Done name)
-    if tokens.Length < 2 || tokens.[1] = "(none)" then
-      state, [ doneFirst; Debug (sprintf "%s: bestmove line carries no move: '%s'" name line) ]
+    let noMove = tokens.Length < 2 || tokens.[1] = "(none)" || tokens.[1] = "0000"
+    if noMove && not (pos.HasLegalMove ()) then
+      state, [ doneFirst; Debug (sprintf "%s: no move in a finished position: '%s'" name line) ]
     else
-      let move = tokens.[1]
+      let move = if tokens.Length < 2 then "" else tokens.[1]
       let ponder =
         match tokens |> Array.tryFindIndex ((=) "ponder") with
         | Some i when i + 1 < tokens.Length -> tokens.[i + 1]

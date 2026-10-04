@@ -148,3 +148,22 @@ let ``One node in a policy test: the earliest top-P move gets the node's Q`` () 
     | [ NNSeq set ] ->
         Assert.Equal<(string * float) list>([ "e2e4", 0.55; "d2d4", 0.20; "node", 0.55 ], [ for m in set -> m.LANMove, m.Q ])
     | other -> Assert.Fail(sprintf "%A" other)
+
+[<Fact>]
+let ``No move ends the search quietly in a finished position, and is an illegal move elsewhere`` () =
+    let printed (effects: AnalysisOutput.Effect list) =
+        effects |> List.exists (function AnalysisOutput.Print t -> t.Contains "illegal move" | _ -> false)
+    let noBestMove (effects: AnalysisOutput.Effect list) =
+        effects |> List.forall (function AnalysisOutput.Update (BestMove _) -> false | _ -> true)
+    let mated, _, _ = positionOf "position fen rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+    let start, _, _ = positionOf "position startpos"
+    for line in [ "bestmove (none)"; "bestmove 0000" ] do
+        let _, effects = AnalysisOutput.step "Eng" mated AnalysisOutput.State.Initial line
+        Assert.Contains(AnalysisOutput.Update (Done "Eng"), effects)
+        Assert.False(printed effects, line)
+        Assert.True(noBestMove effects, line)
+    for line in [ "bestmove (none)"; "bestmove 0000"; "bestmove" ] do
+        let _, effects = AnalysisOutput.step "Eng" start AnalysisOutput.State.Initial line
+        Assert.Contains(AnalysisOutput.Update (Done "Eng"), effects)
+        Assert.True(printed effects, line)
+        Assert.True(noBestMove effects, line)

@@ -20,7 +20,8 @@ let private pos =
       member _.BestMoveFacts move =
         Some { ShortSan = move; MoveNumber = 1; WhiteToMove = true; Fen = "f"; PiecesLeft = 32; IsCastling = false }
       member _.AddShortSan _ = ()
-      member _.Describe () = "" }
+      member _.Describe () = ""
+      member _.HasLegalMove () = true }
 
 let private completedWith move = function
   | (_, Completed (Some (bm: BestMoveInfo))) -> bm.Move = move
