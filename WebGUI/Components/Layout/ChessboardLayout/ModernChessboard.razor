@@ -414,7 +414,6 @@
     public record MoveAnnotation(string Symbol, string CssClass, string Label, string BestMoveLine);
 
     // ── Private state ──
-    private Board moveBoard = new Board();
     private string pendingPromotionMove;
     private int promotionButtonSize = 50;
     private double promotionButtonSizePx => promotionButtonSize * 0.85;
@@ -716,12 +715,10 @@
     private int _scrollAttempts;
     private DotNetObjectReference<ModernChessboard> objRef;
     private ElementReference board;
-    private MudTextField<string> moveListTextField = new();
     private IJSObjectReference chessJSmodule;
     private IJSObjectReference dragHandle;
     private string startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     private string moveList = string.Empty;
-    private List<string> replayMoves = new();
     private HotKeysContext keyContext;
     private List<NNValues> firstNNMoves = new();
     private List<NNValues> secondNNMoves = new();
@@ -729,7 +726,6 @@
     private long _positionGeneration;
     private bool isBoardFlipped;
     private double MinPolicyThreshold { get; set; }
-    private List<MoveAndFen> MoveList { get; set; }
     private record VariationDisplay(int Id, string Text, List<MoveAndFen> Line);
     private List<VariationDisplay> VariationLines { get; set; } = new();
     private record InlineToken(string Text, string DisplayText, string Fen, string Comment, string MoveCoord, bool IsBracket, ulong Hash, bool IsFromVariation, int Ply);
@@ -779,8 +775,6 @@
 
     private bool IsCurrentMove(InlineToken token) =>
         token != null && string.Equals(token.Fen, fen, StringComparison.Ordinal);
-
-    private string CreateComments(MoveAndFen move) => $"<span style=\"color: #e8e8e8; font-weight: bold;\">{ChessBoard.SanMoveNumberString(move.ShortSan)}</span> <span style=\"color: #e0e0e0;\">{move.Move.Comments}</span>";
 
     private string currentMoveColor => "font-weight:800; color:#8FD9FF; ";
     private string whiteMoveColor => "font-weight:600; color:#EEF3FF;";
@@ -999,29 +993,6 @@
         await UpdateFenWithMovesInput();
         UpdateVariationsDisplay();
         StateHasChanged();
-    }
-
-    private async void OnItemClick(int index)
-    {
-        if (!AllowNavigation) return;
-        stopAutoPlay = true;
-        if (index != -1)
-        {
-            await ClearOverlayOnPositionChange();
-            var move = MoveList[index];
-            fen = move.FenAfterMove;
-            ChessBoard.LoadFen(fen);
-            await SetPosition(fen);
-            await OnMoveMadeOnBoard.InvokeAsync(move.Move.FromSq + move.Move.ToSq);
-            UpdateVariationsDisplay();
-            await ScrollToCurrentMove();
-            StateHasChanged();
-        }
-    }
-
-    private void ScrollToEnd()
-    {
-        chessJSmodule.InvokeVoidAsync("scrollDivToEnd", "moveListDiv");
     }
 
     // ── Move input (click-to-move and drag & drop both funnel into TryUserMove) ──

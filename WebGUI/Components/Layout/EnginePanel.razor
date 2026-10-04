@@ -374,14 +374,7 @@
     /// Keep the charts out of view - a display choice only; the data, the chart-lines slider
     /// and MultiPV are untouched, so showing them again later costs nothing but a resize.
     [Parameter] public bool HideCharts { get; set; }
-    private string zobristHash;
     private bool overlayDropdownOpen = false;
-
-    public string ZobristHash
-    {
-        get { return ChessBoard.PositionHash().ToString(); }
-        set { zobristHash = value; }
-    }
 
     private string text = "dump-info";
     private enum ChartView { N, Q, Convergence }
@@ -392,9 +385,7 @@
     private OverlaySettings selectedOverlaySetting = OverlaySettings.None;
     private NNValues currentPosition = NNValues.Empty;
     private bool runLogLiveStats;
-    private System.Text.RegularExpressions.Regex firstMoveInPV = new(@"(?:\d+\.\.\.\.|^\d+\.)\s*([^\s]+)", RegexOptions.Compiled);
     private string whitePV;
-    private string fenUri = string.Empty;
     private bool uciButtonPressed = false;
     string EngineName => Engine == null ? "Engine not initialized" : Engine.Name;
 
@@ -416,14 +407,10 @@
     private SearchInfoPlot searchInfoPlot;
     private IJSObjectReference chessModule;
     private string tableHeader = "";
-    private HashSet<PGNTypes.PgnGame> selectedItems = new();
-    public bool QChartSelected { get; set; } = false;
-    public CultureInfo currentCulture = CultureInfo.CurrentCulture;
     private int numberOfLines = 3;
     private double numberOfNodes = 1;
     private bool showNNdata = false;
     private CancellationTokenSource disposeCts = new();
-    private string moveHistory = string.Empty;
     private double Qdiff = 2;
     public bool autoSearchSwitch
     {
@@ -456,7 +443,6 @@
     HotKeysContext keyContext;
     public List<KeyValuePair<int, EngineStatus>> dataList = new();
     Dictionary<int, EngineStatus> data = new();
-    public bool IsOpt { get; set; } = false;
 
     public async Task ResetChartData()
     {
@@ -480,16 +466,10 @@
     public double CurrentNodes => numberOfNodes;
     public double CurrentTimeMs => numberOfTimeMs;
     public int CurrentChartLines => cpChartLines;
-    private string GetLimitLabel() => searchMode == SearchMode.Nodes ? "Node limit" : "Time (ms)";
     private bool timeMode
     {
         get => searchMode == SearchMode.Time;
         set => OnSearchModeChanged(value ? SearchMode.Time : SearchMode.Nodes);
-    }
-
-    private void ToggleOverlayDropdown()
-    {
-        overlayDropdownOpen = !overlayDropdownOpen;
     }
 
     private void ToggleAutoSearch()
@@ -578,28 +558,6 @@
     {
         StopSearchTimer();
         elapsed = TimeSpan.Zero;
-    }
-
-    private async Task OnMinPolicyThresholdChanged(double value)
-    {
-        MinPolicyThreshold = value;
-        OverlaySetting.MinPolicyThreshold = value;
-        await Notifier.UpdateDisplaySettings(selectedOverlaySetting, Id);
-    }
-
-    private string GetOverlayLabel()
-    {
-        switch (selectedOverlaySetting)
-        {
-            case OverlaySettings.Policy:
-                return "Policy";
-            case OverlaySettings.QVDiff:
-                return "QVDiff";
-            case OverlaySettings.None:
-                return "None";
-            default:
-                return $"{selectedOverlaySetting}";
-        }
     }
 
     private async Task OnOverlaySettingChanged(OverlaySettings newSetting)
@@ -737,8 +695,6 @@
             }
         }
     }
-
-
 
     private string FormatNodes(double nodes)
     {
@@ -1780,7 +1736,6 @@
                 LoadAndOpenPGNGame(game);
                 var fen = ChessBoard.FEN();
                 var posWithMoves = ChessBoard.PositionWithFenAndMoves(fen);
-                var playerIsWhite = game.GameMetaData.White.Trim() == playerInSearch;
                 var player = String.Empty;
                 if (game.GameMetaData.White.Trim() == playerInSearch)
                 {
@@ -1991,8 +1946,6 @@
     private void LoadAndOpenPGNGame(PGNTypes.PgnGame game)
     {
         var board = ChessBoard;
-        var gameIndex = PGNgames.IndexOf(game);
-        var currentGame = $"{game.GameMetaData.White} - {game.GameMetaData.Black}: {game.GameMetaData.Result} (R# {game.GameMetaData.Round})";
         var fenP = string.IsNullOrEmpty(game.GameMetaData.Fen) ? Chess.startPos : game.GameMetaData.Fen;
         board.ResetBoardStateFromFen(fenP);
         foreach (var ply in game.Mainline)

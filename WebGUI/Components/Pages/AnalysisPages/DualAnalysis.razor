@@ -216,7 +216,6 @@
                 </div>
             }
 
-
             @if (tbFilesLoaded)
             {
                 <div class="da-table-container">
@@ -357,7 +356,6 @@
     }
     private ElementReference pgnChart;
     HotKeysContext keyContext;
-    private string fullPath = string.Empty;
     private int minMoveTimeInSecs = 0;
     private string searchString = "";
     private string detectedOpeningName = "";
@@ -634,12 +632,6 @@
     private static string NormalizeMoveDots(string move)
     {
         return System.Text.RegularExpressions.Regex.Replace(move, @"(\d+)\.{3,} ", "$1... ");
-    }
-
-    private static string ExtractMove(string input)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(input, @"^\d+\.*\s*(\S+)");
-        return match.Success ? match.Groups[1].Value : input;
     }
 
     private void WriteAnalysisToFile(string path, EnginePanel page)
@@ -978,7 +970,6 @@
         }
     }
 
-
     public async void OnNewEngineLoaded(EngineConfigEventArgs engineConf)
     {
         if (engineConf.Id == EngineSlot.A)
@@ -1021,7 +1012,6 @@
         }
         await InvokeAsync(StateHasChanged);
     }
-
 
     // The board draws the overlay from whichever engine reported last, and says so through
     // OnOverlaySourceChanged; the source buttons show that, not the last button clicked.

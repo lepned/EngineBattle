@@ -66,10 +66,6 @@
   private int fontSize = 8;
   private string gameResultHeader = "No games played";
 
-  private List<string> LossCombinations = new List<string> { "00", "01/2", "1/20", };
-  private List<string> WinCombinations = new List<string> { "11", "11/2", "1/21" };
-  private List<string> DrawCombinations = new List<string> { "1/21/2", "10", "01" };
-
   private (int Wins, int Draws, int Losses) GetWdlTotals(CrossTableEntry entry)
   {
     var wins = 0;
@@ -152,42 +148,6 @@
       builder.CloseElement();
     }
   };
-
-  private (int W, int D, int L) CalculatePairs(string player, string opponent, string[] results)
-  {
-    int wins = 0;
-    int losses = 0;
-    int draws = 0;
-    List<Tuple<string, string>> result = new List<Tuple<string, string>>();
-    int countToProcess = results.Length % 2 == 0 ? results.Length : results.Length - 1;
-
-    for (int i = 0; i < countToProcess; i += 2)
-    {
-      result.Add(new Tuple<string, string>(results[i], results[i + 1]));
-    }
-    foreach (var pair in result)
-    {
-      var addThem = pair.Item1 + pair.Item2;
-      if (WinCombinations.Contains(addThem) && LossCombinations.Contains(addThem))
-      {
-        continue;
-      }
-      else if (WinCombinations.Contains(addThem))
-      {
-        wins++;
-      }
-      else if (DrawCombinations.Contains(addThem))
-      {
-        draws++;
-      }
-      else if (LossCombinations.Contains(addThem))
-      {
-        losses++;
-      }
-    }
-
-    return (wins, draws, losses);
-  }
 
   private (string, List<Tuple<string, string>>) GetPairs(string[] results)
   {

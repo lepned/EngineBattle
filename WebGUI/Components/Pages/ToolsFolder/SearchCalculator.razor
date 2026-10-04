@@ -296,11 +296,6 @@
       StateHasChanged();
     }
   }
-  private string FormatTime(Int64 mt, Int64 tl)
-  {
-    var frac = (double)mt / (double)(tl + mt);
-    return frac.ToString("P0");
-  }
 
   private string FormatNodes(double nodes)
   {

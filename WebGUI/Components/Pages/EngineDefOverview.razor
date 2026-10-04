@@ -32,54 +32,5 @@
       if (!string.IsNullOrEmpty(s.EngineDefsFolder))
           engineDefFolderPath = s.EngineDefsFolder;
   }
-  private async Task CreateEngineDefFile()
-  {
-    //a template file is located in the EngineBattle/WebGUI/Data folder
-    var relativePath = "Data/SFDef.json"; // Specify the relative path to the file
-    var currentDirectory = Directory.GetCurrentDirectory();
-    var fullPath = Path.Combine(currentDirectory, relativePath);
-    Console.WriteLine(fullPath);
-    var json = await File.ReadAllTextAsync(fullPath);
-
-    var filePath = Path.Combine(engineDefFolderPath, "SFDef.json");
-
-    //create folder if not exists
-    if (!Directory.Exists(engineDefFolderPath))
-    {
-      Directory.CreateDirectory(engineDefFolderPath);
-    }
-
-    if (File.Exists(filePath))
-    {
-      Console.WriteLine("File already exists  - if you want a new engineDef.json please copy this and make changes in a text editor");
-      return;
-    }
-    await File.WriteAllTextAsync(filePath, json);
-  }
-
-  private async Task CreateLc0EngineDefFile()
-  {
-    //a template file is located in the EngineBattle/WebGUI/Data folder
-    var relativePath = "Data/Lc0Def.json"; // Specify the relative path to the file
-    var currentDirectory = Directory.GetCurrentDirectory();
-    var fullPath = Path.Combine(currentDirectory, relativePath);
-    Console.WriteLine(fullPath);
-    var json = await File.ReadAllTextAsync(fullPath);
-
-    var filePath = Path.Combine(engineDefFolderPath, "Lc0Def.json");
-
-    //create folder if not exists
-    if (!Directory.Exists(engineDefFolderPath))
-    {
-      Directory.CreateDirectory(engineDefFolderPath);
-    }
-
-    if (File.Exists(filePath))
-    {
-      Console.WriteLine("File already exists - if you want a new engineDef.json please copy this and make changes in a text editor");
-      return;
-    }
-    await File.WriteAllTextAsync(filePath, json);
-  }
 
 }
