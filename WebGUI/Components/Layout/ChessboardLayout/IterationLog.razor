@@ -47,8 +47,8 @@ else
                 }
                 <div class="il-facts">
                     <div><span class="il-lbl">D/SD</span><span class="il-val">@DepthText(latest)</span></div>
-                    <div><span class="il-lbl">Nodes</span><span class="il-val">@FormatNodes(latest.Nodes)</span></div>
-                    <div><span class="il-lbl">NPS</span><span class="il-val">@FormatNodes((long)latest.Nps)</span></div>
+                    <div><span class="il-lbl">Nodes</span><span class="il-val">@AnalysisText.Nodes(latest.Nodes)</span></div>
+                    <div><span class="il-lbl">NPS</span><span class="il-val">@AnalysisText.Nodes((long)latest.Nps)</span></div>
                     @if (latest.Hashfull > 0)
                     {
                         <div title="Hash table occupancy. Near full, the search slows down and the
@@ -117,7 +117,7 @@ else
                     <span class="il-best">@r.Best</span>
                     @if (!Compact)
                     {
-                        <span class="il-n il-r">@FormatNodes(perIteration ? r.DeltaNodes : r.Row.Nodes)</span>
+                        <span class="il-n il-r">@AnalysisText.Nodes(perIteration ? r.DeltaNodes : r.Row.Nodes)</span>
                     }
                     <span class="il-t il-r">@FormatTime(perIteration ? r.DeltaSeconds : r.Row.Seconds)</span>
                 </div>
@@ -372,11 +372,11 @@ else
                 : $"depth {r.Row.Depth}"
         };
         if (r.Row.SelDepth > 0) parts.Add($"seldepth {r.Row.SelDepth}");
-        if (r.Row.Nps > 0) parts.Add($"{FormatNodes((long)r.Row.Nps)} nps");
+        if (r.Row.Nps > 0) parts.Add($"{AnalysisText.Nodes((long)r.Row.Nps)} nps");
         // The other reading of the two columns, so both are always one hover away.
         parts.Add(perIteration
-            ? $"total {FormatNodes(r.Row.Nodes)} in {FormatTime(r.Row.Seconds)}"
-            : $"this depth {FormatNodes(r.DeltaNodes)} in {FormatTime(r.DeltaSeconds)}");
+            ? $"total {AnalysisText.Nodes(r.Row.Nodes)} in {FormatTime(r.Row.Seconds)}"
+            : $"this depth {AnalysisText.Nodes(r.DeltaNodes)} in {FormatTime(r.DeltaSeconds)}");
         if (r.Ebf is double ebf) parts.Add($"EBF {ebf.ToString("0.00", CultureInfo.InvariantCulture)}");
         if (r.Row.Hashfull > 0) parts.Add($"hash {r.Row.Hashfull / 10}%");
         if (r.Jump != 0) parts.Add($"score moved {r.ScoreDelta.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)}");
@@ -434,13 +434,6 @@ else
     }
 
     // ── Formatting ───────────────────────────────────────────────────────────────
-    private static string FormatNodes(long nodes) => nodes switch
-    {
-        >= 1_000_000_000 => $"{nodes / 1_000_000_000.0:0.##}B",
-        >= 1_000_000 => $"{nodes / 1_000_000.0:0.##}M",
-        >= 1_000 => $"{nodes / 1_000.0:0.#}K",
-        _ => nodes.ToString(CultureInfo.InvariantCulture)
-    };
 
     private static string FormatTime(double s) =>
         s >= 60 ? $"{(int)(s / 60)}:{(s % 60).ToString("00.0", CultureInfo.InvariantCulture)}"
@@ -463,7 +456,7 @@ else
         foreach (var v in view)
         {
             var mark = v.Changed ? "*" : " ";
-            var nodes = FormatNodes(perIteration ? v.DeltaNodes : v.Row.Nodes);
+            var nodes = AnalysisText.Nodes(perIteration ? v.DeltaNodes : v.Row.Nodes);
             var time = FormatTime(perIteration ? v.DeltaSeconds : v.Row.Seconds);
             var ebf = v.Ebf is double e ? e.ToString("0.00", CultureInfo.InvariantCulture) : "-";
             sb.AppendLine($"{DepthRange(v),8}{v.Score,9}{mark} {v.Best,-8}{nodes,9}{time,9}{ebf,7}");

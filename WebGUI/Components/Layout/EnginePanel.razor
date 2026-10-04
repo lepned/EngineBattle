@@ -695,18 +695,6 @@
         }
     }
 
-    private string FormatNodes(double nodes)
-    {
-        if (nodes > 1_000_000_000)
-            return (nodes / 1_000_000_000).ToString("F1") + "B nodes";
-        else if (nodes > 1_000_000)
-            return (nodes / 1_000_000).ToString("F1") + "M nodes";
-        else if (nodes > 1_000)
-            return (nodes / 1_000).ToString("F1") + "K nodes";
-        else
-            return nodes.ToString("F1") + " nodes";
-    }
-
     private async Task PlayMoveFromNNTable(NNValues moveInfo)
     {
         if (autoSearchSwitch)
@@ -731,10 +719,9 @@
     // Eval is already white-perspective (the UCI parser negates for black to move).
     private static (string Text, string Cls) PvEvalParts(EngineStatus status) => status.Eval switch
     {
-        EvalType.CP cp => (cp.Info.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture),
-                           cp.Info >= 0.05 ? "pos" : cp.Info <= -0.05 ? "neg" : ""),
-        EvalType.Mate m => (m.Info > 0 ? $"M{m.Info}" : $"-M{-m.Info}", m.Info > 0 ? "pos" : "neg"),
-        _ => ("–", "")
+        EvalType.CP cp => (AnalysisText.Eval(status.Eval), cp.Info >= 0.05 ? "pos" : cp.Info <= -0.05 ? "neg" : ""),
+        EvalType.Mate m => (AnalysisText.Eval(status.Eval), m.Info > 0 ? "pos" : "neg"),
+        _ => (AnalysisText.Eval(status.Eval), "")
     };
 
     private async Task OnNNTableRowClick(NNValues moveInfo, bool ctrlKey = false)
@@ -1343,7 +1330,7 @@
 
     private string HeaderOf(EngineStatus status)
     {
-        var nodes = FormatNodes(status.Nodes);
+        var nodes = AnalysisText.Nodes(status.Nodes) + " nodes";
         var nps = GameAnalysis.Formatting.formatNPS(status.NPS);
         if (status.EPS == 0)
             return $"{nodes} ({nps}) (tbhits: {status.TBhits:N0})";

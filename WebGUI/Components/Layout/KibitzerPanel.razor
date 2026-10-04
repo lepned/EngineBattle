@@ -77,16 +77,16 @@
     {
         var main = dataList[0].Value;
         <div class="kib-status">
-            <span class="kib-eval">@WhiteEvalStr(main)</span>
+            <span class="kib-eval">@AnalysisText.Eval(main.Eval)</span>
             <span>depth @main.Depth</span>
-            <span>@FormatNodes(main.Nodes)</span>
+            <span>@(AnalysisText.Nodes(main.Nodes) + " nodes")</span>
             <span>@Formatting.formatNPS(main.NPS)</span>
         </div>
         <div class="kib-pvs">
             @foreach (var item in dataList)
             {
                 <div class="kib-pv-row" title="@item.Value.PV">
-                    <span class="kib-pv-eval">@WhiteEvalStr(item.Value)</span>
+                    <span class="kib-pv-eval">@AnalysisText.Eval(item.Value.Eval)</span>
                     <span class="kib-pv-line">@item.Value.PV</span>
                 </div>
             }
@@ -515,23 +515,6 @@
             await OnIterations.InvokeAsync((iterationCollector.Rows, fen, lastIterationInfoLine, false));
     }
 
-    // EngineStatus.Eval is already white-perspective: the UCI parser negates the
-    // side-to-move score for black (EngineProtocol.getEssentialDataWithEPS).
-    private static (double? Cp, int? Mate) WhiteEval(EngineStatus status) => status.Eval switch
-    {
-        EvalType.CP cp => (cp.Info, null),
-        EvalType.Mate m => (null, m.Info),
-        _ => ((double?)null, (int?)null)
-    };
-
-    private string WhiteEvalStr(EngineStatus status)
-    {
-        var (cp, mate) = WhiteEval(status);
-        return mate is int m ? (m > 0 ? $"M{m}" : $"-M{-m}")
-             : cp is double c ? c.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)
-             : "–";
-    }
-
     private async Task ApplyOverlaySetting()
     {
         var setting = overlayOn && hasLiveStats ? OverlaySettings.Policy : OverlaySettings.None;
@@ -559,14 +542,6 @@
         await Send(PanelModel.Event.NewLinesChanged(n));
         if (running) await Send(PanelModel.Event.NewStart(CurrentRequest()));
     }
-
-    private static string FormatNodes(long nodes) => nodes switch
-    {
-        >= 1_000_000_000 => $"{nodes / 1_000_000_000.0:0.#}B nodes",
-        >= 1_000_000 => $"{nodes / 1_000_000.0:0.#}M nodes",
-        >= 1_000 => $"{nodes / 1_000.0:0.#}k nodes",
-        _ => $"{nodes} nodes"
-    };
 
     public ValueTask DisposeAsync()
     {

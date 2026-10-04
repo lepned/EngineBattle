@@ -62,7 +62,7 @@ else
                         }
                     </div>
                 </div>
-                <div class="cm-n">@FormatNodes(r.Nodes)</div>
+                <div class="cm-n">@AnalysisText.Nodes(r.Nodes)</div>
                 @if (Detailed)
                 {
                     <div class="cm-p">@((r.PShare * 100).ToString("0.0", CultureInfo.InvariantCulture))%</div>
@@ -302,7 +302,7 @@ else
             // N% is the bar's share, which in a policy-only run is P — printing it twice
             // would be misleading, so it goes out as a dash.
             var nPct = policyOnly ? "-" : (r.NShare * 100).ToString("0.0", inv);
-            sb.AppendLine($"{san,-8}{nPct,7}{(r.PShare * 100).ToString("0.0", inv),7}{FormatNodes(r.Nodes),9}{q,8}{v,8}  {wdl}");
+            sb.AppendLine($"{san,-8}{nPct,7}{(r.PShare * 100).ToString("0.0", inv),7}{AnalysisText.Nodes(r.Nodes),9}{q,8}{v,8}  {wdl}");
         }
         if (rows.Any(IsPreferred))
             sb.AppendLine($"{preferredMark} = engine choice (first PV move)");
@@ -332,11 +332,4 @@ else
         }
     }
 
-    private static string FormatNodes(long nodes) => nodes switch
-    {
-        >= 1_000_000_000 => $"{nodes / 1_000_000_000.0:0.##}B",
-        >= 1_000_000 => $"{nodes / 1_000_000.0:0.##}M",
-        >= 1_000 => $"{nodes / 1_000.0:0.#}K",
-        _ => nodes.ToString()
-    };
 }
