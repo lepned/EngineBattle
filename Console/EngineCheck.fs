@@ -1,6 +1,6 @@
-/// `anatest`: drives the analysis engine (AnalysisEngine) the way the GUI does, against a real
-/// engine, and checks what comes back. Exit code 1 when a check fails.
-module AnalysisTest
+/// `enginecheck` (diagnostic): drives the analysis engine (AnalysisEngine) the way the GUI does,
+/// against a real engine, and checks what comes back. Exit code 1 when a check fails.
+module EngineCheck
 
 open System
 open System.Collections.Concurrent

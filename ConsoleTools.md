@@ -42,7 +42,6 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `eretjson` | `eret` | Run ERET evaluation from JSON config |
 | `analyze` | `a` | Analyze a position with an engine |
 | `compare` | `cmp` | Compare two engines side-by-side |
-| `anatest` | `at` | Check the analysis engine against a real engine, as the GUI uses it |
 | `benchmark` | `bench`, `b` | Run engine benchmark |
 | `tune` | | Run Bayesian parameter tuner |
 | `redash` | | Regenerate BO dashboard from saved state |
@@ -63,6 +62,12 @@ dotnet run -c Release -- <command> <path-or-arguments>
 | `pvbatch` | | Piece values for a folder of nets |
 | `pvcombo` | | Material-imbalance report by material signature |
 | `help` | `h` | Show help message |
+
+**Diagnostics**
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `enginecheck` | `ec` | Check that an engine behaves correctly in the analysis pages |
 
 ---
 
@@ -308,27 +313,6 @@ dotnet run -c Release -- a engine.json --options
 - `info string` lines (e.g. Lc0's LogLiveStats)
 - Raw `bestmove` line
 - Summary: depth, eval, nodes, NPS, time, TBHits, WDL, bestmove, PV (UCI + SAN notation)
-
----
-
-### anatest
-
-Drives the analysis engine (the one behind the analysis pages, the kibitzer, Play vs computer and Game Review) the way the GUI does, against a real engine, and checks what comes back. Exit code 1 when a check fails.
-
-**Aliases:** `at`
-
-**Syntax:**
-```bash
-dotnet run -c Release -- anatest <engine> [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
-```
-
-**Checks:**
-- `review` - every position of a game in turn, awaited (as Game Review): each search completes with a move for its own position
-- `navigate` - fast moves through the game with `go infinite` (as auto-search), `--rounds` times: one bestmove, for the last position; the rest reported stopped
-- `options` - MultiPV changed during an infinite search: the search is rerun with it (skipped for an engine without MultiPV)
-- `stop` - `go infinite`, then stop: the bestmove arrives (a Winboard engine's analyze ends without one)
-
-**Options:** `--nodes` (default 2000) or `--movetime` for the limited searches - use `--movetime` for a Winboard engine, which has no node limit; `--delay` between navigation requests (default 30 ms); `--moves` replaces the built-in 30-ply game.
 
 ---
 
@@ -584,6 +568,29 @@ What a network thinks a piece is worth, from its evaluations of material imbalan
 `piecevalues` (`pv`) for one engine and position, `piecevaluefit` (`pvfit`) as a regression
 over a PGN or EPD, `pvbatch` over a folder of nets, and `pvcombo <games.pgn>` for a report
 by absolute material signature. Method and options in [PieceValues.md](PieceValues.md).
+
+## Diagnostics
+
+### enginecheck
+
+Checks that an engine behaves correctly in the analysis pages. It drives the analysis engine (the one behind the analysis pages, the kibitzer, Play vs computer and Game Review) the way the GUI does, against a real engine, and checks what comes back. Use it when an engine seems to hang or show wrong moves there: it tells the engine's fault from EngineBattle's. When the engine fails, its exit code and last stderr lines are printed; the full engine I/O is in `logs/engine_<name>_<time>.log` under the working directory. Exit code 1 when a check fails.
+
+**Aliases:** `ec`
+
+**Syntax:**
+```bash
+dotnet run -c Release -- enginecheck <engine> [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
+```
+
+**Checks:**
+- `review` - every position of a game in turn, awaited (as Game Review): each search completes with a move for its own position
+- `navigate` - fast moves through the game with `go infinite` (as auto-search), `--rounds` times: one bestmove, for the last position; the rest reported stopped
+- `options` - MultiPV changed during an infinite search: the search is rerun with it (skipped for an engine without MultiPV)
+- `stop` - `go infinite`, then stop: the bestmove arrives (a Winboard engine's analyze ends without one)
+
+**Options:** `--nodes` (default 2000) or `--movetime` for the limited searches - use `--movetime` for a Winboard engine, which has no node limit; `--delay` between navigation requests (default 30 ms); `--moves` replaces the built-in 30-ply game.
+
+---
 
 ## Configuration File Examples
 

@@ -18,7 +18,7 @@
 		<Compile Include="TunerRunner.fs" />
 		<Compile Include="BayesianOptimizer.fs" />
 		<Compile Include="MatchMode.fs" />
-		<Compile Include="AnalysisTest.fs" />
+		<Compile Include="EngineCheck.fs" />
 		<Compile Include="Program.fs" />
 	</ItemGroup>
 

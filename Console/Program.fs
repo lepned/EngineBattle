@@ -2595,7 +2595,6 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  pvcombo <games.pgn>                     Material-imbalance report by material signature"
     printfn "  analyze, a <engine> [fen] [options]      Analyze a position with an engine"
     printfn "  compare, cmp <e1> <e2> [options]         Compare two engines side-by-side"
-    printfn "  anatest, at <engine> [options]           Check the analysis engine against a real engine"
     printfn "  piecevalues, pv, values <engine> [fen] [options]"
     printfn "                                          Contextual piece values via leave-one-out net eval"
     printfn "                                          (shares --fen/--moves/--nodes/--uci; defaults to nodes=1)"
@@ -2623,6 +2622,10 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  perft <depth> [sampleSize]              Run perft move generation test"
     printfn "  gui [page] [port]                       Launch WebGUI (default: tournament, port 5018)"
     printfn "  help, h                                 Show this help message"
+    printfn ""
+    printfn "Diagnostics:"
+    printfn "  enginecheck, ec <engine> [options]      Check that an engine behaves correctly in the analysis pages"
+    printfn "                                          (--nodes N | --movetime MS, --rounds R, --delay MS, --moves, --uci K V)"
     printfn ""
     printfn "Analyze options:"
     printfn "  --fen S        Set position (quoted FEN string)"
@@ -2799,12 +2802,12 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                     runAnalyze p
                 | Verb (Compare p) ->
                     runCompare p
-                | Verb (AnaTest p) ->
+                | Verb (EngineCheck p) ->
                     let config = resolveEngineConfig p.Engine p.UciOptions
                     let code =
-                      AnalysisTest.run
+                      EngineCheck.run
                         { Config = config; Nodes = p.Nodes; MoveTimeMs = p.MoveTimeMs; DelayMs = p.DelayMs; Rounds = p.Rounds
-                          Moves = defaultArg p.Moves AnalysisTest.defaultMoves }
+                          Moves = defaultArg p.Moves EngineCheck.defaultMoves }
                     if code <> 0 then exit code
                 | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps, svgPath)) ->
                     runQuery fen square epd pv edits emitEpd epdOps svgPath
