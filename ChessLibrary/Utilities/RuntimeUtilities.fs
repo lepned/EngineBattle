@@ -237,7 +237,8 @@ module ConsoleUtils =
   let printInColor (color: ConsoleColor) (text: string) =
     //let originalColor = Console.ForegroundColor
     Console.ForegroundColor <- color
-    printfn "%s" text
+    // one write: printfn writes text and newline apart, and another thread's line can land between
+    Console.Out.WriteLine text
     Console.ForegroundColor <- originalColor
   
   let originalConsoleColor (text: string) = printInColor originalColor text

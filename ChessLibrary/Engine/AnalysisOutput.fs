@@ -226,9 +226,22 @@ module internal AnalysisOutput =
     elif startsWith "info" line then Search
     else mode
 
+  /// A line of the UCI protocol; anything else is the engine talking to its user - and so is an
+  /// `info string` without move stats (Ceres's dump-fen, Stockfish's NNUE note).
+  let private isProtocol (line: string) =
+    let line = line.TrimStart()
+    if startsWith "info string" line then line.Contains "N:"
+    else
+      line = ""
+      || [ "info"; "bestmove"; "option"; "id "; "uciok"; "readyok"; "copyprotection"; "registration" ]
+         |> List.exists (fun keyword -> startsWith keyword line)
+
   /// One line of engine output after the handshake: the new state and what the line produced,
   /// in order.
   let step (name: string) (pos: IPosition) (state: State) (line: string) : State * Effect list =
+    // the answer to a dump command (Ceres's dump-move-stats, dump-info...) or an error: shown, as
+    // the engine meant it for its user; it changes nothing in the parse
+    if not (isProtocol line) then state, [ Print (sprintf "%s: %s" name line) ] else
     let state = { state with Mode = nextMode name state.Mode line }
     match state.Mode with
     | MoveStats moves when startsWith "info string node" line ->

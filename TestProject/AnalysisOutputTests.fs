@@ -167,3 +167,17 @@ let ``No move ends the search quietly in a finished position, and is an illegal 
         Assert.Contains(AnalysisOutput.Update (Done "Eng"), effects)
         Assert.True(printed effects, line)
         Assert.True(noBestMove effects, line)
+
+[<Fact>]
+let ``A line outside the protocol (a dump command's answer, an error) is shown and changes nothing`` () =
+    let pos, _, _ = positionOf "position startpos"
+    let state = { AnalysisOutput.State.Initial with Mode = AnalysisOutput.Search }
+    let next, effects = AnalysisOutput.step "Ceres" pos state "error Unknown command: dump-uci"
+    Assert.Equal<AnalysisOutput.Effect list>([ AnalysisOutput.Print "Ceres: error Unknown command: dump-uci" ], effects)
+    Assert.Equal(state, next)
+    // a message as info string too; move stats stay stats
+    let _, effects = AnalysisOutput.step "Ceres" pos state "info string No search manager created"
+    Assert.Equal<AnalysisOutput.Effect list>([ AnalysisOutput.Print "Ceres: info string No search manager created" ], effects)
+    // protocol lines are not echoed
+    let _, effects = AnalysisOutput.step "Ceres" pos state "info depth 1 score cp 10 nodes 1 nps 1 time 1 pv e2e4"
+    Assert.DoesNotContain(effects, fun e -> match e with AnalysisOutput.Print _ -> true | _ -> false)
