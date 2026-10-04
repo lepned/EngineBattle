@@ -112,24 +112,6 @@ let calculateMedianMoveTime (moves: EngineMoveStat array) =
     |> Array.sortBy id
     |> median
 
-/// Extracts time and nodes for a player.
-/// <param name="moves">The array of engine move statistics.</param>
-/// <returns>An array of tuples containing the move time and nodes.</returns>
-let extractTimeAndNodesForPlayer (moves: EngineMoveStat array) =
-  moves
-  |> Array.filter (fun e -> e.mt > 0 && e.s > 0)
-  |> Array.map (fun e -> (e.mt, e.n))
-
-/// Calculates the average NPS using a simple method.
-/// <param name="moves">The array of engine move statistics.</param>
-/// <returns>The average NPS.</returns>
-let calculateAvgNpsSimple (moves: EngineMoveStat array) =
-  let vals =
-    moves
-    |> Array.map (fun e -> float e.s)
-    |> Array.filter (fun e -> e > 0)
-  if Array.isEmpty vals then 0.0 else Array.average vals
-
 /// Debugs the engine move statistics.
 /// <param name="moves">The array of engine move statistics.</param>
 let debug (moves: EngineMoveStat array) =
@@ -147,10 +129,6 @@ let debug (moves: EngineMoveStat array) =
 //Filter out the outliers from the dataset.
 //Calculate the average of the remaining values.
 
-let n1Map (stat : EngineMoveStat) = stat.n1
-let n2Map (stat : EngineMoveStat) = stat.n2
-let q1Map (stat : EngineMoveStat) = stat.q1
-let q2Map (stat : EngineMoveStat) = stat.q2
 let npsMap (stat : EngineMoveStat) = stat.s
 let nodeMap (stat : EngineMoveStat) = stat.n
 let depthMap (stat : EngineMoveStat) = int64 stat.d
@@ -189,43 +167,6 @@ let averageNpsWithoutOutliers (moves: EngineMoveStat array) mapping =
         sum / (float count)
     else
         0.0
-
-/// Calculates the average NPS.
-/// <param name="moves">The array of engine move statistics.</param>
-/// <returns>The average NPS.</returns>
-let calculateAvgNPS (moves: EngineMoveStat array) =
-  let data = extractTimeAndNodesForPlayer moves
-  let totalTimeMs = data |> Array.sumBy fst
-  let totalNodes = data |> Array.sumBy snd
-  let ratio =
-    if totalTimeMs = 0L then
-      0L
-    else
-      (totalNodes / totalTimeMs) * 1000L
-  ratio
-
-/// Calculates the average depth.
-/// <param name="moves">The array of engine move statistics.</param>
-/// <returns>The average depth.</returns>
-let calculateAvgDepth (moves: EngineMoveStat array) =
-    let vals =
-      moves
-      |> Array.map (fun e -> float e.d)
-      |> Array.filter (fun e -> e > 0)
-    if Array.isEmpty vals then 0.0 else Array.average vals
-
-/// Calculates the average self-depth.
-/// <param name="moves">The array of engine move statistics.</param>
-/// <returns>The average self-depth.</returns>
-let calculateAvgSelfdepth (moves: EngineMoveStat array) =
-  let filtered =
-    moves
-    |> Array.map (fun e -> float e.sd)
-    |> Array.filter (fun e -> e > 0)
-  if filtered.Length = 0 then
-    0.0
-  else
-    filtered |> Array.average
 
 /// Calculates the average move time.
 /// <param name="moves">The array of engine move statistics.</param>
@@ -722,46 +663,3 @@ let calculateMedianAndAvgBookExitSpeedSummaryInPgnFile (games:PgnGame seq) =
         {Player=p; Median=true; AvgNPS=npsMed; Games=games; EPS=epsMed; AvgDepth=depthMed; AvgNodes=nodesMed; AvgSelfDepth=sdMed; Time = moveTime |> int64}
         {Player=p; Median = false; AvgNPS=npsAvg; Games=games; EPS=epsAvg; AvgDepth=depthAvg; AvgNodes=nodesAvg; AvgSelfDepth=sdAvg; Time = moveTime |> int64}
       |]) |> Array.concat
-
-/// Calculates the median speed for all players in a PGN file.
-/// <param name="games">The sequence of PGN games.</param>
-/// <returns>An array of engine statistics per player.</returns>
-let calculateMedianSpeedForAllPlayersInPgnFile (games:PgnGame seq) =
-  let players = getPlayersFromPGN games
-  let allGames = PGNExtractor.extractAllEngineStatsInPGN games
-  let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
-  let movesOf = indexMovesByPlayer allMoves
-  let gamesOf = indexGameCountByPlayer allGames
-  players
-  |> Array.Parallel.map (fun p ->
-      let moves = movesOf p
-      let nps = calculateMedianNps moves
-      let epsMed = calculateMedianEPS moves
-      let nodes = calculateMedianNodes moves
-      let depth = calculateMedianDepth moves
-      let sd = calculateMedianSelfdepth moves
-      let moveTime = calculateMedianMoveTime moves
-      let sd = max sd depth
-      let games = gamesOf p
-      {Player=p; Median = true; AvgNPS=nps; Games=games; EPS=epsMed; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = moveTime |> int64})
-
-/// Calculates the average speed for all players in a PGN file.
-/// <param name="games">The sequence of PGN games.</param>
-/// <returns>An array of engine statistics per player.</returns>
-let calculateAvgSpeedForAllPlayersInPgnFile (games:PgnGame seq) =
-  let players = getPlayersFromPGN games
-  let allGames = PGNExtractor.extractAllEngineStatsInPGN games
-  let allMoves = allGames |> PGNExtractor.extractAllEngineMovesInPGN
-  let movesOf = indexMovesByPlayer allMoves
-  let gamesOf = indexGameCountByPlayer allGames
-  players
-  |> Array.Parallel.map (fun p ->
-      let moves = movesOf p
-      let avg = averageNpsWithoutOutliers moves
-      let nps = avg npsMap
-      let epsAvg = calculateAvgEPS moves
-      let nodes = avg nodeMap
-      let depth = avg depthMap
-      let sd = max depth (avg sdMap)
-      let games = gamesOf p
-      {Player=p; Median = false; AvgNPS=nps; Games=games; EPS=epsAvg; AvgDepth=depth; AvgNodes=nodes; AvgSelfDepth=sd; Time = 0L})

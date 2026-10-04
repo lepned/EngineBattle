@@ -133,10 +133,7 @@ module BlazorInterop =
 module TestPath =
   // Define various paths for PGN files and directories
   let startPos = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-  let frcLichess = "C:/Dev/Chess/PGNs/Results/Lichess/lichess_db_chess960_rated_2024-02.pgn"
   let bigLichess = "C:/Dev/Chess/PGNs/Results/Lichess/lichess_db_standard_rated_2017-10.pgn"
-  let tcecOpening = "C:/Dev/Chess/Openings/TCEC_16-25.pgn"
-  let pgnCup = "C:/Dev/Chess/PGNs/CupTest.pgn"
   let pgnTest1 = "C:/Dev/Chess/PGNs/Sf--t3-ovUncBo_T_Test.pgn"
   let pgnTest2 = "C:/Dev/Chess/PGNs/test_UHO_02.pgn"
   let pgnTest3 = "C:/Dev/Chess/PGNs/Lichess_Fast_01.pgn"
@@ -145,26 +142,10 @@ module TestPath =
   let pgnTest6 = "C:/Dev/Chess/PGNs/Results/SimulatedSpeedTest.pgn"
   let pgnTest7 = "C:/Dev/Chess/PGNs/Deviations/feb25.pgn"
   let pgnTest8 = "C:/Dev/Chess/PGNs/Boosting.pgn"
-  let pgnTest9 = "C:/Dev/Chess/PGNs/Results/T3_distilledTest.pgn"
-  let pgnTest10 = "C:/Dev/Chess/PGNs/t3_Test_19.pgn"
-  let pgnTest11 = "C:/Dev/Chess/PGNs/Results/TCEC_Season_24_-_Superfinal.pgn"
-  let pgnTest12 = "C:/Dev/Chess/PGNs/Results/ccc22-rapid-semifinals.pgn"
   let pgnTest13 = "C:/Dev/Chess/PGNs/Results/TCEC-S25-Superfinal.pgn"
-  let pgnTest14 = "C:/Dev/Chess/PGNs/Results/TCEC-everything.pgn"
-  let pgnTest15 = "C:/Dev/Chess/PGNs/CeresValueTempTest_07.pgn"
-  let pgnTest16 = "C:/Dev/Chess/PGNs/match_run2.pgn"
   let pgnTest17 = "C:/Dev/Chess/PGNs/UHO_4060_v4.pgn"
-  let ccc = "C:/Dev/Chess/pgns/ccc22-rapid-semifinals.pgn"
   let selection = "C:/Dev/Chess/PGNs/Results/TCEC/Selection"
-  let allTcec = "C:/Dev/Chess/PGNs/Results/TCEC"
-  let tcec21 = "C:/Dev/Chess/PGNs/Results/TCEC/TCEC_Season_21/TCEC_Season_21_-_Superfinal.pgn"
-  let cccSelection = "C:/Dev/Chess/PGNs/Results/CCC"
-  let testPGN = "C:/Dev/Chess/PGNs/Results/test.pgn"
-  let ceres1 = "C:/Dev/Chess/PGNs/Ceres/match_TOURN_Ceres1_Ceres2_638722631385989248.pgn"
-  let ceres2 = "C:/Dev/Chess/PGNs/Ceres/match_TOURN_Ceres1_Ceres2_638722637902257039.pgn"
-  let ceres3 = "C:/Dev/Chess/PGNs/Ceres/match_TOURN_Ceres1_Ceres2_638721916003216067.pgn"
   let ceresFolder = "C:/Dev/Chess/PGNs/Ceres"
-  let navsLatestPGN = "C:/Dev/Chess/PGNs/ContemptTest.pgn"
   
   
   
@@ -246,16 +227,6 @@ module TestPath =
             printfn "Current directory: %s" dir
             failwith "Tournament json file not found after backup plans!"
   
-  /// <summary>
-  /// Generates engine configuration JSON files and a tournament configuration JSON file from a specified directory.
-  /// </summary>
-  let createTournamentJsonAndEngineJsonFromDirectory() =
-    let networkFolder = "C:/Dev/Chess/Networks/CeresLatest"
-    let folder = "C:/Dev/Chess/Networks/CeresLatest/output_EngineJson"
-    JSON.getAllConfigFiles networkFolder
-    let tournyCloned = JSON.createTournamentFile (tournamentPath()) folder
-    JSON.writeTournamentJson tournyCloned folder
-
 module RunOutput =
 
   /// Prepares a run's output folder and says what happened, returning the folder the
@@ -283,10 +254,7 @@ module RunOutput =
 
 module Eret =
 
-  let eretPath = "C:/Dev/Chess/Puzzles/ERET_VESELY203.epd"
-  let eretPath2 = "C:/Dev/Chess/Puzzles/chad_tactics-100M.epd"  
   let timeConfig = UnionType.FixedTime (TimeSpan(0,0,5)) //10 seconds
-  let timeConfig2 = UnionType.Nodes 1_000_000
 
   /// <summary>
   /// Processes the ERET update and prints relevant information.

@@ -105,22 +105,4 @@ module PGNTypes =
       | BlackWins
       | DrawAgreed
 
-    type OpportunityDetail =
-      { Game: PgnGame
-        MoveIndex: int
-        MovePlayed: Move
-        EvalDifference: float
-        WhiteEval: float
-        BlackEval: float
-        GameResult: GameResult }
-      with
-        override this.ToString() =
-          sprintf "\nGame %d. %s vs %s Result: %A\n EVAL: W: %f B: %f\n %A"
-            this.Game.GameNumber
-            this.Game.GameMetaData.White
-            this.Game.GameMetaData.Black
-            this.GameResult
-            this.WhiteEval
-            this.BlackEval
-            this.MovePlayed
 

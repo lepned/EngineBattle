@@ -6,9 +6,6 @@ open EPDTypes
 
 module ConversionHelper =
 
-  /// List of piece characters.
-  let pieceChars = ['K';'Q';'R';'B';'N']
-
   /// Gets the piece symbol from a move.
   /// <param name="move">The move.</param>
   /// <returns>The piece symbol.</returns>

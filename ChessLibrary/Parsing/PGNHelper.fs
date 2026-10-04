@@ -61,15 +61,6 @@ let extractFen (input: string) (idx : int) =
       Move = String.Empty
     }
 
-let readTableBaseResults (filePath:string) =
-  let content = File.ReadAllLines filePath
-  let mutable nr = 0
-  seq { for line in content do
-          nr <- nr + 1
-          if line.Contains "BATCH" |> not then
-            extractFen line nr
-     }
-
 /// Gets the opening information from a PGN game.
 let private fallbackOpeningInfo (opening: Header option) (fen: string) (gameNumber: int) =
   match opening with

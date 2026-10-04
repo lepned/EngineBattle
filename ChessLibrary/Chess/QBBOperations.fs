@@ -175,13 +175,6 @@ let inline AbsSq(sq:int, sideToMove:int) = if sideToMove = 0 then sq else OppSq(
 
 // Define functions for each file
 let getAFileKingAttack occupation = ExtractLSB(FileMasks.[0] &&& occupation)
-let getBFileKingAttack occupation = ExtractLSB(FileMasks.[1] &&& occupation)
-let getCFileKingAttack occupation = ExtractLSB(FileMasks.[2] &&& occupation)
-let getDFileKingAttack occupation = ExtractLSB(FileMasks.[3] &&& occupation)
-let getEFileKingAttack occupation = ExtractLSB(FileMasks.[4] &&& occupation)
-let getFFileKingAttack occupation = ExtractLSB(FileMasks.[5] &&& occupation)
-let getGFileKingAttack occupation = ExtractLSB(FileMasks.[6] &&& occupation)
-let getHFileKingAttack occupation = ExtractLSB(FileMasks.[7] &&& occupation)
 
 let createKnightMask startSq finalSq =
   let mutable mask = 0UL
@@ -315,9 +308,6 @@ let getRookMaskWithOccupancy fromSq toSq occupancy =
   ||| getLSBRowOneMask fromSq toSq occupancy  
 
 //create a function that returns the Rook and the bishop mask for a given fromSq and toSq
-let getRookBishopMask fromSq toSq = getRookMask fromSq toSq ||| getBishopMask fromSq toSq
-
-let getRookBishopMaskWithOccupancy fromSq toSq occupancy = getRookMaskWithOccupancy fromSq toSq occupancy ||| getBishopMaskWithOccupancy fromSq toSq occupancy
 
 //create pawn masks for the second and seventh rank
 let createPawnMask startSq finalSq =

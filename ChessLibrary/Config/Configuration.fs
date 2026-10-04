@@ -840,88 +840,8 @@ module JSON =
               ConsoleUtils.printInColor ConsoleColor.Red ("***" + msg)
               None
 
-  let writeTournamentJson (tournament: Tournament) (path: string) : unit =
-      try
-          let options = addConverters (JsonSerializerOptions(WriteIndented = true))
-          options.AllowTrailingCommas <- true
-          options.PreferredObjectCreationHandling <- JsonObjectCreationHandling.Populate
-          let json = JsonSerializer.Serialize(tournament,options)
-          let combinedPath = Path.Combine(path, "tournament.json")
-          File.WriteAllText(combinedPath, json)
-      with
-      | ex -> ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Error: %s" ex.Message)
-
-  let loadBaseConfig (jsonPath: string) =
-      let json = File.ReadAllText(jsonPath)
-      let options = createJsonOptions()
-      options.PropertyNameCaseInsensitive <- true
-      JsonSerializer.Deserialize<EngineConfig>(json, options)
-
   let cloneOptions (dict: Dictionary<string,obj>) =
       Dictionary<string,obj>(dict)
-
-  let makeEngineConfigFile (baseConfig: EngineConfig) (networkPath: string) =
-      let newOptions = cloneOptions baseConfig.Options
-      newOptions.["WeightsFile"] <- networkPath :> obj
-      let onnxName = Path.GetFileNameWithoutExtension(networkPath)
-      let baseConfigName = baseConfig.Name.Trim().Split(" ").[0]
-      let newName = sprintf "%s %s" baseConfigName onnxName
-      { baseConfig with
-          Name = newName
-          Options = newOptions }
-
-  let generateCeresJsonFiles (baseConfig: EngineConfig) (onnxFolderPath: string) (outputFolderPath: string) =
-      let onnxFiles = Directory.GetFiles(onnxFolderPath, "*.onnx")
-      let writeOptions = addConverters (JsonSerializerOptions(WriteIndented = true))
-
-      for onnxFile in onnxFiles do
-        let newConfig = makeEngineConfigFile baseConfig onnxFile
-        let outputFilename = newConfig.Name + ".json"
-        let outputPath = Path.Combine(outputFolderPath, outputFilename)
-        let newJson = JsonSerializer.Serialize(newConfig, writeOptions)
-        File.WriteAllText(outputPath, newJson)
-        printfn "Created %s" outputPath
-      printfn "Generated %d JSON files" onnxFiles.Length
-
-  let generateLc0sonFiles (baseConfig: EngineConfig) (networkFolderPath: string) (outputFolderPath: string) =
-      let networkFiles = Directory.GetFiles(networkFolderPath, "*.pb.gz")
-      let writeOptions = addConverters (JsonSerializerOptions(WriteIndented = true))
-
-      for networkFile in networkFiles do
-        let newConfig = makeEngineConfigFile baseConfig networkFile
-        let outputFilename = newConfig.Name + ".json"
-        let outputPath = Path.Combine(outputFolderPath, outputFilename)
-        let newJson = JsonSerializer.Serialize(newConfig, writeOptions)
-        File.WriteAllText(outputPath, newJson)
-        printfn "Created %s" outputPath
-      printfn "Generated %d JSON files" networkFiles.Length
-
-  let getAllConfigFiles (folder: string) =
-    let engineConfigs = Directory.GetFiles(folder, "*.json")
-    let outputFolder = Path.Combine(folder, "output_EngineJson")
-    Directory.CreateDirectory(outputFolder) |> ignore
-    for path in engineConfigs do
-      let baseConfig = loadBaseConfig path
-      let networkFolderPath = folder
-      if baseConfig.Path.ToLower().Contains("ceres") then
-        generateCeresJsonFiles baseConfig networkFolderPath outputFolder
-      else
-        generateLc0sonFiles baseConfig networkFolderPath outputFolder
-
-  let createTournamentFile (tournyPath: string) (engineFolder : string) =
-    let engineFiles =
-      Directory.GetFiles(engineFolder, "*.json")
-      |> Array.map(fun path -> Path.GetFileName path)
-      |> Array.toList
-      |> List.filter (fun f -> not (f.ToLower().Contains("tournament")))
-
-    match readTournamentJson tournyPath with
-    | Some tournament ->
-      { tournament
-          with
-            EngineSetup = { tournament.EngineSetup with EngineDefFolder = engineFolder; EngineDefList = engineFiles; Engines = [] }
-      }
-    | None -> failwith "Error in reading tournament file"
 
 
 module JSONParser =

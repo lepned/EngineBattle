@@ -344,8 +344,6 @@ type Board() =
       updatePathFromCurrent ()
       this.PositionWithMoves()
 
-    member this.PositionWithFenAndMoves (fen: string) = positionCommand (Board.UciFen fen)
-
     member this.SanMoveNumberString san =
       if String.IsNullOrWhiteSpace san then ""
       else
@@ -846,12 +844,6 @@ type Board() =
       match TMoveOps.getTMoveFromShortSan san moveList position.STM (fun _ -> true) with
       | Some move -> Some (TMoveOps.getUciNotation move position.STM)
       | None -> None
-
-    member this.FindEpMove move =
-      let moveList = this.GenerateMoves()
-      match TMoveOps.getTMoveFromShortSan move moveList position.STM (fun _ -> true) with
-      | Some tmove -> (tmove.MoveType &&& TPieceType.EP) <> TPieceType.EMPTY
-      | None -> false
 
     /// Plays a UCI move through the graph: an existing child with the same move is followed,
     /// otherwise a new edge is added (a variation when the node already has another main move).

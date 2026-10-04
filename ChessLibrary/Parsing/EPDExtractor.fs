@@ -24,11 +24,6 @@ let mapEPDToPGN (epd:EPDEntry) n : PgnGame =
     Raw = epd.RawInput
   }
 
-let mapChessRecordToEPD (record: ChessRecord) n : EPDEntry =
-  let fen = record.FEN
-  let other = { RawInput = record.ToString(); FEN = fen; BestMove = None; AvoidMove = None; Id = Some (n.ToString()); Other = record.ToString() |> Some }
-  other
-
 let readEPDs (path:string) =
   let content = File.ReadAllLines path
   seq { for line in content do

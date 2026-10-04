@@ -3,18 +3,6 @@ module ChessLibrary.PGNExtractor
 open ChessLibrary.PGNTypes
 open ChessLibrary.EngineTypes
 
-/// Extracts moves from a PGN game.
-/// <param name="game">The PGN game.</param>
-/// <returns>A tuple containing the moves and game metadata.</returns>
-let extractMoves (game:PgnGame) =
-  let moves =
-    [|for move in game.Mainline do
-       if move.Color = "w" then
-          yield true, game.GameMetaData.White, move.MoveNumber, move.San
-       else
-          yield false, game.GameMetaData.Black, move.MoveNumber, move.San |]
-  moves, game.GameMetaData
-
 
 /// Extracts engine book exit statistics from a PGN game.
 /// <param name="game">The PGN game.</param>

@@ -8,7 +8,6 @@ type ChessLibrary.Chess.Board
   DeviationHash() : System.UInt64
   EndCurrentVariation() : System.Void
   FEN() : System.String
-  FindEpMove(move: System.String) : System.Boolean
   GenerateMoves() : ChessLibrary.MoveTypes.TMove[]
   GenerateMovesToBuffer(buffer: System.Span<ChessLibrary.MoveTypes.TMove>) : System.Int32
   GetCurrentEdgeComment() : System.String
@@ -42,7 +41,6 @@ type ChessLibrary.Chess.Board
   PlaySanMoveWithComments(san: System.String, comments: System.String) : System.Void
   PlayUciMove(move: System.String) : System.Void
   PositionHash() : System.UInt64
-  PositionWithFenAndMoves(fen: System.String) : System.String
   PositionWithMoves() : System.String
   PositionWithMovesFromGraph() : System.String
   PrintPosition(label: System.String) : System.Void

@@ -8,11 +8,6 @@ open PositionTypes
 open MoveTypes
 
 //reverse a binary string
-let binaryReversed (binary:string) = System.String(Array.rev (binary.ToCharArray()))
-
-let printBinaryView label (number : uint64) = 
-  let binary = Convert.ToString(int64 number, 2) |> binaryReversed 
-  printfn "%s\n%s" label binary
 
 // GenRook/GenBishop return standard attack-set semantics: the origin square is NOT
 // included. (The raw QBB span construction keeps the origin bit; it is masked out here

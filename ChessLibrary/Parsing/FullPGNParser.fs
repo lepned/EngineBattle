@@ -701,54 +701,6 @@ let parseFullPgnGame (pgn:string) =
   | Some game -> game
   | None -> PgnGame.Empty(0)
 
-/// Parse only headers from a PGN file (span-based, skips movetext for performance)
-let parsePgnFileHeadersOnly (pgnFilePath: string): seq<PgnGame> =
-  seq {
-      let st = ParserState.Create()
-      let mutable inMoveText = false
-      let options = FileStreamOptions(Access = FileAccess.Read, Share = FileShare.ReadWrite, Mode = FileMode.Open)
-      use reader = new StreamReader(pgnFilePath, options)
-
-      while not reader.EndOfStream do
-        let currentLine = reader.ReadLine()
-        let trimmed = currentLine.TrimStart()
-
-        if String.IsNullOrEmpty trimmed then
-          // Empty line - transition from headers to movetext or end of game
-          if inMoveText && hasHeaders st then
-            // End of game - yield without parsing moves
-            yield buildGame st
-            resetState st
-            inMoveText <- false
-          elif hasHeaders st && not inMoveText then
-            // Empty line after headers - now in movetext section
-            inMoveText <- true
-        elif trimmed.Length > 0 && trimmed[0] = '[' then
-          // Header line
-          if inMoveText && hasHeaders st then
-            // New game starting - yield previous
-            yield buildGame st
-            resetState st
-            inMoveText <- false
-          parseHeaderTexLine st trimmed
-        else
-          // Movetext line - just mark we're in movetext, don't parse
-          inMoveText <- true
-          // Only check for result tokens to properly terminate the game
-          let trimmedStr = trimmed.ToString()
-          if trimmedStr = "1-0" || trimmedStr = "0-1" || trimmedStr = "1/2-1/2" || trimmedStr = "*" ||
-             trimmedStr.EndsWith(" 1-0") || trimmedStr.EndsWith(" 0-1") || trimmedStr.EndsWith(" 1/2-1/2") || trimmedStr.EndsWith(" *") then
-            if st.Result = "" then
-              if trimmedStr.Contains("1-0") then st.Result <- "1-0"
-              elif trimmedStr.Contains("0-1") then st.Result <- "0-1"
-              elif trimmedStr.Contains("1/2-1/2") then st.Result <- "1/2-1/2"
-              elif trimmedStr.Contains("*") then st.Result <- "*"
-
-      // Handle last game
-      if hasHeaders st then
-        yield buildGame st
-  }
-
 /// Parse only headers from a PGN string (span-based, skips movetext for performance)
 let parsePgnStringHeadersOnly (content: string): seq<PgnGame> =
   seq {
