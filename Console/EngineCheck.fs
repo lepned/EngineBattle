@@ -187,8 +187,8 @@ type private Ctx =
   { S: Session
     Report: Report
     Options: Dictionary<string, UciOption.UciOption>
-    /// Options the config sets (network, device...): left alone.
-    Configured: HashSet<string>
+    /// Options the config sets (network, device...), with their values: left alone.
+    Configured: Dictionary<string, string>
     Searched: ResizeArray<Searched>
     Limited: string
     /// Why the engine can no longer be checked; the rest is skipped.
@@ -269,7 +269,7 @@ let private startup (c: Ctx) (config: EngineConfig) =
 
       let commands = EngineHelper.createInitialUCICommands config |> List.ofSeq
       for cmd in commands do
-        UciOption.parseSetOptionCommand cmd |> Option.iter (fun (name, _) -> c.Configured.Add name |> ignore)
+        UciOption.parseSetOptionCommand cmd |> Option.iter (fun (name, value) -> c.Configured.[name] <- string value)
         c.S.Send cmd
       c.S.Send "isready"
       // a network load (a TensorRT build) can take minutes
@@ -298,7 +298,7 @@ let private optionsGroup (c: Ctx) =
   header "options"
   let toDefault =
     [ for KeyValue (_, o) in c.Options do
-        if not (c.Configured.Contains o.Name) then
+        if not (c.Configured.ContainsKey o.Name) then
           match o.OptionType with
           | UciOption.Check b -> yield o.Name, (if b then "true" else "false")
           | UciOption.Spin (_, _, d) -> yield o.Name, string d
@@ -329,15 +329,20 @@ let private positionsGroup (c: Ctx) =
    | Some line, Some board -> failed c "startpos moves" (sprintf "bestmove %s is not legal in %s" (bestMoveOf line) (board.FEN()))
    | _ -> failed c "startpos moves" "no bestmove within 30 s"; recover c)
   checkedSearch c "fen" ruy [] c.Limited |> ignore
-  let defChess960 = c.Configured.Contains "UCI_Chess960"
-  if defChess960 then c.Report.Add Skip "castling in moves" "the def sets UCI_Chess960 (castling is king takes rook)"
+  // the def's own UCI_Chess960 stays: true writes castling as king takes rook, false is standard
+  let defChess960 =
+    match c.Configured.TryGetValue "UCI_Chess960" with
+    | true, v -> Some (v.Trim().Equals("true", StringComparison.OrdinalIgnoreCase))
+    | _ -> None
+  if defChess960 = Some true then c.Report.Add Skip "castling in moves" "the def turns UCI_Chess960 on (castling is king takes rook)"
   else checkedSearch c "castling in moves" startFen [ "e2e4"; "e7e5"; "g1f3"; "b8c6"; "f1c4"; "g8f6"; "e1g1" ] c.Limited |> ignore
   checkedSearch c "en passant in moves" startFen [ "e2e4"; "a7a6"; "e4e5"; "d7d5" ] c.Limited |> ignore
   checkedSearch c "en passant in fen" "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3" [] c.Limited |> ignore
   checkedSearch c "promotion in moves" "8/P6k/8/8/8/8/6K1/8 w - - 0 1" [ "a7a8q" ] c.Limited |> ignore
   checkedSearch c "underpromotion in moves" "8/P6k/8/8/8/8/6K1/8 w - - 0 1" [ "a7a8n" ] c.Limited |> ignore
   checkedSearch c "black to move, fen" "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1" [] c.Limited |> ignore
-  if defChess960 then c.Report.Add Skip "Chess960" "the def sets UCI_Chess960; left as it is"
+  if defChess960 = Some false then c.Report.Add Skip "Chess960" "the def turns UCI_Chess960 off; left as it is"
+  elif defChess960 = Some true then c.Report.Add Skip "Chess960" "the def turns UCI_Chess960 on; left as it is"
   elif hasOption c "UCI_Chess960" then
     c.S.Send "setoption name UCI_Chess960 value true"
     checkedSearch c "Chess960 start" "nrbkqbrn/pppppppp/8/8/8/8/PPPPPPPP/NRBKQBRN w GBgb - 0 1" [] c.Limited |> ignore
@@ -673,7 +678,7 @@ let run (p: Params) : int =
     let c =
       { S = s; Report = report
         Options = Dictionary<string, UciOption.UciOption>(StringComparer.OrdinalIgnoreCase)
-        Configured = HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        Configured = Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         Searched = ResizeArray()
         Limited = match p.MoveTimeMs with Some ms -> sprintf "go movetime %d" ms | None -> sprintf "go nodes %d" p.Nodes
         Stuck = None; LastFailed = "" }
