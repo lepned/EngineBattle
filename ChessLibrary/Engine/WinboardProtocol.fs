@@ -378,11 +378,8 @@ module WinboardProtocol =
         member _.IsInitialized = lock stateLock (fun () -> isInitialized)
         member _.IsV1Fallback = lock stateLock (fun () -> isV1Fallback)
         member _.IsProtover2 = lock stateLock (fun () -> isProtover2)
-        member _.ConfiguredName = configuredEngineName
         /// Per CECP spec, reuse defaults to true when not explicitly set to 0
         member _.CanReuse = lock stateLock (fun () -> features.Reuse |> Option.defaultValue true)
-        /// Semaphore that signals when initialization completes
-        member _.InitializationSemaphore = initSemaphore
         /// Get the configured time control strategy
         member _.ConfiguredTimeControlStrategy = winboardConfig.TimeControlStrategy
 

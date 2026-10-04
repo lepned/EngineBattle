@@ -120,20 +120,6 @@ let tryFindOption (optionsMap: Dictionary<string, UciOption>) (name: string) =
 
 
 // Function to validate an option (case-insensitive value checks; preserve provided value text)
-let validateOption (optionsMap:Dictionary<string, UciOption>) (name: string, value: string) =
-    match optionsMap.TryGetValue(name) with
-    | true, option ->
-        match option.OptionType with
-        | Check _ -> equalsCI value "true" || equalsCI value "false"
-        | Spin (min, max, _) ->
-            match System.Int64.TryParse(value) with
-            | true, intValue -> intValue >= min && intValue <= max
-            | _ -> false
-        | Combo (options, _) -> options |> List.exists (fun v -> v.Equals(value, StringComparison.OrdinalIgnoreCase))
-        | Button -> true
-        | String _ -> true
-        | _ -> false
-    | _ -> false
 
 let parseSetOptionCommand (command: string) =
     let parts = command.Trim().Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)

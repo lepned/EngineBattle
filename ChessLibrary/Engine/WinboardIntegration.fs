@@ -27,8 +27,6 @@ open ChessLibrary.WinboardProtocol
 module WinboardIntegration =
 
     // Constants
-    [<Literal>]
-    let private MaxInitAttempts = 20
     /// How long an engine has to finish its feature list (done=1) after protover 2, as cutechess
     /// gives it. An engine that says nothing to protover is taken for a V1 engine when it runs out.
     [<Literal>]

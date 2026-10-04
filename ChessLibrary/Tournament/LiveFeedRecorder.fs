@@ -35,11 +35,6 @@ type LiveFeedRecorder(path: string) =
         let line = serializeUpdate update
         lock sync (fun () -> writer.WriteLine line)
 
-    /// Append one `Update` as a wire-JSON line stamped with a gameId (for multi-game routing).
-    member _.RecordWithGameId(gameId: string, update: Update) =
-        let line = withGameId gameId (serializeUpdate update)
-        lock sync (fun () -> writer.WriteLine line)
-
     member _.Dispose() =
         lock sync (fun () ->
             try

@@ -479,7 +479,6 @@ module Engine =
       member _.LastExitCode = lastExitCode
       member _.GetDiagnostics() = getDiagnostics ()
       member _.GetVerifiedCommands() = createVerifiedOptions initCommands
-      member _.InitCommands = initCommands
       member _.Process = proc ()
       member _.PrintNonDefaultValues = fun () -> printNonDefaultValues name config.Path nonDefaultValues
       member _.IsLc0 = isLc0
@@ -510,10 +509,6 @@ module Engine =
         match optionsMap.TryGetValue option with
         | true, opt -> this.AddSetOption (EngineOption.Create opt.Name value)
         | false, _ -> ()
-
-      member this.AddSetOptions (config: EngineOption array) =
-        this.Stop()
-        for option in config do this.AddSetOption option
 
       member this.AddSetOption (option: EngineOption) =
         match UciOption.tryFindOption optionsMap option.Name with
@@ -632,8 +627,6 @@ module Engine =
       member this.ReadLineAsync() = readAsync ()
       member this.ReadLineAsyncWithTimeout(token: CancellationToken) = readAsyncWithTimeout token
       member this.ReadLine() = read ()
-
-      member this.ReadUciOptions() = readUciOptions ()
 
       /// The async forms take .NET optional parameters, so C# can leave them out too: a timeout
       /// of 0 means the default, and the CancellationToken is optional. A cancelled wait throws

@@ -224,20 +224,6 @@ let logEngineInitCommands (logger: ILogger) (player1: ChessEngine) (player2: Che
 // Opening and Game Loading Helpers
 // ============================================================================
 
-/// Load openings from PGN or EPD file, returning games and whether it's an EPD book
-let loadOpenings (path: string option) (maxRounds: int) : PgnGame[] * bool =
-    match path with
-    | Some p ->
-        if p.ToLower().Contains ".epd" then
-            let games = EPDExtractor.parseEPDFile p |> Seq.truncate maxRounds |> Seq.toArray
-            (games, true)
-        else
-            let games = ChessLibrary.FullPGNParser.parsePgnFile p |> Seq.truncate maxRounds |> Seq.toArray
-            (games, false)
-    | None ->
-        let games = [| for i = 1 to maxRounds do yield PgnGame.Empty i |]
-        (games, false)
-
 /// Load openings from PGN or EPD file without truncating (for Cup/Swiss)
 let loadOpeningsUnlimited (path: string option) (defaultRounds: int) : PgnGame[] * bool =
     match path with
@@ -300,32 +286,6 @@ let formatOpeningMoves (openingMoves: PlyMove seq) : string =
 /// pair-based `applyPairLabels` instead.
 let computeRoundText (openingNumber: int) (openingsAlreadyPlayed: int) (liveGamesPlayed: int) : string =
     sprintf "%d.%d" openingNumber (openingsAlreadyPlayed + liveGamesPlayed + 1)
-
-/// Initialize board from pairing opening
-let initBoardFromOpening
-    (board: Board)
-    (opening: PgnGame)
-    (epdBook: bool)
-    (openingMoves: PlyMove seq)
-    (isChess960Setter: bool -> unit)
-    : unit =
-    board.ResetBoardState()
-    if opening.Fen = "" then
-        board.LoadFen Chess.startPos
-        board.StartPosition <- Chess.startPos
-    else
-        board.LoadFen opening.Fen
-        board.StartPosition <- opening.Fen
-        isChess960Setter board.IsFRC
-
-    if not epdBook then
-        for m in openingMoves do
-            board.PlayOpeningMove m.San
-    else
-        board.ResetBoardState()
-        board.LoadFen opening.Fen
-        board.StartPosition <- opening.Fen
-        isChess960Setter board.IsFRC
 
 /// Get position with moves string for logging
 let getPositionWithMoves (board: Board) : string =

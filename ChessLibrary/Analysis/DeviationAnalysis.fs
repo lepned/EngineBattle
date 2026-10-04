@@ -553,9 +553,3 @@ let printPositionDeviationsToConsole (devs: PositionDeviation list) (summary: En
               d.MoveNumber (if d.Color = "w" then "W" else "B")
               (if d.IsSelfDeviation then "self" else "cross") d.GameCount choices selfNote)
   sb.ToString()
-
-/// Where the opening ends for one game: how many leading plies were not the engine's own
-/// choice, and how that was decided. Exposed so the rule can be tested directly - it is the
-/// single most consequential judgement the analysis makes, and the two PGN conventions for
-/// marking a book mean opposite things.
-let openingPlyCount (game: PgnGame) : int * OpeningSource = Opening.plyCount game

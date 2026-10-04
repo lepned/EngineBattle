@@ -6,7 +6,6 @@ type ChessLibrary.Engine
   static resetPrintedEngines() : System.Void
 type ChessLibrary.Engine.ChessEngine
   AddSetOption(option: ChessLibrary.EngineTypes.EngineOption) : System.Void
-  AddSetOptions(config: ChessLibrary.EngineTypes.EngineOption[]) : System.Void
   Analyse(fenPosition: System.String) : System.Void
   DoNotValidate() : System.Void
   GetDefaultOptions() : System.Collections.Generic.Dictionary<System.String, System.Object>
@@ -32,7 +31,6 @@ type ChessLibrary.Engine.ChessEngine
   ReadLine() : System.String
   ReadLineAsync() : System.Threading.Tasks.Task<System.String>
   ReadLineAsyncWithTimeout(token: System.Threading.CancellationToken) : System.Threading.Tasks.Task<System.String>
-  ReadUciOptions() : System.Boolean
   SetMoveOverhead(optionName: System.String, milliSeconds: System.Int32) : System.Void
   StartProcess() : System.Void
   Stop() : System.Void
@@ -53,7 +51,6 @@ type ChessLibrary.Engine.ChessEngine
   prop Config : ChessLibrary.TypesDef.CoreTypes.EngineConfig { get }
   prop ErrorOutput : System.Collections.Generic.IEnumerable<System.String> { get }
   prop FullName : System.String { get }
-  prop InitCommands : System.Collections.Generic.IEnumerable<System.String> { get }
   prop IsLc0 : System.Boolean { get }
   prop IsReference : System.Boolean { get set }
   prop IsRunning : System.Boolean { get set }
@@ -83,13 +80,11 @@ type ChessLibrary.AnalysisEngine
   Raw(command: System.String) : System.Void
   Script(line: System.String) : System.Boolean
   Search(positionCommand: System.String, goCommand: System.String) : Microsoft.FSharp.Control.FSharpAsync<ChessLibrary.AnalysisOutcome>
-  SearchAsync(positionCommand: System.String, goCommand: System.String) : System.Threading.Tasks.Task<ChessLibrary.AnalysisOutcome>
   SetAllOptions(allOptions: System.Collections.Generic.Dictionary<System.String, System.Object>) : System.Void
   SetMoveOverhead(optionName: System.String, ms: System.Int32) : System.Void
   SetOption(option: ChessLibrary.EngineTypes.EngineOption) : System.Void
   SetOptions(options: System.Collections.Generic.IEnumerable<ChessLibrary.EngineTypes.EngineOption>) : System.Void
   SetSearchMoves(moves: Microsoft.FSharp.Collections.FSharpList<System.String>) : System.Void
-  ShutDownEngine() : System.Void
   Skip() : System.Int32
   Stop() : System.Void
   WaitUntilStarted(timeoutMs: System.Int32) : System.Boolean

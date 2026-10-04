@@ -651,10 +651,6 @@ module JSON =
   let private createJsonOptions() =
       addConverters (JsonSerializerOptions(AllowTrailingCommas = true))
 
-  let readEngineConfig path =
-      let json = File.ReadAllText(path)
-      JsonSerializer.Deserialize<EngineConfig[]>(json, createJsonOptions())
-
   let readSingleEngineConfig path =
     try
         let json = File.ReadAllText(path)
@@ -1066,15 +1062,6 @@ module JSONParser =
         else
             failwithf "File not found: %s" filePath
 
-    let loadEngineListConfig (filePath: string) : PuzzleTypes.EngineListConfig =
-        let options = new JsonSerializerOptions(AllowTrailingCommas = true)
-        options.Converters.Add(PuzzleTypes.PuzzleEngineConverter())
-        if File.Exists(filePath) then
-            let json = File.ReadAllText(filePath)
-            JsonSerializer.Deserialize<PuzzleTypes.EngineListConfig>(json, options)
-        else
-            failwithf "File not found: %s" filePath
-
     /// A PuzzleInput over the database in `puzzleFile` - the way to build one for a run.
     /// The runner empties `puzzleData` once its samples are drawn (see PuzzleInput), but
     /// that only frees the database if nothing else holds the array. A caller that writes
@@ -1146,20 +1133,6 @@ module JSONParser =
         let configName = Path.GetFileNameWithoutExtension configFileName
         let displayNet = Path.GetFileName(net)
         { baseConfig with Name = configName + " " + netName; Options = newOptions; NetworkPath = displayNet }
-
-    let mapToEngConfig (engineFolder: string) (engine: PuzzleTypes.PuzzleEngine) =
-        match engine with
-        | PuzzleTypes.Engine (name, _) ->
-            let fullpath = Path.Combine(engineFolder, name)
-            let engineConfig = JSON.readSingleEngineConfig fullpath
-            [ engineConfig ]
-        | PuzzleTypes.EngineWithNets (name, _, nets) ->
-            let fullPath = Path.Combine(engineFolder, name)
-            let baseConfig = JSON.readSingleEngineConfig fullPath
-            [
-                for net in nets do
-                    yield applyNetToConfig name baseConfig net
-            ]
 
     let mapToEngPuzzleConfig (engineFolder: string) (engine: PuzzleTypes.PuzzleEngine) =
         try

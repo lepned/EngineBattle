@@ -414,12 +414,6 @@ module TunerRunner =
       for kv in nonTuned do
         printfn "      %-20s = %O" kv.Key kv.Value
 
-  let internal printAllOptions (label: string) (options: IDictionary<string,obj>) =
-    if options.Count > 0 then
-      printfn "    %s:" label
-      for kv in options |> Seq.sortBy (fun kv -> kv.Key) do
-        printfn "      %-20s = %O" kv.Key kv.Value
-
   let internal printGpuAssignment (gpus: int[]) (parallelGames: int) =
     if gpus <> null && gpus.Length > 0 then
       if parallelGames > 1 then

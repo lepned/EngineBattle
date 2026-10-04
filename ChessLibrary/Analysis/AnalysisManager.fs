@@ -87,10 +87,6 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
       if not keepNodes then SearchDict.Clear()
       analyse (sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix)
 
-    member x.SearchNodesWithCommand (nodes: int, commands:string, keepNodes : bool) : int =
-      if not keepNodes then SearchDict.Clear()
-      engine.Analyse(commands, sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix)
-
     member x.SetSearchMoves (moves: string list) = engine.SetSearchMoves moves
     member x.ClearSearchMoves () = engine.ClearSearchMoves()
     member x.SearchMoves with get() = engine.SearchMoves

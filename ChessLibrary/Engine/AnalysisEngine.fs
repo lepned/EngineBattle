@@ -443,9 +443,6 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     let search = newSearch positionCommand goCommand
     agent.PostAndAsyncReply(fun reply -> Await (search, reply))
 
-  member this.SearchAsync(positionCommand: string, goCommand: string) : Task<AnalysisOutcome> =
-    Async.StartAsTask(this.Search(positionCommand, goCommand))
-
   /// Nothing to search (no legal move): a running search is replaced, and this request ends at once.
   member _.Skip() : int =
     let search = newSearch "" ""
@@ -520,8 +517,6 @@ type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCo
     deliveries.Writer.TryComplete() |> ignore
     ioLog |> Option.iter (fun log -> (log :> IDisposable).Dispose())
     printfn "Engine %s has been shut down." name
-
-  member this.ShutDownEngine() = this.Quit()
 
   member _.SetSearchMoves(moves: string list) = searchMoves <- moves
   member _.ClearSearchMoves() = searchMoves <- []

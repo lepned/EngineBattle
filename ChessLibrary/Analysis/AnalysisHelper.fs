@@ -16,14 +16,6 @@ let neuralNetSetoptionCmd nnPath =
   let opt = EngineOption.Create "WeightsFile" nnPath
   opt
 
-let currentBestBT3Cuda =
-  [
-    Binary.Cuda, neuralNetSetoptionCmd "C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-480000.pb.gz"
-    Binary.Cuda, neuralNetSetoptionCmd "C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-1170000.pb.gz"
-    Binary.Cuda, neuralNetSetoptionCmd "C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-2000000.pb.gz"
-    Binary.Cuda, neuralNetSetoptionCmd "C:/Dev/Chess/Networks/BT3/BT3-768x15x24h-swa-2790000.pb.gz"
-  ]
-
 let waitForEngineIsReady (engine: ChessEngine) = async {
   try
       if engine.HasExited() then
@@ -102,50 +94,6 @@ let run (engine:ChessEngine) (tourny:Tournament) (board:Board) (name, fen) =
 
   startEngine engine
   start () |> Async.AwaitTask |> Async.RunSynchronously
-
-
-let playEPDEntryPositions (logger:ILogger) (tourny:Tournament) (positions:ChessLibrary.EPDTypes.EPDEntry seq) (cts: CancellationTokenSource) = async {
-  logger.LogInformation($"Fen positions analysis about to start")
-  let board = Board()
-  board.LoadFen Chess.startPos
-  let gamesAlreadyPlayed =
-    let fileInfo = System.IO.FileInfo tourny.PgnOutPath
-    if fileInfo.Exists then
-      FullPGNParser.parsePgnFile tourny.PgnOutPath |> Seq.toArray
-    else
-      [||]
-
-  tourny.CurrentGameNr <- gamesAlreadyPlayed.Length
-  let sb = System.Text.StringBuilder()
-  let mutable engine1 = EngineHelper.createEngine (tourny.EngineSetup.Engines[0], Some logger)
-  let mutable engine2 = EngineHelper.createEngine (tourny.EngineSetup.Engines[1], Some logger)
-
-  EngineHelper.initEngines 0 engine1 engine2
-  let results = ResizeArray<EngineStatus>()
-  for pos in positions do
-    for i = 1 to 2 do
-      tourny.OpeningName <- pos.Id.ToString()
-      if cts.IsCancellationRequested then
-        ()
-      else
-        board.ResetBoardState()
-        board.LoadFen(pos.FEN)
-        logger.LogInformation("{position}", pos.FEN)
-        // pos.FEN is the EPD as read (4 fields when the counters are missing); the engine gets
-        // the UCI form, see Board.UciFen.
-        let fenPos = sprintf "position fen %s" (Board.UciFen pos.FEN)
-        let engine1, _ =
-          if i % 2 = 1 then
-            engine1, engine2
-          else
-            engine2, engine1
-        engine1.UciNewGame()
-        engine1.Position fenPos
-        let status = run engine1 tourny board (pos.Id.ToString(), pos.FEN)
-        results.Add status
-        do! Async.Sleep(200)
-  return results
-}
 
 let tryGetMoveWithQAndTop (move:string) (engine: ChessEngine) (pos:string)  =
       let replayBoard = Board()

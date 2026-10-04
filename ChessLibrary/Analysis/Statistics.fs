@@ -75,9 +75,6 @@ module Glicko2 =
         let deviation = 173.7178 * phi
         { Rating = rating; Deviation = deviation; Volatility = sigma }
 
-    let fromPuzzleDataToPlayerRecord (player: CsvPuzzleData) (score:float) =
-      { Rating = player.Rating; Deviation = player.RatingDeviation; Volatility = 0.06 }, score
-
     let g (phi: float) =
         1.0 / Math.Sqrt(1.0 + 3.0 * phi * phi / (pi * pi))
 
@@ -193,9 +190,6 @@ module Pentanomial =
     static member Empty engine =
       { Engine = engine
         L2 = 0; L15 = 0; D = 0; W15 = 0; W2 = 0; CompletedPairs = 0; IncompletePairs = 0 }
-    member this.ToCounts() =
-      { L2 = this.L2; L15 = this.L15; D = this.D; W15 = this.W15; W2 = this.W2
-        CompletedPairs = this.CompletedPairs; IncompletePairs = this.IncompletePairs }
 
   let private isFinalResult (result: string) =
     match result with
@@ -230,14 +224,6 @@ module Pentanomial =
         game.GameMetaData.OpeningHash
     else
       Hash.computeOpeningHashFromGame game
-
-  let private incBucket (bucket: Bucket) (counts: Counts) =
-    match bucket with
-    | L2 -> { counts with L2 = counts.L2 + 1 }
-    | L15 -> { counts with L15 = counts.L15 + 1 }
-    | D -> { counts with D = counts.D + 1 }
-    | W15 -> { counts with W15 = counts.W15 + 1 }
-    | W2 -> { counts with W2 = counts.W2 + 1 }
 
   let private incBucketEngine (bucket: Bucket) (counts: EngineCounts) =
     match bucket with
@@ -458,9 +444,6 @@ module Pentanomial =
         sb.AppendLine($"... truncated ({lines.Length}/{data.Length} matchups shown)") |> ignore
       sb.AppendLine "\n```\n" |> ignore
       sb.ToString()
-
-  let formatAllMatchupsDefault (games: seq<PgnGame>) =
-    formatAllMatchups games 200
 
   /// Completed and incomplete pairs for one matchup — either colour order — together with
   /// the total across every matchup. The per-matchup figure is the sample size behind that

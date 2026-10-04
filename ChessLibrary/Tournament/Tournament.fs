@@ -475,11 +475,6 @@ module Manager =
         tournamentLoaded <- true
       tournament
 
-    member _.LayoutUpdated() =      
-        let tourny = loadTournament ()
-        tournament.LayoutOption <- tourny.LayoutOption
-        tournament
-
     member val GetPiecesLeft = 0 with get, set
 
     member val Pairings  = ResizeArray<Pairing>() with get, set
@@ -536,9 +531,6 @@ module Manager =
             ResizeArray<PgnGame>()
       else
         ResizeArray<PgnGame>()
- 
-    member _.GenerateCrosstableEntries (results: ResizeArray<Result>) =
-      PGNCalculator.generateCrosstableEntries results
  
     member _.GenerateStatsCrosstable (results: ResizeArray<Result>) = 
       let challengers = tournament.EngineSetup.Engines |> List.filter (fun e -> e.IsChallenger) |> List.map _.Name

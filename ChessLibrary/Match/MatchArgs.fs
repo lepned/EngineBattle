@@ -702,9 +702,6 @@ module MatchArgs =
 
   let private optionMap = options |> List.map (fun (f, style, deferred, h) -> f, (style, deferred, h)) |> dict
 
-  /// Whether a token is one of the reference's options (a command line that starts with one is a match).
-  let isOption (token: string) = optionMap.ContainsKey token
-
   let levenshtein (a: string) (b: string) =
     let a, b = if a.Length > b.Length then b, a else a, b
     let mutable prev = Array.init (a.Length + 1) id

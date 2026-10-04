@@ -130,101 +130,6 @@ module Agents =
           loop ())
   
   // Function to run a UCI-compatible chess engine
-  let runUciChessEngine (executablePath: string) =
-      try
-          // Create a new process
-          let myProcess = new Process()
-          myProcess.StartInfo.FileName <- executablePath
-
-          // Set up process to capture input, output, and error
-          myProcess.StartInfo.RedirectStandardInput <- true
-          myProcess.StartInfo.RedirectStandardOutput <- true
-          myProcess.StartInfo.RedirectStandardError <- true
-          myProcess.StartInfo.UseShellExecute <- false
-          myProcess.StartInfo.CreateNoWindow <- true
-
-          // Start the process
-          myProcess.Start() |> ignore
-
-          // Get the standard input, output, and error streams
-          let inputWriter = myProcess.StandardInput
-          let outputReader = myProcess.StandardOutput
-          let errorReader = myProcess.StandardError
-
-          // Create agents for output and error streams
-          let outputAgent = createOutputAgent()
-          let errorAgent = createOutputAgent()
-          let loggingAgent = createLoggingAgent("chess_engine.log")
-
-          // Function to send a command directly
-          let sendCommandDirectly (command: UciCommand) =
-              let commandStr = 
-                  match command with
-                  | Uci -> "uci"
-                  | IsReady -> "isready"
-                  | Position pos -> sprintf "position %s" pos
-                  | Go (nodes, number) -> sprintf "go %s %s" nodes number
-                  | Quit -> "quit"
-              inputWriter.WriteLine(commandStr)
-              inputWriter.Flush()
-
-          // Create a command scheduling agent
-          let commandSchedulingAgent = createCommandSchedulingAgent(sendCommandDirectly)
-
-          // Function to read stream asynchronously and send lines to the agent
-          let readStreamAsync (reader: StreamReader) (agent: MailboxProcessor<OutputMessage>) =
-              async {
-                  try
-                      while not reader.EndOfStream do
-                          let line = reader.ReadLine()
-                          agent.Post(Line line)
-                          loggingAgent.Post(Line line)
-                      agent.Post(Stop)
-                      loggingAgent.Post(Stop)
-                  with ex -> 
-                      Console.WriteLine("Exception: " + ex.Message)
-                      agent.Post(Stop)
-                      loggingAgent.Post(Stop)
-              }
-
-          // Start reading output and error streams asynchronously
-          let outputTask = readStreamAsync outputReader outputAgent |> Async.StartAsTask
-          let errorTask = readStreamAsync errorReader errorAgent |> Async.StartAsTask
-
-          // Function to send a command with or without delay
-          let sendCommand (command: UciCommand) =
-              match command with
-              | Go (nodes, number) -> commandSchedulingAgent.Post(Schedule(command, 500))
-              | _ -> sendCommandDirectly(command)
-
-          // Function to handle user input
-          let rec handleUciCommands () =
-              printf "Enter UCI command: "
-              let commandStr = Console.ReadLine()
-              if String.IsNullOrEmpty(commandStr) then
-                  Console.WriteLine("engine is shutting down?")
-              else
-                match commandStr.Split(' ') with
-                | [| "uci" |] -> sendCommand Uci
-                | [| "isready" |] -> sendCommand IsReady
-                | [| "position"; pos |] -> sendCommand (Position pos)
-                | [| "go"; nodes; number |] -> sendCommand (Go (nodes, number))
-                | [| "quit" |] -> sendCommand Quit
-                | _ -> Console.WriteLine("Unknown command")
-                handleUciCommands()
-
-          // Start handling UCI commands
-          handleUciCommands()
-
-          // Wait for the process to exit
-          myProcess.WaitForExit()
-
-          // Wait for the output reading tasks to complete
-          outputTask.Wait()
-          errorTask.Wait()
-
-      with ex ->
-          Console.WriteLine("Exception: " + ex.Message)
 
 module ConsoleUtils =
 
@@ -241,14 +146,12 @@ module ConsoleUtils =
     Console.Out.WriteLine text
     Console.ForegroundColor <- originalColor
   
-  let originalConsoleColor (text: string) = printInColor originalColor text
   let greenConsole (text: string) = printInColor ConsoleColor.Green text
   let redConsole (text: string) = printInColor ConsoleColor.Red text
   let yellowConsole (text: string) = printInColor ConsoleColor.Yellow text
 
 module BoardHelper =
 
-  let frcFen = "bqnb1rkr/pp3ppp/3ppn2/2p5/5P2/P2P4/NPP1P1PP/BQ1BNRKR w HFhf - 2 9"
   let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
   let normalCastle = Set.ofList ['Q'; 'K'; 'q'; 'k']
 
@@ -261,15 +164,6 @@ module BoardHelper =
     | 'q' -> uint64 TPieceType.QUEEN
     | 'k' -> uint64 TPieceType.KING
     | _ -> failwith $"Invalid piece character in FEN: '{c}'"
-
-  let charToNumber (c : char) white =
-    let lowerCase = Char.ToLower c
-    let baseChar = 'a'
-    let file = int lowerCase - int baseChar
-    if white then
-      file
-    else
-      56 + file
 
   let getPosFromFen (fenOption: string option) =
     let fen = defaultArg fenOption start
@@ -466,8 +360,3 @@ module BoardHelper =
     sb.Append(" " + string pos.Count50 + " " + moveNr.ToString()) |> ignore
     
     sb.ToString()
-
-  let writeBoardStateFromFENToConsole header (fen: string) =
-    let mutable position = Position.Default
-    loadFen(Some fen, &position)
-    PositionOpsToString(header, &position) |> printfn "%s"

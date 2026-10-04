@@ -94,25 +94,6 @@ let getFathomExecutablePath () =
         failwithf "Fathom executable not found at path: %s" exePath
     exePath
 
-/// Runs the Fathom executable with the given tablebase path and FEN, returning its output
-let runFathom (tablebasePath: string) (fen: string) =
-    let exePath = getFathomExecutablePath ()
-    let arguments = sprintf "--path=\"%s\" \"%s\"" tablebasePath fen
-
-    let startInfo =
-        ProcessStartInfo(
-            FileName = exePath,
-            Arguments = arguments,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            CreateNoWindow = true)
-
-    use proc = new Process(StartInfo = startInfo)
-    proc.Start() |> ignore
-    let output = proc.StandardOutput.ReadToEnd()
-    proc.WaitForExit()
-    output
-
 /// Stands in for the prober path until getFathomExecutablePath has returned one.
 let private unresolvedProber = "(not resolved)"
 

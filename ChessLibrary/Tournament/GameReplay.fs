@@ -27,10 +27,6 @@ type ReferenceGameReplay() =
         for (key, value) in initialData do
             this.Add(key, value)
 
-    member this.PrettyPrint() =
-        this |> Seq.map (fun kvp -> sprintf "Key: %A, Engine %s played Move: %s, TimeLeft: %d ms" kvp.Key kvp.Value.Engine kvp.Value.Move kvp.Value.TimeLeftInMs)
-             |> String.concat "\n"
-
 /// Tracks game replay information for live games
 type GameReplay =
     { WhitePlayer: string
@@ -38,12 +34,6 @@ type GameReplay =
       LongSanMoves: ResizeArray<string>
       PGNMetaData: GameMetadata
     }
-    with
-        static member InitGame = {WhitePlayer = ""; BlackPlayer = ""; LongSanMoves = ResizeArray<string>(); PGNMetaData = GameMetadata.Empty}
-        member this.HasMoves = this.LongSanMoves.Count > 0
-        member this.AddPlayers white black = {this with WhitePlayer = white; BlackPlayer = black }
-        member this.AddMove (move:string) = this.LongSanMoves.Add move
-        member this.copyGameReplay white black = {WhitePlayer = white; BlackPlayer = black; LongSanMoves = ResizeArray<string>(this.LongSanMoves); PGNMetaData = this.PGNMetaData}
 
 /// Prepares game replay data for deviation prevention
 /// Clears all replay dictionaries when encountering a new opening (memory optimization)

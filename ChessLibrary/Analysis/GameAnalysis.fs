@@ -48,20 +48,6 @@ module Formatting =
 
     formatTime hours minutes seconds milliseconds
 
-  let getRoundFormatted (input: string) (divider: int) =
-    let parts = input.Split('.')
-    if parts.Length = 2 then
-        let major = int parts.[0]
-        let minor = int parts.[1]
-
-        // Calculate the new major and minor numbers
-        let newMajor = (major - 1) / divider + 1
-        let newMinor = ((major - 1) % divider) + 1
-
-        sprintf "%d.%d" newMajor newMinor
-    else
-        "Invalid input"
-
 module OrdoHelper =
 
   // Configuration (consider moving to a config file)
@@ -182,7 +168,6 @@ module OrdoHelper =
   let winCombinations = [ "11"; "11/2"; "1/21" ]
 
   let calculatePairs (results: string[]) =
-    let welcome = 1
     let pairs =
         results
         |> Seq.take (results.Length - results.Length % 2) // Ensure even number of elements
@@ -288,25 +273,6 @@ module OrdoHelper =
     let totalGames = table |> Seq.sumBy (fun t -> t.TotalScore) |> int
     sprintf "%s%s\n%s\n(%d games)\n%s" endOfLine header rows totalGames endOfLine
 
-  let printHeadToHeadStatsToConsole (table: CrossTableEntry seq) =
-    printfn "\nGame summary:\n"
-    for t in table do
-        printfn "Player: %s" t.Player
-        if Seq.isEmpty t.StatsAgainst then
-            printfn "\tNo games played against any opponent."
-        else
-            t.StatsAgainst
-            |> Seq.sortBy fst
-            |> Seq.iter (fun (opponent, stats) ->
-                let points = float stats.Wins + float stats.Draws * 0.5
-                let gamesPlayed = float (stats.Wins + stats.Draws + stats.Losses)
-                let wdl = sprintf "%d-%d-%d" stats.Wins stats.Draws stats.Losses
-                let result = sprintf "%.1f/%.0f" points gamesPlayed
-                printfn "\tAgainst: %-15s Wins = %2d, Draws = %2d, Losses = %2d (%s) Score = %s"
-                    opponent stats.Wins stats.Draws stats.Losses wdl result
-            )
-        printfn ""
-
   let getResultsAndPairsInConsoleFormat (engines: PlayerResult seq) (table: CrossTableEntry seq) =
       let sb = new StringBuilder()
       let appendLine (txt: string) = sb.AppendLine txt |> ignore
@@ -367,12 +333,6 @@ module PGNCalculator =
       |> List.distinct
 
   // Define a function to get a list of all pairs of players from a list of results
-  let getAllPlayerPairs results =
-      getAllPlayers results
-      |> List.collect (fun player1 ->
-          getAllPlayers results
-          |> List.filter (fun player2 -> player1 <> player2)
-          |> List.map (fun player2 -> (player1, player2)))
 
 // Define a function to calculate the outcome for a given player and result
   let calculateOutcome player (result: Result) : Outcome =
@@ -432,14 +392,6 @@ module PGNCalculator =
 
       else
         createPlayerResult player 0.0 0.0 0.0 0 0 0 0 0 0 0 (0,0,0) (0,0,0) 0 0
-
-  let getResultsFromPGNPath (filePath: string) =
-    let games =
-      FullPGNParser.parsePgnFile filePath
-      |> Seq.map PGNWriter.getResultsFromPGNGame
-      |> Seq.toArray
-      |> Array.rev
-    games
 
   let getResultsFromPGNGames (pgns: PGNTypes.PgnGame seq) =
       pgns
