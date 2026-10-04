@@ -56,17 +56,6 @@ namespace WebGUI.Services
     [JsonIgnore]
     public List<DropItem> DropItems { get; set; }
     
-    static List<DropItem> MyItems => new List<DropItem>()
-    {
-        new DropItem() { Name = "Ceres in process", Identifier = "In tournament" },
-        new DropItem() { Name = "Ceres in process Ref net", Identifier = "In tournament" },
-        new DropItem() { Name = "Stockfish", Identifier = "Engines" },
-        new DropItem() { Name = "LC0 in process", Identifier = "Engines" },
-        new DropItem() { Name = "LC0 in process Ref net", Identifier = "Engines" },
-        new DropItem() { Name = "Ceres UCI", Identifier = "Engines" },
-        new DropItem() { Name = "Ceres UCI Ref net", Identifier = "Engines" },
-    };
-
     public void SaveSettings()
     {
       var json = System.Text.Json.JsonSerializer.Serialize(this);

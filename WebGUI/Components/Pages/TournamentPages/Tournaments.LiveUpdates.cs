@@ -60,8 +60,6 @@ public partial class Tournaments
 				if (tournament.VerboseLogging)
 					// Explanation, not ToString — the latter is the short PGN code ("XX").
 					logger.LogDebug($"Game over: {e.Result.Reason.Explanation} - deviation counter: {tournament.DeviationCounter}");
-				tournamentGamesHeader = $"Last result: {e.Result.Reason}";
-				reason = e.Result.Reason.ToString();
 				var explanation = e.Result.Reason.Explanation;
 				var gameTxtResult = e.Result.Result == "1/2-1/2" ? "Draw" : e.Result.Result == "1-0" ? "White wins" : "Black wins";
 				gameResult = $"{gameTxtResult} by {explanation}";
@@ -334,7 +332,6 @@ public partial class Tournaments
 			case TournamentTypes.Update.StartOfTournament tournyStart:
 				try
 				{
-					startTournyInfo = tournyStart.Info;
 					var games = tournyStart.Info.NumberOfGames;
 					var incomingTournament = tournyStart.Info.Tournament.Value;
 					if (FeedMode && incomingTournament.EngineSetup != null
@@ -620,7 +617,6 @@ public partial class Tournaments
 		TB = 0;
 		UpdateDeviationReference(info);
 		whitePlayer = info.WhitePlayer.Name;
-		whiteDev = info.WhitePlayer.Dev;
 		if (String.IsNullOrEmpty(info.WhitePlayer.LogoPath))
 			whiteEngineLogo = "Img/chessLogo.jpg";
 		else
@@ -631,7 +627,6 @@ public partial class Tournaments
 		whiteClock = info.WhiteTime;
 		whiteTime = ClockTextForSide(true, whiteClock);
 		blackPlayer = info.BlackPlayer.Name;
-		blackDev = info.BlackPlayer.Dev;
 		if (String.IsNullOrEmpty(info.BlackPlayer.LogoPath))
 			blackEngineLogo = "Img/chessLogo.jpg";
 		else
@@ -722,9 +717,6 @@ public partial class Tournaments
 	/// format from which of two timer objects happened to exist.
 	private static bool InTimeTrouble(TimeSpan remaining) => remaining < TimeSpan.FromSeconds(30);
 
-	/// A remaining time, in the format that remaining time calls for.
-	private static string ClockTextFor(TimeSpan remaining) => ClockText(remaining, tenths: InTimeTrouble(remaining));
-
 	/// A node-limited engine has no clock: its time-left cell shows the limit ("150.0K nodes"),
 	/// the same text as the banner, instead of a clock standing at 0:00. Null for a clock.
 	private string NodeLimitText(bool white)
@@ -747,20 +739,6 @@ public partial class Tournaments
 	private void FinalStatusReceived(EngineStatus info)
 	{
 		SetEngineStatus(info);
-		
-		if (info.WDL.IsHasValue)
-		{
-			switch (info.WDL)
-			{
-				case WDLType.HasValue wdl:
-					if (info.PlayerName == whitePlayer)
-						whiteWDL = GetWDLString(wdl.Values);
-
-					else
-						blackWDL = GetWDLString(wdl.Values);
-					break;
-			}
-		}
 	}
 
 	private async Task PonderStatusReceived(EnginePonderStatus info)
@@ -832,22 +810,6 @@ public partial class Tournaments
 
 					}
 					Engine1.Eval = info.Eval;
-				}
-			}
-
-			if (info.WDL.IsHasValue)
-			{
-				switch (info.WDL)
-				{
-					case WDLType.HasValue wdl:
-						//var sharpness = CalcSharpness(wdl.Values);
-						//logger.LogInformation(wdl.Values.ToString());
-						//logger.LogInformation("Sharpness value: " + sharpness.ToString("F1"));
-						if (info.PlayerName == whitePlayer)
-							whiteWDL = GetWDLString(wdl.Values);
-						else
-							blackWDL = GetWDLString(wdl.Values);
-						break;
 				}
 			}
 

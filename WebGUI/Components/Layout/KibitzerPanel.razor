@@ -265,7 +265,7 @@
         if (analyzer == null) return;
         try
         {
-            int id = limit is PanelModel.Limit.MoveTime t ? analyzer.Play($"go movetime {t.ms}") : analyzer.GoInfinite();
+            int id = limit is PanelModel.Limit.MoveTime t ? analyzer.SearchTime(t.ms) : analyzer.GoInfinite();
             model = PanelModel.step(model, PanelModel.Event.NewStarted(id)).Item1;
         }
         catch (Exception ex)
@@ -325,7 +325,6 @@
         }
         try
         {
-            created.Board = ChessBoard;
             created.AddSetoption(EngineOption.Create("MultiPV", pvLines.ToString()));
             analyzer = created;
             await Send(PanelModel.Event.EngineReady);

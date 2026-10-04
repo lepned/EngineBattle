@@ -172,18 +172,6 @@ public partial class Tournaments
 		}
 	}
 
-	string CalcTournamentDuration()
-	{
-		var Tsec = startTournyInfo.TournamentDurationSec;
-		var Gsec = startTournyInfo.GameDurationInSec;
-		if (Tsec == TimeSpan.Zero)
-		{
-			return "";
-		}
-
-		return $"Tournament time: {Tsec}, game time: {Gsec}";
-	}
-
 	// Keeps the banner's text and its progress figures in step; they come from the same
 	// clamped numbers, so the bar can never disagree with the label beside it.
 	void ApplyGameProgress()
@@ -275,21 +263,4 @@ public partial class Tournaments
 			return "";
 	}
 
-	private double CalcSharpness(WDL wdl)
-	{
-		var w = wdl.Win / 1000;
-		var l = wdl.Loss / 1000;
-		var winPart = Math.Log(1 / w - 1);
-		var lossPart = Math.Log(1 / l - 1);
-		var sum = winPart + lossPart;
-		var factor = 2.0 / sum;
-		//logger.LogInformation($"Win: {w} Loss: {l} LogWin: {winPart} LogLoss: {lossPart} Factor: {factor}");
-		return factor;
-	}
-
-	private string GetWDLString(WDL wdl)
-	{
-		var msg = $"[{(wdl.Win / 1000):P1} W | {(wdl.Draw / 1000):P1} D | {(wdl.Loss / 1000):P1} L]";
-		return msg;
-	}
 }

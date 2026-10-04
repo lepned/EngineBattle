@@ -52,7 +52,6 @@ public partial class Tournaments
 	private bool whiteLogLive = false;
 	private StreamingChessboard streamingBoard;	
 	private bool showCompletePV = false;
-	private string standingsTableHeight { get; set; }
 	private IDialogReference dialogReference;
 	private IDialogReference bracketDialogReference;
 	private bool pendingCupDialog;
@@ -65,7 +64,6 @@ public partial class Tournaments
 	private bool swapTables = true;
 	private int autoCycleTimeInSec = 30;
 	private bool showPVBoard = false;
-	private MarkupString crosstableHtml { get; set; }
 	// Ceilings, not sizes: .eb-scale on the elements turns each into a font-size, so the
 	// description and the PV boxes follow the user's nudge like the tables do.
 	/// The description's ceiling, after the measurement that keeps its bullets on one line.
@@ -84,16 +82,13 @@ public partial class Tournaments
 	private int TB = 0;
 	private int r3 = 0;
 	private int move50 = 0;
-	private string reason = "";
 	private int DrawP = 0;
-	private string tournamentGamesHeader = "";
 	private TypesDef.Tournament.Tournament tournament = TypesDef.Tournament.Tournament.Empty;
 	private string tournamentLoadError = "";
 	/// The file is fine and names no engines: show the way in, not an error.
 	private bool firstRun;
 	private InfoBannerInfo infoBannerInfo;
 	private string currentOpeningInPlay = "Opening:";
-	private string tournamentDesc = string.Empty;
 	private LayoutOption layoutOptions = LayoutOption.Default;
 	private int pairingTableHeight = 100;
 	private string whiteTime = "00:00:00";
@@ -102,8 +97,6 @@ public partial class Tournaments
 	private string blackMoveTime = "00:00:00";
 	private string whitePlayer = "White player";
 	private string blackPlayer = "Black player";
-	private string blackWDL = ""; //$"[33.3 W | 33.3 D | 33.3 L]";
-	private string whiteWDL = ""; //$"[33.3 W | 33.3 D | 33.3 L]";
 	private string fen;
 	private string blackPV = ""; //"PV: 1.e4 e5 2.Nf3 Nf6 3.Nxe5 d6  ";
 	private string whitePV = ""; //"PV: 1.e4 e5 2.Nf3 Nf6 3.Nxe5 d6  ";
@@ -161,7 +154,6 @@ public partial class Tournaments
 	private EngineConfig BlackEngineConfig = EngineConfig.Empty;
 	private string moveHistory = string.Empty;
 	private int moveNr = 0;
-	private TypesDef.Tournament.StartOfTournamentInfo startTournyInfo = TypesDef.Tournament.StartOfTournamentInfo.Empty;
 	private ElementReference evalChart;
 	private ElementReference nodesChart;
 	private ElementReference npsChart;
@@ -207,11 +199,7 @@ public partial class Tournaments
 	private string openingMoves;
 	private string whiteEngineLogo = "Img/EngineBattle.png";
 	private string blackEngineLogo = "Img/EngineBattle.png";
-	private string blackDev = "";
-	private string whiteDev = "";
-	private string speedDiff = "";
 	private string gameResult = "";
-	private ChessConfigurationService setting;
 	HotKeysContext keyContext;
 	//private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 	private double tournamentHeight = 0;
@@ -297,7 +285,6 @@ public partial class Tournaments
 
 	private int SpeedChartCycleSeconds => Math.Max(15, autoCycleTimeInSec);
 
-
 	// Eval bar beside the streaming board: latest eval from the engine on move
 	// (already white-perspective — the parser negates for the black engine).
 	private double? tournamentEvalCp;
@@ -371,31 +358,6 @@ public partial class Tournaments
 		}
 	}
 
-	private void SetSpeedFactor()
-	{
-		if (engineStatus.Count > 1)
-		{
-			var (fst, fstName) = (engineStatus[0].NPS, engineStatus[0].PlayerName);
-			var (snd, sndName) = (engineStatus[1].NPS, engineStatus[1].PlayerName);
-
-			if (fst > snd)
-			{
-				var speed = Math.Round(fst / snd, 0);
-				speedDiff = speed.ToString("N0");
-			}
-			else
-			{
-				var speed = Math.Round(snd / fst, 0);
-				speedDiff = speed.ToString("N0");
-			}
-		}
-	}
-
-	private EngineConfig GetPlayer(string name)
-	{
-		return tournament.EngineSetup.Engines.FirstOrDefault(e => e.Name == name);
-	}
-
 	private void SetGameParams(StartGameInfo info)
 	{
 		var b = info.BlackPlayer;
@@ -407,7 +369,6 @@ public partial class Tournaments
 		ResetSpeedChartCycle();
 		if (tournament == null && runner != null)
 			tournament = runner.Tournament();
-		tournamentDesc = tournament.MinSummary();
 		blackLogLive = b.Options.Keys.Contains("LogLiveStats");
 		whiteLogLive = w.Options.Keys.Contains("LogLiveStats");
 
@@ -619,7 +580,6 @@ public partial class Tournaments
 			var move = moves.Last();
 			if (boardSyncGen == gen)
 				fen = move.FenAfterMove;
-			await Notifier.UpdateOpeningDone(move);
 		}
 		await DoChartUpdates();
 	}
@@ -655,7 +615,6 @@ public partial class Tournaments
 		if (searchInfoPlot != null)
 			await searchInfoPlot?.ResetPlot(true);
 	}
-
 
 	private void RunTournament()
 	{
@@ -762,7 +721,6 @@ public partial class Tournaments
 		RunTournament();
 	}
 
-
 	private void ResetSpeedChartCycle()
 	{
 		speedChartCycleEnabled = false;
@@ -805,7 +763,6 @@ public partial class Tournaments
 		});
 	}
 
-
 	// ── Main board sizing ────────────────────────────────────────────────────────
 	// Zero (the default) leaves the three-column grid exactly as it always was; the
 	// classes and the width variable below only take effect once a size is chosen, and
@@ -846,12 +803,6 @@ public partial class Tournaments
 			try { await chessModule.InvokeVoidAsync("resizePlot", chart); }
 			catch (Exception ex) { logger.LogDebug("Chart resize after board resize failed: {Message}", ex.Message); }
 		}
-	}
-
-	private async Task OnSettingAdded(ChessConfigurationService config)
-	{
-		setting = config;
-		await Task.CompletedTask;
 	}
 
 	private void ValidatePVSize()
@@ -1080,23 +1031,6 @@ public partial class Tournaments
 		base.OnAfterRender(firstRender);
 	}
 
-	private void SwapBothTables()
-	{
-		swapTables = !swapTables;
-		StateHasChanged();
-	}
-
-	private void BenchmarkConfig()
-	{
-		var engines = tournament.EngineSetup.Engines.Where(e => e.Name.ToLower().Contains("lc0"));
-		foreach (var config in engines)
-		{
-			var res = EngineProtocol.Engine.createLC0BenchmarkString(config);
-			var msg = $"{config.Name}\n{res}";
-			logger.LogInformation(msg);
-		}
-	}
-
 	// The fences make the console table pasteable into Discord; in the log they only leave
 	// blank lines behind. Collapse those runs, and close with one so the next entry has air.
 	private static readonly System.Text.RegularExpressions.Regex BlankRun =
@@ -1104,17 +1038,6 @@ public partial class Tournaments
 
 	private static string StripFences(string table) =>
 		BlankRun.Replace(table.Replace("```", ""), "\n\n").Trim() + System.Environment.NewLine;
-
-	private string GetStyleForResult(string result)
-	{
-		return result switch
-		{
-			"1" => "color: green;",
-			"0" => "color: red;",
-			"1/2" => "color: white;",  // or just return an empty string if you want the default style
-			_ => ""
-		};
-	}
 
 	private async Task OnFullScreenRequested(bool isFullScreen)
 	{
@@ -1162,7 +1085,6 @@ public partial class Tournaments
         if (startedReplay) Replayer.Stop();
         JsonFeedSvc.Unsubscribe(Update);
         if (feedMultiHandler != null) JsonFeedSvc.UnsubscribeMulti(feedMultiHandler);
-        Notifier.SettingAdded -= OnSettingAdded;
         Notifier.IsFullScreenRequested -= OnFullScreenRequested;
         try
         {

@@ -424,7 +424,6 @@
     private bool showNNdata = false;
     private CancellationTokenSource disposeCts = new();
     private string moveHistory = string.Empty;
-    private bool keepNodesWhileSearching = true;
     private double Qdiff = 2;
     public bool autoSearchSwitch
     {
@@ -1116,7 +1115,6 @@
                 QuitOffThread(newAnalyzer);
                 return;
             }
-            newAnalyzer.Board = ChessBoard;
             analyzer = newAnalyzer;
             // started outside a search (Ctrl+P/Q, the Engine button's own path): the model learns it
             if (model.Engine.IsNotStarted)
@@ -1342,11 +1340,10 @@
         if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
             ApplyExtraSetOptions();
         analyzer.SetSearchMoves(moves);
-        var suffix = moves.IsEmpty ? "" : " searchmoves " + string.Join(" ", moves);
         int id = limit switch
         {
-            PanelModel.Limit.Nodes n => analyzer.SearchNodes(n.Item, keepNodesWhileSearching),
-            PanelModel.Limit.MoveTime t => analyzer.Play($"go movetime {t.ms}{suffix}"),
+            PanelModel.Limit.Nodes n => analyzer.SearchNodes(n.Item),
+            PanelModel.Limit.MoveTime t => analyzer.SearchTime(t.ms),
             _ => analyzer.GoInfinite()
         };
         await Send(PanelModel.Event.NewStarted(id));

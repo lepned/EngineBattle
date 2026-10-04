@@ -7,12 +7,10 @@ open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.AnalysisHelper
 
-/// The analysis engine behind a page. With an Action<SearchUpdate> each update comes with the FEN
-/// of the search it belongs to, so the page can tell a result for another position.
+/// The analysis engine behind a page: it searches the board's position, and each update comes with
+/// the id and FEN of the search it belongs to.
 type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<SearchUpdate>, writeToConsole) =
-    let SearchDict = new System.Collections.Generic.Dictionary<string,int>()
     let board : Chess.Board = board
-    let moveBoard = Chess.Board()
     let logger : ILogger = logger
 
     let mutable ChessEngine = None
@@ -43,7 +41,6 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
       | Some pos -> engine.Analyse(pos, go)
       | None -> engine.Skip()
 
-    member val Board = board with get, set
     member x.Engine = engine
     member x.TryGetMovePolicyAndTopForPosSequence(player:string, qMin:float, qMax:float) =
       let distEngine = distributionEngine()
@@ -63,7 +60,6 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
     member x.Reset() =
       engine.Stop()
       engine.NewGame()
-      SearchDict.Clear()
 
     member x.Quit() = engine.Quit()
 
@@ -83,9 +79,11 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
     // request, stops what it ran, and reports through the callback with that id.
     member x.GoInfinite() : int = analyse ("go infinite" + engine.SearchMoveSuffix)
 
-    member x.SearchNodes (nodes: int, keepNodes : bool) : int =
-      if not keepNodes then SearchDict.Clear()
+    member x.SearchNodes (nodes: int) : int =
       analyse (sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix)
+
+    member x.SearchTime (ms: int) : int =
+      analyse (sprintf "go movetime %d%s" ms engine.SearchMoveSuffix)
 
     member x.SetSearchMoves (moves: string list) = engine.SetSearchMoves moves
     member x.ClearSearchMoves () = engine.ClearSearchMoves()

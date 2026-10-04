@@ -772,6 +772,16 @@
             .ToDictionary(m => m.Ply, BuildAnnotation);
     }
 
+    // The classification thresholds from the settings (both reviews use them).
+    private GameAccuracyAnalysis.ClassificationThresholds Thresholds()
+    {
+        var s = SettingsService.Settings;
+        return new GameAccuracyAnalysis.ClassificationThresholds(
+            s.BrilliantPVGap, s.GreatPVGap, s.BestMinPVGap,
+            s.ExcellentMaxWPLoss, s.GoodMaxWPLoss,
+            s.InaccuracyMaxWPLoss, s.MistakeMaxWPLoss);
+    }
+
     private async Task StartAnalysis()
     {
         if (currentGame == null || engineConfig == null || isAnalyzing) return;
@@ -792,16 +802,12 @@
         var nodeCount = enginePanel != null ? (int)enginePanel.CurrentNodes : nodes;
 
         var s = SettingsService.Settings;
-        var thresholds = new GameAccuracyAnalysis.ClassificationThresholds(
-            s.BrilliantPVGap, s.GreatPVGap, s.BestMinPVGap,
-            s.ExcellentMaxWPLoss, s.GoodMaxWPLoss,
-            s.InaccuracyMaxWPLoss, s.MistakeMaxWPLoss);
-        reviewConfig = new GameReviewConfig(mode, time, nodeCount, depth, s.ReviewMultiPV, true, thresholds, s.AccuracyDecay, s.MicroLossBase, s.MicroLossScale);
+        reviewConfig = new GameReviewConfig(mode, time, nodeCount, depth, s.ReviewMultiPV, true, Thresholds(), s.AccuracyDecay, s.MicroLossBase, s.MicroLossScale);
         reviewGame = currentGame;
         reviewGameIndex = gameIndex;
 
         var positions = reviewPositions(currentGame, reviewConfig);
-        // node searches start from a fresh tree each time, as before
+        // node searches start from a fresh tree each time
         // no await before this: a Cancel or a game click meanwhile would act on a review not yet started
         await Send(ReviewModel.Event.NewStart(positions, goCommand(reviewConfig), reviewConfig.MultiPV, mode.IsNodes));
         StateHasChanged();
@@ -1030,12 +1036,7 @@
     {
         if (currentGame == null) return;
 
-        var qs = SettingsService.Settings;
-        var qThresholds = new GameAccuracyAnalysis.ClassificationThresholds(
-            qs.BrilliantPVGap, qs.GreatPVGap, qs.BestMinPVGap,
-            qs.ExcellentMaxWPLoss, qs.GoodMaxWPLoss,
-            qs.InaccuracyMaxWPLoss, qs.MistakeMaxWPLoss);
-        var result = ReviewService.AnalyzeGameFromAnnotations(currentGame, qThresholds, qs.AccuracyDecay);
+        var result = ReviewService.AnalyzeGameFromAnnotations(currentGame, Thresholds(), SettingsService.Settings.AccuracyDecay);
         if (result == null)
         {
             await DialogService.ShowMessageBox("No annotations",

@@ -215,7 +215,6 @@
     [Parameter] public EventCallback<double?> OnTimeControlApplied { get; set; }
 
     private IReadOnlyList<EngineOption> appliedEngineOptions;
-    private string engineNameInUse;
     // the engine being started or running (a host change while it loads replaces it too)
     private string engineNameStarted;
     // counts engine starts and replacements: a start finishing under an older count is dropped
@@ -268,7 +267,7 @@
     private string lastResultTag = "*";
     private string lastResultReason = string.Empty;
     // an engine config is there to play
-    private bool engineReady;
+    private bool engineReady => Engine != null;
     private bool clockEnabled = true;
 
     // ── The game (ChessLibrary/Analysis/PlayModel.fs): turns, clocks, the engine's search, the result ──
@@ -321,7 +320,6 @@
         }
         ApplyTimeControl();
         LoadSavedGamesFromPgn();
-        engineReady = Engine != null;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -339,7 +337,6 @@
         // A different engine from the host: the running one is for the old config, and its game ends.
         if (!model.Engine.IsNotStarted && Engine != null && engineNameStarted != null && Engine.Name != engineNameStarted)
             await ReplaceEngine();
-        engineReady = Engine != null;
     }
 
     /// The old engine quits; a game with it is aborted.
@@ -347,7 +344,6 @@
     {
         QuitOffThread(analyzer);
         analyzer = null;
-        engineNameInUse = null;
         engineNameStarted = null;
         engineGeneration++;
         await Send(PlayModel.Event.NewEngineGone("the engine was changed", Now));
@@ -392,7 +388,7 @@
             default:
                 // the load runs on; the model hears EngineReady or EngineGone when it is done
                 if (effect.IsStartEngine) _ = StartEngineNow();
-                else if (effect.IsQuitEngine) { QuitOffThread(analyzer); analyzer = null; engineNameInUse = null; engineGeneration++; }
+                else if (effect.IsQuitEngine) { QuitOffThread(analyzer); analyzer = null; engineGeneration++; }
                 else if (effect.IsNewGame) analyzer?.NewGame();
                 else if (effect.IsStopEngine) analyzer?.Stop();
                 else if (effect.IsPlayPremove) _ = PlayPremoveLater();
@@ -445,7 +441,8 @@
         AnalysisManager.SimpleEngineAnalyzer created;
         try
         {
-            created = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, board, logger, HandleSearchUpdate, false));
+            Action<SearchUpdate> onUpdate = u => HandleSearchUpdate(u, generation);
+            created = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, board, logger, onUpdate, false));
         }
         catch (Exception ex)
         {
@@ -512,7 +509,6 @@
 
     private async Task OnAnalyzerCreated()
     {
-        engineNameInUse = Engine?.Name;
         appliedEngineOptions = null;
         ApplyEngineOptions(engineJustStarted: true);
         if (OnEngineReady.HasDelegate)
@@ -902,15 +898,16 @@
     private void OnPremoveSet(string uci) => premoveQueued = gameActive ? uci : null;
     private void OnPremoveCleared() => premoveQueued = null;
 
-    // Called on the engine reader thread: marshalled to the dispatcher, where the model runs.
-    private void HandleSearchUpdate(SearchUpdate update)
+    // On the engine's delivery thread: marshalled to the dispatcher, where the model runs. A replaced
+    // engine's updates are dropped (search ids restart with each engine).
+    private void HandleSearchUpdate(SearchUpdate update, int generation)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
         {
             _ = InvokeAsync(async () =>
             {
-                if (disposeCts.IsCancellationRequested) return;
+                if (disposeCts.IsCancellationRequested || generation != engineGeneration) return;
                 try
                 {
                     await Send(PlayModel.Event.NewResult(update.SearchId, update.Update, Now));
@@ -923,7 +920,7 @@
     }
     private void OnBoardFenChanged(string newFen)
     {
-        logger.LogInformation($"Board FEN changed: {newFen}");
+        logger.LogDebug("Board FEN changed: {Fen}", newFen);
         fen = newFen;
     }
 
@@ -961,12 +958,12 @@
         await ReplaceEngine();
         Engine = engineConfig;
         engineParamSeen = engineConfig;
-        engineReady = true;
         await Send(PlayModel.Event.LoadEngine);
         StateHasChanged();
     }
 
-    private void ReviewGame()
+    /// The game as PGN: the headers, the start position and the moves.
+    private string GamePgn()
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"[Event \"{PgnEvent}\"]");
@@ -977,10 +974,15 @@
         sb.AppendLine($"[TimeControl \"{CurrentTimeControlTag()}\"]");
         if (!string.IsNullOrWhiteSpace(lastResultReason))
             sb.AppendLine($"[Termination \"{lastResultReason}\"]");
+        sb.AppendLine($"[Fen \"{board.StartPosition}\"]");
         sb.AppendLine();
         sb.AppendLine(board.GetMoveHistory());
+        return sb.ToString();
+    }
 
-        var games = ChessLibrary.FullPGNParser.parsePgnString(sb.ToString());
+    private void ReviewGame()
+    {
+        var games = ChessLibrary.FullPGNParser.parsePgnString(GamePgn());
         var gameList = games.ToList();
         if (gameList.Count > 0)
         {
@@ -1000,23 +1002,7 @@
                 Directory.CreateDirectory(directory);
             }
             
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine();
-            sb.AppendLine($"[Event \"{PgnEvent}\"]");
-            sb.AppendLine($"[Date \"{DateTime.Now.ToString("yyyy.MM.dd.HH:mm", CultureInfo.InvariantCulture)}\"]");
-            sb.AppendLine($"[White \"{WhitePlayerLabel}\"]");
-            sb.AppendLine($"[Black \"{BlackPlayerLabel}\"]");
-            sb.AppendLine($"[Result \"{(gameActive ? "*" : lastResultTag)}\"]");
-            sb.AppendLine($"[TimeControl \"{CurrentTimeControlTag()}\"]");
-            if (!string.IsNullOrWhiteSpace(lastResultReason))
-            {
-                sb.AppendLine($"[Termination \"{lastResultReason}\"]");
-            }
-            sb.AppendLine($"[Fen \"{board.StartPosition}\"]");
-            sb.AppendLine();
-            sb.AppendLine(board.GetMoveHistory());
-            
-            File.AppendAllText(gamesPath, sb.ToString());
+            File.AppendAllText(gamesPath, Environment.NewLine + GamePgn());
             logger.LogInformation("Game successfully saved to {path}", gamesPath);
             gameStatus = $"Game saved to {Path.GetFileName(gamesPath)}";
         }

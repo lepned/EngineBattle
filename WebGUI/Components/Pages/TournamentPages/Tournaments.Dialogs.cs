@@ -19,21 +19,6 @@ namespace WebGUI.Components.Pages.TournamentPages;
 
 public partial class Tournaments
 {
-	async Task OpenResultDialog()
-	{
-		CloseAllDialogs();
-		var option = new DialogOptions() { MaxWidth = MaxWidth.Small, FullWidth = false, CloseButton = false, Position = DialogPosition.TopCenter };
-		var title = $"Game Ended";
-		var res = $"{infoBannerInfo.ResultTxt} ({reason})";
-		var parameters = new DialogParameters
-	  {
-		{"Result", res }
-	  };
-
-		resultDialogReference = await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.ResultDialog>(title, parameters, option);
-	}
-
-	void CloseResultDialog() => resultDialogReference?.Close();
 
 	// The parallel runner has no adjudication channel reader, so "the current game" is
 	// undefined and the request would be a silent no-op — surface that instead.
@@ -48,7 +33,6 @@ public partial class Tournaments
 	async Task WhiteWins()
 	{
 		if (AdjudicationBlocked()) return;
-		reason = "White wins by user";
 		gameResult = "1-0";
 		runner?.AdjudicateGame(activeGameNr, "1-0");
 		StopClock();
@@ -58,7 +42,6 @@ public partial class Tournaments
 	async Task BlackWins()
 	{
 		if (AdjudicationBlocked()) return;
-		reason = "Black wins by user";
 		gameResult = "0-1";
 		runner?.AdjudicateGame(activeGameNr, "0-1");
 		StopClock();
@@ -67,7 +50,6 @@ public partial class Tournaments
 	async Task DrawGame()
 	{
 		if (AdjudicationBlocked()) return;
-		reason = "Draw by user";
 		gameResult = "1/2-1/2";
 		runner?.AdjudicateGame(activeGameNr, "1/2-1/2");
 		StopClock();
@@ -173,8 +155,6 @@ public partial class Tournaments
 		};
 		ladderDialogReference = await DialogService.ShowAsync<Components.Layout.TournamentLayout.LadderResumeDialog>("", parameters, options);
 	}
-
-	void CloseDialog() => dialogReference?.Close();
 
 	void CloseBetweenGamesDialogs()
 	{
