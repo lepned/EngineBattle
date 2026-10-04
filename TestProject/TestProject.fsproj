@@ -69,6 +69,8 @@
 		<Compile Include="GamePlayerTests.fs" />
 		<Compile Include="AnalysisMachineTests.fs" />
 		<Compile Include="PanelModelTests.fs" />
+		<Compile Include="PlayModelTests.fs" />
+		<Compile Include="ReviewModelTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
 		<Compile Include="BoardApiSurfaceTests.fs" />

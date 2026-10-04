@@ -208,9 +208,13 @@ let step (state: State) (event: Event) : State * Effect list =
       let settle = if state.Auto then [ Settle (navigation, autoSearchDelayMs) ] else []
       state, stop @ [ ClearLists; ShowRows ] @ settle
   | Settled (navigation, request) ->
-      // auto-search uses a running engine; it never starts one
-      if navigation <> state.Navigation || not state.Auto || state.Reviewing || state.Engine <> Ready then state, []
-      else startSearch request state
+      // auto-search never starts an engine, but one that is starting searches the newest position
+      if navigation <> state.Navigation || not state.Auto || state.Reviewing then state, []
+      else
+        match state.Engine with
+        | Ready -> startSearch request state
+        | Starting -> { state with Pending = (if request.HasMove then Some request else None) }, []
+        | NotStarted -> state, []
   | AutoChanged on -> { state with Auto = on }, []
   | FocusToggled (move, request) ->
       let focused =
@@ -234,4 +238,8 @@ let step (state: State) (event: Event) : State * Effect list =
       { state with Engine = NotStarted; Searching = false; Current = None; Pending = None }, timer
   | Started search -> { state with Current = Some search }, []
   | Result (search, update) -> result search update state
+  // the host's review takes the panel over: its own search stops
+  | ReviewingChanged true when not state.Reviewing ->
+      let state, effects = stopSearch state
+      { state with Reviewing = true; Current = None; Pending = None; Navigation = state.Navigation + 1 }, effects
   | ReviewingChanged reviewing -> { state with Reviewing = reviewing }, []

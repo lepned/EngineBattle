@@ -28,7 +28,7 @@
 <div class="game-review">
     @* ── Toolbar ── *@
     <div class="gr-toolbar">
-        <button class="gr-toolbar-btn" @onclick="BrowsePGNFile" title="Load PGN file">
+        <button class="gr-toolbar-btn" @onclick="BrowsePGNFile" title="Load PGN file" disabled="@(isAnalyzing || reviewingAll)">
             <MudIcon Icon="@Icons.Material.Filled.FileOpen" Size="Size.Small" /> Load PGN
         </button>
 
@@ -113,7 +113,7 @@
             <EnginePanel @ref="enginePanel" FEN="@fen" ChessBoard="@board"
                          Id="grEngine" Engine="engineConfig"
                          Nodes="@nodes"
-                         IsReviewing="@(isAnalyzing || analysisResult == null)"
+                         IsReviewing="@isAnalyzing" ReviewDefaults="true"
                          CompactChartLegend="true" StatsPanelKey="game-review"
                          OnNewEngineLoaded="OnNewEngineLoaded" />
         </div>
@@ -249,7 +249,7 @@
                         @foreach (var game in games.Take(100))
                         {
                             <div class="gr-game-row @(game == currentGame ? "gr-game-selected" : "")"
-                                 @onclick="() => SelectGame(game)">
+                                 @onclick="() => SelectGameFromList(game)">
                                 <span>@game.GameNumber.</span>
                                 <span>@DisplayGameLabel(game)</span>
                                 <span>@game.GameMetaData.Result</span>
@@ -330,20 +330,30 @@
                                System.Globalization.CultureInfo.InvariantCulture, out var cp)
             ? (cp, null) : ((double?)null, (int?)null);
     }
-    private bool isAnalyzing;
     private int progressCurrent;
     private int progressTotal;
     private double progressPercent;
-    private CancellationTokenSource analysisCts;
-    // Loop-level token for "Review All": StartAnalysis owns (and nulls) analysisCts per game,
-    // so the loop must not read that field between games.
-    private CancellationTokenSource reviewAllCts;
+
+    // ── The review (ChessLibrary/Analysis/ReviewModel.fs): which position is searched, what each gave ──
+    private ReviewModel.State model = ReviewModel.initial;
+    // finishing: scored but the board and chart not yet rebuilt - still locked
+    private bool isAnalyzing => ReviewModel.isRunning(model) || finishing;
+    private bool finishing;
+    // one engine per page, reused across reviews (ucinewgame between games)
+    private ChessLibrary.AnalysisEngine reviewEngine;
+    private string reviewEngineName = "";
+    // counts engine starts and replacements: a start finishing under an older count is dropped
+    private int engineGeneration;
+    private readonly CancellationTokenSource disposeCts = new();
+    // what the running review scores at the end
+    private PgnGame reviewGame;
+    private int reviewGameIndex;
+    private GameReviewConfig reviewConfig;
 
     // Export
     private string exportFolder = "";
 
     // Search config
-    private SearchMode searchMode = SearchMode.Time;
     private int timePerMove = 1000;
     private int nodes = 5000;
     private int depth = 18;
@@ -374,12 +384,6 @@
             var s = SettingsService.Settings;
             boardSizePx = Math.Clamp(s.BoardSizeFor("game-review"), 360, 900);
             exportFolder = s.PgnOutputFolder;
-            searchMode = s.ReviewSearchMode switch
-            {
-                "Nodes" => SearchMode.Nodes,
-                "Depth" => SearchMode.Depth,
-                _ => SearchMode.Time
-            };
             timePerMove = s.ReviewTimePerMove;
             nodes = s.ReviewNodes;
             depth = s.ReviewDepth;
@@ -500,9 +504,25 @@
 
     private async void OnNewEngineLoaded(EngineConfigEventArgs args)
     {
-        engineConfig = args.EngineConfig;
-        engineName = engineConfig?.Name ?? "";
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                engineConfig = args.EngineConfig;
+                engineName = engineConfig?.Name ?? "";
+                // the review engine is for the old config
+                await ReplaceReviewEngine("the engine was changed");
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex) { logger.LogError(ex, "Loading the new engine failed"); }
+    }
+
+    // locked during a review: its result belongs to the game it started on
+    private async Task SelectGameFromList(PgnGame game)
+    {
+        if (isAnalyzing || reviewingAll) return;
+        await SelectGame(game);
     }
 
     // ── Game Selection ──
@@ -593,38 +613,16 @@
         await SelectGame(games[gameIndex]);
     }
 
+    // The next game starts when the review of this one finishes (OnReviewFinished).
     private async Task ReviewAllGames()
     {
-        if (games == null || games.Count == 0 || engineConfig == null) return;
+        if (games == null || games.Count == 0 || engineConfig == null || isAnalyzing) return;
         reviewingAll = true;
-        reviewAllCts?.Dispose();
-        reviewAllCts = new CancellationTokenSource();
         allResults.Clear();
-
-        try
-        {
-            for (int i = 0; i < games.Count; i++)
-            {
-                if (reviewAllCts.Token.IsCancellationRequested) break;
-
-                reviewAllCurrentGame = i;
-                gameIndex = i;
-                await SelectGame(games[i]);
-                await InvokeAsync(StateHasChanged);
-
-                await StartAnalysis();
-
-                if (analysisResult != null)
-                    allResults[i] = analysisResult;
-            }
-        }
-        finally
-        {
-            reviewingAll = false;
-            reviewAllCts?.Dispose();
-            reviewAllCts = null;
-            await InvokeAsync(StateHasChanged);
-        }
+        reviewAllCurrentGame = 0;
+        gameIndex = 0;
+        await SelectGame(games[0]);
+        await StartAnalysis();
     }
 
     // ── Analysis ──
@@ -778,28 +776,13 @@
     {
         if (currentGame == null || engineConfig == null || isAnalyzing) return;
 
-        isAnalyzing = true;
         progressCurrent = 0;
-        progressTotal = currentGame.Mainline.Count;
+        progressTotal = currentGame.Mainline.Count + 1;
         progressPercent = 0;
         analysisResult = null;
         accuracyPlot = null;
         moveEvals.Clear();
         moveAnnotations.Clear();
-        analysisCts?.Dispose();
-        analysisCts = new CancellationTokenSource();
-
-        // Track last PV1 eval for live move list updates
-        EvalType liveEval = EvalType.NA;
-
-        // Clear previous chart
-        if (chessModule != null)
-        {
-            try { await chessModule.InvokeVoidAsync("clearQPlot", chartElement, new { }); }
-            catch (Exception ex) { logger.LogDebug(ex, "Failed to clear Q-value plot"); }
-        }
-
-        StateHasChanged();
 
         // Sync search settings from EnginePanel
         var mode = enginePanel != null && enginePanel.IsTimeMode
@@ -813,62 +796,197 @@
             s.BrilliantPVGap, s.GreatPVGap, s.BestMinPVGap,
             s.ExcellentMaxWPLoss, s.GoodMaxWPLoss,
             s.InaccuracyMaxWPLoss, s.MistakeMaxWPLoss);
-        var config = new GameReviewConfig(mode, time, nodeCount, depth, s.ReviewMultiPV, true, thresholds, s.AccuracyDecay, s.MicroLossBase, s.MicroLossScale);
+        reviewConfig = new GameReviewConfig(mode, time, nodeCount, depth, s.ReviewMultiPV, true, thresholds, s.AccuracyDecay, s.MicroLossBase, s.MicroLossScale);
+        reviewGame = currentGame;
+        reviewGameIndex = gameIndex;
 
-        var progress = new Progress<(int current, int total)>(async p =>
+        var positions = reviewPositions(currentGame, reviewConfig);
+        // node searches start from a fresh tree each time, as before
+        // no await before this: a Cancel or a game click meanwhile would act on a review not yet started
+        await Send(ReviewModel.Event.NewStart(positions, goCommand(reviewConfig), reviewConfig.MultiPV, mode.IsNodes));
+        StateHasChanged();
+
+        // Clear previous chart
+        if (chessModule != null)
         {
-            await InvokeAsync(async () =>
-            {
-                progressCurrent = p.current;
-                progressTotal = p.total;
+            try { await chessModule.InvokeVoidAsync("clearQPlot", chartElement, new { }); }
+            catch (Exception ex) { logger.LogDebug(ex, "Failed to clear Q-value plot"); }
+        }
+    }
+
+    private async Task Send(ReviewModel.Event e)
+    {
+        var result = ReviewModel.step(model, e);
+        model = result.Item1;
+        foreach (var effect in result.Item2)
+            await Execute(effect);
+    }
+
+    private async Task Execute(ReviewModel.Effect effect)
+    {
+        switch (effect)
+        {
+            case ReviewModel.Effect.Search search:
+                if (reviewEngine == null) break;
+                var id = reviewEngine.Analyse(search.positionCmd, search.go);
+                model = ReviewModel.step(model, ReviewModel.Event.NewStarted(id)).Item1;
+                break;
+            case ReviewModel.Effect.SetMultiPv multiPv:
+                reviewEngine?.SetOption(EngineOption.Create("MultiPV", multiPv.Item.ToString(CultureInfo.InvariantCulture)));
+                break;
+            case ReviewModel.Effect.ShowPly show:
+                ShowReviewPly(show.ply);
+                break;
+            case ReviewModel.Effect.Progress progress:
+                progressCurrent = progress.current;
+                progressTotal = progress.total;
                 progressPercent = progressTotal > 0 ? (double)progressCurrent / progressTotal * 100.0 : 0;
+                break;
+            case ReviewModel.Effect.LiveEval live:
+                if (reviewGame != null && live.ply < reviewGame.Mainline.Count)
+                    moveEvals[live.ply] = FormatEval(live.Item2);
+                break;
+            case ReviewModel.Effect.Forward forward:
+                enginePanel?.HandleUpdate(forward.Item);
+                break;
+            case ReviewModel.Effect.Finished finished:
+                await OnReviewFinished(finished.Item);
+                break;
+            case ReviewModel.Effect.Failed failed:
+                logger.LogWarning("Game review failed: {Reason}", failed.reason);
+                reviewingAll = false;
+                await RestoreGameView();
+                _ = DialogService.ShowMessageBox("Review stopped", $"The review stopped: {failed.reason}");
+                break;
+            default:
+                // the load runs on; the model hears EngineReady or EngineGone when it is done
+                if (effect.IsStartEngine) _ = StartReviewEngine();
+                else if (effect.IsNewGame) reviewEngine?.NewGame();
+                else if (effect.IsStopEngine) reviewEngine?.Stop();
+                else if (effect.IsQuitEngine) { QuitOffThread(reviewEngine); reviewEngine = null; engineGeneration++; }
+                else if (effect.IsCancelled) { reviewingAll = false; await RestoreGameView(); }
+                break;
+        }
+    }
 
-                // Record eval for the just-completed move
-                if (p.current >= 2 && liveEval != EvalType.NA)
-                {
-                    moveEvals[p.current - 2] = FormatEval(liveEval);
-                    liveEval = EvalType.NA;
-                }
-
-                if (gameFens != null && p.current > 0 && chessBoardRazor != null)
-                {
-                    // p.current fires before analyzing move p.current, so show the position before that move
-                    fen = p.current >= 2 ? gameFens[p.current - 2] : (string.IsNullOrWhiteSpace(currentGame?.Fen) ? Chess.startPos : currentGame.Fen);
-                    await chessBoardRazor.SetPositionDirect(fen);
-                    if (enginePanel != null) await enginePanel.ResetChartData();
-                }
-
-                StateHasChanged();
-            });
-        });
-
+    private async Task StartReviewEngine()
+    {
+        var config = engineConfig;
+        var generation = ++engineGeneration;
+        bool Stale() => generation != engineGeneration || disposeCts.IsCancellationRequested;
+        if (config == null)
+        {
+            await Send(ReviewModel.Event.NewEngineGone("no engine loaded"));
+            return;
+        }
+        StateHasChanged();
+        ChessLibrary.AnalysisEngine created;
         try
         {
-            analysisResult = await ReviewService.AnalyzeGameAsync(
-                currentGame, engineConfig, config, progress, analysisCts.Token,
-                update =>
-                {
-                    enginePanel?.HandleUpdate(update);
-                    if (update.IsStatus)
-                    {
-                        var status = ((EngineUpdate.Status)update).Item;
-                        if (status.MultiPV <= 1)
-                            liveEval = status.Eval;
-                    }
-                });
+            // search ids restart with each engine: an older engine's late updates are dropped
+            var onUpdate = FuncConvert.FromAction<ChessLibrary.SearchUpdate>(u => OnReviewUpdate(u, generation));
+            // the network load can take long: off the page's thread
+            created = await Task.Run(() => ChessLibrary.EngineHelper.createAltEngineForSearches(onUpdate, config, logger, false));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "The review engine failed to start");
+            if (!Stale()) await Send(ReviewModel.Event.NewEngineGone(ex.Message));
+            StateHasChanged();
+            return;
+        }
+        if (Stale())
+        {
+            QuitOffThread(created);
+            return;
+        }
+        try
+        {
+            reviewEngine = created;
+            reviewEngineName = created.Name;
+            await Send(ReviewModel.Event.EngineReady);
+            StateHasChanged();
+        }
+        catch (Exception ex) { logger.LogError(ex, "Starting the review failed"); }
+    }
 
-            if (analysisResult != null && analysisResult.Moves.Length > 0)
+    // Quit waits for the process (seconds): never on the page's thread
+    private static void QuitOffThread(ChessLibrary.AnalysisEngine old)
+    {
+        if (old != null) _ = Task.Run(() => { try { old.Quit(); } catch { } });
+    }
+
+    /// The review engine is dropped (a new config); a running review fails with the reason.
+    private async Task ReplaceReviewEngine(string reason)
+    {
+        if (reviewEngine == null && model.Engine.IsNotStarted) return;
+        QuitOffThread(reviewEngine);
+        reviewEngine = null;
+        engineGeneration++;
+        await Send(ReviewModel.Event.NewEngineGone(reason));
+    }
+
+    // On the engine's delivery thread: marshalled to the dispatcher, where the model runs.
+    private void OnReviewUpdate(ChessLibrary.SearchUpdate update, int generation)
+    {
+        if (disposeCts.IsCancellationRequested) return;
+        try
+        {
+            _ = InvokeAsync(async () =>
             {
-                // Finalize evals and annotations from full analysis result
+                if (disposeCts.IsCancellationRequested || generation != engineGeneration) return;
+                try
+                {
+                    await Send(ReviewModel.Event.NewResult(update.SearchId, update.Update));
+                    StateHasChanged();
+                }
+                catch (Exception ex) { logger.LogError(ex, "Error handling a review update"); }
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// Board and panel on the position being searched (not awaited: the search goes out first).
+    private void ShowReviewPly(int ply)
+    {
+        if (reviewGame == null) return;
+        var startFen = string.IsNullOrWhiteSpace(reviewGame.Fen) ? Chess.startPos : reviewGame.Fen;
+        if (ply > 0 && (gameFens == null || ply - 1 >= gameFens.Length)) return;
+        fen = ply == 0 ? startFen : gameFens[ply - 1];
+        board.LoadFen(fen);
+        _ = Fire(chessBoardRazor?.SetPositionDirect(fen));
+        _ = Fire(enginePanel?.ResetChartData());
+    }
+
+    private async Task Fire(Task task)
+    {
+        if (task == null) return;
+        try { await task; }
+        catch (Exception ex) { logger.LogDebug(ex, "Showing the reviewed position failed"); }
+    }
+
+    /// A cancelled or failed review is discarded: the game shows what it had before.
+    private async Task RestoreGameView()
+    {
+        if (currentGame != null) await SelectGame(currentGame);
+    }
+
+    private async Task OnReviewFinished(PositionOutcome[] outcomes)
+    {
+        finishing = true;
+        try
+        {
+            analysisResult = scoreGame(reviewGame, reviewConfig, outcomes, reviewEngineName);
+            if (analysisResult.Moves.Length > 0)
+            {
+                // the page's state first, the scripts after: a render meanwhile shows a finished game
                 moveEvals = BuildMoveEvals(analysisResult.Moves);
                 moveAnnotations = BuildAnnotations(analysisResult);
-
-                accuracyPlot = new AccuracyPlot(chessModule, chartElement);
-                await accuracyPlot.RenderAsync(analysisResult);
-                await chessModule.InvokeVoidAsync("triggerResizeEvent");
+                if (games != null && reviewGameIndex >= 0)
+                    allResults[reviewGameIndex] = analysisResult;
 
                 // Rebuild game with engine PV lines as variations and reload into board
-                var annotatedGame = BuildGameWithVariations(currentGame, analysisResult);
+                var annotatedGame = BuildGameWithVariations(reviewGame, analysisResult);
                 var startFen = string.IsNullOrWhiteSpace(annotatedGame.Fen) ? Chess.startPos : annotatedGame.Fen;
                 board.ResetBoardStateFromFen(startFen);
                 board.LoadPGNGameWithVariations(annotatedGame);
@@ -882,30 +1000,30 @@
                         : MoveAndFen.FirstEntry);
                 }
 
-                await NavigateToPly(0);
+                accuracyPlot = new AccuracyPlot(chessModule, chartElement);
+                await accuracyPlot.RenderAsync(analysisResult);
+                await chessModule.InvokeVoidAsync("triggerResizeEvent");
 
-                // Cache result for game navigation
-                if (games != null && gameIndex >= 0)
-                    allResults[gameIndex] = analysisResult;
+                await NavigateToPly(0);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Cancelled by user
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error during game analysis");
+            logger.LogError(ex, "Error finishing the game review");
         }
-        finally
+        finally { finishing = false; }
+        StateHasChanged();
+
+        if (reviewingAll && games != null && reviewAllCurrentGame + 1 < games.Count && !disposeCts.IsCancellationRequested)
         {
-            isAnalyzing = false;
-            analysisCts?.Dispose();
-            analysisCts = null;
-            StateHasChanged();
-            if (chessModule != null)
-                await chessModule.InvokeVoidAsync("triggerResizeEvent");
+            reviewAllCurrentGame++;
+            gameIndex = reviewAllCurrentGame;
+            await SelectGame(games[gameIndex]);
+            // Cancel may have come during that await
+            if (reviewingAll) await StartAnalysis();
         }
+        else
+            reviewingAll = false;
     }
 
     private async Task QuickAnalysis()
@@ -941,12 +1059,11 @@
         StateHasChanged();
     }
 
-    private void CancelAnalysis()
+    private async Task CancelAnalysis()
     {
         reviewingAll = false;
-        ReviewService.Cancel();
-        try { reviewAllCts?.Cancel(); } catch (ObjectDisposedException) { }
-        analysisCts?.Cancel();
+        await Send(ReviewModel.Event.Cancel);
+        StateHasChanged();
     }
 
     // ── Navigation ──
@@ -1136,20 +1253,6 @@
         return "";
     }
 
-    private string GetSearchModeLabel()
-    {
-        if (enginePanel != null)
-        {
-            return enginePanel.IsTimeMode
-                ? $"Time {(int)enginePanel.CurrentTimeMs}ms"
-                : $"Nodes {FormatNodes((long)enginePanel.CurrentNodes)}";
-        }
-        if (searchMode.IsTime) return $"Time {timePerMove}ms";
-        if (searchMode.IsNodes) return $"Nodes {FormatNodes(nodes)}";
-        if (searchMode.IsDepth) return $"Depth {depth}";
-        return "";
-    }
-
     private static string DisplayPlayerName(string name, string fallback = "")
     {
         if (string.IsNullOrWhiteSpace(name) || name == "*" || name == "?")
@@ -1174,22 +1277,14 @@
         return hasMoves ? $"{accuracy:F1}%" : "—";
     }
 
-    private static string FormatNodes(long n)
-    {
-        if (n >= 1_000_000_000) return $"{n / 1_000_000_000.0:F1}G";
-        if (n >= 1_000_000) return $"{n / 1_000_000.0:F1}M";
-        if (n >= 1_000) return $"{n / 1_000.0:F1}K";
-        return n.ToString();
-    }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        ReviewService.Cancel();
-        try { reviewAllCts?.Cancel(); } catch (ObjectDisposedException) { }
-        try { reviewAllCts?.Dispose(); } catch (ObjectDisposedException) { }
-        reviewAllCts = null;
-        try { analysisCts?.Cancel(); } catch (ObjectDisposedException) { }
-        try { analysisCts?.Dispose(); } catch (ObjectDisposedException) { }
-        analysisCts = null;
+        disposeCts.Cancel();
+        engineGeneration++;
+        QuitOffThread(reviewEngine);
+        reviewEngine = null;
+        disposeCts.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

@@ -106,14 +106,15 @@ module internal AnalysisOutput =
   let private startsWith (prefix: string) (line: string) = line.StartsWith(prefix, StringComparison.Ordinal)
 
   let private bestMove (name: string) (pos: IPosition) (state: State) (line: string) =
-    // Every bestmove line produces Done, so a waiting caller completes. No move ("(none)", the
+    // Every bestmove line ends with Done (after the BestMove, if any), so a waiting caller completes
+    // and a caller that got no BestMove knows none is coming. No move ("(none)", the
     // UCI null move "0000", a bare "bestmove") is right only where there is none; elsewhere it
     // is an illegal move.
     let tokens = line.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
-    let doneFirst = Update (Done name)
+    let doneLast = Update (Done name)
     let noMove = tokens.Length < 2 || tokens.[1] = "(none)" || tokens.[1] = "0000"
     if noMove && not (pos.HasLegalMove ()) then
-      state, [ doneFirst; Debug (sprintf "%s: no move in a finished position: '%s'" name line) ]
+      state, [ Debug (sprintf "%s: no move in a finished position: '%s'" name line); doneLast ]
     else
       let move = if tokens.Length < 2 then "" else tokens.[1]
       let ponder =
@@ -157,12 +158,12 @@ module internal AnalysisOutput =
               R3 = 1
               PiecesLeft = facts.PiecesLeft
               AdjDrawML = 10 }
-          { state with AllEvals = eval :: state.AllEvals; Evals = []; Depth = 0 }, [ doneFirst; Update (BestMove info) ]
+          { state with AllEvals = eval :: state.AllEvals; Evals = []; Depth = 0 }, [ Update (BestMove info); doneLast ]
       | None ->
           state,
-          [ doneFirst
-            Print $"{name} played an illegal move here: {line} "
-            Print (pos.Describe ()) ]
+          [ Print $"{name} played an illegal move here: {line} "
+            Print (pos.Describe ())
+            doneLast ]
 
   let private searchInfo (name: string) (pos: IPosition) (state: State) (line: string) =
     match Regex.getEssentialDataWithEPS line pos.WhiteToMove with

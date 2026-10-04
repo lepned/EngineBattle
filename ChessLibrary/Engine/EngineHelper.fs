@@ -57,7 +57,7 @@ module EngineHelper =
           new ChessEngine(config, cmds, logger)
 
   /// An analysis engine, started: blocks until it is ready (a network load can take minutes, so
-  /// call it off a UI thread - createAltEngineAsync), and throws when it cannot start.
+  /// call it off a UI thread, e.g. in Task.Run), and throws when it cannot start.
   let rec createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : AnalysisEngine =
       startAltEngine (fun cmds -> new AnalysisEngine(callback, config, cmds, logger, writeToConsole, logToFile = true)) config
 
@@ -84,12 +84,6 @@ module EngineHelper =
   /// blocks; a UI thread (a Blazor handler) must not be the one waiting.
   let createEngineAsync (config: EngineConfig, logger: Microsoft.Extensions.Logging.ILogger option) : Task<ChessEngine> =
       Task.Run(fun () -> createEngine (config, logger))
-
-  /// createAltEngine on a pool thread. The analysis engine's constructor waits for uciok AND
-  /// readyok - the network load, about 5 s for Lc0 and 10 s for Ceres, minutes for a first
-  /// TensorRT build - so a UI thread that makes one itself freezes the page for that long.
-  let createAltEngineAsync (callback, config: EngineConfig, logger: ILogger, writeToConsole: bool) : Task<AnalysisEngine> =
-      Task.Run(fun () -> createAltEngine (callback, config, logger, writeToConsole))
 
   let rec waitForEngineIsReady (delay:int) (engine: ChessEngine) =
     async {

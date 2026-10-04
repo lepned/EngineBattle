@@ -86,15 +86,15 @@ let ``Every recorded search yields a status per scored line, a stats set per nod
         for set in sets do
             for m in set do
                 if m.LANMove <> "node" then Assert.False(String.IsNullOrEmpty m.SANMove, sprintf "%s: no SAN for %s" name m.LANMove)
-        // Done, then the engine's move as BestMove, legal, with a PV and the pre-move FEN.
+        // The engine's move as BestMove (legal, with a PV and the pre-move FEN), then Done.
         let finals = ups |> List.filter (function Done _ | BestMove _ -> true | _ -> false)
         match finals with
-        | [ Done "Eng"; BestMove bm ] ->
+        | [ BestMove bm; Done "Eng" ] ->
             let expected = (Array.last output).Split(' ').[1]
             Assert.Equal(expected, bm.Move)
             Assert.False(String.IsNullOrEmpty bm.PV, name)
             Assert.Equal(board.FEN(), bm.FEN)
-        | other -> Assert.Fail(sprintf "%s: expected Done then BestMove, got %A" name other)
+        | other -> Assert.Fail(sprintf "%s: expected BestMove then Done, got %A" name other)
 
 [<Fact>]
 let ``A new position drops the previous variation before the next line`` () =

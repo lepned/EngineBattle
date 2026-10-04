@@ -6,12 +6,11 @@
 @using WebGUI.Components.Layout.ChessboardLayout
 @using WebGUI.Services
 @using System.Timers
+@using Microsoft.FSharp.Core
 @using static ChessLibrary.EngineTypes
 @inject ILogger<PlayVsEngineGame> logger
 @inject NotifierService Notifier
-@inject OverlaySetting overlaySettings
 @inject IDialogService DialogService
-@inject IJSRuntime JS
 @inject GlobalSettingsService SettingsService
 @inject NavigationManager navManager
 @inject AnalysisNavigationService AnalysisNav
@@ -20,7 +19,8 @@
 <div class="play-vs-computer">
     <div class="pvc-shell">
         <div class="pvc-topbar">
-            <div class="pvc-controls">
+            @* side and time control are locked during a game *@
+            <fieldset class="pvc-controls" disabled="@gameActive" style="border:0;margin:0;padding:0;min-width:0;">
                 <div class="pvc-field">
                     <label for="timeControlSelect">Time Control</label>
                     <select id="timeControlSelect" @bind="selectedTimeControlId">
@@ -95,7 +95,7 @@
                         <option value="Black">Black</option>
                     </select>
                 </div>
-            </div>
+            </fieldset>
             <div class="pvc-actions">
                 @if (ShowEngineLoader)
                 {
@@ -138,8 +138,10 @@
                         <span class="pvc-premove" title="Played the moment your turn comes, if it is still legal. Click the board to cancel."> · premove @premoveQueued queued</span>
                     }
                 </div>
-                <ModernChessboard @ref="chessboardRef" ShowFenField="false" FENposition="@fen" ShowChessNavButtons="true" ShowMoveList="true"
+                @* navigation during a game would look like a move; moves only on the player's turn *@
+                <ModernChessboard @ref="chessboardRef" ShowFenField="false" FENposition="@fen" ShowChessNavButtons="@(!gameActive)" ShowMoveList="true"
                             MakeMoveListClickable="true" MoveListPosition="MoveListPosition.Right"
+                            AllowMoves="@HumanMayMove" AllowNavigation="@(!gameActive)"
                             ShowSizeSlider="true" SizeKey="play-vs-computer"
                             OnMoveMadeOnBoard="OnHumanMove" OnNewFENOnBoard="OnBoardFenChanged" OnBoardFlipped="OnBoardFlipped"
                             ShowPositionStatus="false"
@@ -214,6 +216,10 @@
 
     private IReadOnlyList<EngineOption> appliedEngineOptions;
     private string engineNameInUse;
+    // the engine being started or running (a host change while it loads replaces it too)
+    private string engineNameStarted;
+    // counts engine starts and replacements: a start finishing under an older count is dropped
+    private int engineGeneration;
     private EngineConfig engineParamSeen;
     private record TimeControlOption(string Id, string Label, int Minutes, int IncrementSeconds);
 
@@ -241,8 +247,6 @@
     private int customNodeLimit = 1;
     private string customLimitMode = "Time";
     private bool customSameForBoth = true;
-    private TimeSpan whiteTime;
-    private TimeSpan blackTime;
     private int incrementSeconds = 2;
     private int baseMinutes = 3;
     private int whiteBaseMinutes = 3;
@@ -250,20 +254,12 @@
     private int whiteIncrementSeconds = 2;
     private int blackIncrementSeconds = 2;
     private System.Timers.Timer clockTimer;
-    private bool humanIsWhite = true;
     private bool boardFlipped;
-    private bool isWhiteTurn = true;
-    private bool gameActive = false;
-    // a move request belongs to one game and one position: New game and Take back start a new one
-    private int moveEpoch;
-    private int requestedEpoch = -1;
     private string gameStatus = "";
     private Chess.Board board = new();
     private string fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    private string moveHistory = string.Empty;
     private int numberOfNodes = 1;
     private string gamesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "chess", "mygames.pgn");
-    private readonly object clockLock = new object();
     private readonly CancellationTokenSource disposeCts = new();
     private ModernChessboard chessboardRef;
     private readonly List<GameResult> gameResults = new();
@@ -271,14 +267,28 @@
     private record GameResult(DateTime When, string Result, string Reason, string Moves, string FinalFen);
     private string lastResultTag = "*";
     private string lastResultReason = string.Empty;
+    // an engine config is there to play
     private bool engineReady;
-    private bool engineInitializing;
-    private bool suppressNextHumanMoveEvent;
     private bool clockEnabled = true;
 
+    // ── The game (ChessLibrary/Analysis/PlayModel.fs): turns, clocks, the engine's search, the result ──
+    private PlayModel.State model = PlayModel.initial;
+    // the model's clock: real elapsed time
+    private readonly System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+    private TimeSpan Now => stopwatch.Elapsed;
+
+    private bool gameActive => model.Phase.IsPlaying;
+    private bool engineInitializing => model.Engine.IsStarting;
+    private bool humanIsWhite => model.HumanWhite;
+    private bool HumanToMove => humanIsWhite == (board.Position.STM == 0);
+    private bool HumanMayMove => gameActive && model.Engine.IsReady && !model.Pending && HumanToMove;
+    private TimeSpan whiteTime => PlayModel.remaining(model, true, Now);
+    private TimeSpan blackTime => PlayModel.remaining(model, false, Now);
+
     private bool IsCustomTimeControl => selectedTimeControlId == "custom";
-    private bool CanForceMove => gameActive && engineReady && (humanIsWhite != (board.Position.STM == 0));
-    private bool CanTakeback => gameActive && (board.MovesAndFenPlayed?.Count ?? 0) > 0;
+    private bool CanForceMove => gameActive && !HumanToMove && model.Current != null;
+    private bool CanTakeback => gameActive && !model.Pending && model.Ply > 0 && !playingEngineMove;
+    private bool playingEngineMove;
     private string selectedSide
     {
         get => humanIsWhite ? "White" : "Black";
@@ -292,11 +302,7 @@
             ? @<img class="pvc-engine-logo" src="@Engine.LogoPath" alt="@(Engine.Name)" />
             : @<MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" />;
 
-    private bool IsEngineThinking()
-    {
-        var whiteToMove = board.Position.STM == 0;
-        return humanIsWhite != whiteToMove;
-    }
+    private bool IsEngineThinking() => model.Current != null;
 
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
 
@@ -314,7 +320,6 @@
             catch { }
         }
         ApplyTimeControl();
-        ResetClocks();
         LoadSavedGamesFromPgn();
         engineReady = Engine != null;
     }
@@ -325,22 +330,160 @@
             await OnTimeControlApplied.InvokeAsync(clockEnabled ? whiteBaseMinutes : null);
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         // Only a host-supplied change counts; the component's own Load Engine sets Engine too,
         // and a failed load must keep the button off until the next real change.
         if (ReferenceEquals(Engine, engineParamSeen)) return;
         engineParamSeen = Engine;
-        // A different engine from the host: the running one is for the old config.
-        if (analyzer != null && Engine != null && engineNameInUse != null && Engine.Name != engineNameInUse)
-        {
-            analyzer.Quit();
-            analyzer = null;
-            gameActive = false;
-            StopClock();
-            gameStatus = "";
-        }
+        // A different engine from the host: the running one is for the old config, and its game ends.
+        if (!model.Engine.IsNotStarted && Engine != null && engineNameStarted != null && Engine.Name != engineNameStarted)
+            await ReplaceEngine();
         engineReady = Engine != null;
+    }
+
+    /// The old engine quits; a game with it is aborted.
+    private async Task ReplaceEngine()
+    {
+        QuitOffThread(analyzer);
+        analyzer = null;
+        engineNameInUse = null;
+        engineNameStarted = null;
+        engineGeneration++;
+        await Send(PlayModel.Event.NewEngineGone("the engine was changed", Now));
+    }
+
+    // Quit waits for the process (seconds): never on the page's thread
+    private static void QuitOffThread(AnalysisManager.SimpleEngineAnalyzer old)
+    {
+        if (old != null) _ = Task.Run(() => { try { old.Quit(); } catch { } });
+    }
+
+    private async Task Send(PlayModel.Event e)
+    {
+        var result = PlayModel.step(model, e);
+        model = result.Item1;
+        foreach (var effect in result.Item2)
+            await Execute(effect);
+    }
+
+    private async Task Execute(PlayModel.Effect effect)
+    {
+        switch (effect)
+        {
+            case PlayModel.Effect.Search search:
+                RunSearch(search.Item);
+                break;
+            case PlayModel.Effect.PlayEngineMove play:
+                await PlayEngineMove(play.uci);
+                break;
+            case PlayModel.Effect.StepBack back:
+                await TakeBack(back.plies);
+                break;
+            case PlayModel.Effect.ClockRunning running:
+                if (running.Item) StartClock(); else StopClock();
+                break;
+            case PlayModel.Effect.Ended ended:
+                EndGame(ended.result, ended.reason, ended.status);
+                break;
+            case PlayModel.Effect.ShowStatus status:
+                gameStatus = status.Item;
+                break;
+            default:
+                // the load runs on; the model hears EngineReady or EngineGone when it is done
+                if (effect.IsStartEngine) _ = StartEngineNow();
+                else if (effect.IsQuitEngine) { QuitOffThread(analyzer); analyzer = null; engineNameInUse = null; engineGeneration++; }
+                else if (effect.IsNewGame) analyzer?.NewGame();
+                else if (effect.IsStopEngine) analyzer?.Stop();
+                else if (effect.IsPlayPremove) _ = PlayPremoveLater();
+                break;
+        }
+    }
+
+    /// The board as the model sees it: whose turn, how far, and whether the rules ended the game.
+    private PlayModel.Facts Facts()
+    {
+        var ply = board.MovesAndFenPlayed?.Count ?? 0;
+        return new PlayModel.Facts(board.Position.STM == 0, ply, BoardEnd());
+    }
+
+    private FSharpOption<PlayModel.BoardEnd> BoardEnd()
+    {
+        bool noLegalMoves = !board.AnyLegalMove();
+        var pos = board.Position;
+        bool inCheck = ChessLibrary.MoveGeneration.InCheck(in pos) != 0UL;
+        if (noLegalMoves) return inCheck ? PlayModel.BoardEnd.Checkmate : PlayModel.BoardEnd.Stalemate;
+        if (board.InsufficientMaterial()) return PlayModel.BoardEnd.InsufficientMaterial;
+        if (board.ClaimThreeFoldRep()) return PlayModel.BoardEnd.Threefold;
+        // the backstop for endings where mate cannot be forced but the position is not dead
+        if (board.Position.Count50 >= 100) return PlayModel.BoardEnd.FiftyMoves;
+        return FSharpOption<PlayModel.BoardEnd>.None;
+    }
+
+    private PlayModel.TimeControl CurrentTimeControl()
+    {
+        if (clockEnabled)
+            return PlayModel.TimeControl.NewClocked(TimeSpan.FromMinutes(whiteBaseMinutes), TimeSpan.FromMinutes(blackBaseMinutes),
+                TimeSpan.FromSeconds(whiteIncrementSeconds), TimeSpan.FromSeconds(blackIncrementSeconds));
+        return IsCustomTimeControl && customLimitMode == "Nodes"
+            ? PlayModel.TimeControl.NewNodesPerMove(numberOfNodes)
+            : PlayModel.TimeControl.Unlimited;
+    }
+
+    private async Task StartEngineNow()
+    {
+        var config = Engine;
+        if (config == null)
+        {
+            await Send(PlayModel.Event.NewEngineGone("no engine loaded", Now));
+            return;
+        }
+        engineNameStarted = config.Name;
+        var generation = ++engineGeneration;
+        bool Stale() => generation != engineGeneration || disposeCts.IsCancellationRequested;
+        StateHasChanged();
+        AnalysisManager.SimpleEngineAnalyzer created;
+        try
+        {
+            created = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, board, logger, HandleSearchUpdate, false));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Engine initialization failed");
+            // replaced meanwhile: this one's failure is not news
+            if (!Stale())
+                await Send(PlayModel.Event.NewEngineGone(ex.Message, Now));
+            return;
+        }
+        if (Stale())
+        {
+            QuitOffThread(created);
+            return;
+        }
+        try
+        {
+            analyzer = created;
+            await OnAnalyzerCreated();
+            await Send(PlayModel.Event.NewEngineReady(Now));
+            StateHasChanged();
+        }
+        catch (Exception ex) { logger.LogError(ex, "Starting the game after the engine start failed"); }
+    }
+
+    private void RunSearch(PlayModel.Go go)
+    {
+        if (analyzer == null) return;
+        // a new option list (contempt) goes first, with ucinewgame
+        if (!ReferenceEquals(EngineOptions, appliedEngineOptions))
+            ApplyEngineOptions();
+        var command = go switch
+        {
+            PlayModel.Go.GoNodes n => TimeControlTypes.TimeControlCommands.createNodes(n.Item),
+            PlayModel.Go.GoClock c => TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(c.wtime, c.btime, c.winc, c.binc),
+            _ => throw new InvalidOperationException()
+        };
+        var id = analyzer.Play(command);
+        model = PlayModel.step(model, PlayModel.Event.NewStarted(id)).Item1;
     }
 
     // A new list instance is sent right before the engine's next move, followed by ucinewgame:
@@ -438,165 +581,59 @@
             return;
         }
 
-        moveEpoch++;
-        analyzer?.Stop();
         ApplyTimeControl();
-        await OnTimeControlApplied.InvokeAsync(clockEnabled ? whiteBaseMinutes : null);
-        ResetClocks();
+        // the board reset and Start in one go: a bestmove of the old game can't land in between
         board.ResetBoardState();
         fen = board.FEN();
-        chessboardRef?.ResetGameState();
-        chessboardRef?.ClearPremove();
-        var whiteToMove = board.Position.STM == 0;
-        isWhiteTurn = whiteToMove;
-        gameActive = true;
         resultRecorded = false;
-
-        if (analyzer != null)
-        {
-            analyzer.NewGame();
-        }
-        else
-        {
-            engineInitializing = true;
-            gameStatus = "Initializing engine...";
-            StateHasChanged();
-            try
-            {
-                analyzer = await Task.Factory.StartNew(() =>
-                    new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false));
-                await OnAnalyzerCreated();
-            }
-            catch (Exception ex)
-            {
-                engineInitializing = false;
-                gameActive = false;
-                gameStatus = $"Engine failed to initialize: {ex.Message}";
-                logger.LogError(ex, "Engine initialization failed");
-                StateHasChanged();
-                return;
-            }
-            engineInitializing = false;
-        }
-
-        // Engine is ready — start clock and trigger engine move if needed
-        whiteToMove = board.Position.STM == 0;
-        isWhiteTurn = whiteToMove;
-        gameStatus = humanIsWhite == whiteToMove ? "Your move." : "Computer to move.";
-        StartClock();
+        chessboardRef?.ClearPremove();
+        await Send(PlayModel.Event.NewStart(CurrentTimeControl(), humanIsWhite, Facts(), Now));
+        if (chessboardRef != null) await chessboardRef.ResetGameState();
+        await OnTimeControlApplied.InvokeAsync(clockEnabled ? whiteBaseMinutes : null);
         await OnPositionChanged.InvokeAsync(board.FEN());
-        if (humanIsWhite != whiteToMove)
-            await RequestEngineMove();
         StateHasChanged();
     }
 
-    private async Task RestartGame()
-    {
-        chessboardRef?.ResetGameState();
-        await StartGame();
-    }
+    private Task RestartGame() => StartGame();
 
-    private void ResignGame()
+    private async Task ResignGame()
     {
-        EndGame("Loss", "Resignation", "You resigned. Computer wins.");
-        analyzer?.Stop();
+        await Send(PlayModel.Event.NewResign(Now));
         StateHasChanged();
     }
 
-    private void Abort()
+    private async Task Abort()
     {
-        if (!gameActive)
-        {
-            return;
-        }
-
-        EndGame("Aborted", "Agreement", "Game aborted.");
-        analyzer?.Stop();
+        await Send(PlayModel.Event.NewAbort(Now));
         StateHasChanged();
     }
 
-    private async Task ForceComputerMove()
-    {
-        if (!CanForceMove)
-        {
-            return;
-        }
-
-        analyzer.Stop(); // Play();
-    }
+    private Task ForceComputerMove() => Send(PlayModel.Event.Force);
 
     private async Task OfferTakeback()
     {
-        if (!CanTakeback)
-        {
-            return;
-        }
-        moveEpoch++;
-        analyzer?.Stop();
+        if (!CanTakeback) return;
         chessboardRef?.ClearPremove();
-
-        var whiteToMove = board.Position.STM == 0;
-        var humanTurn = humanIsWhite == whiteToMove;
-
-        if (humanTurn)
-        {
-            await StepBackOnce();
-            await StepBackOnce();
-        }
-        else
-        {
-            await StepBackOnce();
-        }
-
-        fen = board.FEN();
-        UpdateStatusForSideToMove();
-        await OnPositionChanged.InvokeAsync(fen);
+        await Send(PlayModel.Event.NewTakeback(Now));
         StateHasChanged();
     }
 
-    private async Task StepBackOnce()
+    /// The board steps back without telling this page (a step back is not a move), then the model hears where it landed.
+    private async Task TakeBack(int plies)
     {
-        if (chessboardRef is null)
-        {
-            return;
-        }
-
-        var before = board.MovesAndFenPlayed?.Count ?? 0;
-        suppressNextHumanMoveEvent = true;
-        await chessboardRef.StepBack();
-        var after = board.MovesAndFenPlayed?.Count ?? 0;
-        if (after == before)
-        {
-            suppressNextHumanMoveEvent = false;
-        }
-    }
-
-    private void ResetClocks()
-    {
-        lock (clockLock)
-        {
-            if (!clockEnabled)
-            {
-                whiteTime = TimeSpan.Zero;
-                blackTime = TimeSpan.Zero;
-                return;
-            }
-
-            whiteTime = TimeSpan.FromMinutes(whiteBaseMinutes);
-            blackTime = TimeSpan.FromMinutes(blackBaseMinutes);
-        }
+        if (chessboardRef != null)
+            for (var i = 0; i < plies; i++)
+                await chessboardRef.StepBack(notifyParent: false);
+        fen = board.FEN();
+        await Send(PlayModel.Event.NewTookBack(Facts(), Now));
+        await OnPositionChanged.InvokeAsync(fen);
     }
 
     private async Task SetHumanSide(bool playWhite)
     {
-        if (humanIsWhite == playWhite)
-        {
-            return;
-        }
-
-        humanIsWhite = playWhite;
+        if (humanIsWhite == playWhite) return;
+        await Send(PlayModel.Event.NewSideChanged(playWhite));
         await EnsureBoardOrientation();
-        UpdateStatusForSideToMove();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -609,43 +646,22 @@
         }
     }
 
+    // Between games the board's flip picks the side; during one it only turns the board.
     private async Task OnBoardFlipped(bool isFlipped)
     {
         boardFlipped = isFlipped;
-        humanIsWhite = !isFlipped;
-        UpdateStatusForSideToMove();
+        await Send(PlayModel.Event.NewSideChanged(!isFlipped));
         await InvokeAsync(StateHasChanged);
-    }
-
-    private void UpdateStatusForSideToMove()
-    {
-        if (!gameActive)
-        {
-            return;
-        }
-
-        var whiteToMove = board.Position.STM == 0;
-        gameStatus = humanIsWhite == whiteToMove ? "Your move." : "Computer to move.";
-    }
-
-    private void HandleFlagFall(bool whiteFlagged)
-    {
-        var humanLost = whiteFlagged ? humanIsWhite : !humanIsWhite;
-        var status = humanLost ? "You lost on time." : "Computer lost on time.";
-        EndGame(humanLost ? "Loss" : "Win", "Time", status);
     }
 
     private void EndGame(string result, string reason, string statusMessage)
     {
-        gameActive = false;
         chessboardRef?.ClearPremove();
         gameStatus = statusMessage;
-        StopClock();
         lastResultTag = ComputeResultTag(result);
         lastResultReason = reason;
         RecordResult(result, reason);
     }
-
     private void RecordResult(string result, string reason)
     {
         if (resultRecorded)
@@ -784,15 +800,11 @@
         return null;
     }
 
+    // The timer only shows the clocks and asks the model whether a flag fell; the time itself is real elapsed time.
     private void StartClock()
     {
-        if (!clockEnabled)
-        {
-            return;
-        }
-
-        clockTimer?.Dispose();
-        clockTimer = new System.Timers.Timer(1000);
+        StopClock();
+        clockTimer = new System.Timers.Timer(200);
         clockTimer.Elapsed += OnClockTick;
         clockTimer.Start();
     }
@@ -806,146 +818,29 @@
 
     private void OnClockTick(object sender, ElapsedEventArgs e)
     {
-        bool shouldUpdate = false;
-        bool whiteFlagged = false;
-        bool blackFlagged = false;
-
-        lock (clockLock)
+        if (disposeCts.IsCancellationRequested) return;
+        try
         {
-            if (!gameActive || !clockEnabled) return;
-
-            var whiteToMove = board.Position.STM == 0;
-            if (whiteToMove)
+            _ = InvokeAsync(async () =>
             {
-                whiteTime = whiteTime.Subtract(TimeSpan.FromSeconds(1));
-                if (whiteTime.TotalSeconds <= 0)
+                try
                 {
-                    whiteTime = TimeSpan.Zero;
-                    whiteFlagged = true;
+                    await Send(PlayModel.Event.NewTick(Now));
+                    StateHasChanged();
                 }
-            }
-            else
-            {
-                blackTime = blackTime.Subtract(TimeSpan.FromSeconds(1));
-                if (blackTime.TotalSeconds <= 0)
-                {
-                    blackTime = TimeSpan.Zero;
-                    blackFlagged = true;
-                }
-            }
-            shouldUpdate = true;
+                catch (Exception ex) { logger.LogError(ex, "Clock tick failed"); }
+            });
         }
-
-        if (whiteFlagged)
-        {
-            HandleFlagFall(whiteFlagged: true);
-        }
-        else if (blackFlagged)
-        {
-            HandleFlagFall(whiteFlagged: false);
-        }
-
-        if (shouldUpdate)
-        {
-            InvokeAsync(StateHasChanged);
-        }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task OnHumanMove(string move)
     {
-        if (suppressNextHumanMoveEvent)
-        {
-            suppressNextHumanMoveEvent = false;
-            return;
-        }
-
-        var whiteToMove = board.Position.STM == 0;
-        var movedByWhite = !whiteToMove;
-        if (humanIsWhite != movedByWhite)
-        {
-            logger.LogInformation("Human move ignored (not your turn).");
-            return;
-        }
-
-        if (!gameActive)
-        {
-            return;
-        }
-
-        logger.LogInformation($"Human move played: {move}, FEN: {board.FEN()}, WhiteToMove: {whiteToMove}");
-        
-        lock (clockLock)
-        {
-            if (movedByWhite)
-            {
-                whiteTime = whiteTime.Add(TimeSpan.FromSeconds(whiteIncrementSeconds));
-            }
-            else
-            {
-                blackTime = blackTime.Add(TimeSpan.FromSeconds(blackIncrementSeconds));
-            }
-        }
-        
-        isWhiteTurn = whiteToMove;
-        gameStatus = "Computer to move.";
-
-        await OnPositionChanged.InvokeAsync(board.FEN());
-        if (CheckGameEnd()) return;
-        await RequestEngineMove();
-    }
-
-    private bool CheckGameEnd()
-    {
-        // Checkmate: if in check and no legal moves
-        bool noLegalMoves = !board.AnyLegalMove();
-        var pos = board.Position;
-        bool inCheck = ChessLibrary.MoveGeneration.InCheck(in pos) != 0UL;
-        var whiteToMove = board.Position.STM == 0;
-        if (noLegalMoves && inCheck)
-        {
-            var humanWon = humanIsWhite != whiteToMove;
-            var status = humanWon ? "Checkmate! You win." : "Checkmate! Computer wins.";
-            EndGame(humanWon ? "Win" : "Loss", "Checkmate", status);
-            return true;
-        }
-        // Stalemate: not in check and no legal moves
-        if (noLegalMoves && !inCheck)
-        {
-            EndGame("Draw", "Stalemate", "Stalemate. Draw.");
-            return true;
-        }
-        // Draw by insufficient material
-        if (board.InsufficientMaterial())
-        {
-            EndGame("Draw", "Insufficient material", "Draw by insufficient material.");
-            return true;
-        }
-        // Draw by threefold repetition
-        if (board.ClaimThreeFoldRep())
-        {
-            EndGame("Draw", "Threefold repetition", "Draw by threefold repetition.");
-            return true;
-        }
-        // Draw by 50-move rule. This is the backstop for endings where mate cannot be
-        // forced but is not a dead position (K+N vs K+N, opposite-color bishops, …):
-        // the material rule above is the strict FIDE one, so without this the game
-        // would never end on its own.
-        if (board.Position.Count50 >= 100)
-        {
-            EndGame("Draw", "Fifty-move rule", "Draw by the 50-move rule.");
-            return true;
-        }
-        if (clockEnabled && whiteTime.TotalSeconds <= 0)
-        {
-            HandleFlagFall(whiteFlagged: true);
-            return true;
-        }
-        if (clockEnabled && blackTime.TotalSeconds <= 0)
-        {
-            HandleFlagFall(whiteFlagged: false);
-            return true;
-        }
-        return false;
+        // the model takes only the player's own move on its turn (the board also raises this for the engine's move)
+        var ply = model.Ply;
+        await Send(PlayModel.Event.NewHumanMoved(Facts(), Now));
+        if (model.Ply != ply) await OnPositionChanged.InvokeAsync(board.FEN());
+        StateHasChanged();
     }
 
     private string FormatTime(TimeSpan t)
@@ -962,176 +857,70 @@
         return t.ToString(@"mm\:ss");
     }
 
-    /// Placement, side to move, castling and en passant; the move counters may be counted differently.
-    private static bool SamePosition(string a, string b) =>
-        string.Join(' ', (a ?? "").Split(' ').Take(4)) == string.Join(' ', (b ?? "").Split(' ').Take(4));
-
-    private async Task OnEngineMoveReady(MoveAndFen move, string searchedFen)
+    /// The engine's bestmove on the board; one that is not legal here is refused and ends the game.
+    private async Task PlayEngineMove(string uci)
     {
-        // resign, abort, a new game and take back stop the engine; its answer is not a move any more,
-        // nor is one searched on another position (a stopped search answering after New game)
-        if (!gameActive || requestedEpoch != moveEpoch || !SamePosition(searchedFen, board.FEN()))
+        var before = board.MovesAndFenPlayed?.Count ?? 0;
+        try
+        {
+            if (!string.IsNullOrEmpty(uci) && uci != "0000") board.PlayUciMove(uci);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "The engine's move {Move} could not be played", uci);
+        }
+        if ((board.MovesAndFenPlayed?.Count ?? 0) != before + 1)
+        {
+            await Send(PlayModel.Event.NewEngineMoveRefused(uci, Now));
             return;
-        var whiteToMove = board.Position.STM == 0;
-        board.PlayUciMove(move.Move.LongSan);
+        }
         var lastMove = board.MovesAndFenPlayed.LastOrDefault();
-        if (lastMove != null)
+        // the move is on the board but not yet in the model: no takeback in between
+        playingEngineMove = true;
+        try
         {
-            suppressNextHumanMoveEvent = true;
-            await Notifier.UpdateFenMoveToBoard(lastMove);
+            if (lastMove != null)
+                await Notifier.UpdateFenMoveToBoard(lastMove);
         }
+        finally { playingEngineMove = false; }
         fen = board.FEN();
-        var movedByWhite = !whiteToMove;
-        
-        lock (clockLock)
-        {
-            if (movedByWhite)
-            {
-                whiteTime = whiteTime.Add(TimeSpan.FromSeconds(whiteIncrementSeconds));
-            }
-            else
-            {
-                blackTime = blackTime.Add(TimeSpan.FromSeconds(blackIncrementSeconds));
-            }
-        }
-        
-        isWhiteTurn = !whiteToMove;
+        await Send(PlayModel.Event.NewEngineMoved(Facts(), Now));
         await OnPositionChanged.InvokeAsync(fen);
-        if (CheckGameEnd())
-        {
-            await InvokeAsync(StateHasChanged);
-            return;
-        }
-
-        gameStatus = "Your move.";
-        await InvokeAsync(StateHasChanged);
-
-        // A premove queued while the engine was thinking is played now, if the reply left it
-        // legal; the board raises it as an ordinary human move, so the clock and the next
-        // engine turn follow the usual path.
-        // Off this thread first: the bestmove callback can run inline on the engine's reader
-        // thread, and playing the premove asks the engine for its next move, which waits
-        // synchronously for readyok - a line only that reader can deliver. Doing it here
-        // deadlocked the whole circuit (no renders, engine never answered).
-        if (chessboardRef?.PendingPremove != null)
-        {
-            var boardRef = chessboardRef;
-            _ = Task.Run(() => InvokeAsync(async () =>
-            {
-                try { await boardRef.TryPlayQueuedMove(); }
-                catch (Exception ex) { logger.LogError(ex, "Playing the queued premove failed"); }
-            }));
-        }
     }
 
+    // After the current events are done: the premove is an ordinary human move and goes through the model again.
+    private async Task PlayPremoveLater()
+    {
+        await Task.Yield();
+        if (chessboardRef?.PendingPremove == null) return;
+        try { await chessboardRef.TryPlayQueuedMove(); }
+        catch (Exception ex) { logger.LogError(ex, "Playing the queued premove failed"); }
+    }
     // The queued premove shows next to the status line, where the player is already looking.
     // Its own field: the status text is rewritten by the clock and the turn changes.
     private string premoveQueued;
     private void OnPremoveSet(string uci) => premoveQueued = gameActive ? uci : null;
     private void OnPremoveCleared() => premoveQueued = null;
 
-    private async Task RequestEngineMove()
-    {
-        if (Engine == null || analyzer == null)
-        {
-            logger.LogInformation("No engine loaded to play against.");
-            return;
-        }
-
-        if (!ReferenceEquals(EngineOptions, appliedEngineOptions))
-            ApplyEngineOptions();
-        requestedEpoch = moveEpoch;
-        var nodeLimitCommand = TimeControlTypes.TimeControlCommands.createNodes(numberOfNodes);
-        if (IsCustomTimeControl && customLimitMode == "Nodes")
-        {
-            // Off the dispatcher: Play waits synchronously for the engine's readyok, and the
-            // engine's reader thread can be the one executing dispatcher work at that moment
-            // (Blazor runs the queue on whichever thread posts to an idle dispatcher) - waiting
-            // there deadlocked the page when a premove was played right after bestmove.
-            await Task.Run(() => analyzer.Play(nodeLimitCommand));
-        }
-        else if (IsCustomTimeControl && customLimitMode == "Infinite")
-        {
-            var big = TimeSpan.FromMinutes(300);
-            var zero = TimeSpan.Zero;
-            var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(big, big, zero, zero);
-            await Task.Run(() => analyzer.Play(incrCommand));
-        }
-        else
-        {
-            var clockWhite = whiteTime;
-            var clockBlack = blackTime;
-            var incWhite = TimeSpan.FromSeconds(whiteIncrementSeconds);
-            var incBlack = TimeSpan.FromSeconds(blackIncrementSeconds);
-            var incrCommand = TimeControlTypes.TimeControlCommands.createTimeControlWithIncrement(clockWhite, clockBlack, incWhite, incBlack);
-            await Task.Run(() => analyzer.Play(incrCommand));
-        }
-
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task StopSearch()
-    {
-        if (analyzer != null)
-            analyzer.Stop();
-
-        await Task.CompletedTask;
-    }
-
-    // Called on the engine reader thread — marshal to the dispatcher before touching the
-    // board or component state, and never let an exception escape into async void
-    // (same pattern as EnginePanel.HandleUpdate / KibitzerPanel).
-    private void HandleEngineUpdate(EngineUpdate update)
+    // Called on the engine reader thread: marshalled to the dispatcher, where the model runs.
+    private void HandleSearchUpdate(SearchUpdate update)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
         {
-            _ = InvokeAsync(() => HandleEngineUpdateCore(update));
+            _ = InvokeAsync(async () =>
+            {
+                if (disposeCts.IsCancellationRequested) return;
+                try
+                {
+                    await Send(PlayModel.Event.NewResult(update.SearchId, update.Update, Now));
+                    StateHasChanged();
+                }
+                catch (Exception ex) { logger.LogError(ex, "Error handling engine update on play-vs-computer page"); }
+            });
         }
         catch (ObjectDisposedException) { }
     }
-
-    private async Task HandleEngineUpdateCore(EngineUpdate update)
-    {
-        if (disposeCts.IsCancellationRequested) return;
-        try
-        {
-            switch (update)
-            {
-                case EngineUpdate.Done player:
-                    break;
-
-                case EngineUpdate.Ready ready:
-                    break;
-
-                case EngineUpdate.Info i:
-                    break;
-
-                case EngineUpdate.Eval e:
-                    break;
-
-                case EngineUpdate.BestMove b:
-                    await OnEngineMoveReady(b.Item.MoveAndFen, b.Item.FEN);
-                    StateHasChanged();
-                    break;
-
-                case EngineUpdate.UCIInfo info:
-                    break;
-
-                case EngineUpdate.Status s:
-                    var status = s.Item;
-                    break;
-
-                case EngineUpdate.NNSeq n:
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error handling engine update on play-vs-computer page");
-        }
-    }
-
     private void OnBoardFenChanged(string newFen)
     {
         logger.LogInformation($"Board FEN changed: {newFen}");
@@ -1153,33 +942,27 @@
         if (result == null || result.Canceled) return;
         var filePath = (string)result.Data!;
 
-        analyzer?.Engine?.ShutDownEngine();
-        analyzer = null;
         var name = Path.GetFileName(filePath);
         logger.LogInformation("Engine.json file opened {File}", name);
 
+        EngineConfig engineConfig;
         try
         {
-            var engineConfig = JSON.readSingleEngineConfig(filePath);
-            Engine = engineConfig;
-            engineParamSeen = engineConfig;
-            engineReady = true;
-            engineInitializing = true;
-            gameStatus = "Initializing engine...";
-            StateHasChanged();
-            analyzer = await Task.Factory.StartNew(() =>
-                new AnalysisManager.SimpleEngineAnalyzer(Engine, board, logger, HandleEngineUpdate, false));
-            await OnAnalyzerCreated();
-            engineInitializing = false;
+            engineConfig = JSON.readSingleEngineConfig(filePath);
         }
         catch (Exception ex)
         {
+            // the engine in use stays
             logger.LogError(ex, "Failed to load engine configuration from {file}", name);
             gameStatus = $"Error loading engine: {ex.Message}";
-            engineReady = false;
-            engineInitializing = false;
+            StateHasChanged();
+            return;
         }
-
+        await ReplaceEngine();
+        Engine = engineConfig;
+        engineParamSeen = engineConfig;
+        engineReady = true;
+        await Send(PlayModel.Event.LoadEngine);
         StateHasChanged();
     }
 
@@ -1250,7 +1033,7 @@
     {
         disposeCts.Cancel();
         StopClock();
-        analyzer?.Quit();
+        QuitOffThread(analyzer);
         logger.LogInformation("Disposing engines in {component}", "play-vs-engine game");
         disposeCts.Dispose();
         await Task.CompletedTask;

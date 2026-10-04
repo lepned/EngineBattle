@@ -381,6 +381,12 @@
     /// <see cref="TryPlayQueuedMove"/> once the turn has come round and it is legal. A click
     /// anywhere on the board cancels it, like lichess and chess.com.</summary>
     [Parameter] public bool AllowPremove { get; set; }
+    /// <summary>False refuses moves made on the board (premoves still queue): a game page's
+    /// opponent turn, or no game running.</summary>
+    [Parameter] public bool AllowMoves { get; set; } = true;
+    /// <summary>False stops the user moving through the game (buttons, hotkeys, move list):
+    /// a game page during a game, where a step back would look like a move.</summary>
+    [Parameter] public bool AllowNavigation { get; set; } = true;
     [Parameter] public string PremoveSide { get; set; }
     /// <summary>The queued move as UCI (promotion always to queen), or after a cancel.</summary>
     [Parameter] public EventCallback<string> OnPremoveSet { get; set; }
@@ -932,6 +938,8 @@
         showPromotionDialog = false;
         var move = pendingPromotionMove + promotionPiece;
         pendingPromotionMove = null;
+        // the turn may have gone while the dialog was open (a flag fell)
+        if (!AllowMoves) { StateHasChanged(); return; }
         await UpdateNewMove(move, true);
     }
 
@@ -995,6 +1003,7 @@
 
     private async void OnItemClick(int index)
     {
+        if (!AllowNavigation) return;
         stopAutoPlay = true;
         if (index != -1)
         {
@@ -1049,6 +1058,7 @@
             StateHasChanged();
             return;
         }
+        if (!AllowMoves) return;
 
         if (selectedSquare is null)
         {
@@ -1092,7 +1102,7 @@
     {
         // During the other side's turn a premove drag starts from any of our pieces; the
         // legality of what it becomes is judged when it is played.
-        var ok = PremoveTurn ? OwnPiece(square) : !showPromotionDialog && isLegalPieceMove(square);
+        var ok = PremoveTurn ? OwnPiece(square) : AllowMoves && !showPromotionDialog && isLegalPieceMove(square);
         if (ok && (ShowSafeSquarePreview || ShowLegalDestinations))
         {
             dragFromSquare = square;
@@ -1122,7 +1132,7 @@
                 // cancelled drag and leaves an earlier queue alone.
                 if (PremoveDestinations(fromSq).Contains(toSq)) await SetPremove(fromSq, toSq);
             }
-            else
+            else if (AllowMoves)
                 await TryUserMove(fromSq, toSq, animate: false);
             StateHasChanged();
         });
@@ -1353,6 +1363,7 @@
     // ── Navigation ──
     private async Task StartOfGame()
     {
+        if (!AllowNavigation) return;
         stopAutoPlay = true;
         await ClearOverlayOnPositionChange();
         var startFen = ChessBoard.StartPosition;
@@ -1367,6 +1378,7 @@
 
     private async Task EndOfGame()
     {
+        if (!AllowNavigation) return;
         stopAutoPlay = true;
         await ClearOverlayOnPositionChange();
         ChessBoard.EndCurrentVariation();
@@ -1383,6 +1395,7 @@
 
     private async Task NextMove()
     {
+        if (!AllowNavigation) return;
         stopAutoPlay = true;
         await ClearOverlayOnPositionChange();
         var next = ChessBoard.TryGetNextMoveAndFen(fen);
@@ -1399,7 +1412,11 @@
         StateHasChanged();
     }
 
-    private async Task PreviousMove() => await StepBackInternal(true);
+    private async Task PreviousMove()
+    {
+        if (!AllowNavigation) return;
+        await StepBackInternal(true);
+    }
 
     public async Task StepBack(bool notifyParent = true) => await StepBackInternal(notifyParent);
 
@@ -1424,6 +1441,7 @@
 
     private async Task PlayMoves()
     {
+        if (!AllowNavigation) return;
         stopAutoPlay = false;
         fen = ChessBoard.FEN();
         while (!stopAutoPlay && ChessBoard.TryGetNextMoveAndFen(fen) != null)
@@ -1653,6 +1671,7 @@
     // ── Move action menu ──
     private void ShowMoveActionMenu(InlineToken token, MouseEventArgs e)
     {
+        if (!AllowNavigation) return;
         if (token == null || token.IsBracket || string.IsNullOrWhiteSpace(token.Fen)) return;
         selectedActionSan = token.Text;
         selectedActionLabel = FormatMoveLabel(token);
@@ -1730,6 +1749,7 @@
 
     private async Task OnInlineMoveClick(InlineToken token)
     {
+        if (!AllowNavigation) return;
         if (token == null || string.IsNullOrWhiteSpace(token.Fen)) return;
         stopAutoPlay = true;
         await ClearOverlayOnPositionChange();

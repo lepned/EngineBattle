@@ -222,3 +222,28 @@ let ``a focused rerun keeps the views, while reviewing the host's lines are not 
 let ``a host's engine failing does not stop the panel's own search`` () =
   let s, _ = step { searching with Reviewing = true } (Result (0, EngineFailed ("Host", "gone")))
   Assert.True(s.Searching)
+
+[<Fact>]
+let ``a host's review stops the panel's own search`` () =
+  let s, e = step searching (ReviewingChanged true)
+  Assert.Contains(StopEngine, e)
+  Assert.False(s.Searching)
+  Assert.True(s.Reviewing)
+  let _, e = step s (ReviewingChanged true)
+  Assert.Empty(e)
+
+[<Fact>]
+let ``auto-search: a move while the engine starts is searched once it is ready`` () =
+  let s, e = run (initial 3) [ AutoChanged true; Start (nodes 1000) ]
+  Assert.Equal(Starting, s.Engine)
+  // a new position arrives during the load: its search waits for the engine
+  let s, e = step s Navigated
+  let s, e = step s (Settled (s.Navigation, nodes 2000))
+  let _, e = step s EngineReady
+  Assert.Equal<(Limit * string list) list>([ Nodes 2000, [] ], searches e)
+
+[<Fact>]
+let ``auto-search never starts an engine itself`` () =
+  let s, _ = step { initial 3 with Auto = true } Navigated
+  let _, e = step s (Settled (s.Navigation, nodes 2000))
+  Assert.Empty(e)

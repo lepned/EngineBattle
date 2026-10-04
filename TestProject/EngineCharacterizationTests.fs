@@ -245,7 +245,7 @@ let ``Analysis search reports each info line as Status and Info, then Done befor
             Assert.Equal(3, infos.Length)
             Assert.StartsWith("info depth 3 seldepth 5 score cp 22", infos.[2])
             let order = updates.ToArray() |> Array.choose (function Done _ -> Some "done" | BestMove _ -> Some "best" | _ -> None)
-            Assert.Equal<string[]>([| "done"; "best" |], order)
+            Assert.Equal<string[]>([| "best"; "done" |], order)
             Assert.Equal("e7e5", bm.Move)
             Assert.Equal("g1f3", bm.Ponder)
             Assert.Equal("e5", bm.MoveAndFen.ShortSan)
@@ -792,14 +792,14 @@ let ``Tournament PrepareNewGameAsync sends what PrepareNewGame sends`` () =
     finally stopTournament eng
 
 [<Fact>]
-let ``The async factories return at once and hand over a started engine when it is ready`` () =
-    // 1.5 s to readyok: createAltEngine waits for it, so a caller that made the engine itself
-    // would be held that long.
+let ``Off the caller's thread the factories hand over a started engine when it is ready`` () =
+    // 1.5 s to readyok: createAltEngine waits for it, so a page makes it in Task.Run (as the
+    // analysis pages do) and is not held.
     let log = newLogPath ()
     let cfg = config log "" [ "FakeReadyDelayMs", box 1500 ]
     let updates = ConcurrentQueue<EngineUpdate>()
     let sw = Stopwatch.StartNew()
-    let pending = EngineHelper.createAltEngineAsync(updates.Enqueue, cfg, NullLogger.Instance, false)
+    let pending = Tasks.Task.Run(fun () -> EngineHelper.createAltEngine(updates.Enqueue, cfg, NullLogger.Instance, false))
     let returnedAfter = sw.ElapsedMilliseconds
     Assert.True(returnedAfter < 500L, sprintf "the call held its caller for %d ms" returnedAfter)
     Assert.False(pending.IsCompleted)

@@ -114,8 +114,11 @@
             <button class="bc-stop" title="Stop broadcast" @onclick="Stop">✕</button>
         </div>
     }
-    @if (Focus is { } g)
+    @* Mounted while a broadcast runs, also between rounds: the kibitzer keeps its engine and its ▶
+       across a round or broadcast switch and takes the new round's first game. *@
+    @if (viewMounted && (Focus != null || Feed.IsRunning))
     {
+        var g = Focus;
         <div class="bc-layout">
             <div class="bc-focus">
 
@@ -129,12 +132,18 @@
                         <EvalBar Cp="@kibCp" Mate="@kibMate" Flipped="@boardFlipped" />
                     </EvalBarContent>
                     <AboveMoveList>
-                        <KibitzerPanel ChessBoard="@focusBoard" Id="@EngineSlot.A"
+                        <KibitzerPanel @ref="kibitzer" ChessBoard="@focusBoard" Id="@EngineSlot.A"
                                        InitialEngine="Engine" InitialEnginePath="@engineConfigPath"
                                        OnEvalUpdated="OnKibitzerEval" OnLiveStats="OnKibitzerStats"
                                        OnIterations="OnKibitzerIterations" />
                     </AboveMoveList>
                     <BlackPlayerInfo>
+                        @if (g == null)
+                        {
+                            <div class="bc-player"><span class="bc-name">Waiting for games…</span></div>
+                        }
+                        else
+                        {
                         <div class="bc-player">
                             <span class="bc-name">@g.Black <span class="bc-elo">@g.BlackElo</span></span>
                             @if (g.Finished)
@@ -144,8 +153,11 @@
                             <span class="bc-clock @(BlackToMove(g) ? "active" : "")"
                                   title="@ThinkingFor(g, white: false)">@LiveClock(g, white: false)</span>
                         </div>
+                        }
                     </BlackPlayerInfo>
                     <WhitePlayerInfo>
+                        @if (g != null)
+                        {
                         <div class="bc-player">
                             <span class="bc-name">@g.White <span class="bc-elo">@g.WhiteElo</span></span>
                             @if (g.Finished)
@@ -155,10 +167,11 @@
                             <span class="bc-clock @(!BlackToMove(g) && !g.Finished ? "active" : "")"
                                   title="@ThinkingFor(g, white: true)">@LiveClock(g, white: true)</span>
                         </div>
+                        }
                     </WhitePlayerInfo>
                 </ModernChessboard>
 
-                @if (g.Plies.Count > 1 || statsSeen || iterationsSeen)
+                @if (g != null && (g.Plies.Count > 1 || statsSeen || iterationsSeen))
                 {
                     <div class="bc-evalchart">
                         @* One tab slot for whatever the engine can say about the position:
@@ -216,10 +229,6 @@
                 }
             </div>
         </div>
-    }
-    else if (Feed.IsRunning)
-    {
-        <p class="bc-waiting">Waiting for games…</p>
     }
     </div>
 </div>
@@ -287,6 +296,9 @@
     // kibitzer's analyzer reads search positions from it.
     private readonly Chess.Board focusBoard = new();
     private ModernChessboard chessBoardRazor;
+    private KibitzerPanel kibitzer;
+    // a broadcast is being watched: the view stays mounted, between rounds too, until ✕
+    private bool viewMounted;
     private System.Threading.Timer clockTimer;
     private EngineConfig Engine;
     private string engineConfigPath = "";
@@ -403,6 +415,8 @@
             }
         }
 
+        // back on the page while a broadcast runs (a new page instance)
+        viewMounted = Feed.IsRunning;
         if (Focus is { } g) { focusKey = g.Key; await LoadFocusGameAsync(); }
 
         // 1 Hz re-render for the ticking clocks — only while a live game is focused
@@ -507,6 +521,7 @@
         focusKey = "";
         follow = true;
         ResetEvalState();
+        HoldForNewRound();
         Feed.Start(roundId);
     }
 
@@ -620,8 +635,23 @@
         focusKey = "";
         follow = true;
         showLobby = false;
+        viewMounted = true;
         ResetEvalState();
+        HoldForNewRound();
         Feed.Start(target);
+    }
+
+    /// The old round's position leaves the board, and the kibitzer stops searching it; it searches
+    /// again (▶ still on) when the new round's first game arrives (LoadFocusGameAsync).
+    private void HoldForNewRound()
+    {
+        focusBoard.ResetBoardState();
+        fen = focusBoard.FEN();
+        moveEvals = new();
+        // the first game of the new round is announced even when it is still at the start position
+        lastNotifiedFen = "";
+        if (chessBoardRazor != null) _ = chessBoardRazor.SetPositionDirect(fen);
+        if (kibitzer != null) _ = kibitzer.HoldPosition();
     }
 
     /// <summary>"←": show the lobby (stream keeps running) with freshly fetched sections.</summary>
@@ -634,6 +664,8 @@
     private async Task Stop()
     {
         showLobby = false;
+        // ✕ ends the watching: the view, the kibitzer and its engine go
+        viewMounted = false;
         await Feed.StopAsync();
         _ = RefreshLobbyAsync();
     }
@@ -667,7 +699,8 @@
     {
         var g = Focus;
         fen = focusBoard.FEN();
-        follow = g != null && !g.Finished && fen == g.CurrentFen;
+        // between rounds there is no game to follow or leave
+        if (g != null) follow = !g.Finished && fen == g.CurrentFen;
         if (fen != lastNotifiedFen)
         {
             lastNotifiedFen = fen;
@@ -708,7 +741,8 @@
             pendingBoardSync = true;
         }
 
-        if (fen != lastNotifiedFen)
+        var wasHolding = kibitzer?.ReleasePosition() ?? false;
+        if (fen != lastNotifiedFen || wasHolding)
         {
             lastNotifiedFen = fen;
             await Notifier.UpdateFen(fen);
@@ -732,24 +766,34 @@
         return evals;
     }
 
-    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    // A round whose games have no move yet raises no GameUpdated: its first game is adopted here.
+    private void OnChanged() => _ = InvokeAsync(async () =>
+    {
+        if (string.IsNullOrEmpty(focusKey) && viewMounted && Focus is { } g) await AdoptFocus(g.Key);
+        StateHasChanged();
+    });
 
     private void OnGameUpdated(BroadcastGame game, int newMoves) => _ = InvokeAsync(async () =>
     {
+        // an update of the round just left, queued before the switch
+        if (!Feed.Games.Any(x => x.Key == game.Key)) return;
         // First game to arrive becomes the focus; while following, the board tracks the
         // newest move. While exploring, the board is left alone (tiles keep updating).
-        if (string.IsNullOrEmpty(focusKey))
-        {
-            focusKey = game.Key;
-            await LoadFocusGameAsync();
-            // A round switch unmounts ModernChessboard (Focus was null) but @ref keeps
-            // pointing at the disposed instance, so the sync above went nowhere visible.
-            // Always replay after the render that mounts the fresh board.
-            pendingBoardSync = true;
-        }
+        if (string.IsNullOrEmpty(focusKey)) await AdoptFocus(game.Key);
         else if (follow && game.Key == focusKey && newMoves > 0) await LoadFocusGameAsync();
         StateHasChanged();
     });
+
+    /// The round's first game becomes the focus, followed from its newest move.
+    private async Task AdoptFocus(string key)
+    {
+        focusKey = key;
+        follow = true;
+        await LoadFocusGameAsync();
+        // the board may have mounted with this render (first broadcast, or back on the page):
+        // replay the sync once its reference is live
+        pendingBoardSync = true;
+    }
 
     public async ValueTask DisposeAsync()
     {

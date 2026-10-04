@@ -291,148 +291,92 @@ let computePlayerStats (allWinProbs: float array) (playerName: string) (moves: M
 // Engine Position Analysis (MultiPV)
 // ──────────────────────────────────────────────────────────────
 
-/// Mutable callback dispatcher for per-search result accumulation.
-type EngineUpdateDispatcher() =
-    member val Handler : Action<EngineUpdate> = Action<EngineUpdate>(fun _ -> ()) with get, set
+/// A position of the review: the one before each move, then the final one.
+type PositionKind =
+    | Searched
+    /// A book move (from its PGN comment): not searched, no eval.
+    | BookMove
+    /// No legal move: the rules give the eval (white's perspective); engines are not asked.
+    | Terminal of EvalType
 
-/// Analyze a single position with MultiPV. The dispatcher's Handler collects the search's
-/// Status lines; the result arrives after them, through the engine's update queue.
-let analyzePosition
-    (engine: AnalysisEngine)
-    (dispatcher: EngineUpdateDispatcher)
-    (positionCmd: string)
-    (_isWhite: bool)
-    (config: GameReviewConfig)
-    : MultiPVResult array * string =
+type ReviewPosition = { Ply: int; PositionCmd: string; Kind: PositionKind }
 
-    // ucinewgame only in Nodes mode, matching Play() in AnalysisManager
-    if config.SearchMode = Nodes then engine.NewGame()
+/// What a position gave: PV1's eval (white's perspective), all PVs, the engine's bestmove.
+type PositionOutcome = { Eval: EvalType; Pvs: MultiPVResult array; BestMove: string }
 
-    let pvResults = Collections.Generic.Dictionary<int, MultiPVResult>()
-    dispatcher.Handler <- Action<EngineUpdate>(fun update ->
-        match update with
-        | EngineUpdate.Status status ->
-            let pvIndex = if status.MultiPV = 0 then 1 else status.MultiPV
-            let uciPV = status.PVLongSAN
-            let bestMove = if String.IsNullOrEmpty uciPV then "" else uciPV.Split(' ').[0]
-            pvResults.[pvIndex] <-
-                { Eval = status.Eval; BestMove = bestMove; PV = uciPV; Depth = status.Depth; Nodes = status.Nodes }
-        | _ -> ())
+let private isBookMove (config: GameReviewConfig) (move: PlyMove) =
+    config.SkipBookMoves && not (String.IsNullOrEmpty move.Comment) && move.Comment.ToLower().Contains("book")
 
-    let go =
-        match config.SearchMode with
-        | Time -> sprintf "go movetime %d" config.TimePerMove
-        | Nodes -> sprintf "go nodes %d" config.Nodes
-        | Depth -> sprintf "go depth %d" config.Depth
-    let search = engine.SearchAsync(positionCmd, go)
-    // a safety net: past it the search is stopped, and its answer still taken
-    if not (search.Wait 30000) then
-        printfn "Search timed out for position: %s" positionCmd
-        engine.Stop()
-        search.Wait 10000 |> ignore
-    dispatcher.Handler <- Action<EngineUpdate>(fun _ -> ())
+let private startBoard (game: PgnGame) =
+    let board = Board()
+    let startFen = if String.IsNullOrWhiteSpace game.Fen then startPosition else game.Fen
+    board.LoadFen startFen
+    board.StartPosition <- startFen
+    board
 
-    // a terminal position has no move ("bestmove (none)"): Completed None
-    let bestMoveStr =
-        if search.IsCompleted then
-            match search.Result with
-            | Completed (Some info) -> info.Move
-            | _ -> ""
-        else ""
-    let results =
-        pvResults
-        |> Seq.sortBy (fun kv -> kv.Key)
-        |> Seq.map (fun kv -> kv.Value)
-        |> Seq.toArray
-    results, bestMoveStr
+/// Mated: the side to move lost; stalemate: a draw.
+let private terminalEval (board: Board) =
+    if board.AnyLegalMove() then None
+    elif board.IsMate() then Some (if board.Position.STM = 0uy then Mate -1 else Mate 1)
+    else Some (CP 0.0)
+
+/// The positions a review searches, in order: before each move of the mainline, then the final one.
+let reviewPositions (game: PgnGame) (config: GameReviewConfig) : ReviewPosition array =
+    let board = startBoard game
+    let total = game.Mainline.Count
+    let kindHere (move: PlyMove option) =
+        match terminalEval board, move with
+        | Some eval, _ -> Terminal eval
+        | None, Some m when isBookMove config m -> BookMove
+        | None, _ -> Searched
+    [| for i in 0 .. total - 1 do
+         let move = game.Mainline.[i]
+         yield { Ply = i; PositionCmd = board.PositionWithMoves(); Kind = kindHere (Some move) }
+         try board.PlaySanMove move.San with _ -> ()
+       if total > 0 then
+         yield { Ply = total; PositionCmd = board.PositionWithMoves(); Kind = kindHere None } |]
+
+/// The outcome of a position that was not searched.
+let unsearchedOutcome (position: ReviewPosition) =
+    match position.Kind with
+    | Terminal eval -> { Eval = eval; Pvs = [||]; BestMove = "" }
+    | _ -> { Eval = NA; Pvs = [||]; BestMove = "" }
+
+/// A searched position's outcome from its Status lines (by MultiPV index) and its bestmove.
+let searchedOutcome (pvs: Map<int, MultiPVResult>) (bestMove: string) =
+    let results = pvs |> Map.toArray |> Array.sortBy fst |> Array.map snd
+    { Eval = (if results.Length > 0 then results.[0].Eval else NA); Pvs = results; BestMove = bestMove }
+
+/// One PV line from a Status update: (MultiPV index, line).
+let pvOfStatus (status: EngineStatus) =
+    let pvIndex = if status.MultiPV = 0 then 1 else status.MultiPV
+    let uciPV = status.PVLongSAN
+    let bestMove = if String.IsNullOrEmpty uciPV then "" else uciPV.Split(' ').[0]
+    pvIndex, { Eval = status.Eval; BestMove = bestMove; PV = uciPV; Depth = status.Depth; Nodes = status.Nodes }
+
+/// The go command of a review search.
+let goCommand (config: GameReviewConfig) =
+    match config.SearchMode with
+    | Time -> sprintf "go movetime %d" config.TimePerMove
+    | Nodes -> sprintf "go nodes %d" config.Nodes
+    | Depth -> sprintf "go depth %d" config.Depth
 
 // ──────────────────────────────────────────────────────────────
 // Full Game Analysis (engine mode)
 // ──────────────────────────────────────────────────────────────
 
-/// Analyze a complete game with an engine. Returns per-move analysis results.
-/// progressCallback receives (currentMove, totalMoves).
-let analyzeGameWithEngine
-    (engine: AnalysisEngine)
-    (dispatcher: EngineUpdateDispatcher)
-    (game: PgnGame)
-    (config: GameReviewConfig)
-    (progressCallback: int -> int -> unit)
-    (ct: CancellationToken)
-    : GameAnalysisResult =
-
-    let board = Board()
-    let startFen =
-        if String.IsNullOrWhiteSpace game.Fen then startPosition
-        else game.Fen
-    board.LoadFen startFen
-    board.StartPosition <- startFen
-
+/// Scores a game from the outcomes of its review positions (reviewPositions, same order).
+let scoreGame (game: PgnGame) (config: GameReviewConfig) (outcomes: PositionOutcome array) (engineName: string) : GameAnalysisResult =
     let totalMoves = game.Mainline.Count
-
-    if config.MultiPV > 1 then
-        engine.SetOption(EngineOption.Create "MultiPV" (string config.MultiPV))
-
-    // Single-pass: analyze each position BEFORE the move is played, then play the move.
-    // Collect: white-perspective eval, MultiPV data, bestmove, and UCI notation per move.
-    let whiteEvals = ResizeArray<EvalType>()
-    let pvDataPerMove = ResizeArray<MultiPVResult array>()
-    let bestMoves = ResizeArray<string>()
-    let uciMoves = ResizeArray<string>()
-
-    for i in 0 .. totalMoves - 1 do
-        if ct.IsCancellationRequested then ()
-        else
-            progressCallback (i + 1) (totalMoves + 1) // +1 for final position analysis
-
-            let move = game.Mainline.[i]
-            let isWhite = board.Position.STM = 0uy
-
-            // Check legal move count for Forced detection
-            let legalMoves = board.GetLegalMoves() |> Seq.length
-
-            // Check if book move (from PGN comment)
-            let isBookMove =
-                config.SkipBookMoves &&
-                not (String.IsNullOrEmpty move.Comment) &&
-                move.Comment.ToLower().Contains("book")
-
-            if isBookMove then
-                whiteEvals.Add(EvalType.NA)
-                pvDataPerMove.Add([||])
-                bestMoves.Add("")
-            else
-                // Analyze position before this move (including forced moves)
-                let posCmd = board.PositionWithMoves()
-                let pvResults, bestMove = analyzePosition engine dispatcher posCmd isWhite config
-
-                let bestEval =
-                    if pvResults.Length > 0 then pvResults.[0].Eval
-                    else EvalType.NA
-                whiteEvals.Add(bestEval)
-                pvDataPerMove.Add(pvResults)
-                bestMoves.Add(bestMove)
-
-            // Get UCI move for the played move and play it
-            let uci = board.GetUciFromSan(move.San) |> Option.defaultValue ""
-            uciMoves.Add(uci)
-            try board.PlaySanMove move.San
-            with _ -> ()
-
-    // Analyze final position to get eval after last move
-    if not ct.IsCancellationRequested && totalMoves > 0 then
-        progressCallback (totalMoves + 1) (totalMoves + 1)
-        let isWhite = board.Position.STM = 0uy
-        let posCmd = board.PositionWithMoves()
-        let pvResults, _ = analyzePosition engine dispatcher posCmd isWhite config
-        let finalEval =
-            if pvResults.Length > 0 then pvResults.[0].Eval
-            else EvalType.NA
-        whiteEvals.Add(finalEval)
-
-    // Reset MultiPV to 1
-    if config.MultiPV > 1 then
-        engine.SetOption(EngineOption.Create "MultiPV" "1")
+    let startFen = if String.IsNullOrWhiteSpace game.Fen then startPosition else game.Fen
+    let whiteEvals = outcomes |> Array.map (fun o -> o.Eval)
+    let pvDataPerMove = outcomes |> Array.map (fun o -> o.Pvs)
+    let bestMoves = outcomes |> Array.map (fun o -> o.BestMove)
+    let uciMoves =
+        let b = startBoard game
+        [| for move in game.Mainline do
+             yield b.GetUciFromSan(move.San) |> Option.defaultValue ""
+             try b.PlaySanMove move.San with _ -> () |]
 
     // Build MoveAnalysisResult for each move
     let results = ResizeArray<MoveAnalysisResult>()
@@ -440,7 +384,7 @@ let analyzeGameWithEngine
     replayBoard.LoadFen startFen
     replayBoard.StartPosition <- startFen
 
-    let analyzedMoves = min totalMoves (min whiteEvals.Count pvDataPerMove.Count)
+    let analyzedMoves = min totalMoves (min whiteEvals.Length pvDataPerMove.Length)
     for i in 0 .. analyzedMoves - 1 do
         let move = game.Mainline.[i]
         let isWhite = replayBoard.Position.STM = 0uy
@@ -448,17 +392,14 @@ let analyzeGameWithEngine
 
         let legalMoves = replayBoard.GetLegalMoves() |> Seq.length
 
-        let isBookMove =
-            config.SkipBookMoves &&
-            not (String.IsNullOrEmpty move.Comment) &&
-            move.Comment.ToLower().Contains("book")
+        let isBookMove = isBookMove config move
 
-        let uciMove = if i < uciMoves.Count then uciMoves.[i] else ""
+        let uciMove = if i < uciMoves.Length then uciMoves.[i] else ""
 
         let pvData = pvDataPerMove.[i]
         let evalBefore = whiteEvals.[i]  // PV1 eval (best) at this position
         let evalAfter =
-            if i + 1 < whiteEvals.Count then whiteEvals.[i + 1]
+            if i + 1 < whiteEvals.Length then whiteEvals.[i + 1]
             else EvalType.NA
 
         // Find which PV line the played move matches
@@ -591,7 +532,7 @@ let analyzeGameWithEngine
       BlackStats = computePlayerStats allWinProbs (game.GameMetaData.Black) movesArray "b"
       WhitePlayer = game.GameMetaData.White
       BlackPlayer = game.GameMetaData.Black
-      AnalysisEngine = engine.Name
+      AnalysisEngine = engineName
       AnalysisDate = DateTime.UtcNow }
 
 // ──────────────────────────────────────────────────────────────

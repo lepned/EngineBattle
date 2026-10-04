@@ -63,6 +63,10 @@
         {
             <span class="kib-wait">starting…</span>
         }
+        else if (holding && running)
+        {
+            <span class="kib-wait">waiting for the next game…</span>
+        }
         else if (!string.IsNullOrEmpty(engineNote))
         {
             <span class="kib-wait">@engineNote</span>
@@ -114,9 +118,18 @@
     private EngineConfig engineConfig;
 
     private AnalysisManager.SimpleEngineAnalyzer analyzer;
-    private bool running;
-    private bool waitingForEngine;
     private bool hasLiveStats;
+
+    // ── The search control (ChessLibrary/Analysis/PanelModel.fs, as the engine panel): auto-search
+    // on the board's position, results by search id, so a previous position's lines never show ──
+    private PanelModel.State model = PanelModel.initial(3);
+    // ▶ is auto-search on
+    private bool running => model.Auto;
+    private bool waitingForEngine => model.Engine.IsStarting;
+    private List<KeyValuePair<int, EngineStatus>> dataList =>
+        model.Rows.Select(r => new KeyValuePair<int, EngineStatus>(r.Key, r.Value)).OrderBy(r => r.Key).ToList();
+    // counts engine starts and replacements: a start or an update of an older one is dropped
+    private int engineGeneration;
 
     // Iteration log for alpha-beta engines, which report no root visit counts. The reading
     // of an info line is shared with EnginePanel — see IterationCollector.
@@ -127,35 +140,10 @@
     private readonly System.Diagnostics.Stopwatch iterationPublish = System.Diagnostics.Stopwatch.StartNew();
     private bool iterationSkipLogged;
 
-    /// <summary>Per-depth iteration log of the current search, ascending by depth.</summary>
-    public IReadOnlyList<IterationRow> Iterations => iterationCollector.Rows;
-    /// <summary>Newest raw info line, for the iteration log's header readouts.</summary>
-    public string LastInfoLine => lastIterationInfoLine;
     private bool overlayOn = true;
     private int limitSeconds = 5;
     private int pvLines = 3;
-
-    // data is written from the engine-callback thread, the UI thread and the
-    // broadcast-stream thread (via OnNotifyFen) — every touch goes through dataLock.
-    private readonly object dataLock = new();
-    private readonly Dictionary<int, EngineStatus> data = new();
-    private List<KeyValuePair<int, EngineStatus>> dataList = new();
-    // Coalesces overlapping search starts: at most one task runs and one waits.
-    // Guards against unbounded thread-pool pile-up when the engine hangs or dies
-    // (WaitForReadyOk can block for a long time on a crashed process).
-    private int searchQueued;
     private string engineNote = "";
-    // FEN of the position the current search was started on; published with evals so
-    // consumers attribute them to the right move even when navigation is in flight.
-    private string lastSearchFen = "";
-    // Position snapshot for the search task: UCI position command + the fen it was
-    // built from, captured together on the dispatcher (Chess.Board is not thread-safe
-    // and is mutated by ModernChessboard on the dispatcher — the search task must
-    // never touch it). Immutable tuple, so the reference write is atomic and a
-    // coalesced start simply picks up the newest snapshot.
-    private (string PosCmd, string Fen) latestSearch;
-    private double? lastCp;
-    private int? lastMate;
     private readonly CancellationTokenSource disposeCts = new();
 
     protected override void OnInitialized()
@@ -204,6 +192,164 @@
         }
     }
 
+    // The host has no position yet (a round switch, before its first game): nothing to search.
+    private bool holding;
+
+    private PanelModel.Request CurrentRequest() =>
+        new(limitSeconds <= 0 ? PanelModel.Limit.Infinite : PanelModel.Limit.NewMoveTime(limitSeconds * 1000),
+            !holding && (ChessBoard?.AnyLegalMove() ?? false));
+
+    /// <summary>The host's position is gone until it announces a new one: the search stops and
+    /// the lines clear; ▶ stays as it is and the next announced position is searched.</summary>
+    public Task HoldPosition() => InvokeAsync(async () =>
+    {
+        if (disposeCts.IsCancellationRequested) return;
+        holding = true;
+        await Send(PanelModel.Event.Navigated);
+        StateHasChanged();
+    });
+
+    /// <summary>The host has a position again and announces it (NotifyFen). True when it was held:
+    /// then the position must be announced even if it equals the last one.</summary>
+    public bool ReleasePosition()
+    {
+        var was = holding;
+        holding = false;
+        return was;
+    }
+
+    // fen: the position of the search an update belongs to (every update carries its own)
+    private async Task Send(PanelModel.Event e, string fen = "")
+    {
+        var result = PanelModel.step(model, e);
+        model = result.Item1;
+        foreach (var effect in result.Item2)
+            await Execute(effect, fen);
+    }
+
+    private async Task Execute(PanelModel.Effect effect, string fen)
+    {
+        switch (effect)
+        {
+            case PanelModel.Effect.Search search:
+                RunSearch(search.Item1);
+                break;
+            case PanelModel.Effect.Settle settle:
+                _ = SettleAfter(settle.navigation, settle.delayMs);
+                break;
+            case PanelModel.Effect.SetMultiPv multiPv:
+                analyzer?.AddSetoption(EngineOption.Create("MultiPV", multiPv.Item.ToString()));
+                break;
+            case PanelModel.Effect.PublishEval eval:
+                if (OnEvalUpdated.HasDelegate)
+                    await OnEvalUpdated.InvokeAsync((eval.cp != null ? eval.cp.Value : null, eval.mate != null ? eval.mate.Value : null, fen));
+                break;
+            case PanelModel.Effect.Completed:
+                await OnSearchDone(fen);
+                break;
+            case PanelModel.Effect.Show show:
+                await ShowUpdate(show.Item, fen);
+                break;
+            default:
+                // the load runs on; the model hears EngineReady or EngineGone when it is done
+                if (effect.IsStartEngine) _ = StartEngine();
+                else if (effect.IsStopEngine) analyzer?.Stop();
+                else if (effect.IsClearLists) await ClearLists();
+                // ShowRows: the next render shows the model's rows. Timer, ClearCharts, Late, ResetEngine: nothing here.
+                break;
+        }
+    }
+
+    private void RunSearch(PanelModel.Limit limit)
+    {
+        if (analyzer == null) return;
+        try
+        {
+            int id = limit is PanelModel.Limit.MoveTime t ? analyzer.Play($"go movetime {t.ms}") : analyzer.GoInfinite();
+            model = PanelModel.step(model, PanelModel.Event.NewStarted(id)).Item1;
+        }
+        catch (Exception ex)
+        {
+            // the model would wait for a search that never started
+            logger.LogWarning("Search start failed: {Msg}", ex.Message);
+            model = PanelModel.step(model, PanelModel.Event.Stop).Item1;
+        }
+    }
+
+    private async Task SettleAfter(int navigation, int delayMs)
+    {
+        await Task.Delay(delayMs);
+        if (disposeCts.IsCancellationRequested) return;
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                await Send(PanelModel.Event.NewSettled(navigation, CurrentRequest()));
+                StateHasChanged();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task StartEngine()
+    {
+        var config = engineConfig;
+        var generation = ++engineGeneration;
+        bool Stale() => generation != engineGeneration || disposeCts.IsCancellationRequested;
+        if (config == null)
+        {
+            await Send(PanelModel.Event.EngineGone);
+            return;
+        }
+        StateHasChanged();
+        AnalysisManager.SimpleEngineAnalyzer created;
+        try
+        {
+            Action<SearchUpdate> onUpdate = u => Dispatch(u, generation);
+            created = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, onUpdate, false));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Engine start failed: {Msg}", ex.Message);
+            if (Stale()) return;
+            engineNote = "engine did not start";
+            await Send(PanelModel.Event.NewAutoChanged(false));
+            await Send(PanelModel.Event.EngineGone);
+            StateHasChanged();
+            return;
+        }
+        if (Stale())
+        {
+            QuitOffThread(created);
+            return;
+        }
+        try
+        {
+            created.Board = ChessBoard;
+            created.AddSetoption(EngineOption.Create("MultiPV", pvLines.ToString()));
+            analyzer = created;
+            await Send(PanelModel.Event.EngineReady);
+            StateHasChanged();
+        }
+        catch (Exception ex) { logger.LogWarning("Starting the first search failed: {Msg}", ex.Message); }
+    }
+
+    /// The engine quits (another is chosen, or it failed); a start in progress is dropped when it finishes.
+    private async Task ReplaceEngine()
+    {
+        engineGeneration++;
+        QuitOffThread(analyzer);
+        analyzer = null;
+        await Send(PanelModel.Event.EngineGone);
+    }
+
+    // Quit waits for the process (seconds): never on the page's thread
+    private void QuitOffThread(AnalysisManager.SimpleEngineAnalyzer old)
+    {
+        if (old != null)
+            _ = Task.Run(() => { try { old.Quit(); } catch (Exception ex) { logger.LogWarning("Engine quit failed: {Msg}", ex.Message); } });
+    }
+
     private async Task OnEngineSelected(ChangeEventArgs e)
     {
         var path = e.Value?.ToString();
@@ -222,79 +368,45 @@
         engineConfig = config;
         hasLiveStats = false;
         engineNote = "";
-        ClearData();
         // Tell stats consumers the source changed: an empty payload means "no verbose
         // stats until proven otherwise" (the new engine may not emit them at all).
         if (OnLiveStats.HasDelegate)
             await OnLiveStats.InvokeAsync((Array.Empty<NNValues>(), ""));
-        var old = analyzer;
-        analyzer = null;
-        if (old != null)
-            _ = Task.Run(() => { try { old.Quit(); } catch (Exception ex) { logger.LogWarning("Engine quit failed: {Msg}", ex.Message); } });
-        if (running)
-        {
-            await EnsureAnalyzer();
-            BeginSearch();
-        }
+        var wasRunning = running;
+        await ReplaceEngine();
+        await Send(PanelModel.Event.Reset);
+        // still on: the new engine starts and searches the position
+        if (wasRunning) await StartOrLoad();
+    }
+
+    // A search of the board's position; on one with no legal move only the engine starts, and
+    // auto-search searches the next position (Settled while Starting keeps it pending).
+    private Task StartOrLoad()
+    {
+        var request = CurrentRequest();
+        return model.Engine.IsNotStarted && !request.HasMove
+            ? Send(PanelModel.Event.LoadEngine)
+            : Send(PanelModel.Event.NewStart(request));
     }
 
     private async Task ToggleRunning()
     {
         if (running)
         {
-            running = false;
-            analyzer?.Stop();
+            await Send(PanelModel.Event.NewAutoChanged(false));
+            await Send(PanelModel.Event.Stop);
         }
         else
         {
-            running = true;
             engineNote = "";
-            await EnsureAnalyzer();
-            if (analyzer == null) { running = false; return; }
-            BeginSearch();
+            await Send(PanelModel.Event.NewAutoChanged(true));
+            await StartOrLoad();
         }
     }
 
-    private async Task EnsureAnalyzer()
+    // The search's own lists (the rows are the model's), and the host's iteration log with them.
+    private async Task ClearLists()
     {
-        if (analyzer != null && analyzer.Engine.HasExited)
-            analyzer = null;
-        if (analyzer != null || engineConfig == null)
-            return;
-        waitingForEngine = true;
-        StateHasChanged();
-        var config = engineConfig;
-        var created = await Task.Run(() =>
-        {
-            try
-            {
-                return new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, HandleUpdate, false);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning("Engine start failed: {Msg}", ex.Message);
-                return null;
-            }
-        });
-        waitingForEngine = false;
-        if (created == null) return;
-        if (disposeCts.IsCancellationRequested) { created.Quit(); return; }
-        created.Board = ChessBoard;
-        created.AddSetoption(EngineOption.Create("MultiPV", pvLines.ToString()));
-        analyzer = created;
-    }
-
-    private void ClearData()
-    {
-        lock (dataLock)
-        {
-            data.Clear();
-            dataList = new();
-        }
-        // Reset the eval throttle so each new search publishes at least one update,
-        // even when the eval happens to match the previous position's.
-        lastCp = null;
-        lastMate = null;
         // The iteration log belongs to one search. Left standing, its depths are all
         // already known when the next search reports them, so nothing counts as a new
         // depth and the host is never told anything again.
@@ -304,192 +416,111 @@
         iterationSkipLogged = false;
         searchTimer.Restart();
         iterationPublish.Restart();
+        if (!hasLiveStats && OnIterations.HasDelegate)
+            await OnIterations.InvokeAsync((Array.Empty<IterationRow>(), "", "", false));
     }
 
-    /// <summary>Starts (or restarts) a search on the shared board's current position.
-    /// Must run on the dispatcher: it snapshots the shared board here so the search
-    /// task never touches it (off-dispatcher board access races ModernChessboard).</summary>
-    private void BeginSearch()
+    // Every new position on the page's board (a broadcast move, or the user stepping through the
+    // game): the search on the old one stops, and auto-search takes the new one once it settles.
+    public Task OnNotifyFen(string newPos) => InvokeAsync(async () =>
     {
-        var a = analyzer;
-        if (a == null) return;
-        // Terminal position: bail before ClearData so the panel keeps its last content
-        // instead of blanking with no explanation.
-        if (!ChessBoard.AnyLegalMove()) return;
-        ClearData();
-        latestSearch = (ChessBoard.PositionWithMovesFromGraph(), ChessBoard.FEN());
-        // Coalesce: if a start is already queued behind the running one it will pick
-        // up the latest snapshot anyway — no need for another task.
-        if (Interlocked.CompareExchange(ref searchQueued, 1, 0) != 0) return;
-        var ms = limitSeconds * 1000;
-        _ = Task.Run(async () =>
+        if (disposeCts.IsCancellationRequested) return;
+        await Send(PanelModel.Event.Navigated);
+        StateHasChanged();
+    });
+
+    // On the engine's delivery thread: marshalled to the dispatcher, where the model runs. An
+    // update of a replaced engine is dropped (search ids restart with each engine).
+    private void Dispatch(SearchUpdate update, int generation)
+    {
+        if (disposeCts.IsCancellationRequested) return;
+        try
         {
-            try
+            _ = InvokeAsync(async () =>
             {
-                // Lock per analyzer so a task stuck on a dead engine never blocks
-                // searches of a newly selected engine.
-                lock (a)
+                if (disposeCts.IsCancellationRequested || generation != engineGeneration) return;
+                try
                 {
-                    searchQueued = 0;
-                    // The user may have pressed stop (or switched engines) while this
-                    // start was queued — never fire a search the UI no longer shows.
-                    if (!running || !ReferenceEquals(a, analyzer)) return;
-                    if (a.Engine.HasExited)
-                    {
-                        running = false;
-                        engineNote = "engine exited — press ▶ to restart";
-                        logger.LogWarning("Kibitzer engine process has exited");
-                    }
-                    else
-                    {
-                        var (posCmd, searchFen) = latestSearch;
-                        lastSearchFen = searchFen;
-                        a.PlayPrepared(posCmd, ms <= 0 ? "go infinite" : $"go movetime {ms}");
-                    }
+                    await Send(PanelModel.Event.NewResult(update.SearchId, update.Update), update.Fen);
+                    StateHasChanged();
                 }
-                if (!running)
-                    await InvokeAsync(StateHasChanged);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning("Search start failed: {Msg}", ex.Message);
-            }
-        });
-    }
-
-    public async Task OnNotifyFen(string newPos)
-    {
-        // Marshal to the dispatcher: BeginSearch snapshots the shared board, and
-        // Notifier events run on whatever thread raised them — today always the
-        // dispatcher, but nothing enforces that for future callers.
-        if (running && analyzer != null)
-            await InvokeAsync(BeginSearch);
-    }
-
-    // Same reasoning as EnginePanel.HandleUpdate: the reader thread must not be allowed to
-    // run two of these at once over the same component state.
-    public void HandleUpdate(EngineUpdate update)
-    {
-        if (disposeCts.IsCancellationRequested) return;
-        try
-        {
-            _ = InvokeAsync(() => HandleUpdateCore(update));
+                catch (ObjectDisposedException) { }
+                catch (Microsoft.JSInterop.JSDisconnectedException) { }
+                catch (Exception ex) { logger.LogWarning("Kibitzer update failed: {Msg}", ex.Message); }
+            });
         }
         catch (ObjectDisposedException) { }
     }
 
-    private async Task HandleUpdateCore(EngineUpdate update)
+    // An update the model accepted for this search (or the engine's own).
+    private async Task ShowUpdate(EngineUpdate update, string fen)
     {
-        if (disposeCts.IsCancellationRequested) return;
-        try
+        switch (update)
         {
-            switch (update)
-            {
-                case EngineUpdate.Ready ready:
-                    hasLiveStats = ready.HasLiveStat;
-                    waitingForEngine = false;
-                    engineNote = "";
-                    await ApplyOverlaySetting();
-                    await InvokeAsync(StateHasChanged);
-                    break;
+            case EngineUpdate.Ready ready:
+                hasLiveStats = ready.HasLiveStat;
+                engineNote = "";
+                await ApplyOverlaySetting();
+                break;
 
-                case EngineUpdate.Status s:
-                    var status = s.Item;
-                    var k = status.MultiPV <= 0 ? 1 : status.MultiPV;
-                    if (k <= pvLines)
-                    {
-                        lock (dataLock)
-                        {
-                            data[k] = status;
-                            dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
-                        }
-                        if (k == 1)
-                        {
-                            pendingIterationStatus = status;
-                            await PublishEval(status);
-                        }
-                        await InvokeAsync(StateHasChanged);
-                    }
-                    break;
+            case EngineUpdate.EngineFailed failed:
+                logger.LogWarning("Kibitzer engine failed: {Reason}", failed.Reason);
+                engineNote = "engine stopped — press ▶ to restart";
+                await Send(PanelModel.Event.NewAutoChanged(false));
+                await ReplaceEngine();
+                break;
 
-                case EngineUpdate.BestMove b:
-                    // Value-head engines report an empty PV in status lines; fill from bestmove.
-                    lock (dataLock)
-                    {
-                        if (!string.IsNullOrEmpty(b.Item.PV) && data.TryGetValue(1, out var first) && string.IsNullOrEmpty(first.PV))
-                        {
-                            data[1] = new EngineStatus(first.PlayerName, first.Eval, first.Nodes, first.NPS, first.EPS,
-                                                       first.Depth, first.SD, first.TBhits, first.WDL, b.Item.PV, b.Item.Move, first.MultiPV);
-                            dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
-                        }
-                    }
-                    if (!hasLiveStats && OnIterations.HasDelegate)
-                    {
-                        // bestmove ends the search. Without this the host keeps the newest
-                        // row marked as pending, waiting on a depth that will never open.
-                        var doneRows = iterationCollector.Rows;
-                        var doneFen = lastSearchFen;
-                        var doneRaw = lastIterationInfoLine;
-                        await InvokeAsync(() => OnIterations.InvokeAsync((doneRows, doneFen, doneRaw, false)));
-                    }
-                    await InvokeAsync(StateHasChanged);
-                    break;
+            case EngineUpdate.Status s:
+                if (s.Item.MultiPV <= 1) pendingIterationStatus = s.Item;
+                break;
 
-                case EngineUpdate.Info i:
-                    // An engine with live stats has no iteration log by design — the host shows
-                    // the candidate table for it. Only the other case is worth a word.
-                    if (hasLiveStats) break;
-                    if (pendingIterationStatus is null)
+            case EngineUpdate.Info i:
+                // An engine with live stats has no iteration log by design — the host shows
+                // the candidate table for it. Only the other case is worth a word.
+                if (hasLiveStats) break;
+                if (pendingIterationStatus is null)
+                {
+                    if (!iterationSkipLogged)
                     {
-                        if (!iterationSkipLogged)
-                        {
-                            iterationSkipLogged = true;
-                            logger.LogDebug("Iteration log idle: an info line arrived before any status");
-                        }
-                        break;
-                    }
-                    lastIterationInfoLine = i.Info;
-                    var opened = iterationCollector.Capture(pendingIterationStatus, i.Info, searchTimer.Elapsed.TotalSeconds);
-                    // Publish on a new depth, and otherwise at most four times a second.
-                    // Depth-only publishing left the host stale for as long as the engine
-                    // spent refining one depth — and empty for that whole time if its rows
-                    // had just been reset by a game switch.
-                    var due = opened || iterationPublish.ElapsedMilliseconds >= 250;
-                    if (due && OnIterations.HasDelegate)
-                    {
-                        iterationPublish.Restart();
-                        var rowsCopy = iterationCollector.Rows;
-                        var rowsFen = lastSearchFen;
-                        var rawCopy = i.Info;
-                        await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen, rawCopy, true)));
+                        iterationSkipLogged = true;
+                        logger.LogDebug("Iteration log idle: an info line arrived before any status");
                     }
                     break;
+                }
+                lastIterationInfoLine = i.Info;
+                var opened = iterationCollector.Capture(pendingIterationStatus, i.Info, searchTimer.Elapsed.TotalSeconds);
+                // Publish on a new depth, and otherwise at most four times a second.
+                // Depth-only publishing left the host stale for as long as the engine
+                // spent refining one depth — and empty for that whole time if its rows
+                // had just been reset by a game switch.
+                var due = opened || iterationPublish.ElapsedMilliseconds >= 250;
+                if (due && OnIterations.HasDelegate)
+                {
+                    iterationPublish.Restart();
+                    await OnIterations.InvokeAsync((iterationCollector.Rows, fen, i.Info, true));
+                }
+                break;
 
-                case EngineUpdate.NNSeq n:
-                    if (hasLiveStats && n.NNSeq.Count > 0)
-                    {
-                        n.NNSeq.Reverse();
-                        if (OnLiveStats.HasDelegate)
-                        {
-                            // Copy: the overlay consumer receives the same list instance.
-                            var stats = n.NNSeq.ToList();
-                            var statsFen = lastSearchFen;
-                            await InvokeAsync(() => OnLiveStats.InvokeAsync((stats, statsFen)));
-                        }
-                        if (overlayOn)
-                            // Marshal like the neighboring publishes: subscribers
-                            // (ModernChessboard overlay) mutate component state
-                            await InvokeAsync(() => Notifier.MovesWithId(n.NNSeq, Id));
-                    }
-                    break;
-            }
+            case EngineUpdate.NNSeq n:
+                if (hasLiveStats && n.NNSeq.Count > 0)
+                {
+                    n.NNSeq.Reverse();
+                    // Copy: the overlay consumer receives the same list instance.
+                    if (OnLiveStats.HasDelegate)
+                        await OnLiveStats.InvokeAsync((n.NNSeq.ToList(), fen));
+                    if (overlayOn)
+                        await Notifier.MovesWithId(n.NNSeq, Id);
+                }
+                break;
         }
-        catch (ObjectDisposedException) { }
-        catch (Microsoft.JSInterop.JSDisconnectedException) { }
-        catch (Exception ex)
-        {
-            logger.LogWarning("Kibitzer update failed: {Msg}", ex.Message);
-        }
+    }
+
+    // bestmove ends the search. Without this the host keeps the newest iteration row marked as
+    // pending, waiting on a depth that will never open.
+    private async Task OnSearchDone(string fen)
+    {
+        if (!hasLiveStats && OnIterations.HasDelegate)
+            await OnIterations.InvokeAsync((iterationCollector.Rows, fen, lastIterationInfoLine, false));
     }
 
     // EngineStatus.Eval is already white-perspective: the UCI parser negates the
@@ -509,21 +540,6 @@
              : "–";
     }
 
-    private async Task PublishEval(EngineStatus status)
-    {
-        if (!OnEvalUpdated.HasDelegate) return;
-        var (cp, mate) = WhiteEval(status);
-        if (cp == null && mate == null) return;
-        // Throttle: only push meaningful changes to avoid re-rendering the host page per info line.
-        var changed = mate != lastMate || (cp.HasValue != lastCp.HasValue) ||
-                      (cp.HasValue && lastCp.HasValue && Math.Abs(cp.Value - lastCp.Value) >= 0.05);
-        if (!changed) return;
-        lastCp = cp;
-        lastMate = mate;
-        var searchFen = lastSearchFen;
-        await InvokeAsync(() => OnEvalUpdated.InvokeAsync((cp, mate, searchFen)));
-    }
-
     private async Task ApplyOverlaySetting()
     {
         var setting = overlayOn && hasLiveStats ? OverlaySettings.Policy : OverlaySettings.None;
@@ -537,27 +553,20 @@
         await ApplyOverlaySetting();
     }
 
-    private void OnLimitChanged(ChangeEventArgs e)
+    private async Task OnLimitChanged(ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out var s))
-        {
-            limitSeconds = s;
-            if (running) BeginSearch();
-        }
+        if (!int.TryParse(e.Value?.ToString(), out var s)) return;
+        limitSeconds = s;
+        // a running search is replaced by one with the new limit
+        if (running) await Send(PanelModel.Event.NewStart(CurrentRequest()));
     }
 
-    private void OnPvLinesChanged(ChangeEventArgs e)
+    private async Task OnPvLinesChanged(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out var n)) return;
         pvLines = n;
-        analyzer?.AddSetoption(EngineOption.Create("MultiPV", n.ToString()));
-        lock (dataLock)
-        {
-            foreach (var stale in data.Keys.Where(key => key > n).ToList())
-                data.Remove(stale);
-            dataList = data.OrderBy(x => x.Value.MultiPV).ToList();
-        }
-        if (running) BeginSearch();
+        await Send(PanelModel.Event.NewLinesChanged(n));
+        if (running) await Send(PanelModel.Event.NewStart(CurrentRequest()));
     }
 
     private static string FormatNodes(long nodes) => nodes switch
@@ -568,16 +577,14 @@
         _ => $"{nodes} nodes"
     };
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        running = false;
         disposeCts.Cancel();
         Notifier.NotifyFen -= OnNotifyFen;
-        var a = analyzer;
+        engineGeneration++;
+        QuitOffThread(analyzer);
         analyzer = null;
-        if (a != null)
-            _ = Task.Run(() => { try { a.Quit(); } catch (Exception ex) { logger.LogWarning("Engine quit failed: {Msg}", ex.Message); } });
         disposeCts.Dispose();
-        await Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

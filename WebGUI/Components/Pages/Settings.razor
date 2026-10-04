@@ -196,7 +196,6 @@
                     <select @bind="reviewSearchMode">
                         <option value="Time">Time</option>
                         <option value="Nodes">Nodes</option>
-                        <option value="Depth">Depth</option>
                     </select>
                 </div>
                 <div class="field-group">
@@ -208,10 +207,6 @@
                 <div class="field-group">
                     <label>Nodes</label>
                     <input type="number" @bind="reviewNodes" min="1" max="1000000000" />
-                </div>
-                <div class="field-group">
-                    <label>Depth</label>
-                    <input type="number" @bind="reviewDepth" min="1" max="100" />
                 </div>
                 <div class="field-group">
                     <label>MultiPV</label>
@@ -403,7 +398,6 @@
     private string reviewSearchMode = "Time";
     private int reviewTimePerMove = 1000;
     private int reviewNodes = 5000;
-    private int reviewDepth = 18;
     private int reviewMultiPV = 5;
     private double accuracyDecay = 0.065;
     private double microLossBase = 0.02;
@@ -452,10 +446,10 @@
         delayBetweenGamesSec = s.DelayBetweenGamesSec;
         moveOverheadMs = s.MoveOverheadMs;
         startupPage = s.StartupPage;
-        reviewSearchMode = s.ReviewSearchMode;
+        // Depth was offered once; the review panel searches by time or nodes, and Depth meant Time
+        reviewSearchMode = s.ReviewSearchMode == "Nodes" ? "Nodes" : "Time";
         reviewTimePerMove = s.ReviewTimePerMove;
         reviewNodes = s.ReviewNodes;
-        reviewDepth = s.ReviewDepth;
         reviewMultiPV = s.ReviewMultiPV;
         accuracyDecay = s.AccuracyDecay;
         microLossBase = s.MicroLossBase;
@@ -506,7 +500,6 @@
             settings.ReviewSearchMode = reviewSearchMode ?? "Time";
             settings.ReviewTimePerMove = reviewTimePerMove;
             settings.ReviewNodes = reviewNodes;
-            settings.ReviewDepth = reviewDepth;
             settings.ReviewMultiPV = reviewMultiPV;
             settings.AccuracyDecay = accuracyDecay;
             settings.MicroLossBase = microLossBase;
@@ -555,10 +548,9 @@
         delayBetweenGamesSec = defaults.DelayBetweenGamesSec;
         moveOverheadMs = defaults.MoveOverheadMs;
         startupPage = defaults.StartupPage;
-        reviewSearchMode = defaults.ReviewSearchMode;
+        reviewSearchMode = defaults.ReviewSearchMode == "Nodes" ? "Nodes" : "Time";
         reviewTimePerMove = defaults.ReviewTimePerMove;
         reviewNodes = defaults.ReviewNodes;
-        reviewDepth = defaults.ReviewDepth;
         reviewMultiPV = defaults.ReviewMultiPV;
         accuracyDecay = defaults.AccuracyDecay;
         microLossBase = defaults.MicroLossBase;

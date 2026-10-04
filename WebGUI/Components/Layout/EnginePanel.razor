@@ -337,6 +337,8 @@
     [Parameter] public List<PGNTypes.PgnGame> PGNgames { get; set; }
     [Parameter] public string Player { get; set; }
     [Parameter] public bool IsReviewing { get; set; }
+    /// Start with the review settings (limits, lines): a review page, whether or not one runs.
+    [Parameter] public bool ReviewDefaults { get; set; }
     [Parameter] public EventCallback<string> OnSearchCompleted { get; set; }
     /// <summary>White-perspective eval of the main line (pawns, or mate distance) — feeds
     /// an eval bar on the host page. Throttled to meaningful changes (0.05 pawns).</summary>
@@ -999,9 +1001,9 @@
         var filePath = (string)result.Data!;
         try
         {
-            analyzer?.Engine?.ShutDownEngine();
             logger.LogInformation("Engine.json file opened {File}", filePath);
             var engineConfig = JSON.readSingleEngineConfig(filePath);
+            await ReplaceAnalyzer();
             var args = new EngineConfigEventArgs
             {
                 EngineConfig = engineConfig,
@@ -1012,14 +1014,13 @@
             await OnNewEngineLoaded.InvokeAsync(args);
             Engine = engineConfig;
             NNInfoList = new();
-            analyzer = null;
             await Send(PanelModel.Event.LoadEngine);
             StateHasChanged();
         }
         catch (Exception ex)
         {
+            // the engine in use stays
             logger.LogError(ex, "Failed to load engine.json file {File}", filePath);
-            await Send(PanelModel.Event.EngineGone);
             StateHasChanged();
         }
     }
@@ -1085,17 +1086,34 @@
         }
     }
 
-    private async Task StartAnalyzer()
+    // The engine running or being started; a different one from the host replaces it.
+    private string engineNameInUse;
+    // the engine name the host passed last time
+    private string lastHostEngineName;
+    // counts replacements: a start finishing under an older count is dropped
+    private int engineGeneration;
+    // a start in progress: a second caller waits for it instead of starting another engine
+    private Task startingAnalyzer;
+
+    private Task StartAnalyzer()
     {
-        if (analyzer == null)
+        if (analyzer != null) return Task.CompletedTask;
+        return startingAnalyzer ??= StartAnalyzerCore(engineGeneration);
+    }
+
+    private async Task StartAnalyzerCore(int generation)
+    {
+        // returns to the caller first, so startingAnalyzer is set before the finally below clears it
+        await Task.Yield();
+        var config = Engine;
+        engineNameInUse = config?.Name;
+        try
         {
-            var newAnalyzer = await Task.Factory.StartNew(() =>
+            Action<SearchUpdate> onUpdate = u => Dispatch(u.Update, u.Fen, u.SearchId, generation);
+            var newAnalyzer = await Task.Run(() => new AnalysisManager.SimpleEngineAnalyzer(config, ChessBoard, logger, onUpdate, false));
+            if (disposeCts.IsCancellationRequested || generation != engineGeneration)
             {
-                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, HandleSearchUpdate, false);
-            });
-            if (disposeCts.IsCancellationRequested)
-            {
-                newAnalyzer.Quit();
+                QuitOffThread(newAnalyzer);
                 return;
             }
             newAnalyzer.Board = ChessBoard;
@@ -1112,6 +1130,27 @@
                 await OnEngineStarted.InvokeAsync(names);
             }
         }
+        finally
+        {
+            if (generation == engineGeneration) startingAnalyzer = null;
+        }
+    }
+
+    /// The engine quits (exited, or another is loaded); a start in progress is dropped when it finishes.
+    private async Task ReplaceAnalyzer()
+    {
+        engineGeneration++;
+        startingAnalyzer = null;
+        engineNameInUse = null;
+        QuitOffThread(analyzer);
+        analyzer = null;
+        await Send(PanelModel.Event.EngineGone);
+    }
+
+    // Quit waits for the process (seconds): never on the page's thread
+    private static void QuitOffThread(AnalysisManager.SimpleEngineAnalyzer old)
+    {
+        if (old != null) _ = Task.Run(() => { try { old.Quit(); } catch { } });
     }
 
     // Whichever "Chart lines" slider is currently visible. showCharts is set for
@@ -1132,10 +1171,7 @@
         if (Engine == null || chessModule == null)
             return;
         if (analyzer != null && analyzer.Engine.HasExited)
-        {
-            analyzer = null;
-            await Send(PanelModel.Event.EngineGone);
-        }
+            await ReplaceAnalyzer();
         if (searchInfoPlot == null)
         {
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
@@ -1173,17 +1209,18 @@
     // Updates arrive on the engine's delivery thread; Dispatch marshals each to the dispatcher,
     // the panel's only thread, where the model decides what it means.
     // A host's own engine (Game Review) feeds its updates here, without a search.
-    public void HandleUpdate(EngineUpdate update) => Dispatch(update, "", 0);
+    public void HandleUpdate(EngineUpdate update) => Dispatch(update, "", 0, null);
 
-    // The panel's analyzer: each update with the search it belongs to.
-    private void HandleSearchUpdate(SearchUpdate update) => Dispatch(update.Update, update.Fen, update.SearchId);
-
-    private void Dispatch(EngineUpdate update, string searchFen, int searchId)
+    // generation: the panel engine's (a replaced engine's updates are dropped); null for a host's
+    private void Dispatch(EngineUpdate update, string searchFen, int searchId, int? generation)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
         {
-            _ = InvokeAsync(() => HandleUpdateCore(update, searchFen, searchId));
+            _ = InvokeAsync(() =>
+                generation is int g && g != engineGeneration
+                    ? Task.CompletedTask
+                    : HandleUpdateCore(update, searchFen, searchId));
         }
         catch (ObjectDisposedException) { }
     }
@@ -1271,6 +1308,7 @@
 
     private async Task StartEngineNow()
     {
+        var generation = engineGeneration;
         StateHasChanged();
         try
         {
@@ -1280,6 +1318,8 @@
         {
             logger.LogWarning("Failed to start the engine: {Message}", ex.Message);
         }
+        // replaced meanwhile: the new engine's start reports for itself
+        if (generation != engineGeneration) return;
         if (analyzer == null)
         {
             await Send(PanelModel.Event.EngineGone);
@@ -1974,10 +2014,7 @@
             return;
         }
         if (analyzer.Engine.HasExited)
-        {
-            analyzer = null;
-            await Send(PanelModel.Event.EngineGone);
-        }
+            await ReplaceAnalyzer();
         await Send(PanelModel.Event.Reset);
         ResetSearchTimer();
         if (searchInfoPlot != null)
@@ -2020,7 +2057,7 @@
 
     protected override Task OnInitializedAsync()
     {
-        if (IsReviewing)
+        if (ReviewDefaults || IsReviewing)
         {
             numberOfTimeMs = SettingsService.Settings.ReviewTimePerMove;
             numberOfNodes = Math.Max(1, SettingsService.Settings.ReviewNodes);
@@ -2065,8 +2102,19 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        // a review starting stops the panel's own search
         if (model.Reviewing != IsReviewing)
-            model = PanelModel.step(model, PanelModel.Event.NewReviewingChanged(IsReviewing)).Item1;
+            await Send(PanelModel.Event.NewReviewingChanged(IsReviewing));
+        // another engine from the host: the one running or starting is for the old config. Only a
+        // change of what the host passes counts - a host that ignores the Engine button keeps
+        // passing its old def, and that must not undo the button's engine.
+        var hostChanged = Engine?.Name != lastHostEngineName;
+        lastHostEngineName = Engine?.Name;
+        if (hostChanged && Engine is not null && engineNameInUse != null && Engine.Name != engineNameInUse)
+        {
+            logger.LogInformation("Engine {Old} replaced by {New}", engineNameInUse, Engine.Name);
+            await ReplaceAnalyzer();
+        }
         if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
         {
             logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
@@ -2148,7 +2196,7 @@
                 fen = FEN;
             }
             ChessBoard.inAnalysisMode = true;
-            if (IsReviewing)
+            if (ReviewDefaults || IsReviewing)
             {
                 var reviewPV = SettingsService.Settings.ReviewMultiPV;
                 cpChartLines = reviewPV;
@@ -2178,7 +2226,8 @@
         // longer stop it.
         StopSearchTimer();
         try { analyzer?.Stop(); } catch { }
-        analyzer?.Quit();
+        engineGeneration++;
+        QuitOffThread(analyzer);
         logger.LogInformation("Disposing {page}", "EnginePanel");
         try
         {

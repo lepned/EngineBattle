@@ -43,9 +43,6 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
       | Some pos -> engine.Analyse(pos, go)
       | None -> engine.Skip()
 
-    new (engineConfig, board, logger, callback: Action<EngineUpdate>, writeToConsole) =
-      SimpleEngineAnalyzer(engineConfig, board, logger, Action<SearchUpdate>(fun u -> callback.Invoke u.Update), writeToConsole)
-
     member val Board = board with get, set
     member x.Engine = engine
     member x.TryGetMovePolicyAndTopForPosSequence(player:string, qMin:float, qMax:float) =
@@ -105,6 +102,3 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
 
     member x.Play (goCommand: string) : int = analyse goCommand
 
-    /// Search from a position command the caller built from a board snapshot; touches no board.
-    member x.PlayPrepared (positionCmd: string, goCommand: string) : int =
-      engine.Analyse(positionCmd, goCommand)

@@ -142,7 +142,6 @@ type ChessLibrary.AnalysisOutcome.Failed
 type ChessLibrary.AnalysisOutcome.Tags
 type ChessLibrary.EngineHelper
   static createAltEngine(callback: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.EngineTypes.EngineUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : ChessLibrary.AnalysisEngine
-  static createAltEngineAsync(callback: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.EngineTypes.EngineUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : System.Threading.Tasks.Task<ChessLibrary.AnalysisEngine>
   static createAltEngineForSearches(onSearchUpdate: Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.SearchUpdate, Microsoft.FSharp.Core.Unit>, config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.Extensions.Logging.ILogger, writeToConsole: System.Boolean) : ChessLibrary.AnalysisEngine
   static createEngine(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : ChessLibrary.Engine.ChessEngine
   static createEngineAsync(config: ChessLibrary.TypesDef.CoreTypes.EngineConfig, logger: Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>) : System.Threading.Tasks.Task<ChessLibrary.Engine.ChessEngine>
