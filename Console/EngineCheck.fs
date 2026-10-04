@@ -566,7 +566,7 @@ let private analysisGroup (p: Params) (report: Report) =
     | _ -> ()
   if (boardAfter startFen p.Moves).IsNone then report.Add Fail "moves" "--moves is not a legal game from the start position"
   else
-  match (try Ok (EngineHelper.createAltEngine (callback, p.Config, NullLogger.Instance, false)) with ex -> Error ex.Message) with
+  match (try Ok (EngineHelper.createAnalysisEngine ((fun u -> callback u.Update), p.Config, NullLogger.Instance, false)) with ex -> Error ex.Message) with
   | Error message -> report.Add Fail "start" message
   | Ok engine ->
       let positions = prefixes p.Moves

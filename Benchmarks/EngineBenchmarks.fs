@@ -91,7 +91,7 @@ let private startAnalysisWith (logToFile: bool) cfg =
     Console.SetOut TextWriter.Null
     let eng =
         try
-            let eng = new AnalysisEngine(callback, cfg, initCommands cfg, NullLogger.Instance, false, logToFile = logToFile)
+            let eng = new AnalysisEngine((fun u -> callback u.Update), cfg, initCommands cfg, NullLogger.Instance, false, logToFile = logToFile)
             if not (eng.WaitUntilStarted 60000) then
                 eng.Quit()
                 failwith "the analysis engine did not start"
@@ -143,7 +143,7 @@ let private analysisFloodWith (logToFile: bool) name (lines: int) (multiPv: int)
 
 let private analysisFlood name lines multiPv moveStats runs = analysisFloodWith false name lines multiPv moveStats runs
 
-/// As the analysis pages run it: createAltEngine turns on the per-engine I/O log, one line per
+/// As the analysis pages run it: createAnalysisEngine turns on the per-engine I/O log, one line per
 /// line read. The log goes under a temporary working directory, not beside the benchmarks.
 let private analysisFloodLogged name lines runs =
     let dir = Path.Combine(Path.GetTempPath(), "eb-engine-bench-" + Guid.NewGuid().ToString("N"))

@@ -27,7 +27,7 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
           ChessEngine <- Some eng
           eng
 
-    let engine = EngineHelper.createAltEngineForSearches (onSearchUpdate.Invoke, engineConfig, logger, writeToConsole)
+    let engine = EngineHelper.createAnalysisEngine (onSearchUpdate.Invoke, engineConfig, logger, writeToConsole)
 
     /// The board's position, or None when it has no legal move: then the request still ends, in
     /// turn, with SearchStopped, and a running search is replaced.

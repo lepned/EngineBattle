@@ -89,7 +89,7 @@ let private initCommands (cfg: EngineConfig) = EngineHelper.createInitialUCIComm
 /// The analysis-page engine, started, with its updates collected.
 let private startAnalysis (cfg: EngineConfig) =
     let updates = ConcurrentQueue<EngineUpdate>()
-    let eng = new AnalysisEngine(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
+    let eng = new AnalysisEngine((fun u -> updates.Enqueue u.Update), cfg, initCommands cfg, NullLogger.Instance, false)
     if not (eng.WaitUntilStarted 10000) then failwithf "the analysis engine did not start: %s" eng.StartFailure
     eng, updates
 
@@ -211,7 +211,7 @@ let ``Analysis engine that cannot start reports why`` () =
     let log = newLogPath ()
     let updates = ConcurrentQueue<EngineUpdate>()
     let cfg = config log "" [ "FakeExitOnReady", box true ]
-    let eng = new AnalysisEngine(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
+    let eng = new AnalysisEngine((fun u -> updates.Enqueue u.Update), cfg, initCommands cfg, NullLogger.Instance, false)
     try
         Assert.False(eng.WaitUntilStarted 10000)
         Assert.NotEqual<string>("", eng.StartFailure)
@@ -364,7 +364,7 @@ let ``Analysis updates come with the FEN of the search they belong to`` () =
     let log = newLogPath ()
     let cfg = config log "" [ "FakeGoDelayMs", box 300 ]
     let updates = ConcurrentQueue<SearchUpdate>()
-    let eng = new AnalysisEngine(ignore, cfg, initCommands cfg, NullLogger.Instance, false, onSearchUpdate = updates.Enqueue)
+    let eng = new AnalysisEngine(updates.Enqueue, cfg, initCommands cfg, NullLogger.Instance, false)
     let fenAfter (moves: string list) =
         let board = Chess.Board()
         board.LoadFen startFen
@@ -793,13 +793,13 @@ let ``Tournament PrepareNewGameAsync sends what PrepareNewGame sends`` () =
 
 [<Fact>]
 let ``Off the caller's thread the factories hand over a started engine when it is ready`` () =
-    // 1.5 s to readyok: createAltEngine waits for it, so a page makes it in Task.Run (as the
+    // 1.5 s to readyok: createAnalysisEngine waits for it, so a page makes it in Task.Run (as the
     // analysis pages do) and is not held.
     let log = newLogPath ()
     let cfg = config log "" [ "FakeReadyDelayMs", box 1500 ]
     let updates = ConcurrentQueue<EngineUpdate>()
     let sw = Stopwatch.StartNew()
-    let pending = Tasks.Task.Run(fun () -> EngineHelper.createAltEngine(updates.Enqueue, cfg, NullLogger.Instance, false))
+    let pending = Tasks.Task.Run(fun () -> EngineHelper.createAnalysisEngine((fun u -> updates.Enqueue u.Update), cfg, NullLogger.Instance, false))
     let returnedAfter = sw.ElapsedMilliseconds
     Assert.True(returnedAfter < 500L, sprintf "the call held its caller for %d ms" returnedAfter)
     Assert.False(pending.IsCompleted)

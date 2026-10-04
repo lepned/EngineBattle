@@ -60,10 +60,10 @@ type private AnalysisMessage =
 
 /// An engine for the analysis pages and Game Review. Runs AnalysisMachine in an agent: searches
 /// are requests (the newest wins), a stopped search's output never reaches the next one, and the
-/// updates reach `callback` through a queue of their own, so a callback may call back in. With
-/// `onSearchUpdate` the updates go there instead, each with its search's FEN.
-type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCommands: string seq,
-                    logger: ILogger, writeToConsole: bool, ?logToFile: bool, ?onSearchUpdate: SearchUpdate -> unit) =
+/// updates reach `onUpdate` through a queue of their own, so it may call back in. Each update comes
+/// with its search's id and FEN.
+type AnalysisEngine(onUpdate: SearchUpdate -> unit, config: EngineConfig, initCommands: string seq,
+                    logger: ILogger, writeToConsole: bool, ?logToFile: bool) =
   let name = config.Name
   let protocol = protocolFor config (Some logger)
   let isLc0 = EngineProcess.pathMentions "lc0" config
@@ -239,10 +239,7 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
     match item with
     | Deliver (update, fen, search) ->
         // the caller sees Ready before WaitUntilStarted returns
-        (try
-          match onSearchUpdate with
-          | Some deliver -> deliver { Update = update; Fen = fen; SearchId = search }
-          | None -> callback update
+        (try onUpdate { Update = update; Fen = fen; SearchId = search }
          with ex -> logger.LogWarning(ex, "Engine {Engine}: update callback failed", name))
         match update with
         | Ready _ -> started.TrySetResult true |> ignore

@@ -57,13 +57,10 @@ module EngineHelper =
           new ChessEngine(config, cmds, logger)
 
   /// An analysis engine, started: blocks until it is ready (a network load can take minutes, so
-  /// call it off a UI thread, e.g. in Task.Run), and throws when it cannot start.
-  let rec createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : AnalysisEngine =
-      startAltEngine (fun cmds -> new AnalysisEngine(callback, config, cmds, logger, writeToConsole, logToFile = true)) config
-
-  /// createAltEngine whose updates arrive with the FEN of the search they belong to.
-  and createAltEngineForSearches (onSearchUpdate: SearchUpdate -> unit, config: EngineConfig, logger: ILogger, writeToConsole: bool) : AnalysisEngine =
-      startAltEngine (fun cmds -> new AnalysisEngine(ignore, config, cmds, logger, writeToConsole, logToFile = true, onSearchUpdate = onSearchUpdate)) config
+  /// call it off a UI thread, e.g. in Task.Run), and throws when it cannot start. Every update
+  /// arrives with the id and FEN of the search it belongs to.
+  let rec createAnalysisEngine (onUpdate: SearchUpdate -> unit, config: EngineConfig, logger: ILogger, writeToConsole: bool) : AnalysisEngine =
+      startAltEngine (fun cmds -> new AnalysisEngine(onUpdate, config, cmds, logger, writeToConsole, logToFile = true)) config
 
   and private startAltEngine (create: string seq -> AnalysisEngine) (config: EngineConfig) : AnalysisEngine =
       let validation = Configuration.Validation.validateChessEngineCmds config
