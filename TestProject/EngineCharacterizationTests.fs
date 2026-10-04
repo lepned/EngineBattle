@@ -150,6 +150,18 @@ let ``Analysis engine start-up sends uci, the config options, MoveOverheadMs 0, 
     finally quitAnalysis eng
 
 [<Fact>]
+let ``Analysis sets no move overhead even when the def sets one for play`` () =
+    // Lc0 defs carry 1000 ms; kept here, "go movetime 1000" was answered at once
+    let log = newLogPath ()
+    let eng, _ = startAnalysis (config log "" [ "MoveOverheadMs", box 1000 ])
+    try
+        let sent = synced log eng.Raw
+        let def = Array.IndexOf(sent, "setoption name MoveOverheadMs value 1000")
+        let zero = Array.IndexOf(sent, "setoption name MoveOverheadMs value 0")
+        Assert.True(def >= 0 && zero > def, sprintf "%A" sent)
+    finally quitAnalysis eng
+
+[<Fact>]
 let ``Analysis engine reports HasLiveStat when the engine advertises LogLiveStats`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "--live-stats" [])

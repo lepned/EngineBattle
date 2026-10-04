@@ -171,9 +171,10 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
           assignBackend cmd
           recordCommand cmd
           yield cmd
-        // the analysis pages move nothing on a clock; only an engine that has the option gets it
-        let configured = initCommands |> Seq.choose UciOption.parseSetOptionCommand |> Seq.map fst
-        match EngineStartup.moveOverhead optionsMap configured 0L with
+        // a movetime here is the time asked for: no overhead, whatever the def sets for play
+        // (Lc0 defs carry 1000 ms, which turned "go movetime 1000" into an instant answer);
+        // last, so it wins over the def's value. Only an engine that has the option gets it.
+        match EngineStartup.moveOverhead optionsMap [] 0L with
         | Some (optName, value) ->
             // recorded like the def's options, so the settings dialog shows what the engine runs with
             rememberOption optName (box value)

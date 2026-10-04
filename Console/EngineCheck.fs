@@ -373,6 +373,9 @@ let private limitsGroup (c: Ctx) =
   let _, best, ms = search c pos "go movetime 500" 10000
   (match best with
    | None -> failed c "go movetime 500" "no bestmove within 10 s"; recover c
+   | Some _ when ms < 100L ->
+       // far too early: usually a move overhead larger than the movetime
+       c.Report.Add Warn "go movetime 500" (sprintf "bestmove after only %d ms - a move overhead of 500 ms or more?" ms)
    | Some _ -> c.Report.Add (byTime ms 700L 1500L) "go movetime 500" (sprintf "bestmove after %d ms" ms))
   let _, best, ms = search c pos "go wtime 2000 btime 2000 winc 0 binc 0" 10000
   (match best with
