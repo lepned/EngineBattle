@@ -39,10 +39,9 @@ Defaults for the Game Review page's analysis engine and the thresholds behind it
 
 | Setting | Default | Purpose |
 |---------|---------|---------|
-| **Mode** | Time | Search mode: Time, Nodes, or Depth. |
-| **Time (ms)** | 1000 | Milliseconds per move when using Time mode. |
-| **Nodes** | 5000 | Node count per move when using Nodes mode. |
-| **Depth** | 18 | Search depth per move when using Depth mode. |
+| **Mode** | Time | The limit the Game Review panel starts with: Time or Nodes. |
+| **Time (ms)** | 1000 | Milliseconds per position in Time mode. |
+| **Nodes** | 5000 | Nodes per position in Nodes mode. |
 | **MultiPV** | 5 | Principal variations evaluated per position; the gaps between them drive the classification. |
 | **Accuracy Decay** | 0.085 | Exponential decay rate of the accuracy formula. |
 | **Micro-Loss Base** / **Scale** | 0.037 / 0.20 | Penalty for best moves in easy positions, and how fast it shrinks with the PV gap. |

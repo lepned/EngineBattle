@@ -13,9 +13,9 @@ Only Lc0 has these options (v0.30 and later; the page has been checked against v
 
 ## Two modes, one panel
 
-**Train - play vs Lc0.** The Play vs Computer game with the contempt panel beside it. Pick what Lc0 plays at and your own rating; the difference is its contempt. Change a setting during a game and the next engine move uses it.
+**Train - play vs Lc0.** The Play vs Computer game with the contempt panel beside it. Pick what Lc0 plays at and your own rating; the difference is its contempt. Change a setting during a game and the next engine move uses it. Picking another engine in the page's Engine list during a game aborts that game. The game itself (clocks, take back, premoves) is described in [PlayVsComputer.md](PlayVsComputer.md).
 
-**Analyze - one side's view.** The page opens here. The same position searched twice on the same net: one panel objective (`ContemptMode disable`), one from the chosen side's point of view. The strip above the board shows both evals; the panels show both lines. Start each panel as in Dual analysis. Two Lc0 processes run, so two copies of the net are on the GPU.
+**Analyze - one side's view.** The page opens here. The same position searched twice on the same net: one panel objective (`ContemptMode disable`), one from the chosen side's point of view. The strip above the board shows both evals; the panels show both lines. Start each panel as in Dual analysis; a change to the panel applies at the side panel's next search. Two Lc0 processes run, so two copies of the net are on the GPU.
 
 ## The panel
 

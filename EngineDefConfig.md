@@ -76,7 +76,8 @@ For engines using the Winboard/XBoard protocol, you can optionally specify `Winb
 - **Hash**: Size of the hash memory in megabytes.
 - **SyzygyPath**: The directory path for Syzygy tablebases.
 - **Ponder**: Set by EngineBattle from the tournament's `AllowPondering`; a value here is overridden in tournaments.
-- **UCI_ShowWDL**: Determines whether the engine displays Windows/Draws/Loss statistics in UCI mode.
+- **UCI_ShowWDL**: Determines whether the engine displays Win/Draw/Loss statistics in UCI mode.
+- **Move overhead** (`Move Overhead`, `MoveOverheadMs`, ...): used in tournaments and Play vs Computer. The analysis pages always set the engine's own overhead option to 0, whatever the def says: a fixed search time there should be searched in full, not answered early.
 - Any other UCI option you want to pass to the engine.
 
 ## EngineDef.json Examples

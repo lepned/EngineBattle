@@ -10,27 +10,39 @@ WebGUI: **Play & Analysis → Game review** (`/analysis/game-review`)
 
 ### Engine
 
-The left panel loads a chess engine for analysis. Configure a default engine in **Global Settings** to have it pre-loaded. Any UCI engine works — stronger engines and higher search limits produce more accurate reviews.
+The left panel picks the engine (its **Engine** button). Configure a default engine in **Global Settings** to have it pre-loaded. Any UCI engine works — stronger engines and higher search limits produce more accurate reviews.
+
+The review runs on its own instance of that engine, started at the first review and reused for every review after it (and every game of **Review All**). Loading another engine in the panel replaces it; a review running at that moment stops.
+
+While a review runs, the panel shows the review's search: the position being searched, its lines and charts. Between reviews it is an ordinary analysis panel - **Start** searches the position on the board.
 
 ### Search Settings
 
+The search limit is the panel's own, read when you click **Review**: **Time** (ms per position) or **Nodes** (per position). The page opens with the defaults from **Global Settings → Game Review**:
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Search mode** | Time | `Time` (ms per move), `Nodes`, or `Depth` |
-| **Time per move** | 1000 ms | Milliseconds per position when using Time mode |
-| **Nodes** | 5000 | Nodes per position when using Nodes mode |
-| **Depth** | 18 | Depth per position when using Depth mode |
-| **MultiPV** | 5 | Number of principal variations to evaluate (used for move classification) |
+| **Search mode** | Time | Which limit the panel starts with: `Time` or `Nodes` |
+| **Time per move** | 1000 ms | Milliseconds per position in Time mode |
+| **Nodes** | 5000 | Nodes per position in Nodes mode |
+| **MultiPV** | 5 | Principal variations per position; the gaps between them drive the classification. Sent to the engine at every review, also when it is 1 |
 
 ## Review Modes
 
 ### Full Review
 
-Click **Review** to analyze the current game with the loaded engine. Each position is evaluated with MultiPV to classify moves. A progress bar shows the current move being analyzed. Already-analyzed positions are skipped on re-review.
+Click **Review** to analyze the current game. The engine searches the position before every move, then the final position, each with MultiPV, and the moves are classified from what it found. The board and the panel follow the position being searched, and a progress bar counts the positions. Each review searches every position again; nothing is carried over from an earlier review.
+
+- **Book moves** (a PGN comment containing "book") and positions with no legal move are not searched. A final checkmate or stalemate is scored by the rules: a win for the side that mated, a draw for stalemate.
+- **During a review** Load PGN, the game list and the game arrows are locked, so a result always belongs to the game it was started on.
+- **Cancel** stops the search at once and discards the review: nothing is saved or annotated, and the game shows what it showed before (an earlier review's result, or the evals from its PGN).
+- **If the engine fails** (it exits or stops answering), the review stops with a message saying why; the next review starts the engine again. A bestmove that is not legal in its position does not stop the review: that position is scored without a best move.
 
 ### Review All
 
-For multi-game PGN files, click **Review All** to batch-analyze every game. Results are stored per-game and preserved when navigating between games.
+For multi-game PGN files, click **Review All** to review every game in turn, the same way as **Review**. The line above the progress bar says which game is being reviewed. Each finished game keeps its result, shown again straight away when you return to it with the arrows or the game list.
+
+**Cancel** stops the game being reviewed (discarded, as above) and starts no further games; games already finished keep their results. A failed review stops the run as well.
 
 ### Quick Review
 
@@ -91,7 +103,7 @@ The annotated move list shows:
 ## Export
 
 1. Click **Export Folder** to select a destination
-2. Click **Export PGN** to save the annotated game(s)
+2. Click **Export PGN** to save the annotated game shown on the board
 
 The exported PGN includes:
 - Engine evaluation annotations per move

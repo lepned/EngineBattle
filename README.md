@@ -50,8 +50,8 @@ See [TournamentConfig.md](TournamentConfig.md) for configuration details, plus [
 - **Dual-Engine Comparison:** Compare two engines simultaneously with side-by-side analysis, move lists, and detailed graphical evaluations.
 - **Game Review:** Lichess-style move-by-move accuracy analysis with win probability tracking, move classifications (Brilliant, Great, Best, Inaccuracy, Mistake, Blunder), critical moves panel, and annotated PGN export. Supports single-game and batch review.
 - **Focus Mode:** Restrict engine search to specific candidate moves for targeted position exploration.
-- **UCI Script Loading:** Load a text file of UCI commands to quickly configure engine parameters during analysis.
-- **Play vs Computer:** Play against any engine with clocks and takeback, lichess-style: legal-move dots on a picked-up piece and premoves while the engine thinks.
+- **UCI Script Loading:** Load a text file of UCI commands to quickly configure engine parameters during analysis. `setoption` lines wait until the engine is idle (a running search restarts with them); search commands (`go`, `stop`, `position`, `isready`, ...) are skipped, because the panel runs the searches. Lines an engine prints outside the UCI protocol (for example the output of its own dump commands) are shown in the server output.
+- **Play vs Computer:** Play against any engine with clocks and takeback, lichess-style: legal-move dots on a picked-up piece and premoves while the engine thinks. See [PlayVsComputer.md](PlayVsComputer.md).
 - **Lc0 Contempt:** Lc0's contempt as settings rather than UCI options - analyze a position objectively and from one side's view at once, or train against Lc0 playing for the win. See [Lc0Contempt.md](Lc0Contempt.md).
 
 ### 📚 PGN and EPD Tools

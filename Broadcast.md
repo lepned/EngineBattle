@@ -15,14 +15,14 @@ Open it from the navigation menu: **Tournament → Lichess broadcast** (`/broadc
 A compact engine widget above the move list:
 
 - **Engine picker** — lists every engine definition (`*.json`) in your *Engine defs folder* (Settings). The default engine is preselected.
-- **▶ / ■** — start/stop. While running, analysis automatically restarts on every position change.
+- **▶ / ■** — start/stop. While running, analysis restarts on every position change, once the board has stayed on a position for a moment (fast browsing does not start a search per step).
 - **Time limit** — search time per position: 5s (default), 10s, 30s or ∞ (analyze until the position changes).
 - **Lines** — number of PV lines shown (1/3/5, MultiPV).
 - **overlay** — policy overlay on the board (only shown for engines with `LogLiveStats`, i.e. Lc0/Ceres).
 
 Evals are displayed from **white's perspective** everywhere (panel, bar, chart), matching lichess convention.
 
-If the engine process crashes, the panel shows *"engine exited — press ▶ to restart"* — one click recreates it.
+If the engine crashes or stops answering, the panel shows *"engine stopped — press ▶ to restart"* — one click starts it again.
 
 ## Eval bar, candidate moves and eval chart
 
@@ -39,6 +39,8 @@ If the engine process crashes, the panel shows *"engine exited — press ▶ to 
 ## Round switcher
 
 When the current round belongs to a tournament from the official list, the round pill in the header is a dropdown — this is where you move between rounds (live and upcoming rounds are marked). Pasted rounds that are not in the official list have no switcher.
+
+Switching round, or picking another broadcast in the lobby, keeps the kibitzer: its engine stays loaded and, if it was running, it carries on with the new round's first game. Until that game arrives the board shows the start position, the player bars say *Waiting for games…* and nothing is searched. **✕** stops the broadcast and closes the kibitzer's engine.
 
 ## Finished games
 
