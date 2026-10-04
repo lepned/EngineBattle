@@ -27,7 +27,10 @@ internal partial class LogWindow : Window
         // Windows draws this caption too.
         SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
 
-        Output.Text = string.Join(Environment.NewLine, server.Snapshot());
+        // Ends with a newline like every line Flush appends: the first line written after the
+        // window opened used to run on from the last one already shown.
+        var shown = string.Join(Environment.NewLine, server.Snapshot());
+        Output.Text = shown.Length == 0 ? "" : shown + Environment.NewLine;
         Output.ScrollToEnd();
 
         // Batched rather than per-line: a chatty engine would otherwise post thousands of
