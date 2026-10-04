@@ -67,7 +67,7 @@ dotnet run -c Release -- <command> <path-or-arguments>
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
-| `enginecheck` | `ec` | Check that an engine behaves correctly in the analysis pages |
+| `enginecheck` | `ec` | Check that an engine follows the UCI protocol and behaves in the analysis pages |
 
 ---
 
@@ -573,22 +573,30 @@ by absolute material signature. Method and options in [PieceValues.md](PieceValu
 
 ### enginecheck
 
-Checks that an engine behaves correctly in the analysis pages. It drives the analysis engine (the one behind the analysis pages, the kibitzer, Play vs computer and Game Review) the way the GUI does, against a real engine, and checks what comes back. Use it when an engine seems to hang or show wrong moves there: it tells the engine's fault from EngineBattle's. When the engine fails, its exit code and last stderr lines are printed; the full engine I/O is in `logs/engine_<name>_<time>.log` under the working directory. Exit code 1 when a check fails.
+Checks that a UCI engine follows the protocol, and that it behaves in EngineBattle's analysis pages. Use it on a new engine, or when an engine misbehaves in a tournament or an analysis page: it tells the engine's fault from EngineBattle's. Each check prints PASS, WARN (EngineBattle copes, but the engine strays from the UCI spec), FAIL or SKIP. Exit code 1 when a check fails.
 
 **Aliases:** `ec`
 
 **Syntax:**
 ```bash
-dotnet run -c Release -- enginecheck <engine> [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
+dotnet run -c Release -- enginecheck <engine> [--only <groups>] [--nodes N] [--movetime MS] [--rounds R] [--delay MS] [--moves "e2e4 e7e5 ..."] [--uci K V]...
 ```
 
-**Checks:**
-- `review` - every position of a game in turn, awaited (as Game Review): each search completes with a move for its own position
-- `navigate` - fast moves through the game with `go infinite` (as auto-search), `--rounds` times: one bestmove, for the last position; the rest reported stopped
-- `options` - MultiPV changed during an infinite search: the search is rerun with it (skipped for an engine without MultiPV)
-- `stop` - `go infinite`, then stop: the bestmove arrives (a Winboard engine's analyze ends without one)
+**Groups** (all by default; `--only startup,stop,ponder` picks some - `startup` runs with any UCI group, since the others need it; an unknown name is refused):
+- `startup` - `uci` answered with id name, id author, options EngineBattle understands and `uciok`; the def's options, then `isready`; `ucinewgame` + `isready`
+- `options` - every option the def does not set, set to its own default: the engine stays ready
+- `positions` - `startpos` and `fen`, with `moves` containing castling, en passant and (under)promotion, black to move, and Chess960 positions and castling (king takes rook) when the engine has `UCI_Chess960`: each bestmove must be legal
+- `limits` - `go depth`, `go nodes` (warns when far over), `go movetime 500`, 2 s on the clock (fails when the engine would lose on time), `movestogo 1`
+- `info` - the info lines of the `positions` and `limits` searches (so it needs one of them): a score is reported and each last pv is legal
+- `stop` - `go infinite` keeps searching until `stop`; `isready` is answered during a search; `stop` gets a prompt bestmove, also when it follows `go` at once (20 times)
+- `ponder` - with a Ponder option: a ponder move with the bestmove; `go ponder` gives no bestmove before `ponderhit`, then one in time; `stop` ends a ponder search
+- `edge` - `searchmoves` is respected; `MultiPV 3` gives three lines; positions with no legal move (checkmate, stalemate) answer `bestmove 0000` or `(none)` - last, since some engines hang or crash there
+- `quit` - the process exits
+- `analysis` - drives EngineBattle's analysis engine (the one behind the analysis pages, the kibitzer, Play vs computer and Game Review) as the GUI does: every position of a game in turn (as Game Review); fast moves through the game with `go infinite`, `--rounds` times - one bestmove, for the last position; MultiPV changed during a search; stop. Runs on its own engine process.
 
-**Options:** `--nodes` (default 2000) or `--movetime` for the limited searches - use `--movetime` for a Winboard engine, which has no node limit; `--delay` between navigation requests (default 30 ms); `--moves` replaces the built-in 30-ply game.
+Once the engine stops answering, the rest is skipped with the reason, and its last stderr lines are printed (a crash usually says why there).
+
+**Options:** `--nodes` (default 2000) or `--movetime` for the searches; `--delay` between navigation requests (default 30 ms); `--moves` replaces the built-in 30-ply game of the analysis group. A Winboard engine gets only the `analysis` group (use `--movetime`: CECP has no node limit).
 
 ---
 

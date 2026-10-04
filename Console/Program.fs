@@ -2624,8 +2624,10 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
     printfn "  help, h                                 Show this help message"
     printfn ""
     printfn "Diagnostics:"
-    printfn "  enginecheck, ec <engine> [options]      Check that an engine behaves correctly in the analysis pages"
-    printfn "                                          (--nodes N | --movetime MS, --rounds R, --delay MS, --moves, --uci K V)"
+    printfn "  enginecheck, ec <engine> [options]      Check that an engine follows the UCI protocol and behaves in"
+    printfn "                                          the analysis pages; --only <groups> (startup,options,positions,"
+    printfn "                                          limits,info,stop,ponder,edge,quit,analysis), --nodes N |"
+    printfn "                                          --movetime MS, --rounds R, --delay MS, --moves, --uci K V"
     printfn ""
     printfn "Analyze options:"
     printfn "  --fen S        Set position (quoted FEN string)"
@@ -2803,11 +2805,16 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                 | Verb (Compare p) ->
                     runCompare p
                 | Verb (EngineCheck p) ->
-                    let config = resolveEngineConfig p.Engine p.UciOptions
+                    // a missing engine or a broken def is a message, not a stack trace
+                    let config =
+                      try resolveEngineConfig p.Engine p.UciOptions
+                      with ex ->
+                        eprintfn "%s" ex.Message
+                        exit 1
                     let code =
                       EngineCheck.run
                         { Config = config; Nodes = p.Nodes; MoveTimeMs = p.MoveTimeMs; DelayMs = p.DelayMs; Rounds = p.Rounds
-                          Moves = defaultArg p.Moves EngineCheck.defaultMoves }
+                          Moves = defaultArg p.Moves EngineCheck.defaultMoves; Only = p.Only }
                     if code <> 0 then exit code
                 | Verb (Query (fen, square, epd, pv, edits, emitEpd, epdOps, svgPath)) ->
                     runQuery fen square epd pv edits emitEpd epdOps svgPath

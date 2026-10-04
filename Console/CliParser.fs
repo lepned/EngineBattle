@@ -61,7 +61,8 @@ type EngineCheckParams =
       DelayMs: int
       Rounds: int
       Moves: string list option
-      UciOptions: (string * string) list }
+      UciOptions: (string * string) list
+      Only: string list }
 
 type VerbResult =
     | Perft of depth:int * sampleSize:int
@@ -479,17 +480,19 @@ module CustomParser =
                     let mutable rounds = 3
                     let mutable moves = None
                     let mutable uci = []
+                    let mutable only = []
                     while i < args.Length && args.[i].StartsWith("--") do
                         match args.[i].ToLower() with
                         | "--nodes" -> nodes <- parseInt (valueOf args i); i <- i + 2
                         | "--movetime" -> movetime <- Some (parseInt (valueOf args i)); i <- i + 2
+                        | "--only" -> only <- (valueOf args i).ToLower().Split([| ','; ' ' |], StringSplitOptions.RemoveEmptyEntries) |> List.ofArray; i <- i + 2
                         | "--delay" -> delay <- parseInt (valueOf args i); i <- i + 2
                         | "--rounds" -> rounds <- parseInt (valueOf args i); i <- i + 2
                         | "--moves" -> moves <- Some ((valueOf args i).Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries) |> List.ofArray); i <- i + 2
                         | "--uci" -> uci <- (twoValuesOf args i) :: uci; i <- i + 3
                         | unknown -> failwithf "Unknown enginecheck option: %s" unknown
                     let p = { Engine = args.[index + 1]; Nodes = nodes; MoveTimeMs = movetime; DelayMs = delay; Rounds = rounds
-                              Moves = moves; UciOptions = List.rev uci }
+                              Moves = moves; UciOptions = List.rev uci; Only = only }
                     parseArgs args i (Verb (EngineCheck p) :: acc)
                 else failwith "Missing parameter for enginecheck (requires: <engine>)"
             | "compare" | "cmp" -> // Handle the Compare verb
