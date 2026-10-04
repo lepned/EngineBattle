@@ -342,7 +342,7 @@ let ``Analysis pings before go, and a new position stops the old search and wait
     let eng, updates = startAnalysis (config log "" [ "FakeInfinite", box true ])
     try
         let before = (synced log eng.Raw) |> Array.length
-        eng.Analyse(fromStart "e2e4", "go infinite")
+        eng.Analyse(fromStart "e2e4", "go infinite") |> ignore
         waitForSent log "go infinite"
         let second = eng.Search(fromStart "", "go nodes 5")
         waitForSent log "go nodes 5"
@@ -374,7 +374,7 @@ let ``Analysis updates come with the FEN of the search they belong to`` () =
         Assert.True(eng.WaitUntilStarted 10000)
         // replaced searches, then the last one; every result is stamped with its own position
         let first = eng.Search(fromStart "", "go nodes 100")
-        eng.Analyse(fromStart "e2e4", "go nodes 100")
+        eng.Analyse(fromStart "e2e4", "go nodes 100") |> ignore
         let last = eng.Search(fromStart "e2e4 e7e5", "go nodes 100")
         Async.RunSynchronously(first, 10000) |> ignore
         Async.RunSynchronously(last, 10000) |> ignore
@@ -392,7 +392,7 @@ let ``Analysis keeps only the newest of several requests, and no stale output re
     let eng, updates = startAnalysis (config log "" [ "FakeGoDelayMs", box 300 ])
     try
         let first = eng.Search(fromStart "", "go nodes 100")
-        eng.Analyse(fromStart "e2e4", "go nodes 100")
+        eng.Analyse(fromStart "e2e4", "go nodes 100") |> ignore
         let last = eng.Search(fromStart "e2e4 e7e5", "go nodes 100")
         Assert.Equal(Superseded, Async.RunSynchronously(first, 10000))
         match Async.RunSynchronously(last, 10000) with
@@ -424,7 +424,7 @@ let ``Analysis options during a search stop it, are set, and run it again`` () =
     let eng, _ = startAnalysis (config log "" [ "FakeInfinite", box true ])
     try
         let before = (synced log eng.Raw) |> Array.length
-        eng.Analyse(fromStart "", "go infinite")
+        eng.Analyse(fromStart "", "go infinite") |> ignore
         waitForSent log "go infinite"
         eng.SetOption(EngineOption.Create "MultiPV" "3")
         Assert.True(waitUntil 5000 (fun () -> commands log |> Array.filter ((=) "go infinite") |> Array.length = 2))
@@ -1269,7 +1269,7 @@ let ``Winboard analysis: infinite search is analyze, stop is exit, a timed searc
     let sync () = syncedWb log eng.Raw
     try
         let before = sync () |> Array.length
-        eng.Analyse(fromStart "", "go infinite")
+        eng.Analyse(fromStart "", "go infinite") |> ignore
         Assert.True(waitUntil 5000 (fun () -> statuses updates |> Array.length >= 3))
         eng.Stop()
         Assert.Equal<string[]>(

@@ -61,3 +61,11 @@ let ``move overhead goes to the engine's own option, in its spelling, within its
   // none listed, or the def sets it: nothing is sent
   Assert.Equal(None, EngineStartup.moveOverhead (options ()) [] 0L)
   Assert.Equal(None, EngineStartup.moveOverhead lc0 [ "moveoverheadms" ] 0L)
+
+[<Fact>]
+let ``a UCI script sends options while idle, ucinewgame between searches, and no search control`` () =
+  Assert.Equal(AsOption "setoption name Hash value 64", ScriptLine.Of "  setoption name Hash value 64 ")
+  Assert.Equal(AsNewGame "ucinewgame", ScriptLine.Of "ucinewgame")
+  for line in [ "go infinite"; "stop"; "position startpos"; "isready"; "ponderhit"; "quit"; "GO nodes 5" ] do
+    Assert.True((match ScriptLine.Of line with Refused _ -> true | _ -> false), line)
+  Assert.Equal(AsIs "dump-uci", ScriptLine.Of "dump-uci")

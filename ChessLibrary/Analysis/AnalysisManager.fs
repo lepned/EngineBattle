@@ -35,8 +35,13 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
       if board.AnyLegalMove() then Some (board.PositionWithMovesFromGraph())
       else
         logger.LogInformation ("No legal moves with FEN: " + board.FEN())
-        engine.Skip()
         None
+
+    /// The request's id; a board with no legal move is a Skip, which ends at once.
+    let analyse (go: string) =
+      match boardPosition () with
+      | Some pos -> engine.Analyse(pos, go)
+      | None -> engine.Skip()
 
     new (engineConfig, board, logger, callback: Action<EngineUpdate>, writeToConsole) =
       SimpleEngineAnalyzer(engineConfig, board, logger, Action<SearchUpdate>(fun u -> callback.Invoke u.Update), writeToConsole)
@@ -77,16 +82,15 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
 
     member _.BackendInfo() = engine.GetBackEnd()
 
-    // The searches below return at once: the engine takes the newest request, stops what it ran,
-    // and reports through the callback.
-    member x.GoInfinite() =
-      boardPosition () |> Option.iter (fun pos -> engine.Analyse(pos, "go infinite" + engine.SearchMoveSuffix))
+    // The searches below return at once with the request's id: the engine takes the newest
+    // request, stops what it ran, and reports through the callback with that id.
+    member x.GoInfinite() : int = analyse ("go infinite" + engine.SearchMoveSuffix)
 
-    member x.SearchNodes (nodes: int, keepNodes : bool) =
+    member x.SearchNodes (nodes: int, keepNodes : bool) : int =
       if not keepNodes then SearchDict.Clear()
-      boardPosition () |> Option.iter (fun pos -> engine.Analyse(pos, sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix))
+      analyse (sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix)
 
-    member x.SearchNodesWithCommand (nodes: int, commands:string, keepNodes : bool) =
+    member x.SearchNodesWithCommand (nodes: int, commands:string, keepNodes : bool) : int =
       if not keepNodes then SearchDict.Clear()
       engine.Analyse(commands, sprintf "go nodes %d%s" nodes engine.SearchMoveSuffix)
 
@@ -96,9 +100,11 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<S
 
     member x.DumpStats command = engine.Raw command
 
-    member x.Play (goCommand: string) =
-      boardPosition () |> Option.iter (fun pos -> engine.Analyse(pos, goCommand))
+    /// A UCI script line: options while the engine is idle, no search control (false when refused).
+    member x.Script (line: string) = engine.Script line
+
+    member x.Play (goCommand: string) : int = analyse goCommand
 
     /// Search from a position command the caller built from a board snapshot; touches no board.
-    member x.PlayPrepared (positionCmd: string, goCommand: string) =
+    member x.PlayPrepared (positionCmd: string, goCommand: string) : int =
       engine.Analyse(positionCmd, goCommand)

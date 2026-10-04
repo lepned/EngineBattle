@@ -381,7 +381,7 @@
         set { zobristHash = value; }
     }
 
-    private string text = "dump-uci";
+    private string text = "dump-info";
     private enum ChartView { N, Q, Convergence }
     private ChartView chartView = ChartView.N;
     // Kept as a derived flag so existing rank-sequence visibility checks still work.
@@ -424,11 +424,15 @@
     private string moveHistory = string.Empty;
     private bool keepNodesWhileSearching = true;
     private double Qdiff = 2;
-    public bool autoSearchSwitch { get; set; } = false;
+    public bool autoSearchSwitch
+    {
+        get => model.Auto;
+        set { if (value != model.Auto) model = PanelModel.step(model, PanelModel.Event.NewAutoChanged(value)).Item1; }
+    }
     public bool showCharts { get; set; } = true;
     private string neuralNet = "Not set";
     private string backend = "";
-    private bool searchInProgress = false;
+    private bool searchInProgress => model.Searching;
     private bool showPVBoard = false;
     private PVState pvState = new();
     private bool showCpChart = false;
@@ -436,7 +440,7 @@
     private CpEvalPlot cpEvalPlot;
     private int cpChartLines = 4;
     private bool focusModeEnabled = false;
-    private List<string> focusedMoves = new();
+    private List<string> focusedMoves => model.Focused.ToList();
 
     // Expose PVState for parent components (e.g., DualAnalysis for dual comparison)
     public PVState PVState => pvState;
@@ -444,7 +448,7 @@
     public int ActivePvLines => numberOfLines;
     // MultiPV actually sent to the engine (the charts and the cp chart have separate inputs).
     public int ActiveMultiPv => ActiveChartLines;
-    private bool waitingForEngine = false;
+    private bool waitingForEngine => model.Engine.IsStarting;
     private ChessLibrary.AnalysisManager.SimpleEngineAnalyzer analyzer;
     private List<NNValues> NNInfoList = new();
     public List<string> InfoLineList = new();
@@ -455,21 +459,9 @@
 
     public async Task ResetChartData()
     {
-        data.Clear();
-        dataList.Clear();
-        InfoLineList.Clear();
-        // Reference assignment, not Clear(): renders (and CandidateMoves) enumerate the
-        // list on the dispatcher while the engine reader thread produces updates.
-        NNInfoList = new();
-        ClearIterations();
-        lastMainInfoLine = "";
-        lastInfoByMultiPv.Clear();
-        // New position/search: let the first eval through even if it equals the last one.
-        lastPublishedCp = null;
-        lastPublishedMate = null;
-        if (searchInfoPlot != null) await searchInfoPlot.ResetPlot(false);
-        cpEvalPlot?.Clear();
-        cpChartDirty = false;
+        // a host moved to another position: the same clearing as a navigation, charts included
+        await Send(PanelModel.Event.Navigated);
+        await ClearCharts();
         await InvokeAsync(StateHasChanged);
     }
     private IDialogReference dialogReference;
@@ -524,25 +516,6 @@
             numberOfNodes = Math.Max(1, value);
         else
             numberOfTimeMs = Math.Max(1, value);
-    }
-
-    private void StartSearchWithMode()
-    {
-        if (analyzer == null)
-            return;
-
-        if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
-            ApplyExtraSetOptions();
-        if (searchMode == SearchMode.Nodes)
-        {
-            analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
-            return;
-        }
-
-        var ms = (int)Math.Max(1, Math.Round(numberOfTimeMs));
-        var searchMovesSuffix = analyzer.SearchMoves.Any() ? " searchmoves " + string.Join(" ", analyzer.SearchMoves) : "";
-        var goCmd = $"go movetime {ms}{searchMovesSuffix}";
-        analyzer.Play(goCmd);
     }
 
     private void StartSearchTimer()
@@ -780,11 +753,8 @@
 
     private async Task PlayMoveFromNNTable(NNValues moveInfo)
     {
-        InfoLineList.Clear();
         if (autoSearchSwitch)
         {
-            searchInProgress = true;
-            await searchInfoPlot.ResetPlot(false);
             var move = moveInfo.LANMove;
             ChessBoard.PlayUciMove(move);
             fen = ChessBoard.FEN();
@@ -815,14 +785,7 @@
     {
         if (focusModeEnabled && (ctrlKey || !autoSearchSwitch) && moveInfo != null)
         {
-            var move = moveInfo.LANMove;
-            if (focusedMoves.Contains(move))
-                focusedMoves.Remove(move);
-            else
-                focusedMoves.Add(move);
-            ApplySearchMoves();
-            if (searchInProgress && analyzer != null)
-                StartSearchWithMode();
+            await Send(PanelModel.Event.NewFocusToggled(moveInfo.LANMove, CurrentRequest()));
             StateHasChanged();
         }
         else
@@ -831,28 +794,22 @@
         }
     }
 
-    private void ToggleFocusMode()
+    private async Task ToggleFocusMode()
     {
         focusModeEnabled = !focusModeEnabled;
         if (!focusModeEnabled)
-            ClearFocusMoves();
+            await ClearFocusMoves();
     }
 
-    private void RemoveFocusMove(string move)
+    private async Task RemoveFocusMove(string move)
     {
-        focusedMoves.Remove(move);
-        ApplySearchMoves();
-        if (searchInProgress && analyzer != null)
-            StartSearchWithMode();
+        await Send(PanelModel.Event.NewFocusRemoved(move, CurrentRequest()));
         StateHasChanged();
     }
 
-    private void ClearFocusMoves()
+    private async Task ClearFocusMoves()
     {
-        focusedMoves.Clear();
-        ApplySearchMoves();
-        if (searchInProgress && analyzer != null)
-            StartSearchWithMode();
+        await Send(PanelModel.Event.NewFocusCleared(CurrentRequest()));
         StateHasChanged();
     }
 
@@ -956,12 +913,6 @@
         }
     }
 
-    private void ApplySearchMoves()
-    {
-        if (analyzer != null)
-            analyzer.SetSearchMoves(Microsoft.FSharp.Collections.ListModule.OfSeq(focusedMoves));
-    }
-
     private async Task OnPVTableRowClick(KeyValuePair<int, EngineStatus> status, bool ctrlKey = false)
     {
         if (focusModeEnabled && (ctrlKey || !autoSearchSwitch))
@@ -969,13 +920,7 @@
             var move = status.Value.PVLongSAN?.Split(' ').FirstOrDefault();
             if (!string.IsNullOrEmpty(move))
             {
-                if (focusedMoves.Contains(move))
-                    focusedMoves.Remove(move);
-                else
-                    focusedMoves.Add(move);
-                ApplySearchMoves();
-                if (searchInProgress && analyzer != null)
-                    StartSearchWithMode();
+                await Send(PanelModel.Event.NewFocusToggled(move, CurrentRequest()));
                 StateHasChanged();
             }
         }
@@ -987,14 +932,11 @@
 
     private async Task PlayMoveFromStatusTable(KeyValuePair<int, EngineStatus> status)
     {
-        InfoLineList.Clear();
         if (autoSearchSwitch)
         {
-            searchInProgress = true;
             var longSan = status.Value.PVLongSAN.Split(' ').FirstOrDefault();
             if (longSan != null)
             {
-                await searchInfoPlot.ResetPlot(false);
                 ChessBoard.PlayUciMove(longSan);
                 fen = ChessBoard.FEN();
                 await OnEngineMoveMade.InvokeAsync(longSan);
@@ -1004,33 +946,7 @@
         }
     }
 
-    private async Task GoInfinite()
-    {
-        if (analyzer == null)
-        {
-            if (searchInfoPlot == null)
-            {
-                searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
-                searchInfoPlot.CompactLegend = CompactChartLegend;
-                searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
-            }
-            else
-            {
-                await searchInfoPlot.ResetPlot(false);
-            }
-            await StartAnalyzer();
-            searchInfoPlot.EngineName = analyzer.GetEngineName();
-            neuralNet = $"{analyzer.GetNetwork()}";
-            backend = analyzer.BackendInfo();
-            searchInfoPlot.NN = analyzer.GetNetwork();
-        }
-
-        searchInProgress = true;
-        ResetSearchTimer();
-        analyzer?.GoInfinite();
-        StartSearchTimer();
-        await InvokeAsync(StateHasChanged);
-    }
+    private Task GoInfinite() => StartFromPanel(PanelModel.Limit.Infinite);
 
     private async Task BrowseNNFile()
     {
@@ -1083,9 +999,6 @@
         var filePath = (string)result.Data!;
         try
         {
-            waitingForEngine = true;
-            searchInProgress = false;
-            StateHasChanged();
             analyzer?.Engine?.ShutDownEngine();
             logger.LogInformation("Engine.json file opened {File}", filePath);
             var engineConfig = JSON.readSingleEngineConfig(filePath);
@@ -1100,15 +1013,13 @@
             Engine = engineConfig;
             NNInfoList = new();
             analyzer = null;
-            await StartAnalyzer();
-            neuralNet = analyzer.GetNetwork();
-            backend = analyzer.BackendInfo();
+            await Send(PanelModel.Event.LoadEngine);
             StateHasChanged();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to load engine.json file {File}", filePath);
-            waitingForEngine = false;
+            await Send(PanelModel.Event.EngineGone);
             StateHasChanged();
         }
     }
@@ -1132,15 +1043,15 @@
         try
         {
             var lines = await File.ReadAllLinesAsync(filePath);
-            int count = 0;
+            int sent = 0, skipped = 0;
             foreach (var line in lines)
             {
                 var trimmed = line.Trim();
                 if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
-                analyzer.DumpStats(trimmed);
-                count++;
+                // options wait for an idle engine; go, stop, position and the like are skipped
+                if (analyzer.Script(trimmed)) sent++; else skipped++;
             }
-            logger.LogInformation("Loaded UCI script {File}: {Count} commands sent", filePath, count);
+            logger.LogInformation("Loaded UCI script {File}: {Sent} commands sent, {Skipped} skipped", filePath, sent, skipped);
         }
         catch (Exception ex)
         {
@@ -1189,7 +1100,10 @@
             }
             newAnalyzer.Board = ChessBoard;
             analyzer = newAnalyzer;
-            ApplyChartLinesToMultiPV();
+            // started outside a search (Ctrl+P/Q, the Engine button's own path): the model learns it
+            if (model.Engine.IsNotStarted)
+                await Send(PanelModel.Event.EngineReady);
+            await Send(PanelModel.Event.NewLinesChanged(ActiveChartLines));
             appliedExtraSetOptions = null;
             ApplyExtraSetOptions(engineJustStarted: true);
             if (OnEngineStarted.HasDelegate)
@@ -1205,55 +1119,29 @@
     // otherwise the cpChartLines slider is shown for AB engines.
     private int ActiveChartLines => showCharts ? numberOfLines : cpChartLines;
 
-    private void ApplyChartLinesToMultiPV()
-    {
-        if (analyzer == null) return;
-        var option = EngineOption.Create("MultiPV", ActiveChartLines.ToString());
-        analyzer.AddSetoption(option);
-    }
-
-    private void TrimDataToChartLines()
-    {
-        var limit = ActiveChartLines;
-        var staleKeys = data.Keys.Where(k => k > limit).ToList();
-        foreach (var k in staleKeys) data.Remove(k);
-        dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
-    }
-
     private async Task OnChartLinesChanged()
     {
-        ApplyChartLinesToMultiPV();
-        TrimDataToChartLines();
+        await Send(PanelModel.Event.NewLinesChanged(ActiveChartLines));
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task Analyze()
+    private Task Analyze() => StartFromPanel(CurrentLimit());
+
+    private async Task StartFromPanel(PanelModel.Limit limit)
     {
         if (Engine == null || chessModule == null)
-        {
             return;
-        }
         if (analyzer != null && analyzer.Engine.HasExited)
         {
             analyzer = null;
-            await StartAnalyzer();
+            await Send(PanelModel.Event.EngineGone);
         }
-        InfoLineList.Clear();
-        ClearIterations();
         if (searchInfoPlot == null)
         {
             searchInfoPlot = new SearchInfoPlot(chessModule, qPlotReference, nPlotReference, "Cp-value", fen, neuralNet);
             searchInfoPlot.CompactLegend = CompactChartLegend;
             searchInfoPlot.ConvergenceChartElement = convergencePlotReference;
         }
-        else
-        {
-            await searchInfoPlot?.ResetPlot(false);
-        }
-        cpEvalPlot?.Clear();
-        cpChartDirty = false;
-        searchInProgress = true;
-        ResetSearchTimer();
         // The search that starts draws the board's overlay. Read the setting for this slot
         // from the singleton, not from the panel's own copy: a host page sets the singleton
         // (Dual analysis, the contempt page) and the copy only catches up on the panel's next
@@ -1264,247 +1152,348 @@
             selectedOverlaySetting = overlayForThisSlot;
             await Notifier.UpdateDisplaySettings(overlayForThisSlot, Id);
         }
-        await InvokeAsync(StateHasChanged);
         try
         {
-            if (analyzer == null)
-            {
-                waitingForEngine = true;
-                StateHasChanged();
-                await StartAnalyzer();
-                if (analyzer == null) return;
-                backend = analyzer.BackendInfo();
-                if (searchInfoPlot != null)
-                {
-                    searchInfoPlot.EngineName = analyzer.GetEngineName();
-                    searchInfoPlot.NN = showCharts ? $"{analyzer.GetNetwork()}" : "none";
-                }
-                neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
-            }
-            StartSearchWithMode();
-            StartSearchTimer();
+            await Send(PanelModel.Event.NewStart(RequestFor(limit)));
         }
         catch (Exception ex)
         {
             logger.LogWarning("Failed to start analysis: {Message}", ex.Message);
-            searchInProgress = false;
-            waitingForEngine = false;
+            await Send(PanelModel.Event.Stop);
         }
-
         await InvokeAsync(StateHasChanged);
     }
 
     private async Task StopSearch()
     {
-        if (analyzer != null)
-            analyzer.Stop();
-        searchInProgress = false;
-        StopSearchTimer();
-        await Task.CompletedTask;
+        await Send(PanelModel.Event.Stop);
+        StateHasChanged();
     }
 
-    // Updates arrive on the engine's reader thread. The handler is async, so at its first
-    // await it returns and the reader thread immediately starts the next one — two flows
-    // then mutate `data` and `InfoLineList` at once. A mate found at the ply cap delivers
-    // 245 updates in 8ms and makes that collision routine ("Destination array was not long
-    // enough" out of a dictionary being copied while it grows). Marshalling to the
-    // dispatcher serialises them: component state is only ever touched from one thread,
-    // which is what Blazor expects in the first place.
-    // A host's own engine (Game Review) feeds its updates here, without a FEN.
-    public void HandleUpdate(EngineUpdate update) => Dispatch(update, "");
+    // Updates arrive on the engine's delivery thread; Dispatch marshals each to the dispatcher,
+    // the panel's only thread, where the model decides what it means.
+    // A host's own engine (Game Review) feeds its updates here, without a search.
+    public void HandleUpdate(EngineUpdate update) => Dispatch(update, "", 0);
 
-    // The panel's analyzer: each update with the FEN of the search it belongs to.
-    private void HandleSearchUpdate(SearchUpdate update) => Dispatch(update.Update, update.Fen);
+    // The panel's analyzer: each update with the search it belongs to.
+    private void HandleSearchUpdate(SearchUpdate update) => Dispatch(update.Update, update.Fen, update.SearchId);
 
-    private void Dispatch(EngineUpdate update, string searchFen)
+    private void Dispatch(EngineUpdate update, string searchFen, int searchId)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
         {
-            _ = InvokeAsync(() => HandleUpdateCore(update, searchFen));
+            _ = InvokeAsync(() => HandleUpdateCore(update, searchFen, searchId));
         }
         catch (ObjectDisposedException) { }
     }
 
-    private async Task HandleUpdateCore(EngineUpdate update, string searchFen)
+    private async Task HandleUpdateCore(EngineUpdate update, string searchFen, int searchId)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
         {
-            switch (update)
-            {
-                case EngineUpdate.Done player:
-                    break;
-
-                case EngineUpdate.Ready ready:
-                    showCharts = ready.HasLiveStat;
-                    showCpChart = !ready.HasLiveStat;
-                    // The remembered choice now applies to both alternatives — MCTS engines
-                    // get the move-stats panel, AB engines the iteration log.
-                    showNNdata = RememberedStatsPanelChoice();
-                    searchInProgress = false;
-                    waitingForEngine = false;
-                    break;
-
-                case EngineUpdate.Info i:
-                    if (IsForAnotherPosition(searchFen)) break;
-                    InfoLineList.Insert(0, (i.Info));
-                    // Info now arrives per parsed status line — cap the (display-unused)
-                    // backlog so an infinite search can't grow it without bound.
-                    if (InfoLineList.Count > 200)
-                        InfoLineList.RemoveAt(InfoLineList.Count - 1);
-                    // Latest raw PV info per MultiPV index — raw, so any engine-specific
-                    // extras survive into the CandidateMoves copy output. Capped at the
-                    // chart-lines input (= the MultiPV the engine searches), filtered at
-                    // join time so lowering the slider drops stale higher lines. Joined
-                    // eagerly here; renders read only the joined string.
-                    if (i.Info.Contains(" pv "))
-                    {
-                        var k = MultiPvOf(i.Info);
-                        var lineCap = ActiveChartLines;
-                        if (k <= lineCap)
-                        {
-                            lastInfoByMultiPv[k] = i.Info;
-                            lastMainInfoLine = string.Join("\n",
-                                lastInfoByMultiPv.Where(kv => kv.Key <= lineCap)
-                                                 .OrderBy(kv => kv.Key)
-                                                 .Select(kv => kv.Value));
-                        }
-                        // Iteration log: main line only, paired with the Status parsed from
-                        // this very line (emitted immediately before it).
-                        if (k <= 1 && !runLogLiveStats && pendingIterationStatus is not null)
-                        {
-                            var newDepth = CaptureIteration(pendingIterationStatus, i.Info);
-                            if (newDepth && OnIterations.HasDelegate)
-                            {
-                                var rowsCopy = iterationCollector.Rows;
-                                // The search's position, not the board's (see NNSeq).
-                                var rowsFen = string.IsNullOrEmpty(searchFen) ? fen : searchFen;
-                                await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen)));
-                            }
-                        }
-                    }
-                    break;
-
-                case EngineUpdate.Eval e:
-                    break;
-
-                case EngineUpdate.BestMove b:
-                    // The result belongs to the position the search ran on: one played away from
-                    // meanwhile gets nothing - no eval, no "analyzed", and the search running now
-                    // keeps its timer and Stop.
-                    if (IsForAnotherPosition(searchFen))
-                    {
-                        logger.LogDebug("Dropping stale search result for {Fen}", searchFen);
-                        break;
-                    }
-                    whitePV = b.Item.PV;
-                    searchInProgress = false;
-                    waitingForEngine = false;
-                    var commentEval = data.ContainsKey(1) ? data[1].Eval : b.Item.Eval;
-                    var commentNodes = data.ContainsKey(1) ? data[1].Nodes : b.Item.Nodes;
-                    var evalComment = $"{{{commentEval}/{commentNodes.ToString("N0")}}}";
-                    // A host's search (Game Review) is not about ChessBoard's current move: the
-                    // board holds the reviewed game, and its last move got every review eval.
-                    if (!UpdatesFromHost)
-                        ChessBoard.SetCommentOnCurrentEdge(evalComment);
-                    StopSearchTimer();
-                    // The timer that would have drawn it is gone now, so draw whatever the
-                    // last lines added before the search ended.
-                    await FlushCpChart();
-                    pvState.SetSearching(false);
-                    // Fill empty PV in status table from bestmove (value head engines)
-                    if (!string.IsNullOrEmpty(b.Item.PV) && data.ContainsKey(1) && string.IsNullOrEmpty(data[1].PV))
-                    {
-                        var s = data[1];
-                        data[1] = new EngineStatus(s.PlayerName, s.Eval, s.Nodes, s.NPS, s.EPS, s.Depth, s.SD, s.TBhits, s.WDL, b.Item.PV, b.Item.Move, s.MultiPV);
-                        dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
-                    }
-                    if (OnSearchCompleted.HasDelegate)
-                    {
-                        var evalStr = commentEval switch
-                        {
-                            EvalType.CP cp => $"{cp.Info:+0.0;-0.0}",
-                            EvalType.Mate m => $"M{m.Info}",
-                            _ => ""
-                        };
-                        await InvokeAsync(() => OnSearchCompleted.InvokeAsync(evalStr));
-                    }
-                    await InvokeAsync(() => StateHasChanged());
-                    break;
-
-                case EngineUpdate.UCIInfo info:
-                    if (uciButtonPressed)
-                    {
-                        await InvokeAsync(() => OnUCIReceived.InvokeAsync(info.Data));
-                    }
-                    break;
-
-                case EngineUpdate.Status s:
-                    var status = s.Item;
-                    // A stopped search's last lines would fill the PV table just cleared for
-                    // the position played since.
-                    if (IsForAnotherPosition(searchFen)) break;
-                    // Assigned before the first await so it is in place when the raw Info
-                    // for this same line arrives and builds the iteration row.
-                    if (status.MultiPV <= 1) pendingIterationStatus = status;
-                    await Update(status);
-                    if (!runLogLiveStats && showCpChart && cpEvalPlot != null)
-                    {
-                        cpEvalPlot.AddDataPoint(status.MultiPV, status.Depth, status.Eval, status.PV);
-                        cpChartDirty = true;
-                    }
-                    break;
-
-                case EngineUpdate.PolicyDistributionOutCome ds:
-                    var list = ds.Item;
-                    break;
-
-                case EngineUpdate.NNSeq n:
-                    if (n.NNSeq.Count > 0)
-                    {
-                        n.NNSeq.Reverse();
-                        // The root stats of the search that produced them (Lc0 prints its final
-                        // block after `stop`, maybe after a move was played).
-                        var statsFen = string.IsNullOrEmpty(searchFen) ? fen : searchFen;
-                        var staleStats = IsForAnotherPosition(searchFen);
-                        var fresh = n.NNSeq.ToList();
-                        if (!staleStats)
-                        {
-                            currentPosition = fresh.FirstOrDefault();
-                            // Swap in a fresh list instead of mutating in place — renders may
-                            // be enumerating the old one on the dispatcher right now.
-                            NNInfoList = fresh;
-                            var skipTopNode = NNInfoList.Skip(1).ToList();
-                            searchInfoPlot?.AddData(skipTopNode);
-                            if (NNInfoList.Count > 0)
-                                await Notifier.MovesWithId(NNInfoList, Id);
-                            var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
-                            if (searchInfoPlot != null)
-                                await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff, includeConvergence: chartView == ChartView.Convergence);
-                        }
-                        // The host still gets stale stats, under their own FEN: it caches
-                        // per position, so they are there when the user steps back.
-                        if (OnLiveStats.HasDelegate)
-                        {
-                            // Engine updates arrive on the reader thread; EventCallback
-                            // renders the host page, so marshal to the dispatcher.
-                            var statsCopy = fresh.ToList();
-                            await InvokeAsync(() => OnLiveStats.InvokeAsync((statsCopy, statsFen)));
-                        }
-                    }
-                    break;
-            }
+            updateFen = string.IsNullOrEmpty(searchFen) ? fen : searchFen;
+            await Send(PanelModel.Event.NewResult(searchId, update));
         }
         catch (ObjectDisposedException) { }
         catch (Microsoft.JSInterop.JSDisconnectedException) { }
         catch (Exception ex)
         {
-            // Full exception, not just the message: this handler touches a dozen collections
-            // and the message alone ("Destination array was not long enough") says nothing
-            // about which one.
+            // Full exception, not just the message: the effects touch a dozen collections.
             logger.LogWarning(ex, "Engine update callback failed [{Update}]", update.GetType().Name);
         }
+    }
+
+    // The position of the update being handled: its search's, or the board's for a host's.
+    private string updateFen = "";
+
+    // ── The panel model (ChessLibrary/Analysis/PanelModel.fs): every start, stop and clear ──
+    private PanelModel.State model = PanelModel.initial(3);
+
+    private async Task Send(PanelModel.Event e)
+    {
+        var result = PanelModel.step(model, e);
+        model = result.Item1;
+        foreach (var effect in result.Item2)
+            await Execute(effect);
+    }
+
+    private PanelModel.Limit CurrentLimit() =>
+        searchMode == SearchMode.Nodes
+            ? PanelModel.Limit.NewNodes((int)numberOfNodes)
+            : PanelModel.Limit.NewMoveTime((int)Math.Max(1, Math.Round(numberOfTimeMs)));
+
+    private PanelModel.Request RequestFor(PanelModel.Limit limit) =>
+        new PanelModel.Request(limit, ChessBoard?.AnyLegalMove() ?? false);
+
+    private PanelModel.Request CurrentRequest() => RequestFor(CurrentLimit());
+
+    private async Task Execute(PanelModel.Effect effect)
+    {
+        switch (effect)
+        {
+            case PanelModel.Effect.Search search:
+                await RunSearch(search.Item1, search.searchMoves);
+                break;
+            case PanelModel.Effect.Settle settle:
+                _ = SettleAfter(settle.navigation, settle.delayMs);
+                break;
+            case PanelModel.Effect.Timer timer:
+                if (timer.running) { ResetSearchTimer(); StartSearchTimer(); }
+                else StopSearchTimer();
+                break;
+            case PanelModel.Effect.SetMultiPv multiPv:
+                analyzer?.AddSetoption(EngineOption.Create("MultiPV", multiPv.Item.ToString()));
+                break;
+            case PanelModel.Effect.PublishEval eval:
+                await PublishEval(eval.cp, eval.mate);
+                break;
+            case PanelModel.Effect.Completed completed:
+                await OnCompleted(completed.Item);
+                break;
+            case PanelModel.Effect.Show show:
+                await ShowUpdate(show.Item);
+                break;
+            case PanelModel.Effect.Late late:
+                await ForwardLateStats(late.Item);
+                break;
+            default:
+                if (effect.IsStartEngine) await StartEngineNow();
+                else if (effect.IsStopEngine) analyzer?.Stop();
+                else if (effect.IsResetEngine) { analyzer?.Reset(); analyzer?.ClearSearchMoves(); }
+                else if (effect.IsClearLists) ClearLists();
+                else if (effect.IsClearCharts) await ClearCharts();
+                else if (effect.IsShowRows) ShowRows();
+                break;
+        }
+    }
+
+    private async Task StartEngineNow()
+    {
+        StateHasChanged();
+        try
+        {
+            await StartAnalyzer();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Failed to start the engine: {Message}", ex.Message);
+        }
+        if (analyzer == null)
+        {
+            await Send(PanelModel.Event.EngineGone);
+            return;
+        }
+        backend = analyzer.BackendInfo();
+        neuralNet = showCharts ? $"{analyzer.GetNetwork()}" : "none";
+        if (searchInfoPlot != null)
+        {
+            searchInfoPlot.EngineName = analyzer.GetEngineName();
+            searchInfoPlot.NN = neuralNet;
+        }
+        await Send(PanelModel.Event.EngineReady);
+    }
+
+    private async Task RunSearch(PanelModel.Limit limit, Microsoft.FSharp.Collections.FSharpList<string> moves)
+    {
+        if (analyzer == null) return;
+        // a settings list changed since the last search (contempt, for one) goes first, with ucinewgame
+        if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
+            ApplyExtraSetOptions();
+        analyzer.SetSearchMoves(moves);
+        var suffix = moves.IsEmpty ? "" : " searchmoves " + string.Join(" ", moves);
+        int id = limit switch
+        {
+            PanelModel.Limit.Nodes n => analyzer.SearchNodes(n.Item, keepNodesWhileSearching),
+            PanelModel.Limit.MoveTime t => analyzer.Play($"go movetime {t.ms}{suffix}"),
+            _ => analyzer.GoInfinite()
+        };
+        await Send(PanelModel.Event.NewStarted(id));
+    }
+
+    private async Task SettleAfter(int navigation, int delayMs)
+    {
+        await Task.Delay(delayMs);
+        if (disposeCts.IsCancellationRequested) return;
+        await InvokeAsync(async () =>
+        {
+            await Send(PanelModel.Event.NewSettled(navigation, CurrentRequest()));
+            StateHasChanged();
+        });
+    }
+
+    private void ClearLists()
+    {
+        InfoLineList.Clear();
+        ClearIterations();
+        NNInfoList = new();
+        lastMainInfoLine = "";
+        lastInfoByMultiPv.Clear();
+        tableHeader = "";
+    }
+
+    private async Task ClearCharts()
+    {
+        if (searchInfoPlot != null) await searchInfoPlot.ResetPlot(false);
+        cpEvalPlot?.Clear();
+        cpChartDirty = false;
+    }
+
+    private void ShowRows()
+    {
+        data = model.Rows.ToDictionary(kv => kv.Key, kv => kv.Value);
+        dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
+        if (dataList.Count > 0) whitePV = dataList[0].Value.PV;
+        UpdatePVState();
+        StateHasChanged();
+    }
+
+    private string HeaderOf(EngineStatus status)
+    {
+        var nodes = FormatNodes(status.Nodes);
+        var nps = GameAnalysis.Formatting.formatNPS(status.NPS);
+        if (status.EPS == 0)
+            return $"{nodes} ({nps}) (tbhits: {status.TBhits:N0})";
+        var eps = GameAnalysis.Formatting.formatEPS(status.EPS);
+        return $"{nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0})";
+    }
+
+    // An accepted update, for the panel's own views.
+    private async Task ShowUpdate(EngineUpdate update)
+    {
+        switch (update)
+        {
+            case EngineUpdate.Ready ready:
+                showCharts = ready.HasLiveStat;
+                showCpChart = !ready.HasLiveStat;
+                // The remembered choice now applies to both alternatives — MCTS engines
+                // get the move-stats panel, AB engines the iteration log.
+                showNNdata = RememberedStatsPanelChoice();
+                // the visible lines slider follows the engine kind: the engine's MultiPV too
+                if (model.Lines != ActiveChartLines)
+                    await Send(PanelModel.Event.NewLinesChanged(ActiveChartLines));
+                break;
+
+            case EngineUpdate.Info i:
+                InfoLineList.Insert(0, (i.Info));
+                // Info arrives per parsed status line — cap the (display-unused) backlog so an
+                // infinite search can't grow it without bound.
+                if (InfoLineList.Count > 200)
+                    InfoLineList.RemoveAt(InfoLineList.Count - 1);
+                // Latest raw PV info per MultiPV index — raw, so any engine-specific extras
+                // survive into the CandidateMoves copy output. Capped at the chart-lines input
+                // (= the MultiPV the engine searches), filtered at join time so lowering the
+                // slider drops stale higher lines. Joined eagerly here; renders read the string.
+                if (i.Info.Contains(" pv "))
+                {
+                    var k = MultiPvOf(i.Info);
+                    var lineCap = ActiveChartLines;
+                    if (k <= lineCap)
+                    {
+                        lastInfoByMultiPv[k] = i.Info;
+                        lastMainInfoLine = string.Join("\n",
+                            lastInfoByMultiPv.Where(kv => kv.Key <= lineCap)
+                                             .OrderBy(kv => kv.Key)
+                                             .Select(kv => kv.Value));
+                    }
+                    // Iteration log: main line only, paired with the Status parsed from this very
+                    // line (emitted immediately before it).
+                    if (k <= 1 && !runLogLiveStats && pendingIterationStatus is not null)
+                    {
+                        var newDepth = CaptureIteration(pendingIterationStatus, i.Info);
+                        if (newDepth && OnIterations.HasDelegate)
+                        {
+                            var rowsCopy = iterationCollector.Rows;
+                            // the search's position, not the board's
+                            await OnIterations.InvokeAsync((rowsCopy, updateFen));
+                        }
+                    }
+                }
+                break;
+
+            case EngineUpdate.UCIInfo info:
+                if (uciButtonPressed)
+                    await OnUCIReceived.InvokeAsync(info.Data);
+                break;
+
+            case EngineUpdate.Status s:
+                var status = s.Item;
+                // in place before the raw Info of this same line builds the iteration row
+                if (status.MultiPV <= 1) pendingIterationStatus = status;
+                tableHeader = HeaderOf(status);
+                if (!runLogLiveStats && showCpChart && cpEvalPlot != null)
+                {
+                    cpEvalPlot.AddDataPoint(status.MultiPV, status.Depth, status.Eval, status.PV);
+                    cpChartDirty = true;
+                }
+                break;
+
+            case EngineUpdate.NNSeq n:
+                if (n.NNSeq.Count > 0)
+                {
+                    // a reversed copy: the engine's own list is left alone
+                    var fresh = n.NNSeq.ToList();
+                    fresh.Reverse();
+                    currentPosition = fresh.FirstOrDefault();
+                    // Swap in a fresh list instead of mutating in place — renders may be
+                    // enumerating the old one.
+                    NNInfoList = fresh;
+                    var skipTopNode = NNInfoList.Skip(1).ToList();
+                    searchInfoPlot?.AddData(skipTopNode);
+                    if (NNInfoList.Count > 0)
+                        await Notifier.MovesWithId(NNInfoList, Id);
+                    var maxLines = Math.Min(numberOfLines, NNInfoList.Count);
+                    if (searchInfoPlot != null)
+                        await searchInfoPlot.UpdateLogLiveCharts(skipTopNode, maxLines, Qdiff, includeConvergence: chartView == ChartView.Convergence);
+                    await ForwardStats(fresh);
+                }
+                break;
+        }
+    }
+
+    // Another search's live stats: not shown, but the host caches them under their own position
+    // (the search's), so they are there when the user steps back.
+    private async Task ForwardLateStats(EngineUpdate update)
+    {
+        if (update is EngineUpdate.NNSeq n && n.NNSeq.Count > 0)
+        {
+            var stats = n.NNSeq.ToList();
+            stats.Reverse();
+            await ForwardStats(stats);
+        }
+    }
+
+    private async Task ForwardStats(List<NNValues> stats)
+    {
+        if (OnLiveStats.HasDelegate)
+            await OnLiveStats.InvokeAsync((stats.ToList(), updateFen));
+    }
+
+    private async Task OnCompleted(BestMoveInfo info)
+    {
+        whitePV = info.PV;
+        var main = model.Rows.ContainsKey(1) ? model.Rows[1] : null;
+        var commentEval = main != null ? main.Eval : info.Eval;
+        var commentNodes = main != null ? main.Nodes : info.Nodes;
+        // A host's search (Game Review) is not about ChessBoard's current move: the board holds
+        // the reviewed game, and its last move got every review eval.
+        if (!IsReviewing)
+            ChessBoard.SetCommentOnCurrentEdge($"{{{commentEval}/{commentNodes.ToString("N0")}}}");
+        // the timer that would have drawn it is gone now, so draw what the last lines added
+        await FlushCpChart();
+        pvState.SetSearching(false);
+        if (OnSearchCompleted.HasDelegate)
+        {
+            var evalStr = commentEval switch
+            {
+                EvalType.CP cp => $"{cp.Info:+0.0;-0.0}",
+                EvalType.Mate m => $"M{m.Info}",
+                _ => ""
+            };
+            await OnSearchCompleted.InvokeAsync(evalStr);
+        }
+        StateHasChanged();
     }
 
     private void SetStatsPanel(bool showStats)
@@ -1987,30 +1976,17 @@
         if (analyzer.Engine.HasExited)
         {
             analyzer = null;
-            await StartAnalyzer();
-            searchInProgress = false;
+            await Send(PanelModel.Event.EngineGone);
         }
-
-        tableHeader = "";
-
-        analyzer?.Reset();
+        await Send(PanelModel.Event.Reset);
         ResetSearchTimer();
         if (searchInfoPlot != null)
-        {
             await searchInfoPlot.ResetPlot(true);
-        }
         if (cpEvalPlot != null)
         {
             await cpEvalPlot.ClearChart();
             cpChartDirty = false;
         }
-        NNInfoList = new();
-        ClearIterations();
-        InfoLineList.Clear();
-        data.Clear();
-        focusedMoves.Clear();
-        analyzer?.ClearSearchMoves();
-        dataList.Clear();
         StateHasChanged();
     }
 
@@ -2026,188 +2002,20 @@
         StateHasChanged();
     }
 
-    private async Task Update(EngineStatus status)
-    {
-        var nodes = FormatNodes(status.Nodes);
-        var nps = GameAnalysis.Formatting.formatNPS(status.NPS);
-        var k = status.MultiPV;
-        data[k] = status;
-        // Deduplicate: if focused search overwrites multipv 1 with a move that
-        // also exists in a stale higher multipv slot, remove the stale duplicate
-        if (focusedMoves.Count > 0)
-        {
-            var currentFirstMove = status.PVLongSAN?.Split(' ').FirstOrDefault();
-            if (!string.IsNullOrEmpty(currentFirstMove))
-            {
-                var dupeKeys = data.Keys
-                    .Where(key => key != k && data[key].PVLongSAN?.Split(' ').FirstOrDefault() == currentFirstMove)
-                    .ToList();
-                foreach (var dupe in dupeKeys) data.Remove(dupe);
-            }
-        }
-        var ordered = data.OrderBy(e => e.Value.MultiPV).ToList();
-        if (status.EPS == 0)
-        {
-            tableHeader = $"{nodes} ({nps}) (tbhits: {status.TBhits:N0})";
-        }
-        else
-        {
-            var eps = GameAnalysis.Formatting.formatEPS(status.EPS);
-            tableHeader = $"{nodes} ({nps}, {eps}) (tbhits: {status.TBhits:N0})";
-        }
-        dataList = ordered;
-        whitePV = ordered[0].Value.PV;
-
-        // Always update PV state for any subscriber (individual or dual dialog)
-        UpdatePVState();
-
-        if (k <= 1) await PublishEval(status);
-
-        await InvokeAsync(StateHasChanged);
-        await Task.CompletedTask;
-    }
-
-    // Eval-bar publishing: throttled so the host page is not re-rendered per info line.
-    private double? lastPublishedCp;
-    private int? lastPublishedMate;
-
-    private async Task PublishEval(EngineStatus status)
+    private async Task PublishEval(Microsoft.FSharp.Core.FSharpOption<double> cp, Microsoft.FSharp.Core.FSharpOption<int> mate)
     {
         if (!OnEvalUpdated.HasDelegate) return;
-        // EngineStatus.Eval is already white-perspective (the UCI parser negates for black).
-        (double? cp, int? mate) = status.Eval switch
-        {
-            EvalType.CP c => ((double?)c.Info, (int?)null),
-            EvalType.Mate m => (null, m.Info),
-            _ => ((double?)null, (int?)null)
-        };
-        if (cp == null && mate == null) return;
-        var changed = mate != lastPublishedMate || (cp.HasValue != lastPublishedCp.HasValue) ||
-                      (cp.HasValue && lastPublishedCp.HasValue && Math.Abs(cp.Value - lastPublishedCp.Value) >= 0.05);
-        if (!changed) return;
-        lastPublishedCp = cp;
-        lastPublishedMate = mate;
-        await InvokeAsync(() => OnEvalUpdated.InvokeAsync((cp, mate)));
+        double? c = Microsoft.FSharp.Core.FSharpOption<double>.get_IsSome(cp) ? cp.Value : null;
+        int? m = Microsoft.FSharp.Core.FSharpOption<int>.get_IsSome(mate) ? mate.Value : null;
+        await OnEvalUpdated.InvokeAsync((c, m));
     }
 
-    // Coalesces overlapping auto-search starts: at most one task runs and one waits.
-    // Guards against unbounded thread-pool pile-up when the engine hangs or dies
-    // (WaitForReadyOk can block for a long time on a crashed process).
-    // Position snapshot for the auto-search task: Chess.Board is not thread-safe and
-    // is mutated on the dispatcher, so the task must never touch it (same pattern as
-    // KibitzerPanel). Immutable tuple — the reference write is atomic and a coalesced
-    // start picks up the newest snapshot.
-
-    // The updates come from the host's own search, not the panel's: Game Review runs its engine
-    // through the panel while it reviews. It shows each searched position without moving
-    // ChessBoard (which holds the whole game, so its FEN is the final position), so comparing a
-    // search position with ChessBoard.FEN() would call every stats set stale - the live move
-    // stats table stayed empty through a review. The host searches one position at a time, so
-    // its updates are not dropped.
-    private bool UpdatesFromHost => IsReviewing;
-
-    // An update of a search on another position than the board's: a stopped search's, after a
-    // move. Placement, side to move, castling and en passant decide; the move counters do not.
-    private bool IsForAnotherPosition(string searchFen) =>
-        !UpdatesFromHost
-        && ChessBoard != null
-        && !string.IsNullOrEmpty(searchFen)
-        && PositionKey(searchFen) != PositionKey(ChessBoard.FEN());
-
-    private static string PositionKey(string fen) => string.Join(' ', (fen ?? "").Split(' ').Take(4));
-
-    private string BuildAutoGoCommand()
-    {
-        var suffix = analyzer.SearchMoves.Any() ? " searchmoves " + string.Join(" ", analyzer.SearchMoves) : "";
-        return searchMode == SearchMode.Nodes
-            ? $"go nodes {(int)numberOfNodes}{suffix}"
-            : $"go movetime {(int)Math.Max(1, Math.Round(numberOfTimeMs))}{suffix}";
-    }
-
-    // Marshalled to the dispatcher: the body mutates UI state and snapshots the shared
-    // board, and Notifier events run on whatever thread raised them — today always the
-    // dispatcher, but nothing enforces that for future callers.
-    // Auto-search waits this long on a position before it searches it (see OnNotifyFen).
-    private const int AutoSearchDelayMs = 150;
-    private int autoSearchNavigation;
-
+    // Marshalled to the dispatcher: Notifier events run on whatever thread raised them.
+    // A move, a navigation, a PGN or EPD loaded: the model stops, clears and (auto) searches.
     public Task OnNotifyFen(string newPos) => InvokeAsync(async () =>
     {
         fen = newPos;
-        NNInfoList = new();
-        ClearIterations();
-        lastMainInfoLine = "";
-        lastInfoByMultiPv.Clear();
-        // The PV-lines table too: its rows are the previous position's lines until the
-        // next search writes new ones, and with auto-search off nothing ever did.
-        data.Clear();
-        dataList.Clear();
-        tableHeader = "";
-        if (focusedMoves.Count > 0)
-        {
-            focusedMoves.Clear();
-            ApplySearchMoves();
-        }
-        if (autoSearchSwitch)
-        {
-            // A position seen before is searched again like any other: the host keeps its
-            // last result per position for the instant before the new search reports, but
-            // skipping the search made the panel look frozen - old numbers, no clock, Stop
-            // greyed out - which the user read as a hang.
-            if (searchInProgress)
-            {
-                analyzer?.Stop();
-                StopSearchTimer();
-                searchInProgress = false;
-            }
-            // Debounce: the search starts once the board has stayed on a position for a moment,
-            // so holding an arrow key moves the board freely and only the position stopped on
-            // is searched. A newer navigation meanwhile cancels this one.
-            var navigation = ++autoSearchNavigation;
-            await Task.Delay(AutoSearchDelayMs);
-            if (navigation != autoSearchNavigation || !autoSearchSwitch || disposeCts.IsCancellationRequested)
-                return;
-            if (searchInfoPlot != null)
-                await searchInfoPlot?.ResetPlot(false);
-            cpEvalPlot?.Clear();
-            cpChartDirty = false;
-            if (analyzer != null)
-            {
-                // Terminal position: bail BEFORE flagging a search — returning after
-                // searchInProgress/StartSearchTimer left the panel looking like a
-                // search that never ends on mated/stalemated positions.
-                if (!ChessBoard.AnyLegalMove()) return;
-                // Same as a manual Start: a settings list that changed since the last search
-                // (contempt, for one) goes to the engine now, between searches, followed by
-                // ucinewgame. Without this, a knob turned and then a move played on the board
-                // searched on with the old values until the next click on Start.
-                if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
-                    ApplyExtraSetOptions();
-                if (analyzer.Engine.HasExited)
-                {
-                    logger.LogWarning("Engine process has exited during auto-search");
-                    searchInProgress = false;
-                    StopSearchTimer();
-                }
-                else
-                {
-                    searchInProgress = true;
-                    StartSearchTimer();
-                    // A message to the engine's agent: it returns at once and the newest request
-                    // wins, so this runs here on the dispatcher, the panel's only thread.
-                    analyzer.PlayPrepared(ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand());
-                }
-            }
-            else
-            {
-                searchInProgress = false;
-            }
-        }
-        else
-        {
-            searchInProgress = false;
-            StopSearchTimer();
-        }
+        await Send(PanelModel.Event.Navigated);
     });
 
     protected override Task OnInitializedAsync()
@@ -2232,12 +2040,13 @@
             }
         }
         MinPolicyThreshold = OverlaySetting.MinPolicyThreshold;
+        model = PanelModel.step(model, PanelModel.Event.NewReviewingChanged(IsReviewing)).Item1;
         Notifier.NotifyFen += OnNotifyFen;
 
         this.keyContext = this.HotKeys.CreateContext()
             .Add(Key.Escape, (Func<Task>)(async () => await ResetEngine()), "reset engine")
             .Add(ModKey.Ctrl, Key.g, (Func<Task>)(async () => await InvokeAsync(GoInfinite)), "go search")
-            .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => { analyzer?.Stop(); await InvokeAsync(StateHasChanged); }), "stop search")
+            .Add(ModKey.Ctrl, Key.h, (Func<Task>)(async () => await InvokeAsync(StopSearch)), "stop search")
             .Add(ModKey.Ctrl, Key.p, (() => CheckAnalysis()), "check P-rank")
             .Add(ModKey.Ctrl, Key.q, (Func<Task>)(async () => await DoQAnalysis()), "check Q-rank")
             .Add(ModCode.Ctrl | ModCode.Alt, Code.P, (() => CheckAllGamesAnalysis()), "check all games policy")
@@ -2256,11 +2065,13 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (model.Reviewing != IsReviewing)
+            model = PanelModel.step(model, PanelModel.Event.NewReviewingChanged(IsReviewing)).Item1;
         if (Engine is not null && Engine.Name != currentName && !string.IsNullOrEmpty(currentName))
         {
             logger.LogInformation("Engine name changed from {OldName} to {NewName}", currentName, Engine.Name);
             currentName = Engine.Name;
-            await searchInfoPlot?.ResetNPlot();
+            if (searchInfoPlot != null) await searchInfoPlot.ResetNPlot();
             await InvokeAsync(() => NNInfoList = new());
             // New engine: captured info lines belong to the old one — don't let the
             // copy output pair them with the new engine's description.
@@ -2336,7 +2147,6 @@
             {
                 fen = FEN;
             }
-            searchInProgress = false;
             ChessBoard.inAnalysisMode = true;
             if (IsReviewing)
             {
@@ -2352,6 +2162,7 @@
             }
             if (Nodes > 0) numberOfNodes = Nodes;
             Qdiff = 2;
+            await Send(PanelModel.Event.NewLinesChanged(ActiveChartLines));
             StateHasChanged();
         }
 

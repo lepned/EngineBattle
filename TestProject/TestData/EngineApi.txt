@@ -69,7 +69,7 @@ type ChessLibrary.Engine.ChessEngine
   prop SupportsPonder : System.Boolean { get }
   prop UciIdName : System.String { get }
 type ChessLibrary.AnalysisEngine
-  Analyse(positionCommand: System.String, goCommand: System.String) : System.Void
+  Analyse(positionCommand: System.String, goCommand: System.String) : System.Int32
   ClearSearchMoves() : System.Void
   CurrentPositionCommand() : System.String
   GetAllDefaultOptions() : System.Collections.Generic.Dictionary<System.String, System.Object>
@@ -81,6 +81,7 @@ type ChessLibrary.AnalysisEngine
   PrintUCI() : System.Void
   Quit() : System.Void
   Raw(command: System.String) : System.Void
+  Script(line: System.String) : System.Boolean
   Search(positionCommand: System.String, goCommand: System.String) : Microsoft.FSharp.Control.FSharpAsync<ChessLibrary.AnalysisOutcome>
   SearchAsync(positionCommand: System.String, goCommand: System.String) : System.Threading.Tasks.Task<ChessLibrary.AnalysisOutcome>
   SetAllOptions(allOptions: System.Collections.Generic.Dictionary<System.String, System.Object>) : System.Void
@@ -89,7 +90,7 @@ type ChessLibrary.AnalysisEngine
   SetOptions(options: System.Collections.Generic.IEnumerable<ChessLibrary.EngineTypes.EngineOption>) : System.Void
   SetSearchMoves(moves: Microsoft.FSharp.Collections.FSharpList<System.String>) : System.Void
   ShutDownEngine() : System.Void
-  Skip() : System.Void
+  Skip() : System.Int32
   Stop() : System.Void
   WaitUntilStarted(timeoutMs: System.Int32) : System.Boolean
   new(Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.EngineTypes.EngineUpdate, Microsoft.FSharp.Core.Unit>, ChessLibrary.TypesDef.CoreTypes.EngineConfig, System.Collections.Generic.IEnumerable<System.String>, Microsoft.Extensions.Logging.ILogger, System.Boolean, Microsoft.FSharp.Core.FSharpOption<System.Boolean>, Microsoft.FSharp.Core.FSharpOption<Microsoft.FSharp.Core.FSharpFunc<ChessLibrary.SearchUpdate, Microsoft.FSharp.Core.Unit>>)

@@ -602,7 +602,7 @@ let private analysisGroup (p: Params) (report: Report) =
             if failed.Value = "" then
               let sw = Stopwatch.StartNew()
               for cmd, _ in positions do
-                engine.Analyse(cmd, "go infinite")
+                engine.Analyse(cmd, "go infinite") |> ignore
                 if p.DelayMs > 0 then Thread.Sleep p.DelayMs
               let lastCmd, lastFen = List.last positions
               let outcome = await (engine.Search(lastCmd, limited))
@@ -622,7 +622,7 @@ let private analysisGroup (p: Params) (report: Report) =
           if not (engine.GetUCICommands().ContainsKey "MultiPV") then
             report.Add Skip "options" "the engine has no MultiPV option"
           else
-            engine.Analyse(cmd, "go infinite")
+            engine.Analyse(cmd, "go infinite") |> ignore
             Thread.Sleep 500
             engine.SetOption(EngineOption.Create "MultiPV" "3")
             Thread.Sleep 1000

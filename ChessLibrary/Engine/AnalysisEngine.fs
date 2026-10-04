@@ -24,12 +24,32 @@ type AnalysisOutcome =
   | Superseded
   | Failed of string
 
-/// An update with the position (FEN) of the search it belongs to; "" for the engine's own
-/// (Ready, EngineFailed). A caller shows it only where that position is on its board.
-type SearchUpdate = { Update: EngineUpdate; Fen: string }
+/// An update with the search it belongs to - the id `Analyse` returned, and its position (FEN);
+/// 0 and "" for the engine's own (Ready, EngineFailed).
+type SearchUpdate = { Update: EngineUpdate; Fen: string; SearchId: int }
+
+/// How a line from a UCI script is sent: options only while the engine is idle (a running search is
+/// stopped and rerun after them, as the settings dialog does), and no search control - the panel
+/// owns the searches, and a go or stop it does not know of would leave it showing the wrong state.
+type ScriptLine =
+  | AsOption of string
+  /// ucinewgame: between searches.
+  | AsNewGame of string
+  | Refused of reason: string
+  | AsIs of string
+  with
+    static member Of(line: string) =
+      let line = line.Trim()
+      let first = (line.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries) |> Array.tryHead |> Option.defaultValue "").ToLowerInvariant()
+      match first with
+      | "setoption" -> AsOption line
+      | "ucinewgame" -> AsNewGame line
+      | "go" | "stop" | "position" | "ponderhit" | "isready" | "quit" ->
+          Refused (sprintf "'%s' controls the search, which the panel owns" first)
+      | _ -> AsIs line
 
 type private Delivery =
-  | Deliver of EngineUpdate * fen: string
+  | Deliver of EngineUpdate * fen: string * search: int
   | Run of (unit -> unit)
 
 type private AnalysisMessage =
@@ -217,11 +237,11 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
   /// One delivery, on the delivery thread: caller code never runs on the agent.
   let deliverOne item =
     match item with
-    | Deliver (update, fen) ->
+    | Deliver (update, fen, search) ->
         // the caller sees Ready before WaitUntilStarted returns
         (try
           match onSearchUpdate with
-          | Some deliver -> deliver { Update = update; Fen = fen }
+          | Some deliver -> deliver { Update = update; Fen = fen; SearchId = search }
           | None -> callback update
          with ex -> logger.LogWarning(ex, "Engine {Engine}: update callback failed", name))
         match update with
@@ -280,7 +300,7 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
                   match search with
                   | Some id -> (match searchFens.TryGetValue id with | true, f -> f | _ -> "")
                   | None -> ""
-                deliveries.Writer.TryWrite(Deliver (update, fen)) |> ignore
+                deliveries.Writer.TryWrite(Deliver (update, fen, defaultArg search 0)) |> ignore
             | AnalysisMachine.Reply (id, outcome) ->
                 match waiters.TryGetValue id with
                 | true, reply ->
@@ -296,7 +316,9 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
                     logger.LogError(ex, "Engine {Engine}: its options could not be read", name)
                     List.ofSeq initCommands
                 inbox.Post (Ev (AnalysisMachine.Init commands))
-            | AnalysisMachine.Print text -> printfn "%s" text
+            // one write per line: printfn writes the text and the newline apart, and another thread's
+            // line could land between them
+            | AnalysisMachine.Print text -> Console.Out.WriteLine text
             | AnalysisMachine.Debug text -> if debugOn () then logger.LogDebug text
             | AnalysisMachine.Warn text -> logger.LogWarning text
           with ex ->
@@ -413,8 +435,11 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
     try started.Task.Wait timeoutMs && started.Task.Result with _ -> false
 
   /// Searches a position; a newer request replaces it. Results arrive as updates.
-  member _.Analyse(positionCommand: string, goCommand: string) =
-    agent.Post (Ev (AnalysisMachine.Analyse (newSearch positionCommand goCommand)))
+  /// The search's id: its updates carry it (SearchUpdate).
+  member _.Analyse(positionCommand: string, goCommand: string) : int =
+    let search = newSearch positionCommand goCommand
+    agent.Post (Ev (AnalysisMachine.Analyse search))
+    search.Id
 
   /// Searches a position and waits for its end.
   member _.Search(positionCommand: string, goCommand: string) : Async<AnalysisOutcome> =
@@ -425,7 +450,10 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
     Async.StartAsTask(this.Search(positionCommand, goCommand))
 
   /// Nothing to search (no legal move): a running search is replaced, and this request ends at once.
-  member _.Skip() = agent.Post (Ev (AnalysisMachine.Analyse (newSearch "" "")))
+  member _.Skip() : int =
+    let search = newSearch "" ""
+    agent.Post (Ev (AnalysisMachine.Analyse search))
+    search.Id
 
   /// Stops the running search; its bestmove still arrives (before its go: a move at once).
   member _.Stop() = agent.Post (Ev AnalysisMachine.Stop)
@@ -463,10 +491,23 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
         | _ -> ()
     | None -> printfn "Option not found: %s value: %d" optionName ms
 
-  /// Sent at once (UCI script lines, uci).
+  /// Sent at once (uci, dump commands).
   member _.Raw(command: string) =
     recordCommand command
     agent.Post (Ev (AnalysisMachine.Raw command))
+
+  /// A UCI script line (scriptLine): true when it was sent, false when refused.
+  member this.Script(line: string) : bool =
+    match ScriptLine.Of line with
+    | AsOption command ->
+        UciOption.parseSetOptionCommand command |> Option.iter (fun (name, value) -> rememberOption name (box value))
+        configure [ command ] true
+        true
+    | AsNewGame command -> configure [ command ] false; true
+    | Refused reason ->
+        logger.LogWarning("Engine {Engine}: script line '{Line}' skipped: {Reason}", name, line, reason)
+        false
+    | AsIs command -> this.Raw command; true
 
   /// quit, a second to go, then killed.
   member _.Quit() =

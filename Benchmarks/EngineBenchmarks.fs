@@ -136,7 +136,7 @@ let private analysisFloodWith (logToFile: bool) name (lines: int) (multiPv: int)
     try
         measure name lines "lines" 2 runs (fun () ->
             let sw = Stopwatch.StartNew()
-            eng.Analyse("position fen " + startFen, "go nodes 1000")
+            eng.Analyse("position fen " + startFen, "go nodes 1000") |> ignore
             if not (doneSignal.WaitOne 120000) then failwithf "%s: no Done" name
             sw.Elapsed)
     finally quitAnalysis eng
