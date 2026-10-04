@@ -84,14 +84,6 @@ module TimeControlTypes =
       /// Derived, so not written to a config file.
       [<System.Text.Json.Serialization.JsonIgnore>]
       member x.IsMoveTime = not x.NodeLimit && x.MoveTime > TimeSpan.Zero
-      member x.Times (fraction: double) =
-        let fixedTicks = float x.Fixed.Ticks
-        let newFixedTicks = fixedTicks * fraction |> int64
-        let incrTicks = float x.Increment.Ticks
-        let newIncrTicks = incrTicks * fraction |> int64
-        let newNodes = float x.Nodes * fraction |> int32
-        let newMoveTicks = float x.MoveTime.Ticks * fraction |> int64
-        { x with Fixed = TimeSpan(newFixedTicks); Increment = TimeSpan(newIncrTicks); Nodes = newNodes; MoveTime = TimeSpan(newMoveTicks) }
       override x.ToString() =
         if x.NodeLimit then formatNodes x.Nodes
         elif x.IsMoveTime then formatMoveTime x.MoveTime
@@ -134,9 +126,6 @@ module TimeControlTypes =
         | _ -> UnionType.Nodes(config.Nodes)
       member x.GetIncrementTime(idx: int) =
         (x.GetTimeConfig idx).Increment
-      member x.TimeInfo(idx: int) =
-        let config = x.GetTimeConfig idx
-        sprintf "%fs + %fs" config.Fixed.TotalSeconds config.Increment.TotalSeconds
       member x.GetFullTimeInMS(idx: int) =
         let config = x.GetTimeConfig idx
         let fixedMs = int config.Fixed.TotalMilliseconds
@@ -158,12 +147,6 @@ module TimeControlTypes =
           x.GetTime config
 
   module TimeControlCommands =
-    let createTimeControlWithIncrementWithPonder (wtime: TimeSpan) (btime: TimeSpan) (winc: TimeSpan) (binc: TimeSpan) : string =
-      let white = int wtime.TotalMilliseconds
-      let black = int btime.TotalMilliseconds
-      let wInc = int winc.TotalMilliseconds
-      let bInc = int binc.TotalMilliseconds
-      sprintf "go ponder wtime %d btime %d winc %d binc %d" white black wInc bInc
 
     let createTimeControlWithIncrement (wtime: TimeSpan) (btime: TimeSpan) (winc: TimeSpan) (binc: TimeSpan) : string =
       let white = int wtime.TotalMilliseconds
@@ -218,10 +201,3 @@ module TimeControlTypes =
             match x with
             | NodeLimit n -> n
             | TimeLimit ms -> ms
-
-    let uciTimePart (time: UnionType) wTime bTime =
-      match time with
-      | FixedTime _ -> createTimeControl wTime bTime
-      | WithIncrement (_, incr) -> createTimeControlWithIncrement wTime bTime incr incr
-      | WithMoves (_, incr, wMoves, bMoves) -> createTimeControlWithMovesToGo wTime bTime incr incr wMoves bMoves
-      | Nodes nodes -> createNodes nodes

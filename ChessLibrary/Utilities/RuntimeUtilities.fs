@@ -95,39 +95,8 @@ module Agents =
           loop ())
 
   // Function to create an agent for scheduling commands
-  let createCommandSchedulingAgent (sendCommand: UciCommand -> unit) =
-      MailboxProcessor.Start(fun inbox ->
-          let rec loop () = async {
-              let! msg = inbox.Receive()
-              match msg with
-              | Schedule (command, delay) ->
-                  do! Async.Sleep delay
-                  sendCommand(command)
-                  return! loop()
-              | StopScheduling -> 
-                  () // Exit the loop
-          }
-          loop ())
 
   // Function to create an agent for logging
-  let createLoggingAgent (logFilePath: string) =
-      let logWriter = new StreamWriter(logFilePath, true)
-      MailboxProcessor.Start(fun inbox ->
-          let rec loop () = async {
-              try
-                  let! msg = inbox.Receive()
-                  match msg with
-                  | Line line ->
-                      let logLine = sprintf "[%s] %s" (DateTime.Now.ToString("o")) line
-                      logWriter.WriteLine(logLine)
-                      logWriter.Flush()
-                      return! loop()
-                  | Stop ->
-                      logWriter.Dispose()
-              with _ ->
-                  logWriter.Dispose()
-          }
-          loop ())
   
   // Function to run a UCI-compatible chess engine
 

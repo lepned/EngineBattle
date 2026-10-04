@@ -277,8 +277,6 @@ module TypesDef =
                 WinboardConfig = None
                 DeviceOption = ""
                 DeviceTemplate = "" }
-            static member AddOptions (config: EngineConfig) options =
-              { config with Options = options }
 
     type Pairing =
       { Opening: PgnGame
@@ -740,12 +738,6 @@ module TypesDef =
             remaining <- remaining / 2
             rounds <- rounds + 1
           rounds
-
-        member x.EffectiveRounds() =
-          let mode = x.ModeLabel()
-          if mode.Equals("Swiss", StringComparison.OrdinalIgnoreCase) then x.EffectiveSwissRounds()
-          elif mode.Equals("Cup", StringComparison.OrdinalIgnoreCase) then x.EffectiveCupRounds(x.PlayerCount)
-          else x.Rounds
 
         member x.ScheduleSummary() =
           let mode = x.ModeLabel()

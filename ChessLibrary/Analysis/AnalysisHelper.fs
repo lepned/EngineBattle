@@ -12,10 +12,6 @@ open ChessLibrary.BoardUtils
 
 type Binary = | Cuda | ONNX | CPU
 
-let neuralNetSetoptionCmd nnPath =
-  let opt = EngineOption.Create "WeightsFile" nnPath
-  opt
-
 let waitForEngineIsReady (engine: ChessEngine) = async {
   try
       if engine.HasExited() then

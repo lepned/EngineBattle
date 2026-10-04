@@ -327,10 +327,6 @@ module OrdoHelper =
 
 module PGNCalculator =
   // Define a function to get a list of all players from a list of results
-  let getAllPlayers results =
-      results
-      |> List.collect (fun r -> [ r.Player1; r.Player2 ])
-      |> List.distinct
 
   // Define a function to get a list of all pairs of players from a list of results
 
