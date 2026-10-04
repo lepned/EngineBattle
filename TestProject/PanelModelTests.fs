@@ -170,6 +170,11 @@ let ``an engine that failed or exited ends the search; a start after an exit res
   let s, e = step searching (Result (0, EngineFailed ("E", "no readyok")))
   Assert.False(s.Searching)
   Assert.Contains(Timer false, e)
+  // the failed engine is dropped, and the next start starts a new one
+  Assert.Contains(QuitEngine, e)
+  Assert.Equal(NotStarted, s.Engine)
+  let _, e = step s (Start (nodes 1000))
+  Assert.Equal<Effect list>([ StartEngine ], e)
   let s, _ = step searching EngineGone
   let _, e = step s (Start (nodes 1000))
   Assert.Equal<Effect list>([ StartEngine ], e)
@@ -248,3 +253,10 @@ let ``auto-search never starts an engine itself`` () =
   let s, _ = step { initial 3 with Auto = true } Navigated
   let _, e = step s (Settled (s.Navigation, nodes 2000))
   Assert.Empty(e)
+
+[<Fact>]
+let ``a failure while the engine starts is left to the start`` () =
+  let s, _ = step (initial 3) (Start (nodes 1000))
+  let s, e = step s (Result (0, EngineFailed ("E", "no net")))
+  Assert.DoesNotContain(QuitEngine, e)
+  Assert.Equal(Starting, s.Engine)

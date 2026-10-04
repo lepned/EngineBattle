@@ -1092,12 +1092,18 @@
     /// The engine quits (exited, or another is loaded); a start in progress is dropped when it finishes.
     private async Task ReplaceAnalyzer()
     {
+        DropAnalyzer();
+        await Send(PanelModel.Event.EngineGone);
+    }
+
+    // The engine goes (replaced, or it died); a start in progress is dropped when it finishes.
+    private void DropAnalyzer()
+    {
         engineGeneration++;
         startingAnalyzer = null;
         engineNameInUse = null;
         EngineQuit.OffThread(analyzer, logger);
         analyzer = null;
-        await Send(PanelModel.Event.EngineGone);
     }
 
     // Whichever "Chart lines" slider is currently visible. showCharts is set for
@@ -1246,6 +1252,7 @@
                 if (effect.IsStartEngine) await StartEngineNow();
                 else if (effect.IsStopEngine) analyzer?.Stop();
                 else if (effect.IsResetEngine) { analyzer?.Reset(); analyzer?.ClearSearchMoves(); }
+                else if (effect.IsQuitEngine) DropAnalyzer();
                 else if (effect.IsClearLists) ClearLists();
                 else if (effect.IsClearCharts) await ClearCharts();
                 else if (effect.IsShowRows) ShowRows();

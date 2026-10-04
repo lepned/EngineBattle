@@ -68,6 +68,8 @@ type Effect =
   /// Run this search (with these searchmoves); answer with Started.
   | Search of Limit * searchMoves: string list
   | StopEngine
+  /// The engine died: drop it, the next start starts a new one.
+  | QuitEngine
   /// Stop, ucinewgame, no searchmoves.
   | ResetEngine
   /// Answer with Settled after the delay.
@@ -175,7 +177,10 @@ let private result (search: int) (update: EngineUpdate) (state: State) =
   | EngineFailed _ when state.Reviewing -> state, [ Show update ]
   | EngineFailed _ ->
       let timer = if state.Searching then [ Timer false ] else []
-      { state with Searching = false }, timer @ [ Show update ]
+      // a start that fails is the start's to report; a running engine that fails is dropped
+      if state.Engine = Ready then
+        { state with Engine = NotStarted; Searching = false; Current = None; Pending = None }, timer @ [ QuitEngine; Show update ]
+      else { state with Searching = false }, timer @ [ Show update ]
   | EngineUpdate.Ready _ | UCIInfo _ -> state, [ Show update ]
   | NNSeq _ when not (state.Reviewing || state.Current = Some search) -> state, [ Late update ]
   | _ when not (state.Reviewing || state.Current = Some search) -> state, []

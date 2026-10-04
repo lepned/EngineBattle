@@ -253,6 +253,7 @@
                 // the load runs on; the model hears EngineReady or EngineGone when it is done
                 if (effect.IsStartEngine) _ = StartEngine();
                 else if (effect.IsStopEngine) analyzer?.Stop();
+                else if (effect.IsQuitEngine) { engineGeneration++; EngineQuit.OffThread(analyzer, logger); analyzer = null; }
                 else if (effect.IsClearLists) await ClearLists();
                 // ShowRows: the next render shows the model's rows. Timer, ClearCharts, Late, ResetEngine: nothing here.
                 break;
@@ -456,9 +457,9 @@
 
             case EngineUpdate.EngineFailed failed:
                 logger.LogWarning("Kibitzer engine failed: {Reason}", failed.Reason);
+                // the model dropped the engine already (QuitEngine); ▶ starts a new one
                 engineNote = "engine stopped — press ▶ to restart";
                 await Send(PanelModel.Event.NewAutoChanged(false));
-                await ReplaceEngine();
                 break;
 
             case EngineUpdate.Status s:
