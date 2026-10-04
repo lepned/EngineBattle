@@ -33,12 +33,6 @@ module GameGraphTypes =
           Order: int
           IsMainline: bool }
 
-    /// The complete game graph structure with nodes and edges
-    type MoveGraph =
-        { mutable Root: NodeId
-          NodesById: Dictionary<NodeId, PositionNode>
-          EdgesById: Dictionary<EdgeId, MoveEdge>
-          NodesByHash: Dictionary<uint64, ResizeArray<NodeId>> }
 
     /// A token representing a move in an inline display format
     [<CLIMutable>]

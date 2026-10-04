@@ -10,24 +10,6 @@ open PositionTypes
 open MoveTypes
 open MoveGeneration
 
-/// A simple object pool for StringBuilder instances to reduce allocations.
-type StringBuilderPool(initialCapacity: int, maxCapacity: int) =
-    let pool = ConcurrentQueue<StringBuilder>()
-    let mutable maxCapacity_ = maxCapacity
-    do
-        for _ in 1 .. initialCapacity do
-            pool.Enqueue(StringBuilder())
-    member _.Get() =
-        match pool.TryDequeue() with
-        | true, sb -> sb.Clear() |> ignore; sb
-        | _ -> StringBuilder()
-    member _.Return(sb: StringBuilder) =
-        if sb.Capacity > maxCapacity_ then ()
-        elif pool.Count < maxCapacity_ then pool.Enqueue(sb)
-        else
-            match pool.TryDequeue() with
-            | true, oldSb -> oldSb.Clear() |> ignore; pool.Enqueue(sb)
-            | _ -> ()
 
 module Agents =
 
@@ -37,16 +19,7 @@ module Agents =
       | Stop
 
   // Define types for UCI commands and responses
-  type UciCommand =
-      | Uci
-      | IsReady
-      | Position of string
-      | Go of string * string
-      | Quit
   
-  type CommandMessage =
-      | Schedule of UciCommand * int // UciCommand and delay in milliseconds
-      | StopScheduling
 
 
   type UciResponse =

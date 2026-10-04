@@ -36,11 +36,3 @@ module EPDTypes =
       static member create epd tbA Qa move =
         { EPD = epd; TBAnswer = tbA; QAnswer = Qa; Move = move }
 
-  type TBscore =
-    { Name: string
-      FailedPuzzles: ResizeArray<TablebaseEPDEntry>
-      CorrectPuzzles: ResizeArray<TablebaseEPDEntry>
-      TotalNumber: int
-      Correct: int
-      Wrong: int
-      Rating: float }

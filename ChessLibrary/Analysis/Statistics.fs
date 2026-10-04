@@ -11,8 +11,6 @@ open ChessUtilities
 module EloCalculator =
 
   // Define a custom exception type for errors
-  type ErrorFunctionException(message: string) =
-      inherit System.Exception(message)
 
   let log10 = log 10.0
 

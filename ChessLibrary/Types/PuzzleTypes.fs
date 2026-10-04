@@ -13,7 +13,6 @@ module PuzzleTypes =
 
     // Forward reference to EngineConfig - we need to reference the CoreTypes module
     // This type will be defined in CoreTypes.fs and we reference it here
-    type EngineConfigRef = System.Collections.Generic.Dictionary<string, obj>
 
     type PuzzleEngine =
     |Engine of ConfigName: string * Nodes: int
@@ -179,18 +178,6 @@ module PuzzleTypes =
         | ResultsInConsole of string
         | EretError of string
 
-    type BlunderRecord =
-      { Date: DateTime
-        FEN: string
-        Source: string option
-        Lc0Version: string option
-        NetworkUsed: string
-        Nodes: int64
-        IncorrectMove: string
-        CorrectMove: string
-        BlunderType: string
-        Comments: string option
-        DiscordContact: string option }
 
     type PlayerRecord = { Rating: float; Deviation: float; Volatility: float }
 

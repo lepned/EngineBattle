@@ -124,13 +124,3 @@ module PGNTypes =
             this.BlackEval
             this.MovePlayed
 
-    type MissedOpportunity =
-      | MissedWin of OpportunityDetail
-      | MissedDraw of OpportunityDetail
-      | NoneInGame
-      with
-        override this.ToString() =
-          match this with
-          | MissedWin op
-          | MissedDraw op -> op.ToString()
-          | NoneInGame -> "None missed opportunity found"
