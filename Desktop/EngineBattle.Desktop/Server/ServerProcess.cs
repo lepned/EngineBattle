@@ -98,6 +98,9 @@ internal sealed class ServerProcess : IDisposable
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            // the server writes UTF-8 (Console.OutputEncoding); the default here is the ANSI code page
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
         };
 
         foreach (var arg in launch.LeadingArgs) psi.ArgumentList.Add(arg);
