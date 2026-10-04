@@ -595,7 +595,9 @@ let ``Tournament PrepareNewGame warms up once per process, then sends ucinewgame
         Assert.Equal<string[]>(
             [| "position startpos"; "go nodes 1"; "ucinewgame"; "isready"; "ucinewgame"; "isready" |],
             (synced log eng.Write) |> Array.skip before)
-        // A restarted engine is a new process and warms up again.
+        // A restarted engine is a new process and warms up again. (quit first: StopProcess on its own
+        // waits 3 s for the engine to leave before it kills it)
+        eng.Quit()
         eng.StopProcess()
         eng.StartProcess()
         let restartedAt = (synced log eng.Write) |> Array.length
@@ -756,6 +758,8 @@ let ``Tournament SetMoveOverhead is sent once per process and not at all when th
         Assert.Equal<string[]>(
             [| "setoption name MoveOverheadMs value 50"; "setoption name MoveOverheadMs value 60"; "marker" |],
             (synced log eng.Write) |> Array.skip before)
+        // a restart (quit first: StopProcess on its own waits 3 s before it kills the engine)
+        eng.Quit()
         eng.StopProcess()
         eng.StartProcess()
         let restartedAt = (synced log eng.Write) |> Array.length
@@ -1212,7 +1216,7 @@ let ``Winboard analysis: infinite search is analyze, stop is exit, a timed searc
     finally quitAnalysis eng
 
 // ── Pondering ───────────────────────────────────────────────────────────────────────────────────
-// GameExecution.playWithPondering drives these calls; the hit/miss decision is its own. What
+// The game loop's player (Game/PlayerMachine.fs) drives these calls and decides hit or miss. What
 // Engine.fs owns is the traffic: the pondered position, "go ... ponder", then either "ponderhit"
 // (hit) or "stop" (miss), and the lines the caller reads back in between.
 
@@ -1229,10 +1233,29 @@ let private readFor (eng: ChessEngine) (ms: int) =
     lines.ToArray()
 
 [<Fact>]
+let ``an engine without a Ponder option is not sent one and does not ponder; one with it is and does`` () =
+    // EngineBattle sets Ponder itself for AllowPondering (withPonderOption); an engine that does not
+    // list the option (Ceres) plays without pondering instead of failing validation
+    let log = newLogPath ()
+    let eng = startTournament (config log "--no-ponder" [ "Ponder", box true ])
+    try
+        Assert.False(eng.SupportsPonder)
+        Assert.True(eng.PassedValidation)
+        Assert.DoesNotContain(synced log eng.Write, fun c -> c.Contains "Ponder")
+    finally stopTournament eng
+    let log2 = newLogPath ()
+    let eng2 = startTournament (config log2 "" [ "Ponder", box true ])
+    try
+        Assert.True(eng2.SupportsPonder)
+        Assert.Contains("setoption name Ponder value true", synced log2 eng2.Write)
+    finally stopTournament eng2
+
+[<Fact>]
 let ``Ponder hit: no bestmove before ponderhit, then the search answers`` () =
     let log = newLogPath ()
     let eng = startTournament (config log "" [])
     try
+        Assert.True(eng.SupportsPonder)
         let before = synced log eng.Write |> Array.length
         // White pondered on 1...e5 after its 1.e4: the position with the expected reply played.
         eng.Position "position startpos moves e2e4 e7e5"
@@ -1272,18 +1295,16 @@ let ``Ponder miss: stop brings one stale bestmove, which the caller reads before
     finally stopTournament eng
 
 [<Fact>]
-let ``Winboard has no ponder: go ponder becomes a plain go and ponderhit is dropped`` () =
-    // A quirk worth knowing before anyone turns AllowPondering on with a Winboard engine: the
-    // "ponder" is lost, so the engine searches (and moves) for the side to move on its board,
-    // and ponderhit never reaches it.
+let ``Winboard does not ponder: SupportsPonder is false and go ponder and ponderhit send nothing`` () =
+    // It used to: the "ponder" was lost, so a plain go made the engine search (and move) for the
+    // side to move on its board - the opponent's. The game loop asks SupportsPonder first.
     let log = newLogPath ()
     let eng = startTournament (wbConfig log "" [ "FakeInfinite", box true ] None)
     try
+        Assert.False(eng.SupportsPonder)
         let before = syncedWb log eng.Write |> Array.length
         eng.GoPonder ponderGo
         eng.PonderHit()
         eng.Stop()
-        Assert.Equal<string[]>(
-            [| "level 0 1 1"; "time 6000"; "otim 6000"; "go"; "?" |],
-            syncedWb log eng.Write |> Array.skip before)
+        Assert.Equal<string[]>([| "?" |], syncedWb log eng.Write |> Array.skip before)
     finally stopTournament eng

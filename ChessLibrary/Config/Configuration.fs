@@ -311,16 +311,39 @@ module Validation =
               let combinedPath = Path.Combine(config.NetworkPath, weightsPath)
               Errors [sprintf "Neural net in combined path %s or in direct path %s for %s does not exist" combinedPath weightsPath config.Name]
 
-  let validatePonderingAllowed (config: EngineConfig) (tourny: Tournament) =
-      if tourny.AllowPondering then
-          match config.Options |> Seq.tryFind (fun kvp -> kvp.Key.Contains "Ponder") with
-          | None -> Errors ["Ponder option not found in engine options for " + config.Name]
-          | Some nn ->
-              let ponderValue = nn.Value |> string
-              match ponderValue.ToLower() with
-              | "true" -> Ok
-              | _ -> Errors [sprintf "Ponder option in %s must be set to true, but found: %s" config.Name ponderValue]
-      else Ok
+  let private isWinboardConfig (config: EngineConfig) =
+      match config.Protocol with
+      | null -> false
+      | p -> let p = p.ToLowerInvariant() in p = "winboard" || p = "xboard"
+
+  /// The engine config as a tournament runs it: EngineBattle sets the UCI Ponder option itself, to
+  /// AllowPondering - the option only tells an engine whether it will be asked to ponder, so it can
+  /// plan its time, and only EngineBattle knows that. A Ponder in the def is replaced. An engine
+  /// without the option is not sent it (ChessEngine) and plays without pondering; a Winboard engine
+  /// does not ponder in EngineBattle and gets nothing. The def's own options are not touched.
+  let withPonderOption (allowPondering: bool) (config: EngineConfig) : EngineConfig =
+      if isWinboardConfig config then config
+      else
+          let options = System.Collections.Generic.Dictionary<string, obj>(StringComparer.OrdinalIgnoreCase)
+          if not (isNull config.Options) then
+              for kvp in config.Options do
+                  if not (kvp.Key.Equals("Ponder", StringComparison.OrdinalIgnoreCase)) then options.[kvp.Key] <- kvp.Value
+          options.["Ponder"] <- box allowPondering
+          { config with Options = options }
+
+  /// Whether the game loop asks the engine to ponder: only on a clock, and not with deviation
+  /// prevention or the value/policy tests. Its Ponder option is set to this.
+  let willBeAskedToPonder (tourny: Tournament) (config: EngineConfig) =
+      tourny.AllowPondering && not tourny.PreventMoveDeviation
+      && not tourny.TestOptions.ValueTest && not tourny.TestOptions.PolicyTest
+      && (try
+            let tc = tourny.TimeControl.GetTimeConfig config.TimeControlID
+            not tc.IsMoveTime && not tc.NodeLimit
+          with _ -> false)
+
+  /// The engine config with its Ponder option as this tournament runs it (withPonderOption).
+  let ponderOptionFor (tourny: Tournament) (config: EngineConfig) =
+      withPonderOption (willBeAskedToPonder tourny config) config
 
   let validateChessEngineCmds (config: EngineConfig) =
       [
@@ -475,7 +498,6 @@ module Validation =
           validateContempt tourny.EngineSetup.Engines
           validateEngineNames tourny.EngineSetup.Engines
           for config in tourny.EngineSetup.Engines do
-              validatePonderingAllowed config tourny
               validateChessEngineCmds config
       ] |> accumulateErrors
 

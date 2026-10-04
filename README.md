@@ -400,9 +400,11 @@ The `ResultReason` type defines various reasons for the outcome of a chess game.
 - **AdjudicatedEvaluation (AE)**: The game was adjudicated based on evaluation agreement.
 - **ForfeitLimits (FL)**: The game was forfeited due to time or node limits.
 - **Disconnected (DC)**: The game ended due to a disconnect.
+- **Stalled (ST)**: The engine stopped answering: no `readyok` to the `isready` sent before every move (15 s), or no `bestmove` within 10 s of a `stop`. It loses the game and is restarted before its next one.
 - **AdjudicatedByUser (AU)**: The game was adjudicated by a user.
 - **Cancel (XX)**: The game was canceled.
 - **Illegal (IM)**: The game ended due to an illegal move.
+- **Resignation (RS)**: A Winboard engine resigned.
 - **NotStarted (NS)**: The game has not started.
 
 Each `ResultReason` has a corresponding explanation that provides more details about the reason for the game's outcome.

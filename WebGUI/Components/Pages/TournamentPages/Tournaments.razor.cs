@@ -703,6 +703,41 @@ public partial class Tournaments
 				o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
 	}
 
+	/// AllowPondering only: every engine that will be asked to ponder is started once, as Ctrl+V
+	/// does. One that cannot ponder, or fails to start, stops the run - all play on equal terms or
+	/// not at all - and the dialog says which and what to do. Not run otherwise: the option is rare
+	/// and the check costs time.
+	private async Task<bool> CheckPonderingEngines()
+	{
+		// a second start while the engines are being checked is dropped, not run twice
+		if (checkingEngines)
+			return false;
+		// tournament.json as the run will read it, not this page's copy (it may predate an edit)
+		var t = ChessLibrary.Tournament.Manager.loadTournament();
+		if (t == null || !t.AllowPondering)
+			return true;
+		checkingEngines = true;
+		try
+		{
+			Snackbar.Add("AllowPondering: checking which engines can ponder...", Severity.Info);
+			var (ok, warnings, errors) = await Task.Run(() => ChessLibrary.Tournament.TournamentUtils.checkPonderingEngines(t));
+			foreach (var warning in warnings)
+				Snackbar.Add(warning, Severity.Warning, o => { o.RequireInteraction = true; o.ShowCloseIcon = true; });
+			if (!ok)
+			{
+				var opt = new DialogOptions { MaxWidth = MaxWidth.Medium, Position = DialogPosition.TopCenter };
+				var msg = string.Join(" ", errors);
+				await DialogService.ShowAsync<Components.Layout.ExperimentalLayout.DialogOkCancel>("The tournament cannot start", new DialogParameters { { "Result", msg } }, opt);
+			}
+			return ok;
+		}
+		finally
+		{
+			checkingEngines = false;
+		}
+	}
+	private bool checkingEngines;
+
 	private async Task StartTournamentFlow()
 	{
 		if (FeedMode)
@@ -716,6 +751,8 @@ public partial class Tournaments
 		}
 		await PrepareRun();
 		ShowOpeningWarnings();
+		if (!await CheckPonderingEngines())
+			return;
 		if (!await ConfirmCupResumeOrNew())
 			return;
 		if (!await ConfirmSwissResumeOrNew())

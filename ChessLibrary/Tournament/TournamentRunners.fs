@@ -404,7 +404,7 @@ let cup (strategy: PairingHelper.CupSeedingStrategy) (uniquePerMatchOnly: bool) 
 
       // NotStarted is Result.Empty from a cancellation race — not a played game either.
       let isCancelled = result.Reason = ResultReason.Cancel || result.Reason = ResultReason.NotStarted
-      let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ -> true | _ -> false
+      let forceStopEngines = match result.Reason with | ResultReason.Disconnected _ | ResultReason.Stalled _ -> true | _ -> false
       if not isCancelled then
         results <- result :: results
 

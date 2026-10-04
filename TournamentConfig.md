@@ -17,7 +17,7 @@ This document provides an overview of the `tournament.json` configuration file u
 - **MoveAnnotation**: Move annotation detail level in PGN output. Values: `"None"` (no annotation), `"Minimal"` (eval, nodes, speed, move time), `"Standard"` (11 fields), `"Full"` (18 fields). Backward compatible: `true` → Full, `false` → Standard.
 - **MinMoveTimeInMS**: Minimum move time in milliseconds.
 - **TournamentMode**: Tournament mode (RR, Cup, Swiss, Gauntlet, Ladder).
-- **AllowPondering**: Allow engines to ponder during the opponent’s time.
+- **AllowPondering**: Allow engines to ponder during the opponent’s time, in every tournament mode. EngineBattle sets each engine's UCI `Ponder` option itself (a `Ponder` in an engine def is overridden), so nothing has to be added to the defs: `true` for an engine that will be asked to ponder, `false` otherwise. Pondering needs a clock: there is none on a time per move (`St`) or a node limit, nor with `PreventMoveDeviation` or the value/policy tests. When it is on, every engine is started once before the tournament, and all of them must be able to ponder (a UCI engine with a `Ponder` option), so that all play on equal terms: one that cannot, or a Winboard engine, stops the tournament with a message saying which. An engine that fails to start stops it too.
 - **EngineStartupTimeoutInSec**: Engine startup timeout in seconds.
 - **PreventMoveDeviation**: Prevent move deviation option.
 - **Challengers**: Number of challengers in the tournament.

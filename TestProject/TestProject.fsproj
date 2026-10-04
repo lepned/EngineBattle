@@ -60,6 +60,10 @@
 		<Compile Include="WinboardTimeAndMoveTests.fs" />
 		<Compile Include="WinboardHandshakeAndOutputTests.fs" />
 		<Compile Include="DuplicateOpeningWarningTests.fs" />
+		<Compile Include="PonderValidationTests.fs" />
+		<Compile Include="GameClockTests.fs" />
+		<Compile Include="GamePlayerMachineTests.fs" />
+		<Compile Include="GamePlayerTests.fs" />
 		<Compile Include="EngineCharacterizationTests.fs" />
 		<Compile Include="EngineApiSurfaceTests.fs" />
 		<Compile Include="BoardApiSurfaceTests.fs" />

@@ -17,7 +17,7 @@ open ChessLibrary.RuntimeUtilities
 
 let private start = startPos
 
-/// How a tournament game drives the board (GameSetup + GameExecution): reset, load the start, book
+/// How a tournament game drives the board (GameSetup + Game/GameLoop.fs): reset, load the start, book
 /// moves through PlayOpeningMove, the opening kept aside and the list cleared, then every engine
 /// move added to UciMovesPlayed by hand and made with MakeMove - PlayUciMove is not used.
 let private tournamentBoard (book: string list) (moves: string list) =

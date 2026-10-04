@@ -157,7 +157,13 @@
 		<Compile Include="Tournament\GameAdjudication.fs" />
 		<Compile Include="Tournament\GameInitialization.fs" />
 		<Compile Include="Tournament\GameHelpers.fs" />
-		<Compile Include="Tournament\GameExecution.fs" />
+		<Compile Include="Tournament\Game\Clock.fs" />
+		<Compile Include="Tournament\Game\GoCommand.fs" />
+		<Compile Include="Tournament\Game\EngineLine.fs" />
+		<Compile Include="Tournament\Game\SearchStats.fs" />
+		<Compile Include="Tournament\Game\PlayerMachine.fs" />
+		<Compile Include="Tournament\Game\Player.fs" />
+		<Compile Include="Tournament\Game\GameLoop.fs" />
 		<Compile Include="Tournament\GamePersistence.fs" />
 		<Compile Include="Tournament\GameSetup.fs" />
 		<Compile Include="Tournament\TournamentRunners.fs" />

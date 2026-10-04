@@ -182,3 +182,16 @@ let ``a bare command is left for the PATH`` () =
     let t = (mapped [ "-engine"; "cmd=stockfish"; "tc=1+0"; "-engine"; "cmd=./lc0"; "tc=1+0" ]).Tournament
     Assert.Equal("stockfish", t.EngineSetup.Engines.Head.Path)
     Assert.Equal(Path.GetFullPath "./lc0", t.EngineSetup.Engines.[1].Path)
+
+[<Fact>]
+let ``ponder, as cutechess-cli writes it, lets every engine ponder - all or none`` () =
+    Assert.True((mapped (sf @ lc0 @ [ "-each"; "ponder" ])).Tournament.AllowPondering)
+    Assert.False((mapped (sf @ lc0)).Tournament.AllowPondering)
+    // pondering is the whole match's in EngineBattle, and a field where some ponder is not equal
+    Assert.Contains("some engines only", mapError (sf @ [ "ponder" ] @ lc0))
+    // ponder=on / ponder=off as well; off is off (it used to turn pondering on)
+    Assert.True((mapped (sf @ lc0 @ [ "-each"; "ponder=on" ])).Tournament.AllowPondering)
+    Assert.False((mapped (sf @ lc0 @ [ "-each"; "ponder=off" ])).Tournament.AllowPondering)
+    match MatchArgs.parse env (sf @ lc0 @ [ "-each"; "ponder=maybe" ]) with
+    | MatchArgs.Run _ -> Assert.Fail "ponder=maybe was accepted"
+    | _ -> ()

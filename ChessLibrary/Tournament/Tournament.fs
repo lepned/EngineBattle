@@ -47,7 +47,43 @@ module TournamentUtils =
         RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red "\nTournament validation failed"
       return valid
     } |> Async.StartAsTask
-  
+
+  /// With AllowPondering on, each engine that will be asked to ponder is started once before the
+  /// tournament, as the Ctrl+V validation does. Every one of them must be able to ponder (a UCI
+  /// engine that lists a Ponder option): pondering is time on the opponent's clock, and a field
+  /// where some ponder and some cannot is not played on equal terms - so the tournament does not
+  /// run, and the errors say which engine and what to do. It does not run either when an engine
+  /// fails to start or to validate. Returns (ok, warnings, errors). Only run when AllowPondering is
+  /// on - the option is rare, and starting every engine costs time.
+  let checkPonderingEngines (tourny: Tournament) : bool * string list * string list =
+    let failedToStart = ResizeArray<string>()
+    let noPonder = ResizeArray<string>()
+    // only the engines that will be asked to ponder (not under PreventMoveDeviation, not with a
+    // time per move) are started; none, and there is nothing to check
+    for engConfig in tourny.EngineSetup.Engines |> List.filter (Validation.willBeAskedToPonder tourny) do
+      try
+        let engine = EngineHelper.createEngine (Validation.withPonderOption true engConfig, None)
+        try
+          if not engine.PassedValidation then failedToStart.Add (sprintf "%s did not pass UCI validation (see the red lines in the console)" engConfig.Name)
+          if not engine.SupportsPonder then noPonder.Add engConfig.Name
+        finally
+          (try engine.Quit() with _ -> ())
+          (try engine.StopProcess() with _ -> ())
+      with ex ->
+        failedToStart.Add (sprintf "%s failed to start: %s" engConfig.Name ex.Message)
+    let warnings =
+      [ if tourny.AllowPondering && tourny.PreventMoveDeviation then
+          "AllowPondering has no effect with PreventMoveDeviation: those games are played without pondering." ]
+    let errors =
+      [ yield! failedToStart
+        if noPonder.Count > 0 then
+          sprintf "Pondering is on, but %s cannot ponder (no Ponder option, or a Winboard engine). Every engine must be able to ponder so that all play on equal terms: turn pondering off (AllowPondering in tournament.json, ponder in a match), or take %s out."
+            (String.Join(", ", noPonder)) (if noPonder.Count = 1 then "it" else "them") ]
+    for warning in warnings do RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Yellow warning
+    for error in errors do RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red error
+    if not errors.IsEmpty then RuntimeUtilities.ConsoleUtils.printInColor ConsoleColor.Red "The tournament does not run."
+    errors.IsEmpty, warnings, errors
+
 module Manager =  
 
   let mutable cupResumeRequested = false
@@ -176,6 +212,9 @@ module Manager =
     consoleMode
     (tryGetUserAdjudication: unit -> UserAdjudication option)
     (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage> option) =
+      // EngineBattle sets every UCI engine's Ponder option to whether it will be asked to ponder;
+      // in place - a copy of the record would hide its counters (CurrentGameNr, DeviationCounter)
+      tournament.EngineSetup.Engines <- tournament.EngineSetup.Engines |> List.map (Validation.ponderOptionFor tournament)
       logger.LogInformation (tournament.Summary())
       let timer = Stopwatch()
       timer.Start()

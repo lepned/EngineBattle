@@ -151,6 +151,7 @@ Only the fields EB renders are required; everything else falls back to `EngineCo
 | `XX`   | Cancelled |
 | `IM`   | Illegal move |
 | `DC`   | Disconnected |
+| `ST`   | Stalled (the engine stopped answering) |
 | `NS`   | Not started |
 | `AU`   | Adjudicated by user |
 | `RS`   | Resignation (a Winboard engine's `resign`) |

@@ -55,6 +55,8 @@ module MiscTypes =
         | AdjudicatedByUser
         /// The engine gave the game up (a Winboard engine's `resign`)
         | Resignation
+        /// The engine stopped answering: no readyok to a ping, or no bestmove after stop.
+        | Stalled of string
 
         override this.ToString() =
             match this with
@@ -72,6 +74,7 @@ module MiscTypes =
             | NotStarted -> "NS"
             | AdjudicatedByUser -> "AU"
             | Resignation -> "RS"
+            | Stalled _ -> "ST"
 
         member this.Explanation =
             match this with
@@ -89,6 +92,7 @@ module MiscTypes =
             | NotStarted -> "Not started"
             | AdjudicatedByUser -> "Adjudicated by user"
             | Resignation -> "Resignation"
+            | Stalled p -> sprintf "%s stalled" p
 
     let stringToResultReason (str: string): ResultReason =
         match str with
@@ -106,4 +110,5 @@ module MiscTypes =
         | "NS" -> NotStarted
         | "AU" -> AdjudicatedByUser
         | "RS" -> Resignation
+        | "ST" -> Stalled ""
         | _ -> failwith "Invalid ResultReason string"

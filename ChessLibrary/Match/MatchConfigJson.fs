@@ -113,6 +113,8 @@ module MatchConfigJson =
         w.WriteStartObject()
         w.WriteString("name", e.Name); w.WriteString("dir", e.Dir); w.WriteString("cmd", e.Cmd); w.WriteString("args", e.Args)
         w.WriteBoolean("restart", e.Restart)
+        // not in the reference's file: written only when on, so a match without it writes the same file
+        if e.Ponder then w.WriteBoolean("ponder", true)
         w.WriteStartArray "options"
         for k, v in e.Options do
           w.WriteStartArray()
@@ -257,6 +259,7 @@ module MatchConfigJson =
             yield
               { Name = str e' "name" ""; Dir = str e' "dir" ""; Cmd = str e' "cmd" ""; Args = str e' "args" ""
                 Restart = bool' e' "restart" false
+                Ponder = bool' e' "ponder" false
                 Options =
                   match prop e "options" with
                   | Some o -> [ for p in o.EnumerateArray() -> p.[0].GetString(), p.[1].GetString() ]

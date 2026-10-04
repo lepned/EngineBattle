@@ -19,6 +19,7 @@
 //   --no-uciok          answer "uci" with the id lines and options but never "uciok"
 //   --live-stats        advertise LogLiveStats (EngineBattle then reports HasLiveStat)
 //   --ansi              colour stderr lines the way Ceres does
+//   --no-ponder         no Ponder option in the uci answer (an engine that cannot ponder)
 //   --stderr-at-start N print N lines to stderr before reading anything
 //
 // Winboard / xboard mode (--xboard) speaks CECP instead:
@@ -63,10 +64,12 @@ static class FakeUciEngine
         ["FakeBoundLine"] = "false", ["FakeBestMoveNone"] = "false", ["FakeIgnoreQuit"] = "false",
         ["FakeStderrOnReady"] = "0", ["FakeMoveStats"] = "false", ["FakeFirstGoDelayMs"] = "0",
         ["FakeNoPv"] = "false", ["FakePvLength"] = "3", ["FakeMoveStatsRepeat"] = "1",
+        ["FakeStopDelayMs"] = "0", ["FakePrematurePonder"] = "false", ["FakePonderMove"] = "",
     };
 
     static bool _liveStats;
     static bool _ansi;
+    static bool _noPonder;
     static bool _firstGoDone;
     static List<string> _movesFromStart = [];
     static bool _startpos = true;
@@ -90,6 +93,7 @@ static class FakeUciEngine
                 case "--no-uciok": noUciOk = true; break;
                 case "--live-stats": _liveStats = true; break;
                 case "--ansi": _ansi = true; break;
+                case "--no-ponder": _noPonder = true; break;
                 case "--stderr-at-start": stderrAtStart = int.Parse(args[++i]); break;
                 case "--xboard": xboard = true; break;
                 case "--wb-features": wb.Features = args[++i]; break;
@@ -154,7 +158,7 @@ static class FakeUciEngine
         Out("option name Threads type spin default 1 min 1 max 64");
         Out("option name MoveOverheadMs type spin default 100 min 0 max 5000");
         Out("option name MultiPV type spin default 1 min 1 max 8");
-        Out("option name Ponder type check default false");
+        if (!_noPonder) Out("option name Ponder type check default false");
         Out("option name UCI_Chess960 type check default false");
         Out("option name UCI_ShowWDL type check default false");
         Out("option name WeightsFile type string default <empty>");
@@ -179,6 +183,9 @@ static class FakeUciEngine
         Out("option name FakeNoPv type check default false");
         Out("option name FakePvLength type spin default 3 min 1 max 20");
         Out("option name FakeMoveStatsRepeat type spin default 1 min 1 max 1000000");
+        Out("option name FakeStopDelayMs type spin default 0 min 0 max 60000");
+        Out("option name FakePrematurePonder type check default false");
+        Out("option name FakePonderMove type string default <empty>");
         if (!noUciOk) Out("uciok");
     }
 
@@ -388,13 +395,20 @@ static class FakeUciEngine
         }
         // Wait out the delay, or for "stop" when searching infinitely; stop always ends the wait.
         // A ponder search waits for ponderhit (then the delay) or stop.
+        // FakePrematurePonder: a ponder search that ends on its own, before ponderhit or stop -
+        // which UCI forbids and some engines do.
         var until = DateTime.UtcNow.AddMilliseconds(delayMs);
+        bool premature = ponder && Bool("FakePrematurePonder");
         bool Waiting() =>
-            ponder ? !_ponderHit || DateTime.UtcNow < _ponderHitUntil
-                   : infinite || DateTime.UtcNow < until;
+            ponder && !premature ? !_ponderHit || DateTime.UtcNow < _ponderHitUntil
+                                 : infinite || DateTime.UtcNow < until;
         while (!token.IsCancellationRequested && Waiting()) Thread.Sleep(2);
+        // FakeStopDelayMs: a stopped search takes this long to send its bestmove
+        if (token.IsCancellationRequested && Int("FakeStopDelayMs") > 0) Thread.Sleep(Int("FakeStopDelayMs"));
         if (Bool("FakeBestMoveNone")) { Out("bestmove (none)"); return; }
-        Out(pv.Length > 1 ? $"bestmove {best} ponder {pv[1]}" : $"bestmove {best}");
+        // FakePonderMove: the reply it predicts instead of the line's (a ponder miss to come)
+        var ponderMove = Options["FakePonderMove"] is { Length: > 0 } fpm ? fpm : (pv.Length > 1 ? pv[1] : "");
+        Out(ponderMove.Length > 0 ? $"bestmove {best} ponder {ponderMove}" : $"bestmove {best}");
     }
 
     static void StopSearch()

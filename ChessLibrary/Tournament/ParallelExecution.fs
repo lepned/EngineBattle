@@ -20,7 +20,6 @@ open ChessLibrary.TournamentPairing
 open ChessLibrary.TournamentTypes
 open ChessLibrary.GameHelpers
 open ChessLibrary.GameReplay
-open ChessLibrary.GameExecution
 open ChessLibrary.GamePersistence
 open ChessLibrary.TournamentRunners.TournamentUtils
 open System.Text.RegularExpressions
@@ -460,7 +459,7 @@ let parallelTournamentRun
       // Full per-game engine initialisation (MoveOverheadMs, restart checks, the GUI's opening
       // delay) is what the sequential runner this replaces did for the GUI; only the GUI with
       // one board gets it. Pooled engines in the console and in multi-board runs skip it but
-      // still get ucinewgame + readyok before every game, which is cheap - see playGeneric.
+      // still get ucinewgame + readyok before every game, which is cheap - see GameLoop.prepareEngines.
       let initPerGame = not tourny.ConsoleOnly && concurrency = 1
 
       if gamesLeftToPlay.Length = 0 then
@@ -635,12 +634,12 @@ let parallelTournamentRun
                               let gametimer = Stopwatch.GetTimestamp()
                               async {
                                   try
-                                      let replayWhite, replayBlack =
+                                      let replay =
                                           if tourny.PreventMoveDeviation then
                                               seedReplay pair localWhiteDict localBlackDict
-                                              Some localWhiteDict, Some localBlackDict
-                                          else None, None
-                                      return! playGeneric (not initPerGame) replayWhite replayBlack sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
+                                              Some (localWhiteDict, localBlackDict)
+                                          else None
+                                      return! Game.GameLoop.play (not initPerGame) replay sb cts logger tourny currentBoard wEng bEng pair adjudicate gameCallback
                                   with
                                   | ex -> return handleGameException logger ex cts gametimer currentBoard wEng bEng pair  }
 
@@ -703,7 +702,7 @@ let parallelTournamentRun
                               verbose (sprintf "Gate: worker %d finished round %s" i pair.RoundNr)
                           // The pause the sequential runner gave the GUI after every game: the final
                           // position stays on the board for DelayBetweenGames before the next game
-                          // starts. initEngines also waits this long at the NEXT start, in parallel
+                          // starts. GameLoop.prepareEngines also waits this long at the NEXT start, in parallel
                           // with readyok, which is what the old runner did too - but that wait is
                           // invisible, the board has already moved on. The console sets it to zero.
                           // After Release, so a repeat of this key is not held for the pause as well.

@@ -2345,6 +2345,7 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
         | "Not started" -> "not-started"
         | "Adjudicated by user" -> "adj-user"
         | s when s.EndsWith(" Disconnected") -> "disconn"
+        | s when s.EndsWith(" stalled") -> "stalled"
         | other -> other
 
     /// Define the MailboxProcessor for handling updates asynchronously
@@ -2835,13 +2836,16 @@ Puzzle Error: {PuzzleRunners.unknownSubTestsMessage unknown}"
                           printfn "Ladder mode: %d engines, %d game pairs per match" engineList.Length (if obj.ReferenceEquals(tournament.LadderOptions, null) then 4 else tournament.LadderOptions.GamePairsPerMatch)
                         for warning in Validation.duplicateOpeningWarnings tournament do
                           ConsoleUtils.printInColor ConsoleColor.Yellow warning
-                        printfn "Running tournament with config file: %s" configFile
-                        use host = createHost()
-                        host.Start()    
-                        let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
-                        let logger = loggerFactory.CreateLogger("EngineBattle Console logger") // Using a general category name
-                        runTournament tournament logger
-                        host.StopAsync().Wait()                    
+                        // AllowPondering: every engine started once first, to see which can ponder
+                        let enginesOk = not tournament.AllowPondering || (let ok, _, _ = Tournament.TournamentUtils.checkPonderingEngines tournament in ok)
+                        if enginesOk then
+                          printfn "Running tournament with config file: %s" configFile
+                          use host = createHost()
+                          host.Start()
+                          let loggerFactory = host.Services.GetService(typeof<ILoggerFactory>) :?> ILoggerFactory
+                          let logger = loggerFactory.CreateLogger("EngineBattle Console logger") // Using a general category name
+                          runTournament tournament logger
+                          host.StopAsync().Wait()
                     | None -> 
                         printfn "Tournamentjson config file not found..."                        
                 | Verb (Benchmark path) ->

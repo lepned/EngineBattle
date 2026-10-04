@@ -139,12 +139,13 @@ module internal EngineProcess =
 
   // ── The engine process ─────────────────────────────────────────────────────────────────────────
 
-  /// How the engine's stdout is read: pushed line by line to a handler on the process's reader
-  /// thread (the analysis wrapper), or pulled by the caller through StandardOutput (the
-  /// tournament wrapper).
+  /// How the engine's stdout is read, always on the process's reader thread: pushed line by line
+  /// to a handler (the analysis wrapper), or into a channel (the tournament wrapper), which
+  /// completes when the output ends. A channel read can be cancelled cleanly; a cancelled
+  /// StandardOutput read stays pending on the pipe.
   type OutputMode =
     | Push of onLine: (string -> unit)
-    | Pull
+    | Lines of ChannelWriter<string>
 
   /// One engine process: started in the engine's own folder with its arguments, stdin written a
   /// line at a time under a lock (LF on every platform, flushed at once), stderr kept in the
@@ -190,14 +191,15 @@ module internal EngineProcess =
       | Push onLine ->
           proc.OutputDataReceived.Add(fun args ->
             if not (String.IsNullOrEmpty args.Data) then onLine args.Data)
-      | Pull -> ()
+      | Lines writer ->
+          proc.OutputDataReceived.Add(fun args ->
+            if isNull args.Data then writer.TryComplete() |> ignore
+            else writer.TryWrite args.Data |> ignore)
       if proc.Start() then
         proc.StandardInput.NewLine <- "\n"
         proc.StandardInput.AutoFlush <- true
         proc.BeginErrorReadLine()
-        match mode with
-        | Push _ -> proc.BeginOutputReadLine()
-        | Pull -> ()
+        proc.BeginOutputReadLine()
         true
       else false
 
@@ -206,7 +208,6 @@ module internal EngineProcess =
     member _.ExitCode = exitCode
     /// Throws when the process was never started or has been disposed, as Process.HasExited does.
     member _.HasExited = proc.HasExited
-    member _.StandardOutput = proc.StandardOutput
 
     member _.WriteLine(line: string) =
       lock writeLock (fun () -> proc.StandardInput.WriteLine line)

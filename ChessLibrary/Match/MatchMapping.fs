@@ -78,6 +78,12 @@ module MatchMapping =
     let notes = ResizeArray<string>()
     let note (s: string) = notes.Add s
 
+    // ponder: all engines or none - pondering is the tournament's (AllowPondering), and a field
+    // where some ponder and others do not is not played on equal terms
+    let pondering = p.Engines |> List.filter (fun e -> e.Ponder) |> List.length
+    match (if pondering > 0 && pondering < p.Engines.Length then Some "Error: ponder is given to some engines only. EngineBattle lets all engines ponder or none: use -each ponder, or leave it out." else None) with
+    | Some e -> Error e
+    | None ->
     // one time setting per distinct engine limit
     let limits = p.Engines |> List.map timeConfig
     match limits |> List.tryPick (function Error e -> Some e | Ok _ -> None) with
@@ -173,6 +179,7 @@ module MatchMapping =
           TournamentMode = if gauntlet then "Gauntlet" else "RR"
           Challengers = seeds
           Rounds = t.Rounds
+          AllowPondering = (pondering > 0)
           DelayBetweenGames = TimeSpan.FromMilliseconds(float (max 0 t.Wait))
           MoveOverhead = TimeSpan.FromMilliseconds(float moveOverhead)
           EngineStartupTimeoutInSec = int (Math.Ceiling(float t.StartupMs / 1000.0))

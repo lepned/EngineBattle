@@ -14,7 +14,6 @@ open ChessLibrary.Engine
 open ChessLibrary.TournamentTypes
 open ChessLibrary.GameHelpers
 open ChessLibrary.GameReplay
-open ChessLibrary.GameExecution
 open ChessLibrary.CustomException
 
 // ============================================================================
@@ -159,7 +158,7 @@ let createExceptionContext
 // Game Execution with Unified Dispatch
 // ============================================================================
 
-/// Execute game with unified dispatch (play, playWithPondering, or playDoNotDeviate)
+/// Plays a game on the game loop; deviation prevention needs both replays.
 let executeGame
     (tourny: Tournament)
     (replayDictWhite: ReferenceGameReplay option)
@@ -177,20 +176,13 @@ let executeGame
     let gametimer = Stopwatch.GetTimestamp()
     let res =
       try
-          if tourny.PreventMoveDeviation then
-              match replayDictWhite, replayDictBlack with
-              | Some dictWhite, Some dictBlack ->
-                  playDoNotDeviate dictWhite dictBlack sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
-                  |> Async.RunSynchronously
-              | _ ->
-                  failwith "Replay dictionaries required for PreventMoveDeviation mode"
-          else
-              if tourny.AllowPondering then
-                  playWithPondering sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
-                  |> Async.RunSynchronously
-              else
-                  play sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
-                  |> Async.RunSynchronously
+          let replay =
+              match tourny.PreventMoveDeviation, replayDictWhite, replayDictBlack with
+              | true, Some white, Some black -> Some (white, black)
+              | true, _, _ -> failwith "Replay dictionaries required for PreventMoveDeviation mode"
+              | false, _, _ -> None
+          Game.GameLoop.play false replay sb cts logger tourny board engine1 engine2 pair tryGetUserAdjudication callback
+          |> Async.RunSynchronously
       with
       | :? EngineStartupException as ex ->
           let context = createExceptionContext engine1 engine2 pair board tourny
@@ -205,43 +197,3 @@ let executeGame
       if tourny.TotalGames > 0 then sprintf "Game %d/%d: " tourny.CurrentGameNr tourny.TotalGames else ""
     logger.LogInformation("{GameLabel}{GameResult}", gameLabel, res.ToString())
     res
-
-/// Execute game without deviation prevention
-let executeGameSimple
-    (tourny: Tournament)
-    (sb: StringBuilder)
-    (cts: CancellationTokenSource)
-    (logger: ILogger)
-    (board: Board)
-    (engine1: ChessEngine)
-    (engine2: ChessEngine)
-    (pair: Pairing)
-    (tryGetUserAdjudication: unit -> UserAdjudication option)
-    (callback: Update -> unit)
-    : Result =
-    executeGame tourny None None sb cts logger board engine1 engine2 pair tryGetUserAdjudication callback
-
-// ============================================================================
-// Full Game Processing
-// ============================================================================
-
-/// Process a completed game: build metadata, add to replay, write PGN
-let processCompletedGame
-    (tourny: Tournament)
-    (pair: Pairing)
-    (result: Result)
-    (roundTxt: string)
-    (board: Board)
-    (sb: StringBuilder)
-    (replayList: ResizeArray<GameReplay>)
-    (pgnAgent: MailboxProcessor<ChessLibrary.FullPGNParser.PgnGameMessage>)
-    (cts: CancellationTokenSource)
-    (logger: ILogger)
-    : GameMetadata =
-    let gameData = buildGameMetadata tourny pair result roundTxt
-    addToReplayList replayList tourny result gameData board.UciMovesPlayed
-    let moveSection = sb.ToString()
-    writeGameToPgn pgnAgent tourny gameData moveSection result cts
-    if tourny.VerboseLogging then
-        logger.LogInformation(gameMetadataSummary gameData)
-    gameData

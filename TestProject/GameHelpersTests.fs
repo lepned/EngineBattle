@@ -515,23 +515,3 @@ let ``GetFullTimeInMS adds fixed and increment past a day`` () =
                 Nodes = 0; MoveTime = TimeSpan.Zero; MovesToGo = 0 }
     let tc = { TimeConfigs = [cfg]; WmovesToGo = 0; BmovesToGo = 0 }
     Assert.Equal(108_030_000, tc.GetFullTimeInMS 1)
-
-[<Fact>]
-let ``clockAfterMove awards the increment exactly once`` () =
-    // 30s left, 2s increment, 10s spent -> 22s. The value published to the GUI and the wire
-    // used to add the increment a second time and read 24s for the whole game; every delta
-    // between moves was still right, which is why a constant offset went unnoticed.
-    Assert.Equal(TimeSpan.FromSeconds 22.0,
-                 clockAfterMove (TimeSpan.FromSeconds 10.0) (TimeSpan.FromSeconds 30.0) (TimeSpan.FromSeconds 2.0))
-
-[<Fact>]
-let ``clockAfterMove keeps the sign when a move overruns`` () =
-    // The overrun is the point: it is what the loss-on-time check reads. Clamping belongs
-    // where the clock is stored, not in the arithmetic.
-    Assert.Equal(TimeSpan.FromSeconds -10.0,
-                 clockAfterMove (TimeSpan.FromSeconds 40.0) (TimeSpan.FromSeconds 30.0) TimeSpan.Zero)
-
-[<Fact>]
-let ``clockAfterMove works past a day`` () =
-    Assert.Equal(TimeSpan.FromHours 29.5,
-                 clockAfterMove (TimeSpan.FromMinutes 30.0) (TimeSpan.FromHours 30.0) TimeSpan.Zero)

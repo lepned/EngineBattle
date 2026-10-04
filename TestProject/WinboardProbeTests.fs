@@ -48,6 +48,20 @@ let private readLinesWithTimeout (queue: System.Collections.Concurrent.Concurren
         Thread.Sleep(25)
     lines |> Seq.toList
 
+/// As readLinesWithTimeout, but done as soon as a line ends the feature negotiation (done=1);
+/// timeoutMs is the cap, not the wait.
+let private readFeaturesWithTimeout (queue: System.Collections.Concurrent.ConcurrentQueue<string>) (timeoutMs: int) =
+    let lines = ResizeArray<string>()
+    let sw = Stopwatch.StartNew()
+    let mutable finished = false
+    while not finished && sw.ElapsedMilliseconds < int64 timeoutMs do
+        let mutable line = null
+        while queue.TryDequeue(&line) do
+            lines.Add(line)
+            if line.Contains "done=1" then finished <- true
+        if not finished then Thread.Sleep(25)
+    lines |> Seq.toList
+
 // ===== Pure function tests =====
 
 [<Fact>]
@@ -662,7 +676,7 @@ let ``Crafty 25.2 is recognized as protover 2 engine after feature negotiation``
                     if isNull line then () else outQueue.Enqueue(line))
         proc.StandardInput.WriteLine("xboard")
         proc.StandardInput.WriteLine("protover 2")
-        let outLines = readLinesWithTimeout outQueue 3000
+        let outLines = readFeaturesWithTimeout outQueue 3000
         for line in outLines do
             handler.ProcessOutput(line) |> ignore
         Assert.True(handler.IsProtover2, "Handler should be marked as protover 2 after feature negotiation with Crafty 25.2.")
@@ -689,7 +703,7 @@ let ``Crafty setboard feature is detected`` () =
                     if isNull line then () else outQueue.Enqueue(line))
         proc.StandardInput.WriteLine("xboard")
         proc.StandardInput.WriteLine("protover 2")
-        let outLines = readLinesWithTimeout outQueue 3000
+        let outLines = readFeaturesWithTimeout outQueue 3000
         for line in outLines do
             handler.ProcessOutput(line) |> ignore
         Assert.True(handler.Features.SetBoard, "Crafty should advertise setboard=1 in features")

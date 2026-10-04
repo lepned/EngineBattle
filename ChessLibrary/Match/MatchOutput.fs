@@ -38,6 +38,7 @@ module MatchOutput =
     | Illegal -> $"{loser} makes an illegal move"
     | Resignation -> $"{loser} resigns"
     | Disconnected name -> $"{colour (name = white)} disconnects"
+    | Stalled name -> $"{colour (name = white)}'s connection stalls"
     | Cancel
     | NotStarted -> "Game interrupted"
 
@@ -228,7 +229,8 @@ module MatchOutput =
           write (finished id g.White g.Black g.Result.Result (annotation g.White g.Result))
           match g.Result.Reason with
           | ForfeitLimits -> track (if g.Result.Result = "1-0" then g.Black else g.White) true
-          | Disconnected name -> track name false
+          | Disconnected name
+          | Stalled name -> track name false
           | _ -> ()
           if not (order.ContainsKey g.White && order.ContainsKey g.Black) then None   // not this match's game
           else

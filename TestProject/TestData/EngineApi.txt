@@ -47,6 +47,7 @@ type ChessLibrary.Engine.ChessEngine
   Write(s: System.String) : System.Void
   new(ChessLibrary.TypesDef.CoreTypes.EngineConfig, System.Collections.Generic.IEnumerable<System.String>, Microsoft.FSharp.Core.FSharpOption<Microsoft.Extensions.Logging.ILogger>)
   prop BenchmarkLC0Cmd : System.String { get }
+  prop CanPing : System.Boolean { get }
   prop CanReuseWinboard : System.Boolean { get }
   prop Commands : System.Collections.Generic.List<System.String> { get }
   prop Config : ChessLibrary.TypesDef.CoreTypes.EngineConfig { get }
@@ -65,6 +66,7 @@ type ChessLibrary.Engine.ChessEngine
   prop Process : System.Diagnostics.Process { get }
   prop ReadyFailure : System.String { get }
   prop ShowCommands : Microsoft.FSharp.Core.FSharpFunc<Microsoft.FSharp.Core.Unit, Microsoft.FSharp.Core.Unit> { get }
+  prop SupportsPonder : System.Boolean { get }
   prop UciIdName : System.String { get }
 type ChessLibrary.Engine.ChessEngineWithUCIProcessing
   ClearSearchMoves() : System.Void

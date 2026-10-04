@@ -101,7 +101,7 @@ let private pgnWithVariations (seed: int) (plies: int) (every: int) (varLen: int
 
 // ── Scenarios ───────────────────────────────────────────────────────────────────────────────────
 
-/// A tournament game as GameExecution plays it: UciMovesPlayed by hand, MakeMove, and the
+/// A tournament game as the game loop plays it: UciMovesPlayed by hand, MakeMove, and the
 /// repetition count and claim after every move.
 let private tournamentGame name (game: (string * string)[]) runs =
     measure name game.Length "plies" 20 runs (fun () ->

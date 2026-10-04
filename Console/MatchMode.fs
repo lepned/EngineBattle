@@ -116,6 +116,16 @@ let run (args: string list) (viaVerb: bool) : int =
     try
         try
             for note in mapped.Notes do log.WriteLine("Note: " + note)
+            // -each ponder: every engine is started once first, as a tournament with AllowPondering
+            // does, and all must be able to ponder (their start-up goes to the log, not stdout)
+            let ponderErrors =
+                if tourny.AllowPondering then (let _, _, errors = Tournament.TournamentUtils.checkPonderingEngines tourny in errors)
+                else []
+            match ponderErrors with
+            | _ :: _ ->
+                for e in ponderErrors do emit ("Error: " + e + "\n")
+                1
+            | [] ->
             match Path.GetDirectoryName(Path.GetFullPath tourny.PgnOutPath) with
             | null | "" -> ()
             | dir -> Directory.CreateDirectory dir |> ignore
@@ -192,8 +202,8 @@ let run (args: string list) (viaVerb: bool) : int =
             // What the reference never checks, on stdout since it changes the match: fewer games at
             // once when the engines do not fit in memory (Lc0 and Ceres grow with their network),
             // and more search threads than the machine has - games x the thinking engine's Threads
-            // (without ponder one engine per game thinks). Threads the command line leaves to the
-            // engine count as 1.
+            // (without ponder one engine per game thinks, with it both). Threads the command line
+            // leaves to the engine count as 1.
             if not interrupted && tourny.TestOptions.NumberOfGamesInParallel > 1 then
                 let games = ParallelExecution.concurrencyFor tourny
                 if games < tourny.TestOptions.NumberOfGamesInParallel then
@@ -205,6 +215,7 @@ let run (args: string list) (viaVerb: bool) : int =
                         | Some(_, v) -> (match Int32.TryParse v with | true, n -> max 1 n | _ -> 1)
                         | None -> 1)
                     |> List.fold max 1
+                    |> (fun n -> if tourny.AllowPondering then 2 * n else n)
                 if games * threads > Environment.ProcessorCount then
                     emit $"Warning: {games} games x {threads} threads = {games * threads} search threads on {Environment.ProcessorCount} hardware threads.\n"
             if not interrupted then

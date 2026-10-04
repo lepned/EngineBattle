@@ -75,7 +75,7 @@ For engines using the Winboard/XBoard protocol, you can optionally specify `Winb
 - **Threads**: Number of threads the engine should use.
 - **Hash**: Size of the hash memory in megabytes.
 - **SyzygyPath**: The directory path for Syzygy tablebases.
-- **Ponder**: Enables or disables the engine's pondering feature.
+- **Ponder**: Set by EngineBattle from the tournament's `AllowPondering`; a value here is overridden in tournaments.
 - **UCI_ShowWDL**: Determines whether the engine displays Windows/Draws/Loss statistics in UCI mode.
 - Any other UCI option you want to pass to the engine.
 

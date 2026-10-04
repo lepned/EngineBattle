@@ -107,6 +107,11 @@ The command line is taken as written; the match is EngineBattle's:
   PGN options of `-pgnout` other than `file=` are accepted and not needed. Without `-pgnout` the
   games go to `EngineBattle/match_<yyyyMMdd_HHmmss>.pgn` in the temp folder (`%TEMP%` on
   Windows), and the `-log` file says where.
+- **Pondering.** `ponder`, as cutechess-cli writes it (`-each ponder`), lets the engines ponder on
+  the opponent's time; EngineBattle sets their UCI `Ponder` option itself. It is all engines or
+  none: given to some only, the match does not start. Every engine is started once before the
+  match, and one that cannot ponder (no `Ponder` option) stops it with an error, so that all play
+  on equal terms. Pondering doubles the search threads in the warning below.
 - **Gauntlet.** `-seeds` N engines are the challengers; they do not play each other.
 - **Engines** start in their own folder and are reused from game to game. `-startup-ms` is how
   long an engine has to start (default 10000, rounded up to whole seconds).
@@ -127,7 +132,7 @@ only limit.
 
 **cutechess-cli command lines** run as far as the reference (the tool whose command line `match`
 takes) runs them, no further. Its command line is written in cutechess-cli's style
-(`-engine cmd= name=`, `-each tc= proto=uci`, `-rounds`, `-games`, `-repeat`,
+(`-engine cmd= name=`, `-each tc= proto=uci ponder`, `-rounds`, `-games`, `-repeat`,
 `-openings file= format= order= plies=`, `-draw`, `-resign`, `-sprt`, `-concurrency`, `-event`,
 `-site`, `-srand`, `-wait`, `-recover`, `-tournament`), and `-output format=cutechess` prints
 cutechess's report lines. cutechess-cli's own forms are errors there and here:

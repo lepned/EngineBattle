@@ -6,6 +6,7 @@ open System.Diagnostics
 open System.IO
 open System.Threading
 open System.Threading.Tasks
+open System.Threading.Channels
 open System.Runtime.InteropServices
 open Microsoft.FSharp.Core.Operators.Unchecked
 open Microsoft.Extensions.Logging
@@ -87,9 +88,11 @@ module Engine =
   /// The process a ChessEngine is running now, and what has been done to it. A restart makes a new
   /// one, so a warm-up or a MoveOverheadMs sent to the old process never counts for the new one.
   [<AllowNullLiteral>]
-  type private RunningEngine(transport: EngineProcess.Transport) =
+  type private RunningEngine(transport: EngineProcess.Transport, output: Channel<string>) =
     member _.Transport = transport
     member _.Process = transport.Process
+    /// The engine's stdout, line by line (EngineProcess.Lines).
+    member _.Output = output
     /// The once-per-process `go nodes 1` has run (ChessEngine.WarmUp).
     member val WarmedUp = false with get, set
     /// The MoveOverheadMs value this process has been sent.
@@ -699,7 +702,7 @@ module Engine =
           let t =
             EngineProcess.Transport(config, arguments, stderr,
               (fun msg -> printfn "[%s] %s" name msg),
-              (fun line -> printfn "[STDERR %s]: %s" name line),
+              (fun line -> printfn "[STDERR %s]: %s" name (EngineProcess.stripAnsi line)),
               (fun code ->
                 if generation = startGeneration then
                   if code.IsSome then lastExitCode <- code
@@ -709,9 +712,9 @@ module Engine =
                       // printfn: visible even where logging is filtered.
                       else printfn "⚠️ Engine %s exited unexpectedly with code %d" name c
                   | _ -> ()))
-          running <- RunningEngine t
-          // Output is read by the caller (ReadLine*), not by events.
-          if not (t.Start EngineProcess.Pull) then printfn "\n❌ %s could not be started" name
+          let output = Channel.CreateUnbounded<string>()
+          running <- RunningEngine(t, output)
+          if not (t.Start (EngineProcess.Lines output.Writer)) then printfn "\n❌ %s could not be started" name
 
       let hasExited () =
         try isNull running || running.Process.HasExited
@@ -747,8 +750,15 @@ module Engine =
         with ex ->
           printfn "Error writing to engine %s: %s" name ex.Message
 
-      let read () = running.Process.StandardOutput.ReadLine()
-      let readAsync () = running.Process.StandardOutput.ReadLineAsync()
+      /// The next raw line; null when the output has ended. Cancellation throws.
+      let readRaw (token: CancellationToken) =
+        let output = running.Output
+        task {
+          try return! output.Reader.ReadAsync(token).AsTask().ConfigureAwait(false)
+          with :? ChannelClosedException -> return null
+        }
+      let read () = (readRaw CancellationToken.None).GetAwaiter().GetResult()
+      let readAsync () = readRaw CancellationToken.None
 
       /// The next line (Winboard output translated), or null on cancellation, end of stream or a
       /// read error.
@@ -759,8 +769,8 @@ module Engine =
       let readAsyncWithTimeout (token: CancellationToken) =
         task {
           try
-            let! line = running.Process.StandardOutput.ReadLineAsync(token).ConfigureAwait(false)
-            return inboundOrRaw protocol line
+            let! line = (readRaw token).ConfigureAwait(false)
+            return if isNull line then null else inboundOrRaw protocol line
           with
           | :? OperationCanceledException -> return null
           // StreamReader can throw this when the underlying stream is closed or cancelled.
@@ -872,7 +882,7 @@ module Engine =
         task {
           match protocol with
           | Winboard handler ->
-              return! Async.StartAsTask(initializeWinboard running.Process handler logger name FeatureTimeoutMs (forceV1 config)).ConfigureAwait(false)
+              return! Async.StartAsTask(initializeWinboard running.Process readRaw handler logger name FeatureTimeoutMs (forceV1 config)).ConfigureAwait(false)
           | Uci ->
               use cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(float 120000))
               write "uci"
@@ -924,24 +934,30 @@ module Engine =
             assignThread ()
             logDebug (sprintf "Engine %s started successfully." name)
           for cmd in createVerifiedOptions initCommands do
+            // Ponder is EngineBattle's to set (Configuration.withPonderOption): an engine without the
+            // option is not sent it, and does not ponder (SupportsPonder)
             match UciOption.parseSetOptionCommand cmd with
-            | Some (optName, value) ->
-                let valid = UciOption.validateSetOption optionsMap (optName, value)
-                if valid then
-                  match UciOption.getNoneDefaultSetOption optionsMap (optName, value) with
-                  | Some (n, def, v) -> nonDefaultValues.[n] <- (def, v)
-                  | None -> ()
-                // QUIRK (pinned): `validate` is still true here even for an engine made by
-                // createEngineWithoutValidation, which turns it off after the constructor.
-                if validate && not valid then
+            | Some (optName, _) when optName.Equals("Ponder", StringComparison.OrdinalIgnoreCase) && not (optionsMap.ContainsKey optName) ->
+                logDebug (sprintf "Engine %s has no Ponder option: not sent, the engine does not ponder" name)
+            | parsed ->
+              match parsed with
+              | Some (optName, value) ->
+                  let valid = UciOption.validateSetOption optionsMap (optName, value)
+                  if valid then
+                    match UciOption.getNoneDefaultSetOption optionsMap (optName, value) with
+                    | Some (n, def, v) -> nonDefaultValues.[n] <- (def, v)
+                    | None -> ()
+                  // QUIRK (pinned): `validate` is still true here even for an engine made by
+                  // createEngineWithoutValidation, which turns it off after the constructor.
+                  if validate && not valid then
+                    passed <- false
+                    ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." optName value)
+              | None ->
                   passed <- false
-                  ConsoleUtils.printInColor ConsoleColor.Red (sprintf "The option '%s' with value '%s' is invalid." optName value)
-            | None ->
-                passed <- false
-                ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
-            write cmd
-            assignNetworkName cmd
-            commands.Add cmd
+                  ConsoleUtils.printInColor ConsoleColor.Red (sprintf "Invalid setoption command: %s" cmd)
+              write cmd
+              assignNetworkName cmd
+              commands.Add cmd
           match optionsMap.TryGetValue "name", optionsMap.TryGetValue "author" with
           | (true, nameOpt), (true, authorOpt) ->
               match nameOpt.OptionType, authorOpt.OptionType with
@@ -1008,6 +1024,13 @@ module Engine =
       member val IsReference = false with get, set
       /// True if the Winboard engine supports reuse (per CECP, defaults to true). Always true for UCI.
       member _.CanReuseWinboard = canReuse protocol
+      /// Whether the engine can ponder the UCI way (go ... ponder, ponderhit): a UCI engine that
+      /// lists a Ponder option. Winboard engines do not - CECP pondering is the engine's own
+      /// business (hard/easy), and EngineBattle sends easy.
+      member _.SupportsPonder = not (isWinboard protocol) && optionsMap.ContainsKey "Ponder"
+      /// Whether a game pings it before every go: UCI only. Winboard pongs are not reliable
+      /// (WaitForReadyOkAsync gives them a second, then assumes ready).
+      member _.CanPing = not (isWinboard protocol)
       member this.GetDefaultOptions() = getAllDefaultOptions ()
 
       /// QUIRK (pinned): the LAST option whose name contains `name` wins, so "hash" finds
@@ -1126,10 +1149,17 @@ module Engine =
         shutdownRequested <- true
         this.Send "quit"
 
-      member this.PonderHit() = this.Send "ponderhit"
+      /// Nothing for a Winboard engine: it does not ponder the UCI way (SupportsPonder).
+      member this.PonderHit() =
+        if isWinboard protocol then logDebug (sprintf "Engine %s: ponderhit not sent (Winboard engines do not ponder in EngineBattle)" name)
+        else this.Send "ponderhit"
 
-      /// The full ponder command ("go wtime ... ponder"), written as given.
-      member this.GoPonder command = this.Send command
+      /// The full ponder command ("go wtime ... ponder"), written as given. Nothing for a Winboard
+      /// engine: the protocol has no "go ponder", and the plain go it became searched for the side
+      /// to move on the engine's board - the opponent's.
+      member this.GoPonder (command: string) =
+        if isWinboard protocol then logDebug (sprintf "Engine %s: ponder not sent (Winboard engines do not ponder in EngineBattle)" name)
+        else this.Send command
 
       member this.ReadLineAsync() = readAsync ()
       member this.ReadLineAsyncWithTimeout(token: CancellationToken) = readAsyncWithTimeout token

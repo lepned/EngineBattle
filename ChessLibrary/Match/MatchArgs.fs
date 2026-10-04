@@ -39,6 +39,8 @@ module MatchArgs =
       Cmd: string
       Args: string
       Restart: bool
+      /// `ponder` (cutechess-cli's engine option): ponder on the opponent's time
+      Ponder: bool
       /// `option.X=v` pairs in command-line order; a repeated X keeps both, the last one wins in the engine
       Options: (string * string) list
       Tc: TcLimits
@@ -46,7 +48,7 @@ module MatchArgs =
       Plies: int64
       Variant: VariantType }
     static member Empty =
-      { Name = ""; Dir = ""; Cmd = ""; Args = ""; Restart = false; Options = []
+      { Name = ""; Dir = ""; Cmd = ""; Args = ""; Restart = false; Ponder = false; Options = []
         Tc = TcLimits.Zero; Nodes = 0L; Plies = 0L; Variant = Standard }
     /// getEnginePath: dir/cmd, or cmd.
     member e.EnginePath = if e.Dir = "" then e.Cmd else Path.Combine(e.Dir, e.Cmd)
@@ -318,6 +320,10 @@ module MatchArgs =
     | "restart" ->
       if value <> "on" && value <> "off" then fail $"Invalid parameter (must be either \"on\" or \"off\"): {value}"
       { e with Restart = (value = "on") }
+    | "ponder" ->
+      // bare (cutechess-cli's form), or ponder=on / ponder=off
+      if value <> "" && value <> "on" && value <> "off" then fail $"Invalid parameter (must be either \"on\" or \"off\"): {value}"
+      { e with Ponder = (value <> "off") }
     | k when k.StartsWith "option." -> { e with Options = e.Options @ [ k.Substring(k.IndexOf '.' + 1), value ] }
     | "proto" ->
       if value <> "uci" then fail "Unsupported protocol."
@@ -730,6 +736,8 @@ module MatchArgs =
       if ps.IsEmpty && not optional then fail $"Option \"{flag}\" expects key=value parameters."
       ps
       |> List.map (fun p ->
+        // `ponder` stands alone, as cutechess-cli writes it (-each ponder)
+        if p = "ponder" && (flag = "-engine" || flag = "-each") then "ponder", "" else
         let pos = p.IndexOf '='
         if pos <= 0 || pos + 1 = p.Length then fail $"Option \"{flag}\" expects key=value pairs, got \"{p}\"."
         p.Substring(0, pos), p.Substring(pos + 1))

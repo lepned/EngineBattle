@@ -22,29 +22,14 @@ open ChessLibrary.GameReplay
 // Alias for backward compatibility with existing code that calls Formatting.createResultWithEval
 module Formatting = ChessLibrary.TypesDef.CoreTypes
 
-/// The adjudication reason constant for user-initiated adjudication
-let adjudicationReason = ResultReason.AdjudicatedByUser
-
-/// Creates a result for a player who lost on time. `remaining` is the loser's clock after the
-/// move (clockAfterMove), below zero; how far below is the result's TimeOverrunMs.
+/// The result for a loss on time. `remaining` is the loser's clock after the move
+/// (Clock.remainingAfter), below zero; how far below is the result's TimeOverrunMs.
 let lostOnTimeResult (playing: string) (opponent: string) (isWhite: bool) (gameMoveList: ResizeArray<string>) (gametimer: int64) (remaining: TimeSpan) evals : Result =
     let dur = int64 (Stopwatch.GetElapsedTime(gametimer).TotalMilliseconds)
     let resStr = if isWhite then "0-1" else "1-0"
     let player1, player2 = if isWhite then playing, opponent else opponent, playing
     let overrun = int64 (Math.Round(max 0.0 (-remaining.TotalMilliseconds)))
     { Formatting.createResultWithEval player1 player2 gameMoveList resStr ResultReason.ForfeitLimits dur evals with TimeOverrunMs = overrun }
-
-/// The clock after a completed move: what was left, plus the increment earned by completing
-/// it, minus the time actually spent.
-///
-/// Signed on purpose. An engine that overran leaves a negative here, and that is precisely
-/// what the loss-on-time check needs — the previous version clamped at zero, threw the
-/// overshoot away, and a second copy of this same arithmetic then lived in the caller to
-/// recover it. One expression, read by both, cannot drift from itself.
-///
-/// Clamping belongs where the value is stored or shown, not here.
-let clockAfterMove (duration: TimeSpan) (remaining: TimeSpan) (increment: TimeSpan) =
-    remaining + increment - duration
 
 /// Checks if the app is shutting down
 let isAppShuttingDown (cts: CancellationTokenSource) =
@@ -206,79 +191,6 @@ let firstTwoEvals fullEvalList =
     | [] -> []
     | [x] -> [x]
     | x::y::_ -> [x; y]
-
-/// Start a background writer that reads engine output and writes lines into the
-/// provided channel for the duration of the game. The read is cancellable: when the
-/// per-game CTS is cancelled the parked ReadLineAsync aborts immediately, so a stale
-/// writer can never hold the StreamReader across a game boundary and swallow the next
-/// game's readyok (engines are reused across games in 2-player RR/Cup).
-let startEngineChannelWriter
-    (engine: ChessEngine)
-    (engineChannel: Channel<string>)
-    (parentCts: CancellationTokenSource)
-    (logger: ILogger)
-    (inPonderMode: unit -> bool)
-    (callback: Update -> unit)
-    (isWhite: unit -> bool) =
-
-    let cts = CancellationTokenSource.CreateLinkedTokenSource(parentCts.Token)
-    // Poll/throttle settings for ponder updates
-    let mutable ponderPollIntervalMs = 1000L
-    let sw = Stopwatch.StartNew()
-    let rec loop () = async {
-        try
-            if cts.Token.IsCancellationRequested then
-                try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
-                logger.LogInformation("Engine channel writer for {Engine} is stopping due to cancellation", engine.Name)
-                return ()
-            else
-                // Cancellable read (also applies Winboard output translation); returns
-                // null on cancellation, end of stream, or read error.
-                let! line = engine.ReadLineAsyncWithTimeout(cts.Token) |> Async.AwaitTask
-                if isNull line then
-                    // Null means cancellation (game over) or the engine closed stdout.
-                    // Reading again returns null at once, so looping here spins a core.
-                    // Complete the channel instead: the reader ends the game on
-                    // ChannelClosedException.
-                    try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
-                    if cts.Token.IsCancellationRequested then
-                        logger.LogInformation("Engine channel writer for {Engine} stopped by cancellation", engine.Name)
-                    else
-                        logger.LogInformation("Engine {Engine} closed its output, channel writer stopping", engine.Name)
-                    return ()
-                else
-                    let inPonder = inPonderMode()
-                    let isWhite = isWhite()
-                    match line with
-                    |line when inPonder && sw.ElapsedMilliseconds > ponderPollIntervalMs && line.StartsWith "info depth" ->
-                        match Regex.getEssentialData line (not isWhite) with
-                        | Some (d, eval, nodes, nps, _pvLine, tbhits, wdl, sd, _mPv) ->
-                            let status = {
-                                PlayerName = engine.Name; Eval = eval; Depth = d; SD = sd
-                                Nodes = nodes; NPS = float nps; TBhits = tbhits
-                                WDL = if wdl.IsSome then WDLType.HasValue wdl.Value else WDLType.NotFound }
-                            callback (PonderStatus status)
-                            sw.Restart()
-                        | None -> ()
-
-                    |line when inPonder && line.StartsWith "bestmove" ->
-                        sw.Restart()
-                    |line when not inPonder ->
-                        engineChannel.Writer.TryWrite(line) |> ignore
-                    | _ -> ()
-
-                    return! loop()
-        with
-        | :? OperationCanceledException
-        | :? ObjectDisposedException ->
-            try engineChannel.Writer.TryComplete() |> ignore with _ -> ()
-        | ex ->
-            logger.LogWarning(ex, "Engine channel writer error for {Engine}", engine.Name)
-            try engineChannel.Writer.TryComplete(ex) |> ignore with _ -> ()
-    }
-
-    Async.Start(loop(), cts.Token)
-    cts
 
 /// Annotation helper for move output
 let annotation (moveAnnotation: MoveAnnotation) (board: Board) (numberMove : string) (chessMoveInfo : ChessMoveInfo) =

@@ -10,11 +10,8 @@ open ChessLibrary.WinboardProtocol
 ///
 /// This module provides two initialization strategies for Winboard engines:
 ///
-/// 1. **initializeWinboard** - Direct stdout reading using ReadLineAsync
-///    - Use when you want synchronous control over initialization
-///    - Reads directly from process.StandardOutput
-///    - Don't use with BeginOutputReadLine()
-///    - Example: Standalone tools, testing, analysis scripts
+/// 1. **initializeWinboard** - reads lines through the caller's readLine (the tournament engine's
+///    output channel)
 ///
 /// 2. **initializeWinboardEventBased** - Event-based initialization
 ///    - Use when already using BeginOutputReadLine() for async output processing
@@ -61,15 +58,15 @@ module WinboardIntegration =
     /// 5. Send post + easy commands
     ///
     /// **Parameters:**
-    /// - proc: The engine process (must have stdout redirected)
+    /// - proc: The engine process (written to; checked for exit)
+    /// - readLine: the next line of its output; null when it ended
     /// - handler: WinboardHandler instance for protocol translation
     /// - logger: Optional logger for diagnostic output
     /// - engineName: Engine name for logging
     /// - timeoutMs: Timeout in milliseconds for feature negotiation (default: 2000ms)
     /// - forceV1: If true, skip protover 2 and immediately use V1 mode
     ///
-    /// **Thread safety:** This method reads from stdout directly, so don't use BeginOutputReadLine on the same process.
-    let initializeWinboard (proc: Process) (handler: WinboardHandler) (logger: ILogger option) (engineName: string) (timeoutMs: int) (forceV1: bool) =
+    let initializeWinboard (proc: Process) (readLine: CancellationToken -> Tasks.Task<string>) (handler: WinboardHandler) (logger: ILogger option) (engineName: string) (timeoutMs: int) (forceV1: bool) =
         async {
             try
                 let log msg = logger |> Option.iter (fun l -> l.LogInformation(msg))
@@ -117,7 +114,7 @@ module WinboardIntegration =
                                 return false
                             else
                                 try
-                                    let! line = proc.StandardOutput.ReadLineAsync(cts.Token).AsTask() |> Async.AwaitTask
+                                    let! line = readLine cts.Token |> Async.AwaitTask
                                     if not (isNull line) && not (String.IsNullOrWhiteSpace line) then
                                         logDebug $"[WB init {engineName}] {line}"
                                         handler.ProcessOutput(line) |> ignore
@@ -163,7 +160,7 @@ module WinboardIntegration =
                         let mutable gotError = false
                         let rec drainProbe () = async {
                             try
-                                let! line = proc.StandardOutput.ReadLineAsync(probeCts.Token).AsTask() |> Async.AwaitTask
+                                let! line = readLine probeCts.Token |> Async.AwaitTask
                                 if not (isNull line) && not (String.IsNullOrWhiteSpace line) then
                                     logDebug $"[WB setboard probe {engineName}] {line}"
                                     let trimmed = line.Trim()
@@ -193,7 +190,7 @@ module WinboardIntegration =
                         let mutable gotError = false
                         let rec drainProbe () = async {
                             try
-                                let! line = proc.StandardOutput.ReadLineAsync(probeCts.Token).AsTask() |> Async.AwaitTask
+                                let! line = readLine probeCts.Token |> Async.AwaitTask
                                 if not (isNull line) && not (String.IsNullOrWhiteSpace line) then
                                     logDebug $"[WB level probe {engineName}] {line}"
                                     let trimmed = line.Trim()
