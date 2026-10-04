@@ -24,8 +24,12 @@ type AnalysisOutcome =
   | Superseded
   | Failed of string
 
+/// An update with the position (FEN) of the search it belongs to; "" for the engine's own
+/// (Ready, EngineFailed). A caller shows it only where that position is on its board.
+type SearchUpdate = { Update: EngineUpdate; Fen: string }
+
 type private Delivery =
-  | Deliver of EngineUpdate
+  | Deliver of EngineUpdate * fen: string
   | Run of (unit -> unit)
 
 type private AnalysisMessage =
@@ -36,9 +40,10 @@ type private AnalysisMessage =
 
 /// An engine for the analysis pages and Game Review. Runs AnalysisMachine in an agent: searches
 /// are requests (the newest wins), a stopped search's output never reaches the next one, and the
-/// updates reach `callback` through a queue of their own, so a callback may call back in.
+/// updates reach `callback` through a queue of their own, so a callback may call back in. With
+/// `onSearchUpdate` the updates go there instead, each with its search's FEN.
 type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCommands: string seq,
-                    logger: ILogger, writeToConsole: bool, ?logToFile: bool) =
+                    logger: ILogger, writeToConsole: bool, ?logToFile: bool, ?onSearchUpdate: SearchUpdate -> unit) =
   let name = config.Name
   let protocol = protocolFor config (Some logger)
   let isLc0 = EngineProcess.pathMentions "lc0" config
@@ -137,8 +142,11 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
             logIO ">>>" command
     with ex -> logger.LogWarning(ex, "Engine {Engine}: could not send '{Command}'", name, command)
 
+  // each search's position as a FEN, for its updates; written and read on the agent only
+  let searchFens = Dictionary<int, string>()
+
   /// Sets the board for SAN, and tells the engine when the variant changes.
-  let usePosition (command: string) =
+  let usePosition (search: int) (command: string) =
     // the board reads only the fen form; startpos is its start position
     let boardCommand =
       if command.StartsWith("position startpos", StringComparison.Ordinal) then
@@ -148,6 +156,8 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
       lock boardLock (fun () ->
         moveBoard.ResetBoardState()
         moveBoard.PlayCommands boardCommand
+        searchFens.[search] <- moveBoard.FEN()
+        for old in [ for id in searchFens.Keys do if id <= search - 32 then yield id ] do searchFens.Remove old |> ignore
         whiteToMove <- moveBoard.Position.STM = 0uy
         moveBoard.IsFRC)
     sanPvCache.Clear()
@@ -207,9 +217,13 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
   /// One delivery, on the delivery thread: caller code never runs on the agent.
   let deliverOne item =
     match item with
-    | Deliver update ->
+    | Deliver (update, fen) ->
         // the caller sees Ready before WaitUntilStarted returns
-        (try callback update with ex -> logger.LogWarning(ex, "Engine {Engine}: update callback failed", name))
+        (try
+          match onSearchUpdate with
+          | Some deliver -> deliver { Update = update; Fen = fen }
+          | None -> callback update
+         with ex -> logger.LogWarning(ex, "Engine {Engine}: update callback failed", name))
         match update with
         | Ready _ -> started.TrySetResult true |> ignore
         | EngineFailed (_, reason) when not started.Task.IsCompleted ->
@@ -260,8 +274,13 @@ type AnalysisEngine(callback: EngineUpdate -> unit, config: EngineConfig, initCo
           try
             match effect with
             | AnalysisMachine.Send command -> write command
-            | AnalysisMachine.UsePosition command -> usePosition command
-            | AnalysisMachine.Emit update -> deliveries.Writer.TryWrite(Deliver update) |> ignore
+            | AnalysisMachine.UsePosition (search, command) -> usePosition search command
+            | AnalysisMachine.Emit (update, search) ->
+                let fen =
+                  match search with
+                  | Some id -> (match searchFens.TryGetValue id with | true, f -> f | _ -> "")
+                  | None -> ""
+                deliveries.Writer.TryWrite(Deliver (update, fen)) |> ignore
             | AnalysisMachine.Reply (id, outcome) ->
                 match waiters.TryGetValue id with
                 | true, reply ->

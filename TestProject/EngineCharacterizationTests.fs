@@ -360,6 +360,33 @@ let ``Analysis pings before go, and a new position stops the old search and wait
     finally quitAnalysis eng
 
 [<Fact>]
+let ``Analysis updates come with the FEN of the search they belong to`` () =
+    let log = newLogPath ()
+    let cfg = config log "" [ "FakeGoDelayMs", box 300 ]
+    let updates = ConcurrentQueue<SearchUpdate>()
+    let eng = new AnalysisEngine(ignore, cfg, initCommands cfg, NullLogger.Instance, false, onSearchUpdate = updates.Enqueue)
+    let fenAfter (moves: string list) =
+        let board = Chess.Board()
+        board.LoadFen startFen
+        for m in moves do board.PlayUciMove m
+        board.FEN()
+    try
+        Assert.True(eng.WaitUntilStarted 10000)
+        // replaced searches, then the last one; every result is stamped with its own position
+        let first = eng.Search(fromStart "", "go nodes 100")
+        eng.Analyse(fromStart "e2e4", "go nodes 100")
+        let last = eng.Search(fromStart "e2e4 e7e5", "go nodes 100")
+        Async.RunSynchronously(first, 10000) |> ignore
+        Async.RunSynchronously(last, 10000) |> ignore
+        let all = updates.ToArray()
+        let results = all |> Array.filter (fun u -> match u.Update with Status _ | Info _ | BestMove _ | NNSeq _ -> true | _ -> false)
+        Assert.NotEmpty(results)
+        Assert.All(results, fun u -> Assert.Equal(fenAfter [ "e2e4"; "e7e5" ], u.Fen))
+        // the engine's own updates carry none
+        Assert.All(all |> Array.filter (fun u -> match u.Update with Ready _ -> true | _ -> false), fun u -> Assert.Equal("", u.Fen))
+    finally quitAnalysis eng
+
+[<Fact>]
 let ``Analysis keeps only the newest of several requests, and no stale output reaches it`` () =
     let log = newLogPath ()
     let eng, updates = startAnalysis (config log "" [ "FakeGoDelayMs", box 300 ])

@@ -49,7 +49,9 @@ module internal AnalysisMachine =
       Next: Search option
       /// Commands for an idle engine, oldest first.
       Queued: string list
-      LiveStats: bool }
+      LiveStats: bool
+      /// The search started last: output read while idle is its trailing output.
+      Last: int option }
 
   type Settings =
     { Name: string
@@ -76,8 +78,9 @@ module internal AnalysisMachine =
   type Effect =
     | Send of string
     /// Set the board for SAN before the position is sent.
-    | UsePosition of string
-    | Emit of EngineUpdate
+    | UsePosition of search: int * command: string
+    /// The search it belongs to; None for the engine's own (Ready, EngineFailed).
+    | Emit of EngineUpdate * search: int option
     | Reply of id: int * Outcome
     /// The handshake lines until uciok; the agent answers with Init.
     | OptionsReceived of string list
@@ -87,7 +90,7 @@ module internal AnalysisMachine =
 
   let initial uci =
     { Phase = (if uci then AwaitingUciOk [] else AwaitingInit); Since = TimeSpan.Zero
-      Output = AnalysisOutput.State.Initial; Next = None; Queued = []; LiveStats = false }
+      Output = AnalysisOutput.State.Initial; Next = None; Queued = []; LiveStats = false; Last = None }
 
   let private goto phase now (state: State) = { state with Phase = phase; Since = now }
 
@@ -96,7 +99,7 @@ module internal AnalysisMachine =
 
   /// A search that ends without a bestmove: the caller is told, and so is the GUI.
   let private superseded (settings: Settings) (search: Search) =
-    [ Reply (search.Id, Superseded); Emit (SearchStopped settings.Name) ]
+    [ Reply (search.Id, Superseded); Emit (SearchStopped settings.Name, Some search.Id) ]
 
   let private dropNext settings (state: State) =
     match state.Next with
@@ -105,8 +108,8 @@ module internal AnalysisMachine =
 
   let private startSearch (settings: Settings) now (search: Search) (state: State) =
     if search.Go = "" then goto Idle now state, superseded settings search else
-    let state = { state with Output = AnalysisOutput.withoutPv state.Output }
-    let open' = [ UsePosition search.Position; Send search.Position ]
+    let state = { state with Output = AnalysisOutput.withoutPv state.Output; Last = Some search.Id }
+    let open' = [ UsePosition (search.Id, search.Position); Send search.Position ]
     if settings.CanPing then goto (Readying (search, false)) now state, open' @ [ Send "isready" ]
     else goto (Searching (search, false)) now state, open' @ [ Send search.Go ]
 
@@ -120,17 +123,17 @@ module internal AnalysisMachine =
         state, sent @ effects
     | None -> goto Idle now state, sent
 
-  let private parse (settings: Settings) (pos: AnalysisOutput.IPosition) (state: State) (line: string) =
+  let private parse (settings: Settings) (pos: AnalysisOutput.IPosition) (search: int option) (state: State) (line: string) =
     let output, effects = AnalysisOutput.step settings.Name pos state.Output line
     let converted =
       effects |> List.map (function
-        | AnalysisOutput.Update update -> Emit update
+        | AnalysisOutput.Update update -> Emit (update, search)
         | AnalysisOutput.Print text -> Print text
         | AnalysisOutput.Debug text -> Debug text)
     { state with Output = output }, converted
 
   let private bestMoveIn effects =
-    effects |> List.tryPick (function Emit (BestMove info) -> Some info | _ -> None)
+    effects |> List.tryPick (function Emit (BestMove info, _) -> Some info | _ -> None)
 
   /// Stops the running search so `next` can follow; its output from here on is dropped.
   let private replace (settings: Settings) now (current: Search) stopSent (state: State) =
@@ -146,7 +149,7 @@ module internal AnalysisMachine =
 
   let private fail (settings: Settings) now (reason: string) (state: State) =
     // every waiting search ends, for a caller and for the GUI
-    let ended (s: Search) = [ Reply (s.Id, Failed reason); Emit (SearchStopped settings.Name) ]
+    let ended (s: Search) = [ Reply (s.Id, Failed reason); Emit (SearchStopped settings.Name, Some s.Id) ]
     let pending =
       match state.Phase with
       | Readying (s, _) | Searching (s, _) -> ended s
@@ -154,7 +157,7 @@ module internal AnalysisMachine =
     let next = match state.Next with Some n -> ended n | None -> []
     let owes = match state.Phase with Draining ForBestMove | Searching (_, true) -> true | _ -> false
     { goto (Unresponsive (reason, owes)) now state with Next = None },
-    [ Warn (sprintf "%s: %s" settings.Name reason); Emit (EngineFailed (settings.Name, reason)) ] @ pending @ next
+    [ Warn (sprintf "%s: %s" settings.Name reason); Emit (EngineFailed (settings.Name, reason), None) ] @ pending @ next
 
   let private lineEvent (settings: Settings) (pos: AnalysisOutput.IPosition) now (state: State) (line: string) =
     match state.Phase with
@@ -167,11 +170,11 @@ module internal AnalysisMachine =
     | AwaitingStartReady ->
         if isReadyOk line then
           let state, effects = whenIdle settings now state
-          state, [ Emit (Ready (settings.Name, state.LiveStats)) ] @ effects
+          state, [ Emit (Ready (settings.Name, state.LiveStats), None) ] @ effects
         elif EngineProcess.isFatalInitLine line then fail settings now (sprintf "failed to initialize: %s" line) state
         else state, []
     | AwaitingInit -> state, []
-    | Idle -> parse settings pos state line
+    | Idle -> parse settings pos state.Last state line
     | Readying (search, stop) when isReadyOk line ->
         match state.Next, state.Queued with
         | Some _, _ ->
@@ -184,7 +187,7 @@ module internal AnalysisMachine =
         | None, [] -> goto (Searching (search, false)) now state, [ Send search.Go ]
     | Readying _ -> state, []
     | Searching (search, _) ->
-        let state, effects = parse settings pos state line
+        let state, effects = parse settings pos (Some search.Id) state line
         if isBestMove line then
           let state, next = whenIdle settings now state
           state, effects @ [ Reply (search.Id, Completed (bestMoveIn effects)) ] @ next
@@ -216,7 +219,7 @@ module internal AnalysisMachine =
             if settings.CanPing then goto AwaitingStartReady now state, sent @ [ Send "isready" ]
             else
               let state, effects = whenIdle settings now state
-              state, sent @ [ Emit (Ready (settings.Name, state.LiveStats)) ] @ effects
+              state, sent @ [ Emit (Ready (settings.Name, state.LiveStats), None) ] @ effects
         | _ -> state, []
 
     | Analyse search ->
@@ -236,7 +239,7 @@ module internal AnalysisMachine =
             // it may have come back; if not, the ping times out again
             let state, effects = whenIdle settings now { state with Next = Some search }
             state, [ Warn (sprintf "%s: trying again after it stopped answering" settings.Name) ] @ effects
-        | Closed -> state, [ Reply (search.Id, Failed "the engine exited"); Emit (SearchStopped settings.Name) ]
+        | Closed -> state, [ Reply (search.Id, Failed "the engine exited"); Emit (SearchStopped settings.Name, Some search.Id) ]
 
     | Stop ->
         let state, dropped = dropNext settings state

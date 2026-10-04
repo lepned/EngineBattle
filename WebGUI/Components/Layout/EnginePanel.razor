@@ -463,7 +463,7 @@
         NNInfoList = new();
         ClearIterations();
         lastMainInfoLine = "";
-        lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
+        lastInfoByMultiPv.Clear();
         // New position/search: let the first eval through even if it equals the last one.
         lastPublishedCp = null;
         lastPublishedMate = null;
@@ -533,7 +533,6 @@
 
         if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
             ApplyExtraSetOptions();
-        NoteSearchStarted(ChessBoard?.FEN());
         if (searchMode == SearchMode.Nodes)
         {
             analyzer.SearchNodes((int)numberOfNodes, keepNodesWhileSearching);
@@ -1028,7 +1027,6 @@
 
         searchInProgress = true;
         ResetSearchTimer();
-        NoteSearchStarted(ChessBoard?.FEN());
         analyzer?.GoInfinite();
         StartSearchTimer();
         await InvokeAsync(StateHasChanged);
@@ -1182,7 +1180,7 @@
         {
             var newAnalyzer = await Task.Factory.StartNew(() =>
             {
-                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, HandleUpdate, false);
+                return new AnalysisManager.SimpleEngineAnalyzer(Engine, ChessBoard, logger, HandleSearchUpdate, false);
             });
             if (disposeCts.IsCancellationRequested)
             {
@@ -1312,17 +1310,23 @@
     // enough" out of a dictionary being copied while it grows). Marshalling to the
     // dispatcher serialises them: component state is only ever touched from one thread,
     // which is what Blazor expects in the first place.
-    public void HandleUpdate(EngineUpdate update)
+    // A host's own engine (Game Review) feeds its updates here, without a FEN.
+    public void HandleUpdate(EngineUpdate update) => Dispatch(update, "");
+
+    // The panel's analyzer: each update with the FEN of the search it belongs to.
+    private void HandleSearchUpdate(SearchUpdate update) => Dispatch(update.Update, update.Fen);
+
+    private void Dispatch(EngineUpdate update, string searchFen)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
         {
-            _ = InvokeAsync(() => HandleUpdateCore(update));
+            _ = InvokeAsync(() => HandleUpdateCore(update, searchFen));
         }
         catch (ObjectDisposedException) { }
     }
 
-    private async Task HandleUpdateCore(EngineUpdate update)
+    private async Task HandleUpdateCore(EngineUpdate update, string searchFen)
     {
         if (disposeCts.IsCancellationRequested) return;
         try
@@ -1343,6 +1347,7 @@
                     break;
 
                 case EngineUpdate.Info i:
+                    if (IsForAnotherPosition(searchFen)) break;
                     InfoLineList.Insert(0, (i.Info));
                     // Info now arrives per parsed status line — cap the (display-unused)
                     // backlog so an infinite search can't grow it without bound.
@@ -1352,22 +1357,18 @@
                     // extras survive into the CandidateMoves copy output. Capped at the
                     // chart-lines input (= the MultiPV the engine searches), filtered at
                     // join time so lowering the slider drops stale higher lines. Joined
-                    // eagerly here (single engine reader thread mutates the dict, cleared
-                    // on the dispatcher — lock both; renders read only the joined string).
+                    // eagerly here; renders read only the joined string.
                     if (i.Info.Contains(" pv "))
                     {
                         var k = MultiPvOf(i.Info);
                         var lineCap = ActiveChartLines;
                         if (k <= lineCap)
                         {
-                            lock (lastInfoByMultiPv)
-                            {
-                                lastInfoByMultiPv[k] = i.Info;
-                                lastMainInfoLine = string.Join("\n",
-                                    lastInfoByMultiPv.Where(kv => kv.Key <= lineCap)
-                                                     .OrderBy(kv => kv.Key)
-                                                     .Select(kv => kv.Value));
-                            }
+                            lastInfoByMultiPv[k] = i.Info;
+                            lastMainInfoLine = string.Join("\n",
+                                lastInfoByMultiPv.Where(kv => kv.Key <= lineCap)
+                                                 .OrderBy(kv => kv.Key)
+                                                 .Select(kv => kv.Value));
                         }
                         // Iteration log: main line only, paired with the Status parsed from
                         // this very line (emitted immediately before it).
@@ -1378,7 +1379,7 @@
                             {
                                 var rowsCopy = iterationCollector.Rows;
                                 // The search's position, not the board's (see NNSeq).
-                                var rowsFen = lastStartedSearchFen ?? fen;
+                                var rowsFen = string.IsNullOrEmpty(searchFen) ? fen : searchFen;
                                 await InvokeAsync(() => OnIterations.InvokeAsync((rowsCopy, rowsFen)));
                             }
                         }
@@ -1388,30 +1389,24 @@
                 case EngineUpdate.Eval e:
                     break;
 
-                // a search replaced by a newer one ends here instead of in a bestmove
-                case EngineUpdate.SearchStopped:
-                    pendingSearchFens.TryDequeue(out _);
-                    break;
-
                 case EngineUpdate.BestMove b:
+                    // The result belongs to the position the search ran on: one played away from
+                    // meanwhile gets nothing - no eval, no "analyzed", and the search running now
+                    // keeps its timer and Stop.
+                    if (IsForAnotherPosition(searchFen))
+                    {
+                        logger.LogDebug("Dropping stale search result for {Fen}", searchFen);
+                        break;
+                    }
                     whitePV = b.Item.PV;
                     searchInProgress = false;
                     waitingForEngine = false;
-                    // Attribute the result to the position the search actually ran on.
-                    // A stopped search's bestmove can arrive after navigation; writing it
-                    // onto the current board marked the NEW position as analyzed (auto-
-                    // search then skipped it forever) and attached the old eval to it.
-                    pendingSearchFens.TryDequeue(out var searchedFen);
-                    var staleResult =
-                        !string.IsNullOrEmpty(searchedFen)
-                        && ChessBoard != null
-                        && !string.Equals(searchedFen, ChessBoard.FEN(), StringComparison.Ordinal);
                     var commentEval = data.ContainsKey(1) ? data[1].Eval : b.Item.Eval;
                     var commentNodes = data.ContainsKey(1) ? data[1].Nodes : b.Item.Nodes;
                     var evalComment = $"{{{commentEval}/{commentNodes.ToString("N0")}}}";
                     // A host's search (Game Review) is not about ChessBoard's current move: the
                     // board holds the reviewed game, and its last move got every review eval.
-                    if (!staleResult && !UpdatesFromHost)
+                    if (!UpdatesFromHost)
                         ChessBoard.SetCommentOnCurrentEdge(evalComment);
                     StopSearchTimer();
                     // The timer that would have drawn it is gone now, so draw whatever the
@@ -1425,11 +1420,7 @@
                         data[1] = new EngineStatus(s.PlayerName, s.Eval, s.Nodes, s.NPS, s.EPS, s.Depth, s.SD, s.TBhits, s.WDL, b.Item.PV, b.Item.Move, s.MultiPV);
                         dataList = data.OrderBy(e => e.Value.MultiPV).ToList();
                     }
-                    if (staleResult)
-                    {
-                        logger.LogDebug("Dropping stale search result for {Fen}", searchedFen);
-                    }
-                    else if (OnSearchCompleted.HasDelegate)
+                    if (OnSearchCompleted.HasDelegate)
                     {
                         var evalStr = commentEval switch
                         {
@@ -1451,16 +1442,9 @@
 
                 case EngineUpdate.Status s:
                     var status = s.Item;
-                    // A stopped search keeps reporting for a moment after `stop`, and by
-                    // then a move may have been played: those lines are about the previous
-                    // position and would fill the PV table just cleared for the new one.
-                    // Same attribution as bestmove and the live stats.
-                    var statusSearchFen = lastStartedSearchFen;
-                    if (!UpdatesFromHost
-                        && ChessBoard != null
-                        && !string.IsNullOrEmpty(statusSearchFen)
-                        && !string.Equals(statusSearchFen, ChessBoard.FEN(), StringComparison.Ordinal))
-                        break;
+                    // A stopped search's last lines would fill the PV table just cleared for
+                    // the position played since.
+                    if (IsForAnotherPosition(searchFen)) break;
                     // Assigned before the first await so it is in place when the raw Info
                     // for this same line arrives and builds the iteration row.
                     if (status.MultiPV <= 1) pendingIterationStatus = status;
@@ -1480,16 +1464,10 @@
                     if (n.NNSeq.Count > 0)
                     {
                         n.NNSeq.Reverse();
-                        // These root stats belong to the search that produced them, not to
-                        // whatever the board shows now: Lc0 prints its final block after
-                        // `stop`, and a move played meanwhile had it stamped with the new
-                        // position - the previous side's candidate moves under the new FEN.
-                        // Same attribution the bestmove case does with pendingSearchFens.
-                        var statsFen = lastStartedSearchFen ?? fen;
-                        var staleStats = !UpdatesFromHost
-                            && ChessBoard != null
-                            && !string.IsNullOrEmpty(statsFen)
-                            && !string.Equals(statsFen, ChessBoard.FEN(), StringComparison.Ordinal);
+                        // The root stats of the search that produced them (Lc0 prints its final
+                        // block after `stop`, maybe after a move was played).
+                        var statsFen = string.IsNullOrEmpty(searchFen) ? fen : searchFen;
+                        var staleStats = IsForAnotherPosition(searchFen);
                         var fresh = n.NNSeq.ToList();
                         if (!staleStats)
                         {
@@ -2115,23 +2093,10 @@
     // Coalesces overlapping auto-search starts: at most one task runs and one waits.
     // Guards against unbounded thread-pool pile-up when the engine hangs or dies
     // (WaitForReadyOk can block for a long time on a crashed process).
-    private int autoSearchQueued;
     // Position snapshot for the auto-search task: Chess.Board is not thread-safe and
     // is mutated on the dispatcher, so the task must never touch it (same pattern as
     // KibitzerPanel). Immutable tuple — the reference write is atomic and a coalesced
     // start picks up the newest snapshot.
-    private (string PosCmd, string Go, string Fen) latestAutoSearch;
-
-    // FEN of each in-flight search, enqueued when the go is actually issued and
-    // dequeued when its bestmove arrives. A stopped search's bestmove can land after
-    // navigation (even after the NEXT search's go was sent), and must not be
-    // attributed to the new position: it marked the new position as analyzed (so
-    // auto-search skipped it forever) and attached the old eval to the new edge/ply.
-    private readonly System.Collections.Concurrent.ConcurrentQueue<string> pendingSearchFens = new();
-
-    // The position of the search started last: what live stats arriving now belong to. The
-    // engine's final root stats come after `stop`, by which time the board may have moved on.
-    private volatile string lastStartedSearchFen;
 
     // The updates come from the host's own search, not the panel's: Game Review runs its engine
     // through the panel while it reviews. It shows each searched position without moving
@@ -2141,13 +2106,15 @@
     // its updates are not dropped.
     private bool UpdatesFromHost => IsReviewing;
 
-    private void NoteSearchStarted(string searchFen)
-    {
-        lastStartedSearchFen = searchFen ?? "";
-        // Bound the queue: a bestmove can be lost on abnormal engine output
-        while (pendingSearchFens.Count > 4) pendingSearchFens.TryDequeue(out _);
-        pendingSearchFens.Enqueue(searchFen ?? "");
-    }
+    // An update of a search on another position than the board's: a stopped search's, after a
+    // move. Placement, side to move, castling and en passant decide; the move counters do not.
+    private bool IsForAnotherPosition(string searchFen) =>
+        !UpdatesFromHost
+        && ChessBoard != null
+        && !string.IsNullOrEmpty(searchFen)
+        && PositionKey(searchFen) != PositionKey(ChessBoard.FEN());
+
+    private static string PositionKey(string fen) => string.Join(' ', (fen ?? "").Split(' ').Take(4));
 
     private string BuildAutoGoCommand()
     {
@@ -2160,13 +2127,17 @@
     // Marshalled to the dispatcher: the body mutates UI state and snapshots the shared
     // board, and Notifier events run on whatever thread raised them — today always the
     // dispatcher, but nothing enforces that for future callers.
+    // Auto-search waits this long on a position before it searches it (see OnNotifyFen).
+    private const int AutoSearchDelayMs = 150;
+    private int autoSearchNavigation;
+
     public Task OnNotifyFen(string newPos) => InvokeAsync(async () =>
     {
         fen = newPos;
         NNInfoList = new();
         ClearIterations();
         lastMainInfoLine = "";
-        lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
+        lastInfoByMultiPv.Clear();
         // The PV-lines table too: its rows are the previous position's lines until the
         // next search writes new ones, and with auto-search off nothing ever did.
         data.Clear();
@@ -2187,7 +2158,15 @@
             {
                 analyzer?.Stop();
                 StopSearchTimer();
+                searchInProgress = false;
             }
+            // Debounce: the search starts once the board has stayed on a position for a moment,
+            // so holding an arrow key moves the board freely and only the position stopped on
+            // is searched. A newer navigation meanwhile cancels this one.
+            var navigation = ++autoSearchNavigation;
+            await Task.Delay(AutoSearchDelayMs);
+            if (navigation != autoSearchNavigation || !autoSearchSwitch || disposeCts.IsCancellationRequested)
+                return;
             if (searchInfoPlot != null)
                 await searchInfoPlot?.ResetPlot(false);
             cpEvalPlot?.Clear();
@@ -2204,46 +2183,19 @@
                 // searched on with the old values until the next click on Start.
                 if (!ReferenceEquals(ExtraSetOptions, appliedExtraSetOptions))
                     ApplyExtraSetOptions();
-                searchInProgress = true;
-                StartSearchTimer();
-                var a = analyzer;
-                // Snapshot the shared board here on the dispatcher — the search task
-                // must never touch it (racing the board's owner page corrupts the
-                // move list mid-render: "Collection was modified").
-                latestAutoSearch = (ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand(), ChessBoard.FEN());
-                if (Interlocked.CompareExchange(ref autoSearchQueued, 1, 0) == 0)
+                if (analyzer.Engine.HasExited)
                 {
-                    _ = Task.Run(async () => {
-                        try
-                        {
-                            // Lock per analyzer so a task stuck on a dead engine never
-                            // blocks searches of a recreated one.
-                            lock (a)
-                            {
-                                autoSearchQueued = 0;
-                                if (!autoSearchSwitch || !ReferenceEquals(a, analyzer)) return;
-                                if (a.Engine.HasExited)
-                                {
-                                    logger.LogWarning("Engine process has exited during auto-search");
-                                    searchInProgress = false;
-                                }
-                                else
-                                {
-                                    var (posCmd, goCmd, searchFen) = latestAutoSearch;
-                                    // Enqueue next to the actual go: coalesced starts
-                                    // (CAS above) send only the newest snapshot once.
-                                    NoteSearchStarted(searchFen);
-                                    a.PlayPrepared(posCmd, goCmd);
-                                }
-                            }
-                            if (!searchInProgress)
-                            {
-                                StopSearchTimer();
-                                await InvokeAsync(StateHasChanged);
-                            }
-                        }
-                        catch (Exception ex) { logger.LogWarning("Search start failed: {Msg}", ex.Message); }
-                    });
+                    logger.LogWarning("Engine process has exited during auto-search");
+                    searchInProgress = false;
+                    StopSearchTimer();
+                }
+                else
+                {
+                    searchInProgress = true;
+                    StartSearchTimer();
+                    // A message to the engine's agent: it returns at once and the newest request
+                    // wins, so this runs here on the dispatcher, the panel's only thread.
+                    analyzer.PlayPrepared(ChessBoard.PositionWithMovesFromGraph(), BuildAutoGoCommand());
                 }
             }
             else
@@ -2314,7 +2266,7 @@
             // copy output pair them with the new engine's description.
             ClearIterations();
             lastMainInfoLine = "";
-            lock (lastInfoByMultiPv) lastInfoByMultiPv.Clear();
+            lastInfoByMultiPv.Clear();
             neuralNet = string.Empty;
             // The old engine's arrows go; whether this slot keeps an overlay depends on the new
             // engine. One without live stats cannot draw one, so the slot is switched off. One

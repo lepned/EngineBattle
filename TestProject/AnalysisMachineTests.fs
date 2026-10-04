@@ -34,7 +34,8 @@ let private run settings state events =
 
 let private sends effects = effects |> List.choose (function Send c -> Some c | _ -> None)
 let private replies effects = effects |> List.choose (function Reply (id, o) -> Some (id, o) | _ -> None)
-let private emitted effects = effects |> List.choose (function Emit u -> Some u | _ -> None)
+let private emitted effects = effects |> List.choose (function Emit (u, _) -> Some u | _ -> None)
+let private emittedFor effects = effects |> List.choose (function Emit (u, s) -> Some (u, s) | _ -> None)
 
 /// An idle engine, as after start-up.
 let private idle = { initial true with Phase = Idle }
@@ -66,7 +67,7 @@ let ``a search asked for during start-up starts once the engine is ready`` () =
 [<Fact>]
 let ``a search sets the board, sends the position and isready, then go on readyok`` () =
   let s, e = step settings pos (ms 0.0) idle (Analyse (search 1))
-  Assert.Equal<Effect list>([ UsePosition "position fen p1"; Send "position fen p1"; Send "isready" ], e)
+  Assert.Equal<Effect list>([ UsePosition (1, "position fen p1"); Send "position fen p1"; Send "isready" ], e)
   let _, e = step settings pos (ms 1.0) s (Line "readyok")
   Assert.Equal<string list>([ "go infinite" ], sends e)
 
@@ -239,3 +240,29 @@ let ``after a stop that got no answer, a new search waits for the old bestmove``
   let _, e = step settings pos (ms 10005.0) s (Line "bestmove e2e4")
   Assert.Empty(replies e)
   Assert.Equal<string list>([ "position fen p2"; "isready" ], sends e)
+
+[<Fact>]
+let ``a search's updates carry its id; the engine's own carry none`` () =
+  let s, e = run settings (initial true) [ 0.0, Line "uciok"; 1.0, Init []; 2.0, Line "readyok" ]
+  Assert.Equal<(EngineUpdate * int option) list>([ Ready ("E", false), None ], emittedFor e)
+  let s, _ = run settings s [ 3.0, Analyse (search 7); 4.0, Line "readyok" ]
+  let s, e = step settings pos (ms 5.0) s (Line "info depth 3 score cp 20 nodes 100 nps 100 time 1 pv e2e4")
+  Assert.NotEmpty(emittedFor e)
+  Assert.All(emittedFor e, fun (_, id) -> Assert.Equal(Some 7, id))
+  // the replaced search's SearchStopped names it, not the new one
+  let _, e = step settings pos (ms 6.0) s (Analyse (search 8))
+  Assert.Equal<(EngineUpdate * int option) list>([ SearchStopped "E", Some 7 ], emittedFor e)
+
+[<Fact>]
+let ``a search's position is set under its own id`` () =
+  let _, e = step settings pos (ms 0.0) idle (Analyse (search 3))
+  Assert.Contains(UsePosition (3, "position fen p3"), e)
+
+[<Fact>]
+let ``output read while idle is the last search's trailing output`` () =
+  // a Winboard analyze ends at once on stop; its last thinking lines come after
+  let wb = { settings with CanPing = false; StopAnswers = (fun _ -> false) }
+  let s, _ = run wb idle [ 0.0, Analyse (search 5); 1.0, Stop ]
+  let _, e = step wb pos (ms 2.0) s (Line "info depth 9 score cp 10 nodes 9 nps 9 time 9 pv e2e4")
+  Assert.NotEmpty(emittedFor e)
+  Assert.All(emittedFor e, fun (_, id) -> Assert.Equal(Some 5, id))

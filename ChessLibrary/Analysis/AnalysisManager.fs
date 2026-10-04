@@ -7,12 +7,13 @@ open ChessLibrary.TypesDef.CoreTypes
 open ChessLibrary.EngineTypes
 open ChessLibrary.AnalysisHelper
 
-type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineUpdate>, writeToConsole) =
+/// The analysis engine behind a page. With an Action<SearchUpdate> each update comes with the FEN
+/// of the search it belongs to, so the page can tell a result for another position.
+type SimpleEngineAnalyzer (engineConfig, board, logger, onSearchUpdate: Action<SearchUpdate>, writeToConsole) =
     let SearchDict = new System.Collections.Generic.Dictionary<string,int>()
     let board : Chess.Board = board
     let moveBoard = Chess.Board()
     let logger : ILogger = logger
-    let sendAnalysisResponse (update: EngineUpdate) = callback.Invoke update
 
     let mutable ChessEngine = None
     let distributionEngine() : ChessEngine =
@@ -26,7 +27,7 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
           ChessEngine <- Some eng
           eng
 
-    let engine = EngineHelper.createAltEngine (sendAnalysisResponse, engineConfig, logger, writeToConsole)
+    let engine = EngineHelper.createAltEngineForSearches (onSearchUpdate.Invoke, engineConfig, logger, writeToConsole)
 
     /// The board's position, or None when it has no legal move: then the request still ends, in
     /// turn, with SearchStopped, and a running search is replaced.
@@ -36,6 +37,9 @@ type SimpleEngineAnalyzer (engineConfig, board, logger, callback: Action<EngineU
         logger.LogInformation ("No legal moves with FEN: " + board.FEN())
         engine.Skip()
         None
+
+    new (engineConfig, board, logger, callback: Action<EngineUpdate>, writeToConsole) =
+      SimpleEngineAnalyzer(engineConfig, board, logger, Action<SearchUpdate>(fun u -> callback.Invoke u.Update), writeToConsole)
 
     member val Board = board with get, set
     member x.Engine = engine

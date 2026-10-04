@@ -58,7 +58,14 @@ module EngineHelper =
 
   /// An analysis engine, started: blocks until it is ready (a network load can take minutes, so
   /// call it off a UI thread - createAltEngineAsync), and throws when it cannot start.
-  let createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : AnalysisEngine =
+  let rec createAltEngine (callback, config:EngineConfig, logger:ILogger, writeToConsole:bool) : AnalysisEngine =
+      startAltEngine (fun cmds -> new AnalysisEngine(callback, config, cmds, logger, writeToConsole, logToFile = true)) config
+
+  /// createAltEngine whose updates arrive with the FEN of the search they belong to.
+  and createAltEngineForSearches (onSearchUpdate: SearchUpdate -> unit, config: EngineConfig, logger: ILogger, writeToConsole: bool) : AnalysisEngine =
+      startAltEngine (fun cmds -> new AnalysisEngine(ignore, config, cmds, logger, writeToConsole, logToFile = true, onSearchUpdate = onSearchUpdate)) config
+
+  and private startAltEngine (create: string seq -> AnalysisEngine) (config: EngineConfig) : AnalysisEngine =
       let validation = Configuration.Validation.validateChessEngineCmds config
       match validation with
       |Configuration.Validation.Errors errors ->
@@ -66,8 +73,7 @@ module EngineHelper =
           ConsoleUtils.printInColor ConsoleColor.Red error
         failwith "Engine could not be created"
       |Configuration.Validation.Ok ->
-          let cmds = createInitialUCICommands config
-          let engine = new AnalysisEngine(callback, config, cmds, logger, writeToConsole, logToFile = true)
+          let engine = create (createInitialUCICommands config)
           if not (engine.WaitUntilStarted(int (TimeSpan.FromHours 2.0).TotalMilliseconds)) then
             engine.Quit()
             failwith (sprintf "Engine %s could not be started%s" config.Name
